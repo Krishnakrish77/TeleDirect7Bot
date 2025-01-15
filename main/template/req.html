@@ -29,22 +29,31 @@
     </header>
 
     <div class="container">
-      <div class="artplayer-app"></div>
+      <tag src="%s" class="player"></tag>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
     <script>
-      const art = new Artplayer({
-        container: ".artplayer-app",
-        url: "%s",
-        playbackRate: true,
-        pip: true,
-        fullscreen: true,
-        fastForward: true,
-        hotkey: true,
-        fullscreenWeb: true,
-        autoOrientation: true,
-      });
+      const controls = [
+              'play-large',
+              'rewind',
+              'play', 
+              'fast-forward', 
+              'progress', 
+              'current-time',
+              'duration',
+              'mute',
+              'volume',
+              'captions',
+              'settings',
+              'pip',
+              'airplay',
+              'download',
+              'fullscreen'
+            ];
+        document.addEventListener('DOMContentLoaded', () => {
+            const player = Plyr.setup('.player', { controls });
+        });
 
       const body = document.querySelector("body");
       const toogle = document.querySelector(".toogle");
