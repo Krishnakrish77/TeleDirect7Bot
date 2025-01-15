@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      property="og:image"
+      content="https://www.flaticon.com/premium-icon/icons/svg/2626/2626281.svg"
+      itemprop="thumbnailUrl"
+    />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>%s</title>
+    <link rel="stylesheet" type="text/css" href="/static/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Raleway"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Delius"
+    />
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.5.6/plyr.css" />
+  </head>
+
+  <body>
+    <header>
+      <div class="toogle"></div>
+      <div id="file-name" class="cyber">%s</div>
+    </header>
+
+    <div class="container">
+      <div class="artplayer-app"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+    <script>
+      const art = new Artplayer({
+        container: ".artplayer-app",
+        url: "%s",
+        playbackRate: true,
+        pip: true,
+        fullscreen: true,
+        fastForward: true,
+        hotkey: true,
+        fullscreenWeb: true,
+        autoOrientation: true,
+      });
+
+      const body = document.querySelector("body");
+      const toogle = document.querySelector(".toogle");
+      toogle.onclick = () => {
+        body.classList.toggle("dark");
+      };
+    </script>
+  </body>
+</html>
