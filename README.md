@@ -153,10 +153,11 @@ you may also add as many as bots you want. (max limit is not tested yet)
 ## How to use the bot
 
 :warning: **Before using the  bot, don't forget to add all the bots (multi-client ones too) to the `BIN_CHANNEL` as an admin**
+:warning: **MKV files might not stream well on browsers. Download the file and play it using your player of your choice**
  
 `/start` : To check if the bot is alive or not.
 
-To get an instant stream link, just forward any media to the bot and boom, its fast af.
+To get an instant stream link, just forward any media to the bot and boom! You get a stream link and a direct download link.
 
 ## FAQ
 
