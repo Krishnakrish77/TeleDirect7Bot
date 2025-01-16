@@ -20,12 +20,12 @@ async def render_page(message_id, secure_hash):
         async with aiofiles.open('main/template/req.html') as r:
             heading = 'Watch {}'.format(file_data.file_name)
             tag = file_data.mime_type.split('/')[0].strip()
-            html = (await r.read()).replace('tag', tag) % (heading, file_data.file_name, src)
+            html = (await r.read()).replace('tag', tag) % (heading, src, file_data.file_name)
     elif str(file_data.mime_type.split('/')[0].strip()) == 'audio':
         async with aiofiles.open('main/template/req.html') as r:
             heading = 'Listen {}'.format(file_data.file_name)
             tag = file_data.mime_type.split('/')[0].strip()
-            html = (await r.read()).replace('tag', tag) % (heading, file_data.file_name, src)
+            html = (await r.read()).replace('tag', tag) % (heading, src, file_data.file_name)
     else:
         async with aiofiles.open('main/template/dl.html') as r:
             async with aiohttp.ClientSession() as s:
