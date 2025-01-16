@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       property="og:image"
-      content="https://www.flaticon.com/premium-icon/icons/svg/2626/2626281.svg"
+      content="https://icons.veryicon.com/png/Application/Mega%20Pack%202/Windows%20Media%20Player%2011.png"
       itemprop="thumbnailUrl"
     />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
@@ -23,43 +23,51 @@
   </head>
 
   <body>
-    <header>
-      <div class="toogle"></div>
-      <div id="file-name" class="cyber">%s</div>
-    </header>
-
-    <div class="container">
+    <div class="player-container">
       <tag src="%s" class="player"></tag>
+      <div class="info-panel">
+        <h2>%s</h2>
+      </div>
     </div>
 
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/darkmode-js@1.5.7/lib/darkmode-js.min.js"></script>
     <script>
-      const controls = [
-              'play-large',
-              'rewind',
-              'play', 
-              'fast-forward', 
-              'progress', 
-              'current-time',
-              'duration',
-              'mute',
-              'volume',
-              'captions',
-              'settings',
-              'pip',
-              'airplay',
-              'download',
-              'fullscreen'
-            ];
-        document.addEventListener('DOMContentLoaded', () => {
-            const player = Plyr.setup('.player', { controls });
-        });
-
-      const body = document.querySelector("body");
-      const toogle = document.querySelector(".toogle");
-      toogle.onclick = () => {
-        body.classList.toggle("dark");
+      const settings = {
+        controls: [
+          "play-large",
+          "rewind",
+          "play",
+          "fast-forward",
+          "progress",
+          "current-time",
+          "duration",
+          "mute",
+          "volume",
+          "captions",
+          "settings",
+          "pip",
+          "airplay",
+          "download",
+          "fullscreen",
+        ],
+        keyboard: {
+          focused: true,
+          global: true,
+        },
       };
+      document.addEventListener("DOMContentLoaded", () => {
+        const player = Plyr.setup(".player", settings);
+      });
+
+      const options = {
+        label: "🌓",
+      };
+
+      function addDarkmodeWidget() {
+        new Darkmode(options).showWidget();
+      }
+      window.addEventListener("load", addDarkmodeWidget);
     </script>
   </body>
 </html>
