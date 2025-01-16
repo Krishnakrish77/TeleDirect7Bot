@@ -32,5 +32,5 @@ async def render_page(message_id, secure_hash):
                 async with s.get(src) as u:
                     heading = 'Download {}'.format(file_data.file_name)
                     file_size = humanbytes(int(u.headers.get('Content-Length')))
-                    html = (await r.read()) % (heading, file_data.file_name, src, file_size)
+                    html = (await r.read()) % (heading, file_data.file_name, file_size, src)
     return html
