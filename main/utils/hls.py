@@ -188,9 +188,16 @@ async def stream_segment(
         "-ss", f"{start_sec:.3f}",  # fast seek (before -i)
         "-i", source_url,
         "-t", f"{duration_sec:.3f}",
-        "-c", "copy",
         "-map", "0:v:0?",
         "-map", "0:a:0?",
+        # Video: copy bytes as-is (zero CPU).
+        "-c:v", "copy",
+        # Audio: always transcode to AAC. Chrome's MSE can't decode AC3 or
+        # EAC3 in HLS (Safari can) — by always emitting AAC we get universal
+        # browser support at ~1–2% CPU per stream.
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-ac", "2",
         # Reset PTS at the segment boundary, then shift to the segment's
         # logical position. Without this, every segment's first PTS comes
         # from the nearest keyframe in the source (which doesn't align with
