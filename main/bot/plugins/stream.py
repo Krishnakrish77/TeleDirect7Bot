@@ -2,6 +2,7 @@ import asyncio
 import logging
 from main.bot import StreamBot
 from main.utils.file_properties import gen_link
+from main.utils.indexer import schedule_index
 from main.vars import Var
 from pyrogram import filters, Client
 from pyrogram.errors import FloodWait
@@ -24,6 +25,7 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 async def private_receive_handler(c: Client, m: Message):
     try:
         log_msg = await m.forward(chat_id=Var.BIN_CHANNEL)
+        schedule_index(c, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=False)
         await log_msg.reply_text(text=f"**Requested By :** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n**User ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
 
@@ -45,6 +47,7 @@ async def channel_receive_handler(bot, broadcast: Message):
         return
     try:
         log_msg = await broadcast.forward(chat_id=Var.BIN_CHANNEL)
+        schedule_index(bot, log_msg)
         stream_link = "https://{}/{}".format(Var.FQDN, log_msg.id) if Var.ON_HEROKU or Var.NO_PORT else \
             "http://{}:{}/{}".format(Var.FQDN,
                                     Var.PORT,
@@ -74,6 +77,7 @@ async def channel_receive_handler(bot, broadcast: Message):
 async def group_receive_handler(c: Client, m: Message):
     try:
         log_msg = await m.forward(chat_id=Var.BIN_CHANNEL)
+        schedule_index(c, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=True)
         await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
 
