@@ -27,11 +27,12 @@
       <{{ tag }} src="{{ src }}" class="player"></{{ tag }}>
       <div class="info-panel">
         <h2>{{ file_name }}</h2>
-        <p class="player-hint">Player not working? Open the stream in VLC or copy the URL.</p>
+        <p class="player-hint">Player not working? Open the stream in VLC.</p>
         <div class="buttons">
-          <a class="ext-button vlc" href="vlc://{{ src }}">▶ Open in VLC</a>
-          <a class="ext-button download" href="{{ src }}" download>⬇ Download</a>
-          <button class="ext-button copy" type="button" data-stream-url="{{ src }}">⧉ Copy URL</button>
+          <a class="ext-button vlc" href="vlc://{{ src }}">
+            <span class="ext-button__icon" aria-hidden="true">▶</span>
+            <span class="ext-button__label">Open in VLC</span>
+          </a>
         </div>
       </div>
     </div>
@@ -64,28 +65,6 @@
       };
       document.addEventListener("DOMContentLoaded", () => {
         const player = Plyr.setup(".player", settings);
-
-        const copyBtn = document.querySelector(".ext-button.copy");
-        if (copyBtn) {
-          copyBtn.addEventListener("click", async () => {
-            const url = copyBtn.dataset.streamUrl;
-            const original = copyBtn.textContent;
-            try {
-              await navigator.clipboard.writeText(url);
-              copyBtn.textContent = "✓ Copied";
-            } catch (err) {
-              // Fallback for non-secure contexts / older Safari
-              const ta = document.createElement("textarea");
-              ta.value = url;
-              document.body.appendChild(ta);
-              ta.select();
-              try { document.execCommand("copy"); copyBtn.textContent = "✓ Copied"; }
-              catch (_) { copyBtn.textContent = "✗ Copy failed"; }
-              document.body.removeChild(ta);
-            }
-            setTimeout(() => { copyBtn.textContent = original; }, 2000);
-          });
-        }
       });
 
       const options = {

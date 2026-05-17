@@ -34,59 +34,63 @@ body {
   color: #666;
 }
 
+.info-panel .player-hint {
+  margin: 16px 0 12px;
+  color: #8a8f98;
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
+}
+
 .info-panel .buttons {
-  margin-top: 20px;
+  margin-top: 4px;
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.info-panel .player-hint {
-  margin: 12px 0 0;
-  color: #888;
-  font-size: 0.9rem;
-}
-
 .info-panel .ext-button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
+  gap: 10px;
+  padding: 12px 22px;
   border: none;
-  border-radius: 6px;
-  background: #007bff;
-  color: white;
+  border-radius: 999px;
+  font-family: inherit;
   font-size: 0.95rem;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   text-decoration: none;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
+  user-select: none;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
 }
 
-.info-panel .ext-button:hover {
-  background: #0056b3;
-  transform: translateY(-1px);
+.info-panel .ext-button:active {
+  transform: translateY(0);
+  filter: brightness(0.95);
+}
+
+.info-panel .ext-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: 0.85rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .info-panel .ext-button.vlc {
-  background: #ff8800;
+  background: linear-gradient(135deg, #ff9933 0%, #f06000 100%);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(240, 96, 0, 0.35);
 }
+
 .info-panel .ext-button.vlc:hover {
-  background: #cc6d00;
-}
-
-.info-panel .ext-button.download {
-  background: #28a745;
-}
-.info-panel .ext-button.download:hover {
-  background: #1e7a35;
-}
-
-.info-panel .ext-button.copy {
-  background: #6c757d;
-}
-.info-panel .ext-button.copy:hover {
-  background: #545b62;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(240, 96, 0, 0.45);
+  filter: brightness(1.05);
 }
 
 /* General Download Page */
