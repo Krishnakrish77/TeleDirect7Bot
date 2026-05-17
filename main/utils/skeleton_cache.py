@@ -73,20 +73,30 @@ def tail_floor(file_size: int) -> int:
 async def _collect_range(
     byte_streamer, file_id, index: int, start: int, end: int
 ) -> bytes:
-    """Drain ByteStreamer.yield_file for a specific byte range into memory."""
+    """Drain ByteStreamer.yield_file for a byte range into memory.
+
+    yield_file's part_count formula doesn't account for first_part_cut, so a
+    range that starts mid-chunk would end up short by that many bytes. Sidestep
+    that by aligning the underlying fetch to chunk boundaries (first_part_cut
+    forced to 0, last_part_cut forced to full chunk_sz), fetch enough whole
+    chunks to cover the target end, then slice the requested range out of the
+    collected bytes.
+    """
     length = end - start + 1
     chunk_sz = _chunk_size(length)
-    offset = _offset_fix(start, chunk_sz)
-    first_part_cut = start - offset
-    last_part_cut = (end % chunk_sz) + 1
-    part_count = math.ceil(length / chunk_sz)
+    aligned_start = _offset_fix(start, chunk_sz)
+    # Smallest chunk-aligned end that covers `end`.
+    aligned_end_exclusive = ((end // chunk_sz) + 1) * chunk_sz
+    part_count = (aligned_end_exclusive - aligned_start) // chunk_sz
 
     chunks = []
     async for chunk in byte_streamer.yield_file(
-        file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_sz
+        file_id, index, aligned_start, 0, chunk_sz, part_count, chunk_sz
     ):
         chunks.append(chunk)
-    return b"".join(chunks)
+    raw = b"".join(chunks)
+    rel_start = start - aligned_start
+    return raw[rel_start : rel_start + length]
 
 
 async def get_or_fetch_head(
