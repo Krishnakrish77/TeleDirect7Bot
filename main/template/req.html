@@ -1,104 +1,108 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      property="og:image"
-      content="https://camo.githubusercontent.com/cc0b6a3547991fa106f7265c07b3793bdea083130f91d68497347a6adc5085f9/68747470733a2f2f74656c656772612e70682f66696c652f3464313234343030623938356232666536656531632e6a7067"
-      itemprop="thumbnailUrl"
-    />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ heading }}</title>
-    <link rel="stylesheet" type="text/css" href="/static/style.css?v=3" />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css?family=Raleway"
-    />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css?family=Delius"
-    />
-    <link rel="stylesheet" href="https://cdn.plyr.io/3.5.6/plyr.css" />
-  </head>
+{% extends "base.html" %}
 
-  <body>
-    <div class="player-container">
-      <{{ tag }} src="{{ src }}" class="player"></{{ tag }}>
-      <div class="info-panel">
-        <h2>{{ file_name }}</h2>
-        <p class="player-hint">Player not working? Open the stream in VLC.</p>
-        <div class="buttons">
-          <a class="ext-button vlc" href="vlc://{{ src }}" data-stream-url="{{ src }}">
-            <span class="ext-button__icon" aria-hidden="true">▶</span>
-            <span class="ext-button__label">Open in VLC</span>
+{% block title %}{{ heading }}{% endblock %}
+
+{% block head_extra %}
+  <meta
+    property="og:image"
+    content="https://camo.githubusercontent.com/cc0b6a3547991fa106f7265c07b3793bdea083130f91d68497347a6adc5085f9/68747470733a2f2f74656c656772612e70682f66696c652f3464313234343030623938356232666536656531632e6a7067"
+    itemprop="thumbnailUrl"
+  />
+  <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+  <style>
+    /* Plyr theming to match the brand orange + dark UI */
+    :root {
+      --plyr-color-main: #f97316;
+      --plyr-video-background: #0b1220;
+      --plyr-menu-background: rgba(15, 23, 42, 0.95);
+      --plyr-menu-color: #e2e8f0;
+    }
+    .plyr--video {
+      border-radius: 0.75rem;
+      overflow: hidden;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="w-full max-w-4xl" x-data="{ playing: false }">
+    <div class="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md
+                shadow-2xl shadow-black/40 overflow-hidden">
+      <div class="aspect-video bg-black">
+        <{{ tag }} src="{{ src }}" class="player w-full h-full"
+                 playsinline controls></{{ tag }}>
+      </div>
+
+      <div class="px-6 sm:px-8 py-6 space-y-4">
+        <div>
+          <p class="text-xs uppercase tracking-[0.18em] text-brand-400/80">Now playing</p>
+          <h1 class="mt-1.5 text-xl sm:text-2xl font-semibold text-white leading-snug break-all">
+            {{ file_name }}
+          </h1>
+        </div>
+
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3
+                    pt-4 border-t border-white/5">
+          <p class="text-sm text-slate-400">
+            Player not loading?
+            <span class="text-slate-300">Open the stream in VLC for any container.</span>
+          </p>
+
+          <a id="vlcButton"
+             href="vlc://{{ src }}"
+             data-stream-url="{{ src }}"
+             class="group inline-flex items-center justify-center gap-2
+                    rounded-xl px-5 py-2.5 font-semibold text-white
+                    bg-gradient-to-br from-brand-400 to-brand-600
+                    shadow-glow ring-1 ring-brand-400/40
+                    hover:from-brand-300 hover:to-brand-500
+                    active:scale-[0.99] transition">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                 class="w-4 h-4 group-hover:translate-x-0.5 transition">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            Open in VLC
           </a>
         </div>
       </div>
     </div>
 
-    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/darkmode-js@1.5.7/lib/darkmode-js.min.js"></script>
-    <script>
-      const settings = {
-        controls: [
-          "play-large",
-          "rewind",
-          "play",
-          "fast-forward",
-          "progress",
-          "current-time",
-          "duration",
-          "mute",
-          "volume",
-          "captions",
-          "settings",
-          "pip",
-          "airplay",
-          "download",
-          "fullscreen",
-        ],
-        keyboard: {
-          focused: true,
-          global: true,
-        },
-      };
-      function buildVlcUrl(streamUrl) {
-        const ua = navigator.userAgent || "";
-        if (/Android/i.test(ua)) {
-          // VLC for Android handles the standard Android Intent URL scheme.
-          // The url-without-scheme + #Intent fragment routes to org.videolan.vlc.
-          const scheme = streamUrl.startsWith("https://") ? "https" : "http";
-          const stripped = streamUrl.replace(/^https?:\/\//, "");
-          return `intent://${stripped}#Intent;scheme=${scheme};package=org.videolan.vlc;type=video/*;end`;
-        }
-        if (/iPad|iPhone|iPod/.test(ua)) {
-          // iOS VLC documents vlc-x-callback as the official scheme.
-          return `vlc-x-callback://x-callback-url/stream?url=${encodeURIComponent(streamUrl)}`;
-        }
-        // Desktop fallback: vlc:// works on Windows (registered by installer),
-        // and is the closest thing on Linux. macOS users may need to open
-        // the URL manually via VLC > File > Open Network.
-        return `vlc://${streamUrl}`;
+    <p class="mt-6 text-center text-xs text-slate-500">
+      Powered by Telegram • @TeleDirect7Bot
+    </p>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+  <script>
+    function buildVlcUrl(streamUrl) {
+      const ua = navigator.userAgent || "";
+      if (/Android/i.test(ua)) {
+        const scheme = streamUrl.startsWith("https://") ? "https" : "http";
+        const stripped = streamUrl.replace(/^https?:\/\//, "");
+        return `intent://${stripped}#Intent;scheme=${scheme};package=org.videolan.vlc;type=video/*;end`;
       }
+      if (/iPad|iPhone|iPod/.test(ua)) {
+        return `vlc-x-callback://x-callback-url/stream?url=${encodeURIComponent(streamUrl)}`;
+      }
+      return `vlc://${streamUrl}`;
+    }
 
-      document.addEventListener("DOMContentLoaded", () => {
-        const player = Plyr.setup(".player", settings);
-
-        const vlcBtn = document.querySelector(".ext-button.vlc");
-        if (vlcBtn && vlcBtn.dataset.streamUrl) {
-          vlcBtn.href = buildVlcUrl(vlcBtn.dataset.streamUrl);
-        }
+    document.addEventListener("DOMContentLoaded", () => {
+      Plyr.setup(".player", {
+        controls: [
+          "play-large", "rewind", "play", "fast-forward", "progress",
+          "current-time", "duration", "mute", "volume", "captions",
+          "settings", "pip", "airplay", "download", "fullscreen",
+        ],
+        keyboard: { focused: true, global: true },
       });
 
-      const options = {
-        label: "🌓",
-      };
-
-      function addDarkmodeWidget() {
-        new Darkmode(options).showWidget();
+      const vlcBtn = document.getElementById("vlcButton");
+      if (vlcBtn && vlcBtn.dataset.streamUrl) {
+        vlcBtn.href = buildVlcUrl(vlcBtn.dataset.streamUrl);
       }
-      window.addEventListener("load", addDarkmodeWidget);
-    </script>
-  </body>
-</html>
+    });
+  </script>
+{% endblock %}
