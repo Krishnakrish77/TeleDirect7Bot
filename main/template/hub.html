@@ -1,62 +1,138 @@
 {% extends "base.html" %}
 
 {% block title %}
-  {%- if section == 'search' and query -%}Search · {{ query }}
-  {%- elif section == 'tag' -%}{{ query }}
+  {%- if params.q -%}Search · {{ params.q }}
+  {%- elif params.tag -%}#{{ params.tag }}
   {%- else -%}TeleDirect{%- endif -%}
 {% endblock %}
 
 {% block content %}
   <div class="w-full max-w-7xl">
-    <header class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
-      <div>
-        <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">
-          <a href="/" class="hover:text-brand-300 transition-colors">TeleDirect</a>
-        </h1>
-        <p class="mt-1 text-sm text-slate-400">
-          {%- if section == 'search' -%}
-            Search results{% if query %} for <span class="text-slate-200">{{ query }}</span>{% endif %}
-          {%- elif section == 'tag' -%}
-            Tagged <span class="text-brand-300">{{ query }}</span>
-          {%- else -%}
-            Your media library
-          {%- endif -%}
-        </p>
+    <header class="mb-6">
+      <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+        <div>
+          <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+            <a href="/" class="hover:text-brand-300 transition-colors">TeleDirect</a>
+          </h1>
+          <p class="mt-1 text-sm text-slate-400">
+            {{ catalogue_size }} item{{ '' if catalogue_size == 1 else 's' }} in your library
+          </p>
+        </div>
       </div>
-
-      <form
-        action="/search"
-        method="get"
-        class="w-full sm:w-80"
-        hx-get="/search"
-        hx-trigger="input changed delay:300ms from:find input"
-        hx-target="#grid"
-        hx-swap="innerHTML"
-        hx-push-url="true"
-      >
-        <label class="relative block">
-          <span class="sr-only">Search</span>
-          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
-               xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
-          </svg>
-          <input
-            type="search"
-            name="q"
-            value="{{ query if section == 'search' else '' }}"
-            placeholder="Search titles, tags…"
-            autocomplete="off"
-            class="w-full pl-10 pr-3 py-2.5 rounded-lg
-                   bg-ink-800/70 text-slate-100 placeholder-slate-500
-                   border border-white/5
-                   focus:outline-none focus:ring-2 focus:ring-brand-400/60 focus:border-brand-400/60
-                   transition"
-          />
-        </label>
-      </form>
     </header>
+
+    <form
+      id="filters"
+      action="/"
+      method="get"
+      class="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto] gap-3"
+      hx-get="/"
+      hx-trigger="input changed delay:300ms from:find input[type=search], change from:find select"
+      hx-target="#grid"
+      hx-swap="innerHTML"
+      hx-push-url="true"
+      hx-include="#filters"
+    >
+      <label class="relative block">
+        <span class="sr-only">Search</span>
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
+             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
+        </svg>
+        <input
+          type="search"
+          name="q"
+          value="{{ params.q }}"
+          placeholder="Search titles, tags…"
+          autocomplete="off"
+          class="w-full pl-10 pr-3 py-2.5 rounded-lg
+                 bg-ink-800/70 text-slate-100 placeholder-slate-500
+                 border border-white/5
+                 focus:outline-none focus:ring-2 focus:ring-brand-400/60 focus:border-brand-400/60
+                 transition"
+        />
+      </label>
+
+      <select name="year" aria-label="Year"
+              class="px-3 py-2.5 rounded-lg bg-ink-800/70 text-slate-100
+                     border border-white/5
+                     focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                     transition">
+        <option value="">Any year</option>
+        {% for y in years %}
+          <option value="{{ y }}" {% if params.year == y %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+
+      <select name="quality" aria-label="Quality"
+              class="px-3 py-2.5 rounded-lg bg-ink-800/70 text-slate-100
+                     border border-white/5
+                     focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                     transition">
+        <option value="">Any quality</option>
+        {% for q in qualities %}
+          <option value="{{ q }}" {% if params.quality == q %}selected{% endif %}>{{ q }}</option>
+        {% endfor %}
+      </select>
+
+      <select name="sort" aria-label="Sort"
+              class="px-3 py-2.5 rounded-lg bg-ink-800/70 text-slate-100
+                     border border-white/5
+                     focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                     transition">
+        {% for value, label in sort_options %}
+          <option value="{{ value }}" {% if params.sort == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+
+      {# Preserve tag in the form so the HTMX include carries it on filter changes. #}
+      {% if params.tag %}
+        <input type="hidden" name="tag" value="{{ params.tag }}" />
+      {% endif %}
+    </form>
+
+    {% if params.tag or params.q or params.year or params.quality %}
+      <div class="mb-4 flex flex-wrap items-center gap-2 text-xs">
+        <span class="text-slate-500">Filtered:</span>
+        {% if params.q %}
+          <span class="px-2 py-1 rounded bg-ink-800 text-slate-300 border border-white/5">
+            “{{ params.q }}”
+          </span>
+        {% endif %}
+        {% if params.year %}
+          <span class="px-2 py-1 rounded bg-ink-800 text-slate-300 border border-white/5">
+            {{ params.year }}
+          </span>
+        {% endif %}
+        {% if params.quality %}
+          <span class="px-2 py-1 rounded bg-ink-800 text-slate-300 border border-white/5">
+            {{ params.quality }}
+          </span>
+        {% endif %}
+        {% if params.tag %}
+          <span class="px-2 py-1 rounded bg-brand-500/15 text-brand-300 border border-brand-400/30">
+            #{{ params.tag }}
+          </span>
+        {% endif %}
+        <a href="/" class="ml-1 text-slate-400 hover:text-white transition-colors">Clear all</a>
+      </div>
+    {% endif %}
+
+    {% if tag_cloud and not params.tag %}
+      <div class="mb-6 flex flex-wrap gap-2">
+        {% for name, count in tag_cloud %}
+          <a href="/?tag={{ name }}"
+             class="text-xs px-2.5 py-1 rounded-full
+                    bg-ink-800/60 text-slate-300 border border-white/5
+                    hover:bg-brand-500/15 hover:text-brand-300 hover:border-brand-400/30
+                    transition-colors">
+            #{{ name }} <span class="text-slate-500">{{ count }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
 
     <div id="grid">
       {% include "_grid.html" %}

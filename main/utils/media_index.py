@@ -23,13 +23,34 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
+from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from main.utils.file_properties import get_hash
 from main.utils.hub_query import HubItem
 from main.utils.index_entry import IndexEntry, parse, title_from_filename
+
+
+# Buckets we recognise in filenames/captions. Order matters: longest match
+# first so "2160p" wins over "p", "4K" wins over "K" alone.
+_QUALITY_PATTERNS: List[Tuple[str, "re.Pattern"]] = [
+    ("4K",    re.compile(r"\b(2160p|uhd|4k)\b", re.IGNORECASE)),
+    ("1080p", re.compile(r"\b1080p?\b|\bfhd\b", re.IGNORECASE)),
+    ("720p",  re.compile(r"\b720p?\b|\bhd\b", re.IGNORECASE)),
+    ("480p",  re.compile(r"\b480p?\b|\bsd\b", re.IGNORECASE)),
+]
+
+
+def _extract_quality(*texts: str) -> str:
+    """Pick the highest-resolution match across the given haystacks."""
+    haystack = " ".join(t for t in texts if t)
+    for label, pat in _QUALITY_PATTERNS:
+        if pat.search(haystack):
+            return label
+    return ""
 
 
 _INDEX_FILE = Path(os.environ.get("MEDIA_INDEX_PATH", "/tmp/media_index.json"))
@@ -52,6 +73,7 @@ def _to_serializable(item: HubItem) -> dict:
         "duration": item.duration,
         "file_size": item.file_size,
         "has_thumb": item.has_thumb,
+        "quality": item.quality,
     }
 
 
@@ -66,6 +88,7 @@ def _from_serializable(d: dict) -> HubItem:
         duration=d.get("duration", 0) or 0,
         file_size=d.get("file_size", 0) or 0,
         has_thumb=d.get("has_thumb", False),
+        quality=d.get("quality", "") or "",
     )
 
 
@@ -107,6 +130,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         duration=int(getattr(media, "duration", 0) or 0),
         file_size=int(getattr(media, "file_size", 0) or 0),
         has_thumb=bool(getattr(media, "thumbs", None)),
+        quality=_extract_quality(parsed.title, file_name, parsed.description),
     )
 
 
@@ -207,48 +231,84 @@ async def seed(bot, channel_id: int) -> None:
     )
 
 
-# --- Read-side: browse / search / tag --------------------------------
+# --- Read-side: unified query -----------------------------------------
 
-def _all_sorted_desc() -> List[HubItem]:
-    return sorted(_items.values(), key=lambda it: it.message_id, reverse=True)
+_SORT_KEYS = {
+    "newest":   (lambda it: it.message_id, True),
+    "oldest":   (lambda it: it.message_id, False),
+    "title_az": (lambda it: it.title.lower(), False),
+    "title_za": (lambda it: it.title.lower(), True),
+    "largest":  (lambda it: it.file_size, True),
+    "smallest": (lambda it: it.file_size, False),
+}
 
 
-def browse_page(before_id: Optional[int], limit: int):
-    """(items, next_cursor) — newest-first, page through by message_id."""
-    items_all = _all_sorted_desc()
-    if before_id:
+def _matches(item: HubItem, q: str, year: Optional[int], quality: str, tag: str) -> bool:
+    if year is not None and item.year != year:
+        return False
+    if quality and item.quality.lower() != quality.lower():
+        return False
+    if tag and tag.lstrip("#").lower() not in item.tags:
+        return False
+    if q:
+        ql = q.lower().lstrip("#")
+        haystack = " ".join([
+            item.title.lower(),
+            item.description.lower(),
+            " ".join(item.tags),
+        ])
+        if ql not in haystack:
+            return False
+    return True
+
+
+def query(
+    *,
+    q: str = "",
+    year: Optional[int] = None,
+    quality: str = "",
+    tag: str = "",
+    sort: str = "newest",
+    before_id: Optional[int] = None,
+    limit: int = 24,
+) -> Tuple[List[HubItem], Optional[int]]:
+    """Unified filter + sort + paginate over the in-process catalogue."""
+    key_fn, reverse = _SORT_KEYS.get(sort, _SORT_KEYS["newest"])
+    items_all = sorted(_items.values(), key=key_fn, reverse=reverse)
+
+    items_all = [it for it in items_all if _matches(it, q, year, quality, tag)]
+
+    # Pagination cursor is only meaningful for message_id-ordered sorts.
+    if before_id and sort in ("newest",):
         items_all = [it for it in items_all if it.message_id < before_id]
+    elif before_id and sort == "oldest":
+        items_all = [it for it in items_all if it.message_id > before_id]
+
     page = items_all[:limit]
-    next_cursor = page[-1].message_id if len(page) == limit else None
+    next_cursor = None
+    if len(page) == limit and sort in ("newest", "oldest"):
+        next_cursor = page[-1].message_id
     return page, next_cursor
 
 
-def search(query: str, limit: int) -> List[HubItem]:
-    if not query:
-        return []
-    q = query.lower().lstrip("#")
-    items_all = _all_sorted_desc()
-    out: List[HubItem] = []
-    for it in items_all:
-        haystack = " ".join([
-            it.title.lower(),
-            it.description.lower(),
-            " ".join(it.tags),
-        ])
-        if q in haystack:
-            out.append(it)
-            if len(out) >= limit:
-                break
-    return out
+def distinct_years() -> List[int]:
+    """Years present in the catalogue, newest first."""
+    return sorted({it.year for it in _items.values() if it.year}, reverse=True)
 
 
-def by_tag(tag: str, limit: int) -> List[HubItem]:
-    tag = tag.lstrip("#").lower().strip()
-    if not tag:
-        return []
-    items_all = _all_sorted_desc()
-    out = [it for it in items_all if tag in it.tags]
-    return out[:limit]
+def distinct_qualities() -> List[str]:
+    """Qualities present, ordered by resolution from 4K to 480p."""
+    present = {it.quality for it in _items.values() if it.quality}
+    order = ["4K", "1080p", "720p", "480p"]
+    return [q for q in order if q in present]
+
+
+def tag_cloud(limit: int = 30) -> List[Tuple[str, int]]:
+    """Most-used tags with usage counts."""
+    counter: Counter = Counter()
+    for it in _items.values():
+        counter.update(it.tags)
+    return counter.most_common(limit)
 
 
 def size() -> int:

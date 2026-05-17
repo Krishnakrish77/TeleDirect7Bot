@@ -26,6 +26,7 @@ class HubItem:
     duration: int
     file_size: int
     has_thumb: bool
+    quality: str = ""  # parsed resolution bucket: 480p / 720p / 1080p / 4K / ""
 
 
 # Imports kept at the bottom to avoid a circular import with media_index,
@@ -33,14 +34,33 @@ class HubItem:
 from main.utils import media_index  # noqa: E402
 
 
+async def query(
+    *,
+    q: str = "",
+    year: Optional[int] = None,
+    quality: str = "",
+    tag: str = "",
+    sort: str = "newest",
+    before_id: Optional[int] = None,
+    limit: int = PAGE_SIZE,
+) -> Tuple[List[HubItem], Optional[int]]:
+    return media_index.query(
+        q=q, year=year, quality=quality, tag=tag, sort=sort,
+        before_id=before_id, limit=limit,
+    )
+
+
+# Back-compat helpers used by tests / external callers; keep thin.
 async def browse(before_id: Optional[int] = None, limit: int = PAGE_SIZE
                  ) -> Tuple[List[HubItem], Optional[int]]:
-    return media_index.browse_page(before_id, limit)
+    return await query(before_id=before_id, limit=limit)
 
 
-async def search(query: str, limit: int = PAGE_SIZE) -> List[HubItem]:
-    return media_index.search(query.strip(), limit)
+async def search(q: str, limit: int = PAGE_SIZE) -> List[HubItem]:
+    items, _ = await query(q=q, limit=limit)
+    return items
 
 
 async def by_tag(tag: str, limit: int = PAGE_SIZE) -> List[HubItem]:
-    return media_index.by_tag(tag, limit)
+    items, _ = await query(tag=tag, limit=limit)
+    return items

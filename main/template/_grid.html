@@ -67,9 +67,18 @@
 
   {% if next_cursor %}
     <div class="mt-8 flex justify-center">
+      {# Carry the active filter params through so paging respects them. #}
+      {%- set qs -%}
+        before={{ next_cursor }}
+        {%- if params.q %}&q={{ params.q | urlencode }}{% endif -%}
+        {%- if params.year %}&year={{ params.year }}{% endif -%}
+        {%- if params.quality %}&quality={{ params.quality | urlencode }}{% endif -%}
+        {%- if params.tag %}&tag={{ params.tag | urlencode }}{% endif -%}
+        {%- if params.sort and params.sort != 'newest' %}&sort={{ params.sort }}{% endif -%}
+      {%- endset %}
       <button
         type="button"
-        hx-get="/?before={{ next_cursor }}"
+        hx-get="/?{{ qs }}"
         hx-target="closest div"
         hx-swap="outerHTML"
         hx-indicator="this"

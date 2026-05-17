@@ -204,6 +204,9 @@ async def stream_segment(
     args = [
         "ffmpeg",
         "-hide_banner", "-loglevel", "warning",
+        # Regenerate PTS starting at 0 for each subprocess so -output_ts_offset
+        # below gives the logical position rather than (keyframe_pts + offset).
+        "-fflags", "+genpts",
         "-ss", f"{start_sec:.3f}",  # fast seek to nearest keyframe ≤ start
         "-i", source_url,
         "-t", f"{duration_sec:.3f}",
@@ -211,16 +214,13 @@ async def stream_segment(
         "-map", "0:a:0?",
         "-c:v", "copy",
         *audio_args,
-        # Preserve source timestamps. With -c copy ffmpeg can't drop pre-roll
-        # frames after the keyframe seek; trying to renumber output PTS via
-        # -output_ts_offset created gaps/overlaps between segments that hls.js
-        # surfaced as replayed frames around boundaries. Keeping source PTS
-        # means adjacent segments share a small keyframe-aligned overlap which
-        # MSE deduplicates cleanly during stitching.
-        "-copyts",
-        "-muxdelay", "0",
-        "-muxpreload", "0",
-        "-mpegts_copyts", "1",
+        # Each segment's output PTS starts at its logical position
+        # (start_sec). Combined with +genpts above, this is the closest
+        # we can get to continuous timestamps across segments without
+        # re-encoding. The -copyts variant caused playback to stop ~11s
+        # in because adjacent segments had divergent PTS that MSE refused
+        # past the keyframe boundary of segment 1.
+        "-output_ts_offset", f"{start_sec:.3f}",
         "-avoid_negative_ts", "disabled",
         "-f", "mpegts",
         "pipe:1",
