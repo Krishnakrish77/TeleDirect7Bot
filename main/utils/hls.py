@@ -191,9 +191,13 @@ async def stream_segment(
         "-c", "copy",
         "-map", "0:v:0?",
         "-map", "0:a:0?",
-        "-copyts",
-        "-muxdelay", "0",
-        "-muxpreload", "0",
+        # Reset PTS at the segment boundary, then shift to the segment's
+        # logical position. Without this, every segment's first PTS comes
+        # from the nearest keyframe in the source (which doesn't align with
+        # 6s boundaries), so segments overlap or gap and hls.js's source
+        # buffer refuses anything past the first one.
+        "-output_ts_offset", f"{start_sec:.3f}",
+        "-avoid_negative_ts", "disabled",
         "-f", "mpegts",
         "pipe:1",
     ]
