@@ -8,6 +8,7 @@ is identical and unchanged callers can build URLs predictably.
     GET /hls/{hash}{id}/seg-{n}.ts
 """
 
+import asyncio
 import logging
 import re
 
@@ -114,12 +115,13 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
     try:
         async for chunk in hls.stream_segment(source_url, start_sec, duration_sec):
             await response.write(chunk)
-    except ConnectionResetError:
-        # Client disconnected mid-stream — ffmpeg subprocess is cleaned up
-        # inside stream_segment's finally block.
+        await response.write_eof()
+    except (ConnectionError, asyncio.CancelledError):
+        # hls.js routinely cancels in-flight segment requests when seeking or
+        # when its buffer is satisfied. The ffmpeg subprocess is cleaned up by
+        # stream_segment's finally block.
         logging.debug("Client disconnected during segment %d for msg %d", n, message_id)
     except Exception:
         logging.exception("Error streaming segment %d for msg %d", n, message_id)
 
-    await response.write_eof()
     return response
