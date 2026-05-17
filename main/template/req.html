@@ -37,6 +37,8 @@
         class="player"
         {% if hls_src %}data-hls-src="{{ hls_src }}"{% endif %}
         data-direct-src="{{ src }}"
+        {% if sub_path %}data-sub-path="{{ sub_path }}"{% endif %}
+        crossorigin="anonymous"
         playsinline
         controls
       ></{{ tag }}>
@@ -130,9 +132,35 @@
       video.src = directSrc;
     }
 
-    document.addEventListener("DOMContentLoaded", () => {
+    async function injectSubtitleTracks(video) {
+      const subPath = video.dataset.subPath;
+      if (!subPath) return;
+      try {
+        const resp = await fetch(`${subPath}/list.json`);
+        if (!resp.ok) return;
+        const tracks = await resp.json();
+        tracks.forEach((t, i) => {
+          const track = document.createElement("track");
+          track.kind = "subtitles";
+          track.label = t.label || `Track ${i + 1}`;
+          if (t.language) track.srclang = t.language;
+          track.src = `${subPath}/${t.index}.vtt`;
+          if (i === 0) track.default = true;
+          video.appendChild(track);
+        });
+      } catch (_) {
+        // Subtitle endpoint unavailable / no tracks — silently skip.
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
       const video = document.getElementById("player");
-      if (video) attachSource(video);
+      if (video) {
+        // Inject <track> elements BEFORE Plyr wraps the video so Plyr
+        // discovers them and renders the captions button automatically.
+        await injectSubtitleTracks(video);
+        attachSource(video);
+      }
 
       Plyr.setup(".player", {
         controls: [
@@ -140,6 +168,7 @@
           "current-time", "duration", "mute", "volume", "captions",
           "settings", "pip", "airplay", "download", "fullscreen",
         ],
+        captions: { active: true, language: "auto", update: true },
         keyboard: { focused: true, global: true },
       });
 

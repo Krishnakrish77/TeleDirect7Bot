@@ -9,8 +9,10 @@ is identical and unchanged callers can build URLs predictably.
 """
 
 import asyncio
+import json
 import logging
 import re
+import time
 
 from aiohttp import web
 
@@ -133,3 +135,89 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
         logging.exception("Error streaming segment %d for msg %d", n, message_id)
 
     return response
+
+
+# --- Subtitles ---------------------------------------------------------
+
+# In-memory cache for extracted WebVTT bytes. Keyed by (message_id, track).
+_VTT_CACHE_TTL = 60 * 60  # 1h — source is immutable
+_vtt_cache: dict = {}
+_vtt_locks: dict = {}
+
+
+@routes.get(r"/sub/{path:[^/]+}/list.json")
+async def hls_sub_list(request: web.Request) -> web.Response:
+    """Returns the available text-based subtitle tracks for a media file."""
+    try:
+        secure_hash, message_id = _parse_path(request.match_info["path"])
+        await _resolve(message_id, secure_hash)
+    except InvalidHash as e:
+        raise web.HTTPForbidden(text=e.message)
+    except FIleNotFound as e:
+        raise web.HTTPNotFound(text=e.message)
+
+    probe = await hls.probe(message_id, hls.internal_stream_url(secure_hash, message_id))
+    tracks = [
+        {
+            "index": s.index,
+            "language": s.language,
+            "label": s.label,
+            "codec": s.codec,
+        }
+        for s in probe.subtitles
+    ]
+    return web.json_response(
+        tracks,
+        headers={
+            "Cache-Control": "public, max-age=300",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+@routes.get(r"/sub/{path:[^/]+}/{track:\d+}.vtt")
+async def hls_sub_vtt(request: web.Request) -> web.Response:
+    try:
+        secure_hash, message_id = _parse_path(request.match_info["path"])
+        await _resolve(message_id, secure_hash)
+    except InvalidHash as e:
+        raise web.HTTPForbidden(text=e.message)
+    except FIleNotFound as e:
+        raise web.HTTPNotFound(text=e.message)
+
+    track = int(request.match_info["track"])
+    cache_key = (message_id, track)
+
+    # Serve from cache if fresh.
+    entry = _vtt_cache.get(cache_key)
+    now = time.monotonic()
+    if entry and (now - entry[0]) < _VTT_CACHE_TTL:
+        data = entry[1]
+    else:
+        lock = _vtt_locks.setdefault(cache_key, asyncio.Lock())
+        async with lock:
+            entry = _vtt_cache.get(cache_key)
+            if entry and (time.monotonic() - entry[0]) < _VTT_CACHE_TTL:
+                data = entry[1]
+            else:
+                # Verify track exists before spending an ffmpeg cycle on it.
+                probe = await hls.probe(message_id, hls.internal_stream_url(secure_hash, message_id))
+                if not any(s.index == track for s in probe.subtitles):
+                    raise web.HTTPNotFound(text="subtitle track not found")
+                data = await hls.extract_subtitle_vtt(
+                    hls.internal_stream_url(secure_hash, message_id), track
+                )
+                if not data:
+                    raise web.HTTPInternalServerError(text="subtitle extraction failed")
+                _vtt_cache[cache_key] = (time.monotonic(), data)
+
+    return web.Response(
+        body=data,
+        content_type="text/vtt",
+        charset="utf-8",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Access-Control-Allow-Origin": "*",
+            "Content-Length": str(len(data)),
+        },
+    )

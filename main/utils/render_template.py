@@ -38,11 +38,18 @@ async def render_page(message_id, secure_hash):
             urllib.parse.urljoin(Var.URL, f'hls/{secure_hash}{message_id}/playlist.m3u8')
             if mime_type == "video" else None
         )
+        # Base path for subtitle endpoints — the client appends /list.json
+        # and /{n}.vtt itself.
+        sub_path = (
+            urllib.parse.urljoin(Var.URL, f'sub/{secure_hash}{message_id}').rstrip("/")
+            if mime_type == "video" else None
+        )
         return _REQ_TEMPLATE.render(
             tag=mime_type,
             heading=heading,
             src=src,
             hls_src=hls_src,
+            sub_path=sub_path,
             file_name=file_data.file_name,
         )
     heading = f"Download {file_data.file_name}"

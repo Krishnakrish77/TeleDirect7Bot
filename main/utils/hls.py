@@ -20,8 +20,8 @@ import logging
 import math
 import os
 import time
-from dataclasses import dataclass
-from typing import AsyncIterator, Dict, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import AsyncIterator, Dict, List, Optional, Tuple
 
 from main.vars import Var
 
@@ -45,12 +45,47 @@ HLS_COMPAT_AUDIO = {"aac", "ac3", "eac3", "mp3", "mp2"}
 # we transcode those to AAC when serving HLS.
 BROWSER_AUDIO_OK = {"aac", "mp3", "mp2"}
 
+# Text-based subtitle codecs we can transcode to WebVTT. Image-based ones
+# (hdmv_pgs_subtitle, dvd_subtitle, dvb_subtitle) would require OCR — skip.
+SUB_TEXT_CODECS = {"subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text"}
+
+# Map ISO 639-2 codes (what ffprobe gives) to ISO 639-1 (what HTML expects).
+_LANG_3_TO_2 = {
+    "eng": "en", "tam": "ta", "hin": "hi", "tel": "te", "mal": "ml",
+    "kan": "kn", "ben": "bn", "mar": "mr", "guj": "gu", "pan": "pa",
+    "urd": "ur", "spa": "es", "fre": "fr", "fra": "fr", "ger": "de",
+    "deu": "de", "ita": "it", "jpn": "ja", "kor": "ko", "chi": "zh",
+    "zho": "zh", "rus": "ru", "ara": "ar", "por": "pt", "nld": "nl",
+    "dut": "nl", "pol": "pl", "tur": "tr", "swe": "sv", "nor": "no",
+    "dan": "da", "fin": "fi",
+}
+
+_LANG_LABEL = {
+    "en": "English", "ta": "Tamil", "hi": "Hindi", "te": "Telugu",
+    "ml": "Malayalam", "kn": "Kannada", "bn": "Bengali", "mr": "Marathi",
+    "gu": "Gujarati", "pa": "Punjabi", "ur": "Urdu", "es": "Spanish",
+    "fr": "French", "de": "German", "it": "Italian", "ja": "Japanese",
+    "ko": "Korean", "zh": "Chinese", "ru": "Russian", "ar": "Arabic",
+    "pt": "Portuguese", "nl": "Dutch", "pl": "Polish", "tr": "Turkish",
+    "sv": "Swedish", "no": "Norwegian", "da": "Danish", "fi": "Finnish",
+}
+
+
+@dataclass(frozen=True)
+class SubtitleTrack:
+    """One text-based subtitle stream available for WebVTT extraction."""
+    index: int          # ffmpeg -map 0:s:index
+    codec: str
+    language: str       # ISO 639-1, may be ""
+    label: str          # human-readable, e.g. "English"
+
 
 @dataclass(frozen=True)
 class ProbeResult:
     duration: float
     video_codec: Optional[str]
     audio_codec: Optional[str]
+    subtitles: Tuple[SubtitleTrack, ...] = ()
 
     @property
     def hls_compatible(self) -> bool:
@@ -118,12 +153,33 @@ async def probe(message_id: int, source_url: str) -> ProbeResult:
         return result
 
 
+def _normalise_lang(raw: Optional[str]) -> str:
+    if not raw:
+        return ""
+    raw = raw.lower().strip()
+    if len(raw) == 2:
+        return raw
+    return _LANG_3_TO_2.get(raw, "")
+
+
+def _label_for(lang: str, title: Optional[str], index: int) -> str:
+    if title:
+        return title
+    if lang and lang in _LANG_LABEL:
+        return _LANG_LABEL[lang]
+    if lang:
+        return lang.upper()
+    return f"Track {index + 1}"
+
+
 async def _run_ffprobe(source_url: str) -> ProbeResult:
     global _ffmpeg_available
     args = [
         "ffprobe",
         "-v", "error",
-        "-show_entries", "format=duration:stream=codec_type,codec_name",
+        # Also pull tags so we know the subtitle's language + title.
+        "-show_entries",
+        "format=duration:stream=index,codec_type,codec_name:stream_tags=language,title",
         "-of", "json",
         "-timeout", "15000000",  # 15s connect/read timeout in microseconds
         source_url,
@@ -153,13 +209,65 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
     duration = float(data.get("format", {}).get("duration", 0) or 0)
     video_codec = None
     audio_codec = None
-    for stream in data.get("streams", []):
-        if stream.get("codec_type") == "video" and video_codec is None:
-            video_codec = stream.get("codec_name")
-        elif stream.get("codec_type") == "audio" and audio_codec is None:
-            audio_codec = stream.get("codec_name")
+    subtitle_tracks: List[SubtitleTrack] = []
+    sub_index = 0  # the Nth subtitle stream (for ffmpeg's -map 0:s:N)
 
-    return ProbeResult(duration=duration, video_codec=video_codec, audio_codec=audio_codec)
+    for stream in data.get("streams", []):
+        ctype = stream.get("codec_type")
+        cname = stream.get("codec_name")
+        if ctype == "video" and video_codec is None:
+            video_codec = cname
+        elif ctype == "audio" and audio_codec is None:
+            audio_codec = cname
+        elif ctype == "subtitle":
+            if cname in SUB_TEXT_CODECS:
+                tags = stream.get("tags", {}) or {}
+                lang = _normalise_lang(tags.get("language"))
+                title = (tags.get("title") or "").strip() or None
+                subtitle_tracks.append(SubtitleTrack(
+                    index=sub_index,
+                    codec=cname or "",
+                    language=lang,
+                    label=_label_for(lang, title, sub_index),
+                ))
+            sub_index += 1
+
+    return ProbeResult(
+        duration=duration,
+        video_codec=video_codec,
+        audio_codec=audio_codec,
+        subtitles=tuple(subtitle_tracks),
+    )
+
+
+async def extract_subtitle_vtt(source_url: str, track_index: int) -> Optional[bytes]:
+    """Run ffmpeg to extract the Nth subtitle stream and convert it to WebVTT
+    bytes. Returns None on failure."""
+    global _ffmpeg_available
+    args = [
+        "ffmpeg",
+        "-hide_banner", "-loglevel", "error",
+        "-i", source_url,
+        "-map", f"0:s:{track_index}",
+        "-c:s", "webvtt",
+        "-f", "webvtt",
+        "pipe:1",
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+    except FileNotFoundError:
+        _ffmpeg_available = False
+        return None
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        logging.warning(
+            "ffmpeg subtitle extract failed (track=%d, code=%s): %s",
+            track_index, proc.returncode, stderr.decode(errors="replace")[:400],
+        )
+        return None
+    return stdout
 
 
 def build_playlist(probe_result: ProbeResult, segment_url_template: str) -> str:
