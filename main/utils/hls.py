@@ -34,11 +34,16 @@ PROBE_TTL = 60 * 60
 
 # Cap concurrent ffmpeg subprocesses so a free-tier instance can't be DOSed
 # into oblivion by a handful of viewers all hitting "play" at once.
-MAX_CONCURRENT_SEGMENTS = int(os.environ.get("HLS_MAX_CONCURRENT", "4"))
+MAX_CONCURRENT_SEGMENTS = int(os.environ.get("HLS_MAX_CONCURRENT", "2"))
 
 # Codecs MPEG-TS can carry without re-encoding.
 HLS_COMPAT_VIDEO = {"h264", "hevc"}
 HLS_COMPAT_AUDIO = {"aac", "ac3", "eac3", "mp3", "mp2"}
+
+# Audio codecs browsers can play natively in HLS without re-encoding.
+# AAC and MP3 are universal in MSE; AC3/EAC3 don't play in Chrome/Firefox so
+# we transcode those to AAC when serving HLS.
+BROWSER_AUDIO_OK = {"aac", "mp3", "mp2"}
 
 
 @dataclass(frozen=True)
@@ -178,10 +183,24 @@ def build_playlist(probe_result: ProbeResult, segment_url_template: str) -> str:
 
 
 async def stream_segment(
-    source_url: str, start_sec: float, duration_sec: float
+    source_url: str,
+    start_sec: float,
+    duration_sec: float,
+    audio_codec: Optional[str] = None,
 ) -> AsyncIterator[bytes]:
     """Spawn ffmpeg to transmux a segment of the source into MPEG-TS, yielding
-    bytes as they're produced. Caller is responsible for response framing."""
+    bytes as they're produced. Caller is responsible for response framing.
+
+    Audio is copied when the source codec is already browser-friendly (AAC/MP3)
+    and transcoded to AAC otherwise. The codec hint should come from the
+    cached probe so we don't re-probe per segment.
+    """
+    if audio_codec and audio_codec in BROWSER_AUDIO_OK:
+        audio_args = ["-c:a", "copy"]
+    else:
+        # AC3/EAC3/DTS sources: encode to AAC for browser MSE compatibility.
+        audio_args = ["-c:a", "aac", "-b:a", "160k", "-ac", "2"]
+
     args = [
         "ffmpeg",
         "-hide_banner", "-loglevel", "warning",
@@ -190,14 +209,8 @@ async def stream_segment(
         "-t", f"{duration_sec:.3f}",
         "-map", "0:v:0?",
         "-map", "0:a:0?",
-        # Video: copy bytes as-is (zero CPU).
         "-c:v", "copy",
-        # Audio: always transcode to AAC. Chrome's MSE can't decode AC3 or
-        # EAC3 in HLS (Safari can) — by always emitting AAC we get universal
-        # browser support at ~1–2% CPU per stream.
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-ac", "2",
+        *audio_args,
         # Reset PTS at the segment boundary, then shift to the segment's
         # logical position. Without this, every segment's first PTS comes
         # from the nearest keyframe in the source (which doesn't align with

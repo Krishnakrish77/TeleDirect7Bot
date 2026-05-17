@@ -119,7 +119,9 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
     await response.prepare(request)
 
     try:
-        async for chunk in hls.stream_segment(source_url, start_sec, duration_sec):
+        async for chunk in hls.stream_segment(
+            source_url, start_sec, duration_sec, audio_codec=probe.audio_codec
+        ):
             await response.write(chunk)
         await response.write_eof()
     except (ConnectionError, asyncio.CancelledError):

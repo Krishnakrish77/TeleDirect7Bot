@@ -102,19 +102,17 @@
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          // ffmpeg segments are generated on-demand from a remote MKV; each
-          // first-byte costs a few Telegram round-trips. Lean toward larger
-          // buffers and more patient timeouts so playback doesn't stall the
-          // moment ffmpeg takes a second to seek.
-          maxBufferLength: 60,
-          maxMaxBufferLength: 600,
-          maxBufferSize: 120 * 1024 * 1024,
+          // Each segment costs a couple of Telegram round-trips for ffmpeg
+          // to seek into the source MKV. Patient timeouts but moderate
+          // buffering — over-aggressive prefetch queues too many ffmpegs.
+          maxBufferLength: 30,
+          maxMaxBufferLength: 120,
+          maxBufferSize: 60 * 1024 * 1024,
           manifestLoadingTimeOut: 30000,
           manifestLoadingMaxRetry: 4,
           levelLoadingTimeOut: 30000,
           fragLoadingTimeOut: 60000,
           fragLoadingMaxRetry: 4,
-          startFragPrefetch: true,
         });
         hls.on(Hls.Events.ERROR, (_evt, data) => {
           if (data.fatal) {
