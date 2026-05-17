@@ -16,7 +16,21 @@
       --plyr-menu-background: rgba(15, 17, 21, 0.97);
       --plyr-menu-color: #e2e8f0;
     }
-    .plyr--video { border-radius: 0.75rem; overflow: hidden; }
+
+    /* Plyr should fill the aspect-video container, not collapse to intrinsic size. */
+    .plyr { width: 100%; height: 100%; }
+    .plyr--video .plyr__video-wrapper { height: 100%; }
+    .plyr--video video { width: 100%; height: 100%; object-fit: contain; }
+
+    /* Tailwind Preflight aggressively resets <button>, <svg>, <progress>, and
+       <input type="range"> — all of which Plyr relies on. Re-establish the
+       defaults Plyr expects, scoped to .plyr so we don't undo Preflight
+       globally. */
+    .plyr svg { display: inline-block; vertical-align: middle; height: auto; }
+    .plyr button { font: inherit; line-height: inherit; color: inherit;
+                   background-color: transparent; cursor: pointer; }
+    .plyr input[type="range"] { -webkit-appearance: none; appearance: none; }
+    .plyr progress { vertical-align: baseline; }
   </style>
 {% endblock %}
 
@@ -30,7 +44,7 @@
     <div class="mt-8 aspect-video bg-black rounded-xl overflow-hidden">
       <{{ tag }}
         id="player"
-        class="player w-full h-full"
+        class="player"
         {% if hls_src %}data-hls-src="{{ hls_src }}"{% endif %}
         data-direct-src="{{ src }}"
         playsinline
