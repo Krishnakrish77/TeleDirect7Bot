@@ -18,8 +18,8 @@ from main.utils.render_template import render_page
 
 routes = web.RouteTableDef()
 
-@routes.get("/", allow_head=True)
-async def root_route_handler(_):
+@routes.get("/status", allow_head=True)
+async def status_route_handler(_):
     return web.json_response(
         {
             "server_status": "running",

@@ -1,0 +1,84 @@
+{% if not items %}
+  <div class="flex flex-col items-center justify-center py-20 text-center">
+    <div class="grid place-items-center w-14 h-14 rounded-2xl bg-ink-800/70 text-slate-500 mb-4">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.6" class="w-7 h-7">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M15.75 10.5 12 6.75 8.25 10.5m7.5 4.5L12 18.75 8.25 15M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+      </svg>
+    </div>
+    <p class="text-slate-400 text-sm">{{ empty_text }}</p>
+  </div>
+{% else %}
+  <ul class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
+    {% for item in items %}
+      <li>
+        <a href="/watch/{{ item.secure_hash }}{{ item.message_id }}"
+           class="group block rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
+                  hover:border-brand-400/40 hover:bg-ink-800
+                  transition-colors">
+          <div class="aspect-[2/3] bg-ink-900 relative overflow-hidden">
+            {% if item.has_thumb %}
+              <img
+                src="/thumb/{{ item.secure_hash }}{{ item.message_id }}.jpg"
+                alt=""
+                loading="lazy"
+                class="absolute inset-0 w-full h-full object-cover
+                       group-hover:scale-105 transition-transform duration-300"
+              />
+            {% else %}
+              <div class="absolute inset-0 grid place-items-center text-slate-700">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="1.5" class="w-10 h-10">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                        d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                </svg>
+              </div>
+            {% endif %}
+            {% if item.duration %}
+              <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded
+                           bg-black/70 text-[10px] font-medium text-white
+                           tabular-nums">
+                {{ item.duration | duration }}
+              </span>
+            {% endif %}
+          </div>
+          <div class="p-3">
+            <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
+                       group-hover:text-brand-300 transition-colors">
+              {{ item.title }}
+              {%- if item.year %} <span class="text-slate-400 font-normal">({{ item.year }})</span>{% endif -%}
+            </h3>
+            {% if item.tags %}
+              <div class="mt-1.5 flex flex-wrap gap-1">
+                {% for tag in item.tags[:3] %}
+                  <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded
+                               bg-brand-500/10 text-brand-300">#{{ tag }}</span>
+                {% endfor %}
+              </div>
+            {% elif item.file_size %}
+              <p class="mt-1 text-xs text-slate-500">{{ item.file_size | humansize }}</p>
+            {% endif %}
+          </div>
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+
+  {% if next_cursor %}
+    <div class="mt-8 flex justify-center">
+      <button
+        type="button"
+        hx-get="/?before={{ next_cursor }}"
+        hx-target="closest div"
+        hx-swap="outerHTML"
+        hx-indicator="this"
+        class="px-5 py-2.5 rounded-lg bg-ink-800 border border-white/10
+               text-slate-300 hover:bg-ink-700 hover:text-white
+               focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400
+               transition">
+        Load more
+      </button>
+    </div>
+  {% endif %}
+{% endif %}
