@@ -1,5 +1,6 @@
 aiohttp
-pyrogram~=2.0.35
+kurigram~=2.2.22
 python-dotenv
-tgcrypto
+pytgcrypto
 jinja2
+uvloop

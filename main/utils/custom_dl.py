@@ -7,8 +7,7 @@ from typing import Dict, Tuple, Union
 from main.bot import work_loads
 from pyrogram import Client, utils, raw
 from .file_properties import get_file_ids
-from pyrogram.session import Session, Auth
-from pyrogram.errors import AuthBytesInvalid
+from pyrogram.session import Session
 from main.server.exceptions import FIleNotFound
 from pyrogram.file_id import FileId, FileType, ThumbnailSource
 
@@ -63,59 +62,11 @@ class ByteStreamer:
 
     async def generate_media_session(self, client: Client, file_id: FileId) -> Session:
         """
-        Generates the media session for the DC that contains the media file.
-        This is required for getting the bytes from Telegram servers.
+        Returns a media session for the DC that holds the file. Delegates the
+        full cross-DC auth handshake + media-session cache to kurigram's
+        Client.get_session helper.
         """
-
-        media_session = client.media_sessions.get(file_id.dc_id, None)
-
-        if media_session is None:
-            if file_id.dc_id != await client.storage.dc_id():
-                media_session = Session(
-                    client,
-                    file_id.dc_id,
-                    await Auth(
-                        client, file_id.dc_id, await client.storage.test_mode()
-                    ).create(),
-                    await client.storage.test_mode(),
-                    is_media=True,
-                )
-                await media_session.start()
-
-                for _ in range(6):
-                    exported_auth = await client.invoke(
-                        raw.functions.auth.ExportAuthorization(dc_id=file_id.dc_id)
-                    )
-
-                    try:
-                        await media_session.send(
-                            raw.functions.auth.ImportAuthorization(
-                                id=exported_auth.id, bytes=exported_auth.bytes
-                            )
-                        )
-                        break
-                    except AuthBytesInvalid:
-                        logging.debug(
-                            f"Invalid authorization bytes for DC {file_id.dc_id}"
-                        )
-                        continue
-                else:
-                    await media_session.stop()
-                    raise AuthBytesInvalid
-            else:
-                media_session = Session(
-                    client,
-                    file_id.dc_id,
-                    await client.storage.auth_key(),
-                    await client.storage.test_mode(),
-                    is_media=True,
-                )
-                await media_session.start()
-            logging.debug(f"Created media session for DC {file_id.dc_id}")
-            client.media_sessions[file_id.dc_id] = media_session
-        else:
-            logging.debug(f"Using cached media session for DC {file_id.dc_id}")
-        return media_session
+        return await client.get_session(file_id.dc_id, is_media=True)
 
 
     @staticmethod
@@ -217,7 +168,7 @@ class ByteStreamer:
         except (TimeoutError, AttributeError):
             pass
         finally:
-            logging.debug("Finished yielding file with {current_part} parts.")
+            logging.debug(f"Finished yielding file with {current_part} parts.")
             work_loads[index] -= 1
 
     

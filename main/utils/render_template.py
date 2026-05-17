@@ -31,10 +31,25 @@ async def render_page(message_id, secure_hash):
     mime_type = (file_data.mime_type or "").split('/')[0].strip()
     if mime_type in ("video", "audio"):
         heading = ("Watch " if mime_type == "video" else "Listen ") + (file_data.file_name or "")
+        # HLS is offered only for video; the playlist endpoint will 415 if the
+        # source codecs aren't transmuxable to TS, and the client falls back
+        # to the direct src.
+        hls_src = (
+            urllib.parse.urljoin(Var.URL, f'hls/{secure_hash}{message_id}/playlist.m3u8')
+            if mime_type == "video" else None
+        )
+        # Base path for subtitle endpoints — the client appends /list.json
+        # and /{n}.vtt itself.
+        sub_path = (
+            urllib.parse.urljoin(Var.URL, f'sub/{secure_hash}{message_id}').rstrip("/")
+            if mime_type == "video" else None
+        )
         return _REQ_TEMPLATE.render(
             tag=mime_type,
             heading=heading,
             src=src,
+            hls_src=hls_src,
+            sub_path=sub_path,
             file_name=file_data.file_name,
         )
     heading = f"Download {file_data.file_name}"

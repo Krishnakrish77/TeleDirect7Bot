@@ -1,73 +1,181 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      property="og:image"
-      content="https://camo.githubusercontent.com/cc0b6a3547991fa106f7265c07b3793bdea083130f91d68497347a6adc5085f9/68747470733a2f2f74656c656772612e70682f66696c652f3464313234343030623938356232666536656531632e6a7067"
-      itemprop="thumbnailUrl"
-    />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ heading }}</title>
-    <link rel="stylesheet" type="text/css" href="/static/style.css" />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css?family=Raleway"
-    />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css?family=Delius"
-    />
-    <link rel="stylesheet" href="https://cdn.plyr.io/3.5.6/plyr.css" />
-  </head>
+{% extends "base.html" %}
 
-  <body>
-    <div class="player-container">
-      <{{ tag }} src="{{ src }}" class="player"></{{ tag }}>
-      <div class="info-panel">
-        <h2>{{ file_name }}</h2>
-      </div>
+{% block title %}{{ heading }}{% endblock %}
+
+{% block head_extra %}
+  <meta
+    property="og:image"
+    content="https://camo.githubusercontent.com/cc0b6a3547991fa106f7265c07b3793bdea083130f91d68497347a6adc5085f9/68747470733a2f2f74656c656772612e70682f66696c652f3464313234343030623938356232666536656531632e6a7067"
+    itemprop="thumbnailUrl"
+  />
+  <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+  <style>
+    :root {
+      --plyr-color-main: #f97316;
+      --plyr-video-background: #000;
+      --plyr-menu-background: rgba(15, 17, 21, 0.97);
+      --plyr-menu-color: #e2e8f0;
+    }
+
+    /* Plyr should fill the aspect-video container, not collapse to intrinsic size. */
+    .plyr { width: 100%; height: 100%; }
+    .plyr--video .plyr__video-wrapper { height: 100%; }
+    .plyr--video video { width: 100%; height: 100%; object-fit: contain; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="w-full max-w-4xl">
+    <div class="text-center px-2">
+      <h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">TeleDirect</h1>
+      <p class="mt-2 text-sm sm:text-base text-slate-400 break-all">{{ file_name }}</p>
     </div>
 
-    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/darkmode-js@1.5.7/lib/darkmode-js.min.js"></script>
-    <script>
-      const settings = {
+    <div class="mt-8 aspect-video bg-black rounded-xl overflow-hidden">
+      <{{ tag }}
+        id="player"
+        class="player"
+        {% if hls_src %}data-hls-src="{{ hls_src }}"{% endif %}
+        data-direct-src="{{ src }}"
+        {% if sub_path %}data-sub-path="{{ sub_path }}"{% endif %}
+        crossorigin="anonymous"
+        playsinline
+        controls
+      ></{{ tag }}>
+    </div>
+
+    <div class="mt-6 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3
+                text-sm text-amber-200/90 text-center">
+      <span class="font-semibold text-amber-200">Note:</span>
+      Player not loading? Open the stream in VLC for any container format.
+    </div>
+
+    <div class="mt-6 flex justify-center">
+      <a id="vlcButton"
+         href="vlc://{{ src }}"
+         data-stream-url="{{ src }}"
+         class="inline-flex items-center justify-center gap-2
+                rounded-lg px-6 py-3 font-semibold text-white
+                bg-brand-500 hover:bg-brand-600 active:bg-brand-700
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300
+                transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+             class="w-4 h-4">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+        Open in VLC
+      </a>
+    </div>
+
+    <p class="mt-10 text-center text-xs text-slate-500">Powered by Telegram · @TeleDirect7Bot</p>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+  <script>
+    function buildVlcUrl(streamUrl) {
+      const ua = navigator.userAgent || "";
+      if (/Android/i.test(ua)) {
+        const scheme = streamUrl.startsWith("https://") ? "https" : "http";
+        const stripped = streamUrl.replace(/^https?:\/\//, "");
+        return `intent://${stripped}#Intent;scheme=${scheme};package=org.videolan.vlc;type=video/*;end`;
+      }
+      if (/iPad|iPhone|iPod/.test(ua)) {
+        return `vlc-x-callback://x-callback-url/stream?url=${encodeURIComponent(streamUrl)}`;
+      }
+      return `vlc://${streamUrl}`;
+    }
+
+    function attachSource(video) {
+      const hlsSrc = video.dataset.hlsSrc;
+      const directSrc = video.dataset.directSrc;
+
+      // Safari and iOS play HLS natively — set the source and let the browser
+      // handle it. No JS lib needed.
+      if (hlsSrc && video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = hlsSrc;
+        return;
+      }
+
+      // Chrome/Firefox/Edge: use hls.js if HLS source is offered.
+      if (hlsSrc && window.Hls && Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          // Each segment costs a couple of Telegram round-trips for ffmpeg
+          // to seek into the source MKV. Patient timeouts but moderate
+          // buffering — over-aggressive prefetch queues too many ffmpegs.
+          maxBufferLength: 30,
+          maxMaxBufferLength: 120,
+          maxBufferSize: 60 * 1024 * 1024,
+          manifestLoadingTimeOut: 30000,
+          manifestLoadingMaxRetry: 4,
+          levelLoadingTimeOut: 30000,
+          fragLoadingTimeOut: 60000,
+          fragLoadingMaxRetry: 4,
+        });
+        hls.on(Hls.Events.ERROR, (_evt, data) => {
+          if (data.fatal) {
+            console.warn("HLS fatal error, falling back to direct stream:", data);
+            try { hls.destroy(); } catch (_) {}
+            video.src = directSrc;
+          }
+        });
+        hls.loadSource(hlsSrc);
+        hls.attachMedia(video);
+        return;
+      }
+
+      // Last resort: direct progressive byte stream.
+      video.src = directSrc;
+    }
+
+    async function injectSubtitleTracks(video) {
+      const subPath = video.dataset.subPath;
+      if (!subPath) return;
+      try {
+        const resp = await fetch(`${subPath}/list.json`);
+        if (!resp.ok) return;
+        const tracks = await resp.json();
+        tracks.forEach((t, i) => {
+          const track = document.createElement("track");
+          track.kind = "subtitles";
+          track.label = t.label || `Track ${i + 1}`;
+          if (t.language) track.srclang = t.language;
+          track.src = `${subPath}/${t.index}.vtt`;
+          if (i === 0) track.default = true;
+          video.appendChild(track);
+        });
+      } catch (_) {
+        // Subtitle endpoint unavailable / no tracks — silently skip.
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      const video = document.getElementById("player");
+      if (video) {
+        // Inject <track> elements BEFORE Plyr wraps the video so Plyr
+        // discovers them and renders the captions button automatically.
+        await injectSubtitleTracks(video);
+        attachSource(video);
+      }
+
+      Plyr.setup(".player", {
         controls: [
-          "play-large",
-          "rewind",
-          "play",
-          "fast-forward",
-          "progress",
-          "current-time",
-          "duration",
-          "mute",
-          "volume",
-          "captions",
-          "settings",
-          "pip",
-          "airplay",
-          "download",
-          "fullscreen",
+          "play-large", "rewind", "play", "fast-forward", "progress",
+          "current-time", "duration", "mute", "volume", "captions",
+          "settings", "pip", "airplay", "download", "fullscreen",
         ],
-        keyboard: {
-          focused: true,
-          global: true,
-        },
-      };
-      document.addEventListener("DOMContentLoaded", () => {
-        const player = Plyr.setup(".player", settings);
+        captions: { active: true, language: "auto", update: true },
+        keyboard: { focused: true, global: true },
       });
 
-      const options = {
-        label: "🌓",
-      };
-
-      function addDarkmodeWidget() {
-        new Darkmode(options).showWidget();
+      const vlcBtn = document.getElementById("vlcButton");
+      if (vlcBtn && vlcBtn.dataset.streamUrl) {
+        vlcBtn.href = buildVlcUrl(vlcBtn.dataset.streamUrl);
       }
-      window.addEventListener("load", addDarkmodeWidget);
-    </script>
-  </body>
-</html>
+    });
+  </script>
+{% endblock %}

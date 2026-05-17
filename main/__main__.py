@@ -1,8 +1,18 @@
+import os
 import sys
 import signal
 import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
+
+# Replace asyncio's default event loop with uvloop — Cython-based, ~2–4×
+# faster on event-loop ops. aiohttp + pyrogram pick it up transparently.
+try:
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    pass
+
 from .vars import Var
 from aiohttp import web
 from pyrogram import idle
@@ -10,10 +20,12 @@ from main import utils
 from main import StreamBot
 from main.server import web_server
 from main.bot.clients import initialize_clients
+from main.utils import media_index
 
 
+_LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, _LOG_LEVEL, logging.INFO),
     datefmt="%d/%m/%Y %H:%M:%S",
     format='[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(stream=sys.stdout),
@@ -26,11 +38,6 @@ logging.getLogger("aiohttp.web").setLevel(logging.ERROR)
 
 server = web.AppRunner(web_server())
 
-if sys.version_info[1] > 9:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-else:
-    loop = asyncio.get_event_loop()
 
 async def start_services():
     print()
@@ -40,11 +47,13 @@ async def start_services():
     StreamBot.username = bot_info.username
     print("------------------------------ DONE ------------------------------")
     print()
-    print(
-        "---------------------- Initializing Clients ----------------------"
-    )
+    print("---------------------- Initializing Clients ----------------------")
     await initialize_clients()
     print("------------------------------ DONE ------------------------------")
+    # Seed the hub's in-process catalogue from BIN_CHANNEL history. Runs in
+    # the background so it doesn't block web server startup; the hub starts
+    # empty and fills in over the next ~30s as message metadata streams in.
+    asyncio.create_task(media_index.seed(StreamBot, Var.BIN_CHANNEL))
     if Var.ON_HEROKU:
         print("------------------ Starting Keep Alive Service ------------------")
         print()
@@ -65,25 +74,28 @@ async def start_services():
     print("------------------------------------------------------------------")
     print()
     print("""
- _____________________________________________   
-|                                             |  
-|          Deployed Successfully              |  
+ _____________________________________________
+|                                             |
+|          Deployed Successfully              |
 |              Join @TeleDirect7Bot           |
 |_____________________________________________|
     """)
     await idle()
 
+
 async def cleanup():
     await server.cleanup()
     await StreamBot.stop()
 
+
 def _request_shutdown():
     logging.info("Received shutdown signal, stopping...")
-    for task in asyncio.all_tasks(loop):
+    for task in asyncio.all_tasks():
         task.cancel()
 
 
-if __name__ == "__main__":
+async def main():
+    loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
             loop.add_signal_handler(sig, _request_shutdown)
@@ -91,12 +103,17 @@ if __name__ == "__main__":
             # Windows doesn't support add_signal_handler
             pass
     try:
-        loop.run_until_complete(start_services())
+        await start_services()
+    finally:
+        await cleanup()
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
     except Exception as err:
-        logging.error(err.with_traceback(None))
+        logging.exception("Fatal error during startup", exc_info=err)
     finally:
-        loop.run_until_complete(cleanup())
-        loop.stop()
         print("------------------------ Stopped Services ------------------------")

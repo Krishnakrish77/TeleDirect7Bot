@@ -1,0 +1,66 @@
+"""
+Read-side helpers for the media hub.
+
+Browse / search / tag all delegate to the in-process media_index — bots
+can't call Telegram's getHistory or search methods, so the catalogue is
+maintained ourselves (see main/utils/media_index.py).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+
+
+PAGE_SIZE = 24
+
+
+@dataclass
+class HubItem:
+    message_id: int
+    secure_hash: str
+    title: str
+    year: Optional[int]
+    description: str
+    tags: List[str]
+    duration: int
+    file_size: int
+    has_thumb: bool
+    quality: str = ""  # parsed resolution bucket: 480p / 720p / 1080p / 4K / ""
+
+
+# Imports kept at the bottom to avoid a circular import with media_index,
+# which itself imports HubItem from this module.
+from main.utils import media_index  # noqa: E402
+
+
+async def query(
+    *,
+    q: str = "",
+    year: Optional[int] = None,
+    quality: str = "",
+    tag: str = "",
+    sort: str = "newest",
+    before_id: Optional[int] = None,
+    limit: int = PAGE_SIZE,
+) -> Tuple[List[HubItem], Optional[int]]:
+    return media_index.query(
+        q=q, year=year, quality=quality, tag=tag, sort=sort,
+        before_id=before_id, limit=limit,
+    )
+
+
+# Back-compat helpers used by tests / external callers; keep thin.
+async def browse(before_id: Optional[int] = None, limit: int = PAGE_SIZE
+                 ) -> Tuple[List[HubItem], Optional[int]]:
+    return await query(before_id=before_id, limit=limit)
+
+
+async def search(q: str, limit: int = PAGE_SIZE) -> List[HubItem]:
+    items, _ = await query(q=q, limit=limit)
+    return items
+
+
+async def by_tag(tag: str, limit: int = PAGE_SIZE) -> List[HubItem]:
+    items, _ = await query(tag=tag, limit=limit)
+    return items
