@@ -28,8 +28,14 @@
     </div>
 
     <div class="mt-8 aspect-video bg-black rounded-xl overflow-hidden">
-      <{{ tag }} src="{{ src }}" class="player w-full h-full"
-               playsinline controls></{{ tag }}>
+      <{{ tag }}
+        id="player"
+        class="player w-full h-full"
+        {% if hls_src %}data-hls-src="{{ hls_src }}"{% endif %}
+        data-direct-src="{{ src }}"
+        playsinline
+        controls
+      ></{{ tag }}>
     </div>
 
     <div class="mt-6 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3
@@ -61,6 +67,7 @@
 
 {% block scripts %}
   <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
   <script>
     function buildVlcUrl(streamUrl) {
       const ua = navigator.userAgent || "";
@@ -75,7 +82,40 @@
       return `vlc://${streamUrl}`;
     }
 
+    function attachSource(video) {
+      const hlsSrc = video.dataset.hlsSrc;
+      const directSrc = video.dataset.directSrc;
+
+      // Safari and iOS play HLS natively — set the source and let the browser
+      // handle it. No JS lib needed.
+      if (hlsSrc && video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = hlsSrc;
+        return;
+      }
+
+      // Chrome/Firefox/Edge: use hls.js if HLS source is offered.
+      if (hlsSrc && window.Hls && Hls.isSupported()) {
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+        hls.on(Hls.Events.ERROR, (_evt, data) => {
+          if (data.fatal) {
+            console.warn("HLS fatal error, falling back to direct stream:", data);
+            try { hls.destroy(); } catch (_) {}
+            video.src = directSrc;
+          }
+        });
+        hls.loadSource(hlsSrc);
+        hls.attachMedia(video);
+        return;
+      }
+
+      // Last resort: direct progressive byte stream.
+      video.src = directSrc;
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
+      const video = document.getElementById("player");
+      if (video) attachSource(video);
+
       Plyr.setup(".player", {
         controls: [
           "play-large", "rewind", "play", "fast-forward", "progress",
