@@ -38,19 +38,55 @@ body {
   margin-top: 20px;
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
-.info-panel button {
-  padding: 10px 15px;
+.info-panel .player-hint {
+  margin: 12px 0 0;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.info-panel .ext-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
   border: none;
+  border-radius: 6px;
   background: #007bff;
   color: white;
-  border-radius: 5px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
   cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
 }
 
-.info-panel button:hover {
+.info-panel .ext-button:hover {
   background: #0056b3;
+  transform: translateY(-1px);
+}
+
+.info-panel .ext-button.vlc {
+  background: #ff8800;
+}
+.info-panel .ext-button.vlc:hover {
+  background: #cc6d00;
+}
+
+.info-panel .ext-button.download {
+  background: #28a745;
+}
+.info-panel .ext-button.download:hover {
+  background: #1e7a35;
+}
+
+.info-panel .ext-button.copy {
+  background: #6c757d;
+}
+.info-panel .ext-button.copy:hover {
+  background: #545b62;
 }
 
 /* General Download Page */
