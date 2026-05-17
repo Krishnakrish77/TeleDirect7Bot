@@ -20,7 +20,7 @@ from main import utils
 from main import StreamBot
 from main.server import web_server
 from main.bot.clients import initialize_clients
-from main.utils import media_index
+from main.utils import hls_session, media_index
 
 
 _LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -54,6 +54,9 @@ async def start_services():
     # the background so it doesn't block web server startup; the hub starts
     # empty and fills in over the next ~30s as message metadata streams in.
     asyncio.create_task(media_index.seed(StreamBot, Var.BIN_CHANNEL))
+    # Start the HLS-session reaper so idle ffmpeg processes + their /tmp
+    # segment dirs get freed.
+    hls_session.ensure_reaper_running()
     if Var.ON_HEROKU:
         print("------------------ Starting Keep Alive Service ------------------")
         print()
@@ -84,6 +87,12 @@ async def start_services():
 
 
 async def cleanup():
+    # Kill in-flight ffmpeg subprocesses and free their /tmp dirs before
+    # stopping the bot so we don't orphan disk or processes.
+    try:
+        await asyncio.wait_for(hls_session.shutdown_all(), timeout=10)
+    except Exception:
+        logging.warning("hls_session shutdown_all errored or timed out", exc_info=True)
     await server.cleanup()
     await StreamBot.stop()
 

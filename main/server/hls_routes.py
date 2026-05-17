@@ -19,7 +19,7 @@ from aiohttp import web
 from main import StreamBot
 from main.bot import multi_clients, work_loads
 from main.server.exceptions import FIleNotFound, InvalidHash
-from main.utils import hls, skeleton_cache, ByteStreamer
+from main.utils import hls, hls_session, skeleton_cache, ByteStreamer
 
 
 routes = web.RouteTableDef()
@@ -106,35 +106,26 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
     if n >= probe.segment_count:
         raise web.HTTPNotFound(text="Segment out of range")
 
-    start_sec = n * hls.SEGMENT_SECONDS
-    # Final segment may be shorter than SEGMENT_SECONDS.
-    duration_sec = min(hls.SEGMENT_SECONDS, probe.duration - start_sec)
+    # One long-lived ffmpeg per file produces segments to /tmp; we just
+    # serve the file when it's on disk. Backward seeks within already-
+    # produced segments are free; forward seek beyond the current cursor
+    # restarts ffmpeg from the seek point.
+    session = await hls_session.get_or_start(
+        message_id, source_url, probe.duration, probe.audio_codec,
+    )
+    seg_path = await session.request(n)
+    if seg_path is None:
+        logging.warning("hls_session msg=%d segment %d timed out", message_id, n)
+        raise web.HTTPGatewayTimeout(text="segment generation timed out")
 
-    response = web.StreamResponse(
-        status=200,
+    return web.FileResponse(
+        path=seg_path,
         headers={
-            "Content-Type": "video/mp2t",
             "Cache-Control": "public, max-age=3600",
             "Access-Control-Allow-Origin": "*",
+            "Content-Type": "video/mp2t",
         },
     )
-    await response.prepare(request)
-
-    try:
-        async for chunk in hls.stream_segment(
-            source_url, start_sec, duration_sec, audio_codec=probe.audio_codec
-        ):
-            await response.write(chunk)
-        await response.write_eof()
-    except (ConnectionError, asyncio.CancelledError):
-        # hls.js routinely cancels in-flight segment requests when seeking or
-        # when its buffer is satisfied. The ffmpeg subprocess is cleaned up by
-        # stream_segment's finally block.
-        logging.debug("Client disconnected during segment %d for msg %d", n, message_id)
-    except Exception:
-        logging.exception("Error streaming segment %d for msg %d", n, message_id)
-
-    return response
 
 
 # --- Subtitles ---------------------------------------------------------
