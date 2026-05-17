@@ -1,0 +1,156 @@
+"""
+Range cache for the "skeleton" bytes of remote video files.
+
+Each on-demand HLS segment request runs a fresh ffmpeg subprocess, and each
+subprocess re-reads the same handful of small regions from the source:
+
+  * the file header at offset 0 (~tens of KB for MKV)
+  * the SeekHead + Cues block at the end of the file (~tens to hundreds of KB)
+  * the cluster containing the target timestamp (variable)
+
+The first two are deterministic and small. Caching them in memory turns
+N Telegram round-trips per seek into 1 — every segment after the cache is
+warm avoids the head/tail fetches entirely.
+
+The cache is keyed by Telegram message_id. Entries hold the first HEAD_SIZE
+bytes and the last TAIL_SIZE bytes of the file. A simple TTL evicts stale
+entries.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import math
+import time
+from typing import Dict, Optional
+
+from main.utils import chunk_size as _chunk_size, offset_fix as _offset_fix
+
+
+HEAD_SIZE = 2 * 1024 * 1024   # 2 MB
+TAIL_SIZE = 2 * 1024 * 1024   # 2 MB
+TTL_SECONDS = 60 * 60         # 1 hour
+
+
+class _Entry:
+    __slots__ = ("file_size", "head", "tail", "added_at", "lock")
+
+    def __init__(self, file_size: int):
+        self.file_size = file_size
+        self.head: Optional[bytes] = None
+        self.tail: Optional[bytes] = None
+        self.added_at = time.monotonic()
+        self.lock = asyncio.Lock()
+
+
+_cache: Dict[int, _Entry] = {}
+
+
+def _entry(message_id: int, file_size: int) -> _Entry:
+    entry = _cache.get(message_id)
+    now = time.monotonic()
+    if (
+        entry is None
+        or entry.file_size != file_size
+        or (now - entry.added_at) > TTL_SECONDS
+    ):
+        entry = _Entry(file_size)
+        _cache[message_id] = entry
+    return entry
+
+
+def head_limit(file_size: int) -> int:
+    """Last byte index (inclusive) covered by the head cache."""
+    return min(HEAD_SIZE, file_size) - 1
+
+
+def tail_floor(file_size: int) -> int:
+    """First byte index covered by the tail cache."""
+    return max(0, file_size - TAIL_SIZE)
+
+
+async def _collect_range(
+    byte_streamer, file_id, index: int, start: int, end: int
+) -> bytes:
+    """Drain ByteStreamer.yield_file for a specific byte range into memory."""
+    length = end - start + 1
+    chunk_sz = _chunk_size(length)
+    offset = _offset_fix(start, chunk_sz)
+    first_part_cut = start - offset
+    last_part_cut = (end % chunk_sz) + 1
+    part_count = math.ceil(length / chunk_sz)
+
+    chunks = []
+    async for chunk in byte_streamer.yield_file(
+        file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_sz
+    ):
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def get_or_fetch_head(
+    message_id: int, file_size: int, byte_streamer, file_id, index: int
+) -> bytes:
+    entry = _entry(message_id, file_size)
+    if entry.head is not None:
+        return entry.head
+    async with entry.lock:
+        if entry.head is not None:
+            return entry.head
+        end = head_limit(file_size)
+        logging.debug("Warming head cache for msg %d (%d bytes)", message_id, end + 1)
+        entry.head = await _collect_range(byte_streamer, file_id, index, 0, end)
+        return entry.head
+
+
+async def get_or_fetch_tail(
+    message_id: int, file_size: int, byte_streamer, file_id, index: int
+) -> bytes:
+    entry = _entry(message_id, file_size)
+    if entry.tail is not None:
+        return entry.tail
+    async with entry.lock:
+        if entry.tail is not None:
+            return entry.tail
+        start = tail_floor(file_size)
+        logging.debug(
+            "Warming tail cache for msg %d (%d bytes)", message_id, file_size - start
+        )
+        entry.tail = await _collect_range(
+            byte_streamer, file_id, index, start, file_size - 1
+        )
+        return entry.tail
+
+
+def serve_head(message_id: int, from_bytes: int, until_bytes: int) -> Optional[bytes]:
+    entry = _cache.get(message_id)
+    if entry is None or entry.head is None:
+        return None
+    if until_bytes >= len(entry.head):
+        return None
+    return entry.head[from_bytes : until_bytes + 1]
+
+
+def serve_tail(message_id: int, from_bytes: int, until_bytes: int) -> Optional[bytes]:
+    entry = _cache.get(message_id)
+    if entry is None or entry.tail is None:
+        return None
+    t_start = entry.file_size - len(entry.tail)
+    if from_bytes < t_start:
+        return None
+    return entry.tail[from_bytes - t_start : until_bytes - t_start + 1]
+
+
+async def prefetch_skeleton(
+    message_id: int, file_size: int, byte_streamer, file_id, index: int
+) -> None:
+    """Fire-and-forget warmer. Catches exceptions so a failing prefetch
+    never bubbles into the caller's task."""
+    try:
+        await asyncio.gather(
+            get_or_fetch_head(message_id, file_size, byte_streamer, file_id, index),
+            get_or_fetch_tail(message_id, file_size, byte_streamer, file_id, index),
+        )
+    except Exception:
+        logging.exception("Skeleton prefetch failed for msg %d", message_id)

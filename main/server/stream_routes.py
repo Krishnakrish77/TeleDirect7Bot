@@ -12,6 +12,7 @@ from aiohttp.http_exceptions import BadStatusLine
 from main.bot import multi_clients, work_loads
 from main.server.exceptions import FIleNotFound, InvalidHash
 from main import Var, utils, StartTime, __version__, StreamBot
+from main.utils import skeleton_cache
 from main.utils.render_template import render_page
 
 
@@ -107,16 +108,6 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     until_bytes = (request.http_range.stop or file_size) - 1
     range_header = "Range" in request.headers
 
-    req_length = until_bytes - from_bytes
-    new_chunk_size = utils.chunk_size(req_length)
-    offset = utils.offset_fix(from_bytes, new_chunk_size)
-    first_part_cut = from_bytes - offset
-    last_part_cut = (until_bytes % new_chunk_size) + 1
-    part_count = math.ceil(req_length / new_chunk_size)
-    body = tg_connect.yield_file(
-        file_id, index, offset, first_part_cut, last_part_cut, part_count, new_chunk_size
-    )
-
     mime_type = file_id.mime_type
     file_name = file_id.file_name
     disposition = "attachment"
@@ -134,16 +125,57 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
             file_name = f"{secrets.token_hex(2)}.unknown"
     if "video/" in mime_type or "audio/" in mime_type:
         disposition = "inline"
+
+    common_headers = {
+        "Content-Type": f"{mime_type}",
+        "Range": f"bytes={from_bytes}-{until_bytes}",
+        "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
+        "Content-Disposition": f'{disposition}; filename="{file_name}"',
+        "Accept-Ranges": "bytes",
+    }
+
+    # Fast path: if the requested range fits entirely inside the cached file
+    # header or tail, serve from memory and skip the Telegram round-trip.
+    # ffmpeg hits these regions on every seek (MKV header + Cues block) so
+    # this turns N round-trips into 1 per file.
+    cached_body = None
+    if until_bytes <= skeleton_cache.head_limit(file_size):
+        cached_body = skeleton_cache.serve_head(message_id, from_bytes, until_bytes)
+        if cached_body is None:
+            head = await skeleton_cache.get_or_fetch_head(
+                message_id, file_size, tg_connect, file_id, index
+            )
+            cached_body = head[from_bytes : until_bytes + 1]
+    elif from_bytes >= skeleton_cache.tail_floor(file_size):
+        cached_body = skeleton_cache.serve_tail(message_id, from_bytes, until_bytes)
+        if cached_body is None:
+            tail = await skeleton_cache.get_or_fetch_tail(
+                message_id, file_size, tg_connect, file_id, index
+            )
+            t_start = file_size - len(tail)
+            cached_body = tail[from_bytes - t_start : until_bytes - t_start + 1]
+
+    if cached_body is not None:
+        return web.Response(
+            status=206 if range_header else 200,
+            body=cached_body,
+            headers={**common_headers, "Content-Length": str(len(cached_body))},
+        )
+
+    req_length = until_bytes - from_bytes
+    new_chunk_size = utils.chunk_size(req_length)
+    offset = utils.offset_fix(from_bytes, new_chunk_size)
+    first_part_cut = from_bytes - offset
+    last_part_cut = (until_bytes % new_chunk_size) + 1
+    part_count = math.ceil(req_length / new_chunk_size)
+    body = tg_connect.yield_file(
+        file_id, index, offset, first_part_cut, last_part_cut, part_count, new_chunk_size
+    )
+
     return_resp = web.Response(
         status=206 if range_header else 200,
         body=body,
-        headers={
-            "Content-Type": f"{mime_type}",
-            "Range": f"bytes={from_bytes}-{until_bytes}",
-            "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
-            "Content-Disposition": f'{disposition}; filename="{file_name}"',
-            "Accept-Ranges": "bytes",
-        },
+        headers=common_headers,
     )
 
     if return_resp.status == 200:

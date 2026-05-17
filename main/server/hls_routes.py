@@ -17,7 +17,7 @@ from aiohttp import web
 from main import StreamBot
 from main.bot import multi_clients, work_loads
 from main.server.exceptions import FIleNotFound, InvalidHash
-from main.utils import hls, ByteStreamer
+from main.utils import hls, skeleton_cache, ByteStreamer
 
 
 routes = web.RouteTableDef()
@@ -33,9 +33,8 @@ def _parse_path(raw: str):
     return m.group(1), int(m.group(2))
 
 
-async def _file_id_for(message_id: int, secure_hash: str):
-    # Reuse the same per-client ByteStreamer cache used by the byte-streaming
-    # routes so we don't re-fetch FileId for the same message.
+async def _resolve(message_id: int, secure_hash: str):
+    """Returns (file_id, byte_streamer, client_index) and validates the hash."""
     index = min(work_loads, key=work_loads.get) if work_loads else 0
     client = multi_clients.get(index, StreamBot)
     streamer = _class_cache.get(client)
@@ -45,14 +44,14 @@ async def _file_id_for(message_id: int, secure_hash: str):
     file_id = await streamer.get_file_properties(message_id)
     if file_id.unique_id[:6] != secure_hash:
         raise InvalidHash
-    return file_id
+    return file_id, streamer, index
 
 
 @routes.get(r"/hls/{path:[^/]+}/playlist.m3u8")
 async def hls_playlist(request: web.Request) -> web.Response:
     try:
         secure_hash, message_id = _parse_path(request.match_info["path"])
-        await _file_id_for(message_id, secure_hash)
+        file_id, streamer, index = await _resolve(message_id, secure_hash)
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
@@ -67,6 +66,13 @@ async def hls_playlist(request: web.Request) -> web.Response:
             message_id, probe.video_codec, probe.audio_codec, probe.duration,
         )
         raise web.HTTPUnsupportedMediaType(text="HLS not supported for this codec")
+
+    # Warm the skeleton cache in the background. By the time the browser asks
+    # for segments, ffmpeg's header + Cues reads will hit our in-memory cache
+    # instead of round-tripping to Telegram for every seek.
+    asyncio.create_task(skeleton_cache.prefetch_skeleton(
+        message_id, file_id.file_size, streamer, file_id, index
+    ))
 
     seg_template = f"seg-{{n}}.ts"
     body = hls.build_playlist(probe, seg_template)
@@ -84,7 +90,7 @@ async def hls_playlist(request: web.Request) -> web.Response:
 async def hls_segment(request: web.Request) -> web.StreamResponse:
     try:
         secure_hash, message_id = _parse_path(request.match_info["path"])
-        await _file_id_for(message_id, secure_hash)
+        await _resolve(message_id, secure_hash)
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
