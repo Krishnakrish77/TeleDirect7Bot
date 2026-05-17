@@ -67,6 +67,16 @@ _probe_cache: Dict[int, Tuple[float, ProbeResult]] = {}
 _probe_locks: Dict[int, asyncio.Lock] = {}
 _segment_semaphore: Optional[asyncio.Semaphore] = None
 
+# Toggled to False the first time ffprobe/ffmpeg fails to launch with
+# FileNotFoundError — typically because the deploy is on a buildpack that
+# didn't install ffmpeg. After that the HLS routes 415 immediately instead
+# of error-spamming logs on every viewer request.
+_ffmpeg_available: bool = True
+
+
+def ffmpeg_available() -> bool:
+    return _ffmpeg_available
+
 
 def _semaphore() -> asyncio.Semaphore:
     # Lazy-init so we always bind to the running loop, not the import-time one.
@@ -104,6 +114,7 @@ async def probe(message_id: int, source_url: str) -> ProbeResult:
 
 
 async def _run_ffprobe(source_url: str) -> ProbeResult:
+    global _ffmpeg_available
     args = [
         "ffprobe",
         "-v", "error",
@@ -112,9 +123,17 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
         "-timeout", "15000000",  # 15s connect/read timeout in microseconds
         source_url,
     ]
-    proc = await asyncio.create_subprocess_exec(
-        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+    except FileNotFoundError:
+        _ffmpeg_available = False
+        logging.warning(
+            "ffprobe not installed on the deploy image; HLS disabled. "
+            "Install ffmpeg (Dockerfile already does this) and redeploy."
+        )
+        return ProbeResult(duration=0.0, video_codec=None, audio_codec=None)
     stdout, stderr = await proc.communicate()
     if proc.returncode != 0:
         logging.warning("ffprobe failed (%s): %s", proc.returncode, stderr.decode()[:300])
@@ -179,15 +198,21 @@ async def stream_segment(
         "pipe:1",
     ]
 
+    global _ffmpeg_available
     sem = _semaphore()
     await sem.acquire()
     proc = None
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError:
+            _ffmpeg_available = False
+            logging.warning("ffmpeg not installed on the deploy image; HLS disabled.")
+            return
         assert proc.stdout is not None
         while True:
             chunk = await proc.stdout.read(64 * 1024)
