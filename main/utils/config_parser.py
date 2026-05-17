@@ -1,19 +1,16 @@
 from os import environ
-from typing import Dict, Optional
+from typing import Dict
 
 
 class TokenParser:
-    def __init__(self, config_file: Optional[str] = None):
-        self.tokens = {}
-        self.config_file = config_file
+    def __init__(self):
+        self.tokens: Dict[int, str] = {}
 
     def parse_from_env(self) -> Dict[int, str]:
-        self.tokens = dict(
-            (c + 1, t)
+        self.tokens = {
+            c + 1: t
             for c, (_, t) in enumerate(
-                filter(
-                    lambda n: n[0].startswith("MULTI_TOKEN"), sorted(environ.items())
-                )
+                sorted((k, v) for k, v in environ.items() if k.startswith("MULTI_TOKEN"))
             )
-        )
+        }
         return self.tokens

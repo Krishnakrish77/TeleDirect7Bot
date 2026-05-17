@@ -1,12 +1,11 @@
 def humanbytes(size):
     # https://stackoverflow.com/a/49361727/4723940
-    # 2**10 = 1024
-    if not size:
+    if size is None:
         return ""
-    power = 2**10
+    power = 1024
     n = 0
-    Dic_powerN = {0: ' ', 1: 'Ki', 2: 'Mi', 3: 'Gi', 4: 'Ti'}
-    while size > power:
+    units = {0: ' ', 1: 'Ki', 2: 'Mi', 3: 'Gi', 4: 'Ti'}
+    while size >= power and n < len(units) - 1:
         size /= power
         n += 1
-    return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
+    return f"{round(size, 2)} {units[n]}B"

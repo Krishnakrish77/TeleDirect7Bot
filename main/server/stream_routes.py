@@ -36,7 +36,7 @@ async def root_route_handler(_):
     )
 
 @routes.get(r"/watch/{path:\S+}", allow_head=True)
-async def stream_handler(request: web.Request):
+async def watch_handler(request: web.Request):
     try:
         path = request.match_info["path"]
         match = re.search(r"^([a-zA-Z0-9_-]{6})(\d+)$", path)
@@ -82,11 +82,9 @@ async def stream_handler(request: web.Request):
 class_cache = {}
 
 async def media_streamer(request: web.Request, message_id: int, secure_hash: str):
-    range_header = request.headers.get("Range", 0)
-    
     index = min(work_loads, key=work_loads.get)
     faster_client = multi_clients[index]
-    
+
     if Var.MULTI_CLIENT:
         logging.info(f"Client {index} is now serving {request.remote}")
 
@@ -97,27 +95,21 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         logging.debug(f"Creating new ByteStreamer object for client {index}")
         tg_connect = utils.ByteStreamer(faster_client)
         class_cache[faster_client] = tg_connect
-    logging.debug("before calling get_file_properties")
     file_id = await tg_connect.get_file_properties(message_id)
-    logging.debug("after calling get_file_properties")
-    
+
     if file_id.unique_id[:6] != secure_hash:
         logging.debug(f"Invalid hash for message with ID {message_id}")
         raise InvalidHash
-    
+
     file_size = file_id.file_size
 
-    if range_header:
-        from_bytes, until_bytes = range_header.replace("bytes=", "").split("-")
-        from_bytes = int(from_bytes)
-        until_bytes = int(until_bytes) if until_bytes else file_size - 1
-    else:
-        from_bytes = request.http_range.start or 0
-        until_bytes = request.http_range.stop or file_size - 1
+    from_bytes = request.http_range.start or 0
+    until_bytes = (request.http_range.stop or file_size) - 1
+    range_header = "Range" in request.headers
 
     req_length = until_bytes - from_bytes
-    new_chunk_size = await utils.chunk_size(req_length)
-    offset = await utils.offset_fix(from_bytes, new_chunk_size)
+    new_chunk_size = utils.chunk_size(req_length)
+    offset = utils.offset_fix(from_bytes, new_chunk_size)
     first_part_cut = from_bytes - offset
     last_part_cut = (until_bytes % new_chunk_size) + 1
     part_count = math.ceil(req_length / new_chunk_size)
@@ -136,7 +128,7 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
                 file_name = f"{secrets.token_hex(2)}.unknown"
     else:
         if file_name:
-            mime_type = mimetypes.guess_type(file_id.file_name)
+            mime_type = mimetypes.guess_type(file_id.file_name)[0] or "application/octet-stream"
         else:
             mime_type = "application/octet-stream"
             file_name = f"{secrets.token_hex(2)}.unknown"

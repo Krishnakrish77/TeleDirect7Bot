@@ -1,4 +1,5 @@
 import random
+import logging
 from main.bot import StreamBot
 from main.utils.file_properties import gen_link, get_media_file_unique_id
 from main.vars import Var
@@ -37,6 +38,9 @@ async def cb_data(bot, update: CallbackQuery):
         await update.answer(random.choice(deldbtnmsg), show_alert=True)
     else:
         usr_cmd = update.data.split("_")
+        if len(usr_cmd) < 3:
+            await update.answer()
+            return
         if usr_cmd[0] == "msgdelconf2":
             await update.message.edit_text(
             text=update.message.text,
@@ -45,14 +49,16 @@ async def cb_data(bot, update: CallbackQuery):
         )
         elif usr_cmd[0] == "msgdelno":
             get_msg = await bot.get_messages(chat_id=Var.BIN_CHANNEL, message_ids=int(usr_cmd[1]))
-            if get_media_file_unique_id(get_msg) == usr_cmd[2]:
+            if get_msg.empty:
+                await update.answer("Sorry Your File is Missing from the Server", show_alert=True)
+            elif get_media_file_unique_id(get_msg) == usr_cmd[2]:
                 reply_markup, Stream_Text, stream_link = await gen_link(m=update, log_msg=get_msg, from_channel=False)
 
                 await update.message.edit_text(
                 text=Stream_Text,
                 disable_web_page_preview=True,
                 reply_markup=reply_markup
-                )            
+                )
             else:
                 await update.answer("Message id and file_unique_id miss match", show_alert=True)
         elif usr_cmd[0] == "msgdelyes":
@@ -73,14 +79,14 @@ async def cb_data(bot, update: CallbackQuery):
                 else:
                     await update.answer("Message id and file_unique_id miss match", show_alert=True)
             except MessageDeleteForbidden as e:
-                print(e)
+                logging.warning("MessageDeleteForbidden: %s", e)
                 await bot.send_message(
                     chat_id=Var.BIN_CHANNEL,
-                    text=f"**#ᴇʀʀᴏʀ_ᴛʀᴀᴄᴇʙᴀᴄᴋ:** `{e}`\n#Delete_Link", disable_web_page_preview=True, 
+                    text=f"**#ᴇʀʀᴏʀ_ᴛʀᴀᴄᴇʙᴀᴄᴋ:** `{e}`\n#Delete_Link", disable_web_page_preview=True,
                 )
                 await update.answer(text='Message too old', show_alert=True)
             except Exception as e:
-                print(e)
+                logging.exception("Failed to delete callback message")
                 error_id=await bot.send_message(
                     chat_id=Var.BIN_CHANNEL,
                     text=f"**#ᴇʀʀᴏʀ_ᴛʀᴀᴄᴇʙᴀᴄᴋ:** `{e}`\n#Delete_Link", disable_web_page_preview=True, 

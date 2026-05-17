@@ -5,7 +5,6 @@ from main.utils.Translation import Language, BUTTON
 
 @StreamBot.on_message(~filters.user(Var.BANNED_USERS) & filters.command('start'))
 async def start(b, m):
-    # lang = getattr(Language, m.from_user.language_code)
     lang = getattr(Language, "en")
     await m.reply_text(
         text=lang.START_TEXT.format(m.from_user.mention),
@@ -15,11 +14,10 @@ async def start(b, m):
 
 
 @StreamBot.on_message(~filters.user(Var.BANNED_USERS) & filters.command(["about"]))
-async def start(bot, update):
-    # lang = getattr(Language, update.from_user.language_code)
+async def about(bot, update):
     lang = getattr(Language, "en")
     await update.reply_text(
-        text=lang.ABOUT_TEXT.format(update.from_user.mention),
+        text=lang.ABOUT_TEXT,
         disable_web_page_preview=True,
         reply_markup=BUTTON.ABOUT_BUTTONS
     )
@@ -27,10 +25,9 @@ async def start(bot, update):
 
 @StreamBot.on_message((filters.command('help')) & ~filters.user(Var.BANNED_USERS))
 async def help_handler(bot, message):
-    # lang = getattr(Language, message.from_user.language_code)
     lang = getattr(Language, "en")
     await message.reply_text(
-        text=lang.HELP_TEXT.format(Var.UPDATES_CHANNEL),        
+        text=lang.HELP_TEXT.format(Var.UPDATES_CHANNEL),
         disable_web_page_preview=True,
         reply_markup=BUTTON.HELP_BUTTONS
         )

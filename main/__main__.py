@@ -1,6 +1,8 @@
 import sys
+import signal
 import asyncio
 import logging
+from logging.handlers import RotatingFileHandler
 from .vars import Var
 from aiohttp import web
 from pyrogram import idle
@@ -15,7 +17,8 @@ logging.basicConfig(
     datefmt="%d/%m/%Y %H:%M:%S",
     format='[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(stream=sys.stdout),
-              logging.FileHandler("streambot.log", mode="a", encoding="utf-8")],)
+              RotatingFileHandler("streambot.log", mode="a", maxBytes=10 * 1024 * 1024,
+                                  backupCount=3, encoding="utf-8")],)
 
 logging.getLogger("aiohttp").setLevel(logging.ERROR)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
@@ -56,7 +59,7 @@ async def start_services():
     print("                        bot =>> {}".format(bot_info.first_name))
     if bot_info.dc_id:
         print("                        DC ID =>> {}".format(str(bot_info.dc_id)))
-    print("                        server ip =>> {}".format(bind_address, Var.PORT))
+    print("                        server ip =>> {}:{}".format(bind_address, Var.PORT))
     if Var.ON_HEROKU:
         print("                        app running on =>> {}".format(Var.FQDN))
     print("------------------------------------------------------------------")
@@ -74,10 +77,22 @@ async def cleanup():
     await server.cleanup()
     await StreamBot.stop()
 
+def _request_shutdown():
+    logging.info("Received shutdown signal, stopping...")
+    for task in asyncio.all_tasks(loop):
+        task.cancel()
+
+
 if __name__ == "__main__":
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, _request_shutdown)
+        except NotImplementedError:
+            # Windows doesn't support add_signal_handler
+            pass
     try:
         loop.run_until_complete(start_services())
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         pass
     except Exception as err:
         logging.error(err.with_traceback(None))

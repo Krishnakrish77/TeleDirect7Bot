@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import aiohttp
-import traceback
 from main import Var
 
 
@@ -14,8 +13,8 @@ async def ping_server():
                 timeout=aiohttp.ClientTimeout(total=10)
             ) as session:
                 async with session.get(Var.URL) as resp:
-                    logging.info("Pinged server with response: {}".format(resp.status))
-        except TimeoutError:
+                    logging.info("Pinged server with response: %s", resp.status)
+        except asyncio.TimeoutError:
             logging.warning("Couldn't connect to the site URL..!")
         except Exception:
-            traceback.print_exc()
+            logging.exception("Keepalive ping failed")

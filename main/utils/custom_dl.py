@@ -1,8 +1,9 @@
 import math
+import time
 import asyncio
 import logging
 from main import Var
-from typing import Dict, Union
+from typing import Dict, Tuple, Union
 from main.bot import work_loads
 from pyrogram import Client, utils, raw
 from .file_properties import get_file_ids
@@ -12,47 +13,40 @@ from main.server.exceptions import FIleNotFound
 from pyrogram.file_id import FileId, FileType, ThumbnailSource
 
 
-async def chunk_size(length):
+CACHE_TTL = 30 * 60
+CACHE_SWEEP_INTERVAL = 5 * 60
+
+
+def chunk_size(length):
     return 2 ** max(min(math.ceil(math.log2(length / 1024)), 10), 2) * 1024
 
 
-async def offset_fix(offset, chunksize):
-    offset -= offset % chunksize
-    return offset
+def offset_fix(offset, chunksize):
+    return offset - offset % chunksize
 
 
 class ByteStreamer:
     def __init__(self, client: Client):
         """A custom class that holds the cache of a specific client and class functions.
-        attributes:
-            client: the client that the cache is for.
-            cached_file_ids: a dict of cached file IDs.
-            cached_file_properties: a dict of cached file properties.
-        
-        functions:
-            generate_file_properties: returns the properties for a media of a specific message contained in Tuple.
-            generate_media_session: returns the media session for the DC that contains the media file.
-            yield_file: yield a file from telegram servers for streaming.
-            
-        This is a modified version of the <https://github.com/eyaadh/megadlbot_oss/blob/master/mega/telegram/utils/custom_download.py>
+
+        This is a modified version of <https://github.com/eyaadh/megadlbot_oss/blob/master/mega/telegram/utils/custom_download.py>
         Thanks to Eyaadh <https://github.com/eyaadh>
         """
-        self.clean_timer = 30 * 60
         self.client: Client = client
-        self.cached_file_ids: Dict[int, FileId] = {}
+        self.cached_file_ids: Dict[int, Tuple[float, FileId]] = {}
         asyncio.create_task(self.clean_cache())
 
     async def get_file_properties(self, message_id: int) -> FileId:
         """
-        Returns the properties of a media of a specific message in a FIleId class.
-        if the properties are cached, then it'll return the cached results.
-        or it'll generate the properties from the Message ID and cache them.
+        Returns the properties of a media of a specific message in a FileId class.
+        Cached entries older than CACHE_TTL are refreshed.
         """
-        if message_id not in self.cached_file_ids:
+        entry = self.cached_file_ids.get(message_id)
+        if entry is None or (time.monotonic() - entry[0]) > CACHE_TTL:
             await self.generate_file_properties(message_id)
             logging.debug(f"Cached file properties for message with ID {message_id}")
-        return self.cached_file_ids[message_id]
-    
+        return self.cached_file_ids[message_id][1]
+
     async def generate_file_properties(self, message_id: int) -> FileId:
         """
         Generates the properties of a media file on a specific message.
@@ -63,9 +57,9 @@ class ByteStreamer:
         if not file_id:
             logging.debug(f"Message with ID {message_id} not found")
             raise FIleNotFound
-        self.cached_file_ids[message_id] = file_id
+        self.cached_file_ids[message_id] = (time.monotonic(), file_id)
         logging.debug(f"Cached media message with ID {message_id}")
-        return self.cached_file_ids[message_id]
+        return file_id
 
     async def generate_media_session(self, client: Client, file_id: FileId) -> Session:
         """
@@ -229,9 +223,14 @@ class ByteStreamer:
     
     async def clean_cache(self) -> None:
         """
-        function to clean the cache to reduce memory usage
+        Periodically evict only stale FileId entries instead of clearing everything,
+        which would force every in-flight stream to re-fetch from Telegram at once.
         """
         while True:
-            await asyncio.sleep(self.clean_timer)
-            self.cached_file_ids.clear()
-            logging.debug("Cleaned the cache")
+            await asyncio.sleep(CACHE_SWEEP_INTERVAL)
+            now = time.monotonic()
+            stale = [mid for mid, (ts, _) in self.cached_file_ids.items() if now - ts > CACHE_TTL]
+            for mid in stale:
+                del self.cached_file_ids[mid]
+            if stale:
+                logging.debug(f"Evicted {len(stale)} stale cache entries")

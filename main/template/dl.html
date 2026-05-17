@@ -9,7 +9,7 @@
     />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>%s</title>
+    <title>{{ heading }}</title>
     <link rel="stylesheet" type="text/css" href="/static/style.css" />
     <link
       rel="stylesheet"
@@ -33,11 +33,11 @@
               class="file-icon"
             />
             <div>
-              <h2 class="file-name">%s</h2>
-              <p class="file-size">File Size: %s</p>
+              <h2 class="file-name">{{ file_name }}</h2>
+              <p class="file-size">File Size: {{ file_size }}</p>
             </div>
           </div>
-          <a href="%s" class="download-button" download>
+          <a href="{{ src }}" class="download-button" download>
             Download
           </a>
         </div>

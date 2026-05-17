@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from main.bot import StreamBot
 from main.utils.file_properties import gen_link
 from main.vars import Var
@@ -33,7 +34,7 @@ async def private_receive_handler(c: Client, m: Message):
             quote=True
         )
     except FloodWait as e:
-        print(f"Sleeping for {str(e.x)}s")
+        logging.warning(f"Sleeping for {e.x}s")
         await asyncio.sleep(e.x)
         await c.send_message(chat_id=Var.BIN_CHANNEL, text=f"Got Floodwait Of {str(e.x)}s from [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n\n**User ID :** `{str(m.from_user.id)}`", disable_web_page_preview=True,)
 
@@ -60,22 +61,21 @@ async def channel_receive_handler(bot, broadcast: Message):
                 [[InlineKeyboardButton("Download Link 📥", url=stream_link)]])
         )
     except FloodWait as w:
-        print(f"Sleeping for {str(w.x)}s")
+        logging.warning(f"Sleeping for {w.x}s")
         await asyncio.sleep(w.x)
         await bot.send_message(chat_id=Var.BIN_CHANNEL,
                              text=f"Got Floodwait Of {str(w.x)}s from {broadcast.chat.title}\n\n**Channel ID:** `{str(broadcast.chat.id)}`",
                              disable_web_page_preview=True,)
     except Exception as e:
         await bot.send_message(chat_id=Var.BIN_CHANNEL, text=f"**#ᴇʀʀᴏʀ_ᴛʀᴀᴄᴇʙᴀᴄᴋ:** `{e}`", disable_web_page_preview=True)
-        print(f"Can't Edit Broadcast Message!\nEʀʀᴏʀ: {e}")
+        logging.error(f"Can't Edit Broadcast Message: {e}")
 
-# Feature is Dead no New Update for Stream Link on Group
 @StreamBot.on_message(filters.group & ~filters.user(Var.BANNED_USERS) & (filters.document | filters.video | filters.audio), group=4)
-async def private_receive_handler(c: Client, m: Message):
+async def group_receive_handler(c: Client, m: Message):
     try:
         log_msg = await m.forward(chat_id=Var.BIN_CHANNEL)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=True)
-        await log_msg.reply_text(text=f"**Requested By :** [{m.chat.first_name}](tg://user?id={m.chat.id})\n**Group ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
+        await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
 
         await m.reply_text(
             text=Stream_Text,
@@ -84,7 +84,7 @@ async def private_receive_handler(c: Client, m: Message):
             quote=True
         )
     except FloodWait as e:
-        print(f"Sleeping for {str(e.x)}s")
+        logging.warning(f"Sleeping for {e.x}s")
         await asyncio.sleep(e.x)
-        await c.send_message(chat_id=Var.BIN_CHANNEL, text=f"Got Floodwait Of {str(e.x)}s from [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n\n**User ID :** `{str(m.from_user.id)}`", disable_web_page_preview=True, )
+        await c.send_message(chat_id=Var.BIN_CHANNEL, text=f"Got Floodwait Of {str(e.x)}s in group `{m.chat.title}` ({m.chat.id})", disable_web_page_preview=True)
 
