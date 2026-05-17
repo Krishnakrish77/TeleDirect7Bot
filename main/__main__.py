@@ -20,6 +20,7 @@ from main import utils
 from main import StreamBot
 from main.server import web_server
 from main.bot.clients import initialize_clients
+from main.utils import media_index
 
 
 _LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -49,6 +50,10 @@ async def start_services():
     print("---------------------- Initializing Clients ----------------------")
     await initialize_clients()
     print("------------------------------ DONE ------------------------------")
+    # Seed the hub's in-process catalogue from BIN_CHANNEL history. Runs in
+    # the background so it doesn't block web server startup; the hub starts
+    # empty and fills in over the next ~30s as message metadata streams in.
+    asyncio.create_task(media_index.seed(StreamBot, Var.BIN_CHANNEL))
     if Var.ON_HEROKU:
         print("------------------ Starting Keep Alive Service ------------------")
         print()

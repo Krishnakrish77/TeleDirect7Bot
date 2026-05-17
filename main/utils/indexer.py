@@ -61,8 +61,10 @@ def _build_caption(message: Message) -> Optional[str]:
 
 
 async def index_bin_message(bot: Client, bin_msg: Message) -> None:
-    """Edit a BIN_CHANNEL message's caption into the structured index format.
-    No-op for non-indexable messages or if the caption is already correct."""
+    """Edit a BIN_CHANNEL message's caption into the structured index format,
+    then register the entry in the in-process catalogue used by the hub."""
+    from main.utils import media_index
+
     caption = _build_caption(bin_msg)
     if caption is None:
         return
@@ -79,8 +81,17 @@ async def index_bin_message(bot: Client, bin_msg: Message) -> None:
         logging.warning("FloodWait editing bin:%d — sleeping %ss", bin_msg.id, wait)
         await asyncio.sleep(wait)
         await index_bin_message(bot, bin_msg)
+        return
     except Exception:
         logging.exception("Failed to index bin:%d", bin_msg.id)
+
+    # Re-fetch the message so the caption we just wrote is the one that
+    # gets parsed into the index entry.
+    try:
+        fresh = await bot.get_messages(bin_msg.chat.id, bin_msg.id)
+        await media_index.add_from_message(fresh)
+    except Exception:
+        logging.debug("media_index add failed for bin:%d", bin_msg.id, exc_info=True)
 
 
 def schedule_index(bot: Client, bin_msg: Message) -> None:
