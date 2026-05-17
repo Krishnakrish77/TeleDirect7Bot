@@ -29,7 +29,7 @@
         method="get"
         class="w-full sm:w-80"
         hx-get="/search"
-        hx-trigger="keyup changed delay:300ms from:find input, search delay:0ms from:find input"
+        hx-trigger="input changed delay:300ms from:find input"
         hx-target="#grid"
         hx-swap="innerHTML"
         hx-push-url="true"

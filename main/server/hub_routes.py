@@ -51,19 +51,20 @@ def _fmt_duration(seconds: int) -> str:
     return f"{m}:{s:02d}"
 
 
-_HUB_HTML_CACHE = "public, max-age=30"
-
-
 def _is_htmx(request: web.Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
 
 def _html(body: str) -> web.Response:
+    # No cache on hub HTML: the index grows in real time as new files are
+    # forwarded, and a stale cached empty page is the worst first impression
+    # we can give a returning user. Browsers will still see fast subsequent
+    # loads via gzip + the in-process query cache.
     return web.Response(
         text=body,
         content_type="text/html",
         charset="utf-8",
-        headers={"Cache-Control": _HUB_HTML_CACHE},
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
 
 
@@ -107,11 +108,28 @@ async def hub_home(request: web.Request) -> web.Response:
 @routes.get("/search")
 async def hub_search(request: web.Request) -> web.Response:
     query = (request.query.get("q") or "").strip()
-    items: List[HubItem] = await hub_query.search(query) if query else []
 
+    # Empty query: behave like browse. Otherwise an HTMX search-fire on an
+    # empty input (autofill / clear) would blank the grid by swapping in
+    # nothing.
+    if not query:
+        items, next_cursor = await hub_query.browse()
+        if _is_htmx(request):
+            body = await _render_grid(request, items, next_cursor)
+            return _html(body)
+        body = await _render_page(
+            request,
+            section="browse",
+            query="",
+            items=items,
+            next_cursor=next_cursor,
+            empty_text="Nothing in the library yet — forward a video to the bot.",
+        )
+        return _html(body)
+
+    items = await hub_query.search(query)
     if _is_htmx(request):
-        empty = "No matches." if query else "Type to search."
-        body = await _render_grid(request, items, None, empty_text=empty)
+        body = await _render_grid(request, items, None, empty_text="No matches.")
         return _html(body)
 
     body = await _render_page(
@@ -120,9 +138,9 @@ async def hub_search(request: web.Request) -> web.Response:
         query=query,
         items=items,
         next_cursor=None,
-        empty_text="No matches." if query else "Type a query above to search the library.",
+        empty_text="No matches.",
     )
-    return web.Response(text=body, content_type="text/html")
+    return _html(body)
 
 
 @routes.get("/tag/{name}")
