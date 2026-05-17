@@ -95,8 +95,10 @@ def _fresh(key, cache):
 
 async def browse(before_id: Optional[int] = None, limit: int = PAGE_SIZE) -> Tuple[List[HubItem], Optional[int]]:
     """Newest-first page of hub items. Returns (items, next_cursor).
-    next_cursor is the oldest message id in this page, to pass back as
-    before_id for the following page; None if no more.
+
+    Uses search_messages(query="") instead of get_chat_history — bots can
+    hit messages.search but get_history is restricted for them on some
+    channels.
     """
     cache_key = (before_id, limit)
     cached = _fresh(cache_key, _browse_cache)
@@ -105,18 +107,26 @@ async def browse(before_id: Optional[int] = None, limit: int = PAGE_SIZE) -> Tup
 
     items: List[HubItem] = []
     next_cursor: Optional[int] = None
-    offset_id = before_id or 0
 
-    async for message in StreamBot.get_chat_history(Var.BIN_CHANNEL, limit=FETCH_FAN_OUT, offset_id=offset_id):
-        next_cursor = message.id
-        item = _item_from_message(message)
-        if item is None:
-            continue
-        items.append(item)
-        if len(items) >= limit:
-            break
+    try:
+        async for message in StreamBot.search_messages(
+            chat_id=Var.BIN_CHANNEL,
+            query="",
+            offset_id=before_id or 0,
+            limit=FETCH_FAN_OUT,
+        ):
+            next_cursor = message.id
+            item = _item_from_message(message)
+            if item is None:
+                continue
+            items.append(item)
+            if len(items) >= limit:
+                break
+    except Exception:
+        import logging
+        logging.exception("Failed to fetch BIN_CHANNEL history; showing empty hub")
+        return [], None
 
-    # If we drained the iterator without reaching `limit`, there's no more.
     if len(items) < limit:
         next_cursor = None
 
@@ -138,15 +148,20 @@ async def search(query: str, limit: int = PAGE_SIZE) -> List[HubItem]:
         return cached
 
     items: List[HubItem] = []
-    async for message in StreamBot.search_messages(
-        chat_id=Var.BIN_CHANNEL, query=query, limit=FETCH_FAN_OUT
-    ):
-        item = _item_from_message(message)
-        if item is None:
-            continue
-        items.append(item)
-        if len(items) >= limit:
-            break
+    try:
+        async for message in StreamBot.search_messages(
+            chat_id=Var.BIN_CHANNEL, query=query, limit=FETCH_FAN_OUT
+        ):
+            item = _item_from_message(message)
+            if item is None:
+                continue
+            items.append(item)
+            if len(items) >= limit:
+                break
+    except Exception:
+        import logging
+        logging.exception("search_messages failed for query=%r", query)
+        return []
 
     async with _cache_lock:
         _search_cache[cache_key] = (time.monotonic(), items)

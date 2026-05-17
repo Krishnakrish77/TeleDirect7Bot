@@ -4,6 +4,15 @@ import signal
 import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
+
+# Replace asyncio's default event loop with uvloop — Cython-based, ~2–4×
+# faster on event-loop ops. aiohttp + pyrogram pick it up transparently.
+try:
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    pass
+
 from .vars import Var
 from aiohttp import web
 from pyrogram import idle

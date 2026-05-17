@@ -3,3 +3,4 @@ kurigram~=2.2.22
 python-dotenv
 pytgcrypto
 jinja2
+uvloop

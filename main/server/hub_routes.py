@@ -22,7 +22,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import hub_query
+from main.utils import hub_query, thumb_cache
 from main.utils.hub_query import HubItem
 from main.utils.human_readable import humanbytes
 from main.vars import Var
@@ -51,8 +51,20 @@ def _fmt_duration(seconds: int) -> str:
     return f"{m}:{s:02d}"
 
 
+_HUB_HTML_CACHE = "public, max-age=30"
+
+
 def _is_htmx(request: web.Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
+
+
+def _html(body: str) -> web.Response:
+    return web.Response(
+        text=body,
+        content_type="text/html",
+        charset="utf-8",
+        headers={"Cache-Control": _HUB_HTML_CACHE},
+    )
 
 
 async def _render_grid(request: web.Request, items: List[HubItem],
@@ -79,7 +91,7 @@ async def hub_home(request: web.Request) -> web.Response:
 
     if _is_htmx(request):
         body = await _render_grid(request, items, next_cursor)
-        return web.Response(text=body, content_type="text/html")
+        return _html(body)
 
     body = await _render_page(
         request,
@@ -100,7 +112,7 @@ async def hub_search(request: web.Request) -> web.Response:
     if _is_htmx(request):
         empty = "No matches." if query else "Type to search."
         body = await _render_grid(request, items, None, empty_text=empty)
-        return web.Response(text=body, content_type="text/html")
+        return _html(body)
 
     body = await _render_page(
         request,
@@ -121,7 +133,7 @@ async def hub_tag(request: web.Request) -> web.Response:
     if _is_htmx(request):
         body = await _render_grid(request, items, None,
                                   empty_text=f"Nothing tagged #{tag}.")
-        return web.Response(text=body, content_type="text/html")
+        return _html(body)
 
     body = await _render_page(
         request,
@@ -139,33 +151,35 @@ async def hub_thumb(request: web.Request) -> web.Response:
     secure_hash = request.match_info["hash"]
     message_id = int(request.match_info["id"])
 
-    try:
-        message = await StreamBot.get_messages(Var.BIN_CHANNEL, message_id)
-    except Exception:
+    async def fetch() -> Optional[bytes]:
+        try:
+            message = await StreamBot.get_messages(Var.BIN_CHANNEL, message_id)
+        except Exception:
+            return None
+        media = (
+            getattr(message, "video", None)
+            or getattr(message, "animation", None)
+            or getattr(message, "document", None)
+        )
+        if media is None:
+            return None
+        thumbs = getattr(media, "thumbs", None) or []
+        if not thumbs:
+            return None
+        bytesio = await StreamBot.download_media(thumbs[-1].file_id, in_memory=True)
+        if bytesio is None:
+            return None
+        return bytesio.getvalue() if hasattr(bytesio, "getvalue") else bytes(bytesio)
+
+    data = await thumb_cache.cached_or_fetch(message_id, fetch)
+    if data is None:
         raise web.HTTPNotFound(text="thumb not found")
 
-    media = getattr(message, "video", None) or getattr(message, "animation", None) or getattr(message, "document", None)
-    if media is None:
-        raise web.HTTPNotFound(text="no media")
-
-    thumbs = getattr(media, "thumbs", None) or []
-    if not thumbs:
-        raise web.HTTPNotFound(text="no thumbnail")
-
-    # Telegram thumbs are JPEGs, small (<320px). Download into memory once;
-    # cache headers let the browser hold onto it.
-    try:
-        bytesio = await StreamBot.download_media(thumbs[-1].file_id, in_memory=True)
-    except Exception:
-        logging.exception("Thumb download failed for msg %d", message_id)
-        raise web.HTTPInternalServerError(text="thumb download failed")
-
-    data = bytesio.getvalue() if hasattr(bytesio, "getvalue") else bytes(bytesio)
     return web.Response(
         body=data,
         content_type="image/jpeg",
         headers={
-            "Cache-Control": "public, max-age=86400",
+            "Cache-Control": "public, max-age=86400, immutable",
             "Content-Length": str(len(data)),
         },
     )
