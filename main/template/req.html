@@ -10,66 +10,52 @@
   />
   <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
   <style>
-    /* Plyr theming to match the brand orange + dark UI */
     :root {
       --plyr-color-main: #f97316;
-      --plyr-video-background: #0b1220;
-      --plyr-menu-background: rgba(15, 23, 42, 0.95);
+      --plyr-video-background: #000;
+      --plyr-menu-background: rgba(15, 17, 21, 0.97);
       --plyr-menu-color: #e2e8f0;
     }
-    .plyr--video {
-      border-radius: 0.75rem;
-      overflow: hidden;
-    }
+    .plyr--video { border-radius: 0.75rem; overflow: hidden; }
   </style>
 {% endblock %}
 
 {% block content %}
-  <div class="w-full max-w-4xl" x-data="{ playing: false }">
-    <div class="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md
-                shadow-2xl shadow-black/40 overflow-hidden">
-      <div class="aspect-video bg-black">
-        <{{ tag }} src="{{ src }}" class="player w-full h-full"
-                 playsinline controls></{{ tag }}>
-      </div>
-
-      <div class="px-6 sm:px-8 py-6 space-y-4">
-        <div>
-          <p class="text-xs uppercase tracking-[0.18em] text-brand-400/80">Now playing</p>
-          <h1 class="mt-1.5 text-xl sm:text-2xl font-semibold text-white leading-snug break-all">
-            {{ file_name }}
-          </h1>
-        </div>
-
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3
-                    pt-4 border-t border-white/5">
-          <p class="text-sm text-slate-400">
-            Player not loading?
-            <span class="text-slate-300">Open the stream in VLC for any container.</span>
-          </p>
-
-          <a id="vlcButton"
-             href="vlc://{{ src }}"
-             data-stream-url="{{ src }}"
-             class="group inline-flex items-center justify-center gap-2
-                    rounded-xl px-5 py-2.5 font-semibold text-white
-                    bg-gradient-to-br from-brand-400 to-brand-600
-                    shadow-glow ring-1 ring-brand-400/40
-                    hover:from-brand-300 hover:to-brand-500
-                    active:scale-[0.99] transition">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
-                 class="w-4 h-4 group-hover:translate-x-0.5 transition">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-            Open in VLC
-          </a>
-        </div>
-      </div>
+  <div class="w-full max-w-4xl">
+    <div class="text-center px-2">
+      <h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">TeleDirect</h1>
+      <p class="mt-2 text-sm sm:text-base text-slate-400 break-all">{{ file_name }}</p>
     </div>
 
-    <p class="mt-6 text-center text-xs text-slate-500">
-      Powered by Telegram • @TeleDirect7Bot
-    </p>
+    <div class="mt-8 aspect-video bg-black rounded-xl overflow-hidden">
+      <{{ tag }} src="{{ src }}" class="player w-full h-full"
+               playsinline controls></{{ tag }}>
+    </div>
+
+    <div class="mt-6 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3
+                text-sm text-amber-200/90 text-center">
+      <span class="font-semibold text-amber-200">Note:</span>
+      Player not loading? Open the stream in VLC for any container format.
+    </div>
+
+    <div class="mt-6 flex justify-center">
+      <a id="vlcButton"
+         href="vlc://{{ src }}"
+         data-stream-url="{{ src }}"
+         class="inline-flex items-center justify-center gap-2
+                rounded-lg px-6 py-3 font-semibold text-white
+                bg-brand-500 hover:bg-brand-600 active:bg-brand-700
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300
+                transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+             class="w-4 h-4">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+        Open in VLC
+      </a>
+    </div>
+
+    <p class="mt-10 text-center text-xs text-slate-500">Powered by Telegram · @TeleDirect7Bot</p>
   </div>
 {% endblock %}
 
