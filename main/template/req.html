@@ -29,7 +29,7 @@
         <h2>{{ file_name }}</h2>
         <p class="player-hint">Player not working? Open the stream in VLC.</p>
         <div class="buttons">
-          <a class="ext-button vlc" href="vlc://{{ src }}">
+          <a class="ext-button vlc" href="vlc://{{ src }}" data-stream-url="{{ src }}">
             <span class="ext-button__icon" aria-hidden="true">▶</span>
             <span class="ext-button__label">Open in VLC</span>
           </a>
@@ -63,8 +63,32 @@
           global: true,
         },
       };
+      function buildVlcUrl(streamUrl) {
+        const ua = navigator.userAgent || "";
+        if (/Android/i.test(ua)) {
+          // VLC for Android handles the standard Android Intent URL scheme.
+          // The url-without-scheme + #Intent fragment routes to org.videolan.vlc.
+          const scheme = streamUrl.startsWith("https://") ? "https" : "http";
+          const stripped = streamUrl.replace(/^https?:\/\//, "");
+          return `intent://${stripped}#Intent;scheme=${scheme};package=org.videolan.vlc;type=video/*;end`;
+        }
+        if (/iPad|iPhone|iPod/.test(ua)) {
+          // iOS VLC documents vlc-x-callback as the official scheme.
+          return `vlc-x-callback://x-callback-url/stream?url=${encodeURIComponent(streamUrl)}`;
+        }
+        // Desktop fallback: vlc:// works on Windows (registered by installer),
+        // and is the closest thing on Linux. macOS users may need to open
+        // the URL manually via VLC > File > Open Network.
+        return `vlc://${streamUrl}`;
+      }
+
       document.addEventListener("DOMContentLoaded", () => {
         const player = Plyr.setup(".player", settings);
+
+        const vlcBtn = document.querySelector(".ext-button.vlc");
+        if (vlcBtn && vlcBtn.dataset.streamUrl) {
+          vlcBtn.href = buildVlcUrl(vlcBtn.dataset.streamUrl);
+        }
       });
 
       const options = {
