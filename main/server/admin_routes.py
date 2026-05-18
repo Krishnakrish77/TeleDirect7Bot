@@ -115,27 +115,42 @@ async def admin_home(request: web.Request) -> web.Response:
 
 @routes.post("/admin/enrich")
 async def admin_enrich(request: web.Request) -> web.Response:
-    """Bulk-enrich every catalogue entry that hasn't been touched by TMDB
-    yet. Uses the in-process per-title cache, so series with many episodes
-    contribute one network request total. Form field ``force=1`` re-enriches
-    everything, including entries that already have a tmdb_id.
+    """Fire-and-forget bulk TMDB enrichment.
+
+    Posting here schedules ``enrich_all`` as a background task and returns
+    immediately so the HTTP request doesn't time out — a 95-item pass
+    with caption write-backs takes several minutes. Progress is exposed
+    via /admin/status which the admin page polls.
+
+    Form field ``force=1`` re-enriches even already-tagged entries.
     """
     _require_session(request)
     form = await request.post()
     force = bool(form.get("force"))
-    # Pass StreamBot so the enriched canonical metadata gets written back
-    # to BIN_CHANNEL captions. Telegram's per-channel edit rate limit
-    # (~30/min for bots) is handled by the throttle inside enrich_all.
-    summary = await media_index.enrich_all(bot=StreamBot, force=force)
     from urllib.parse import quote
-    if summary.get("skipped_no_api_key"):
-        flash = "TMDB_API_KEY not set — enrichment skipped"
-    else:
-        flash = (
-            f"Enrichment finished: {summary['enriched']}/{summary['total']} "
-            f"enriched, {summary['failed']} no match"
-        )
+
+    state = media_index.enrichment_state()
+    if state.get("running"):
+        flash = "Enrichment already running — see progress below"
+        raise web.HTTPFound(f"/admin?flash={quote(flash)}")
+
+    import asyncio as _aio
+    _aio.create_task(media_index.enrich_all(bot=StreamBot, force=force))
+    flash = "Enrichment started — leave the page open to watch progress"
     raise web.HTTPFound(f"/admin?flash={quote(flash)}")
+
+
+@routes.get("/admin/status")
+async def admin_status(request: web.Request) -> web.Response:
+    """JSON snapshot of the seed + enrichment progress. The admin page
+    polls this every couple of seconds while either pipeline is active.
+    """
+    _require_session(request)
+    return web.json_response({
+        "seed": media_index.seed_state(),
+        "enrich": media_index.enrichment_state(),
+        "catalogue_size": media_index.size(),
+    }, headers={"Cache-Control": "no-store"})
 
 
 @routes.post("/admin/reindex")

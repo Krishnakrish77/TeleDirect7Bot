@@ -73,6 +73,23 @@ _seeded = False
 # warm-restart can resume scanning without sending a probe.
 _latest_seen_id: int = 0
 
+# In-memory progress state for the two long-running pipelines (seed and
+# enrich). The admin UI polls /admin/status which serialises both.
+_seed_state: dict = {"running": False, "scanned": 0, "total": 0,
+                     "indexed": 0, "started_at": 0.0, "finished_at": 0.0}
+_enrich_state: dict = {"running": False, "done": 0, "total": 0,
+                       "enriched": 0, "failed": 0,
+                       "started_at": 0.0, "finished_at": 0.0,
+                       "last_title": ""}
+
+
+def seed_state() -> dict:
+    return dict(_seed_state)
+
+
+def enrichment_state() -> dict:
+    return dict(_enrich_state)
+
 
 def _to_serializable(item: HubItem) -> dict:
     return {
@@ -403,36 +420,48 @@ async def seed(bot, channel_id: int) -> None:
     if latest_id > _latest_seen_id:
         _latest_seen_id = latest_id
 
-    scanned = 0
     floor = max(1, latest_id - _SEED_DEPTH)
     high = latest_id
+    total_to_scan = high - floor + 1
+    _seed_state.update(
+        running=True,
+        scanned=0,
+        total=total_to_scan,
+        indexed=len(_items),
+        started_at=time.time(),
+        finished_at=0.0,
+    )
     logging.info(
         "media_index: seeding %d…%d (depth=%d)", high, floor, _SEED_DEPTH
     )
-    while high >= floor:
-        ids = list(range(high, max(floor - 1, high - _FETCH_BATCH), -1))
-        try:
-            batch = await bot.get_messages(channel_id, ids)
-        except Exception:
-            logging.exception("media_index: get_messages failed for %d..%d", ids[-1], ids[0])
-            break
-        if not isinstance(batch, list):
-            batch = [batch]
-        async with _lock:
-            for m in batch:
-                item = _item_from_message(m)
-                if item is not None:
-                    _items[item.message_id] = item
-            _persist_unlocked()
-        scanned += len(ids)
-        high -= _FETCH_BATCH
-        # Yield to the loop so a long seed doesn't starve other work.
-        await asyncio.sleep(0)
-
-    _seeded = True
+    try:
+        while high >= floor:
+            ids = list(range(high, max(floor - 1, high - _FETCH_BATCH), -1))
+            try:
+                batch = await bot.get_messages(channel_id, ids)
+            except Exception:
+                logging.exception("media_index: get_messages failed for %d..%d", ids[-1], ids[0])
+                break
+            if not isinstance(batch, list):
+                batch = [batch]
+            async with _lock:
+                for m in batch:
+                    item = _item_from_message(m)
+                    if item is not None:
+                        _items[item.message_id] = item
+                _persist_unlocked()
+            _seed_state["scanned"] += len(ids)
+            _seed_state["indexed"] = len(_items)
+            high -= _FETCH_BATCH
+            # Yield to the loop so a long seed doesn't starve other work.
+            await asyncio.sleep(0)
+    finally:
+        _seeded = True
+        _seed_state["running"] = False
+        _seed_state["finished_at"] = time.time()
     logging.info(
         "media_index: seed done — scanned %d ids, %d entries indexed",
-        scanned, len(_items),
+        _seed_state["scanned"], len(_items),
     )
 
 
@@ -643,6 +672,27 @@ def variants_for_movie(movie_key: str) -> List[HubItem]:
     return vs
 
 
+def _dedup_by_group(items: List[HubItem]) -> List[HubItem]:
+    """Keep at most one item per series_key / movie_key, preserving the
+    input order (which callers expect to be newest-first). Items without
+    a group key pass through.
+    """
+    seen_series: set = set()
+    seen_movie: set = set()
+    out: List[HubItem] = []
+    for it in items:
+        if it.series_key:
+            if it.series_key in seen_series:
+                continue
+            seen_series.add(it.series_key)
+        elif it.movie_key:
+            if it.movie_key in seen_movie:
+                continue
+            seen_movie.add(it.movie_key)
+        out.append(it)
+    return out
+
+
 def pick_heroes(limit: int = 6) -> List[HubItem]:
     """Choose featured items for the landing-page hero carousel.
 
@@ -653,30 +703,38 @@ def pick_heroes(limit: int = 6) -> List[HubItem]:
     3. Any enriched item (poster + canonical title, no copy).
     4. Most recent items in the catalogue, period — at least the hero
        has *something* on a cold start before enrichment lands.
+
+    Each tier is deduplicated by series_key / movie_key so a show with
+    several recent episodes shows up once, not three times.
     """
     by_recent = sorted(_items.values(), key=lambda it: -it.message_id)
 
-    tier1 = [it for it in by_recent if it.backdrop_path and it.overview]
+    tier1 = _dedup_by_group([it for it in by_recent
+                             if it.backdrop_path and it.overview])
     if len(tier1) >= 3:
         return tier1[:limit]
 
-    tier2 = [
+    pool_ids = {id(it) for it in tier1}
+    tier2 = _dedup_by_group([
         it for it in by_recent
-        if it.overview and it not in tier1
-    ]
-    pool = tier1 + tier2
+        if it.overview and id(it) not in pool_ids
+    ])
+    pool = _dedup_by_group(tier1 + tier2)
     if len(pool) >= 3:
         return pool[:limit]
 
-    tier3 = [it for it in by_recent if it.tmdb_id and it not in pool]
-    pool = pool + tier3
+    pool_ids = {id(it) for it in pool}
+    tier3 = _dedup_by_group([
+        it for it in by_recent
+        if it.tmdb_id and id(it) not in pool_ids
+    ])
+    pool = _dedup_by_group(pool + tier3)
     if len(pool) >= 3:
         return pool[:limit]
 
-    # Last resort: pad with the newest unenriched items so the hero shows
-    # *something*. The template handles missing TMDB fields gracefully.
-    tier4 = [it for it in by_recent if it not in pool]
-    return (pool + tier4)[:limit]
+    pool_ids = {id(it) for it in pool}
+    tier4 = _dedup_by_group([it for it in by_recent if id(it) not in pool_ids])
+    return _dedup_by_group(pool + tier4)[:limit]
 
 
 def pick_hero() -> Optional[HubItem]:
@@ -799,10 +857,16 @@ async def persist_canonical_to_bin(bot, message_id: int) -> bool:
     state.
 
     Handles FloodWait by sleeping and retrying; MessageNotModified counts
-    as success (the caption is already what we want). Returns True on
+    as success (the caption is already what we want). When Telegram
+    returns MessageIdInvalid the in-memory entry is stale (the source
+    message was deleted on the channel) — we drop it from the catalogue
+    so subsequent seeds don't repeat the work. Returns True on
     successful edit (or no-op), False on hard failure.
     """
     from pyrogram.errors import FloodWait, MessageNotModified
+    from pyrogram.errors.exceptions.bad_request_400 import (
+        MessageIdInvalid, ChannelInvalid,
+    )
     from main.utils.index_entry import render
     from main.vars import Var
 
@@ -826,6 +890,16 @@ async def persist_canonical_to_bin(bot, message_id: int) -> bool:
         return True
     except MessageNotModified:
         return True
+    except MessageIdInvalid:
+        # Catalogue entry points at a message that no longer exists on
+        # the channel — almost always a previously-deleted upload that
+        # the persisted JSON still remembered. Drop it.
+        logging.info(
+            "media_index: dropping stale entry bin:%d (MESSAGE_ID_INVALID)",
+            message_id,
+        )
+        await remove(message_id)
+        return False
     except FloodWait as e:
         wait = getattr(e, "value", None) or getattr(e, "x", 0) or 1
         logging.warning("FloodWait writing caption bin:%d — sleeping %ss",
@@ -838,10 +912,17 @@ async def persist_canonical_to_bin(bot, message_id: int) -> bool:
                 caption=caption,
             )
             return True
+        except MessageIdInvalid:
+            await remove(message_id)
+            return False
         except Exception:
             logging.exception("Caption write failed after FloodWait for bin:%d",
                               message_id)
             return False
+    except ChannelInvalid:
+        # BIN_CHANNEL itself unreachable — abort, don't drop the entry.
+        logging.exception("Caption write failed: BIN_CHANNEL invalid")
+        return False
     except Exception:
         logging.exception("Caption write failed for bin:%d", message_id)
         return False
@@ -970,34 +1051,59 @@ async def enrich_one(message_id: int, bot=None) -> bool:
 async def enrich_all(bot=None, force: bool = False) -> dict:
     """Background-enrich every entry that hasn't been enriched yet.
 
-    With ``force=True`` re-enriches everything, including entries that
-    already have TMDB data. Episodes of the same series share TMDB calls
-    via the tmdb module's in-process cache so a long-running show makes
-    only one network round trip per enrichment pass.
+    Populates ``_enrich_state`` as it goes so the admin UI can poll for
+    live progress. With ``force=True`` re-enriches everything, including
+    entries that already have TMDB data. Episodes of the same series
+    share TMDB calls via the tmdb module's in-process cache so a
+    long-running show makes only one network round trip per pass.
     """
+    if _enrich_state["running"]:
+        return {"total": len(_items), "enriched": 0, "already_running": True}
+
     if not tmdb.is_configured():
         return {"total": len(_items), "enriched": 0, "skipped_no_api_key": True}
 
-    ids = list(_items.keys())
-    enriched = 0
-    failed = 0
-    for mid in ids:
-        item = _items.get(mid)
-        if item is None:
-            continue
-        if not force and item.tmdb_id:
-            continue
-        ok = await enrich_one(mid, bot=bot)
-        if ok:
-            enriched += 1
-        else:
-            failed += 1
-        # Yield to the loop so the web server stays responsive during a
-        # bulk enrich. Sleep slightly longer when writing back to BIN to
-        # stay under Telegram's per-channel editMessage rate limit
-        # (~30/minute for bots).
-        await asyncio.sleep(2.0 if bot is not None else 0)
-    return {"total": len(_items), "enriched": enriched, "failed": failed}
+    targets = [
+        mid for mid, it in _items.items()
+        if force or not it.tmdb_id
+    ]
+
+    _enrich_state.update(
+        running=True,
+        done=0,
+        total=len(targets),
+        enriched=0,
+        failed=0,
+        started_at=time.time(),
+        finished_at=0.0,
+        last_title="",
+    )
+
+    try:
+        for mid in targets:
+            item = _items.get(mid)
+            if item is None:
+                _enrich_state["done"] += 1
+                continue
+            _enrich_state["last_title"] = item.title or item.file_name or f"bin:{mid}"
+            ok = await enrich_one(mid, bot=bot)
+            _enrich_state["done"] += 1
+            if ok:
+                _enrich_state["enriched"] += 1
+            else:
+                _enrich_state["failed"] += 1
+            # Throttle to stay under Telegram's per-channel editMessage
+            # rate limit (~30/minute for bots) when we're writing back.
+            await asyncio.sleep(2.0 if bot is not None else 0)
+    finally:
+        _enrich_state["running"] = False
+        _enrich_state["finished_at"] = time.time()
+
+    return {
+        "total": len(targets),
+        "enriched": _enrich_state["enriched"],
+        "failed": _enrich_state["failed"],
+    }
 
 
 async def reindex_all() -> dict:
