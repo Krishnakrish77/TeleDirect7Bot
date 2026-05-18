@@ -1137,6 +1137,25 @@ def pick_hero() -> Optional[HubItem]:
     return heroes[0] if heroes else None
 
 
+def _hub_int_env(name: str, default: int, *, lo: int = 1, hi: int = 50) -> int:
+    raw = (os.environ.get(name, "") or "").strip()
+    if not raw:
+        return default
+    try:
+        n = int(raw)
+    except ValueError:
+        return default
+    return max(lo, min(n, hi))
+
+
+# Genre-shelf cap is env-tunable (``HUB_GENRE_SHELVES``, default 3).
+# Bump it when the catalogue has lots of TMDB-enriched items and you
+# want the landing page to read deeper without clicking through to a
+# genre filter. Clamped to [1, 20] so a typo can't blow up rendering.
+def _genre_shelf_count() -> int:
+    return _hub_int_env("HUB_GENRE_SHELVES", 3, lo=1, hi=20)
+
+
 def shelves(per_shelf: int = 25) -> List[dict]:
     """Curated horizontal rows for the hub's no-filter landing view.
 
@@ -1221,8 +1240,10 @@ def shelves(per_shelf: int = 25) -> List[dict]:
     if by_genre:
         # For each genre, walk the items and emit the right card (group
         # for series/movie variants, plain HubItem otherwise) — same
-        # promotion logic as the all_cards bucketing above.
-        genre_rows = sorted(by_genre.items(), key=lambda kv: -len(kv[1]))[:3]
+        # promotion logic as the all_cards bucketing above. Cap from
+        # env so operators can show more rows on heavily-enriched
+        # catalogues.
+        genre_rows = sorted(by_genre.items(), key=lambda kv: -len(kv[1]))[:_genre_shelf_count()]
         for genre, members in genre_rows:
             seen_series: set = set()
             seen_movie: set = set()
