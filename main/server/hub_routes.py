@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlencode
 
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -63,13 +64,35 @@ def _is_htmx(request: web.Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
 
-def _html(body: str) -> web.Response:
+def _html(body: str, push_url: Optional[str] = None) -> web.Response:
+    headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+    if push_url is not None:
+        headers["HX-Push-Url"] = push_url
     return web.Response(
         text=body,
         content_type="text/html",
         charset="utf-8",
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        headers=headers,
     )
+
+
+def _canonical_url(params: dict) -> str:
+    """Build a clean URL with only the active (non-default) filters set, so
+    htmx's hx-push-url doesn't leave empty ?q=&year=&... query strings in
+    the address bar when a filter gets cleared."""
+    qs = {}
+    if params.get("q"):
+        qs["q"] = params["q"]
+    if params.get("tag"):
+        qs["tag"] = params["tag"]
+    if params.get("year"):
+        qs["year"] = params["year"]
+    if params.get("quality"):
+        qs["quality"] = params["quality"]
+    sort = params.get("sort") or "newest"
+    if sort != "newest":
+        qs["sort"] = sort
+    return "/" if not qs else f"/?{urlencode(qs)}"
 
 
 def _parse_filters(request: web.Request) -> dict:
@@ -146,7 +169,10 @@ async def hub_home(request: web.Request) -> web.Response:
     empty = _empty_text(params)
 
     if _is_htmx(request):
-        return _html(await _render_grid(items, next_cursor, empty, params))
+        return _html(
+            await _render_grid(items, next_cursor, empty, params),
+            push_url=_canonical_url(params),
+        )
 
     return _html(await _render_page(items, next_cursor, empty, params))
 

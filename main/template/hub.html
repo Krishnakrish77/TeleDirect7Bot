@@ -27,10 +27,9 @@
       method="get"
       class="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto] gap-3"
       hx-get="/"
-      hx-trigger="input changed delay:300ms from:find input[type=search], change from:find select"
+      hx-trigger="input changed delay:300ms, change"
       hx-target="#grid"
       hx-swap="innerHTML"
-      hx-push-url="true"
       hx-include="#filters"
     >
       <label class="relative block">

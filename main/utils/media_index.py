@@ -176,31 +176,34 @@ def _load() -> None:
 
 
 async def seed(bot, channel_id: int) -> None:
-    """Populate the index from BIN_CHANNEL history. Sends a probe to learn
-    the latest message id, then iterates backward fetching by id batches.
-    Safe to call multiple times — already-seen entries get refreshed."""
+    """Populate the index from BIN_CHANNEL history. Reads the latest message
+    id via get_chat_history (no probe needed) and iterates backward fetching
+    by id batches. Safe to call multiple times — already-seen entries get
+    refreshed."""
     global _seeded
     if _seeded:
         return
 
     _load()  # Restore whatever was on disk first.
 
+    latest_id: Optional[int] = None
     try:
-        probe = await bot.send_message(channel_id, "🔍 seeding catalogue…")
+        async for msg in bot.get_chat_history(channel_id, limit=1):
+            latest_id = msg.id
+            break
     except Exception:
-        logging.exception("media_index: probe send failed; seed skipped")
+        logging.exception("media_index: failed to read latest id; seed skipped")
         _seeded = True
         return
 
-    latest_id = probe.id
-    try:
-        await probe.delete()
-    except Exception:
-        logging.debug("media_index: probe delete failed (non-fatal)")
+    if latest_id is None:
+        logging.info("media_index: BIN_CHANNEL is empty; nothing to seed")
+        _seeded = True
+        return
 
     scanned = 0
     floor = max(1, latest_id - _SEED_DEPTH)
-    high = latest_id - 1
+    high = latest_id
     logging.info(
         "media_index: seeding %d…%d (depth=%d)", high, floor, _SEED_DEPTH
     )
