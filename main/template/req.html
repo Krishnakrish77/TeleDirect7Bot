@@ -22,11 +22,12 @@
     .plyr--video .plyr__video-wrapper { height: 100%; }
     .plyr--video video { width: 100%; height: 100%; object-fit: contain; }
 
-    /* Hide the bare <video> element until Plyr wraps it so the browser's
-       native controls don't flash before initialization. .plyr ancestor
-       means Plyr has injected its wrapper and is ready to show. */
-    .player:not(.plyr__video-embed):not([data-plyr-ready]) { visibility: hidden; }
-    .plyr .player { visibility: visible; }
+    /* Hide the bare <video> until Plyr wraps it so any pre-wrap state is
+       never painted. Once Plyr.setup() runs it inserts .plyr / .plyr__
+       video-wrapper between the .aspect-video container and the <video>,
+       so this direct-child selector stops matching and the video becomes
+       visible without needing a higher-specificity override. */
+    .aspect-video > video.player { visibility: hidden; }
   </style>
 {% endblock %}
 
