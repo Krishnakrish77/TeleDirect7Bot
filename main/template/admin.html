@@ -447,10 +447,10 @@
            class="fixed inset-0 z-30 grid place-items-center bg-black/70 backdrop-blur-sm p-4">
         <div @click.outside="editing = null"
              class="w-full max-w-lg rounded-xl bg-ink-900 border border-white/10
-                    shadow-2xl">
+                    shadow-2xl max-h-[90vh] flex flex-col">
           <form method="post" :action="'/admin/edit/' + editing.id"
-                class="divide-y divide-white/5">
-            <header class="px-5 py-3 flex items-center justify-between">
+                class="flex flex-col min-h-0 flex-1 divide-y divide-white/5">
+            <header class="px-5 py-3 flex items-center justify-between flex-shrink-0">
               <h2 class="text-base font-semibold text-white">
                 Edit bin:<span x-text="editing.id"></span>
               </h2>
@@ -458,7 +458,12 @@
                       class="text-slate-400 hover:text-white">✕</button>
             </header>
 
-            <div class="px-5 py-4 space-y-3">
+            {# Scrollable body — the modal can grow taller than the
+               viewport once the TMDB preview card renders, so we
+               cap the container at 90vh and let the body region
+               scroll internally. Header + footer stay anchored so
+               the Save button is always reachable. #}
+            <div class="px-5 py-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
               <label class="block">
                 <span class="text-xs uppercase tracking-wider text-slate-400">Title</span>
                 <input type="text" name="title" required
@@ -619,7 +624,7 @@
               </div>
             </div>
 
-            <footer class="px-5 py-3 flex items-center justify-end gap-2">
+            <footer class="px-5 py-3 flex items-center justify-end gap-2 flex-shrink-0">
               <button type="button" @click="editing = null"
                       class="px-3 py-1.5 rounded text-sm
                              bg-ink-800 text-slate-300 border border-white/5
