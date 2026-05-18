@@ -525,6 +525,49 @@ _SORT_KEYS = {
 }
 
 
+def _haystack(item: HubItem) -> str:
+    """Searchable text pulled from every field a user might query against.
+
+    Lowercased once at search time — cheap on a single-thousand-item
+    catalogue and avoids paying for it per substring comparison.
+    """
+    return " ".join([
+        item.title.lower(),
+        item.series_title.lower(),
+        item.description.lower(),
+        item.overview.lower(),
+        item.file_name.lower(),
+        item.imdb_id.lower(),
+        " ".join(item.tags),
+        " ".join(g.lower() for g in item.tmdb_genres),
+    ])
+
+
+def _fuzzy_score(q: str, item: HubItem) -> float:
+    """Word-level fuzzy ratio against the item's most-display-relevant
+    title fields. Returns 0 if no token clears the 0.75 threshold so
+    misspellings stay forgiving but unrelated titles don't leak in.
+    """
+    import difflib
+    candidates = [item.title.lower(), item.series_title.lower()]
+    best = 0.0
+    for cand in candidates:
+        if not cand:
+            continue
+        # Whole-string ratio first — catches "samsram" vs "samsaram".
+        score = difflib.SequenceMatcher(None, q, cand).ratio()
+        if score > best:
+            best = score
+        # Then token-level — catches "minsaram" in "samsaram adhu minsaram".
+        for word in cand.split():
+            if len(word) < 3:
+                continue
+            score = difflib.SequenceMatcher(None, q, word).ratio()
+            if score > best:
+                best = score
+    return best if best >= 0.75 else 0.0
+
+
 def _matches(item: HubItem, q: str, year: Optional[int], quality: str, tag: str) -> bool:
     if year is not None and item.year != year:
         return False
@@ -534,13 +577,13 @@ def _matches(item: HubItem, q: str, year: Optional[int], quality: str, tag: str)
         return False
     if q:
         ql = q.lower().lstrip("#")
-        haystack = " ".join([
-            item.title.lower(),
-            item.description.lower(),
-            " ".join(item.tags),
-        ])
-        if ql not in haystack:
-            return False
+        if ql in _haystack(item):
+            return True
+        # Fuzzy fallback — only for queries 3+ chars so a stray keystroke
+        # doesn't sweep in the whole catalogue.
+        if len(ql) >= 3 and _fuzzy_score(ql, item) > 0:
+            return True
+        return False
     return True
 
 
@@ -720,6 +763,82 @@ def episodes_for_series(series_key: str) -> List[HubItem]:
     eps = [it for it in _items.values() if it.series_key == series_key]
     eps.sort(key=lambda e: (e.season or 0, e.episode or 0, e.message_id))
     return eps
+
+
+def suggest(q: str, limit: int = 8) -> List[dict]:
+    """Lightweight search for the nav dropdown.
+
+    Walks the catalogue once, scoring each item; returns the top N as
+    plain dicts suitable for JSON response (small enough to keep the
+    HTTP round-trip snappy). Collapses series episodes into one row per
+    series_key, and movie variants into one row per movie_key, so a
+    show with 10 episodes doesn't drown out unrelated matches.
+    """
+    if not q or len(q.strip()) < 1:
+        return []
+    ql = q.strip().lower().lstrip("#")
+
+    scored: List = []
+    for it in _items.values():
+        hay = _haystack(it)
+        score = 0.0
+        if ql in it.title.lower() or ql in it.series_title.lower():
+            score = 1.0  # title-substring is the strongest signal
+        elif ql in hay:
+            score = 0.6  # substring elsewhere (description, genres, file)
+        elif len(ql) >= 3:
+            fuzzy = _fuzzy_score(ql, it)
+            if fuzzy > 0:
+                score = fuzzy * 0.8  # fuzzy under exact substring
+        if score > 0:
+            scored.append((score, it))
+
+    if not scored:
+        return []
+
+    # Highest score first, ties broken by recency.
+    scored.sort(key=lambda x: (-x[0], -x[1].message_id))
+
+    # Collapse by group so a multi-episode series shows once.
+    seen_series: set = set()
+    seen_movie: set = set()
+    suggestions: List[dict] = []
+    for score, it in scored:
+        if it.series_key:
+            if it.series_key in seen_series:
+                continue
+            seen_series.add(it.series_key)
+            url = f"/series/{it.series_key}"
+            title = it.series_title or it.title
+            kind = "series"
+        elif it.movie_key:
+            if it.movie_key in seen_movie:
+                continue
+            seen_movie.add(it.movie_key)
+            # MovieGroup page only exists when there are 2+ variants; we
+            # can't tell from a single item here without scanning, so
+            # always link to /watch and let users click into variants
+            # from there if needed.
+            url = f"/watch/{it.secure_hash}{it.message_id}"
+            title = it.title
+            kind = "movie"
+        else:
+            url = f"/watch/{it.secure_hash}{it.message_id}"
+            title = it.title
+            kind = "movie"
+        suggestions.append({
+            "title": title,
+            "year": it.year,
+            "kind": kind,
+            "url": url,
+            "poster_path": it.poster_path,
+            "secure_hash": it.secure_hash,
+            "message_id": it.message_id,
+        })
+        if len(suggestions) >= limit:
+            break
+
+    return suggestions
 
 
 def variants_for_movie(movie_key: str) -> List[HubItem]:

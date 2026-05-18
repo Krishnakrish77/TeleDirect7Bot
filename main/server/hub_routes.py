@@ -279,6 +279,26 @@ async def favicon(_request: web.Request) -> web.Response:
     )
 
 
+@routes.get("/search/suggest")
+async def search_suggest(request: web.Request) -> web.Response:
+    """Top-N matches for the nav dropdown.
+
+    Cheap enough to run on every keystroke (debounced client-side):
+    ~100us per item even for 1000-item catalogues. Returns a JSON list
+    of {title, year, kind, url, poster_path, secure_hash, message_id}.
+    """
+    q = (request.query.get("q") or "").strip()
+    try:
+        limit = max(1, min(20, int(request.query.get("limit") or 8)))
+    except ValueError:
+        limit = 8
+    results = media_index.suggest(q, limit=limit) if q else []
+    return web.json_response(
+        results,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @routes.get(r"/movie/{key:[a-z0-9][a-z0-9:\-]*}")
 async def hub_movie(request: web.Request) -> web.Response:
     """One movie: list every upload variant so the user picks which to play."""

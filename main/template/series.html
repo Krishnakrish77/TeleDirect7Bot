@@ -52,14 +52,58 @@
       {% endif %}
     </header>
 
+    {# Client-side episode filter. No server roundtrip — just hides
+       non-matching <li>s by data-title substring match. #}
+    <div x-data="{
+           q: '',
+           filter(value) {
+             const v = (value || '').trim().toLowerCase();
+             this.q = v;
+             const lis = $root.querySelectorAll('li[data-ep-title]');
+             let hidden = 0;
+             lis.forEach(li => {
+               const title = li.dataset.epTitle || '';
+               const match = !v || title.includes(v);
+               li.style.display = match ? '' : 'none';
+               if (!match) hidden++;
+             });
+             // Hide empty season sections so the layout doesn't keep
+             // dead headers around.
+             $root.querySelectorAll('section[data-season]').forEach(s => {
+               const any = Array.from(s.querySelectorAll('li[data-ep-title]'))
+                                .some(li => li.style.display !== 'none');
+               s.style.display = any ? '' : 'none';
+             });
+           }
+         }"
+         class="mb-6">
+      <label class="relative block max-w-md">
+        <span class="sr-only">Filter episodes</span>
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
+             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
+        </svg>
+        <input type="search"
+               placeholder="Filter episodes…"
+               @input="filter($event.target.value)"
+               class="w-full pl-9 pr-3 py-2 rounded-lg
+                      bg-ink-800/70 text-sm text-slate-100 placeholder-slate-500
+                      border border-white/5
+                      focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                      transition" />
+      </label>
+    </div>
+
     {% for block in season_blocks %}
-      <section class="mb-10">
+      <section data-season="{{ block.season or 'misc' }}" class="mb-10">
         <h2 class="text-lg font-semibold text-slate-200 mb-3">
           {% if block.season %}Season {{ block.season }}{% else %}Episodes{% endif %}
         </h2>
         <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {% for ep in block.episodes %}
-            <li>
+            <li data-ep-title="{{ (ep.title or '') | lower }} {{ (ep.file_name or '') | lower }}{% if ep.season and ep.episode %} s{{ '%02d' % ep.season }}e{{ '%02d' % ep.episode }}{% endif %}">
               <a href="/watch/{{ ep.secure_hash }}{{ ep.message_id }}"
                  class="group flex gap-3 p-3 rounded-lg bg-ink-800/60 border border-white/5
                         hover:border-brand-400/40 hover:bg-ink-800 transition-colors">

@@ -30,27 +30,110 @@
         TeleDirect
       </a>
 
-      <label class="relative flex-1 max-w-md ml-auto">
-        <span class="sr-only">Search</span>
-        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
-             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round"
-                d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
-        </svg>
-        <input
-          type="search"
-          name="q"
-          value="{{ params.q }}"
-          placeholder="Search…"
-          autocomplete="off"
-          class="w-full pl-9 pr-3 py-2 rounded-lg
-                 bg-ink-800/70 text-sm text-slate-100 placeholder-slate-500
-                 border border-white/5
-                 focus:outline-none focus:ring-2 focus:ring-brand-400/60 focus:border-brand-400/60
-                 transition"
-        />
-      </label>
+      {# Live suggestion dropdown around the nav search input. Hits
+         /search/suggest on every keystroke (debounced 150ms client-side)
+         and shows top matches with poster + title + year + type. The
+         dropdown owns its own Alpine state so it can run alongside the
+         page-level HTMX form. Keyboard: ArrowUp/Down navigates,
+         Enter jumps, Escape closes. #}
+      <div class="relative flex-1 max-w-md ml-auto"
+           x-data="{
+             items: [],
+             active: -1,
+             open: false,
+             query: '',
+             timer: null,
+             schedule(v) {
+               this.query = v;
+               clearTimeout(this.timer);
+               if (!v || v.trim().length < 1) { this.items = []; this.open = false; return; }
+               this.timer = setTimeout(() => this.fetch(v.trim()), 150);
+             },
+             async fetch(v) {
+               try {
+                 const r = await fetch('/search/suggest?q=' + encodeURIComponent(v) + '&limit=8');
+                 if (!r.ok) return;
+                 this.items = await r.json();
+                 this.active = -1;
+                 this.open = this.items.length > 0;
+               } catch (e) { /* swallow */ }
+             },
+             move(delta) {
+               if (!this.items.length) return;
+               this.active = (this.active + delta + this.items.length) % this.items.length;
+             },
+             go(idx) {
+               if (idx >= 0 &amp;&amp; idx < this.items.length) {
+                 window.location = this.items[idx].url;
+               }
+             },
+             posterUrl(item) {
+               return item.poster_path
+                 ? 'https://image.tmdb.org/t/p/w92' + item.poster_path
+                 : '/thumb/' + item.secure_hash + item.message_id + '.jpg';
+             },
+           }"
+           @click.outside="open = false"
+           @keydown.escape.window="open = false">
+        <label class="relative block">
+          <span class="sr-only">Search</span>
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
+               xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
+          </svg>
+          <input
+            type="search"
+            name="q"
+            value="{{ params.q }}"
+            placeholder="Search…"
+            autocomplete="off"
+            @input="schedule($event.target.value)"
+            @focus="if (items.length) open = true"
+            @keydown.arrow-down.prevent="move(1); open = true"
+            @keydown.arrow-up.prevent="move(-1)"
+            @keydown.enter="if (active >= 0) { $event.preventDefault(); go(active); }"
+            class="w-full pl-9 pr-3 py-2 rounded-lg
+                   bg-ink-800/70 text-sm text-slate-100 placeholder-slate-500
+                   border border-white/5
+                   focus:outline-none focus:ring-2 focus:ring-brand-400/60 focus:border-brand-400/60
+                   transition"
+          />
+        </label>
+
+        <div x-show="open &amp;&amp; items.length"
+             x-transition.opacity.duration.150ms
+             x-cloak
+             class="absolute right-0 left-0 top-full mt-2 z-40
+                    bg-ink-900/98 backdrop-blur border border-white/10
+                    rounded-lg shadow-2xl overflow-hidden">
+          <ul class="max-h-96 overflow-y-auto py-1">
+            <template x-for="(item, idx) in items" :key="item.url">
+              <li>
+                <a :href="item.url"
+                   @mouseenter="active = idx"
+                   :class="active === idx
+                           ? 'bg-brand-500/15 text-white'
+                           : 'text-slate-200 hover:bg-ink-800'"
+                   class="flex items-center gap-3 px-3 py-2 transition-colors">
+                  <img :src="posterUrl(item)" alt="" loading="lazy"
+                       onerror="this.style.visibility='hidden'"
+                       class="w-9 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium truncate" x-text="item.title"></p>
+                    <p class="text-xs text-slate-500 tabular-nums">
+                      <span x-text="item.year || ''"></span>
+                      <span class="ml-2 uppercase tracking-wider text-[10px]"
+                            x-text="item.kind"></span>
+                    </p>
+                  </div>
+                </a>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
     </header>
 
     {% if heroes and not (params.q or params.tag or params.year or params.quality) %}
