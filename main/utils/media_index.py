@@ -1178,11 +1178,24 @@ async def persist_canonical_to_bin(bot, message_id: int) -> bool:
     except MessageNotModified:
         return True
     except MessageIdInvalid:
-        # Catalogue entry points at a message that no longer exists on
-        # the channel — almost always a previously-deleted upload that
-        # the persisted JSON still remembered. Drop it.
+        # MessageIdInvalid is overloaded: the message is either truly
+        # gone OR the bot doesn't own it (admin posted directly to the
+        # channel rather than forwarded through the bot). Probe first
+        # so we don't shred the catalogue every time enrichment writes
+        # back to a non-bot-owned video.
+        try:
+            probe = await bot.get_messages(Var.BIN_CHANNEL, message_id)
+            still_exists = probe is not None and not getattr(probe, "empty", False)
+        except Exception:
+            still_exists = False
+        if still_exists:
+            logging.info(
+                "media_index: bin:%d not bot-owned; in-memory enrichment kept",
+                message_id,
+            )
+            return True
         logging.info(
-            "media_index: dropping stale entry bin:%d (MESSAGE_ID_INVALID)",
+            "media_index: dropping stale entry bin:%d (genuinely missing)",
             message_id,
         )
         await remove(message_id)
@@ -1208,6 +1221,14 @@ async def persist_canonical_to_bin(bot, message_id: int) -> bool:
             )
             return True
         except MessageIdInvalid:
+            # Same probe-before-drop logic on the retry path.
+            try:
+                probe = await bot.get_messages(Var.BIN_CHANNEL, message_id)
+                still_exists = probe is not None and not getattr(probe, "empty", False)
+            except Exception:
+                still_exists = False
+            if still_exists:
+                return True
             await remove(message_id)
             return False
         except Exception:
