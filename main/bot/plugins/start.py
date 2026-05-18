@@ -76,8 +76,9 @@ async def admin_link(bot, message):
     await message.reply_text(
         text=(
             "🔐 **Admin access**\n\n"
-            f"One-time link (valid 15 min):\n{url}\n\n"
-            "Visiting it sets a session cookie good for the next hour."
+            f"{url}\n\n"
+            "• Open this link within **15 minutes** — it expires after that.\n"
+            "• Once you open it, your admin session stays signed in for **1 hour**."
         ),
         disable_web_page_preview=True,
         quote=True,

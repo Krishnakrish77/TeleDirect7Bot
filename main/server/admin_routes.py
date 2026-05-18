@@ -73,10 +73,18 @@ async def admin_login(request: web.Request) -> web.Response:
     token = request.query.get("t", "")
     user_id = admin_auth.verify_one_time(token) if token else None
     if user_id is None:
-        return _html(
-            "<h1>Admin link invalid or expired</h1>"
-            "<p>DM <code>/admin</code> to the bot to get a new link.</p>",
-            status=403,
+        # Lazy import — the server module owns the renderer and importing
+        # at module load would create a circular dependency.
+        from main.server import render_error
+        return await render_error(
+            403,
+            title="Admin link invalid or expired",
+            message=(
+                "One-time admin links expire 15 minutes after they're "
+                "issued. DM <code>/admin</code> to the bot to get a new one."
+            ),
+            action_href="https://t.me/" + (StreamBot.username or ""),
+            action_label="Open bot in Telegram",
         )
     session = admin_auth.issue_session_token(user_id)
     resp = web.HTTPFound("/admin")

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} · TeleDirect{% endblock %}
+
+{% block content %}
+  <div class="w-full max-w-md mx-auto pt-12 sm:pt-20 text-center">
+    <p class="text-[10px] uppercase tracking-[0.3em] text-slate-500 mb-4
+              tabular-nums">
+      Error {{ status }}
+    </p>
+
+    <div class="mx-auto mb-6 grid place-items-center w-16 h-16 rounded-2xl
+                bg-ink-800/70 border border-white/5 text-brand-300">
+      {% if status == 403 %}
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" class="w-8 h-8">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/>
+        </svg>
+      {% elif status == 404 %}
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" class="w-8 h-8">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/>
+        </svg>
+      {% elif status >= 500 %}
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" class="w-8 h-8">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
+        </svg>
+      {% else %}
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" class="w-8 h-8">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+        </svg>
+      {% endif %}
+    </div>
+
+    <h1 class="text-2xl sm:text-3xl font-bold text-white mb-3">{{ title }}</h1>
+
+    {% if message %}
+      <p class="text-sm text-slate-400 leading-relaxed mb-6">
+        {{ message | safe }}
+      </p>
+    {% endif %}
+
+    <div class="flex flex-wrap justify-center gap-3">
+      {% if action_href and action_label %}
+        <a href="{{ action_href }}"
+           class="inline-flex items-center gap-2 rounded-lg
+                  px-4 py-2 text-sm font-medium
+                  bg-brand-500 text-white hover:bg-brand-600
+                  transition-colors">
+          {{ action_label }}
+        </a>
+      {% endif %}
+      <a href="/"
+         class="inline-flex items-center gap-2 rounded-lg
+                px-4 py-2 text-sm font-medium
+                bg-ink-800 text-slate-300 border border-white/5
+                hover:bg-ink-700 hover:text-white transition-colors">
+        Back to library
+      </a>
+    </div>
+  </div>
+{% endblock %}

@@ -305,7 +305,9 @@ async def hub_movie(request: web.Request) -> web.Response:
     key = request.match_info["key"]
     variants = media_index.variants_for_movie(key)
     if not variants:
-        raise web.HTTPNotFound(text="movie not found")
+        raise web.HTTPNotFound(
+            text="We couldn't find that movie in the catalogue.",
+        )
 
     # Prefer the enriched variant for the page's TMDB metadata — any one
     # variant works since they all point at the same film.
@@ -327,7 +329,9 @@ async def hub_series(request: web.Request) -> web.Response:
     key = request.match_info["key"]
     episodes = media_index.episodes_for_series(key)
     if not episodes:
-        raise web.HTTPNotFound(text="series not found")
+        raise web.HTTPNotFound(
+            text="We couldn't find that series in the catalogue.",
+        )
 
     # Numbered seasons in the catalogue (excludes the None bucket).
     numbered_seasons = sorted({e.season for e in episodes if e.season})
