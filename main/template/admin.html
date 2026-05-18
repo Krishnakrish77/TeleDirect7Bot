@@ -11,6 +11,9 @@
          selected: [],
          allChecked: false,
          editing: null,
+         query: '',
+         filter: 'all',
+         visibleCount: 0,
          openEdit(btn) {
            const d = btn.dataset;
            this.editing = {
@@ -20,8 +23,31 @@
              tags: d.tags || '',
              description: d.description || '',
            };
+         },
+         rowVisible(row) {
+           const ds = row.dataset;
+           if (this.filter === 'unenriched' &amp;&amp; ds.enriched === '1') return false;
+           if (this.filter === 'enriched' &amp;&amp; ds.enriched !== '1') return false;
+           if (this.filter === 'series' &amp;&amp; ds.kind !== 'series') return false;
+           if (this.filter === 'movies' &amp;&amp; ds.kind !== 'movie') return false;
+           if (this.filter === 'no-poster' &amp;&amp; ds.hasPoster === '1') return false;
+           const q = this.query.trim().toLowerCase();
+           if (q &amp;&amp; !(ds.searchable || '').includes(q)) return false;
+           return true;
+         },
+         refresh() {
+           const rows = this.$root.querySelectorAll('tbody tr[data-searchable]');
+           let n = 0;
+           rows.forEach(r => {
+             const show = this.rowVisible(r);
+             r.style.display = show ? '' : 'none';
+             if (show) n++;
+           });
+           this.visibleCount = n;
          }
-       }">
+       }"
+       x-init="$nextTick(() => refresh())"
+       x-effect="query; filter; refresh()">
     <header class="mb-6 flex items-end justify-between gap-3">
       <div>
         <h1 class="text-3xl font-bold text-white tracking-tight">Admin</h1>
@@ -193,6 +219,48 @@
         </div>
       </div>
 
+      {# Search + filter chips. All client-side — instant filtering of
+         the rendered rows. For catalogues much larger than ~1000 items
+         we'd want server-side pagination, but on a hub-sized dataset
+         this scales fine and the operator gets sub-frame feedback. #}
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <label class="relative flex-1 min-w-[16rem] max-w-md">
+          <span class="sr-only">Search</span>
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
+               xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
+          </svg>
+          <input type="search" placeholder="Search title, file, tag, bin id…"
+                 x-model="query"
+                 class="w-full pl-9 pr-3 py-1.5 text-sm rounded
+                        bg-ink-800/70 text-slate-100 placeholder-slate-500
+                        border border-white/5
+                        focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+        </label>
+
+        <template x-for="chip in [
+              { id: 'all', label: 'All' },
+              { id: 'unenriched', label: 'Unenriched' },
+              { id: 'enriched', label: 'Enriched' },
+              { id: 'series', label: 'Series' },
+              { id: 'movies', label: 'Movies' },
+              { id: 'no-poster', label: 'No poster' }
+            ]" :key="chip.id">
+          <button type="button"
+                  @click="filter = chip.id"
+                  :class="filter === chip.id
+                          ? 'bg-brand-500/20 text-brand-200 border-brand-400/40'
+                          : 'bg-ink-800/60 text-slate-300 border-white/5 hover:bg-ink-800'"
+                  class="px-3 py-1.5 text-xs rounded-full border transition-colors"
+                  x-text="chip.label"></button>
+        </template>
+
+        <span class="ml-auto text-xs text-slate-500 tabular-nums"
+              x-text="`${visibleCount} of {{ catalogue_size }}`"></span>
+      </div>
+
       <div class="overflow-x-auto rounded-lg border border-white/5">
         <table class="w-full text-sm">
           <thead class="text-xs uppercase tracking-wider text-slate-500
@@ -213,7 +281,13 @@
           </thead>
           <tbody>
             {% for item in items %}
-              <tr class="border-b border-white/5 hover:bg-ink-800/40">
+              {%- set kind = 'series' if item.series_key else 'movie' -%}
+              {%- set searchable = ((item.title or '') ~ ' ' ~ (item.series_title or '') ~ ' ' ~ (item.file_name or '') ~ ' ' ~ (item.tags | join(' ')) ~ ' ' ~ (item.imdb_id or '') ~ ' bin:' ~ item.message_id) | lower -%}
+              <tr class="border-b border-white/5 hover:bg-ink-800/40"
+                  data-searchable="{{ searchable }}"
+                  data-kind="{{ kind }}"
+                  data-enriched="{{ '1' if item.tmdb_id else '0' }}"
+                  data-has-poster="{{ '1' if item.poster_path else '0' }}">
                 <td class="px-3 py-2">
                   <input type="checkbox" name="ids" value="{{ item.message_id }}"
                          x-model="selected" />
