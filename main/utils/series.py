@@ -67,6 +67,12 @@ class SeriesMatch:
     season: int
     episode: int
     key: str
+    # The unprocessed title portion captured by the regex, with separators
+    # normalised but case untouched. Callers that want to run a further
+    # cleaner (e.g. dedup.clean_for_search) need the original casing so
+    # heuristics like "leading lowercase word = channel handle" still fire
+    # — the humanised ``title`` field has already capitalised everything.
+    raw_title: str = ""
 
 
 def parse(text: str) -> Optional[SeriesMatch]:
@@ -85,6 +91,10 @@ def parse(text: str) -> Optional[SeriesMatch]:
         if not m:
             continue
         raw_title = m.group("title")
+        # Preserve original casing in raw_title — humanise capitalises
+        # leading lowercase words, which downstream cleaners rely on to
+        # detect channel-handle prefixes.
+        raw_separator_normalised = re.sub(r"[._]+", " ", raw_title).strip()
         title = _humanise_title(raw_title)
         if not title:
             continue
@@ -93,6 +103,7 @@ def parse(text: str) -> Optional[SeriesMatch]:
             season=int(m.group("season")),
             episode=int(m.group("episode")),
             key=slugify(title),
+            raw_title=raw_separator_normalised,
         )
     return None
 

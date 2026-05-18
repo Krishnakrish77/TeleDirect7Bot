@@ -225,10 +225,11 @@ def _item_from_message(message) -> Optional[HubItem]:
 
     if sm:
         # series.parse keeps any leading channel-prefix the filename had
-        # (``rodeo When Life Gives You Tangerines``). Run it through the
-        # same cleaner the movie path uses so series_title is presentable.
+        # (``rodeo When Life Gives You Tangerines``). Feed the un-humanised
+        # raw_title — clean_for_search detects channel handles by leading
+        # lowercase, which the humanise step would have erased.
         from main.utils.dedup import clean_for_search
-        cleaned_series_title = clean_for_search(sm.title) or sm.title
+        cleaned_series_title = clean_for_search(sm.raw_title or sm.title) or sm.title
         series_key = series_parse.slugify(cleaned_series_title) or sm.key
         series_title = cleaned_series_title
         season = sm.season
@@ -1628,13 +1629,13 @@ async def reindex_all(bot=None) -> dict:
 
                 sm = series_parse.parse(it.file_name) or series_parse.parse(it.title)
                 if sm:
-                    # series.parse extracts the title-portion verbatim, so
-                    # ``rodeo When Life Gives You Tangerines S01E14`` keeps
-                    # the channel prefix. Run it through clean_for_search
-                    # to drop leading junk words; if the cleaner empties
-                    # the title, fall back to the raw series-parse output.
+                    # See _item_from_message — feed un-humanised raw_title
+                    # so the lowercase-leading-word heuristic still fires
+                    # against channel prefixes like ``rodeo``.
                     from main.utils.dedup import clean_for_search
-                    cleaned_series_title = clean_for_search(sm.title) or sm.title
+                    cleaned_series_title = (
+                        clean_for_search(sm.raw_title or sm.title) or sm.title
+                    )
                     new_series_key = series_parse.slugify(cleaned_series_title) or sm.key
                     new_series_title = cleaned_series_title
                     new_season = sm.season
