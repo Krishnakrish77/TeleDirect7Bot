@@ -230,14 +230,27 @@
                   {{ item.message_id }}
                 </td>
                 <td class="px-3 py-2 text-right">
+                  {# Payload lives in data-* attributes so Jinja's
+                     autoescape handles all the awkward characters
+                     (quotes, ampersands, newlines, ...) — embedding
+                     them inside an inline JS expression breaks the
+                     attribute when the title has a stray quote. #}
                   <button type="button"
-                          @click="editing = {
-                            id: {{ item.message_id }},
-                            title: {{ item.title | tojson }},
-                            year: {{ (item.year if item.year else '') | tojson }},
-                            tags: {{ (item.tags | join(' ')) | tojson }},
-                            description: {{ item.description | tojson }},
-                          }"
+                          data-id="{{ item.message_id }}"
+                          data-title="{{ item.title }}"
+                          data-year="{{ item.year or '' }}"
+                          data-tags="{{ item.tags | join(' ') }}"
+                          data-description="{{ item.description }}"
+                          @click="
+                            const d = $event.currentTarget.dataset;
+                            editing = {
+                              id: parseInt(d.id, 10),
+                              title: d.title,
+                              year: d.year,
+                              tags: d.tags,
+                              description: d.description,
+                            };
+                          "
                           class="text-xs px-2 py-1 rounded
                                  bg-brand-500/15 text-brand-300
                                  border border-brand-400/30
@@ -252,83 +265,87 @@
       </div>
     </form>
 
-    {# Inline-edit modal. Rendered outside the bulk form so it doesn't nest.
+    {# Inline-edit modal. Rendered outside the bulk form so it doesn't
+       nest. The modal body is wrapped in <template x-if="editing"> so
+       the x-model bindings only mount when editing has a payload —
+       otherwise Alpine tries to read editing.title on null and throws.
        Form action is built from the editing.id payload Alpine populates. #}
-    <div x-show="editing !== null"
-         x-cloak
-         @keydown.escape.window="editing = null"
-         class="fixed inset-0 z-30 grid place-items-center bg-black/70 backdrop-blur-sm p-4">
-      <div @click.outside="editing = null"
-           class="w-full max-w-lg rounded-xl bg-ink-900 border border-white/10
-                  shadow-2xl">
-        <form method="post" :action="'/admin/edit/' + (editing?.id ?? 0)"
-              class="divide-y divide-white/5">
-          <header class="px-5 py-3 flex items-center justify-between">
-            <h2 class="text-base font-semibold text-white">
-              Edit bin:<span x-text="editing?.id"></span>
-            </h2>
-            <button type="button" @click="editing = null"
-                    class="text-slate-400 hover:text-white">✕</button>
-          </header>
+    <template x-if="editing">
+      <div x-cloak
+           @keydown.escape.window="editing = null"
+           class="fixed inset-0 z-30 grid place-items-center bg-black/70 backdrop-blur-sm p-4">
+        <div @click.outside="editing = null"
+             class="w-full max-w-lg rounded-xl bg-ink-900 border border-white/10
+                    shadow-2xl">
+          <form method="post" :action="'/admin/edit/' + editing.id"
+                class="divide-y divide-white/5">
+            <header class="px-5 py-3 flex items-center justify-between">
+              <h2 class="text-base font-semibold text-white">
+                Edit bin:<span x-text="editing.id"></span>
+              </h2>
+              <button type="button" @click="editing = null"
+                      class="text-slate-400 hover:text-white">✕</button>
+            </header>
 
-          <div class="px-5 py-4 space-y-3">
-            <label class="block">
-              <span class="text-xs uppercase tracking-wider text-slate-400">Title</span>
-              <input type="text" name="title" required
-                     x-model="editing.title"
-                     class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
-                            border border-white/5
-                            focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
-            </label>
+            <div class="px-5 py-4 space-y-3">
+              <label class="block">
+                <span class="text-xs uppercase tracking-wider text-slate-400">Title</span>
+                <input type="text" name="title" required
+                       x-model="editing.title"
+                       class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                              border border-white/5
+                              focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+              </label>
 
-            <label class="block">
-              <span class="text-xs uppercase tracking-wider text-slate-400">Year</span>
-              <input type="number" name="year" min="1900" max="2099"
-                     x-model="editing.year"
-                     class="mt-1 w-32 px-3 py-2 rounded bg-ink-800/70 text-slate-100
-                            border border-white/5
-                            focus:outline-none focus:ring-2 focus:ring-brand-400/60
-                            tabular-nums" />
-            </label>
+              <label class="block">
+                <span class="text-xs uppercase tracking-wider text-slate-400">Year</span>
+                <input type="number" name="year" min="1900" max="2099"
+                       x-model="editing.year"
+                       class="mt-1 w-32 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                              border border-white/5
+                              focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                              tabular-nums" />
+              </label>
 
-            <label class="block">
-              <span class="text-xs uppercase tracking-wider text-slate-400">Tags</span>
-              <input type="text" name="tags"
-                     placeholder="space-separated, no # prefix"
-                     x-model="editing.tags"
-                     class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
-                            border border-white/5
-                            focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
-            </label>
+              <label class="block">
+                <span class="text-xs uppercase tracking-wider text-slate-400">Tags</span>
+                <input type="text" name="tags"
+                       placeholder="space-separated, no # prefix"
+                       x-model="editing.tags"
+                       class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                              border border-white/5
+                              focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+              </label>
 
-            <label class="block">
-              <span class="text-xs uppercase tracking-wider text-slate-400">Description</span>
-              <textarea name="description" rows="3"
-                        x-model="editing.description"
-                        class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
-                               border border-white/5
-                               focus:outline-none focus:ring-2 focus:ring-brand-400/60
-                               resize-y"></textarea>
-            </label>
-          </div>
+              <label class="block">
+                <span class="text-xs uppercase tracking-wider text-slate-400">Description</span>
+                <textarea name="description" rows="3"
+                          x-model="editing.description"
+                          class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                 border border-white/5
+                                 focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                                 resize-y"></textarea>
+              </label>
+            </div>
 
-          <footer class="px-5 py-3 flex items-center justify-end gap-2">
-            <button type="button" @click="editing = null"
-                    class="px-3 py-1.5 rounded text-sm
-                           bg-ink-800 text-slate-300 border border-white/5
-                           hover:bg-ink-700 transition-colors">
-              Cancel
-            </button>
-            <button type="submit"
-                    class="px-4 py-1.5 rounded text-sm font-medium
-                           bg-brand-500 text-white
-                           hover:bg-brand-600 transition-colors">
-              Save
-            </button>
-          </footer>
-        </form>
+            <footer class="px-5 py-3 flex items-center justify-end gap-2">
+              <button type="button" @click="editing = null"
+                      class="px-3 py-1.5 rounded text-sm
+                             bg-ink-800 text-slate-300 border border-white/5
+                             hover:bg-ink-700 transition-colors">
+                Cancel
+              </button>
+              <button type="submit"
+                      class="px-4 py-1.5 rounded text-sm font-medium
+                             bg-brand-500 text-white
+                             hover:bg-brand-600 transition-colors">
+                Save
+              </button>
+            </footer>
+          </form>
+        </div>
       </div>
-    </div>
+    </template>
   </div>
 
   <style>[x-cloak] { display: none !important; }</style>
