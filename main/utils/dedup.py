@@ -47,6 +47,32 @@ _NOISE_TOKENS = re.compile(
 # the start.
 _INLINE_HANDLE_RE = re.compile(r"@\w+")
 
+# Words that are NEVER legitimate title content — acronyms, pirate-site
+# brand names, abbreviations. Safe to strip from the start of the title
+# in any context.
+_LEADING_JUNK_ALWAYS = {
+    "idiots", "hdt", "mm", "wmr", "fbm", "snr",
+    "tamilblasters", "1tamilblasters", "tamilmv", "tamilmoviez",
+    "movieztamil", "moviezzclub", "hevchubx", "breakfreemovies",
+    "kickass", "kickass_torrents", "a2dxmovies", "gangtamil",
+    "uhd_tamil", "moviesda",
+    "predvdrip", "prehd", "untouched", "ds4k",
+}
+
+# Words that double as legitimate English title words (Red Sparrow, The
+# Cinematic Universe, ...) but also appear as channel/release markers.
+# Only stripped when an @-prefix or www-domain was already stripped
+# earlier — meaning the cleaner is now inside the channel-noise region.
+_LEADING_JUNK_AFTER_PREFIX = {
+    "red", "rodeo", "world", "mobile", "team", "cinematic",
+    "real", "cf", "mc", "mp", "ms",
+}
+
+# Run-on initialisms left behind by release-group prefixes like
+# ``@R_A_R_B_G_<title>`` once underscores become spaces — strips a
+# leading run of 2+ single-letter tokens.
+_LEADING_INITIALS_RE = re.compile(r"^\s*(?:[a-zA-Z]\s+){2,}")
+
 _YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 
 
@@ -67,35 +93,71 @@ def clean_for_search(title: str, file_name: str = "") -> str:
     text = re.sub(r"(\d{4,})([A-Za-z])", r"\1 \2", text)
     text = re.sub(r"([A-Za-z])(\d{4,})", r"\1 \2", text)
 
-    m = _YEAR_RE.search(text)
-    if m:
-        text = text[: m.start()]
-
-    # Strip leading channel/group prefixes (same patterns movie_key uses).
+    # Strip leading channel/group prefixes BEFORE year detection.
+    # ``@R_A_R_B_G_2001_A_Space_Odyssey_1968_…`` carries the year 2001
+    # inside the release-group name; cutting on it would lose the
+    # actual title. Stripping prefixes first lets the year scan land
+    # on a real year.
+    stripped_prefix = False
     for _ in range(4):
         new = re.sub(r"^\s*\[\w+\]\s*[-·:]?\s*", "", text)
         new = re.sub(r"^\s*@\w+(?:\s+\w+)*?\s+[-·:]\s+", "", new)
         if new == text:
             break
         text = new
+        stripped_prefix = True
 
-    # Fallback for @-prefixes without a separator (``@CC The Perks``,
-    # ``@UnixLinks Jana Nayagan``) — strip just the first @-word so we
-    # don't accidentally eat the whole title.
-    text = re.sub(r"^\s*@\w+\s+", "", text)
+    new = re.sub(r"^\s*@\w+\s+", "", text)
+    if new != text:
+        text = new
+        stripped_prefix = True
 
-    # ``www TamilBlasters buzz Hey Sinamika`` — drop the www and the
-    # uploader-domain words that follow it. Pattern: ``www`` followed by
-    # a few alnum tokens, then ``buzz`` / ``net`` / ``com`` / etc.
-    text = re.sub(
+    new = re.sub(
         r"^\s*www\s+\S+(?:\s+(?:buzz|net|com|org|info|io|cc))?\s+",
         "", text, flags=re.IGNORECASE,
     )
+    if new != text:
+        text = new
+        stripped_prefix = True
 
-    # Strip @channelname tokens wherever they appear. Earlier passes
-    # only caught leading @-prefixes; trailing ones like
-    # ``Good Witch S07E02 @T4TVSeries mkv`` slipped through.
+    # Strip leading single-letter runs (``A R B G`` from @R_A_R_B_G).
+    text = _LEADING_INITIALS_RE.sub("", text)
+
+    # Year detect + cut, in a loop. If the first year is at the very
+    # start (a prefix year), keep walking forward looking for a year
+    # that has actual title text before it — that's the real release
+    # year. Also handles ``1959 - Sleeping Beauty`` (single prefix
+    # year, no second year — the after-side becomes the title).
+    m = _YEAR_RE.search(text)
+    while m:
+        before = text[: m.start()].strip(" -—:·")
+        after = text[m.end():].strip(" -—:·")
+        if before:
+            text = before
+            break
+        if after:
+            text = after
+            m = _YEAR_RE.search(text)
+            continue
+        break
+
+    # Strip @-handles that appear mid-string (trailing handles like
+    # ``Good Witch S07E02 @T4TVSeries mkv``).
     text = _INLINE_HANDLE_RE.sub(" ", text)
+
+    # Drop leading junk markers. ALWAYS-list runs unconditionally —
+    # these are acronyms / pirate-site brand names that never appear
+    # in titles. AFTER_PREFIX-list only runs when a channel/domain
+    # prefix was already stripped, so legitimate titles starting with
+    # ``Red`` or ``World`` survive when there's no prefix context.
+    words = text.split()
+    while words and words[0].lower() in _LEADING_JUNK_ALWAYS:
+        words = words[1:]
+        stripped_prefix = True
+    if stripped_prefix:
+        while words and words[0].lower() in _LEADING_JUNK_AFTER_PREFIX:
+            words = words[1:]
+    text = " ".join(words)
 
     # Strip the release-noise tokens but leave the rest of the title's
     # casing/punctuation intact for natural-language search.
@@ -136,11 +198,24 @@ def movie_key(title: str, year: Optional[int], file_name: str = "") -> str:
     # 2. Year detect + cut. Release flags always trail the year, so
     #    everything after it is throwaway. file_name provides a backup
     #    year for hand-edited captions that dropped it.
+    #
+    #    Special case: if the year is at the very start of the text
+    #    (``1959 - Sleeping Beauty.mp4`` → ``1959 Sleeping Beauty mp4``)
+    #    cutting at the year leaves nothing, but the actual title sits
+    #    AFTER the year. Detect that and cut from the other side.
     detected_year = year
     m = _YEAR_RE.search(text)
     if m:
         detected_year = int(m.group(0))
-        text = text[: m.start()]
+        before = text[: m.start()].strip(" -—:·")
+        after = text[m.end():].strip(" -—:·")
+        # Prefer the side with actual content. If the pre-year side is
+        # empty or just punctuation, use the post-year side as the
+        # title instead.
+        if not before and after:
+            text = after
+        else:
+            text = before or after
     elif detected_year is None and file_name:
         m2 = _YEAR_RE.search(file_name)
         if m2:
