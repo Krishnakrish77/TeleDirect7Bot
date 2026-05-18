@@ -126,6 +126,13 @@ def _best_match(results: List[dict], title: str, year: Optional[int],
     a year but the TMDB candidate's release_date is empty (common for
     announced-but-unreleased films), we still consider it — just with a
     small confidence penalty. Same the other way around.
+
+    The year-boost only applies to candidates that already cleared the
+    title-similarity bar on their own — it can disambiguate two strong
+    matches from different decades, but it never promotes a weak match.
+    Previously a 0.67 similarity (e.g. "Plankton: The Movie" vs query
+    "The Movie") plus a 0.1 year boost would slip past the 0.7
+    threshold, leading to confidently-wrong enrichments.
     """
     best: Tuple[float, Optional[dict]] = (0.0, None)
     for r in results:
@@ -134,16 +141,13 @@ def _best_match(results: List[dict], title: str, year: Optional[int],
         if year is not None and cy is not None and abs(cy - year) > _YEAR_TOLERANCE:
             continue
         score = _similarity(candidate_title, title)
-        # Boost when the year is an exact match — disambiguates two
-        # similarly-titled films from different decades.
+        if score < _TITLE_MATCH_THRESHOLD:
+            continue
         if year is not None and cy == year:
-            score += 0.1
+            score += 0.1  # disambiguator only — doesn't change passes/fails
         elif year is not None and cy is None:
-            # Candidate hasn't been released yet (release_date empty in
-            # TMDB). Plausible match but we lower confidence so a future
-            # exact-year hit would outrank it.
             score *= 0.9
-        if score >= _TITLE_MATCH_THRESHOLD and score > best[0]:
+        if score > best[0]:
             best = (score, r)
     return best[1]
 
