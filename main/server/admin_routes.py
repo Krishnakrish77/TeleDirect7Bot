@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -342,7 +342,7 @@ async def admin_edit(request: web.Request) -> web.Response:
         entry.tags = new_tags
         entry.description = new_description
 
-    status = await _rewrite_caption(message_id, apply)
+    status, reason = await _rewrite_caption(message_id, apply)
 
     # Manual TMDB-id override wins over everything. Fetch the record
     # immediately (this isn't fire-and-forget — admin is waiting for
@@ -386,17 +386,38 @@ async def admin_edit(request: web.Request) -> web.Response:
         if title_changed or year_changed:
             msg += " — re-enrich queued"
     elif status == "local-only":
-        msg = (
-            f"Updated bin:{message_id} in the catalogue. The BIN_CHANNEL "
-            "caption couldn't be edited — Telegram refused the edit. Two "
-            "common causes: (1) the message was posted to the channel "
-            "directly so the bot doesn't own it, or (2) the message was "
-            "FORWARDED into BIN_CHANNEL — Telegram restricts caption "
-            "edits on messages that carry a 'Forwarded from' header even "
-            "for the forwarder. New uploads now use copy() instead of "
-            "forward() to avoid (2); older entries stay editable in "
-            "memory only."
-        )
+        # Surface the specific Telegram error code so the operator
+        # sees the real cause instead of a one-size diagnosis.
+        # https://core.telegram.org/method/messages.editMessage
+        if reason == "edit-time-expired":
+            cause = (
+                "Telegram returned MESSAGE_EDIT_TIME_EXPIRED. Bots can "
+                "only edit their own messages within 48 hours; this "
+                "message is older. The in-memory entry was updated."
+            )
+        elif reason == "author-required":
+            cause = (
+                "Telegram returned MESSAGE_AUTHOR_REQUIRED. Usually "
+                "means the message was forwarded into BIN_CHANNEL (the "
+                "'Forwarded from' header makes the caption non-editable "
+                "even for the forwarder) or posted by another author. "
+                "New uploads now use copy() instead of forward() to "
+                "avoid this; pre-existing forwarded entries stay "
+                "editable in memory only."
+            )
+        elif reason == "message-id-invalid":
+            cause = (
+                "Telegram returned MESSAGE_ID_INVALID but a probe "
+                "confirmed the message still exists. Likely the bot "
+                "lacks edit permission on this specific message. "
+                "In-memory entry was updated."
+            )
+        else:
+            cause = (
+                "Telegram refused the caption edit. The in-memory "
+                "entry was still updated."
+            )
+        msg = f"Updated bin:{message_id} in the catalogue. {cause}"
         if title_changed or year_changed:
             msg += " Re-enrich queued."
     elif status == "removed":
@@ -430,27 +451,25 @@ async def _bulk_delete(ids: List[int]) -> int:
     return deleted
 
 
-async def _rewrite_caption(message_id: int, mutate) -> str:
+async def _rewrite_caption(message_id: int, mutate) -> Tuple[str, str]:
     """Fetch a BIN message, rebuild its IndexEntry, mutate, and persist.
 
-    ``mutate(entry, item)`` modifies the IndexEntry in place. Returns a
-    status string:
-      • ``"written"`` — caption was edited on Telegram and the in-memory
-        entry was refreshed from the rewritten caption.
-      • ``"local-only"`` — Telegram refused the edit (message exists but
-        the bot doesn't own it) so we kept the in-memory mutation but
-        didn't push it.
-      • ``"removed"`` — the message truly no longer exists on the
-        channel; the catalogue entry has been dropped.
+    ``mutate(entry, item)`` modifies the IndexEntry in place. Returns
+    ``(status, reason_code)``:
+
+    Status:
+      • ``"written"`` — caption was edited on Telegram.
+      • ``"local-only"`` — Telegram refused the edit; in-memory only.
+      • ``"removed"`` — the message truly no longer exists.
       • ``"failed"`` — unexpected error; no state changes.
 
-    Telegram errors we expect to see:
-      • MessageIdInvalid — overloaded: either the message is gone OR
-        the bot doesn't own it. We probe with get_messages to tell
-        them apart.
-      • InlineBotRequired / MessageAuthorRequired — same "can't edit"
-        outcome as the not-bot-owned case.
-      • MessageNotModified — same caption, treat as success.
+    ``reason_code`` distinguishes WHY a local-only happened so the
+    admin sees the right diagnosis. Per
+    https://core.telegram.org/method/messages.editMessage the
+    documented edit errors are MESSAGE_ID_INVALID,
+    MESSAGE_AUTHOR_REQUIRED, MESSAGE_EDIT_TIME_EXPIRED, and a few
+    others. We pass through the specific code so the flash message
+    can name the cause instead of guessing.
     """
     from pyrogram.errors import MessageNotModified
     from pyrogram.errors.exceptions.bad_request_400 import MessageIdInvalid
@@ -465,10 +484,21 @@ async def _rewrite_caption(message_id: int, mutate) -> str:
         _UNEDITABLE += (MessageAuthorRequired,)
     except ImportError:
         pass
+    # MESSAGE_EDIT_TIME_EXPIRED — Telegram caps bot self-edits at 48h
+    # for private/group chats. Channels normally don't apply this to
+    # admin posts, but forwarded posts sometimes do.
+    _EDIT_TIME_EXPIRED: tuple = ()
+    try:
+        from pyrogram.errors.exceptions.bad_request_400 import (
+            MessageEditTimeExpired,
+        )
+        _EDIT_TIME_EXPIRED += (MessageEditTimeExpired,)
+    except ImportError:
+        pass
 
     item = media_index.get_item(message_id)
     if item is None:
-        return "failed"
+        return "failed", "no-item"
     entry = IndexEntry(
         title=item.title,
         year=item.year,
@@ -488,15 +518,13 @@ async def _rewrite_caption(message_id: int, mutate) -> str:
             caption=render(entry),
         )
     except MessageNotModified:
-        return "written"
+        return "written", ""
     except MessageIdInvalid:
-        # Telegram's MESSAGE_ID_INVALID is overloaded: it fires both when
-        # the message truly is gone AND when the bot doesn't own the
-        # message (admin posted it directly to the channel rather than
-        # forwarded through the bot). Probe with get_messages — if it
-        # comes back non-empty, the message exists and we just can't
-        # edit its caption. Keep the entry, apply the mutation in
-        # memory, and let the admin know.
+        # MESSAGE_ID_INVALID is overloaded: it fires both when the
+        # message truly is gone AND when the bot can't reach it (often
+        # a forwarded post that the bot didn't originate). Probe via
+        # get_messages — if it comes back non-empty, the message
+        # exists and we just can't edit its caption.
         try:
             probe = await StreamBot.get_messages(Var.BIN_CHANNEL, message_id)
             still_exists = probe is not None and not getattr(probe, "empty", False)
@@ -504,26 +532,33 @@ async def _rewrite_caption(message_id: int, mutate) -> str:
             still_exists = False
         if still_exists:
             logging.info(
-                "admin: bin:%d not bot-owned; in-memory edit only", message_id,
+                "admin: bin:%d MESSAGE_ID_INVALID but exists; in-memory only",
+                message_id,
             )
             _apply_local_only(message_id, entry)
-            return "local-only"
+            return "local-only", "message-id-invalid"
         logging.info(
-            "admin: bin:%d truly absent on Telegram; removing from catalogue",
-            message_id,
+            "admin: bin:%d truly absent on Telegram; removing", message_id,
         )
         await media_index.remove(message_id)
-        return "removed"
+        return "removed", ""
+    except _EDIT_TIME_EXPIRED as exc:
+        logging.info(
+            "admin: bin:%d MESSAGE_EDIT_TIME_EXPIRED (%s); in-memory only",
+            message_id, exc.__class__.__name__,
+        )
+        _apply_local_only(message_id, entry)
+        return "local-only", "edit-time-expired"
     except _UNEDITABLE as exc:
         logging.info(
             "admin: bin:%d caption read-only (%s); skipping caption write",
             message_id, exc.__class__.__name__,
         )
         _apply_local_only(message_id, entry)
-        return "local-only"
+        return "local-only", "author-required"
     except Exception:
         logging.exception("admin: edit_caption failed for bin:%d", message_id)
-        return "failed"
+        return "failed", "unknown"
 
     # Refresh the in-memory entry from the rewritten caption.
     try:
@@ -553,7 +588,7 @@ async def _bulk_retag(ids: List[int], tags: List[str]) -> int:
         entry.tags = list(tags)
     n = 0
     for mid in ids:
-        status = await _rewrite_caption(mid, apply)
+        status, _reason = await _rewrite_caption(mid, apply)
         if status in ("written", "local-only"):
             n += 1
     return n
@@ -573,7 +608,7 @@ async def _bulk_quality(ids: List[int], quality: str) -> int:
         entry.description = (quality + (" · " + desc if desc else "")).strip()
     n = 0
     for mid in ids:
-        status = await _rewrite_caption(mid, apply)
+        status, _reason = await _rewrite_caption(mid, apply)
         if status in ("written", "local-only"):
             n += 1
     return n
