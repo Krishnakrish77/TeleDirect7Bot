@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+  <div class="w-full max-w-4xl">
+    <header class="mb-8">
+      <a href="/" class="inline-flex items-center gap-1 text-sm text-slate-400
+                        hover:text-brand-300 transition-colors mb-3">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M15.75 19.5 8.25 12l7.5-7.5"/>
+        </svg>
+        Back to library
+      </a>
+      <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+        {{ title }}
+        {%- if year %} <span class="text-slate-400 font-normal">({{ year }})</span>{% endif -%}
+      </h1>
+      <p class="mt-1 text-sm text-slate-400">
+        {{ variant_count }} version{{ '' if variant_count == 1 else 's' }} available — pick one to watch
+      </p>
+    </header>
+
+    <ul class="space-y-3">
+      {% for v in variants %}
+        <li>
+          <a href="/watch/{{ v.secure_hash }}{{ v.message_id }}"
+             class="group flex items-center gap-4 p-4 rounded-lg
+                    bg-ink-800/60 border border-white/5
+                    hover:border-brand-400/40 hover:bg-ink-800
+                    transition-colors">
+            <div class="flex-shrink-0 w-32 aspect-video bg-ink-900 rounded
+                        relative overflow-hidden">
+              <img
+                src="/thumb/{{ v.secure_hash }}{{ v.message_id }}.jpg"
+                alt=""
+                loading="lazy"
+                onerror="this.remove()"
+                class="absolute inset-0 w-full h-full object-cover"
+              />
+              {% if v.duration %}
+                <span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded
+                             bg-black/70 text-[10px] font-medium text-white
+                             tabular-nums">
+                  {{ v.duration | duration }}
+                </span>
+              {% endif %}
+            </div>
+            <div class="min-w-0 flex-1">
+              <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
+                         group-hover:text-brand-300 transition-colors">
+                {{ v.title }}
+              </h3>
+              <p class="mt-1 text-xs text-slate-500 break-all">
+                {{ v.file_name or '—' }}
+              </p>
+              <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                {% if v.quality %}
+                  <span class="px-2 py-0.5 rounded bg-brand-500/15 text-brand-300
+                               border border-brand-400/30 font-medium">
+                    {{ v.quality }}
+                  </span>
+                {% endif %}
+                {% if v.file_size %}
+                  <span class="text-slate-400 tabular-nums">
+                    {{ v.file_size | humansize }}
+                  </span>
+                {% endif %}
+                {% if v.subtitles %}
+                  <span class="text-slate-500">
+                    + {{ v.subtitles | length }} sidecar sub{{ '' if v.subtitles | length == 1 else 's' }}
+                  </span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="flex-shrink-0 text-slate-500 group-hover:text-brand-300 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+              </svg>
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endblock %}

@@ -240,6 +240,70 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
     )
 
 
+# Cap parallel ffmpeg thumbnail grabs separately from segment generation —
+# a freshly-loaded hub can fire 24 thumb requests at once, and each grab
+# launches its own ffmpeg.
+MAX_CONCURRENT_THUMBS = int(os.environ.get("THUMB_MAX_CONCURRENT", "3"))
+_thumb_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _thumb_sem() -> asyncio.Semaphore:
+    global _thumb_semaphore
+    if _thumb_semaphore is None:
+        _thumb_semaphore = asyncio.Semaphore(MAX_CONCURRENT_THUMBS)
+    return _thumb_semaphore
+
+
+async def grab_thumbnail(source_url: str, duration: float = 0.0) -> Optional[bytes]:
+    """Grab a single JPEG frame from a video to use as a fallback thumbnail.
+
+    Used by /thumb/* when Telegram's own thumbnail is missing — happens for
+    many forwarded videos. We input-seek (``-ss`` before ``-i``) so ffmpeg
+    only reads the part of the source needed to land on the keyframe, not
+    the full file. Returns None on failure.
+    """
+    # Aim for ~5% into the video, capped between 3s and 30s. Short clips
+    # don't have 30s of intro; long ones often start with title cards.
+    if duration > 0:
+        seek = max(3.0, min(30.0, duration * 0.05))
+    else:
+        seek = 5.0
+
+    args = [
+        "ffmpeg",
+        "-hide_banner", "-loglevel", "error",
+        "-ss", f"{seek:.2f}",
+        "-i", source_url,
+        "-frames:v", "1",
+        "-q:v", "5",
+        "-vf", "scale=320:-2",  # constrain width; cards are 200-260px wide
+        "-f", "image2pipe",
+        "-vcodec", "mjpeg",
+        "-",
+    ]
+    async with _thumb_sem():
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        except asyncio.TimeoutError:
+            logging.warning("thumbnail grab timed out for %s", source_url)
+            return None
+        except Exception:
+            logging.exception("thumbnail grab failed for %s", source_url)
+            return None
+    if proc.returncode != 0 or not stdout:
+        logging.debug(
+            "ffmpeg thumb grab exit=%s stderr=%s",
+            proc.returncode, (stderr or b"")[:200].decode("utf-8", "replace"),
+        )
+        return None
+    return stdout
+
+
 async def extract_subtitle_vtt(source_url: str, track_index: int) -> Optional[bytes]:
     """Run ffmpeg to extract the Nth subtitle stream and convert it to WebVTT
     bytes. Returns None on failure."""

@@ -30,9 +30,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from main.utils.file_properties import get_hash
-from main.utils.hub_query import ExternalSubtitle, HubItem, SeriesGroup
+from main.utils.hub_query import ExternalSubtitle, HubItem, MovieGroup, SeriesGroup
 from main.utils.index_entry import IndexEntry, parse, title_from_filename
 from main.utils import series as series_parse
+from main.utils.dedup import movie_key as compute_movie_key
 from main.utils.subtitles import stem_for_pairing
 
 
@@ -84,6 +85,7 @@ def _to_serializable(item: HubItem) -> dict:
         "series_title": item.series_title,
         "season": item.season,
         "episode": item.episode,
+        "movie_key": item.movie_key,
         "subtitles": [
             {
                 "bin_message_id": s.bin_message_id,
@@ -113,6 +115,7 @@ def _from_serializable(d: dict) -> HubItem:
         series_title=d.get("series_title", "") or "",
         season=d.get("season"),
         episode=d.get("episode"),
+        movie_key=d.get("movie_key", "") or "",
         subtitles=[
             ExternalSubtitle(
                 bin_message_id=s["bin_message_id"],
@@ -156,6 +159,9 @@ def _item_from_message(message) -> Optional[HubItem]:
     # Try filename first (release names follow conventions), fall back to the
     # parsed caption title for hand-written entries.
     sm = series_parse.parse(file_name) or series_parse.parse(parsed.title)
+    # Movies get a dedup key; series episodes get "" (the series_key path
+    # already collapses them by show name).
+    mk = "" if sm else compute_movie_key(parsed.title or file_name, parsed.year, file_name)
 
     return HubItem(
         message_id=message.id,
@@ -173,6 +179,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         series_title=sm.title if sm else "",
         season=sm.season if sm else None,
         episode=sm.episode if sm else None,
+        movie_key=mk,
     )
 
 
@@ -479,6 +486,28 @@ def _build_series_group(episodes: List[HubItem]) -> SeriesGroup:
     )
 
 
+def _build_movie_group(variants: List[HubItem]) -> MovieGroup:
+    """Construct a MovieGroup from 2+ same-movie uploads."""
+    poster = next(
+        (v for v in variants if v.has_thumb),
+        max(variants, key=lambda v: v.message_id),
+    )
+    # Use the longest title as the canonical display name — the longest
+    # is usually the most descriptive (channel prefixes and release flags
+    # add length but they're equally common across variants).
+    canonical = max(variants, key=lambda v: len(v.title or ""))
+    return MovieGroup(
+        movie_key=variants[0].movie_key,
+        title=canonical.title or variants[0].title,
+        year=canonical.year or variants[0].year,
+        variant_count=len(variants),
+        latest_message_id=max(v.message_id for v in variants),
+        poster_item=poster,
+        has_thumb=any(v.has_thumb for v in variants),
+        total_size=sum(v.file_size for v in variants),
+    )
+
+
 def query_grouped(
     *,
     q: str = "",
@@ -486,45 +515,84 @@ def query_grouped(
     quality: str = "",
     tag: str = "",
     sort: str = "newest",
+    offset: int = 0,
     limit: int = 24,
-) -> List:
-    """Like query() but collapses items sharing a series_key into one card.
+) -> Tuple[List, int]:
+    """Filter, sort, collapse, and paginate the catalogue.
 
-    Returned list mixes HubItem (standalone) and SeriesGroup (series).
-    Series search match-on-title: a query for ``office`` matches the series
-    name itself in addition to per-episode titles, so groups don't get
-    filtered away when the user types the show name.
+    Returned list mixes HubItem (singletons), SeriesGroup (TV episodes
+    collapsed by series_key), and MovieGroup (2+ uploads of the same film
+    collapsed by movie_key). Returns ``(page, total_count)`` so the caller
+    can build a Load More button without an extra query.
     """
     items_all = [
         it for it in _items.values()
         if _matches(it, q, year, quality, tag) or _series_matches_query(it, q)
     ]
 
-    groups: dict = {}
+    series_groups: dict = {}
+    movie_groups: dict = {}
     standalone: List[HubItem] = []
     for it in items_all:
         if it.series_key:
-            groups.setdefault(it.series_key, []).append(it)
+            series_groups.setdefault(it.series_key, []).append(it)
+        elif it.movie_key:
+            movie_groups.setdefault(it.movie_key, []).append(it)
         else:
             standalone.append(it)
 
-    grouped = [_build_series_group(eps) for eps in groups.values()]
+    grouped_series = [_build_series_group(eps) for eps in series_groups.values()]
+    # Only collapse when there are 2+ variants — a single upload stays a
+    # plain HubItem so the card links straight to /watch instead of
+    # forcing the user through a one-row variants page.
+    grouped_movies: List = []
+    for variants in movie_groups.values():
+        if len(variants) >= 2:
+            grouped_movies.append(_build_movie_group(variants))
+        else:
+            standalone.append(variants[0])
 
     if sort == "newest":
-        sort_key = lambda x: -(x.latest_message_id if isinstance(x, SeriesGroup) else x.message_id)
+        sort_key = lambda x: -_card_message_id(x)
     elif sort == "oldest":
-        sort_key = lambda x: (x.latest_message_id if isinstance(x, SeriesGroup) else x.message_id)
+        sort_key = lambda x: _card_message_id(x)
     elif sort == "title_az":
-        sort_key = lambda x: (x.series_title if isinstance(x, SeriesGroup) else x.title).lower()
+        sort_key = lambda x: _card_title(x).lower()
     elif sort == "title_za":
-        sort_key = lambda x: tuple(-ord(c) for c in (x.series_title if isinstance(x, SeriesGroup) else x.title).lower())
+        sort_key = lambda x: tuple(-ord(c) for c in _card_title(x).lower())
     elif sort == "largest":
-        sort_key = lambda x: -(sum(e.file_size for e in groups.get(x.series_key, [])) if isinstance(x, SeriesGroup) else x.file_size)
+        sort_key = lambda x: -_card_file_size(x)
     else:
-        sort_key = lambda x: -(x.latest_message_id if isinstance(x, SeriesGroup) else x.message_id)
+        sort_key = lambda x: -_card_message_id(x)
 
-    combined = sorted(grouped + standalone, key=sort_key)
-    return combined[:limit]
+    combined = sorted(grouped_series + grouped_movies + standalone, key=sort_key)
+    total = len(combined)
+    page = combined[offset : offset + limit]
+    return page, total
+
+
+def _card_message_id(card) -> int:
+    if isinstance(card, (SeriesGroup, MovieGroup)):
+        return card.latest_message_id
+    return card.message_id
+
+
+def _card_title(card) -> str:
+    if isinstance(card, SeriesGroup):
+        return card.series_title
+    if isinstance(card, MovieGroup):
+        return card.title
+    return card.title
+
+
+def _card_file_size(card) -> int:
+    if isinstance(card, MovieGroup):
+        return card.total_size
+    if isinstance(card, SeriesGroup):
+        # Series rank by their largest single episode rather than the
+        # sum, since otherwise long-running shows always dominate.
+        return max((e.file_size for e in episodes_for_series(card.series_key)), default=0)
+    return card.file_size
 
 
 def _series_matches_query(it: HubItem, q: str) -> bool:
@@ -538,6 +606,62 @@ def episodes_for_series(series_key: str) -> List[HubItem]:
     eps = [it for it in _items.values() if it.series_key == series_key]
     eps.sort(key=lambda e: (e.season or 0, e.episode or 0, e.message_id))
     return eps
+
+
+def variants_for_movie(movie_key: str) -> List[HubItem]:
+    """All uploads of a given movie, sorted newest first."""
+    vs = [it for it in _items.values() if it.movie_key == movie_key]
+    vs.sort(key=lambda v: v.message_id, reverse=True)
+    return vs
+
+
+async def reindex_all() -> dict:
+    """Re-derive series_key, season, episode, movie_key, quality on every
+    existing HubItem from its current file_name + title.
+
+    Used by /admin/reindex to backfill grouping logic over the catalogue
+    after the series/dedup detectors are improved. No Telegram round-trips
+    needed — the cached file_name and parsed caption are enough.
+
+    Returns a count summary so the admin UI can show what changed.
+    """
+    changed_series = 0
+    changed_movie = 0
+    changed_quality = 0
+    async with _lock:
+        for it in _items.values():
+            sm = series_parse.parse(it.file_name) or series_parse.parse(it.title)
+            new_series_key = sm.key if sm else ""
+            new_series_title = sm.title if sm else ""
+            new_season = sm.season if sm else None
+            new_episode = sm.episode if sm else None
+            new_movie_key = (
+                ""
+                if sm
+                else compute_movie_key(it.title or it.file_name, it.year, it.file_name)
+            )
+            new_quality = _extract_quality(it.title, it.file_name, it.description)
+
+            if (it.series_key, it.season, it.episode) != (new_series_key, new_season, new_episode):
+                changed_series += 1
+            if it.movie_key != new_movie_key:
+                changed_movie += 1
+            if it.quality != new_quality:
+                changed_quality += 1
+
+            it.series_key = new_series_key
+            it.series_title = new_series_title
+            it.season = new_season
+            it.episode = new_episode
+            it.movie_key = new_movie_key
+            it.quality = new_quality
+        _persist_unlocked()
+    return {
+        "total": len(_items),
+        "series_changed": changed_series,
+        "movie_changed": changed_movie,
+        "quality_changed": changed_quality,
+    }
 
 
 def distinct_years() -> List[int]:

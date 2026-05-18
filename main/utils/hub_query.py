@@ -42,6 +42,9 @@ class HubItem:
     series_title: str = ""         # human-friendly series name
     season: Optional[int] = None
     episode: Optional[int] = None
+    # Slug shared by every upload of the same film (different filenames /
+    # release groups). "" for series episodes and uniquely-titled uploads.
+    movie_key: str = ""
 
 
 @dataclass
@@ -54,6 +57,19 @@ class SeriesGroup:
     latest_message_id: int  # for newest-first ordering of the hub page
     poster_item: "HubItem"  # representative episode used for thumb/year/tags
     has_thumb: bool = False
+
+
+@dataclass
+class MovieGroup:
+    """A virtual hub entry collapsing multiple uploads of the same movie."""
+    movie_key: str
+    title: str
+    year: Optional[int]
+    variant_count: int
+    latest_message_id: int   # for newest-first ordering of the hub page
+    poster_item: "HubItem"
+    has_thumb: bool = False
+    total_size: int = 0      # sum of variant file sizes — used for "largest" sort
 
 
 # Imports kept at the bottom to avoid a circular import with media_index,

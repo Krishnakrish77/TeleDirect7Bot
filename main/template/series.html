@@ -36,14 +36,13 @@
                         hover:border-brand-400/40 hover:bg-ink-800 transition-colors">
                 <div class="flex-shrink-0 w-32 aspect-video bg-ink-900 rounded
                             relative overflow-hidden">
-                  {% if ep.has_thumb %}
-                    <img
-                      src="/thumb/{{ ep.secure_hash }}{{ ep.message_id }}.jpg"
-                      alt=""
-                      loading="lazy"
-                      class="absolute inset-0 w-full h-full object-cover"
-                    />
-                  {% endif %}
+                  <img
+                    src="/thumb/{{ ep.secure_hash }}{{ ep.message_id }}.jpg"
+                    alt=""
+                    loading="lazy"
+                    onerror="this.remove()"
+                    class="absolute inset-0 w-full h-full object-cover"
+                  />
                   {% if ep.duration %}
                     <span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded
                                  bg-black/70 text-[10px] font-medium text-white

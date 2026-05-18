@@ -113,6 +113,26 @@ async def admin_home(request: web.Request) -> web.Response:
     return _html(body)
 
 
+@routes.post("/admin/reindex")
+async def admin_reindex(request: web.Request) -> web.Response:
+    """Recompute series/movie/quality fields on every existing HubItem.
+
+    Cheap — runs entirely against the cached metadata, no Telegram round
+    trips. Used after the series or dedup detectors improve and older
+    entries need to pick up the new logic.
+    """
+    _require_session(request)
+    summary = await media_index.reindex_all()
+    flash = (
+        f"Re-indexed {summary['total']} entries: "
+        f"series={summary['series_changed']}, "
+        f"movie={summary['movie_changed']}, "
+        f"quality={summary['quality_changed']}"
+    )
+    from urllib.parse import quote
+    raise web.HTTPFound(f"/admin?flash={quote(flash)}")
+
+
 @routes.post("/admin/action")
 async def admin_action(request: web.Request) -> web.Response:
     _require_session(request)

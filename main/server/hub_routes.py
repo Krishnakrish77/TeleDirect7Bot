@@ -20,7 +20,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import hub_query, media_index, thumb_cache
+from main.utils import hls, hub_query, media_index, thumb_cache
 from main.utils.hub_query import HubItem
 from main.utils.human_readable import humanbytes
 from main.vars import Var
@@ -76,10 +76,14 @@ def _html(body: str, push_url: Optional[str] = None) -> web.Response:
     )
 
 
-def _canonical_url(params: dict) -> str:
+def _canonical_url(params: dict, include_offset: bool = False) -> str:
     """Build a clean URL with only the active (non-default) filters set, so
     htmx's hx-push-url doesn't leave empty ?q=&year=&... query strings in
-    the address bar when a filter gets cleared."""
+    the address bar when a filter gets cleared.
+
+    ``include_offset`` is True only when rendering Load-More links: page-1
+    of the hub is canonically ``/``, not ``/?offset=0``.
+    """
     qs = {}
     if params.get("q"):
         qs["q"] = params["q"]
@@ -92,7 +96,12 @@ def _canonical_url(params: dict) -> str:
     sort = params.get("sort") or "newest"
     if sort != "newest":
         qs["sort"] = sort
+    if include_offset and params.get("offset"):
+        qs["offset"] = params["offset"]
     return "/" if not qs else f"/?{urlencode(qs)}"
+
+
+PAGE_SIZE = 24
 
 
 def _parse_filters(request: web.Request) -> dict:
@@ -107,33 +116,40 @@ def _parse_filters(request: web.Request) -> dict:
     sort = (request.query.get("sort") or "newest").strip()
     if sort not in {opt[0] for opt in SORT_OPTIONS}:
         sort = "newest"
-    before_raw = request.query.get("before")
     try:
-        before_id = int(before_raw) if before_raw else None
+        offset = max(0, int(request.query.get("offset") or 0))
     except ValueError:
-        before_id = None
-    return dict(q=q, tag=tag, quality=quality, year=year, sort=sort, before_id=before_id)
+        offset = 0
+    return dict(
+        q=q, tag=tag, quality=quality, year=year, sort=sort, offset=offset,
+    )
 
 
-async def _render_grid(items: List[HubItem],
-                       next_cursor: Optional[int],
+async def _render_grid(items: List,
+                       next_offset: Optional[int],
                        empty_text: str,
                        params: dict) -> str:
     tpl = _env.get_template("_grid.html")
+    next_url = None
+    if next_offset is not None:
+        next_url = _canonical_url({**params, "offset": next_offset}, include_offset=True)
     return await tpl.render_async(
-        items=items, next_cursor=next_cursor, empty_text=empty_text,
+        items=items, next_url=next_url, empty_text=empty_text,
         params=params,
     )
 
 
-async def _render_page(items: List[HubItem],
-                       next_cursor: Optional[int],
+async def _render_page(items: List,
+                       next_offset: Optional[int],
                        empty_text: str,
                        params: dict) -> str:
     tpl = _env.get_template("hub.html")
+    next_url = None
+    if next_offset is not None:
+        next_url = _canonical_url({**params, "offset": next_offset}, include_offset=True)
     return await tpl.render_async(
         items=items,
-        next_cursor=next_cursor,
+        next_url=next_url,
         empty_text=empty_text,
         params=params,
         years=media_index.distinct_years(),
@@ -169,28 +185,27 @@ async def hub_home(request: web.Request) -> web.Response:
     # the canonical URL so the address bar stays clean. HTMX requests are
     # handled below via the HX-Push-Url header.
     if not _is_htmx(request):
-        canonical = _canonical_url(params)
+        canonical = _canonical_url(params, include_offset=True)
         if request.rel_url.path_qs != canonical:
             raise web.HTTPFound(canonical)
 
-    # Grouped view collapses all episodes of a series into a single card.
-    # When the user is filtering by tag, year, or quality we still group:
-    # the filter applies to the underlying episodes and the group shows
-    # only the matching ones.
-    items = media_index.query_grouped(
+    items, total = media_index.query_grouped(
         q=params["q"], year=params["year"], quality=params["quality"],
         tag=params["tag"], sort=params["sort"],
+        offset=params["offset"], limit=PAGE_SIZE,
     )
-    next_cursor = None  # Grouped view paginates client-side; catalogue is small.
+    next_offset = params["offset"] + PAGE_SIZE
+    if next_offset >= total:
+        next_offset = None
     empty = _empty_text(params)
 
     if _is_htmx(request):
         return _html(
-            await _render_grid(items, next_cursor, empty, params),
-            push_url=_canonical_url(params),
+            await _render_grid(items, next_offset, empty, params),
+            push_url=_canonical_url(params, include_offset=True),
         )
 
-    return _html(await _render_page(items, next_cursor, empty, params))
+    return _html(await _render_page(items, next_offset, empty, params))
 
 
 @routes.get("/tag/{name}")
@@ -199,6 +214,47 @@ async def hub_tag(request: web.Request) -> web.Response:
     page picks it up with all filters available."""
     name = request.match_info["name"]
     raise web.HTTPFound(f"/?tag={name}")
+
+
+# Tiny inline SVG favicon. Without this every page logs a 500 because the
+# default catch-all /{path:\S+} stream-handler tries to parse "favicon.ico"
+# as a BIN message id. Serving an actual icon — even a minimal one — is
+# nicer than the 204 we'd otherwise need to swallow the request.
+_FAVICON_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+    b'<rect width="64" height="64" rx="14" fill="#f97316"/>'
+    b'<path d="M22 20l24 12-24 12z" fill="#fff"/>'
+    b'</svg>'
+)
+
+
+@routes.get("/favicon.ico")
+@routes.get("/favicon.svg")
+async def favicon(_request: web.Request) -> web.Response:
+    return web.Response(
+        body=_FAVICON_SVG,
+        content_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400, immutable"},
+    )
+
+
+@routes.get(r"/movie/{key:[a-z0-9][a-z0-9:\-]*}")
+async def hub_movie(request: web.Request) -> web.Response:
+    """One movie: list every upload variant so the user picks which to play."""
+    key = request.match_info["key"]
+    variants = media_index.variants_for_movie(key)
+    if not variants:
+        raise web.HTTPNotFound(text="movie not found")
+
+    canonical = variants[0]
+    tpl = _env.get_template("movie.html")
+    body = await tpl.render_async(
+        title=canonical.title,
+        year=canonical.year,
+        variant_count=len(variants),
+        variants=variants,
+    )
+    return _html(body)
 
 
 @routes.get(r"/series/{key:[a-z0-9][a-z0-9\-]*}")
@@ -231,27 +287,46 @@ async def hub_series(request: web.Request) -> web.Response:
 
 @routes.get(r"/thumb/{hash:[a-zA-Z0-9_-]{6}}{id:\d+}.jpg")
 async def hub_thumb(request: web.Request) -> web.Response:
+    secure_hash = request.match_info["hash"]
     message_id = int(request.match_info["id"])
 
     async def fetch() -> Optional[bytes]:
+        # Preferred path: use Telegram's own thumbnail. ~30 KB JPEG, no
+        # decoding needed, available for most uploads.
         try:
             message = await StreamBot.get_messages(Var.BIN_CHANNEL, message_id)
         except Exception:
+            message = None
+        if message is not None:
+            media = (
+                getattr(message, "video", None)
+                or getattr(message, "animation", None)
+                or getattr(message, "document", None)
+            )
+            if media is not None:
+                thumbs = getattr(media, "thumbs", None) or []
+                if thumbs:
+                    try:
+                        bytesio = await StreamBot.download_media(
+                            thumbs[-1].file_id, in_memory=True,
+                        )
+                        if bytesio is not None:
+                            return (
+                                bytesio.getvalue()
+                                if hasattr(bytesio, "getvalue") else bytes(bytesio)
+                            )
+                    except Exception:
+                        pass  # fall through to ffmpeg fallback
+
+        # Fallback: grab a frame via ffmpeg. Cheap thanks to input-seek
+        # (only the bytes around the chosen timestamp are fetched from the
+        # source). thumb_cache holds the result for 6h so we don't redo
+        # this work on every page refresh.
+        item = media_index.get_item(message_id)
+        if item is None or item.secure_hash != secure_hash:
             return None
-        media = (
-            getattr(message, "video", None)
-            or getattr(message, "animation", None)
-            or getattr(message, "document", None)
-        )
-        if media is None:
-            return None
-        thumbs = getattr(media, "thumbs", None) or []
-        if not thumbs:
-            return None
-        bytesio = await StreamBot.download_media(thumbs[-1].file_id, in_memory=True)
-        if bytesio is None:
-            return None
-        return bytesio.getvalue() if hasattr(bytesio, "getvalue") else bytes(bytesio)
+        source_url = hls.internal_stream_url(secure_hash, message_id)
+        return await hls.grab_thumbnail(source_url, duration=float(item.duration or 0))
 
     data = await thumb_cache.cached_or_fetch(message_id, fetch)
     if data is None:
