@@ -2241,3 +2241,123 @@ def tag_cloud(limit: int = 30) -> List[Tuple[str, int]]:
 
 def size() -> int:
     return len(_items)
+
+
+def stats() -> dict:
+    """Single-pass aggregation of catalogue health metrics for /admin.
+
+    Cheap at any reasonable scale — we walk ``_items`` once and bucket
+    into dict counters. At 10K items this is ~5ms; at 100K it'd be
+    ~50ms which is still fine for an on-demand admin call.
+
+    Returned shape::
+
+        {
+          "total": 127,
+          "total_size_bytes": 12345678901,
+          "kinds": {"series_episodes": 60, "movie_variants": 50,
+                    "standalone": 17},
+          "quality_buckets": [("1080p", 40), ("720p", 30), ("4K", 5),
+                              ("480p", 2), ("unknown", 50)],
+          "enrichment": {"enriched": 90, "attempted_no_match": 10,
+                         "never_attempted": 27},
+          "codec_health": {"probed_playable": 60, "probed_unplayable": 8,
+                           "never_probed": 59},
+          "top_genres": [("Action", 25), ("Drama", 18), ...],
+          "missing_poster": 12,
+          "missing_thumb": 4,
+          "duplicate_groups": 3,        # secure_hash uniques w/ >1 item
+          "duplicate_extras": 5,        # extras that would be deleted
+        }
+    """
+    total = 0
+    total_size = 0
+    series_eps = 0
+    movie_groups: dict = {}
+    standalone = 0
+    quality_counts: dict = {}
+    enriched = 0
+    attempted_no_match = 0
+    never_attempted = 0
+    probed_playable = 0
+    probed_unplayable = 0
+    never_probed = 0
+    genre_counts: dict = {}
+    missing_poster = 0
+    missing_thumb = 0
+    by_hash: dict = {}
+    from main.utils.codec_probe import is_browser_playable
+    for it in _items.values():
+        total += 1
+        total_size += it.file_size or 0
+        if it.series_key:
+            series_eps += 1
+        elif it.movie_key:
+            movie_groups.setdefault(it.movie_key, []).append(it)
+        else:
+            standalone += 1
+        qb = it.quality or "unknown"
+        quality_counts[qb] = quality_counts.get(qb, 0) + 1
+        if it.tmdb_id:
+            enriched += 1
+        elif it.enriched_at and it.enriched_at > 0:
+            attempted_no_match += 1
+        else:
+            never_attempted += 1
+        if it.probed_at and it.probed_at > 0:
+            if is_browser_playable(it.video_codec or "", it.pix_fmt or ""):
+                probed_playable += 1
+            else:
+                probed_unplayable += 1
+        else:
+            never_probed += 1
+        for g in (it.tmdb_genres or []):
+            genre_counts[g] = genre_counts.get(g, 0) + 1
+        if it.tmdb_id and not it.poster_path:
+            missing_poster += 1
+        if not it.has_thumb:
+            missing_thumb += 1
+        if it.secure_hash:
+            by_hash.setdefault(it.secure_hash, []).append(it)
+    # Movie-variant collapse: 2+ uploads of the same film count as
+    # one "movie group", the rest become standalone-equivalent.
+    movie_variant_groups = sum(1 for v in movie_groups.values() if len(v) >= 2)
+    movie_variant_extras = sum(len(v) - 1 for v in movie_groups.values() if len(v) >= 2)
+    # Quality order — keep ranked from highest resolution down with
+    # "unknown" last for cleaner rendering.
+    quality_rank = ["4K", "1080p", "720p", "480p"]
+    quality_buckets = [
+        (q, quality_counts.get(q, 0)) for q in quality_rank if quality_counts.get(q)
+    ]
+    if quality_counts.get("unknown"):
+        quality_buckets.append(("unknown", quality_counts["unknown"]))
+    top_genres = sorted(
+        genre_counts.items(), key=lambda kv: (-kv[1], kv[0]),
+    )[:10]
+    duplicate_groups = sum(1 for v in by_hash.values() if len(v) > 1)
+    duplicate_extras = sum(len(v) - 1 for v in by_hash.values() if len(v) > 1)
+    return {
+        "total": total,
+        "total_size_bytes": total_size,
+        "kinds": {
+            "series_episodes": series_eps,
+            "movie_variants": movie_variant_groups + movie_variant_extras,
+            "standalone": standalone,
+        },
+        "quality_buckets": quality_buckets,
+        "enrichment": {
+            "enriched": enriched,
+            "attempted_no_match": attempted_no_match,
+            "never_attempted": never_attempted,
+        },
+        "codec_health": {
+            "probed_playable": probed_playable,
+            "probed_unplayable": probed_unplayable,
+            "never_probed": never_probed,
+        },
+        "top_genres": top_genres,
+        "missing_poster": missing_poster,
+        "missing_thumb": missing_thumb,
+        "duplicate_groups": duplicate_groups,
+        "duplicate_extras": duplicate_extras,
+    }

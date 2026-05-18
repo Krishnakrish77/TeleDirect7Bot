@@ -174,6 +174,7 @@ async def admin_home(request: web.Request) -> web.Response:
     body = await tpl.render_async(
         items=items_all,
         catalogue_size=media_index.size(),
+        stats=media_index.stats(),
         flash=flash,
     )
     resp = _html(body)
