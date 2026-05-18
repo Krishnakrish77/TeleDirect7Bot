@@ -11,7 +11,19 @@
 {% endblock %}
 
 {% block content %}
-  <div class="w-full max-w-2xl text-center">
+  <div class="w-full max-w-2xl">
+    <a href="/"
+       onclick="if (history.length > 1) { event.preventDefault(); history.back(); }"
+       class="inline-flex items-center gap-1 text-sm text-slate-400
+              hover:text-brand-300 transition-colors mb-4">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+      Back to library
+    </a>
+    <div class="text-center">
     <h1 class="text-3xl sm:text-4xl font-bold text-white tracking-tight">TeleDirect</h1>
     <p class="mt-2 text-sm sm:text-base text-slate-400 break-all px-2">
       {{ file_name }} <span class="text-slate-500">·</span> {{ file_size }}
@@ -45,5 +57,6 @@
     </div>
 
     <p class="mt-8 text-xs text-slate-500">Powered by Telegram · @TeleDirect7Bot</p>
+    </div>
   </div>
 {% endblock %}

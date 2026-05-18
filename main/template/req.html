@@ -33,6 +33,34 @@
 
 {% block content %}
   <div class="w-full max-w-4xl">
+    {# Back nav. Prefer the deep link to the parent (series or movie
+       page) when meta tells us about one — that's the page the user
+       likely came from. Otherwise fall back to the library root.
+       The arrow uses history.back() via JS if available so a deeper
+       trail (e.g. came from search → series → variant) returns
+       correctly. #}
+    {% set back_href = '/' %}
+    {% if meta and meta.series_key %}
+      {% set back_href = '/series/' ~ meta.series_key %}
+      {% set back_label = 'Back to series' %}
+    {% elif meta and meta.movie_key %}
+      {% set back_href = '/movie/' ~ meta.movie_key %}
+      {% set back_label = 'Back to variants' %}
+    {% else %}
+      {% set back_label = 'Back to library' %}
+    {% endif %}
+    <a href="{{ back_href }}"
+       onclick="if (history.length > 1) { event.preventDefault(); history.back(); }"
+       class="inline-flex items-center gap-1 text-sm text-slate-400
+              hover:text-brand-300 transition-colors mb-4">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+      {{ back_label }}
+    </a>
+
     <div class="text-center px-2">
       <h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">TeleDirect</h1>
       <p class="mt-2 text-sm sm:text-base text-slate-400 break-all">{{ file_name }}</p>
