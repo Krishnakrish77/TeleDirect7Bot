@@ -1484,6 +1484,14 @@ async def enrich_one(message_id: int, bot=None) -> bool:
         # Best-effort caption write-back. A failure here doesn't undo the
         # in-memory enrichment; the next enrich pass will retry.
         await persist_canonical_to_bin(bot, message_id)
+        # Refresh the pinned snapshot so this one-off enrichment survives
+        # a /tmp wipe even when the caption write-back failed.
+        try:
+            await snapshot_to_telegram(bot)
+        except Exception:
+            logging.exception(
+                "media_index: post-enrich-one snapshot failed (non-fatal)"
+            )
     return True
 
 
@@ -1509,6 +1517,18 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
         _persist_unlocked()
     if bot is not None:
         await persist_canonical_to_bin(bot, message_id)
+        # Refresh the pinned snapshot too. /tmp is ephemeral on Koyeb,
+        # and persist_canonical_to_bin is best-effort (the caption
+        # write fails for messages the bot doesn't own). The pinned
+        # snapshot is the only persistence layer that survives both
+        # — without this refresh, restarting the bot loses the manual
+        # override the operator just applied.
+        try:
+            await snapshot_to_telegram(bot)
+        except Exception:
+            logging.exception(
+                "media_index: post-manual-enrich snapshot failed (non-fatal)"
+            )
     return True
 
 
