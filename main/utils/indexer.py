@@ -122,6 +122,16 @@ async def index_bin_message(bot: Client, bin_msg: Message) -> None:
         logging.debug("enrichment schedule failed for bin:%d", bin_msg.id,
                       exc_info=True)
 
+    # Fire-and-forget ffprobe so the watch page knows whether this
+    # file is browser-playable (h264/8-bit ✓, hevc/10-bit/av1 ✗)
+    # without waiting for the user to hit play and fail.
+    try:
+        from main.utils import codec_probe
+        codec_probe.schedule_probe(bin_msg.id)
+    except Exception:
+        logging.debug("codec probe schedule failed for bin:%d", bin_msg.id,
+                      exc_info=True)
+
 
 def schedule_index(bot: Client, bin_msg: Message) -> None:
     """Fire-and-forget. Caller (the forward handlers) gets to reply with the

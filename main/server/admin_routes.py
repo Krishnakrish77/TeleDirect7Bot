@@ -225,12 +225,34 @@ async def admin_status(request: web.Request) -> web.Response:
     polls this every couple of seconds while either pipeline is active.
     """
     _require_session(request)
+    from main.utils import codec_probe
     return web.json_response({
         "seed": media_index.seed_state(),
         "enrich": media_index.enrichment_state(),
         "reindex": media_index.reindex_state(),
+        "probe": codec_probe.state(),
         "catalogue_size": media_index.size(),
     }, headers={"Cache-Control": "no-store"})
+
+
+@routes.post("/admin/probe-codecs")
+async def admin_probe_codecs(request: web.Request) -> web.Response:
+    """ffprobe every catalogue entry that hasn't been probed yet.
+
+    Lets the watch page render the VLC-fallback overlay upfront for
+    HEVC / 10-bit / AV1-in-MKV files instead of waiting for the
+    browser to fail mid-playback. Bounded concurrency so we don't
+    saturate Telegram's range endpoint.
+    """
+    _require_session(request)
+    from main.utils import codec_probe
+    import asyncio as _aio
+    if not codec_probe.state().get("running"):
+        _aio.create_task(codec_probe.probe_all_missing())
+    if _is_htmx(request):
+        return web.Response(status=204)
+    from urllib.parse import quote
+    raise web.HTTPFound(f"/admin?flash={quote('Codec probe queued')}")
 
 
 @routes.post("/admin/reindex")

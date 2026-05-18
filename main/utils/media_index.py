@@ -130,6 +130,9 @@ def _to_serializable(item: HubItem) -> dict:
         "overview": item.overview,
         "tmdb_genres": item.tmdb_genres,
         "enriched_at": item.enriched_at,
+        "video_codec": item.video_codec,
+        "pix_fmt": item.pix_fmt,
+        "probed_at": item.probed_at,
         "subtitles": [
             {
                 "bin_message_id": s.bin_message_id,
@@ -168,6 +171,9 @@ def _from_serializable(d: dict) -> HubItem:
         overview=d.get("overview", "") or "",
         tmdb_genres=d.get("tmdb_genres", []) or [],
         enriched_at=float(d.get("enriched_at", 0) or 0),
+        video_codec=d.get("video_codec", "") or "",
+        pix_fmt=d.get("pix_fmt", "") or "",
+        probed_at=float(d.get("probed_at", 0) or 0),
         subtitles=[
             ExternalSubtitle(
                 bin_message_id=s["bin_message_id"],
@@ -362,6 +368,16 @@ async def attach_subtitle(video_message_id: int, sub: ExternalSubtitle) -> bool:
 async def remove(message_id: int) -> None:
     async with _lock:
         _items.pop(message_id, None)
+        _persist_unlocked()
+
+
+async def persist_now() -> None:
+    """Public helper: take the lock and flush the /tmp JSON cache.
+
+    Used by helper modules (codec_probe etc.) that mutate item
+    fields in place and need to durably record the change.
+    """
+    async with _lock:
         _persist_unlocked()
 
 

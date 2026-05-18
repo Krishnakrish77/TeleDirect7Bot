@@ -54,6 +54,14 @@ class HubItem:
     overview: str = ""
     tmdb_genres: List[str] = field(default_factory=list)
     enriched_at: float = 0.0       # unix ts; 0 means never attempted
+    # --- ffprobe-derived codec info (optional; populated by codec_probe) -----
+    # ``video_codec`` is e.g. "h264" / "hevc" / "av1"; ``pix_fmt`` is the
+    # pixel format (e.g. "yuv420p" for 8-bit, "yuv420p10le" for 10-bit).
+    # ``probed_at`` is the unix ts of the last probe attempt; 0 means
+    # never probed.
+    video_codec: str = ""
+    pix_fmt: str = ""
+    probed_at: float = 0.0
 
 
 @dataclass

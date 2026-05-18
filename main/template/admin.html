@@ -139,6 +139,17 @@
             Re-index catalogue
           </button>
         </form>
+        <form hx-post="/admin/probe-codecs"
+              hx-swap="none"
+              @htmx:after-request.camel="$dispatch('admin-progress-tick')"
+              class="inline">
+          <button type="submit"
+                  class="text-sm px-3 py-1.5 rounded bg-ink-800 text-slate-200
+                         border border-white/5 hover:bg-ink-700 transition-colors"
+                  title="ffprobe every unprobed entry to detect HEVC / 10-bit / AV1 files that can't play in browsers">
+            Probe codecs
+          </button>
+        </form>
         <a href="/admin/logout"
            class="text-sm text-slate-400 hover:text-brand-300 transition-colors">
           Sign out
@@ -161,6 +172,7 @@
            seed: null,
            enrich: null,
            reindex: null,
+           probe: null,
            pollHandle: null,
            start() {
              this.tick();
@@ -176,7 +188,9 @@
                this.seed = data.seed;
                this.enrich = data.enrich;
                this.reindex = data.reindex;
-               if (!data.seed.running &amp;&amp; !data.enrich.running &amp;&amp; !data.reindex.running) {
+               this.probe = data.probe;
+               const any = (data.seed.running || data.enrich.running || data.reindex.running || (data.probe &amp;&amp; data.probe.running));
+               if (!any) {
                  if (this.pollHandle) {
                    clearInterval(this.pollHandle);
                    this.pollHandle = null;
@@ -229,6 +243,20 @@
           <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
             <div class="h-full bg-brand-400 transition-all duration-500"
                  :style="`width:${pct(reindex)}%`"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="probe &amp;&amp; probe.running">
+        <div class="rounded-lg border border-brand-400/30 bg-brand-400/5 p-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-brand-200">Probing codecs (ffprobe)</span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${probe.done}/${probe.total} · ${probe.found_incompatible} flagged as not browser-playable`"></span>
+          </div>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full bg-brand-400 transition-all duration-500"
+                 :style="`width:${pct(probe)}%`"></div>
           </div>
         </div>
       </template>
