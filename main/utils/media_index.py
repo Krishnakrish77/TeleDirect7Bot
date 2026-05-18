@@ -520,13 +520,11 @@ async def seed(bot, channel_id: int) -> None:
                     existing = _items.get(new_item.message_id)
                     if existing is not None:
                         # Merge with prior snapshot/in-memory state.
-                        # Caption-derived data wins for fields that ARE
-                        # in the caption (title, year, ids, poster);
-                        # snapshot wins for fields that aren't (TMDB
-                        # genres, attached subtitles, enriched_at) and
-                        # also fills in caption fields the write-back
-                        # never managed to push (tags / description /
-                        # overview on uneditable bins).
+                        #
+                        # Snapshot always wins for fields that aren't
+                        # round-tripped through the caption: TMDB
+                        # genres, attached subtitle sidecars, the
+                        # enriched_at timestamp.
                         new_item.tmdb_genres = (
                             existing.tmdb_genres or new_item.tmdb_genres
                         )
@@ -536,6 +534,45 @@ async def seed(bot, channel_id: int) -> None:
                         new_item.enriched_at = (
                             existing.enriched_at or new_item.enriched_at
                         )
+                        # When the caption-write succeeded the caption
+                        # carries the TMDB id, title, year, poster, etc.
+                        # — let new_item (the parse result) win in that
+                        # case so manual admin edits land too.
+                        #
+                        # When the snapshot says the row was enriched
+                        # but the parsed caption did NOT recover a
+                        # tmdb_id, the caption write-back must have
+                        # been rejected (uneditable bin). The caption
+                        # is then the raw upload text and new_item's
+                        # title/year/etc. are filename-derived and
+                        # worse than what the snapshot already has.
+                        # Preserve every enrichment-derived field.
+                        caption_lost_enrichment = (
+                            existing.tmdb_id and not new_item.tmdb_id
+                        )
+                        if caption_lost_enrichment:
+                            new_item.title = existing.title or new_item.title
+                            new_item.year = existing.year or new_item.year
+                            new_item.tmdb_id = existing.tmdb_id
+                            new_item.tmdb_kind = existing.tmdb_kind
+                            new_item.imdb_id = existing.imdb_id or new_item.imdb_id
+                            new_item.poster_path = (
+                                existing.poster_path or new_item.poster_path
+                            )
+                            new_item.backdrop_path = (
+                                existing.backdrop_path or new_item.backdrop_path
+                            )
+                            # series_title / series_key are derived from
+                            # the (now-restored) title for TV rows.
+                            if existing.tmdb_kind == "tv":
+                                new_item.series_title = (
+                                    existing.series_title or new_item.series_title
+                                )
+                                new_item.series_key = (
+                                    existing.series_key or new_item.series_key
+                                )
+                            if existing.movie_key and not new_item.movie_key:
+                                new_item.movie_key = existing.movie_key
                         if existing.tags and not new_item.tags:
                             new_item.tags = existing.tags
                         if existing.description and not new_item.description:
