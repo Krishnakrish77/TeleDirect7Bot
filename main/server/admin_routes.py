@@ -590,7 +590,7 @@ async def _rewrite_caption(message_id: int, mutate) -> Tuple[str, str]:
         await media_index.add_from_message(fresh)
     except Exception:
         logging.exception("admin: post-edit refresh failed for bin:%d", message_id)
-    return "written"
+    return "written", ""
 
 
 def _apply_local_only(message_id: int, entry) -> None:
