@@ -93,6 +93,7 @@
            if (this.filter === 'series' &amp;&amp; ds.kind !== 'series') return false;
            if (this.filter === 'movies' &amp;&amp; ds.kind !== 'movie') return false;
            if (this.filter === 'no-poster' &amp;&amp; ds.hasPoster === '1') return false;
+           if (this.filter === 'duplicates' &amp;&amp; ds.duplicate !== '1') return false;
            const q = this.query.trim().toLowerCase();
            if (q &amp;&amp; !(ds.searchable || '').includes(q)) return false;
            return true;
@@ -343,10 +344,20 @@
               Issues to clean up
             </p>
             <div class="space-y-1 text-slate-300 tabular-nums">
-              <div class="flex justify-between {% if stats.duplicate_extras %}text-amber-300{% endif %}">
-                <span>Duplicate uploads</span>
-                <span>{% if stats.duplicate_extras %}{{ stats.duplicate_extras }} extras across {{ stats.duplicate_groups }} files{% else %}none{% endif %}</span>
-              </div>
+              {% if stats.duplicate_extras %}
+                <button type="button"
+                        @click="filter = 'duplicates'; document.getElementById('statsPanel').open = false; refresh()"
+                        class="w-full flex justify-between text-amber-300 hover:text-amber-200
+                               text-left transition-colors">
+                  <span>Duplicate uploads</span>
+                  <span>{{ stats.duplicate_extras }} extras across {{ stats.duplicate_groups }} files →</span>
+                </button>
+              {% else %}
+                <div class="flex justify-between">
+                  <span>Duplicate uploads</span>
+                  <span>none</span>
+                </div>
+              {% endif %}
               <div class="flex justify-between">
                 <span>Missing poster</span>
                 <span>{{ stats.missing_poster }}</span>
@@ -581,7 +592,8 @@
               { id: 'enriched', label: 'Enriched' },
               { id: 'series', label: 'Series' },
               { id: 'movies', label: 'Movies' },
-              { id: 'no-poster', label: 'No poster' }
+              { id: 'no-poster', label: 'No poster' },
+              { id: 'duplicates', label: 'Duplicates' }
             ]" :key="chip.id">
           <button type="button"
                   @click="filter = chip.id"
@@ -617,12 +629,14 @@
           <tbody>
             {% for item in items %}
               {%- set kind = 'series' if item.series_key else 'movie' -%}
+              {%- set is_dup = item.message_id in duplicate_message_ids -%}
               {%- set searchable = ((item.title or '') ~ ' ' ~ (item.series_title or '') ~ ' ' ~ (item.file_name or '') ~ ' ' ~ (item.tags | join(' ')) ~ ' ' ~ (item.imdb_id or '') ~ ' bin:' ~ item.message_id) | lower -%}
-              <tr class="border-b border-white/5 hover:bg-ink-800/40"
+              <tr class="border-b border-white/5 hover:bg-ink-800/40 {% if is_dup %}border-l-2 border-l-amber-400/60{% endif %}"
                   data-searchable="{{ searchable }}"
                   data-kind="{{ kind }}"
                   data-enriched="{{ '1' if item.tmdb_id else '0' }}"
-                  data-has-poster="{{ '1' if item.poster_path else '0' }}">
+                  data-has-poster="{{ '1' if item.poster_path else '0' }}"
+                  data-duplicate="{{ '1' if is_dup else '0' }}">
                 <td class="px-3 py-2">
                   <input type="checkbox" name="ids" value="{{ item.message_id }}"
                          x-model="selected" />

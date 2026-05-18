@@ -157,6 +157,21 @@ async def admin_home(request: web.Request) -> web.Response:
         key=lambda it: it.message_id, reverse=True,
     )
 
+    # Detect duplicate groups so the template can mark rows + filter
+    # by them. A "duplicate" here means the secure_hash is shared by
+    # 2+ rows — the same byte stream forwarded into BIN_CHANNEL more
+    # than once. Quality variants of the same episode have DIFFERENT
+    # secure_hashes (different encodes), so they are NOT marked.
+    by_hash: dict = {}
+    for it in items_all:
+        if it.secure_hash:
+            by_hash.setdefault(it.secure_hash, []).append(it)
+    duplicate_message_ids: set = set()
+    for h, members in by_hash.items():
+        if len(members) > 1:
+            for m in members:
+                duplicate_message_ids.add(m.message_id)
+
     # Read the flash cookie up front so we render once. The cookie
     # gets cleared on the response below regardless of whether it
     # was set, so a refresh after the toast disappears doesn't
@@ -175,6 +190,7 @@ async def admin_home(request: web.Request) -> web.Response:
         items=items_all,
         catalogue_size=media_index.size(),
         stats=media_index.stats(),
+        duplicate_message_ids=duplicate_message_ids,
         flash=flash,
     )
     resp = _html(body)
