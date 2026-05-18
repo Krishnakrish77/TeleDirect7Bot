@@ -30,8 +30,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from main.utils.file_properties import get_hash
-from main.utils.hub_query import HubItem
+from main.utils.hub_query import ExternalSubtitle, HubItem
 from main.utils.index_entry import IndexEntry, parse, title_from_filename
+from main.utils.subtitles import stem_for_pairing
 
 
 # Buckets we recognise in filenames/captions. Order matters: longest match
@@ -74,6 +75,16 @@ def _to_serializable(item: HubItem) -> dict:
         "file_size": item.file_size,
         "has_thumb": item.has_thumb,
         "quality": item.quality,
+        "file_name": item.file_name,
+        "subtitles": [
+            {
+                "bin_message_id": s.bin_message_id,
+                "secure_hash": s.secure_hash,
+                "language": s.language,
+                "label": s.label,
+            }
+            for s in item.subtitles
+        ],
     }
 
 
@@ -89,6 +100,16 @@ def _from_serializable(d: dict) -> HubItem:
         file_size=d.get("file_size", 0) or 0,
         has_thumb=d.get("has_thumb", False),
         quality=d.get("quality", "") or "",
+        file_name=d.get("file_name", "") or "",
+        subtitles=[
+            ExternalSubtitle(
+                bin_message_id=s["bin_message_id"],
+                secure_hash=s.get("secure_hash", ""),
+                language=s.get("language", ""),
+                label=s.get("label", ""),
+            )
+            for s in (d.get("subtitles") or [])
+        ],
     )
 
 
@@ -131,6 +152,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         file_size=int(getattr(media, "file_size", 0) or 0),
         has_thumb=bool(getattr(media, "thumbs", None)),
         quality=_extract_quality(parsed.title, file_name, parsed.description),
+        file_name=file_name,
     )
 
 
@@ -139,8 +161,58 @@ async def add_from_message(message) -> None:
     if item is None:
         return
     async with _lock:
+        # Preserve any sidecar subtitle pairings across re-indexing.
+        existing = _items.get(item.message_id)
+        if existing and existing.subtitles:
+            item.subtitles = existing.subtitles
         _items[item.message_id] = item
         _persist_unlocked()
+
+
+def get_item(message_id: int) -> Optional[HubItem]:
+    return _items.get(message_id)
+
+
+def find_by_hash(secure_hash: str) -> Optional[HubItem]:
+    """Linear lookup by secure_hash (first 6 chars of file_unique_id)."""
+    if not secure_hash:
+        return None
+    for it in _items.values():
+        if it.secure_hash == secure_hash:
+            return it
+    return None
+
+
+def find_by_filename_stem(stem: str) -> Optional[HubItem]:
+    """Most-recent indexed video whose filename stem matches.
+
+    Used to pair an external .srt with a video when the upload wasn't sent
+    as a reply. Latest-first so a re-uploaded version wins over older copies.
+    """
+    if not stem:
+        return None
+    matches = [
+        it for it in _items.values()
+        if it.file_name and stem_for_pairing(it.file_name) == stem
+    ]
+    if not matches:
+        return None
+    return max(matches, key=lambda it: it.message_id)
+
+
+async def attach_subtitle(video_message_id: int, sub: ExternalSubtitle) -> bool:
+    """Link a sidecar to a video. Returns True if the video was found."""
+    async with _lock:
+        item = _items.get(video_message_id)
+        if item is None:
+            return False
+        # Replace any existing entry for the same bin id (re-upload case).
+        item.subtitles = [
+            s for s in item.subtitles if s.bin_message_id != sub.bin_message_id
+        ]
+        item.subtitles.append(sub)
+        _persist_unlocked()
+        return True
 
 
 async def remove(message_id: int) -> None:

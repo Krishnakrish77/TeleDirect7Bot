@@ -8,11 +8,20 @@ maintained ourselves (see main/utils/media_index.py).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 
 PAGE_SIZE = 24
+
+
+@dataclass
+class ExternalSubtitle:
+    """A sidecar .srt/.vtt uploaded to BIN_CHANNEL alongside a video."""
+    bin_message_id: int
+    secure_hash: str  # for validating /sub/.../ext-{id}.vtt requests
+    language: str = ""
+    label: str = ""
 
 
 @dataclass
@@ -27,6 +36,8 @@ class HubItem:
     file_size: int
     has_thumb: bool
     quality: str = ""  # parsed resolution bucket: 480p / 720p / 1080p / 4K / ""
+    file_name: str = ""  # original media filename, retained for sidecar matching
+    subtitles: List[ExternalSubtitle] = field(default_factory=list)
 
 
 # Imports kept at the bottom to avoid a circular import with media_index,

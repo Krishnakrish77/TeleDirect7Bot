@@ -20,8 +20,17 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait, MessageNotModified
 from pyrogram.types import Message
 
+from main.utils.file_properties import get_hash, get_media_file_unique_id
+from main.utils.hub_query import ExternalSubtitle
 from main.utils.human_readable import humanbytes
 from main.utils.index_entry import IndexEntry, render, title_from_filename
+from main.utils.subtitles import (
+    derive_label,
+    is_subtitle_filename,
+    is_subtitle_mime,
+    language_from_filename,
+    stem_for_pairing,
+)
 
 
 # Media types worth cataloguing for the hub. Photos, stickers, voice notes
@@ -98,3 +107,73 @@ def schedule_index(bot: Client, bin_msg: Message) -> None:
     """Fire-and-forget. Caller (the forward handlers) gets to reply with the
     stream link immediately while caption editing happens in the background."""
     asyncio.create_task(index_bin_message(bot, bin_msg))
+
+
+def _subtitle_document(message: Message):
+    """Return the document if this is a subtitle sidecar, else None."""
+    doc = getattr(message, "document", None)
+    if doc is None:
+        return None
+    file_name = getattr(doc, "file_name", "") or ""
+    mime = (getattr(doc, "mime_type", "") or "").lower()
+    if is_subtitle_filename(file_name):
+        return doc
+    if is_subtitle_mime(mime) and file_name:
+        # Text/plain alone is too generous; require a recognisable filename.
+        return doc
+    return None
+
+
+async def pair_subtitle(bin_msg: Message, source_msg: Optional[Message]) -> Optional[int]:
+    """If ``bin_msg`` is a subtitle sidecar, attach it to a previously-indexed
+    video. Returns the target video's BIN message id on success, None otherwise.
+
+    Pairing strategy (in order):
+      1. ``source_msg.reply_to_message`` (user replied to their own video DM)
+         — match by file_unique_id[:6].
+      2. Filename stem match against existing HubItems.
+    """
+    from main.utils import media_index
+
+    doc = _subtitle_document(bin_msg)
+    if doc is None:
+        return None
+
+    file_name = getattr(doc, "file_name", "") or ""
+
+    target = None
+    reply = getattr(source_msg, "reply_to_message", None) if source_msg else None
+    if reply is not None:
+        reply_uid = (get_media_file_unique_id(reply) or "")[:6]
+        if reply_uid:
+            target = media_index.find_by_hash(reply_uid)
+
+    if target is None:
+        target = media_index.find_by_filename_stem(stem_for_pairing(file_name))
+
+    if target is None:
+        logging.info("subtitle bin:%d uploaded but no matching video found",
+                     bin_msg.id)
+        return None
+
+    language = language_from_filename(file_name)
+    sub = ExternalSubtitle(
+        bin_message_id=bin_msg.id,
+        secure_hash=get_hash(bin_msg),
+        language=language,
+        label=derive_label(language, file_name),
+    )
+    ok = await media_index.attach_subtitle(target.message_id, sub)
+    if ok:
+        logging.info(
+            "subtitle bin:%d paired with video bin:%d (lang=%s)",
+            bin_msg.id, target.message_id, language or "?",
+        )
+        return target.message_id
+    return None
+
+
+def schedule_subtitle_pairing(bot: Client, bin_msg: Message,
+                              source_msg: Optional[Message]) -> None:
+    """Fire-and-forget background pairing for sidecar uploads."""
+    asyncio.create_task(pair_subtitle(bin_msg, source_msg))

@@ -2,11 +2,24 @@ import asyncio
 import logging
 from main.bot import StreamBot
 from main.utils.file_properties import gen_link
-from main.utils.indexer import schedule_index
+from main.utils.indexer import schedule_index, schedule_subtitle_pairing
+from main.utils.subtitles import is_subtitle_filename, is_subtitle_mime
 from main.vars import Var
 from pyrogram import filters, Client
 from pyrogram.errors import FloodWait
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+
+
+def _looks_like_subtitle(m: Message) -> bool:
+    doc = getattr(m, "document", None)
+    if doc is None:
+        return False
+    file_name = getattr(doc, "file_name", "") or ""
+    if is_subtitle_filename(file_name):
+        return True
+    mime = (getattr(doc, "mime_type", "") or "").lower()
+    return is_subtitle_mime(mime) and bool(file_name)
+
 
 @StreamBot.on_message(
     filters.private
@@ -25,6 +38,15 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 async def private_receive_handler(c: Client, m: Message):
     try:
         log_msg = await m.forward(chat_id=Var.BIN_CHANNEL)
+
+        if _looks_like_subtitle(m):
+            schedule_subtitle_pairing(c, log_msg, m)
+            await m.reply_text(
+                text="📝 Subtitle saved. I'll attach it to the matching video.",
+                quote=True,
+            )
+            return
+
         schedule_index(c, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=False)
         await log_msg.reply_text(text=f"**Requested By :** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n**User ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)

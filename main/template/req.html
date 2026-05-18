@@ -144,7 +144,10 @@
           track.kind = "subtitles";
           track.label = t.label || `Track ${i + 1}`;
           if (t.language) track.srclang = t.language;
-          track.src = `${subPath}/${t.index}.vtt`;
+          // External sidecars come with an absolute-path `url`; embedded
+          // tracks include one too. Fall back to the legacy {index}.vtt for
+          // older list.json responses still in CDN cache.
+          track.src = t.url || `${subPath}/${t.index}.vtt`;
           if (i === 0) track.default = true;
           video.appendChild(track);
         });
