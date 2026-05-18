@@ -107,6 +107,31 @@
              if (show) n++;
            });
            this.visibleCount = n;
+           // Re-sort the DOM whenever filter changes so leaving the
+           // duplicates view restores the default bin-id-desc order.
+           // Default (any filter except 'duplicates') = bin_id desc.
+           // Duplicates view = secure_hash asc, then bin_id asc so
+           // group members sit adjacent and the canonical (oldest)
+           // row appears first within each group.
+           if (rows.length) {
+             const tbody = rows[0].parentNode;
+             const all = [...rows];
+             if (this.filter === 'duplicates') {
+               all.sort((a, b) => {
+                 const ha = a.dataset.hash || '';
+                 const hb = b.dataset.hash || '';
+                 if (ha !== hb) return ha < hb ? -1 : 1;
+                 return parseInt(a.dataset.binId || '0', 10) -
+                        parseInt(b.dataset.binId || '0', 10);
+               });
+             } else {
+               all.sort((a, b) =>
+                 parseInt(b.dataset.binId || '0', 10) -
+                 parseInt(a.dataset.binId || '0', 10),
+               );
+             }
+             all.forEach(r => tbody.appendChild(r));
+           }
          }
        }"
        x-init="$nextTick(() => refresh())"
@@ -636,7 +661,9 @@
                   data-kind="{{ kind }}"
                   data-enriched="{{ '1' if item.tmdb_id else '0' }}"
                   data-has-poster="{{ '1' if item.poster_path else '0' }}"
-                  data-duplicate="{{ '1' if is_dup else '0' }}">
+                  data-duplicate="{{ '1' if is_dup else '0' }}"
+                  data-hash="{{ item.secure_hash or '' }}"
+                  data-bin-id="{{ item.message_id }}">
                 <td class="px-3 py-2">
                   <input type="checkbox" name="ids" value="{{ item.message_id }}"
                          x-model="selected" />
