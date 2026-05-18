@@ -103,15 +103,40 @@ async def channel_receive_handler(bot, broadcast: Message):
                                     log_msg.id)
         await log_msg.reply_text(
             text=f"**Channel Name:** `{broadcast.chat.title}`\n**Channel ID:** `{broadcast.chat.id}`\n**Request URL:** https://t.me/{(await bot.get_me()).username}?start=msgid_{str(log_msg.id)}",
-            # text=f"**Cʜᴀɴɴᴇʟ Nᴀᴍᴇ:** `{broadcast.chat.title}`\n**Cʜᴀɴɴᴇʟ ID:** `{broadcast.chat.id}`\n**Rᴇǫᴜᴇsᴛ ᴜʀʟ:** https://t.me/FxStreamBot?start=msgid_{str(log_msg.id)}",
-            quote=True,            
+            quote=True,
         )
-        await bot.edit_message_reply_markup(
-            chat_id=broadcast.chat.id,
-            message_id=broadcast.id,
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Download Link 📥", url=stream_link)]])
-        )
+        # Best-effort: try to attach an inline "Download Link" button to
+        # the source-channel message. This only works when the bot
+        # itself authored the post or has explicit edit rights in the
+        # source channel; the common case is a user-uploaded post we
+        # have no edit permission on, which Telegram surfaces as
+        # MESSAGE_ID_INVALID. Streaming + forward to BIN_CHANNEL have
+        # already succeeded, so swallow the failure rather than
+        # logging it at ERROR or echoing it into BIN.
+        try:
+            from pyrogram.errors.exceptions.bad_request_400 import (
+                MessageIdInvalid,
+            )
+        except ImportError:
+            MessageIdInvalid = None
+        try:
+            await bot.edit_message_reply_markup(
+                chat_id=broadcast.chat.id,
+                message_id=broadcast.id,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("Download Link 📥", url=stream_link)]]),
+            )
+        except Exception as edit_exc:
+            if MessageIdInvalid is not None and isinstance(edit_exc, MessageIdInvalid):
+                logging.debug(
+                    "channel_receive: skipping reply-markup on %s/%d (bot doesn't own that message)",
+                    broadcast.chat.title, broadcast.id,
+                )
+            else:
+                logging.warning(
+                    "channel_receive: edit_message_reply_markup failed for %s/%d: %s",
+                    broadcast.chat.title, broadcast.id, edit_exc,
+                )
     except FloodWait as w:
         logging.warning(f"Sleeping for {w.x}s")
         await asyncio.sleep(w.x)
@@ -119,8 +144,13 @@ async def channel_receive_handler(bot, broadcast: Message):
                              text=f"Got Floodwait Of {str(w.x)}s from {broadcast.chat.title}\n\n**Channel ID:** `{str(broadcast.chat.id)}`",
                              disable_web_page_preview=True,)
     except Exception as e:
-        await bot.send_message(chat_id=Var.BIN_CHANNEL, text=f"**#ᴇʀʀᴏʀ_ᴛʀᴀᴄᴇʙᴀᴄᴋ:** `{e}`", disable_web_page_preview=True)
-        logging.error(f"Can't Edit Broadcast Message: {e}")
+        # Real failure of the forward / reply flow — log it, but don't
+        # spam BIN_CHANNEL with a traceback message. That was leaving a
+        # pile of #ᴇʀʀᴏʀ_ᴛʀᴀᴄᴇʙᴀᴄᴋ messages in the catalogue channel.
+        logging.exception(
+            "channel_receive_handler failed for %s/%d",
+            broadcast.chat.title, broadcast.id,
+        )
 
 @StreamBot.on_message(filters.group & ~filters.user(Var.BANNED_USERS) & (filters.document | filters.video | filters.audio), group=4)
 async def group_receive_handler(c: Client, m: Message):
