@@ -244,6 +244,22 @@ async def admin_edit(request: web.Request) -> web.Response:
     new_tags = _normalise_tags(form.get("tags") or "")
     new_description = (form.get("description") or "").strip()
 
+    # Optional manual TMDB-id override. When present, it bypasses the
+    # title-search path entirely — admin tells us which record to use
+    # by its provider id (handy when titles are too generic for search
+    # to disambiguate).
+    tmdb_id_raw = (form.get("tmdb_id") or "").strip()
+    tmdb_kind = (form.get("tmdb_kind") or "movie").strip().lower()
+    if tmdb_kind not in ("movie", "tv"):
+        tmdb_kind = "movie"
+    manual_tmdb_id: Optional[int] = None
+    if tmdb_id_raw:
+        try:
+            manual_tmdb_id = int(tmdb_id_raw)
+        except ValueError:
+            from urllib.parse import quote
+            raise web.HTTPFound(f"/admin?flash={quote('TMDB ID must be numeric')}")
+
     if not new_title:
         from urllib.parse import quote
         raise web.HTTPFound(f"/admin?flash={quote('Title is required')}")
@@ -262,12 +278,25 @@ async def admin_edit(request: web.Request) -> web.Response:
 
     status = await _rewrite_caption(message_id, apply)
 
-    # If the title or year changed and TMDB is configured, retry the
-    # lookup so misclassified entries can be corrected by editing alone.
-    # Reset the existing TMDB ID so enrich_one searches fresh by the new
-    # title rather than just refreshing the old record. Skip for
-    # 'removed' / 'failed' — there's nothing to re-enrich.
-    if status in ("written", "local-only") and (title_changed or year_changed):
+    # Manual TMDB-id override wins over everything. Fetch the record
+    # immediately (this isn't fire-and-forget — admin is waiting for
+    # the result and a failure should be reported) and apply it,
+    # which also writes the canonical metadata back to BIN.
+    manual_tmdb_status = ""
+    if (status in ("written", "local-only")
+            and manual_tmdb_id is not None):
+        ok = await media_index.enrich_with_tmdb_id(
+            message_id, manual_tmdb_id, tmdb_kind, bot=StreamBot,
+        )
+        manual_tmdb_status = "applied" if ok else "failed"
+
+    # If the title or year changed (and there's no manual override) and
+    # TMDB is configured, retry the search-based lookup so misclassified
+    # entries can be corrected by editing alone. Reset the existing
+    # TMDB ID so enrich_one searches fresh by the new title rather than
+    # just refreshing the old record. Skip for 'removed' / 'failed' —
+    # there's nothing to re-enrich.
+    elif status in ("written", "local-only") and (title_changed or year_changed):
         from main.utils import tmdb
         if tmdb.is_configured():
             item = media_index.get_item(message_id)

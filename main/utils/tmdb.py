@@ -218,3 +218,30 @@ async def lookup_movie(title: str, year: Optional[int] = None) -> Optional[TMDBH
 
 async def lookup_series(title: str, year: Optional[int] = None) -> Optional[TMDBHit]:
     return await _lookup("tv", title, year)
+
+
+async def fetch_by_id(tmdb_id: int, kind: str) -> Optional[TMDBHit]:
+    """Hit /movie/{id} or /tv/{id} directly — no title search, no
+    confidence scoring. Used by admin when they want to attach a
+    specific TMDB record to a row whose title is too messy or generic
+    for search to find the right match. Returns None if the id doesn't
+    exist or TMDB isn't configured.
+    """
+    if not is_configured() or not tmdb_id or kind not in ("movie", "tv"):
+        return None
+    year_field = "release_date" if kind == "movie" else "first_air_date"
+    async with aiohttp.ClientSession() as session:
+        details = await _enrich_details(session, kind, int(tmdb_id))
+        if details is None:
+            return None
+        return TMDBHit(
+            tmdb_id=int(details.get("id") or tmdb_id),
+            kind=kind,
+            title=details.get("title") or details.get("name") or "",
+            year=_parse_year(details.get(year_field)),
+            overview=(details.get("overview") or "").strip(),
+            poster_path=details.get("poster_path") or "",
+            backdrop_path=details.get("backdrop_path") or "",
+            genres=[g["name"] for g in (details.get("genres") or []) if g.get("name")],
+            imdb_id=(details.get("external_ids") or {}).get("imdb_id") or "",
+        )

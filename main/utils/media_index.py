@@ -242,6 +242,12 @@ def _item_from_message(message) -> Optional[HubItem]:
         episode = None
         movie_key = compute_movie_key(parsed.title or file_name, parsed.year, file_name)
 
+    # When the caption carries a TMDB id, the description we just parsed
+    # is the TMDB overview written back by an earlier enrichment. Promote
+    # it to the overview field so a re-seed-from-BIN keeps the watch
+    # page's overview block populated without needing to re-hit TMDB.
+    overview = parsed.description if parsed.tmdb_id else ""
+
     return HubItem(
         message_id=message.id,
         secure_hash=get_hash(message),
@@ -266,6 +272,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         imdb_id=parsed.imdb_id,
         poster_path=parsed.poster_path,
         backdrop_path=parsed.backdrop_path,
+        overview=overview,
     )
 
 
@@ -1411,6 +1418,31 @@ async def enrich_one(message_id: int, bot=None) -> bool:
     return True
 
 
+async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
+                              bot=None) -> bool:
+    """Apply a specific TMDB record to one HubItem by its TMDB id.
+
+    Used by the admin Edit modal when the operator wants to override
+    the title-search result with an exact pick (the search either
+    matched the wrong record or didn't match at all). Returns True on
+    success, False if TMDB couldn't resolve the id.
+    """
+    if not tmdb.is_configured():
+        return False
+    item = _items.get(message_id)
+    if item is None:
+        return False
+    hit = await tmdb.fetch_by_id(tmdb_id, kind)
+    if hit is None:
+        return False
+    async with _lock:
+        _apply_tmdb_to_item(item, hit)
+        _persist_unlocked()
+    if bot is not None:
+        await persist_canonical_to_bin(bot, message_id)
+    return True
+
+
 async def enrich_all(bot=None, force: bool = False) -> dict:
     """Background-enrich every entry that hasn't been enriched yet.
 
@@ -1507,6 +1539,19 @@ async def reindex_all(bot=None) -> dict:
     try:
         async with _lock:
             for it in _items.values():
+                # Refresh title + year from the filename so improvements
+                # to clean_for_search land on existing entries. TMDB-
+                # enriched items still keep their canonical title — we
+                # only re-derive when the entry hasn't been matched yet,
+                # so manual admin edits / TMDB canonical titles aren't
+                # clobbered.
+                if not it.tmdb_id:
+                    fresh_title = title_from_filename(it.file_name)
+                    if fresh_title and fresh_title != "(untitled)":
+                        it.title = fresh_title
+                    if it.year is None:
+                        it.year = year_from_filename(it.file_name)
+
                 sm = series_parse.parse(it.file_name) or series_parse.parse(it.title)
                 if sm:
                     new_series_key = sm.key

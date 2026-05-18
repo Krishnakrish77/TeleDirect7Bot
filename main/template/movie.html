@@ -29,8 +29,9 @@
                  class="w-32 sm:w-40 rounded-lg shadow-lg" />
           {% endif %}
           <div class="flex-1 min-w-0">
-            {% if meta.overview %}
-              <p class="text-sm text-slate-300 leading-relaxed">{{ meta.overview }}</p>
+            {% set body = meta.overview or meta.description %}
+            {% if body %}
+              <p class="text-sm text-slate-300 leading-relaxed">{{ body }}</p>
             {% endif %}
             <div class="mt-3 flex flex-wrap gap-2 text-xs">
               {% for g in meta.tmdb_genres %}

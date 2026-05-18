@@ -22,6 +22,12 @@
              year: d.year || '',
              tags: d.tags || '',
              description: d.description || '',
+             // Prefill the TMDB override fields with whatever this row
+             // already carries — operator can keep the existing id,
+             // change to a different one, or clear to fall back to
+             // search-by-title.
+             tmdb_id: d.tmdbId || '',
+             tmdb_kind: d.tmdbKind || 'movie',
            };
          },
          rowVisible(row) {
@@ -329,6 +335,8 @@
                           data-year="{{ item.year or '' }}"
                           data-tags="{{ item.tags | join(' ') }}"
                           data-description="{{ item.description }}"
+                          data-tmdb-id="{{ item.tmdb_id or '' }}"
+                          data-tmdb-kind="{{ item.tmdb_kind or 'movie' }}"
                           @click.stop="openEdit($event.currentTarget)"
                           class="text-xs px-2 py-1 rounded
                                  bg-brand-500/15 text-brand-300
@@ -405,6 +413,39 @@
                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60
                                  resize-y"></textarea>
               </label>
+
+              {# Optional TMDB id override. When set, the backend skips
+                 search-by-title and applies the specified record
+                 directly — useful for titles that are too generic or
+                 too messy for TMDB's search to disambiguate. #}
+              <div class="pt-3 border-t border-white/5">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">
+                  TMDB override <span class="lowercase tracking-normal text-slate-500">(optional)</span>
+                </p>
+                <div class="flex items-center gap-2">
+                  <input type="number" name="tmdb_id" min="1"
+                         placeholder="TMDB ID"
+                         x-model="editing.tmdb_id"
+                         class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                border border-white/5
+                                focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                                tabular-nums" />
+                  <select name="tmdb_kind"
+                          x-model="editing.tmdb_kind"
+                          class="px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                 border border-white/5
+                                 focus:outline-none focus:ring-2 focus:ring-brand-400/60">
+                    <option value="movie">Movie</option>
+                    <option value="tv">TV</option>
+                  </select>
+                </div>
+                <p class="mt-1.5 text-xs text-slate-500 leading-relaxed">
+                  Set this and Save to attach a specific TMDB record
+                  by id — overrides the title-search fallback. Find
+                  the id at themoviedb.org (e.g.
+                  <code class="text-slate-400">/movie/1230</code> → 1230).
+                </p>
+              </div>
             </div>
 
             <footer class="px-5 py-3 flex items-center justify-end gap-2">
