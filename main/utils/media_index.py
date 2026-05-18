@@ -514,12 +514,22 @@ async def _delete_probe(bot, channel_id: int, probe_id: int) -> None:
 async def seed(bot, channel_id: int) -> None:
     """Populate the index from BIN_CHANNEL history.
 
-    Bots can't call ``messages.getHistory``, so on a cold start we discover
-    the latest message id by sending a tiny dot to the channel and reading
-    its returned id. On warm restarts we already know ``_latest_seen_id``
-    from the persisted JSON — the auto-indexer bumps it on every BIN
-    message — so we skip the probe entirely. This makes a visible "."
-    appear at most ONCE in the channel's lifetime, not on every restart.
+    Bots can't call ``messages.getHistory``, so we discover the channel's
+    current latest message id by sending a tiny ``.`` and reading the id
+    Telegram returns, then immediately deleting it. The probe IS the only
+    way for a bot to learn the high-water mark.
+
+    We used to skip the probe on warm restarts (``_latest_seen_id`` was
+    persisted to /tmp and the pinned snapshot), but that turned out to
+    LOSE entries: uploads made between the last snapshot and a restart
+    leave ``_latest_seen_id`` stale, and seed would then walk only DOWN
+    from the stale value — missing every new upload above it. With a
+    debounced snapshot save (up to 30s after a mutation), this race is
+    realistic for users who upload a batch and restart soon after.
+
+    Probing every seed adds one ``.`` send + delete per startup, which
+    the retry logic in ``_delete_probe`` cleans up so the dot never
+    stays visible.
     """
     global _seeded, _latest_seen_id
     if _seeded:
@@ -539,23 +549,16 @@ async def seed(bot, channel_id: int) -> None:
                 "media_index: telegram-snapshot restore failed (non-fatal)"
             )
 
-    latest_id = _latest_seen_id
-    if latest_id <= 0:
-        # No persisted state — first run. Send a probe to learn the id, then
-        # erase it with delete_messages + retries.
-        try:
-            probe = await bot.send_message(channel_id, ".")
-        except Exception:
-            logging.exception("media_index: probe send failed; seed skipped")
-            _seeded = True
-            return
-        latest_id = probe.id
-        await _delete_probe(bot, channel_id, probe.id)
-    else:
-        logging.info(
-            "media_index: skipping probe — resuming from persisted id %d",
-            latest_id,
-        )
+    # Always probe — we can't trust _latest_seen_id to reflect the
+    # actual channel state after a /tmp wipe + stale snapshot.
+    try:
+        probe = await bot.send_message(channel_id, ".")
+    except Exception:
+        logging.exception("media_index: probe send failed; seed skipped")
+        _seeded = True
+        return
+    latest_id = probe.id
+    await _delete_probe(bot, channel_id, probe.id)
 
     if latest_id > _latest_seen_id:
         _latest_seen_id = latest_id
