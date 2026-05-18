@@ -58,6 +58,7 @@
     <div x-data="{
            seed: null,
            enrich: null,
+           reindex: null,
            pollHandle: null,
            start() {
              this.tick();
@@ -72,7 +73,8 @@
                const data = await r.json();
                this.seed = data.seed;
                this.enrich = data.enrich;
-               if (!data.seed.running &amp;&amp; !data.enrich.running) {
+               this.reindex = data.reindex;
+               if (!data.seed.running &amp;&amp; !data.enrich.running &amp;&amp; !data.reindex.running) {
                  if (this.pollHandle) {
                    clearInterval(this.pollHandle);
                    this.pollHandle = null;
@@ -111,6 +113,20 @@
           <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
             <div class="h-full bg-brand-400 transition-all duration-500"
                  :style="`width:${pct(enrich)}%`"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="reindex &amp;&amp; reindex.running">
+        <div class="rounded-lg border border-brand-400/30 bg-brand-400/5 p-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-brand-200">Re-indexing catalogue</span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${reindex.done}/${reindex.total} processed`"></span>
+          </div>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full bg-brand-400 transition-all duration-500"
+                 :style="`width:${pct(reindex)}%`"></div>
           </div>
         </div>
       </template>

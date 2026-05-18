@@ -154,6 +154,7 @@ async def admin_status(request: web.Request) -> web.Response:
     return web.json_response({
         "seed": media_index.seed_state(),
         "enrich": media_index.enrichment_state(),
+        "reindex": media_index.reindex_state(),
         "catalogue_size": media_index.size(),
     }, headers={"Cache-Control": "no-store"})
 
@@ -167,21 +168,14 @@ async def admin_reindex(request: web.Request) -> web.Response:
     entries need to pick up the new logic.
     """
     _require_session(request)
-    summary = await media_index.reindex_all()
-    flash = (
-        f"Re-indexed {summary['total']} entries: "
-        f"series={summary['series_changed']}, "
-        f"movie={summary['movie_changed']}, "
-        f"quality={summary['quality_changed']}"
-    )
+    import asyncio as _aio
+    state = media_index.reindex_state()
+    if not state.get("running"):
+        _aio.create_task(media_index.reindex_all())
     if _is_htmx(request):
-        # Surface the flash via a header so the inline widget can render
-        # it without a page reload.
-        return web.Response(
-            status=204,
-            headers={"HX-Trigger": f'{{"adminFlash":{json.dumps(flash)}}}'},
-        )
+        return web.Response(status=204)
     from urllib.parse import quote
+    flash = "Re-index started — leave the page open to watch progress"
     raise web.HTTPFound(f"/admin?flash={quote(flash)}")
 
 

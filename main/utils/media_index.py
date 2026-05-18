@@ -81,6 +81,10 @@ _enrich_state: dict = {"running": False, "done": 0, "total": 0,
                        "enriched": 0, "failed": 0,
                        "started_at": 0.0, "finished_at": 0.0,
                        "last_title": ""}
+_reindex_state: dict = {"running": False, "done": 0, "total": 0,
+                        "series_changed": 0, "movie_changed": 0,
+                        "quality_changed": 0,
+                        "started_at": 0.0, "finished_at": 0.0}
 
 
 def seed_state() -> dict:
@@ -89,6 +93,10 @@ def seed_state() -> dict:
 
 def enrichment_state() -> dict:
     return dict(_enrich_state)
+
+
+def reindex_state() -> dict:
+    return dict(_reindex_state)
 
 
 def _to_serializable(item: HubItem) -> dict:
@@ -1152,44 +1160,61 @@ async def reindex_all() -> dict:
     after the series/dedup detectors are improved. No Telegram round-trips
     needed — the cached file_name and parsed caption are enough.
 
-    Returns a count summary so the admin UI can show what changed.
+    Populates ``_reindex_state`` so the admin UI can poll progress; for
+    100-ish entries this is sub-second but the state keeps the surface
+    consistent with seed and enrich.
     """
-    changed_series = 0
-    changed_movie = 0
-    changed_quality = 0
-    async with _lock:
-        for it in _items.values():
-            sm = series_parse.parse(it.file_name) or series_parse.parse(it.title)
-            new_series_key = sm.key if sm else ""
-            new_series_title = sm.title if sm else ""
-            new_season = sm.season if sm else None
-            new_episode = sm.episode if sm else None
-            new_movie_key = (
-                ""
-                if sm
-                else compute_movie_key(it.title or it.file_name, it.year, it.file_name)
-            )
-            new_quality = _extract_quality(it.title, it.file_name, it.description)
+    if _reindex_state["running"]:
+        return {"already_running": True, "total": len(_items)}
 
-            if (it.series_key, it.season, it.episode) != (new_series_key, new_season, new_episode):
-                changed_series += 1
-            if it.movie_key != new_movie_key:
-                changed_movie += 1
-            if it.quality != new_quality:
-                changed_quality += 1
+    _reindex_state.update(
+        running=True,
+        done=0,
+        total=len(_items),
+        series_changed=0,
+        movie_changed=0,
+        quality_changed=0,
+        started_at=time.time(),
+        finished_at=0.0,
+    )
+    try:
+        async with _lock:
+            for it in _items.values():
+                sm = series_parse.parse(it.file_name) or series_parse.parse(it.title)
+                new_series_key = sm.key if sm else ""
+                new_series_title = sm.title if sm else ""
+                new_season = sm.season if sm else None
+                new_episode = sm.episode if sm else None
+                new_movie_key = (
+                    ""
+                    if sm
+                    else compute_movie_key(it.title or it.file_name, it.year, it.file_name)
+                )
+                new_quality = _extract_quality(it.title, it.file_name, it.description)
 
-            it.series_key = new_series_key
-            it.series_title = new_series_title
-            it.season = new_season
-            it.episode = new_episode
-            it.movie_key = new_movie_key
-            it.quality = new_quality
-        _persist_unlocked()
+                if (it.series_key, it.season, it.episode) != (new_series_key, new_season, new_episode):
+                    _reindex_state["series_changed"] += 1
+                if it.movie_key != new_movie_key:
+                    _reindex_state["movie_changed"] += 1
+                if it.quality != new_quality:
+                    _reindex_state["quality_changed"] += 1
+
+                it.series_key = new_series_key
+                it.series_title = new_series_title
+                it.season = new_season
+                it.episode = new_episode
+                it.movie_key = new_movie_key
+                it.quality = new_quality
+                _reindex_state["done"] += 1
+            _persist_unlocked()
+    finally:
+        _reindex_state["running"] = False
+        _reindex_state["finished_at"] = time.time()
     return {
-        "total": len(_items),
-        "series_changed": changed_series,
-        "movie_changed": changed_movie,
-        "quality_changed": changed_quality,
+        "total": _reindex_state["total"],
+        "series_changed": _reindex_state["series_changed"],
+        "movie_changed": _reindex_state["movie_changed"],
+        "quality_changed": _reindex_state["quality_changed"],
     }
 
 
