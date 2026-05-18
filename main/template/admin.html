@@ -118,61 +118,89 @@
           Select rows for bulk actions or click Edit on any row for inline editing.
         </p>
       </div>
-      <div class="flex items-center gap-3">
-        <form hx-post="/admin/enrich"
-              hx-swap="none"
-              @htmx:after-request.camel="$dispatch('admin-progress-tick')"
-              class="inline">
-          <button type="submit"
+      {# Maintenance dropdown — collapses the five pipeline actions
+         (Enrich, Re-index, Probe codecs, Fetch episode details,
+         Migrate → Mongo) into one menu so the header stops being a
+         wall of buttons. Each item is its own HTMX form so the
+         existing fire-and-forget + progress-tick pattern still works. #}
+      <div class="flex items-center gap-3"
+           x-data="{ menuOpen: false }"
+           @keydown.escape.window="menuOpen = false"
+           @click.outside="menuOpen = false">
+        <div class="relative">
+          <button type="button"
+                  @click="menuOpen = !menuOpen"
+                  :aria-expanded="menuOpen.toString()"
                   class="text-sm px-3 py-1.5 rounded bg-ink-800 text-slate-200
-                         border border-white/5 hover:bg-ink-700 transition-colors">
-            Enrich (TMDB)
+                         border border-white/5 hover:bg-ink-700 transition-colors
+                         inline-flex items-center gap-1.5">
+            Maintenance
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2"
+                 class="w-3.5 h-3.5"
+                 :class="menuOpen ? 'rotate-180' : ''">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="m19.5 8.25-7.5 7.5-7.5-7.5"/>
+            </svg>
           </button>
-        </form>
-        <form hx-post="/admin/reindex"
-              hx-swap="none"
-              @htmx:after-request.camel="$dispatch('admin-progress-tick')"
-              class="inline">
-          <button type="submit"
-                  class="text-sm px-3 py-1.5 rounded bg-ink-800 text-slate-200
-                         border border-white/5 hover:bg-ink-700 transition-colors">
-            Re-index catalogue
-          </button>
-        </form>
-        <form hx-post="/admin/probe-codecs"
-              hx-swap="none"
-              @htmx:after-request.camel="$dispatch('admin-progress-tick')"
-              class="inline">
-          <button type="submit"
-                  class="text-sm px-3 py-1.5 rounded bg-ink-800 text-slate-200
-                         border border-white/5 hover:bg-ink-700 transition-colors"
-                  title="ffprobe every unprobed entry to detect HEVC / 10-bit / AV1 files that can't play in browsers">
-            Probe codecs
-          </button>
-        </form>
-        <form hx-post="/admin/fetch-episodes"
-              hx-swap="none"
-              @htmx:after-request.camel="$dispatch('admin-progress-tick')"
-              class="inline">
-          <button type="submit"
-                  class="text-sm px-3 py-1.5 rounded bg-ink-800 text-slate-200
-                         border border-white/5 hover:bg-ink-700 transition-colors"
-                  title="Fetch TMDB per-episode names + overviews + still images for TV rows. One call per season; episodes share the response.">
-            Fetch episode details
-          </button>
-        </form>
-        <form hx-post="/admin/migrate-to-mongo"
-              hx-swap="none"
-              hx-confirm="Migrate the in-memory catalogue to MongoDB? Requires MONGO_URI to be set."
-              @htmx:after-request.camel="$dispatch('admin-progress-tick')"
-              class="inline">
-          <button type="submit"
-                  class="text-sm px-3 py-1.5 rounded bg-amber-500/15 text-amber-200
-                         border border-amber-400/30 hover:bg-amber-500/25 transition-colors"
-                  title="Bulk-upsert every catalogue item into MongoDB Atlas. Tracks progress live below.">
-            Migrate → Mongo
-          </button>
-        </form>
+          <div x-show="menuOpen" x-cloak x-transition.opacity.duration.150ms
+               class="absolute right-0 top-full mt-2 z-30 w-64
+                      rounded-lg border border-white/10 bg-ink-900
+                      shadow-2xl py-1.5">
+            <form hx-post="/admin/enrich" hx-swap="none"
+                  @htmx:after-request.camel="$dispatch('admin-progress-tick'); menuOpen = false"
+                  class="block">
+              <button type="submit"
+                      class="w-full text-left px-4 py-2 text-sm text-slate-200
+                             hover:bg-ink-800 transition-colors">
+                <span class="block font-medium">Enrich (TMDB)</span>
+                <span class="block text-xs text-slate-500">Match every un-enriched item against TMDB.</span>
+              </button>
+            </form>
+            <form hx-post="/admin/reindex" hx-swap="none"
+                  @htmx:after-request.camel="$dispatch('admin-progress-tick'); menuOpen = false"
+                  class="block">
+              <button type="submit"
+                      class="w-full text-left px-4 py-2 text-sm text-slate-200
+                             hover:bg-ink-800 transition-colors">
+                <span class="block font-medium">Re-index catalogue</span>
+                <span class="block text-xs text-slate-500">Re-derive titles / series-keys / quality from filenames.</span>
+              </button>
+            </form>
+            <form hx-post="/admin/probe-codecs" hx-swap="none"
+                  @htmx:after-request.camel="$dispatch('admin-progress-tick'); menuOpen = false"
+                  class="block">
+              <button type="submit"
+                      class="w-full text-left px-4 py-2 text-sm text-slate-200
+                             hover:bg-ink-800 transition-colors">
+                <span class="block font-medium">Probe codecs</span>
+                <span class="block text-xs text-slate-500">ffprobe to flag HEVC / 10-bit / AV1 files.</span>
+              </button>
+            </form>
+            <form hx-post="/admin/fetch-episodes" hx-swap="none"
+                  @htmx:after-request.camel="$dispatch('admin-progress-tick'); menuOpen = false"
+                  class="block">
+              <button type="submit"
+                      class="w-full text-left px-4 py-2 text-sm text-slate-200
+                             hover:bg-ink-800 transition-colors">
+                <span class="block font-medium">Fetch episode details</span>
+                <span class="block text-xs text-slate-500">Pull TMDB per-episode titles + stills (1 call per season).</span>
+              </button>
+            </form>
+            <div class="my-1 border-t border-white/5"></div>
+            <form hx-post="/admin/migrate-to-mongo" hx-swap="none"
+                  hx-confirm="Migrate the in-memory catalogue to MongoDB? Requires MONGO_URI to be set."
+                  @htmx:after-request.camel="$dispatch('admin-progress-tick'); menuOpen = false"
+                  class="block">
+              <button type="submit"
+                      class="w-full text-left px-4 py-2 text-sm text-amber-200
+                             hover:bg-amber-500/10 transition-colors">
+                <span class="block font-medium">Migrate → Mongo</span>
+                <span class="block text-xs text-amber-300/70">Bulk-upsert into MongoDB Atlas. One-shot.</span>
+              </button>
+            </form>
+          </div>
+        </div>
         <a href="/admin/logout"
            class="text-sm text-slate-400 hover:text-brand-300 transition-colors">
           Sign out
