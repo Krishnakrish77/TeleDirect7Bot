@@ -33,6 +33,7 @@ from typing import List, Optional
 
 TITLE_MARKER = "🎬"
 FILE_MARKER = "📁"
+ID_MARKER = "🆔"
 
 _YEAR_RE = re.compile(r"\s*\((\d{4})\)\s*$")
 _TAG_LINE_RE = re.compile(r"^#\S")
@@ -43,6 +44,16 @@ _FILE_RE = re.compile(
     r"(?:(?P<size>[^·]+?)\s*·\s*)?"
     r"bin:(?P<bin_id>\d+)\s*$"
 )
+# Durable provider data on the 🆔 caption line:
+#   🆔 tmdb-tv:200931 imdb:tt19378684 poster:/abc.jpg backdrop:/def.jpg
+# Lets a re-seed-from-BIN recover the canonical record IDs *and* poster
+# art without having to re-search TMDB. Poster/backdrop are TMDB relative
+# paths so they're short — the whole line stays well under Telegram's
+# 1024-char caption cap.
+_ID_TMDB_RE = re.compile(r"\btmdb-(?P<kind>movie|tv):(?P<id>\d+)\b")
+_ID_IMDB_RE = re.compile(r"\bimdb:(?P<id>tt\d+)\b")
+_ID_POSTER_RE = re.compile(r"\bposter:(?P<path>\S+)")
+_ID_BACKDROP_RE = re.compile(r"\bbackdrop:(?P<path>\S+)")
 
 _VIDEO_EXT_RE = re.compile(
     r"\.(mkv|mp4|avi|mov|m4v|wmv|flv|webm|mpg|mpeg|ts)$", re.IGNORECASE
@@ -63,6 +74,14 @@ class IndexEntry:
     description: str = ""
     tags: List[str] = field(default_factory=list)
     files: List[FileVariant] = field(default_factory=list)
+    # Durable provider record IDs round-tripped via the 🆔 caption line.
+    tmdb_id: Optional[int] = None
+    tmdb_kind: str = ""        # "movie" or "tv"; "" if unknown
+    imdb_id: str = ""
+    # TMDB-relative poster + backdrop paths. Short strings, kept inline so
+    # a re-seed-from-BIN restores cards with real artwork — not just IDs.
+    poster_path: str = ""
+    backdrop_path: str = ""
 
 
 def parse(caption: str) -> Optional[IndexEntry]:
@@ -77,6 +96,11 @@ def parse(caption: str) -> Optional[IndexEntry]:
     tags: List[str] = []
     files: List[FileVariant] = []
     description_lines: List[str] = []
+    tmdb_id: Optional[int] = None
+    tmdb_kind: str = ""
+    imdb_id: str = ""
+    poster_path: str = ""
+    backdrop_path: str = ""
 
     for line in caption.splitlines():
         stripped = line.strip()
@@ -89,6 +113,20 @@ def parse(caption: str) -> Optional[IndexEntry]:
                 year = int(year_match.group(1))
                 title_text = title_text[: year_match.start()].rstrip()
             title = title_text
+        elif stripped.startswith(ID_MARKER):
+            tmdb_m = _ID_TMDB_RE.search(stripped)
+            if tmdb_m:
+                tmdb_kind = tmdb_m.group("kind")
+                tmdb_id = int(tmdb_m.group("id"))
+            imdb_m = _ID_IMDB_RE.search(stripped)
+            if imdb_m:
+                imdb_id = imdb_m.group("id")
+            poster_m = _ID_POSTER_RE.search(stripped)
+            if poster_m:
+                poster_path = poster_m.group("path")
+            backdrop_m = _ID_BACKDROP_RE.search(stripped)
+            if backdrop_m:
+                backdrop_path = backdrop_m.group("path")
         elif _TAG_LINE_RE.match(stripped):
             tags.extend(t.lower() for t in _TAG_RE.findall(stripped))
         elif stripped.startswith(FILE_MARKER):
@@ -111,6 +149,11 @@ def parse(caption: str) -> Optional[IndexEntry]:
         description="\n".join(description_lines).strip(),
         tags=tags,
         files=files,
+        tmdb_id=tmdb_id,
+        tmdb_kind=tmdb_kind,
+        imdb_id=imdb_id,
+        poster_path=poster_path,
+        backdrop_path=backdrop_path,
     )
 
 
@@ -141,6 +184,19 @@ def render(entry: IndexEntry) -> str:
                 bits.append(fv.size)
             bits.append(f"bin:{fv.bin_id}")
             parts.append(f"{FILE_MARKER} {' · '.join(bits)}")
+
+    id_bits: List[str] = []
+    if entry.tmdb_id and entry.tmdb_kind:
+        id_bits.append(f"tmdb-{entry.tmdb_kind}:{entry.tmdb_id}")
+    if entry.imdb_id:
+        id_bits.append(f"imdb:{entry.imdb_id}")
+    if entry.poster_path:
+        id_bits.append(f"poster:{entry.poster_path}")
+    if entry.backdrop_path:
+        id_bits.append(f"backdrop:{entry.backdrop_path}")
+    if id_bits:
+        parts.append("")
+        parts.append(f"{ID_MARKER} {' '.join(id_bits)}")
 
     return "\n".join(parts)
 

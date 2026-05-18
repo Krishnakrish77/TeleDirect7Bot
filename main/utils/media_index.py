@@ -41,6 +41,7 @@ from main.utils import series as series_parse
 from main.utils.dedup import movie_key as compute_movie_key
 from main.utils.subtitles import stem_for_pairing
 from main.utils import tmdb
+from main.utils import state_doc
 
 
 # Buckets we recognise in filenames/captions. Order matters: longest match
@@ -213,9 +214,29 @@ def _item_from_message(message) -> Optional[HubItem]:
     # Try filename first (release names follow conventions), fall back to the
     # parsed caption title for hand-written entries.
     sm = series_parse.parse(file_name) or series_parse.parse(parsed.title)
-    # Movies get a dedup key; series episodes get "" (the series_key path
-    # already collapses them by show name).
-    mk = "" if sm else compute_movie_key(parsed.title or file_name, parsed.year, file_name)
+    # If the caption preserved a TMDB tv id but the filename has no
+    # SxxEyy pattern, still treat the upload as a series so a re-seed
+    # doesn't fragment grouped titles back into the movie-variant pool.
+    is_tv_by_id = parsed.tmdb_kind == "tv" and parsed.tmdb_id
+
+    if sm:
+        series_key = sm.key
+        series_title = sm.title
+        season = sm.season
+        episode = sm.episode
+        movie_key = ""
+    elif is_tv_by_id and parsed.title:
+        series_key = series_parse.slugify(parsed.title)
+        series_title = parsed.title
+        season = None
+        episode = None
+        movie_key = ""
+    else:
+        series_key = ""
+        series_title = ""
+        season = None
+        episode = None
+        movie_key = compute_movie_key(parsed.title or file_name, parsed.year, file_name)
 
     return HubItem(
         message_id=message.id,
@@ -229,11 +250,18 @@ def _item_from_message(message) -> Optional[HubItem]:
         has_thumb=bool(getattr(media, "thumbs", None)),
         quality=_extract_quality(parsed.title, file_name, parsed.description),
         file_name=file_name,
-        series_key=sm.key if sm else "",
-        series_title=sm.title if sm else "",
-        season=sm.season if sm else None,
-        episode=sm.episode if sm else None,
-        movie_key=mk,
+        series_key=series_key,
+        series_title=series_title,
+        season=season,
+        episode=episode,
+        movie_key=movie_key,
+        # Provider IDs + artwork paths round-trip through the caption
+        # so a re-seed recovers them without needing to hit TMDB again.
+        tmdb_id=parsed.tmdb_id,
+        tmdb_kind=parsed.tmdb_kind,
+        imdb_id=parsed.imdb_id,
+        poster_path=parsed.poster_path,
+        backdrop_path=parsed.backdrop_path,
     )
 
 
@@ -406,6 +434,18 @@ async def seed(bot, channel_id: int) -> None:
         return
 
     _load()  # Restore whatever was on disk first.
+
+    # If /tmp was empty (cold container restart on Koyeb) try the
+    # Telegram-pinned snapshot before walking BIN. The snapshot carries
+    # full TMDB enrichment state — poster paths, tmdb_ids, the lot — so
+    # a redeploy doesn't lose hard-won enrichment data.
+    if not _items:
+        try:
+            await restore_from_telegram(bot)
+        except Exception:
+            logging.exception(
+                "media_index: telegram-snapshot restore failed (non-fatal)"
+            )
 
     latest_id = _latest_seen_id
     if latest_id <= 0:
@@ -863,6 +903,60 @@ def shelves(per_shelf: int = 14) -> List[dict]:
     return out
 
 
+async def snapshot_to_telegram(bot) -> Optional[int]:
+    """Upload a JSON snapshot of the catalogue to BIN_CHANNEL.
+
+    Called at the end of admin actions that meaningfully change state
+    (enrich, reindex). The pinned snapshot is what cold-start restarts
+    read from — /tmp/media_index.json is just a hot cache on top.
+    Failures don't block the caller; the catalogue is still in memory
+    and the BIN captions remain a fallback recovery path.
+    """
+    try:
+        payload = {
+            "version": 1,
+            "saved_at": time.time(),
+            "latest_seen_id": _latest_seen_id,
+            "items": [_to_serializable(it) for it in _items.values()],
+        }
+        return await state_doc.save(bot, payload)
+    except Exception:
+        logging.exception("media_index: snapshot_to_telegram failed (non-fatal)")
+        return None
+
+
+async def restore_from_telegram(bot) -> bool:
+    """Try to repopulate ``_items`` from the pinned Telegram snapshot.
+
+    Returns True if the snapshot existed and was loaded. Called early in
+    ``seed()`` when ``/tmp`` is empty — recovers full enrichment state
+    (poster paths, tmdb_ids, etc.) without re-hitting TMDB.
+    """
+    global _latest_seen_id
+    payload = await state_doc.load(bot)
+    if payload is None:
+        return False
+    items_data = payload.get("items") or []
+    persisted_latest = int(payload.get("latest_seen_id") or 0)
+    loaded = 0
+    async with _lock:
+        for d in items_data:
+            try:
+                item = _from_serializable(d)
+                _items[item.message_id] = item
+                loaded += 1
+            except Exception:
+                continue
+        local_max = max((it.message_id for it in _items.values()), default=0)
+        _latest_seen_id = max(_latest_seen_id, persisted_latest, local_max)
+        _persist_unlocked()
+    logging.info(
+        "media_index: restored %d entries from Telegram snapshot (latest=%d)",
+        loaded, _latest_seen_id,
+    )
+    return loaded > 0
+
+
 async def persist_canonical_to_bin(bot, message_id: int) -> bool:
     """Edit a BIN_CHANNEL message's caption to reflect the HubItem's
     current canonical state.
@@ -917,6 +1011,11 @@ async def persist_canonical_to_bin(bot, message_id: int) -> bool:
         year=item.year,
         description=item.overview or item.description or "",
         tags=list(item.tags),
+        tmdb_id=item.tmdb_id,
+        tmdb_kind=item.tmdb_kind,
+        imdb_id=item.imdb_id,
+        poster_path=item.poster_path,
+        backdrop_path=item.backdrop_path,
     )
     caption = render(entry)
     try:
@@ -1156,6 +1255,16 @@ async def enrich_all(bot=None, force: bool = False) -> dict:
         _enrich_state["running"] = False
         _enrich_state["finished_at"] = time.time()
 
+    # Snapshot the freshly-enriched state to Telegram so a future cold
+    # start picks up the work without re-running TMDB.
+    if bot is not None and (_enrich_state["enriched"] or force):
+        try:
+            await snapshot_to_telegram(bot)
+        except Exception:
+            logging.exception(
+                "media_index: post-enrich snapshot failed (non-fatal)"
+            )
+
     return {
         "total": len(targets),
         "enriched": _enrich_state["enriched"],
@@ -1163,7 +1272,7 @@ async def enrich_all(bot=None, force: bool = False) -> dict:
     }
 
 
-async def reindex_all() -> dict:
+async def reindex_all(bot=None) -> dict:
     """Re-derive series_key, season, episode, movie_key, quality on every
     existing HubItem from its current file_name + title.
 
@@ -1235,6 +1344,14 @@ async def reindex_all() -> dict:
     finally:
         _reindex_state["running"] = False
         _reindex_state["finished_at"] = time.time()
+
+    if bot is not None:
+        try:
+            await snapshot_to_telegram(bot)
+        except Exception:
+            logging.exception(
+                "media_index: post-reindex snapshot failed (non-fatal)"
+            )
     return {
         "total": _reindex_state["total"],
         "series_changed": _reindex_state["series_changed"],

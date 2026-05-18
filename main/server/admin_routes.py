@@ -171,7 +171,10 @@ async def admin_reindex(request: web.Request) -> web.Response:
     import asyncio as _aio
     state = media_index.reindex_state()
     if not state.get("running"):
-        _aio.create_task(media_index.reindex_all())
+        # Pass StreamBot so the completed re-index also uploads a fresh
+        # Telegram-pinned state snapshot — cold restarts then restore
+        # full enrichment data without re-hitting TMDB.
+        _aio.create_task(media_index.reindex_all(bot=StreamBot))
     if _is_htmx(request):
         return web.Response(status=204)
     from urllib.parse import quote
