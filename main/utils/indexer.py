@@ -101,13 +101,22 @@ async def index_bin_message(bot: Client, bin_msg: Message) -> None:
         logging.exception("Failed to index bin:%d", bin_msg.id)
 
     # Re-fetch the message so the caption we just wrote is the one that
-    # gets parsed into the index entry.
+    # gets parsed into the index entry. Even when the caption-edit
+    # above failed (forwarded messages can't be edited, channel posts
+    # the bot doesn't own, etc.) we still want the entry in the
+    # catalogue — the read-side falls back to filename-derived title.
     try:
         fresh = await bot.get_messages(bin_msg.chat.id, bin_msg.id)
         await media_index.add_from_message(fresh)
     except Exception:
         logging.debug("media_index add failed for bin:%d", bin_msg.id, exc_info=True)
         return
+
+    # Snapshot the catalogue so the new entry survives a Koyeb restart
+    # even when TMDB never matches (enrich_one is the only other code
+    # path that snapshots, and it returns early on no-match). Coalesced
+    # via the debouncer so a 70-episode burst is one upload, not 70.
+    media_index.schedule_snapshot(bot)
 
     # Fire-and-forget TMDB enrichment. The lookup is cached per
     # (title, year) so multiple episodes of the same series share one

@@ -91,6 +91,54 @@ _reindex_state: dict = {"running": False, "done": 0, "total": 0,
                         "quality_changed": 0,
                         "started_at": 0.0, "finished_at": 0.0}
 
+# --- Snapshot debouncer ----------------------------------------------------
+# Pinned-snapshot writes are expensive (upload+pin+delete-prior) and noisy
+# (each shows up in BIN_CHANNEL until the delete-prior succeeds). Calls
+# made within ``_SNAPSHOT_DEBOUNCE`` of each other collapse into one
+# actual save once the window settles. Bulk-uploading a TV-show season
+# (70+ episodes triggering enrich_one each) used to fan-out into 70+
+# snapshot saves — now it's one.
+_SNAPSHOT_DEBOUNCE: float = 30.0
+_pending_snapshot_task = None
+
+
+def schedule_snapshot(bot) -> None:
+    """Queue a coalesced ``snapshot_to_telegram`` after a quiet window.
+
+    Each call cancels the previous pending task and starts a new one,
+    so a rapid burst of mutations produces exactly one snapshot save
+    after the burst finishes. Pass ``bot=None`` to disable (we can't
+    save without a client).
+    """
+    global _pending_snapshot_task
+    if bot is None:
+        return
+    try:
+        if _pending_snapshot_task is not None and not _pending_snapshot_task.done():
+            _pending_snapshot_task.cancel()
+    except Exception:
+        pass
+    try:
+        _pending_snapshot_task = asyncio.create_task(_deferred_snapshot(bot))
+    except RuntimeError:
+        # No running loop (e.g. called from a sync context outside the
+        # web/bot event loop). Skip silently — the next event-loop call
+        # will reschedule.
+        pass
+
+
+async def _deferred_snapshot(bot) -> None:
+    try:
+        await asyncio.sleep(_SNAPSHOT_DEBOUNCE)
+    except asyncio.CancelledError:
+        return
+    try:
+        await snapshot_to_telegram(bot)
+    except Exception:
+        logging.exception(
+            "media_index: deferred snapshot_to_telegram failed (non-fatal)"
+        )
+
 
 def seed_state() -> dict:
     return dict(_seed_state)
@@ -1513,14 +1561,11 @@ async def enrich_one(message_id: int, bot=None) -> bool:
         # Best-effort caption write-back. A failure here doesn't undo the
         # in-memory enrichment; the next enrich pass will retry.
         await persist_canonical_to_bin(bot, message_id)
-        # Refresh the pinned snapshot so this one-off enrichment survives
-        # a /tmp wipe even when the caption write-back failed.
-        try:
-            await snapshot_to_telegram(bot)
-        except Exception:
-            logging.exception(
-                "media_index: post-enrich-one snapshot failed (non-fatal)"
-            )
+        # Coalesce snapshot saves — bulk uploads fire enrich_one per
+        # episode and we don't want 70 snapshot writes back-to-back.
+        # The debouncer collapses them into one save after the burst
+        # quiets down.
+        schedule_snapshot(bot)
     return True
 
 
@@ -1546,18 +1591,10 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
         _persist_unlocked()
     if bot is not None:
         await persist_canonical_to_bin(bot, message_id)
-        # Refresh the pinned snapshot too. /tmp is ephemeral on Koyeb,
-        # and persist_canonical_to_bin is best-effort (the caption
-        # write fails for messages the bot doesn't own). The pinned
-        # snapshot is the only persistence layer that survives both
-        # — without this refresh, restarting the bot loses the manual
-        # override the operator just applied.
-        try:
-            await snapshot_to_telegram(bot)
-        except Exception:
-            logging.exception(
-                "media_index: post-manual-enrich snapshot failed (non-fatal)"
-            )
+        # Manual admin override — coalesce snapshot like the auto path.
+        # If the admin makes several override edits in a row, only one
+        # snapshot lands at the end.
+        schedule_snapshot(bot)
     return True
 
 
