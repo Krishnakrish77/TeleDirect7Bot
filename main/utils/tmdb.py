@@ -119,13 +119,18 @@ async def _get(session: aiohttp.ClientSession, path: str, **params) -> Optional[
 
 def _best_match(results: List[dict], title: str, year: Optional[int],
                 year_field: str) -> Optional[dict]:
-    """Pick the top candidate that clears the confidence bar."""
+    """Pick the top candidate that clears the confidence bar.
+
+    Year-matching policy: only reject when BOTH sides have a year and
+    they're more than ``_YEAR_TOLERANCE`` apart. When the catalogue has
+    a year but the TMDB candidate's release_date is empty (common for
+    announced-but-unreleased films), we still consider it — just with a
+    small confidence penalty. Same the other way around.
+    """
     best: Tuple[float, Optional[dict]] = (0.0, None)
     for r in results:
         candidate_title = r.get("title") or r.get("name") or ""
         cy = _parse_year(r.get(year_field))
-        if year is not None and cy is None:
-            continue
         if year is not None and cy is not None and abs(cy - year) > _YEAR_TOLERANCE:
             continue
         score = _similarity(candidate_title, title)
@@ -133,6 +138,11 @@ def _best_match(results: List[dict], title: str, year: Optional[int],
         # similarly-titled films from different decades.
         if year is not None and cy == year:
             score += 0.1
+        elif year is not None and cy is None:
+            # Candidate hasn't been released yet (release_date empty in
+            # TMDB). Plausible match but we lower confidence so a future
+            # exact-year hit would outrank it.
+            score *= 0.9
         if score >= _TITLE_MATCH_THRESHOLD and score > best[0]:
             best = (score, r)
     return best[1]
