@@ -84,21 +84,6 @@ async def admin_link(bot, message):
     )
 
 
-@StreamBot.on_message(filters.command(["myid", "id"]) & filters.private)
-async def my_id(bot, message):
-    """DM-only helper: returns the sender's Telegram user id.
-
-    Useful for OWNER_ID setup — the user can find their numeric id without
-    needing a third-party bot like @userinfobot.
-    """
-    if message.from_user is None:
-        return
-    await message.reply_text(
-        text=f"Your Telegram user id: `{message.from_user.id}`",
-        quote=True,
-    )
-
-
 @StreamBot.on_message((filters.command('help')) & ~filters.user(Var.BANNED_USERS))
 async def help_handler(bot, message):
     lang = getattr(Language, "en")
