@@ -99,7 +99,15 @@ def clean_for_search(title: str, file_name: str = "") -> str:
     if not candidate:
         return ""
 
-    text = re.sub(r"[._]+", " ", candidate)
+    # Strip leading @-handles BEFORE underscore-to-space normalisation,
+    # so multi-token handles like ``@Filmbox_Studios`` get consumed as
+    # one unit. Otherwise the underscore-split would turn it into
+    # ``@Filmbox Studios``, only @Filmbox gets stripped by the later
+    # @-rules, and ``Studios`` leaks into the cleaned title.
+    text = re.sub(r"^\s*@[\w_]+\s*", "", candidate)
+    stripped_prefix = text != candidate
+
+    text = re.sub(r"[._]+", " ", text)
     text = re.sub(r"(\d{4,})([A-Za-z])", r"\1 \2", text)
     text = re.sub(r"([A-Za-z])(\d{4,})", r"\1 \2", text)
 
@@ -108,7 +116,8 @@ def clean_for_search(title: str, file_name: str = "") -> str:
     # inside the release-group name; cutting on it would lose the
     # actual title. Stripping prefixes first lets the year scan land
     # on a real year.
-    stripped_prefix = False
+    # ``stripped_prefix`` may already be True from the pre-normalisation
+    # @-handle strip above; don't reset it.
     for _ in range(4):
         new = re.sub(r"^\s*\[\w+\]\s*[-·:]?\s*", "", text)
         new = re.sub(r"^\s*@\w+(?:\s+\w+)*?\s+[-·:]\s+", "", new)

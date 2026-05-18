@@ -26,9 +26,11 @@ from typing import Optional
 
 # Ordered most-specific first; the first match wins.
 _PATTERNS = [
-    # S01E03 / s1e3 with optional dot/space/dash separators before/after
+    # S01E03 / s1e3 / S16 EP351 with optional dot/space/dash separators
+    # between the season and episode tokens, and an optional ``P``
+    # after the episode marker (``EP`` is common in anime releases).
     re.compile(
-        r"^(?P<title>.+?)[\s._\-]+s(?P<season>\d{1,2})\s*e(?P<episode>\d{1,3})\b",
+        r"^(?P<title>.+?)[\s._\-]+s(?P<season>\d{1,2})[\s._\-]*ep?(?P<episode>\d{1,4})\b",
         re.IGNORECASE,
     ),
     # 1x03 / 01x003
@@ -112,8 +114,15 @@ def parse(text: str) -> Optional[SeriesMatch]:
         # Preserve original casing in raw_title — humanise capitalises
         # leading lowercase words, which downstream cleaners rely on to
         # detect channel-handle prefixes.
-        raw_separator_normalised = re.sub(r"[._]+", " ", raw_title).strip()
-        title = _humanise_title(raw_title)
+        #
+        # Strip ``@<handle>`` BEFORE underscore normalisation so multi-
+        # token handles like ``@Filmbox_Studios`` get consumed whole.
+        # If we ran ``[._]+ → ' '`` first, the handle would split into
+        # ``@Filmbox Studios`` and only ``@Filmbox`` would match the
+        # cleaner's @-strip — ``Studios`` would leak into the title.
+        raw_no_handle = re.sub(r"^\s*@[\w_]+\s*", "", raw_title)
+        raw_separator_normalised = re.sub(r"[._]+", " ", raw_no_handle).strip()
+        title = _humanise_title(raw_no_handle)
         if not title:
             continue
         # Daily-aired serial pattern doesn't carry an explicit season —
