@@ -1540,12 +1540,18 @@ async def reindex_all(bot=None) -> dict:
         async with _lock:
             for it in _items.values():
                 # Refresh title + year from the filename so improvements
-                # to clean_for_search land on existing entries. TMDB-
-                # enriched items still keep their canonical title — we
-                # only re-derive when the entry hasn't been matched yet,
-                # so manual admin edits / TMDB canonical titles aren't
-                # clobbered.
-                if not it.tmdb_id:
+                # to clean_for_search land on existing entries.
+                #
+                # Refresh in two cases:
+                # • Not enriched yet (no tmdb_id) — filename is the only
+                #   source of truth for the title.
+                # • Enriched as TV — the per-episode title field is
+                #   filename-derived (the TMDB show title lives in
+                #   series_title separately), so refreshing applies
+                #   cleaner improvements without losing canonical data.
+                # Movies stay untouched so TMDB's canonical title and
+                # manual admin renames aren't clobbered.
+                if not it.tmdb_id or it.tmdb_kind == "tv":
                     fresh_title = title_from_filename(it.file_name)
                     if fresh_title and fresh_title != "(untitled)":
                         it.title = fresh_title
