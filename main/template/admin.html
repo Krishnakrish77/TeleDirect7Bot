@@ -224,6 +224,13 @@
                 <span class="block text-xs text-slate-500">Remove extra copies of the same file. Variants survive.</span>
               </button>
             </form>
+            <a href="/admin/audit-bin"
+               @click="menuOpen = false"
+               class="block w-full text-left px-4 py-2 text-sm text-slate-200
+                      hover:bg-ink-800 transition-colors">
+              <span class="block font-medium">Audit BIN ↔ catalogue</span>
+              <span class="block text-xs text-slate-500">Find files in BIN missing from catalogue (and vice versa).</span>
+            </a>
             <div class="my-1 border-t border-white/5"></div>
             <form hx-post="/admin/migrate-to-mongo" hx-swap="none"
                   hx-confirm="Migrate the in-memory catalogue to MongoDB? Requires MONGO_URI to be set."

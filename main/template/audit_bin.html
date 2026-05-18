@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Audit BIN · TeleDirect{% endblock %}
+
+{% block content %}
+  <div class="w-full max-w-5xl">
+    <header class="mb-6 flex items-end justify-between gap-3">
+      <div>
+        <a href="/admin" class="inline-flex items-center gap-1 text-sm text-slate-400
+                                hover:text-brand-300 transition-colors mb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M15.75 19.5 8.25 12l7.5-7.5"/>
+          </svg>
+          Back to admin
+        </a>
+        <h1 class="text-3xl font-bold text-white tracking-tight">Audit BIN ↔ catalogue</h1>
+        <p class="mt-1 text-sm text-slate-400">
+          Reconciles every video/document message in BIN_CHANNEL with the catalogue.
+          Surfaces (a) BIN files with no catalogue row and
+          (b) catalogue rows whose underlying BIN message is missing.
+        </p>
+      </div>
+      <form hx-post="/admin/audit-bin" hx-swap="none"
+            @htmx:after-request.camel="setTimeout(() => location.reload(), 800)"
+            class="inline">
+        <button type="submit"
+                class="text-sm px-3 py-1.5 rounded bg-brand-500/20 text-brand-200
+                       border border-brand-400/40 hover:bg-brand-500/30 transition-colors">
+          {% if report and report.ready %}Re-run audit{% else %}Run audit{% endif %}
+        </button>
+      </form>
+    </header>
+
+    {% if flash %}
+      <div class="mb-4 rounded-lg border border-brand-400/30 bg-brand-400/10
+                  px-4 py-2 text-sm text-brand-200">{{ flash }}</div>
+    {% endif %}
+
+    {# Live progress while audit is walking. Polls /admin/status. #}
+    <div x-data="{
+           state: null,
+           handle: null,
+           start() { this.tick(); if (!this.handle) this.handle = setInterval(() => this.tick(), 2000); },
+           async tick() {
+             try {
+               const r = await fetch('/admin/status', { headers: { Accept: 'application/json' } });
+               if (!r.ok) return;
+               const data = await r.json();
+               this.state = data.audit;
+               if (this.state &amp;&amp; !this.state.running &amp;&amp; this.state.finished_at > 0) {
+                 if (this.handle) { clearInterval(this.handle); this.handle = null; }
+                 // Auto-refresh once when the run finishes so the
+                 // freshly-built report becomes visible.
+                 if (!sessionStorage.getItem('auditReloaded')) {
+                   sessionStorage.setItem('auditReloaded', '1');
+                   setTimeout(() => { sessionStorage.removeItem('auditReloaded'); location.reload(); }, 300);
+                 }
+               }
+             } catch (e) { /* swallow */ }
+           },
+           pct() { return this.state &amp;&amp; this.state.total > 0
+                    ? Math.min(100, Math.round(this.state.done / this.state.total * 100)) : 0; },
+         }"
+         x-init="start()" class="mb-4">
+      <template x-if="state &amp;&amp; state.running">
+        <div class="rounded-lg border border-brand-400/30 bg-brand-400/5 p-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-brand-200">Walking BIN_CHANNEL</span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${state.done}/${state.total} ids scanned`"></span>
+          </div>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full bg-brand-400 transition-all duration-500"
+                 :style="`width:${pct()}%`"></div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    {% if not report.ready %}
+      <div class="rounded-lg border border-white/5 bg-ink-800/40 p-8 text-center">
+        <p class="text-slate-300">No audit has been run yet on this process.</p>
+        <p class="text-sm text-slate-500 mt-1">Click <strong>Run audit</strong> above
+          to walk BIN_CHANNEL and build a reconciliation report.</p>
+      </div>
+    {% else %}
+      <div class="mb-4 rounded-lg border border-white/5 bg-ink-800/30 p-4 text-sm text-slate-300">
+        <div class="flex flex-wrap gap-x-6 gap-y-1">
+          <span>{{ report.total_bin_scanned }} BIN messages scanned</span>
+          <span>{{ report.total_catalogue }} catalogue rows</span>
+          <span>Range walked: bin:{{ report.floor }} → bin:{{ report.latest_id }}</span>
+        </div>
+      </div>
+
+      {# BIN orphans: file exists in BIN, no catalogue row → re-index. #}
+      <section class="mb-8">
+        <div class="flex items-end justify-between mb-3">
+          <div>
+            <h2 class="text-xl font-bold text-white">BIN orphans</h2>
+            <p class="text-xs text-slate-500">
+              Video / document messages present in BIN_CHANNEL with no
+              corresponding catalogue entry. Re-index to restore them.
+            </p>
+          </div>
+          {% if report.bin_orphans %}
+            <form method="post" action="/admin/audit-bin/reindex"
+                  onsubmit="return confirm('Re-index {{ report.bin_orphans | length }} BIN orphans? They will run through the normal indexing pipeline.');">
+              <input type="hidden" name="all" value="1" />
+              <button type="submit"
+                      class="text-xs px-3 py-1.5 rounded bg-emerald-500/15 text-emerald-200
+                             border border-emerald-400/30 hover:bg-emerald-500/25 transition-colors">
+                Re-index all ({{ report.bin_orphans | length }})
+              </button>
+            </form>
+          {% endif %}
+        </div>
+
+        {% if not report.bin_orphans %}
+          <p class="text-sm text-slate-500 px-1">None. Every video in the scanned range is in the catalogue.</p>
+        {% else %}
+          <ul class="divide-y divide-white/5 rounded-lg border border-white/5 bg-ink-800/30">
+            {% for o in report.bin_orphans %}
+              <li class="flex items-center gap-3 px-4 py-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm text-slate-200 truncate">{{ o.file_name or '(no filename)' }}</p>
+                  <p class="text-xs text-slate-500 tabular-nums">
+                    bin:{{ o.message_id }}
+                    {% if o.file_size %}· {{ o.file_size | humansize }}{% endif %}
+                    {% if o.mime_type %}· {{ o.mime_type }}{% endif %}
+                    {% if o.date %}· {{ o.date }}{% endif %}
+                  </p>
+                </div>
+                <form method="post" action="/admin/audit-bin/reindex">
+                  <input type="hidden" name="id" value="{{ o.message_id }}" />
+                  <button type="submit"
+                          class="text-xs px-3 py-1 rounded bg-ink-900/60 text-slate-200
+                                 border border-white/5 hover:bg-ink-900 hover:text-emerald-300
+                                 transition-colors">
+                    Re-index
+                  </button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </section>
+
+      {# Catalogue orphans: row in catalogue, no BIN message → drop. #}
+      <section class="mb-8">
+        <div class="flex items-end justify-between mb-3">
+          <div>
+            <h2 class="text-xl font-bold text-white">Catalogue orphans</h2>
+            <p class="text-xs text-slate-500">
+              Catalogue rows whose underlying BIN message was deleted from
+              Telegram. Removing them cleans up the hub display.
+            </p>
+          </div>
+          {% if report.catalogue_orphans %}
+            <form method="post" action="/admin/audit-bin/remove"
+                  onsubmit="return confirm('Remove {{ report.catalogue_orphans | length }} catalogue orphans? This deletes the row only — BIN_CHANNEL is untouched (the message is already gone).');">
+              <input type="hidden" name="all" value="1" />
+              <button type="submit"
+                      class="text-xs px-3 py-1.5 rounded bg-red-500/15 text-red-200
+                             border border-red-400/30 hover:bg-red-500/25 transition-colors">
+                Remove all ({{ report.catalogue_orphans | length }})
+              </button>
+            </form>
+          {% endif %}
+        </div>
+
+        {% if not report.catalogue_orphans %}
+          <p class="text-sm text-slate-500 px-1">None. Every catalogue row has a live BIN message.</p>
+        {% else %}
+          <ul class="divide-y divide-white/5 rounded-lg border border-white/5 bg-ink-800/30">
+            {% for o in report.catalogue_orphans %}
+              <li class="flex items-center gap-3 px-4 py-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm text-slate-200 truncate">
+                    {{ o.title or '(no title)' }}{% if o.year %} ({{ o.year }}){% endif %}
+                  </p>
+                  <p class="text-xs text-slate-500 tabular-nums">
+                    bin:{{ o.message_id }}
+                    {% if o.file_size %}· {{ o.file_size | humansize }}{% endif %}
+                    {% if o.file_name %}· {{ o.file_name }}{% endif %}
+                  </p>
+                </div>
+                <form method="post" action="/admin/audit-bin/remove">
+                  <input type="hidden" name="id" value="{{ o.message_id }}" />
+                  <button type="submit"
+                          class="text-xs px-3 py-1 rounded bg-ink-900/60 text-slate-200
+                                 border border-white/5 hover:bg-ink-900 hover:text-red-300
+                                 transition-colors">
+                    Remove
+                  </button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </section>
+    {% endif %}
+  </div>
+{% endblock %}
