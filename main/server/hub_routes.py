@@ -400,10 +400,49 @@ async def hub_series(request: web.Request) -> web.Response:
         for ep in episodes:
             seasons.setdefault(ep.season or 0, []).append(ep)
 
-    season_blocks = [
-        {"season": s, "episodes": eps}
-        for s, eps in sorted(seasons.items())
-    ]
+    # Within each season, collapse episodes that share the same episode
+    # number into a single card whose ``variants`` list holds every
+    # quality/size variant. The watch link points at the largest
+    # variant (typically the highest quality); a chip row underneath
+    # lets the user pick a smaller one. Items with the same
+    # ``secure_hash`` are true duplicates — surfaced as a count so the
+    # operator knows to clean them up.
+    season_blocks = []
+    for s, eps in sorted(seasons.items()):
+        by_ep: dict = {}
+        extras: list = []
+        for e in eps:
+            if e.episode is None:
+                extras.append(e)
+            else:
+                by_ep.setdefault(e.episode, []).append(e)
+        entries = []
+        for ep_num in sorted(by_ep.keys()):
+            variants_all = sorted(
+                by_ep[ep_num], key=lambda v: -(v.file_size or 0),
+            )
+            seen_hash: set = set()
+            unique_variants: list = []
+            duplicates: list = []
+            for v in variants_all:
+                if v.secure_hash and v.secure_hash in seen_hash:
+                    duplicates.append(v)
+                else:
+                    if v.secure_hash:
+                        seen_hash.add(v.secure_hash)
+                    unique_variants.append(v)
+            entries.append({
+                "rep": unique_variants[0],
+                "variants": unique_variants,
+                "duplicate_count": len(duplicates),
+            })
+        # Episodes without an episode number get their own entry each
+        # (we can't reliably collapse them).
+        for e in extras:
+            entries.append({
+                "rep": e, "variants": [e], "duplicate_count": 0,
+            })
+        season_blocks.append({"season": s, "entries": entries})
 
     # First enriched episode (if any) carries the show-level TMDB data.
     enriched = next((e for e in episodes if e.tmdb_id), episodes[0])
@@ -413,7 +452,13 @@ async def hub_series(request: web.Request) -> web.Response:
         series_title=episodes[0].series_title or key,
         series_key=key,
         season_blocks=season_blocks,
-        episode_count=len(episodes),
+        # Distinct (season, episode) tuples; falls back to the raw row
+        # count when no episode is numbered. Surfaces "12 episodes"
+        # instead of "37 uploads" when there are heavy variant clusters.
+        episode_count=(
+            len({(e.season, e.episode) for e in episodes if e.episode is not None})
+            or len(episodes)
+        ),
         # Don't count the unknown-season bucket as a season; if every
         # episode is unbucketed (no SxxEyy anywhere) fall back to 1.
         season_count=max(1, len(numbered_seasons)),

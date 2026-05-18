@@ -342,6 +342,51 @@ async def admin_migrate_to_mongo(request: web.Request) -> web.Response:
     )
 
 
+@routes.post("/admin/dedupe")
+async def admin_dedupe(request: web.Request) -> web.Response:
+    """Find items that share a ``secure_hash`` (= same file uploaded
+    multiple times) and delete the extras, keeping the lowest
+    message_id (= the original upload).
+
+    Quality variants of the same episode have DIFFERENT secure_hashes
+    (different files, different file_unique_id) — they're untouched.
+    This only collapses true duplicates: the same byte stream
+    forwarded into BIN_CHANNEL more than once.
+    """
+    _require_session(request)
+    by_hash: dict = {}
+    for it in media_index._items.values():
+        if not it.secure_hash:
+            continue
+        by_hash.setdefault(it.secure_hash, []).append(it)
+
+    deleted = 0
+    groups = 0
+    for h, items in by_hash.items():
+        if len(items) <= 1:
+            continue
+        groups += 1
+        # Keep the OLDEST upload (lowest message_id) as the canonical
+        # entry; delete the rest from BIN + catalogue.
+        keepers = sorted(items, key=lambda v: v.message_id)
+        for extra in keepers[1:]:
+            try:
+                await StreamBot.delete_messages(Var.BIN_CHANNEL, extra.message_id)
+            except Exception:
+                logging.exception(
+                    "admin: dedupe delete failed for bin:%d",
+                    extra.message_id,
+                )
+                continue
+            await media_index.remove(extra.message_id, bot=StreamBot)
+            deleted += 1
+
+    raise _redirect_with_flash(
+        f"De-dup pass: {deleted} extra upload{'' if deleted == 1 else 's'} "
+        f"removed across {groups} duplicate group{'' if groups == 1 else 's'}."
+    )
+
+
 @routes.post("/admin/fetch-episodes")
 async def admin_fetch_episodes(request: web.Request) -> web.Response:
     """Backfill TMDB per-episode metadata (episode name + overview + still

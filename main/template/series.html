@@ -103,32 +103,24 @@
           {% if block.season %}Season {{ block.season }}{% else %}Episodes{% endif %}
         </h2>
         <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {% for ep in block.episodes %}
+          {% for entry in block.entries %}
+            {% set ep = entry.rep %}
             <li data-ep-title="{{ (ep.title or '') | lower }} {{ (ep.episode_title or '') | lower }} {{ (ep.file_name or '') | lower }}{% if ep.season and ep.episode %} s{{ '%02d' % ep.season }}e{{ '%02d' % ep.episode }}{% endif %}">
-              <a href="/watch/{{ ep.secure_hash }}{{ ep.message_id }}"
-                 class="group flex gap-3 p-3 rounded-lg bg-ink-800/60 border border-white/5
-                        hover:border-brand-400/40 hover:bg-ink-800 transition-colors">
-                <div class="flex-shrink-0 w-32 aspect-video bg-ink-900 rounded
-                            relative overflow-hidden">
-                  {# Prefer TMDB's per-episode still image when we have one
-                     — it's a frame from THIS episode and looks much
-                     better than Telegram's auto-grabbed thumb (which is
-                     often the same colourbar frame across an entire
-                     show). Fall back to /thumb when no still is known. #}
+              <div class="group flex gap-3 p-3 rounded-lg bg-ink-800/60 border border-white/5
+                          hover:border-brand-400/40 hover:bg-ink-800 transition-colors">
+                <a href="/watch/{{ ep.secure_hash }}{{ ep.message_id }}"
+                   class="flex-shrink-0 w-32 aspect-video bg-ink-900 rounded
+                          relative overflow-hidden">
                   {% if ep.episode_still_path %}
                     <img
                       src="https://image.tmdb.org/t/p/w300{{ ep.episode_still_path }}"
-                      alt=""
-                      loading="lazy"
-                      onerror="this.remove()"
+                      alt="" loading="lazy" onerror="this.remove()"
                       class="absolute inset-0 w-full h-full object-cover"
                     />
                   {% else %}
                     <img
                       src="/thumb/{{ ep.secure_hash }}{{ ep.message_id }}.jpg"
-                      alt=""
-                      loading="lazy"
-                      onerror="this.remove()"
+                      alt="" loading="lazy" onerror="this.remove()"
                       class="absolute inset-0 w-full h-full object-cover"
                     />
                   {% endif %}
@@ -139,7 +131,7 @@
                       {{ ep.duration | duration }}
                     </span>
                   {% endif %}
-                </div>
+                </a>
                 <div class="min-w-0 flex-1">
                   <p class="text-xs text-slate-500 tabular-nums">
                     {% if ep.season and ep.episode %}
@@ -151,24 +143,46 @@
                       · {{ ep.episode_air_date }}
                     {% endif %}
                   </p>
-                  <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
-                             group-hover:text-brand-300 transition-colors">
-                    {{ ep.episode_title or ep.title }}
-                  </h3>
+                  <a href="/watch/{{ ep.secure_hash }}{{ ep.message_id }}"
+                     class="block">
+                    <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
+                               group-hover:text-brand-300 transition-colors">
+                      {{ ep.episode_title or ep.title }}
+                    </h3>
+                  </a>
                   {% if ep.episode_overview %}
                     <p class="mt-1 text-xs text-slate-400 leading-snug line-clamp-2">
                       {{ ep.episode_overview }}
                     </p>
                   {% endif %}
-                  {% if ep.quality or ep.file_size %}
+
+                  {# Variants: chip per quality/size, clicking jumps to
+                     that specific upload. When there's only one
+                     variant the chip row is just metadata (size). #}
+                  {% if entry.variants | length > 1 %}
+                    <div class="mt-2 flex flex-wrap gap-1.5">
+                      {% for v in entry.variants %}
+                        <a href="/watch/{{ v.secure_hash }}{{ v.message_id }}"
+                           class="px-2 py-0.5 text-[11px] rounded
+                                  bg-ink-900/70 text-slate-300 border border-white/5
+                                  hover:border-brand-400/40 hover:text-brand-300
+                                  transition-colors tabular-nums">
+                          {% if v.quality %}{{ v.quality }}{% endif %}
+                          {% if v.quality and v.file_size %} · {% endif %}
+                          {% if v.file_size %}{{ v.file_size | humansize }}{% endif %}
+                        </a>
+                      {% endfor %}
+                    </div>
+                  {% elif ep.quality or ep.file_size %}
                     <p class="mt-1 text-xs text-slate-500">
                       {% if ep.quality %}{{ ep.quality }}{% endif %}
                       {% if ep.quality and ep.file_size %} · {% endif %}
                       {% if ep.file_size %}{{ ep.file_size | humansize }}{% endif %}
                     </p>
                   {% endif %}
+
                 </div>
-              </a>
+              </div>
             </li>
           {% endfor %}
         </ul>

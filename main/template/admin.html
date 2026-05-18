@@ -187,6 +187,17 @@
                 <span class="block text-xs text-slate-500">Pull TMDB per-episode titles + stills (1 call per season).</span>
               </button>
             </form>
+            <form hx-post="/admin/dedupe" hx-swap="none"
+                  hx-confirm="Delete extra uploads of the SAME file (same secure_hash)? Quality variants are NOT touched."
+                  @htmx:after-request.camel="menuOpen = false"
+                  class="block">
+              <button type="submit"
+                      class="w-full text-left px-4 py-2 text-sm text-slate-200
+                             hover:bg-ink-800 transition-colors">
+                <span class="block font-medium">De-duplicate uploads</span>
+                <span class="block text-xs text-slate-500">Remove extra copies of the same file. Variants survive.</span>
+              </button>
+            </form>
             <div class="my-1 border-t border-white/5"></div>
             <form hx-post="/admin/migrate-to-mongo" hx-swap="none"
                   hx-confirm="Migrate the in-memory catalogue to MongoDB? Requires MONGO_URI to be set."
