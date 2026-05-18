@@ -65,11 +65,12 @@
                   d="M12 9v3.75m0-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Zm0 13.036h.007v.008H12v-.008Z"/>
           </svg>
           <h3 class="text-lg font-semibold text-white mb-2">
-            Codec not supported by browser
+            This file won't play in the browser
           </h3>
           <p class="text-sm text-slate-300 mb-4">
-            This file is likely 10-bit HEVC or another format your browser can't
-            decode. The streaming link still works in VLC and most native players.
+            Could be a codec (10-bit HEVC, AV1, …) the browser can't decode,
+            or a stream-pipeline error. The streaming link still works in
+            VLC and most native players.
           </p>
           <a id="codecOverlayVlc"
              href="vlc://{{ src }}"
@@ -242,41 +243,62 @@
     }
 
     function watchForUndecodableCodec(video) {
-      // Two failure modes trigger the codec/format overlay:
+      // Two failure modes trigger the overlay:
       //   1. hls.js delivers segments fine but MSE silently rejects them
       //      because the codec isn't supported (10-bit HEVC / AV1 / DV).
-      //      Symptom: currentTime advances but videoWidth stays 0.
-      //   2. The browser raises a MediaError mid-decode — usually
-      //      DTS-not-monotonic chunk-demuxer errors on B-frame-heavy
-      //      sources that don't survive HLS segmentation cleanly.
-      //      Symptom: video.error is set and playback halts.
+      //      Symptom: currentTime advances but videoWidth stays 0 for
+      //      an extended period without ever decoding a frame.
+      //   2. The browser raises a MediaError mid-decode and playback
+      //      halts permanently — usually a chunk-demuxer error on
+      //      B-frame-heavy sources.
+      //
+      // Critical guard: once any frame has decoded (videoWidth > 0),
+      // never show the overlay. Transient videoWidth=0 during seeks
+      // or hls.js fallback transitions otherwise produced false
+      // positives on perfectly-playable H.264 files.
       const overlay = document.getElementById("codecOverlay");
       if (!overlay) return;
       let shown = false;
+      let everDecoded = false;
       const show = (reason) => {
-        if (shown) return;
+        if (shown || everDecoded) return;
         overlay.classList.remove("hidden");
         shown = true;
         if (reason) console.warn("Codec overlay shown:", reason);
       };
+      // Track first successful decode — once set we trust the source.
+      const markDecoded = () => {
+        if (video.videoWidth > 0) everDecoded = true;
+      };
+      ["loadedmetadata", "loadeddata", "playing", "timeupdate"]
+        .forEach(ev => video.addEventListener(ev, markDecoded));
 
-      // Mode 2: explicit media error.
+      // Mode 2: explicit MediaError. Always shows if frames never
+      // decoded; suppressed if we already had successful playback.
       video.addEventListener("error", () => {
-        if (video.error) {
+        if (video.error && !everDecoded) {
           show(video.error.message || `code ${video.error.code}`);
         }
       });
 
-      // Mode 1: playing but no frames. Poll only after the first 'playing'
-      // event so we don't fight a still-buffering player.
+      // Mode 1: playing but no frames. Need a sustained stall — 4
+      // consecutive 1-second polls with videoWidth=0 before we call
+      // it permanent. Brief 0-width windows during fallback / seek
+      // shouldn't fire the overlay.
       video.addEventListener("playing", () => {
+        let stallTicks = 0;
         let ticks = 0;
         const id = setInterval(() => {
-          if (shown) { clearInterval(id); return; }
+          if (shown || everDecoded) { clearInterval(id); return; }
           if (!video.paused && video.currentTime > 1 && video.videoWidth === 0) {
-            show("videoWidth=0 after playback start");
+            stallTicks++;
+            if (stallTicks >= 4) {
+              show("videoWidth=0 sustained " + stallTicks + "s");
+            }
+          } else {
+            stallTicks = 0;
           }
-          if (++ticks > 10) clearInterval(id);
+          if (++ticks > 15) clearInterval(id);
         }, 1000);
       }, { once: true });
     }
