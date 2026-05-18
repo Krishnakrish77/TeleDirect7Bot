@@ -1262,13 +1262,23 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
         item.movie_key = ""
     elif hit.kind == "tv" and hit.title:
         # TMDB says the title is a TV show, but the source filename lacks
-        # any episode locator. Still a series — group by TMDB title so
-        # multiple uploads of the same show collapse into one card and
-        # don't leak into the movie-variants surface.
+        # any SxxEyy pattern. Still a series — group by TMDB title so
+        # multiple uploads collapse into one card. Run the loose episode
+        # extractor on the filename + title to recover an episode number
+        # when explicit "Ep13" / "E13" / trailing-integer hints exist;
+        # default to S1 when one or more siblings are SxxEyy-labelled.
         item.series_key = series_parse.slugify(hit.title)
         item.series_title = hit.title
-        item.season = None
-        item.episode = None
+        inferred_ep = (
+            series_parse.infer_episode_loose(item.file_name)
+            or series_parse.infer_episode_loose(item.title)
+        )
+        if inferred_ep is not None:
+            item.season = 1  # default; a smarter probe could read TMDB
+            item.episode = inferred_ep
+        else:
+            item.season = None
+            item.episode = None
         item.movie_key = ""
     else:
         item.series_key = ""
@@ -1485,11 +1495,20 @@ async def reindex_all(bot=None) -> dict:
                 elif it.tmdb_kind == "tv" and it.title:
                     # Same logic as the enrich path: TMDB says TV, no
                     # filename SxxEyy → still a series, collapse by
-                    # canonical title.
+                    # canonical title. Try the loose-episode extractor
+                    # to recover an episode number from the filename.
                     new_series_key = series_parse.slugify(it.title)
                     new_series_title = it.title
-                    new_season = None
-                    new_episode = None
+                    inferred_ep = (
+                        series_parse.infer_episode_loose(it.file_name)
+                        or series_parse.infer_episode_loose(it.title)
+                    )
+                    if inferred_ep is not None:
+                        new_season = 1
+                        new_episode = inferred_ep
+                    else:
+                        new_season = None
+                        new_episode = None
                     new_movie_key = ""
                 else:
                     new_series_key = ""
