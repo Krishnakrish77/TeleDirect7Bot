@@ -673,15 +673,25 @@ def variants_for_movie(movie_key: str) -> List[HubItem]:
 
 
 def _dedup_by_group(items: List[HubItem]) -> List[HubItem]:
-    """Keep at most one item per series_key / movie_key, preserving the
-    input order (which callers expect to be newest-first). Items without
-    a group key pass through.
+    """Keep at most one item per tmdb_id / series_key / movie_key,
+    preserving input order (which callers expect to be newest-first).
+
+    tmdb_id is checked first because it's the strongest signal — two
+    uploads enriched from the same TMDB record are definitely the same
+    title, even when the source filenames are too different for the
+    local heuristics (clean_for_search, series.parse) to collapse them
+    to a common key.
     """
+    seen_tmdb: set = set()
     seen_series: set = set()
     seen_movie: set = set()
     out: List[HubItem] = []
     for it in items:
-        if it.series_key:
+        if it.tmdb_id:
+            if it.tmdb_id in seen_tmdb:
+                continue
+            seen_tmdb.add(it.tmdb_id)
+        elif it.series_key:
             if it.series_key in seen_series:
                 continue
             seen_series.add(it.series_key)
@@ -867,6 +877,26 @@ async def persist_canonical_to_bin(bot, message_id: int) -> bool:
     from pyrogram.errors.exceptions.bad_request_400 import (
         MessageIdInvalid, ChannelInvalid,
     )
+    # 403 cases where the bot is allowed to read the message but not edit
+    # its caption. Common when the BIN entry was forwarded from an
+    # inline-bot source (quote bots, wallpaper bots) or originally sent
+    # by a different bot. The entry is still streamable — we just skip
+    # the write-back rather than tearing it down.
+    _UNEDITABLE_EXC: tuple = ()
+    try:
+        from pyrogram.errors.exceptions.forbidden_403 import (
+            InlineBotRequired,
+        )
+        _UNEDITABLE_EXC = _UNEDITABLE_EXC + (InlineBotRequired,)
+    except ImportError:
+        pass
+    try:
+        from pyrogram.errors.exceptions.forbidden_403 import (
+            MessageAuthorRequired,
+        )
+        _UNEDITABLE_EXC = _UNEDITABLE_EXC + (MessageAuthorRequired,)
+    except ImportError:
+        pass
     from main.utils.index_entry import render
     from main.vars import Var
 
@@ -900,6 +930,14 @@ async def persist_canonical_to_bin(bot, message_id: int) -> bool:
         )
         await remove(message_id)
         return False
+    except _UNEDITABLE_EXC as exc:
+        # We can't edit this particular caption but the underlying media
+        # still streams fine — keep the entry, skip the write-back.
+        logging.info(
+            "media_index: bin:%d caption is read-only (%s); keeping entry",
+            message_id, exc.__class__.__name__,
+        )
+        return True
     except FloodWait as e:
         wait = getattr(e, "value", None) or getattr(e, "x", 0) or 1
         logging.warning("FloodWait writing caption bin:%d — sleeping %ss",
