@@ -17,14 +17,20 @@
         </p>
       </div>
       <div class="flex items-center gap-3">
-        <form method="post" action="/admin/enrich" class="inline">
+        <form hx-post="/admin/enrich"
+              hx-swap="none"
+              @htmx:after-request.camel="$dispatch('admin-progress-tick')"
+              class="inline">
           <button type="submit"
                   class="text-sm px-3 py-1.5 rounded bg-ink-800 text-slate-200
                          border border-white/5 hover:bg-ink-700 transition-colors">
             Enrich (TMDB)
           </button>
         </form>
-        <form method="post" action="/admin/reindex" class="inline">
+        <form hx-post="/admin/reindex"
+              hx-swap="none"
+              @htmx:after-request.camel="$dispatch('admin-progress-tick')"
+              class="inline">
           <button type="submit"
                   class="text-sm px-3 py-1.5 rounded bg-ink-800 text-slate-200
                          border border-white/5 hover:bg-ink-700 transition-colors">
@@ -55,7 +61,9 @@
            pollHandle: null,
            start() {
              this.tick();
-             this.pollHandle = setInterval(() => this.tick(), 2000);
+             if (!this.pollHandle) {
+               this.pollHandle = setInterval(() => this.tick(), 2000);
+             }
            },
            async tick() {
              try {
@@ -65,14 +73,17 @@
                this.seed = data.seed;
                this.enrich = data.enrich;
                if (!data.seed.running &amp;&amp; !data.enrich.running) {
-                 clearInterval(this.pollHandle);
-                 this.pollHandle = null;
+                 if (this.pollHandle) {
+                   clearInterval(this.pollHandle);
+                   this.pollHandle = null;
+                 }
                }
              } catch (e) { /* swallow; we'll retry on the next tick */ }
            },
            pct(s) { return s &amp;&amp; s.total > 0 ? Math.min(100, Math.round((s.done ?? s.scanned) / s.total * 100)) : 0; },
          }"
          x-init="start()"
+         @admin-progress-tick.window="tick(); start()"
          class="mb-4 space-y-3">
 
       <template x-if="seed &amp;&amp; seed.running">

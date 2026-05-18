@@ -15,6 +15,7 @@ stays in sync.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import List, Optional
@@ -113,16 +114,17 @@ async def admin_home(request: web.Request) -> web.Response:
     return _html(body)
 
 
+def _is_htmx(request: web.Request) -> bool:
+    return request.headers.get("HX-Request", "").lower() == "true"
+
+
 @routes.post("/admin/enrich")
 async def admin_enrich(request: web.Request) -> web.Response:
     """Fire-and-forget bulk TMDB enrichment.
 
-    Posting here schedules ``enrich_all`` as a background task and returns
-    immediately so the HTTP request doesn't time out — a 95-item pass
-    with caption write-backs takes several minutes. Progress is exposed
-    via /admin/status which the admin page polls.
-
-    Form field ``force=1`` re-enriches even already-tagged entries.
+    HTMX requests get a 204 so the admin page stays put and the live
+    progress widget picks the new state up on its next /admin/status
+    poll. Non-HTMX callers (curl etc.) still get the legacy redirect.
     """
     _require_session(request)
     form = await request.post()
@@ -130,14 +132,17 @@ async def admin_enrich(request: web.Request) -> web.Response:
     from urllib.parse import quote
 
     state = media_index.enrichment_state()
-    if state.get("running"):
-        flash = "Enrichment already running — see progress below"
-        raise web.HTTPFound(f"/admin?flash={quote(flash)}")
-
-    import asyncio as _aio
-    _aio.create_task(media_index.enrich_all(bot=StreamBot, force=force))
-    flash = "Enrichment started — leave the page open to watch progress"
-    raise web.HTTPFound(f"/admin?flash={quote(flash)}")
+    if not state.get("running"):
+        import asyncio as _aio
+        _aio.create_task(media_index.enrich_all(bot=StreamBot, force=force))
+    flash_msg = (
+        "Enrichment already running — see progress below"
+        if state.get("running")
+        else "Enrichment started — leave the page open to watch progress"
+    )
+    if _is_htmx(request):
+        return web.Response(status=204)
+    raise web.HTTPFound(f"/admin?flash={quote(flash_msg)}")
 
 
 @routes.get("/admin/status")
@@ -169,6 +174,13 @@ async def admin_reindex(request: web.Request) -> web.Response:
         f"movie={summary['movie_changed']}, "
         f"quality={summary['quality_changed']}"
     )
+    if _is_htmx(request):
+        # Surface the flash via a header so the inline widget can render
+        # it without a page reload.
+        return web.Response(
+            status=204,
+            headers={"HX-Trigger": f'{{"adminFlash":{json.dumps(flash)}}}'},
+        )
     from urllib.parse import quote
     raise web.HTTPFound(f"/admin?flash={quote(flash)}")
 
