@@ -347,7 +347,7 @@ async def seed(bot, channel_id: int) -> None:
     message — so we skip the probe entirely. This makes a visible "."
     appear at most ONCE in the channel's lifetime, not on every restart.
     """
-    global _seeded
+    global _seeded, _latest_seen_id
     if _seeded:
         return
 
@@ -371,7 +371,6 @@ async def seed(bot, channel_id: int) -> None:
             latest_id,
         )
 
-    global _latest_seen_id
     if latest_id > _latest_seen_id:
         _latest_seen_id = latest_id
 
