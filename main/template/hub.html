@@ -7,18 +7,18 @@
 {% endblock %}
 
 {% block content %}
-  <div class="w-full max-w-7xl">
-    <header class="mb-6 relative z-10">
-      <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-        <div>
-          <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">
-            <a href="/" class="hover:text-brand-300 transition-colors">TeleDirect</a>
-          </h1>
-          <p class="mt-1 text-sm text-slate-400">
-            {{ catalogue_size }} item{{ '' if catalogue_size == 1 else 's' }} in your library
-          </p>
-        </div>
-      </div>
+  <div class="w-full max-w-7xl -mt-6 sm:-mt-12">
+    {# Compact top nav. Streaming-app convention is a small left-aligned
+       logo with no subtitle — the content below speaks for itself, and
+       the catalogue count goes inline on the right. #}
+    <header class="mb-4 relative z-20 flex items-center justify-between gap-3">
+      <a href="/" class="text-xl sm:text-2xl font-bold tracking-tight text-white
+                        hover:text-brand-300 transition-colors">
+        TeleDirect
+      </a>
+      <p class="text-xs sm:text-sm text-slate-500 tabular-nums">
+        {{ catalogue_size }} item{{ '' if catalogue_size == 1 else 's' }}
+      </p>
     </header>
 
     {% if hero and not (params.q or params.tag or params.year or params.quality) %}
