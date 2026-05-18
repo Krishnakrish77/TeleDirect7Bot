@@ -1,18 +1,73 @@
-{# Shelf rows rendered inside #grid for the no-filter landing view. Lives
-   as its own partial so the HTMX path can swap it in too when the user
-   clears all filters. #}
+{# Shelf rows. Each row is a horizontally-scrolling carousel with arrow
+   buttons (Netflix-style) for desktop and touch-scroll on mobile. The
+   row title is on its own line with subtle "more" arrow next to it. #}
 {% for shelf in shelves %}
-  <section class="mb-10">
-    <h2 class="text-lg font-semibold text-slate-200 mb-3">{{ shelf.name | safe }}</h2>
-    <div class="-mx-2 px-2 overflow-x-auto pb-2
-                [scrollbar-color:rgb(71_85_105)_transparent]">
-      <ul class="flex gap-4 sm:gap-5 min-w-min">
+  <section class="mb-8 sm:mb-10 group/shelf"
+           x-data="{ atStart: true, atEnd: false }">
+    <h2 class="text-lg sm:text-xl font-semibold text-white mb-3 px-1
+               flex items-baseline gap-2">
+      <span>{{ shelf.name | safe }}</span>
+      <span class="text-[10px] uppercase tracking-widest text-slate-500">
+        {{ shelf['items'] | length }}
+      </span>
+    </h2>
+    <div class="relative">
+      {# Left arrow: hidden on touch / when already at start. Visible on
+         hover over the row on desktop. #}
+      <button type="button"
+              x-show="!atStart"
+              x-transition.opacity
+              @click="$refs.row.scrollBy({ left: -$refs.row.clientWidth * 0.8, behavior: 'smooth' })"
+              class="hidden md:flex absolute left-0 top-0 bottom-2 z-10
+                     w-12 items-center justify-center
+                     bg-gradient-to-r from-ink-900 to-transparent
+                     opacity-0 group-hover/shelf:opacity-100 transition-opacity">
+        <span class="grid place-items-center w-9 h-9 rounded-full
+                     bg-black/70 text-white shadow-lg
+                     hover:bg-black/90 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M15.75 19.5 8.25 12l7.5-7.5"/>
+          </svg>
+        </span>
+      </button>
+
+      <ul x-ref="row"
+          @scroll.debounce.50ms="
+            atStart = $refs.row.scrollLeft <= 8;
+            atEnd = $refs.row.scrollLeft + $refs.row.clientWidth >= $refs.row.scrollWidth - 8;
+          "
+          class="flex gap-3 sm:gap-4 overflow-x-auto snap-x snap-mandatory
+                 scroll-smooth pb-2 -mx-4 sm:-mx-2 px-4 sm:px-2
+                 [scrollbar-width:none] [-ms-overflow-style:none]
+                 [&amp;::-webkit-scrollbar]:hidden">
         {% for item in shelf['items'] %}
-          <li class="w-36 sm:w-44 flex-shrink-0">
+          <li class="snap-start flex-shrink-0
+                     w-32 sm:w-40 md:w-48 lg:w-52">
             {% include "_card.html" %}
           </li>
         {% endfor %}
       </ul>
+
+      <button type="button"
+              x-show="!atEnd"
+              x-transition.opacity
+              @click="$refs.row.scrollBy({ left: $refs.row.clientWidth * 0.8, behavior: 'smooth' })"
+              class="hidden md:flex absolute right-0 top-0 bottom-2 z-10
+                     w-12 items-center justify-center
+                     bg-gradient-to-l from-ink-900 to-transparent
+                     opacity-0 group-hover/shelf:opacity-100 transition-opacity">
+        <span class="grid place-items-center w-9 h-9 rounded-full
+                     bg-black/70 text-white shadow-lg
+                     hover:bg-black/90 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+          </svg>
+        </span>
+      </button>
     </div>
   </section>
 {% endfor %}

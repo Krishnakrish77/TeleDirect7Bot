@@ -8,7 +8,7 @@
 
 {% block content %}
   <div class="w-full max-w-7xl">
-    <header class="mb-6">
+    <header class="mb-6 relative z-10">
       <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
         <div>
           <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">
@@ -20,6 +20,10 @@
         </div>
       </div>
     </header>
+
+    {% if hero and not (params.q or params.tag or params.year or params.quality) %}
+      {% include "_hero.html" %}
+    {% endif %}
 
     <form
       id="filters"

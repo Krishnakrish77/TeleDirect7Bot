@@ -41,6 +41,51 @@ _NOISE_TOKENS = re.compile(
 _YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 
 
+def clean_for_search(title: str, file_name: str = "") -> str:
+    """Reduce a filename-shaped title to a clean human-readable query.
+
+    Like ``movie_key`` but keeps the result as a spaced string instead of
+    a slug — TMDB's search endpoint expects natural language. Strips
+    leading channel tags, the trailing year + release flags, and runs
+    of dots/underscores. Returns the title in its original case so TMDB
+    can score the candidates correctly.
+    """
+    candidate = title or file_name
+    if not candidate:
+        return ""
+
+    text = re.sub(r"[._]+", " ", candidate)
+    text = re.sub(r"(\d{4,})([A-Za-z])", r"\1 \2", text)
+    text = re.sub(r"([A-Za-z])(\d{4,})", r"\1 \2", text)
+
+    m = _YEAR_RE.search(text)
+    if m:
+        text = text[: m.start()]
+
+    # Strip leading channel/group prefixes (same patterns movie_key uses).
+    for _ in range(4):
+        new = re.sub(r"^\s*\[\w+\]\s*[-·:]?\s*", "", text)
+        new = re.sub(r"^\s*@\w+(?:\s+\w+)*?\s+[-·:]\s+", "", new)
+        if new == text:
+            break
+        text = new
+
+    # Fallback for @-prefixes without a separator (``@CC The Perks``,
+    # ``@UnixLinks Jana Nayagan``) — strip just the first @-word so we
+    # don't accidentally eat the whole title.
+    text = re.sub(r"^\s*@\w+\s+", "", text)
+
+    # Strip the release-noise tokens but leave the rest of the title's
+    # casing/punctuation intact for natural-language search.
+    text = _NOISE_TOKENS.sub(" ", text)
+
+    # Drop anything inside lingering brackets — usually noise the year-cut
+    # didn't catch.
+    text = re.sub(r"[\[\(].*?[\]\)]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" -—·:()[]")
+    return text
+
+
 def movie_key(title: str, year: Optional[int], file_name: str = "") -> str:
     """Canonical key collapsing same-movie uploads.
 

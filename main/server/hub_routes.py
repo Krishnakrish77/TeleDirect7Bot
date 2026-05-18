@@ -148,7 +148,8 @@ async def _render_page(items: List,
                        next_offset: Optional[int],
                        empty_text: str,
                        params: dict,
-                       shelves: Optional[List[dict]] = None) -> str:
+                       shelves: Optional[List[dict]] = None,
+                       hero=None) -> str:
     tpl = _env.get_template("hub.html")
     next_url = None
     if next_offset is not None:
@@ -156,6 +157,7 @@ async def _render_page(items: List,
     return await tpl.render_async(
         items=items,
         shelves=shelves,
+        hero=hero,
         next_url=next_url,
         empty_text=empty_text,
         params=params,
@@ -209,13 +211,17 @@ async def hub_home(request: web.Request) -> web.Response:
 
     if use_shelves:
         shelves = media_index.shelves()
+        hero = media_index.pick_hero()
         if _is_htmx(request):
             return _html(
                 await _render_shelves(shelves, params),
                 push_url=_canonical_url(params, include_offset=True),
             )
         empty = _empty_text(params)
-        return _html(await _render_page([], None, empty, params, shelves=shelves))
+        return _html(
+            await _render_page([], None, empty, params,
+                               shelves=shelves, hero=hero),
+        )
 
     items, total = media_index.query_grouped(
         q=params["q"], year=params["year"], quality=params["quality"],

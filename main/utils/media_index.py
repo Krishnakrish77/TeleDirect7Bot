@@ -631,15 +631,37 @@ def variants_for_movie(movie_key: str) -> List[HubItem]:
     return vs
 
 
-def shelves(per_shelf: int = 12) -> List[dict]:
+def pick_hero() -> Optional[HubItem]:
+    """Choose a hero item for the landing-page banner.
+
+    Strongly prefers an enriched item with a backdrop image so the hero
+    has something to render. Within the eligible set, picks one of the
+    most-recent few at random for variety across refreshes.
+    """
+    import random
+    candidates = [
+        it for it in _items.values()
+        if it.backdrop_path and it.overview
+    ]
+    if not candidates:
+        # Fall back to anything enriched (TMDB without backdrop is rare
+        # but possible for older titles).
+        candidates = [it for it in _items.values() if it.tmdb_id]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda it: -it.message_id)
+    pool = candidates[:8]  # top 8 newest enriched
+    return random.choice(pool)
+
+
+def shelves(per_shelf: int = 14) -> List[dict]:
     """Curated horizontal rows for the hub's no-filter landing view.
 
-    Each shelf returns the top ``per_shelf`` cards in a category, ordered
-    newest-first. Shelves are computed off the same ``_items`` snapshot —
-    items can legitimately appear on more than one (a recent series shows
-    up in both "Recently added" and "Series") — so the landing page reads
-    like Netflix's "based on what you have" rather than a strict
-    partition.
+    Recent first, then series, then movies, then up to three genre shelves
+    derived from TMDB enrichment. Items can appear on multiple rows
+    (a recent series shows in both "Recently added" and "Series") so the
+    landing page reads like Netflix's "based on what you have" rather
+    than a strict partition.
 
     Returned shape::
 
@@ -670,41 +692,66 @@ def shelves(per_shelf: int = 12) -> List[dict]:
             standalone_movies.append(variants[0])
 
     all_movies = movie_groups + standalone_movies + singles
+    all_cards: List = series_groups + movie_groups + standalone_movies + singles
 
-    # --- shape into shelves ---
     def newest(items, key=lambda c: _card_message_id(c)):
         return sorted(items, key=lambda c: -key(c))[:per_shelf]
 
     out: List[dict] = []
 
-    recent_all = list(_items.values())
-    if recent_all:
-        out.append({
-            "name": "Recently added",
-            "items": newest(recent_all),
-        })
-
+    if all_cards:
+        out.append({"name": "Recently added", "items": newest(all_cards)})
     if series_groups:
         out.append({
             "name": "Series",
             "items": newest(series_groups, key=lambda s: s.latest_message_id),
         })
-
     if all_movies:
-        out.append({
-            "name": "Movies",
-            "items": newest(all_movies),
-        })
+        out.append({"name": "Movies", "items": newest(all_movies)})
 
-    by_quality_1080 = [
-        it for it in _items.values()
-        if it.quality in ("1080p", "4K") and not it.series_key
-    ]
-    if by_quality_1080:
-        out.append({
-            "name": "1080p &amp; up",
-            "items": newest(by_quality_1080),
-        })
+    # --- genre shelves from TMDB enrichment ---
+    # Map each genre slug → list of items that carry it. Pick the top 3
+    # most-populated genres for shelf rows so the page doesn't sprawl.
+    by_genre: dict = {}
+    for it in _items.values():
+        if not it.tmdb_genres:
+            continue
+        # We promote SeriesGroup/MovieGroup cards into genre rows too, so
+        # the per-item iteration needs to deduplicate by group.
+        for g in it.tmdb_genres:
+            by_genre.setdefault(g, []).append(it)
+
+    if by_genre:
+        # For each genre, walk the items and emit the right card (group
+        # for series/movie variants, plain HubItem otherwise) — same
+        # promotion logic as the all_cards bucketing above.
+        genre_rows = sorted(by_genre.items(), key=lambda kv: -len(kv[1]))[:3]
+        for genre, members in genre_rows:
+            seen_series: set = set()
+            seen_movie: set = set()
+            row_cards: List = []
+            for it in sorted(members, key=lambda x: -x.message_id):
+                if it.series_key:
+                    if it.series_key in seen_series:
+                        continue
+                    eps = series_buckets.get(it.series_key, [it])
+                    row_cards.append(_build_series_group(eps))
+                    seen_series.add(it.series_key)
+                elif it.movie_key:
+                    if it.movie_key in seen_movie:
+                        continue
+                    variants = movie_buckets.get(it.movie_key, [it])
+                    if len(variants) >= 2:
+                        row_cards.append(_build_movie_group(variants))
+                    else:
+                        row_cards.append(variants[0])
+                    seen_movie.add(it.movie_key)
+                else:
+                    row_cards.append(it)
+                if len(row_cards) >= per_shelf:
+                    break
+            if row_cards:
+                out.append({"name": genre, "items": row_cards})
 
     return out
 
@@ -761,28 +808,49 @@ async def enrich_one(message_id: int) -> bool:
 
     Returns True if the entry got enriched, False otherwise. Idempotent:
     re-running on an already-enriched item refreshes its data.
+
+    The lookup tries multiple cleaned title forms before giving up:
+    1. ``clean_for_search`` on the catalogue title (strips channel tags,
+       release noise, year suffix)
+    2. ``clean_for_search`` on the file_name (fallback when the title got
+       degraded by an earlier indexer)
+    3. The raw title as TMDB sees it
     """
+    from main.utils.dedup import clean_for_search
+
     if not tmdb.is_configured():
         return False
     item = _items.get(message_id)
     if item is None:
         return False
 
-    # Use the parsed series title for TV episodes so we look up the show,
-    # not the episode-specific filename.
     if item.series_key and item.series_title:
+        # TV: lookup the show. series_title is already clean per series.parse.
         hit = await tmdb.lookup_series(item.series_title, item.year)
     else:
-        # Movie path: strip any leading channel tag (the dedup module
-        # already does this for keys, but the raw title is what TMDB
-        # search sees).
-        title = item.title or item.file_name
-        hit = await tmdb.lookup_movie(title, item.year)
+        # Movie: try cleaned-title variants in order, fall through to TV if
+        # everything misses (some standalone uploads are TV specials).
+        candidates: list = []
+        seen: set = set()
+        for raw in (item.title, item.file_name):
+            cleaned = clean_for_search(raw, item.file_name)
+            if cleaned and cleaned not in seen:
+                candidates.append(cleaned)
+                seen.add(cleaned)
+        # Last-ditch: the title as-is. Useful for hand-edited entries.
+        if item.title and item.title not in seen:
+            candidates.append(item.title)
+
+        hit = None
+        for q in candidates:
+            hit = await tmdb.lookup_movie(q, item.year)
+            if hit is not None:
+                break
         if hit is None:
-            # Some episodes get parsed without SxxEyy in the title (e.g.
-            # standalone uploads of a TV special). Try a TV lookup as a
-            # fallback.
-            hit = await tmdb.lookup_series(title, item.year)
+            for q in candidates:
+                hit = await tmdb.lookup_series(q, item.year)
+                if hit is not None:
+                    break
 
     if hit is None:
         async with _lock:
