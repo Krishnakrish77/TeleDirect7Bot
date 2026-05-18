@@ -57,6 +57,12 @@ class TMDBHit:
 _cache: dict = {}
 _locks: dict = {}
 
+# Per-(tv_id, season) cache holding the raw season payload from TMDB.
+# One call returns every episode of a season, so a 20-episode anime
+# season costs one round-trip not twenty. TTL matches _CACHE_TTL.
+_season_cache: dict = {}
+_season_locks: dict = {}
+
 
 def _now() -> float:
     return time.monotonic()
@@ -279,3 +285,59 @@ async def fetch_by_id(tmdb_id: int, kind: str) -> Optional[TMDBHit]:
             genres=[g["name"] for g in (details.get("genres") or []) if g.get("name")],
             imdb_id=(details.get("external_ids") or {}).get("imdb_id") or "",
         )
+
+
+async def fetch_season(tv_id: int, season: int) -> Optional[dict]:
+    """Return the raw TMDB season payload, with all episodes inlined.
+
+    One call gives back every episode of a season — so a 20-episode
+    anime season costs ONE round-trip, not twenty. The result is
+    cached under ``(tv_id, season)`` and the same-key concurrent
+    callers collapse onto a single inflight fetch via the lock.
+
+    Shape (relevant fields only)::
+
+        {
+          "id": <season tmdb id>,
+          "season_number": 1,
+          "episodes": [
+            {"episode_number": 1, "name": "...", "overview": "...",
+             "still_path": "/abc.jpg", "air_date": "2014-01-01"},
+            ...
+          ],
+        }
+    """
+    if not is_configured() or not tv_id or season is None:
+        return None
+    key = (int(tv_id), int(season))
+    cached = _season_cache.get(key)
+    if cached and (_now() - cached[0]) < _CACHE_TTL:
+        return cached[1]
+    lock = _season_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        cached = _season_cache.get(key)
+        if cached and (_now() - cached[0]) < _CACHE_TTL:
+            return cached[1]
+        async with aiohttp.ClientSession() as session:
+            payload = await _get(session, f"/tv/{tv_id}/season/{season}")
+        if not payload or "episodes" not in payload:
+            # Negative cache so a 404 on an out-of-range season doesn't
+            # keep retrying. Short TTL so it self-heals.
+            _season_cache[key] = (_now(), None)
+            return None
+        _season_cache[key] = (_now(), payload)
+        return payload
+
+
+def episode_from_season(season_payload: dict, episode: int) -> Optional[dict]:
+    """Pick a single episode dict out of a cached season payload."""
+    if not season_payload or episode is None:
+        return None
+    target = int(episode)
+    for ep in season_payload.get("episodes") or []:
+        try:
+            if int(ep.get("episode_number") or 0) == target:
+                return ep
+        except (TypeError, ValueError):
+            continue
+    return None

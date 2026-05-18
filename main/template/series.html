@@ -104,19 +104,34 @@
         </h2>
         <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {% for ep in block.episodes %}
-            <li data-ep-title="{{ (ep.title or '') | lower }} {{ (ep.file_name or '') | lower }}{% if ep.season and ep.episode %} s{{ '%02d' % ep.season }}e{{ '%02d' % ep.episode }}{% endif %}">
+            <li data-ep-title="{{ (ep.title or '') | lower }} {{ (ep.episode_title or '') | lower }} {{ (ep.file_name or '') | lower }}{% if ep.season and ep.episode %} s{{ '%02d' % ep.season }}e{{ '%02d' % ep.episode }}{% endif %}">
               <a href="/watch/{{ ep.secure_hash }}{{ ep.message_id }}"
                  class="group flex gap-3 p-3 rounded-lg bg-ink-800/60 border border-white/5
                         hover:border-brand-400/40 hover:bg-ink-800 transition-colors">
                 <div class="flex-shrink-0 w-32 aspect-video bg-ink-900 rounded
                             relative overflow-hidden">
-                  <img
-                    src="/thumb/{{ ep.secure_hash }}{{ ep.message_id }}.jpg"
-                    alt=""
-                    loading="lazy"
-                    onerror="this.remove()"
-                    class="absolute inset-0 w-full h-full object-cover"
-                  />
+                  {# Prefer TMDB's per-episode still image when we have one
+                     — it's a frame from THIS episode and looks much
+                     better than Telegram's auto-grabbed thumb (which is
+                     often the same colourbar frame across an entire
+                     show). Fall back to /thumb when no still is known. #}
+                  {% if ep.episode_still_path %}
+                    <img
+                      src="https://image.tmdb.org/t/p/w300{{ ep.episode_still_path }}"
+                      alt=""
+                      loading="lazy"
+                      onerror="this.remove()"
+                      class="absolute inset-0 w-full h-full object-cover"
+                    />
+                  {% else %}
+                    <img
+                      src="/thumb/{{ ep.secure_hash }}{{ ep.message_id }}.jpg"
+                      alt=""
+                      loading="lazy"
+                      onerror="this.remove()"
+                      class="absolute inset-0 w-full h-full object-cover"
+                    />
+                  {% endif %}
                   {% if ep.duration %}
                     <span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded
                                  bg-black/70 text-[10px] font-medium text-white
@@ -132,11 +147,19 @@
                     {% elif ep.episode %}
                       Episode {{ ep.episode }}
                     {% endif %}
+                    {% if ep.episode_air_date %}
+                      · {{ ep.episode_air_date }}
+                    {% endif %}
                   </p>
                   <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
                              group-hover:text-brand-300 transition-colors">
-                    {{ ep.title }}
+                    {{ ep.episode_title or ep.title }}
                   </h3>
+                  {% if ep.episode_overview %}
+                    <p class="mt-1 text-xs text-slate-400 leading-snug line-clamp-2">
+                      {{ ep.episode_overview }}
+                    </p>
+                  {% endif %}
                   {% if ep.quality or ep.file_size %}
                     <p class="mt-1 text-xs text-slate-500">
                       {% if ep.quality %}{{ ep.quality }}{% endif %}

@@ -216,16 +216,38 @@
                  class="w-28 sm:w-32 rounded-lg shadow flex-shrink-0" />
           {% endif %}
           <div class="min-w-0 flex-1">
-            <h2 class="text-lg font-semibold text-white">
-              {{ meta.title }}
-              {%- if meta.year %} <span class="text-slate-400 font-normal">({{ meta.year }})</span>{% endif -%}
-              {% if meta.season and meta.episode %}
-                <span class="ml-2 text-sm text-slate-400 tabular-nums">
-                  S{{ '%02d' % meta.season }}E{{ '%02d' % meta.episode }}
-                </span>
+            {# Series header for TV episodes — show the show name and
+               the SxxEyy badge as the primary title, episode-specific
+               name as the subtitle. Movies keep the original behaviour. #}
+            {% if meta.series_title and meta.episode_title %}
+              <p class="text-xs uppercase tracking-wider text-brand-300">
+                {{ meta.series_title }}
+                {%- if meta.season and meta.episode %}
+                  · S{{ '%02d' % meta.season }}E{{ '%02d' % meta.episode }}
+                {%- endif %}
+              </p>
+              <h2 class="text-lg font-semibold text-white">
+                {{ meta.episode_title }}
+              </h2>
+              {% if meta.episode_air_date %}
+                <p class="mt-0.5 text-xs text-slate-500 tabular-nums">
+                  First aired {{ meta.episode_air_date }}
+                </p>
               {% endif %}
-            </h2>
-            {% set body = meta.overview or meta.description %}
+            {% else %}
+              <h2 class="text-lg font-semibold text-white">
+                {{ meta.title }}
+                {%- if meta.year %} <span class="text-slate-400 font-normal">({{ meta.year }})</span>{% endif -%}
+                {% if meta.season and meta.episode %}
+                  <span class="ml-2 text-sm text-slate-400 tabular-nums">
+                    S{{ '%02d' % meta.season }}E{{ '%02d' % meta.episode }}
+                  </span>
+                {% endif %}
+              </h2>
+            {% endif %}
+            {# Prefer episode-specific overview when present; fall back
+               to the show-level overview then to description. #}
+            {% set body = meta.episode_overview or meta.overview or meta.description %}
             {% if body %}
               <p class="mt-2 text-sm text-slate-300 leading-relaxed">{{ body }}</p>
             {% endif %}

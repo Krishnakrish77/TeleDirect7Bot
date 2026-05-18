@@ -62,6 +62,14 @@ class HubItem:
     video_codec: str = ""
     pix_fmt: str = ""
     probed_at: float = 0.0
+    # --- TMDB per-episode metadata (only meaningful for TV) -----------------
+    # Populated by enrich_one / enrich_with_tmdb_id when both season and
+    # episode are known and a successful /tv/{id}/season/{S} payload was
+    # available. Empty strings when not fetched yet.
+    episode_title: str = ""
+    episode_overview: str = ""
+    episode_still_path: str = ""
+    episode_air_date: str = ""
 
 
 @dataclass

@@ -233,8 +233,26 @@ async def admin_status(request: web.Request) -> web.Response:
         "enrich": media_index.enrichment_state(),
         "reindex": media_index.reindex_state(),
         "probe": codec_probe.state(),
+        "episode_fill": media_index.episode_fill_state(),
         "catalogue_size": media_index.size(),
     }, headers={"Cache-Control": "no-store"})
+
+
+@routes.post("/admin/fetch-episodes")
+async def admin_fetch_episodes(request: web.Request) -> web.Response:
+    """Backfill TMDB per-episode metadata (episode name + overview + still
+    image) for TV rows where it's missing. One TMDB call per
+    (tv_id, season) thanks to season-level caching, so even a 500-ep
+    anime show only costs one call per season.
+    """
+    _require_session(request)
+    import asyncio as _aio
+    if not media_index.episode_fill_state().get("running"):
+        _aio.create_task(media_index.fill_episode_details(bot=StreamBot))
+    if _is_htmx(request):
+        return web.Response(status=204)
+    from urllib.parse import quote
+    raise web.HTTPFound(f"/admin?flash={quote('Episode details fetch queued')}")
 
 
 @routes.post("/admin/probe-codecs")

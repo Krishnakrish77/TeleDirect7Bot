@@ -181,6 +181,10 @@ def _to_serializable(item: HubItem) -> dict:
         "video_codec": item.video_codec,
         "pix_fmt": item.pix_fmt,
         "probed_at": item.probed_at,
+        "episode_title": item.episode_title,
+        "episode_overview": item.episode_overview,
+        "episode_still_path": item.episode_still_path,
+        "episode_air_date": item.episode_air_date,
         "subtitles": [
             {
                 "bin_message_id": s.bin_message_id,
@@ -222,6 +226,10 @@ def _from_serializable(d: dict) -> HubItem:
         video_codec=d.get("video_codec", "") or "",
         pix_fmt=d.get("pix_fmt", "") or "",
         probed_at=float(d.get("probed_at", 0) or 0),
+        episode_title=d.get("episode_title", "") or "",
+        episode_overview=d.get("episode_overview", "") or "",
+        episode_still_path=d.get("episode_still_path", "") or "",
+        episode_air_date=d.get("episode_air_date", "") or "",
         subtitles=[
             ExternalSubtitle(
                 bin_message_id=s["bin_message_id"],
@@ -1568,6 +1576,40 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
             existing.add(slug)
 
 
+async def _fill_episode_metadata(item: HubItem) -> bool:
+    """For a TV episode with known (season, episode), copy TMDB's
+    per-episode name/overview/still onto the item.
+
+    Returns True on a populated update. Uses tmdb.fetch_season's cache
+    so all episodes of a season collapse onto one network call —
+    the second-and-beyond episodes of a 500-ep show pay nothing.
+    """
+    if (item.tmdb_kind != "tv" or not item.tmdb_id
+            or item.season is None or item.episode is None):
+        return False
+    payload = await tmdb.fetch_season(item.tmdb_id, item.season)
+    if not payload:
+        return False
+    ep = tmdb.episode_from_season(payload, item.episode)
+    if not ep:
+        return False
+    new_title = (ep.get("name") or "").strip()
+    new_overview = (ep.get("overview") or "").strip()
+    new_still = (ep.get("still_path") or "").strip()
+    new_air = (ep.get("air_date") or "").strip()
+    changed = (
+        new_title != item.episode_title
+        or new_overview != item.episode_overview
+        or new_still != item.episode_still_path
+        or new_air != item.episode_air_date
+    )
+    item.episode_title = new_title
+    item.episode_overview = new_overview
+    item.episode_still_path = new_still
+    item.episode_air_date = new_air
+    return changed
+
+
 async def enrich_one(message_id: int, bot=None) -> bool:
     """Look up and apply TMDB enrichment for a single catalogue entry.
 
@@ -1638,6 +1680,11 @@ async def enrich_one(message_id: int, bot=None) -> bool:
         _apply_tmdb_to_item(item, hit)
         _persist_unlocked()
 
+    # Per-episode enrichment is async — do it outside the lock so the
+    # TMDB season fetch doesn't block other catalogue mutations.
+    await _fill_episode_metadata(item)
+    await persist_now()
+
     if bot is not None:
         # Best-effort caption write-back. A failure here doesn't undo the
         # in-memory enrichment; the next enrich pass will retry.
@@ -1670,6 +1717,8 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
     async with _lock:
         _apply_tmdb_to_item(item, hit)
         _persist_unlocked()
+    await _fill_episode_metadata(item)
+    await persist_now()
     if bot is not None:
         await persist_canonical_to_bin(bot, message_id)
         # Manual admin override — coalesce snapshot like the auto path.
@@ -1677,6 +1726,58 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
         # snapshot lands at the end.
         schedule_snapshot(bot)
     return True
+
+
+_episode_fill_state: dict = {
+    "running": False, "done": 0, "total": 0, "filled": 0,
+    "started_at": 0.0, "finished_at": 0.0,
+}
+
+
+def episode_fill_state() -> dict:
+    return dict(_episode_fill_state)
+
+
+async def fill_episode_details(bot=None) -> dict:
+    """Backfill TMDB per-episode metadata for TV rows that don't have
+    it yet. Cheap thanks to the season-level cache in tmdb.fetch_season
+    — one network call per (tv_id, season), no matter how many
+    episodes share it.
+    """
+    if _episode_fill_state["running"]:
+        return {"already_running": True}
+    if not tmdb.is_configured():
+        return {"skipped_no_api_key": True}
+    targets = [
+        it for it in _items.values()
+        if it.tmdb_kind == "tv" and it.tmdb_id
+           and it.season is not None and it.episode is not None
+           and not it.episode_title
+    ]
+    _episode_fill_state.update(
+        running=True, done=0, total=len(targets), filled=0,
+        started_at=time.time(), finished_at=0.0,
+    )
+    try:
+        for it in targets:
+            try:
+                changed = await _fill_episode_metadata(it)
+                if changed:
+                    _episode_fill_state["filled"] += 1
+            except Exception:
+                logging.debug("episode fill failed for bin:%d",
+                              it.message_id, exc_info=True)
+            _episode_fill_state["done"] += 1
+        await persist_now()
+        if bot is not None:
+            schedule_snapshot(bot)
+    finally:
+        _episode_fill_state["running"] = False
+        _episode_fill_state["finished_at"] = time.time()
+    return {
+        "total": _episode_fill_state["total"],
+        "filled": _episode_fill_state["filled"],
+    }
 
 
 async def enrich_all(bot=None, force: bool = False) -> dict:

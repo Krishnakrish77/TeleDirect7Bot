@@ -150,6 +150,17 @@
             Probe codecs
           </button>
         </form>
+        <form hx-post="/admin/fetch-episodes"
+              hx-swap="none"
+              @htmx:after-request.camel="$dispatch('admin-progress-tick')"
+              class="inline">
+          <button type="submit"
+                  class="text-sm px-3 py-1.5 rounded bg-ink-800 text-slate-200
+                         border border-white/5 hover:bg-ink-700 transition-colors"
+                  title="Fetch TMDB per-episode names + overviews + still images for TV rows. One call per season; episodes share the response.">
+            Fetch episode details
+          </button>
+        </form>
         <a href="/admin/logout"
            class="text-sm text-slate-400 hover:text-brand-300 transition-colors">
           Sign out
@@ -173,6 +184,7 @@
            enrich: null,
            reindex: null,
            probe: null,
+           episode_fill: null,
            pollHandle: null,
            start() {
              this.tick();
@@ -189,7 +201,10 @@
                this.enrich = data.enrich;
                this.reindex = data.reindex;
                this.probe = data.probe;
-               const any = (data.seed.running || data.enrich.running || data.reindex.running || (data.probe &amp;&amp; data.probe.running));
+               this.episode_fill = data.episode_fill;
+               const any = (data.seed.running || data.enrich.running || data.reindex.running
+                 || (data.probe &amp;&amp; data.probe.running)
+                 || (data.episode_fill &amp;&amp; data.episode_fill.running));
                if (!any) {
                  if (this.pollHandle) {
                    clearInterval(this.pollHandle);
@@ -257,6 +272,20 @@
           <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
             <div class="h-full bg-brand-400 transition-all duration-500"
                  :style="`width:${pct(probe)}%`"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="episode_fill &amp;&amp; episode_fill.running">
+        <div class="rounded-lg border border-brand-400/30 bg-brand-400/5 p-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-brand-200">Fetching episode details (TMDB)</span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${episode_fill.done}/${episode_fill.total} · ${episode_fill.filled} populated`"></span>
+          </div>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full bg-brand-400 transition-all duration-500"
+                 :style="`width:${pct(episode_fill)}%`"></div>
           </div>
         </div>
       </template>
