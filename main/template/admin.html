@@ -22,13 +22,40 @@
              year: d.year || '',
              tags: d.tags || '',
              description: d.description || '',
-             // Prefill the TMDB override fields with whatever this row
-             // already carries — operator can keep the existing id,
-             // change to a different one, or clear to fall back to
-             // search-by-title.
              tmdb_id: d.tmdbId || '',
              tmdb_kind: d.tmdbKind || 'movie',
+             // Preview state populated by previewTmdb().
+             preview: null,
+             previewError: '',
+             previewLoading: false,
            };
+           // If the row already has a TMDB id, kick off a preview fetch
+           // immediately so admin sees what's currently attached.
+           if (this.editing.tmdb_id) this.previewTmdb();
+         },
+         async previewTmdb() {
+           const e = this.editing;
+           if (!e) return;
+           const id = parseInt(e.tmdb_id, 10);
+           e.preview = null;
+           e.previewError = '';
+           if (!id || id < 1) return;
+           e.previewLoading = true;
+           try {
+             const r = await fetch(
+               '/admin/tmdb-preview?id=' + id + '&kind=' + encodeURIComponent(e.tmdb_kind),
+             );
+             const data = await r.json();
+             if (!r.ok) {
+               e.previewError = data.error || ('HTTP ' + r.status);
+             } else {
+               e.preview = data;
+             }
+           } catch (err) {
+             e.previewError = 'Network error';
+           } finally {
+             e.previewLoading = false;
+           }
          },
          rowVisible(row) {
            const ds = row.dataset;
@@ -426,12 +453,14 @@
                   <input type="number" name="tmdb_id" min="1"
                          placeholder="TMDB ID"
                          x-model="editing.tmdb_id"
+                         @input.debounce.500ms="previewTmdb()"
                          class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
                                 border border-white/5
                                 focus:outline-none focus:ring-2 focus:ring-brand-400/60
                                 tabular-nums" />
                   <select name="tmdb_kind"
                           x-model="editing.tmdb_kind"
+                          @change="previewTmdb()"
                           class="px-3 py-2 rounded bg-ink-800/70 text-slate-100
                                  border border-white/5
                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60">
@@ -445,6 +474,56 @@
                   the id at themoviedb.org (e.g.
                   <code class="text-slate-400">/movie/1230</code> → 1230).
                 </p>
+
+                {# Live preview of the TMDB record so admin confirms
+                   the right one before saving. Updates 500ms after the
+                   id stops changing, or when the kind selector flips. #}
+                <div x-show="editing.previewLoading"
+                     class="mt-3 text-xs text-slate-500">
+                  Fetching from TMDB…
+                </div>
+                <div x-show="editing.previewError"
+                     class="mt-3 rounded-lg border border-red-400/30 bg-red-500/10
+                            text-red-300 text-xs px-3 py-2"
+                     x-text="editing.previewError"></div>
+                <template x-if="editing.preview &amp;&amp; !editing.previewLoading">
+                  <div class="mt-3 rounded-lg border border-brand-400/30
+                              bg-brand-400/5 p-3 flex gap-3">
+                    <template x-if="editing.preview.poster_path">
+                      <img :src="'https://image.tmdb.org/t/p/w92' + editing.preview.poster_path"
+                           alt="" class="w-14 h-20 rounded object-cover flex-shrink-0" />
+                    </template>
+                    <template x-if="!editing.preview.poster_path">
+                      <div class="w-14 h-20 rounded bg-ink-800 flex-shrink-0
+                                  grid place-items-center text-slate-600 text-xs">
+                        no poster
+                      </div>
+                    </template>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-semibold text-white truncate">
+                        <span x-text="editing.preview.title"></span>
+                        <span x-show="editing.preview.year"
+                              class="text-slate-400 font-normal"
+                              x-text="'(' + editing.preview.year + ')'"></span>
+                      </p>
+                      <p class="text-[10px] uppercase tracking-wider text-slate-500 mt-0.5">
+                        <span x-text="editing.preview.kind"></span>
+                        <template x-if="editing.preview.imdb_id">
+                          <span>
+                            · <a :href="'https://www.imdb.com/title/' + editing.preview.imdb_id + '/'"
+                                 target="_blank" rel="noopener"
+                                 class="text-yellow-300 hover:underline"
+                                 x-text="editing.preview.imdb_id"></a>
+                          </span>
+                        </template>
+                      </p>
+                      <p class="mt-1 text-xs text-slate-400 leading-snug line-clamp-3"
+                         x-text="editing.preview.overview || '(no overview)'"></p>
+                      <p class="mt-1.5 text-[10px] text-slate-500"
+                         x-text="(editing.preview.genres || []).join(' · ')"></p>
+                    </div>
+                  </div>
+                </template>
               </div>
             </div>
 

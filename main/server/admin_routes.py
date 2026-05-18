@@ -153,6 +153,41 @@ async def admin_enrich(request: web.Request) -> web.Response:
     raise web.HTTPFound(f"/admin?flash={quote(flash_msg)}")
 
 
+@routes.get("/admin/tmdb-preview")
+async def admin_tmdb_preview(request: web.Request) -> web.Response:
+    """Preview a TMDB record by id so admin can confirm before applying.
+
+    Hit by the Edit modal whenever the operator types a TMDB id. Returns
+    poster path, title, year, overview, genres so the UI can render a
+    small preview card next to the input.
+    """
+    _require_session(request)
+    try:
+        tmdb_id = int(request.query.get("id", ""))
+    except ValueError:
+        return web.json_response({"error": "id must be numeric"}, status=400)
+    kind = (request.query.get("kind") or "movie").lower()
+    if kind not in ("movie", "tv"):
+        return web.json_response({"error": "kind must be movie or tv"}, status=400)
+
+    from main.utils import tmdb
+    if not tmdb.is_configured():
+        return web.json_response({"error": "TMDB_API_KEY not set"}, status=503)
+    hit = await tmdb.fetch_by_id(tmdb_id, kind)
+    if hit is None:
+        return web.json_response({"error": "Not found"}, status=404)
+    return web.json_response({
+        "tmdb_id": hit.tmdb_id,
+        "kind": hit.kind,
+        "title": hit.title,
+        "year": hit.year,
+        "overview": hit.overview,
+        "poster_path": hit.poster_path,
+        "genres": hit.genres,
+        "imdb_id": hit.imdb_id,
+    })
+
+
 @routes.get("/admin/status")
 async def admin_status(request: web.Request) -> web.Response:
     """JSON snapshot of the seed + enrichment progress. The admin page

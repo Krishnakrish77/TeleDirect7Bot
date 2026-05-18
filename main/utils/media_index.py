@@ -509,9 +509,35 @@ async def seed(bot, channel_id: int) -> None:
                 batch = [batch]
             async with _lock:
                 for m in batch:
-                    item = _item_from_message(m)
-                    if item is not None:
-                        _items[item.message_id] = item
+                    new_item = _item_from_message(m)
+                    if new_item is None:
+                        continue
+                    existing = _items.get(new_item.message_id)
+                    if existing is not None:
+                        # Merge with prior snapshot/in-memory state.
+                        # Caption-derived data wins for fields that ARE
+                        # in the caption (title, year, ids, poster);
+                        # snapshot wins for fields that aren't (TMDB
+                        # genres, attached subtitles, enriched_at) and
+                        # also fills in caption fields the write-back
+                        # never managed to push (tags / description /
+                        # overview on uneditable bins).
+                        new_item.tmdb_genres = (
+                            existing.tmdb_genres or new_item.tmdb_genres
+                        )
+                        new_item.subtitles = (
+                            existing.subtitles or new_item.subtitles
+                        )
+                        new_item.enriched_at = (
+                            existing.enriched_at or new_item.enriched_at
+                        )
+                        if existing.tags and not new_item.tags:
+                            new_item.tags = existing.tags
+                        if existing.description and not new_item.description:
+                            new_item.description = existing.description
+                        if existing.overview and not new_item.overview:
+                            new_item.overview = existing.overview
+                    _items[new_item.message_id] = new_item
                 _persist_unlocked()
             _seed_state["scanned"] += len(ids)
             _seed_state["indexed"] = len(_items)
