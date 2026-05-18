@@ -119,15 +119,8 @@
         {{ item.title }}
         {%- if item.year %} <span class="text-slate-400 font-normal">({{ item.year }})</span>{% endif -%}
       </h3>
-      {% if item.tags %}
-        <div class="mt-1.5 flex flex-wrap gap-1">
-          {% for tag in item.tags[:3] %}
-            <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded
-                         bg-brand-500/10 text-brand-300">#{{ tag }}</span>
-          {% endfor %}
-        </div>
-      {% elif item.file_size %}
-        <p class="mt-1 text-xs text-slate-500">{{ item.file_size | humansize }}</p>
+      {% if item.file_size %}
+        <p class="mt-1 text-xs text-slate-500 tabular-nums">{{ item.file_size | humansize }}</p>
       {% endif %}
     </div>
   </a>
