@@ -1,0 +1,134 @@
+{# Single hub card. Renders one of three variants depending on what
+   `item` is — MovieGroup, SeriesGroup, or a plain HubItem. Callers wrap
+   this in their own list element ({{ <li> }} in the grid, {{ <li> }} in a
+   shelf row) so the same partial works in both layouts. #}
+{% if item.variant_count is defined %}
+  {# MovieGroup: 2+ uploads of the same film. Click → /movie/{key} #}
+  {% set poster = item.poster_item %}
+  <a href="/movie/{{ item.movie_key }}"
+     class="group block rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
+            hover:border-brand-400/40 hover:bg-ink-800
+            transition-colors">
+    <div class="aspect-[2/3] bg-ink-900 relative overflow-hidden">
+      <div class="absolute inset-0 grid place-items-center text-slate-700">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" class="w-10 h-10">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
+        </svg>
+      </div>
+      <img
+        src="/thumb/{{ poster.secure_hash }}{{ poster.message_id }}.jpg"
+        alt=""
+        loading="lazy"
+        onerror="this.remove()"
+        class="absolute inset-0 w-full h-full object-cover
+               group-hover:scale-105 transition-transform duration-300"
+      />
+      <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded
+                   bg-amber-500/90 text-[10px] font-semibold text-white
+                   uppercase tracking-wider">
+        {{ item.variant_count }} versions
+      </span>
+    </div>
+    <div class="p-3">
+      <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
+                 group-hover:text-brand-300 transition-colors">
+        {{ item.title }}
+        {%- if item.year %} <span class="text-slate-400 font-normal">({{ item.year }})</span>{% endif -%}
+      </h3>
+      <p class="mt-1 text-xs text-slate-500">Pick a version →</p>
+    </div>
+  </a>
+{% elif item.episode_count is defined %}
+  {# SeriesGroup: collapsed card linking to /series/{key} #}
+  {% set poster = item.poster_item %}
+  <a href="/series/{{ item.series_key }}"
+     class="group block rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
+            hover:border-brand-400/40 hover:bg-ink-800
+            transition-colors">
+    <div class="aspect-[2/3] bg-ink-900 relative overflow-hidden">
+      <div class="absolute inset-0 grid place-items-center text-slate-700">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" class="w-10 h-10">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M3.75 7.5h16.5M3.75 12h16.5M3.75 16.5h16.5"/>
+        </svg>
+      </div>
+      <img
+        src="/thumb/{{ poster.secure_hash }}{{ poster.message_id }}.jpg"
+        alt=""
+        loading="lazy"
+        onerror="this.remove()"
+        class="absolute inset-0 w-full h-full object-cover
+               group-hover:scale-105 transition-transform duration-300"
+      />
+      <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded
+                   bg-brand-500/90 text-[10px] font-semibold text-white
+                   uppercase tracking-wider">
+        Series
+      </span>
+      <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded
+                   bg-black/70 text-[10px] font-medium text-white
+                   tabular-nums">
+        {{ item.episode_count }} ep{{ '' if item.episode_count == 1 else 's' }}
+      </span>
+    </div>
+    <div class="p-3">
+      <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
+                 group-hover:text-brand-300 transition-colors">
+        {{ item.series_title }}
+      </h3>
+      <p class="mt-1 text-xs text-slate-500">
+        {{ item.season_count }} season{{ '' if item.season_count == 1 else 's' }}
+      </p>
+    </div>
+  </a>
+{% else %}
+  <a href="/watch/{{ item.secure_hash }}{{ item.message_id }}"
+     class="group block rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
+            hover:border-brand-400/40 hover:bg-ink-800
+            transition-colors">
+    <div class="aspect-[2/3] bg-ink-900 relative overflow-hidden">
+      <div class="absolute inset-0 grid place-items-center text-slate-700">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" class="w-10 h-10">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
+        </svg>
+      </div>
+      <img
+        src="/thumb/{{ item.secure_hash }}{{ item.message_id }}.jpg"
+        alt=""
+        loading="lazy"
+        onerror="this.remove()"
+        class="absolute inset-0 w-full h-full object-cover
+               group-hover:scale-105 transition-transform duration-300"
+      />
+      {% if item.duration %}
+        <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded
+                     bg-black/70 text-[10px] font-medium text-white
+                     tabular-nums">
+          {{ item.duration | duration }}
+        </span>
+      {% endif %}
+    </div>
+    <div class="p-3">
+      <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
+                 group-hover:text-brand-300 transition-colors">
+        {{ item.title }}
+        {%- if item.year %} <span class="text-slate-400 font-normal">({{ item.year }})</span>{% endif -%}
+      </h3>
+      {% if item.tags %}
+        <div class="mt-1.5 flex flex-wrap gap-1">
+          {% for tag in item.tags[:3] %}
+            <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded
+                         bg-brand-500/10 text-brand-300">#{{ tag }}</span>
+          {% endfor %}
+        </div>
+      {% elif item.file_size %}
+        <p class="mt-1 text-xs text-slate-500">{{ item.file_size | humansize }}</p>
+      {% endif %}
+    </div>
+  </a>
+{% endif %}

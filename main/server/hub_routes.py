@@ -139,16 +139,23 @@ async def _render_grid(items: List,
     )
 
 
+async def _render_shelves(shelves: List[dict], params: dict) -> str:
+    tpl = _env.get_template("_shelves.html")
+    return await tpl.render_async(shelves=shelves, params=params)
+
+
 async def _render_page(items: List,
                        next_offset: Optional[int],
                        empty_text: str,
-                       params: dict) -> str:
+                       params: dict,
+                       shelves: Optional[List[dict]] = None) -> str:
     tpl = _env.get_template("hub.html")
     next_url = None
     if next_offset is not None:
         next_url = _canonical_url({**params, "offset": next_offset}, include_offset=True)
     return await tpl.render_async(
         items=items,
+        shelves=shelves,
         next_url=next_url,
         empty_text=empty_text,
         params=params,
@@ -188,6 +195,27 @@ async def hub_home(request: web.Request) -> web.Response:
         canonical = _canonical_url(params, include_offset=True)
         if request.rel_url.path_qs != canonical:
             raise web.HTTPFound(canonical)
+
+    # No filters, default sort, page 1 → render the curated shelf view.
+    # Anything else falls through to the flat grid + pagination.
+    use_shelves = (
+        not params["q"]
+        and not params["tag"]
+        and not params["year"]
+        and not params["quality"]
+        and params["sort"] == "newest"
+        and params["offset"] == 0
+    )
+
+    if use_shelves:
+        shelves = media_index.shelves()
+        if _is_htmx(request):
+            return _html(
+                await _render_shelves(shelves, params),
+                push_url=_canonical_url(params, include_offset=True),
+            )
+        empty = _empty_text(params)
+        return _html(await _render_page([], None, empty, params, shelves=shelves))
 
     items, total = media_index.query_grouped(
         q=params["q"], year=params["year"], quality=params["quality"],

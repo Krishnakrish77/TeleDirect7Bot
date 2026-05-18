@@ -614,6 +614,84 @@ def variants_for_movie(movie_key: str) -> List[HubItem]:
     return vs
 
 
+def shelves(per_shelf: int = 12) -> List[dict]:
+    """Curated horizontal rows for the hub's no-filter landing view.
+
+    Each shelf returns the top ``per_shelf`` cards in a category, ordered
+    newest-first. Shelves are computed off the same ``_items`` snapshot —
+    items can legitimately appear on more than one (a recent series shows
+    up in both "Recently added" and "Series") — so the landing page reads
+    like Netflix's "based on what you have" rather than a strict
+    partition.
+
+    Returned shape::
+
+        [
+            {"name": "Recently added", "items": [HubItem|SeriesGroup|MovieGroup, ...]},
+            ...
+        ]
+    """
+    # --- bucket every item by what it is ---
+    series_buckets: dict = {}
+    movie_buckets: dict = {}
+    singles: List[HubItem] = []
+    for it in _items.values():
+        if it.series_key:
+            series_buckets.setdefault(it.series_key, []).append(it)
+        elif it.movie_key:
+            movie_buckets.setdefault(it.movie_key, []).append(it)
+        else:
+            singles.append(it)
+
+    series_groups = [_build_series_group(eps) for eps in series_buckets.values()]
+    movie_groups: List = []
+    standalone_movies: List[HubItem] = []
+    for variants in movie_buckets.values():
+        if len(variants) >= 2:
+            movie_groups.append(_build_movie_group(variants))
+        else:
+            standalone_movies.append(variants[0])
+
+    all_movies = movie_groups + standalone_movies + singles
+
+    # --- shape into shelves ---
+    def newest(items, key=lambda c: _card_message_id(c)):
+        return sorted(items, key=lambda c: -key(c))[:per_shelf]
+
+    out: List[dict] = []
+
+    recent_all = list(_items.values())
+    if recent_all:
+        out.append({
+            "name": "Recently added",
+            "items": newest(recent_all),
+        })
+
+    if series_groups:
+        out.append({
+            "name": "Series",
+            "items": newest(series_groups, key=lambda s: s.latest_message_id),
+        })
+
+    if all_movies:
+        out.append({
+            "name": "Movies",
+            "items": newest(all_movies),
+        })
+
+    by_quality_1080 = [
+        it for it in _items.values()
+        if it.quality in ("1080p", "4K") and not it.series_key
+    ]
+    if by_quality_1080:
+        out.append({
+            "name": "1080p &amp; up",
+            "items": newest(by_quality_1080),
+        })
+
+    return out
+
+
 async def reindex_all() -> dict:
     """Re-derive series_key, season, episode, movie_key, quality on every
     existing HubItem from its current file_name + title.

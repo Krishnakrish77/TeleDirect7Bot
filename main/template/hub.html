@@ -134,7 +134,11 @@
     {% endif %}
 
     <div id="grid">
-      {% include "_grid.html" %}
+      {% if shelves %}
+        {% include "_shelves.html" %}
+      {% else %}
+        {% include "_grid.html" %}
+      {% endif %}
     </div>
   </div>
 {% endblock %}

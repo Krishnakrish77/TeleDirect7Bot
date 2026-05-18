@@ -162,6 +162,42 @@ async def admin_action(request: web.Request) -> web.Response:
     raise web.HTTPFound("/admin?flash=Unknown+action")
 
 
+@routes.post(r"/admin/edit/{id:\d+}")
+async def admin_edit(request: web.Request) -> web.Response:
+    """Per-row edit: title, year, tags, description in one go."""
+    _require_session(request)
+    message_id = int(request.match_info["id"])
+    form = await request.post()
+
+    new_title = (form.get("title") or "").strip()
+    year_raw = (form.get("year") or "").strip()
+    new_year = None
+    if year_raw:
+        try:
+            new_year = int(year_raw)
+        except ValueError:
+            from urllib.parse import quote
+            raise web.HTTPFound(f"/admin?flash={quote('Year must be a number')}")
+    new_tags = _normalise_tags(form.get("tags") or "")
+    new_description = (form.get("description") or "").strip()
+
+    if not new_title:
+        from urllib.parse import quote
+        raise web.HTTPFound(f"/admin?flash={quote('Title is required')}")
+
+    def apply(entry, _item):
+        entry.title = new_title
+        entry.year = new_year
+        entry.tags = new_tags
+        entry.description = new_description
+
+    ok = await _rewrite_caption(message_id, apply)
+    from urllib.parse import quote
+    if ok:
+        raise web.HTTPFound(f"/admin?flash={quote('Updated bin:' + str(message_id))}")
+    raise web.HTTPFound(f"/admin?flash={quote('Edit failed for bin:' + str(message_id))}")
+
+
 # --- Bulk operations --------------------------------------------------
 
 

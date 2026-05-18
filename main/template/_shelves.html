@@ -1,0 +1,18 @@
+{# Shelf rows rendered inside #grid for the no-filter landing view. Lives
+   as its own partial so the HTMX path can swap it in too when the user
+   clears all filters. #}
+{% for shelf in shelves %}
+  <section class="mb-10">
+    <h2 class="text-lg font-semibold text-slate-200 mb-3">{{ shelf.name | safe }}</h2>
+    <div class="-mx-2 px-2 overflow-x-auto pb-2
+                [scrollbar-color:rgb(71_85_105)_transparent]">
+      <ul class="flex gap-4 sm:gap-5 min-w-min">
+        {% for item in shelf['items'] %}
+          <li class="w-36 sm:w-44 flex-shrink-0">
+            {% include "_card.html" %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+{% endfor %}
