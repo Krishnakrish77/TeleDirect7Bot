@@ -7,36 +7,30 @@
 {% endblock %}
 
 {% block content %}
-  <div class="w-full max-w-7xl -mt-6 sm:-mt-12">
-    {# Compact top nav. Streaming-app convention is a small left-aligned
-       logo with no subtitle — the content below speaks for itself, and
-       the catalogue count goes inline on the right. #}
-    <header class="mb-4 relative z-20 flex items-center justify-between gap-3">
+  {# The whole form lives on the container so the search input in the
+     top nav and the secondary filter dropdowns share one HTMX trigger
+     and one ?q=&year=&… serialisation. #}
+  <form
+    id="filters"
+    action="/"
+    method="get"
+    class="w-full max-w-7xl -mt-6 sm:-mt-12"
+    hx-get="/"
+    hx-trigger="input changed delay:300ms, change"
+    hx-target="#grid"
+    hx-swap="innerHTML"
+    hx-include="#filters"
+  >
+    {# Compact top nav: small logo on the left, search field on the
+       right. No catalogue count — it just took space without adding
+       useful information. #}
+    <header class="mb-4 relative z-20 flex items-center gap-3">
       <a href="/" class="text-xl sm:text-2xl font-bold tracking-tight text-white
-                        hover:text-brand-300 transition-colors">
+                        hover:text-brand-300 transition-colors flex-shrink-0">
         TeleDirect
       </a>
-      <p class="text-xs sm:text-sm text-slate-500 tabular-nums">
-        {{ catalogue_size }} item{{ '' if catalogue_size == 1 else 's' }}
-      </p>
-    </header>
 
-    {% if hero and not (params.q or params.tag or params.year or params.quality) %}
-      {% include "_hero.html" %}
-    {% endif %}
-
-    <form
-      id="filters"
-      action="/"
-      method="get"
-      class="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto] gap-3"
-      hx-get="/"
-      hx-trigger="input changed delay:300ms, change"
-      hx-target="#grid"
-      hx-swap="innerHTML"
-      hx-include="#filters"
-    >
-      <label class="relative block">
+      <label class="relative flex-1 max-w-md ml-auto">
         <span class="sr-only">Search</span>
         <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
              xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -48,93 +42,75 @@
           type="search"
           name="q"
           value="{{ params.q }}"
-          placeholder="Search titles, tags…"
+          placeholder="Search…"
           autocomplete="off"
-          class="w-full pl-10 pr-3 py-2.5 rounded-lg
-                 bg-ink-800/70 text-slate-100 placeholder-slate-500
+          class="w-full pl-9 pr-3 py-2 rounded-lg
+                 bg-ink-800/70 text-sm text-slate-100 placeholder-slate-500
                  border border-white/5
                  focus:outline-none focus:ring-2 focus:ring-brand-400/60 focus:border-brand-400/60
                  transition"
         />
       </label>
+    </header>
 
-      <select name="year" aria-label="Year"
-              class="px-3 py-2.5 rounded-lg bg-ink-800/70 text-slate-100
-                     border border-white/5
-                     focus:outline-none focus:ring-2 focus:ring-brand-400/60
-                     transition">
-        <option value="">Any year</option>
-        {% for y in years %}
-          <option value="{{ y }}" {% if params.year == y %}selected{% endif %}>{{ y }}</option>
-        {% endfor %}
-      </select>
+    {% if hero and not (params.q or params.tag or params.year or params.quality) %}
+      {% include "_hero.html" %}
+    {% endif %}
 
-      <select name="quality" aria-label="Quality"
-              class="px-3 py-2.5 rounded-lg bg-ink-800/70 text-slate-100
-                     border border-white/5
-                     focus:outline-none focus:ring-2 focus:ring-brand-400/60
-                     transition">
-        <option value="">Any quality</option>
-        {% for q in qualities %}
-          <option value="{{ q }}" {% if params.quality == q %}selected{% endif %}>{{ q }}</option>
-        {% endfor %}
-      </select>
+    {# Secondary filter dropdowns. Only shown when the user has narrowed
+       at all OR when they're not on the curated landing — keeping the
+       hero+shelves view as uncluttered as possible. #}
+    {% set filtering = params.q or params.tag or params.year or params.quality or params.sort != 'newest' %}
+    {% if filtering or not shelves %}
+      <div class="mb-5 flex flex-wrap items-center gap-2">
+        <select name="year" aria-label="Year"
+                class="px-3 py-1.5 text-sm rounded-lg bg-ink-800/70 text-slate-100
+                       border border-white/5
+                       focus:outline-none focus:ring-2 focus:ring-brand-400/60">
+          <option value="">Any year</option>
+          {% for y in years %}
+            <option value="{{ y }}" {% if params.year == y %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
 
-      <select name="sort" aria-label="Sort"
-              class="px-3 py-2.5 rounded-lg bg-ink-800/70 text-slate-100
-                     border border-white/5
-                     focus:outline-none focus:ring-2 focus:ring-brand-400/60
-                     transition">
-        {% for value, label in sort_options %}
-          <option value="{{ value }}" {% if params.sort == value %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
+        <select name="quality" aria-label="Quality"
+                class="px-3 py-1.5 text-sm rounded-lg bg-ink-800/70 text-slate-100
+                       border border-white/5
+                       focus:outline-none focus:ring-2 focus:ring-brand-400/60">
+          <option value="">Any quality</option>
+          {% for q in qualities %}
+            <option value="{{ q }}" {% if params.quality == q %}selected{% endif %}>{{ q }}</option>
+          {% endfor %}
+        </select>
 
-      {# Preserve tag in the form so the HTMX include carries it on filter changes. #}
-      {% if params.tag %}
-        <input type="hidden" name="tag" value="{{ params.tag }}" />
-      {% endif %}
-    </form>
+        <select name="sort" aria-label="Sort"
+                class="px-3 py-1.5 text-sm rounded-lg bg-ink-800/70 text-slate-100
+                       border border-white/5
+                       focus:outline-none focus:ring-2 focus:ring-brand-400/60">
+          {% for value, label in sort_options %}
+            <option value="{{ value }}" {% if params.sort == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
 
-    {% if params.tag or params.q or params.year or params.quality %}
-      <div class="mb-4 flex flex-wrap items-center gap-2 text-xs">
-        <span class="text-slate-500">Filtered:</span>
-        {% if params.q %}
-          <span class="px-2 py-1 rounded bg-ink-800 text-slate-300 border border-white/5">
-            “{{ params.q }}”
-          </span>
-        {% endif %}
-        {% if params.year %}
-          <span class="px-2 py-1 rounded bg-ink-800 text-slate-300 border border-white/5">
-            {{ params.year }}
-          </span>
-        {% endif %}
-        {% if params.quality %}
-          <span class="px-2 py-1 rounded bg-ink-800 text-slate-300 border border-white/5">
-            {{ params.quality }}
-          </span>
-        {% endif %}
         {% if params.tag %}
-          <span class="px-2 py-1 rounded bg-brand-500/15 text-brand-300 border border-brand-400/30">
+          <span class="px-2 py-1 text-xs rounded bg-brand-500/15 text-brand-300
+                       border border-brand-400/30">
             #{{ params.tag }}
           </span>
         {% endif %}
-        <a href="/" class="ml-1 text-slate-400 hover:text-white transition-colors">Clear all</a>
+
+        {% if filtering %}
+          <a href="/" class="ml-auto text-xs text-slate-400 hover:text-white
+                            transition-colors">
+            Clear
+          </a>
+        {% endif %}
       </div>
     {% endif %}
 
-    {% if tag_cloud and not params.tag %}
-      <div class="mb-6 flex flex-wrap gap-2">
-        {% for name, count in tag_cloud %}
-          <a href="/?tag={{ name }}"
-             class="text-xs px-2.5 py-1 rounded-full
-                    bg-ink-800/60 text-slate-300 border border-white/5
-                    hover:bg-brand-500/15 hover:text-brand-300 hover:border-brand-400/30
-                    transition-colors">
-            #{{ name }} <span class="text-slate-500">{{ count }}</span>
-          </a>
-        {% endfor %}
-      </div>
+    {# Preserve tag in the form so HTMX includes carry it on filter changes. #}
+    {% if params.tag %}
+      <input type="hidden" name="tag" value="{{ params.tag }}" />
     {% endif %}
 
     <div id="grid">
@@ -144,5 +120,5 @@
         {% include "_grid.html" %}
       {% endif %}
     </div>
-  </div>
+  </form>
 {% endblock %}
