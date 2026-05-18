@@ -776,13 +776,18 @@ def _fuzzy_score(q: str, item: HubItem) -> float:
     return best if best >= 0.75 else 0.0
 
 
-def _matches(item: HubItem, q: str, year: Optional[int], quality: str, tag: str) -> bool:
+def _matches(item: HubItem, q: str, year: Optional[int], quality: str,
+             tag: str, genre: str = "") -> bool:
     if year is not None and item.year != year:
         return False
     if quality and item.quality.lower() != quality.lower():
         return False
     if tag and tag.lstrip("#").lower() not in item.tags:
         return False
+    if genre:
+        gl = genre.lower()
+        if not any(g.lower() == gl for g in (item.tmdb_genres or [])):
+            return False
     if q:
         ql = q.lower().lstrip("#")
         if ql in _haystack(item):
@@ -801,6 +806,7 @@ def query(
     year: Optional[int] = None,
     quality: str = "",
     tag: str = "",
+    genre: str = "",
     sort: str = "newest",
     before_id: Optional[int] = None,
     limit: int = 24,
@@ -809,7 +815,7 @@ def query(
     key_fn, reverse = _SORT_KEYS.get(sort, _SORT_KEYS["newest"])
     items_all = sorted(_items.values(), key=key_fn, reverse=reverse)
 
-    items_all = [it for it in items_all if _matches(it, q, year, quality, tag)]
+    items_all = [it for it in items_all if _matches(it, q, year, quality, tag, genre)]
 
     # Pagination cursor is only meaningful for message_id-ordered sorts.
     if before_id and sort in ("newest",):
@@ -870,6 +876,7 @@ def query_grouped(
     year: Optional[int] = None,
     quality: str = "",
     tag: str = "",
+    genre: str = "",
     sort: str = "newest",
     view: str = "",
     offset: int = 0,
@@ -884,7 +891,7 @@ def query_grouped(
     """
     items_all = [
         it for it in _items.values()
-        if _matches(it, q, year, quality, tag) or _series_matches_query(it, q)
+        if _matches(it, q, year, quality, tag, genre) or _series_matches_query(it, q)
     ]
 
     series_groups: dict = {}
@@ -1873,6 +1880,20 @@ def distinct_qualities() -> List[str]:
     present = {it.quality for it in _items.values() if it.quality}
     order = ["4K", "1080p", "720p", "480p"]
     return [q for q in order if q in present]
+
+
+def distinct_genres() -> List[str]:
+    """TMDB-derived genres present in the catalogue, ordered by frequency.
+
+    Powers the hub's Genre filter dropdown — only shows genres that
+    actually have at least one item, so the list doesn't include the
+    full TMDB taxonomy.
+    """
+    counter: dict = {}
+    for it in _items.values():
+        for g in it.tmdb_genres or []:
+            counter[g] = counter.get(g, 0) + 1
+    return [g for g, _ in sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
 def tag_cloud(limit: int = 30) -> List[Tuple[str, int]]:

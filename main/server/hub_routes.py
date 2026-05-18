@@ -12,6 +12,7 @@ without a full reload. Non-HTMX requests get the full templated page.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlencode
@@ -93,6 +94,8 @@ def _canonical_url(params: dict, include_offset: bool = False) -> str:
         qs["year"] = params["year"]
     if params.get("quality"):
         qs["quality"] = params["quality"]
+    if params.get("genre"):
+        qs["genre"] = params["genre"]
     if params.get("view"):
         qs["view"] = params["view"]
     sort = params.get("sort") or "newest"
@@ -110,6 +113,7 @@ def _parse_filters(request: web.Request) -> dict:
     q = (request.query.get("q") or "").strip()
     tag = (request.query.get("tag") or "").strip().lstrip("#").lower()
     quality = (request.query.get("quality") or "").strip()
+    genre = (request.query.get("genre") or "").strip()
     year_raw = request.query.get("year") or ""
     try:
         year = int(year_raw) if year_raw else None
@@ -126,8 +130,8 @@ def _parse_filters(request: web.Request) -> dict:
     if view not in {"movies", "series", ""}:
         view = ""
     return dict(
-        q=q, tag=tag, quality=quality, year=year, sort=sort, offset=offset,
-        view=view,
+        q=q, tag=tag, quality=quality, genre=genre, year=year, sort=sort,
+        offset=offset, view=view,
     )
 
 
@@ -169,6 +173,7 @@ async def _render_page(items: List,
         params=params,
         years=media_index.distinct_years(),
         qualities=media_index.distinct_qualities(),
+        genres=media_index.distinct_genres(),
         tag_cloud=media_index.tag_cloud(),
         sort_options=SORT_OPTIONS,
         catalogue_size=media_index.size(),
@@ -185,6 +190,8 @@ def _empty_text(params: dict) -> str:
         bits.append(params["quality"])
     if params["tag"]:
         bits.append(f"tagged #{params['tag']}")
+    if params.get("genre"):
+        bits.append(f"in {params['genre']}")
     if bits:
         return "No entries " + ", ".join(bits) + "."
     return "Nothing in the library yet — forward a video to the bot."
@@ -232,7 +239,8 @@ async def hub_home(request: web.Request) -> web.Response:
 
     items, total = media_index.query_grouped(
         q=params["q"], year=params["year"], quality=params["quality"],
-        tag=params["tag"], sort=params["sort"], view=params["view"],
+        tag=params["tag"], genre=params["genre"],
+        sort=params["sort"], view=params["view"],
         offset=params["offset"], limit=PAGE_SIZE,
     )
     next_offset = params["offset"] + PAGE_SIZE
@@ -297,6 +305,51 @@ async def search_suggest(request: web.Request) -> web.Response:
         results,
         headers={"Cache-Control": "no-store"},
     )
+
+
+@routes.get("/api/items")
+async def api_items(request: web.Request) -> web.Response:
+    """Bulk lookup: ``?keys=<hash><id>,<hash><id>,...`` → JSON array of
+    minimal item dicts. Used by the hub's client-side "Continue
+    watching" shelf, which reads keys from localStorage and needs the
+    matching item metadata to render cards. Capped at 50 keys per call.
+    """
+    raw = (request.query.get("keys") or "").strip()
+    if not raw:
+        return web.json_response([], headers={"Cache-Control": "no-store"})
+    keys = [k for k in raw.split(",") if k][:50]
+    out = []
+    for k in keys:
+        m = re.match(r"^([a-zA-Z0-9_-]{6})(\d+)$", k)
+        if not m:
+            continue
+        try:
+            mid = int(m.group(2))
+        except ValueError:
+            continue
+        item = media_index.get_item(mid)
+        if item is None or item.secure_hash != m.group(1):
+            continue
+        # Prefer a series episode's parent show title for the card label
+        # so the Continue-watching shelf reads coherently.
+        label = (item.series_title or "") if item.series_key else ""
+        ep_label = ""
+        if item.series_key and item.season is not None and item.episode is not None:
+            ep_label = f"S{item.season:02d}E{item.episode:02d}"
+        out.append({
+            "key": k,
+            "message_id": item.message_id,
+            "secure_hash": item.secure_hash,
+            "title": item.title,
+            "series_title": label,
+            "episode_label": ep_label,
+            "year": item.year,
+            "poster_path": item.poster_path or "",
+            "kind": "series" if item.series_key else ("movie" if item.movie_key else ""),
+            "watch_url": f"/watch/{item.secure_hash}{item.message_id}",
+            "thumb_url": f"/thumb/{item.secure_hash}{item.message_id}.jpg" if item.has_thumb else "",
+        })
+    return web.json_response(out, headers={"Cache-Control": "no-store"})
 
 
 @routes.get(r"/movie/{key:[a-z0-9][a-z0-9:\-]*}")

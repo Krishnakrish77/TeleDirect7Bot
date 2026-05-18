@@ -156,10 +156,155 @@
       {% include "_hero.html" %}
     {% endif %}
 
+    {# Continue-watching shelf. Entirely client-rendered from
+       localStorage so the server stays stateless and the shelf
+       reflects whatever this browser has actually watched. The
+       Alpine component reads td:cw, calls /api/items to enrich
+       the stored keys with current titles + poster paths, and
+       falls back to gracefully hiding when nothing is in-progress.
+       Only shown on the unfiltered landing — feels weird to surface
+       it alongside an active search. #}
+    {% if not filtering %}
+      <section x-data="continueWatching()" x-init="init()" x-show="entries.length"
+               x-cloak class="mb-10">
+        <div class="flex items-end justify-between mb-3">
+          <h2 class="text-xl font-bold text-white tracking-tight">Continue watching</h2>
+          <button type="button" @click="clearAll()"
+                  class="text-xs text-slate-500 hover:text-brand-300 transition-colors">
+            Clear all
+          </button>
+        </div>
+        <div class="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1
+                    snap-x snap-mandatory scroll-smooth">
+          <template x-for="e in entries" :key="e.key">
+            <a :href="e.watch_url"
+               class="snap-start flex-shrink-0 w-40 sm:w-48 group">
+              <div class="relative aspect-video rounded-lg overflow-hidden
+                          bg-ink-800 border border-white/5
+                          group-hover:border-brand-400/40 transition-colors">
+                <template x-if="e.poster_url">
+                  <img :src="e.poster_url" alt="" loading="lazy"
+                       class="absolute inset-0 w-full h-full object-cover" />
+                </template>
+                {# Resume progress bar. Width = pos/dur as a CSS percent. #}
+                <div class="absolute bottom-0 left-0 right-0 h-1 bg-black/60">
+                  <div class="h-full bg-brand-400"
+                       :style="'width:' + Math.round((e.pos / e.dur) * 100) + '%'"></div>
+                </div>
+                <button type="button"
+                        @click.prevent="forget(e.key, $event)"
+                        title="Remove from Continue watching"
+                        class="absolute top-1 right-1 w-6 h-6 grid place-items-center
+                               rounded-full bg-black/70 text-white/80
+                               opacity-0 group-hover:opacity-100 transition-opacity
+                               hover:text-white">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                       fill="none" stroke="currentColor" stroke-width="2"
+                       class="w-3.5 h-3.5">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M6 18 18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+              <p class="mt-2 text-sm font-medium text-white line-clamp-1
+                        group-hover:text-brand-300 transition-colors"
+                 x-text="e.display_title"></p>
+              <p class="text-xs text-slate-500 tabular-nums"
+                 x-text="formatRemaining(e)"></p>
+            </a>
+          </template>
+        </div>
+      </section>
+
+      <script>
+        function continueWatching() {
+          return {
+            entries: [],
+            async init() {
+              const raw = localStorage.getItem('td:cw');
+              if (!raw) return;
+              let stored;
+              try { stored = JSON.parse(raw) || {}; }
+              catch (e) { return; }
+              const keys = Object.keys(stored);
+              if (!keys.length) return;
+              // Sort by recency (t) before fetching so we keep at most
+              // 12 cards and the oldest ones don't dominate.
+              const sorted = keys
+                .map(k => ({ k, t: (stored[k] && stored[k].t) || 0 }))
+                .sort((a, b) => b.t - a.t)
+                .slice(0, 12)
+                .map(x => x.k);
+              try {
+                const r = await fetch('/api/items?keys=' + encodeURIComponent(sorted.join(',')));
+                if (!r.ok) return;
+                const items = await r.json();
+                // items may be shorter than sorted (some keys gone /
+                // bad). Build entries in the snapshot order so newest
+                // first.
+                const byKey = Object.fromEntries(items.map(i => [i.key, i]));
+                const live = [];
+                for (const k of sorted) {
+                  const meta = byKey[k];
+                  const cw = stored[k];
+                  if (!meta || !cw || !cw.dur) {
+                    // Stale or unknown key — drop from localStorage too.
+                    delete stored[k];
+                    continue;
+                  }
+                  const display = meta.series_title
+                    ? (meta.series_title + (meta.episode_label ? ' · ' + meta.episode_label : ''))
+                    : meta.title;
+                  live.push({
+                    key: k,
+                    pos: cw.pos,
+                    dur: cw.dur,
+                    watch_url: meta.watch_url,
+                    poster_url: meta.poster_path
+                      ? 'https://image.tmdb.org/t/p/w342' + meta.poster_path
+                      : (meta.thumb_url || ''),
+                    display_title: display,
+                  });
+                }
+                this.entries = live;
+                // Persist the cleanup of stale keys.
+                localStorage.setItem('td:cw', JSON.stringify(stored));
+              } catch (e) {
+                /* network — show nothing, try again next visit */
+              }
+            },
+            forget(key, ev) {
+              if (ev) ev.preventDefault();
+              const raw = localStorage.getItem('td:cw');
+              try {
+                const data = JSON.parse(raw || '{}');
+                delete data[key];
+                localStorage.setItem('td:cw', JSON.stringify(data));
+              } catch (e) { /* ignore */ }
+              this.entries = this.entries.filter(e => e.key !== key);
+            },
+            clearAll() {
+              if (!confirm('Clear all Continue-watching entries?')) return;
+              localStorage.removeItem('td:cw');
+              this.entries = [];
+            },
+            formatRemaining(e) {
+              const remaining = Math.max(0, (e.dur || 0) - (e.pos || 0));
+              const m = Math.floor(remaining / 60);
+              if (m < 1) return 'less than a minute left';
+              if (m < 60) return m + ' min left';
+              const h = Math.floor(m / 60);
+              return h + 'h ' + (m % 60) + 'm left';
+            },
+          };
+        }
+      </script>
+    {% endif %}
+
     {# Secondary filter dropdowns. Only shown when the user has narrowed
        at all OR when they're not on the curated landing — keeping the
        hero+shelves view as uncluttered as possible. #}
-    {% set filtering = params.q or params.tag or params.year or params.quality or params.sort != 'newest' %}
+    {% set filtering = params.q or params.tag or params.year or params.quality or params.genre or params.sort != 'newest' %}
     {% if filtering or not shelves %}
       <div class="mb-5 flex flex-wrap items-center gap-2">
         <select name="year" aria-label="Year"
@@ -181,6 +326,18 @@
             <option value="{{ q }}" {% if params.quality == q %}selected{% endif %}>{{ q }}</option>
           {% endfor %}
         </select>
+
+        {% if genres %}
+          <select name="genre" aria-label="Genre"
+                  class="px-3 py-1.5 text-sm rounded-lg bg-ink-800/70 text-slate-100
+                         border border-white/5
+                         focus:outline-none focus:ring-2 focus:ring-brand-400/60">
+            <option value="">Any genre</option>
+            {% for g in genres %}
+              <option value="{{ g }}" {% if params.genre == g %}selected{% endif %}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        {% endif %}
 
         <select name="sort" aria-label="Sort"
                 class="px-3 py-1.5 text-sm rounded-lg bg-ink-800/70 text-slate-100

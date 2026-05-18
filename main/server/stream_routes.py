@@ -18,6 +18,30 @@ from main.utils.render_template import render_page
 
 routes = web.RouteTableDef()
 
+@routes.get("/healthz", allow_head=True)
+async def healthz(_):
+    """Liveness + readiness check for orchestrators.
+
+    Returns 200 once the seed has finished AND the catalogue has
+    items; 503 while still seeding (so Koyeb's health probe holds
+    traffic out until we're ready). Always returns JSON so it's
+    inspectable in a browser.
+    """
+    from main.utils import media_index
+    seed = media_index.seed_state()
+    cat_size = media_index.size()
+    ready = (not seed.get("running")) and (seed.get("finished_at", 0) > 0) and cat_size > 0
+    body = {
+        "status": "ok" if ready else "starting",
+        "catalogue_size": cat_size,
+        "seed_running": bool(seed.get("running")),
+        "seed_finished": seed.get("finished_at", 0) > 0,
+        "uptime_s": int(time.time() - StartTime),
+    }
+    return web.json_response(body, status=200 if ready else 503,
+                             headers={"Cache-Control": "no-store"})
+
+
 @routes.get("/status", allow_head=True)
 async def status_route_handler(_):
     return web.json_response(

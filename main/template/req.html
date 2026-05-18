@@ -424,12 +424,97 @@
       // the player visible immediately.
       if (video) {
         injectSubtitleTracks(video);
+        attachWatchProgress(video);
       }
 
       document.querySelectorAll("[data-stream-url]").forEach((el) => {
         if (el.dataset.streamUrl) el.href = buildVlcUrl(el.dataset.streamUrl);
       });
     });
+
+    // ---- Continue-watching support --------------------------------------
+    //
+    // Persist playback position to localStorage so the user can come back
+    // and resume where they left off, and so the hub can render a
+    // "Continue watching" shelf. Storage shape:
+    //
+    //   localStorage['td:cw'] = JSON.stringify({
+    //     "<hash><message_id>": {
+    //       pos: <seconds>, dur: <seconds>, t: <unix-ms>,
+    //       title: "<best-effort label>"
+    //     },
+    //     ...
+    //   })
+    //
+    // Keys removed when playback gets within FINISH_PCT of the end.
+    const CW_KEY = "td:cw";
+    const CW_MIN_PCT = 0.02;   // ignore initial seek-flicker before ~2%
+    const CW_FINISH_PCT = 0.95; // treat as watched, remove from shelf
+
+    function cwLoad() {
+      try { return JSON.parse(localStorage.getItem(CW_KEY) || "{}"); }
+      catch (e) { return {}; }
+    }
+    function cwSave(data) {
+      try { localStorage.setItem(CW_KEY, JSON.stringify(data)); }
+      catch (e) { /* quota — give up silently */ }
+    }
+    function cwKey() {
+      // Derive the lookup key from the current /watch/<hash><id> path so
+      // the hub can build it back from a HubItem without server help.
+      const m = location.pathname.match(/\/watch\/([a-zA-Z0-9_-]+)$/);
+      return m ? m[1] : null;
+    }
+
+    function attachWatchProgress(video) {
+      const key = cwKey();
+      if (!key) return;
+      const titleEl = document.querySelector("h1");
+      const fileNameEl = document.querySelector("p.break-all");
+      const label = (titleEl && titleEl.innerText.trim()) ||
+                    (fileNameEl && fileNameEl.innerText.trim()) || "";
+
+      // Restore prior position on first frame, once duration is known.
+      let restored = false;
+      const tryRestore = () => {
+        if (restored) return;
+        const data = cwLoad();
+        const entry = data[key];
+        if (!entry || !entry.pos || !video.duration) { restored = true; return; }
+        if (entry.pos > video.duration * CW_FINISH_PCT) { restored = true; return; }
+        try {
+          video.currentTime = entry.pos;
+        } catch (e) { /* invalid state on some browsers; skip */ }
+        restored = true;
+      };
+      video.addEventListener("loadedmetadata", tryRestore);
+      video.addEventListener("canplay", tryRestore);
+
+      // Throttle saves to ~once every 5s.
+      let lastSave = 0;
+      const persist = () => {
+        if (!video.duration || !isFinite(video.duration)) return;
+        const pos = video.currentTime || 0;
+        const dur = video.duration;
+        const pct = pos / dur;
+        const data = cwLoad();
+        if (pct >= CW_FINISH_PCT || pct < CW_MIN_PCT) {
+          // Either watched-to-end or barely started — drop the entry.
+          if (data[key]) { delete data[key]; cwSave(data); }
+          return;
+        }
+        data[key] = { pos, dur, t: Date.now(), title: label };
+        cwSave(data);
+      };
+      video.addEventListener("timeupdate", () => {
+        const now = Date.now();
+        if (now - lastSave < 5000) return;
+        lastSave = now;
+        persist();
+      });
+      video.addEventListener("pause", persist);
+      window.addEventListener("beforeunload", persist);
+    }
   </script>
   {% endif %}
 {% endblock %}
