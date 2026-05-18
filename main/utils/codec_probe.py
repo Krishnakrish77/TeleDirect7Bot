@@ -87,7 +87,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         "-probesize", "5M",
         "-analyzeduration", "5000000",
         "-select_streams", "v:0",
-        "-show_entries", "stream=codec_name,pix_fmt,profile",
+        "-show_entries", "stream=codec_name,pix_fmt,profile,width,height",
         "-of", "json",
         stream_url,
     ]
@@ -145,13 +145,42 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     s = streams[0]
     item.video_codec = (s.get("codec_name") or "").lower()
     item.pix_fmt = (s.get("pix_fmt") or "").lower()
+    # Derive quality bucket from the actual encoded height when the
+    # filename didn't reveal one. ffprobe's truth wins over the
+    # filename-parsed bucket — release groups frequently mislabel
+    # ("X.S01E01.1080p.mkv" that's actually 720p at runtime).
+    try:
+        height = int(s.get("height") or 0)
+    except (TypeError, ValueError):
+        height = 0
+    if height > 0:
+        probed_quality = _quality_from_height(height)
+        if probed_quality:
+            item.quality = probed_quality
     item.probed_at = time.time()
-    media_index.persist_now()
+    await media_index.persist_now()
     logging.info(
-        "codec_probe: bin:%d → codec=%s pix_fmt=%s",
+        "codec_probe: bin:%d → codec=%s pix_fmt=%s height=%s quality=%s",
         item.message_id, item.video_codec, item.pix_fmt,
+        height or "?", item.quality or "?",
     )
     return True
+
+
+def _quality_from_height(height: int) -> str:
+    """Map encoded-video height to the same buckets the rest of the
+    catalogue uses. Thresholds are deliberately generous to absorb
+    near-canonical resolutions (e.g. 1088 for HEVC alignment, 1078
+    for slightly-cropped 1080p sources)."""
+    if height >= 1800:
+        return "4K"
+    if height >= 950:
+        return "1080p"
+    if height >= 650:
+        return "720p"
+    if height >= 350:
+        return "480p"
+    return ""
 
 
 # In-memory throttle so neither the bulk admin pass NOR per-upload
