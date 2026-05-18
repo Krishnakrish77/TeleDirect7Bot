@@ -21,6 +21,12 @@
     .plyr { width: 100%; height: 100%; }
     .plyr--video .plyr__video-wrapper { height: 100%; }
     .plyr--video video { width: 100%; height: 100%; object-fit: contain; }
+
+    /* Hide the bare <video> element until Plyr wraps it so the browser's
+       native controls don't flash before initialization. .plyr ancestor
+       means Plyr has injected its wrapper and is ready to show. */
+    .player:not(.plyr__video-embed):not([data-plyr-ready]) { visibility: hidden; }
+    .plyr .player { visibility: visible; }
   </style>
 {% endblock %}
 
@@ -40,7 +46,6 @@
         {% if sub_path %}data-sub-path="{{ sub_path }}"{% endif %}
         crossorigin="anonymous"
         playsinline
-        controls
       ></{{ tag }}>
     </div>
 
@@ -156,15 +161,15 @@
       }
     }
 
-    document.addEventListener("DOMContentLoaded", async () => {
+    document.addEventListener("DOMContentLoaded", () => {
       const video = document.getElementById("player");
       if (video) {
-        // Inject <track> elements BEFORE Plyr wraps the video so Plyr
-        // discovers them and renders the captions button automatically.
-        await injectSubtitleTracks(video);
         attachSource(video);
       }
 
+      // Wrap with Plyr immediately so the browser's native controls are
+      // replaced before the user sees them. Plyr's captions.update flag
+      // makes it pick up <track> elements added afterward.
       Plyr.setup(".player", {
         controls: [
           "play-large", "rewind", "play", "fast-forward", "progress",
@@ -174,6 +179,13 @@
         captions: { active: true, language: "auto", update: true },
         keyboard: { focused: true, global: true },
       });
+
+      // Subtitle list requires an ffprobe pass on the source which can take
+      // seconds over Telegram. Injecting tracks after Plyr is set up keeps
+      // the player visible immediately.
+      if (video) {
+        injectSubtitleTracks(video);
+      }
 
       const vlcBtn = document.getElementById("vlcButton");
       if (vlcBtn && vlcBtn.dataset.streamUrl) {
