@@ -105,6 +105,49 @@ async def admin_logout(request: web.Request) -> web.Response:
     raise resp
 
 
+_FLASH_COOKIE = "admin_flash"
+
+
+def _redirect_with_flash(message: str, target: str = "/admin") -> web.Response:
+    """Set a short-lived flash cookie and redirect to a clean URL.
+
+    Flash messages used to live in ``?flash=<encoded>`` query strings,
+    which made the address bar ugly, leaked the text into browser
+    history, re-showed the toast on refresh, and could expose state
+    when an admin shared a URL. Cookies are a better fit: write once,
+    read once, auto-cleared after the next /admin render.
+    """
+    from urllib.parse import quote as _q
+    resp = web.HTTPFound(target)
+    if message:
+        # Cookie value is URL-encoded so commas / spaces / semicolons
+        # don't mangle the Set-Cookie syntax. Decoded server-side
+        # before rendering.
+        resp.set_cookie(
+            _FLASH_COOKIE, _q(message, safe=""),
+            max_age=60, path="/admin", httponly=True, samesite="Lax",
+        )
+    return resp
+
+
+def _pop_flash(request: web.Request, resp: web.Response) -> str:
+    """Read the flash cookie if present and immediately delete it.
+
+    Called from ``admin_home`` so the message renders exactly once
+    and clears whether or not the user refreshes.
+    """
+    raw = request.cookies.get(_FLASH_COOKIE)
+    if not raw:
+        return ""
+    from urllib.parse import unquote as _u
+    try:
+        msg = _u(raw)
+    except Exception:
+        msg = ""
+    resp.del_cookie(_FLASH_COOKIE, path="/admin")
+    return msg
+
+
 @routes.get("/admin")
 async def admin_home(request: web.Request) -> web.Response:
     _require_session(request)
@@ -114,14 +157,29 @@ async def admin_home(request: web.Request) -> web.Response:
         key=lambda it: it.message_id, reverse=True,
     )
 
-    flash = request.query.get("flash", "")
+    # Read the flash cookie up front so we render once. The cookie
+    # gets cleared on the response below regardless of whether it
+    # was set, so a refresh after the toast disappears doesn't
+    # re-show it.
+    raw = request.cookies.get(_FLASH_COOKIE) or ""
+    flash = ""
+    if raw:
+        from urllib.parse import unquote as _u
+        try:
+            flash = _u(raw)
+        except Exception:
+            flash = ""
+
     tpl = _env.get_template("admin.html")
     body = await tpl.render_async(
         items=items_all,
         catalogue_size=media_index.size(),
         flash=flash,
     )
-    return _html(body)
+    resp = _html(body)
+    if raw:
+        resp.del_cookie(_FLASH_COOKIE, path="/admin")
+    return resp
 
 
 def _is_htmx(request: web.Request) -> bool:
@@ -152,7 +210,7 @@ async def admin_enrich(request: web.Request) -> web.Response:
     )
     if _is_htmx(request):
         return web.Response(status=204)
-    raise web.HTTPFound(f"/admin?flash={quote(flash_msg)}")
+    raise _redirect_with_flash(flash_msg)
 
 
 @routes.get("/admin/tmdb-preview")
@@ -260,10 +318,9 @@ async def admin_migrate_to_mongo(request: web.Request) -> web.Response:
     import os
 
     if not os.environ.get("MONGO_URI"):
-        from urllib.parse import quote
-        raise web.HTTPFound("/admin?flash=" + quote(
+        raise _redirect_with_flash(
             "MONGO_URI env var is not set — configure Atlas first.",
-        ))
+        )
 
     # Build a one-off MongoStore even if STORE_BACKEND isn't ``mongo``
     # yet — the migration is the whole point of having this endpoint.
@@ -277,10 +334,9 @@ async def admin_migrate_to_mongo(request: web.Request) -> web.Response:
         await client.init()
     except Exception as exc:
         logging.exception("admin: Mongo migrate init failed")
-        from urllib.parse import quote
-        raise web.HTTPFound("/admin?flash=" + quote(
+        raise _redirect_with_flash(
             f"Mongo init failed: {exc.__class__.__name__}",
-        ))
+        )
 
     # Pull a stable snapshot of the dict under the lock so a parallel
     # mutation doesn't write a doc twice.
@@ -290,12 +346,11 @@ async def admin_migrate_to_mongo(request: web.Request) -> web.Response:
     await client.upsert_many(docs)
     await client.set_meta("latest_seen_id", media_index._latest_seen_id)
 
-    from urllib.parse import quote
-    raise web.HTTPFound("/admin?flash=" + quote(
+    raise _redirect_with_flash(
         f"Migrated {len(docs)} items into Mongo "
         f"({db_name}.{items_coll}). Set STORE_BACKEND=mongo and restart "
         "to start serving from it."
-    ))
+    )
 
 
 @routes.post("/admin/fetch-episodes")
@@ -312,7 +367,7 @@ async def admin_fetch_episodes(request: web.Request) -> web.Response:
     if _is_htmx(request):
         return web.Response(status=204)
     from urllib.parse import quote
-    raise web.HTTPFound(f"/admin?flash={quote('Episode details fetch queued')}")
+    raise _redirect_with_flash('Episode details fetch queued')
 
 
 @routes.post("/admin/probe-codecs")
@@ -332,7 +387,7 @@ async def admin_probe_codecs(request: web.Request) -> web.Response:
     if _is_htmx(request):
         return web.Response(status=204)
     from urllib.parse import quote
-    raise web.HTTPFound(f"/admin?flash={quote('Codec probe queued')}")
+    raise _redirect_with_flash('Codec probe queued')
 
 
 @routes.post("/admin/reindex")
@@ -355,7 +410,7 @@ async def admin_reindex(request: web.Request) -> web.Response:
         return web.Response(status=204)
     from urllib.parse import quote
     flash = "Re-index started — leave the page open to watch progress"
-    raise web.HTTPFound(f"/admin?flash={quote(flash)}")
+    raise _redirect_with_flash(flash)
 
 
 @routes.post("/admin/action")
@@ -366,25 +421,25 @@ async def admin_action(request: web.Request) -> web.Response:
     action = form.get("action", "")
     ids = [int(x) for x in form.getall("ids") if str(x).isdigit()]
     if not ids:
-        raise web.HTTPFound("/admin?flash=Nothing+selected")
+        raise _redirect_with_flash("Nothing selected")
 
     if action == "delete":
         n = await _bulk_delete(ids)
-        raise web.HTTPFound(f"/admin?flash=Deleted+{n}+entries")
+        raise _redirect_with_flash(f"Deleted {n} entries")
 
     if action == "retag":
         tags = _normalise_tags(form.get("tags", ""))
         n = await _bulk_retag(ids, tags)
-        raise web.HTTPFound(f"/admin?flash=Re-tagged+{n}+entries")
+        raise _redirect_with_flash(f"Re-tagged {n} entries")
 
     if action == "quality":
         quality = (form.get("quality") or "").strip()
         if quality not in {"480p", "720p", "1080p", "4K"}:
-            raise web.HTTPFound("/admin?flash=Invalid+quality")
+            raise _redirect_with_flash("Invalid quality")
         n = await _bulk_quality(ids, quality)
-        raise web.HTTPFound(f"/admin?flash=Updated+quality+on+{n}+entries")
+        raise _redirect_with_flash(f"Updated quality on {n} entries")
 
-    raise web.HTTPFound("/admin?flash=Unknown+action")
+    raise _redirect_with_flash("Unknown action")
 
 
 @routes.post(r"/admin/edit/{id:\d+}")
@@ -408,7 +463,7 @@ async def admin_edit(request: web.Request) -> web.Response:
             new_year = int(year_raw)
         except ValueError:
             from urllib.parse import quote
-            raise web.HTTPFound(f"/admin?flash={quote('Year must be a number')}")
+            raise _redirect_with_flash('Year must be a number')
     new_tags = _normalise_tags(form.get("tags") or "")
     new_description = (form.get("description") or "").strip()
 
@@ -426,11 +481,11 @@ async def admin_edit(request: web.Request) -> web.Response:
             manual_tmdb_id = int(tmdb_id_raw)
         except ValueError:
             from urllib.parse import quote
-            raise web.HTTPFound(f"/admin?flash={quote('TMDB ID must be numeric')}")
+            raise _redirect_with_flash('TMDB ID must be numeric')
 
     if not new_title:
         from urllib.parse import quote
-        raise web.HTTPFound(f"/admin?flash={quote('Title is required')}")
+        raise _redirect_with_flash('Title is required')
 
     # Capture what the operator typed so we can decide whether to
     # re-enrich after the caption write.
@@ -529,7 +584,7 @@ async def admin_edit(request: web.Request) -> web.Response:
         )
     else:
         msg = f"Edit failed for bin:{message_id} (see server logs)"
-    raise web.HTTPFound(f"/admin?flash={quote(msg)}")
+    raise _redirect_with_flash(msg)
 
 
 # --- Bulk operations --------------------------------------------------
