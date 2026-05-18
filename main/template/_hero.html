@@ -1,85 +1,161 @@
-{# Hero/featured banner. Renders only when an enriched item with a
-   backdrop exists — otherwise the caller skips this include. The
-   backdrop is the full-width art behind a dark gradient; the foreground
-   has the title, year, genres, overview, and a Watch CTA. #}
-{% set watch_path = '/watch/' ~ hero.secure_hash ~ hero.message_id %}
-{% if hero.series_key %}
-  {% set deep_link = '/series/' ~ hero.series_key %}
-{% elif hero.movie_key %}
-  {% set deep_link = '/movie/' ~ hero.movie_key %}
-{% else %}
-  {% set deep_link = watch_path %}
-{% endif %}
+{# Hero carousel. Up to N featured items rotate every 7 seconds with
+   manual prev/next buttons and indicator dots. Each slide stretches
+   full bleed inside the hub container. Auto-advance pauses on hover so
+   readers don't lose their place mid-overview. #}
+<section
+  x-data="{
+    active: 0,
+    count: {{ heroes | length }},
+    timer: null,
+    next() { this.active = (this.active + 1) % this.count; },
+    prev() { this.active = (this.active - 1 + this.count) % this.count; },
+    go(i) { this.active = i; this.restart(); },
+    restart() {
+      if (this.timer) clearInterval(this.timer);
+      if (this.count > 1) this.timer = setInterval(() => this.next(), 7000);
+    },
+  }"
+  x-init="restart()"
+  @mouseenter="if (timer) { clearInterval(timer); timer = null; }"
+  @mouseleave="restart()"
+  class="relative -mx-4 sm:-mx-6 lg:-mx-10 mb-10
+         aspect-[16/9] sm:aspect-[21/9] max-h-[70vh]
+         overflow-hidden rounded-xl group/hero">
 
-<section class="relative -mx-4 sm:-mx-6 lg:-mx-10 mb-10
-                aspect-[16/9] sm:aspect-[21/9] max-h-[70vh] overflow-hidden rounded-xl">
-  {% if hero.backdrop_path %}
-    <img src="https://image.tmdb.org/t/p/w1280{{ hero.backdrop_path }}"
-         alt=""
-         class="absolute inset-0 w-full h-full object-cover" />
-  {% endif %}
-  {# Two gradients: vertical for the bottom fade into the page bg, and
-     a horizontal one biased to the left so the copy stays readable on
-     any backdrop. #}
-  <div class="absolute inset-0
-              bg-gradient-to-t from-ink-900 via-ink-900/60 to-transparent"></div>
-  <div class="absolute inset-0
-              bg-gradient-to-r from-ink-900/95 via-ink-900/50 to-transparent"></div>
+  {% for hero in heroes %}
+    {% set watch_path = '/watch/' ~ hero.secure_hash ~ hero.message_id %}
+    {% if hero.series_key %}
+      {% set deep_link = '/series/' ~ hero.series_key %}
+    {% elif hero.movie_key %}
+      {% set deep_link = '/movie/' ~ hero.movie_key %}
+    {% else %}
+      {% set deep_link = watch_path %}
+    {% endif %}
 
-  <div class="relative h-full flex items-end sm:items-center
-              px-6 sm:px-10 lg:px-14 pb-10 sm:pb-0">
-    <div class="max-w-2xl text-white">
-      {% if hero.tmdb_kind == 'tv' %}
-        <span class="inline-block text-[10px] uppercase tracking-[0.2em] font-semibold
-                     text-brand-300 mb-2">Series</span>
+    <div
+      x-show="active === {{ loop.index0 }}"
+      x-transition.opacity.duration.700ms
+      class="absolute inset-0">
+      {% if hero.backdrop_path %}
+        <img src="https://image.tmdb.org/t/p/w1280{{ hero.backdrop_path }}"
+             alt="" loading="{{ 'eager' if loop.first else 'lazy' }}"
+             class="absolute inset-0 w-full h-full object-cover" />
+      {% elif hero.poster_path %}
+        <img src="https://image.tmdb.org/t/p/w780{{ hero.poster_path }}"
+             alt="" loading="{{ 'eager' if loop.first else 'lazy' }}"
+             class="absolute inset-0 w-full h-full object-cover blur-md scale-110 opacity-60" />
+        <img src="https://image.tmdb.org/t/p/w500{{ hero.poster_path }}"
+             alt="" loading="{{ 'eager' if loop.first else 'lazy' }}"
+             class="absolute right-6 sm:right-10 top-1/2 -translate-y-1/2
+                    h-[80%] w-auto rounded-lg shadow-2xl hidden sm:block" />
+      {% else %}
+        <div class="absolute inset-0 bg-gradient-to-br
+                    from-brand-500/20 via-ink-900 to-ink-900"></div>
       {% endif %}
-      <h2 class="text-3xl sm:text-5xl font-bold tracking-tight drop-shadow-md">
-        {{ hero.series_title or hero.title }}
-        {%- if hero.year %}
-          <span class="text-slate-300 font-normal text-2xl sm:text-3xl ml-2">({{ hero.year }})</span>
-        {% endif -%}
-      </h2>
-      {% if hero.tmdb_genres %}
-        <p class="mt-3 text-xs sm:text-sm text-slate-300 tracking-wide">
-          {{ hero.tmdb_genres[:4] | join(' · ') }}
-        </p>
-      {% endif %}
-      {% if hero.overview %}
-        <p class="mt-4 text-sm sm:text-base text-slate-200/90 leading-relaxed
-                  line-clamp-3 sm:line-clamp-4 max-w-xl drop-shadow">
-          {{ hero.overview }}
-        </p>
-      {% endif %}
-      <div class="mt-6 flex flex-wrap gap-3">
-        <a href="{{ watch_path }}"
-           class="inline-flex items-center gap-2 rounded-lg
-                  px-5 py-2.5 font-semibold text-ink-900
-                  bg-white hover:bg-slate-200 transition-colors shadow-lg">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-               fill="currentColor" class="w-4 h-4">
-            <path d="M8 5v14l11-7z"/>
-          </svg>
-          Play
-        </a>
-        {% if deep_link != watch_path %}
-          <a href="{{ deep_link }}"
-             class="inline-flex items-center gap-2 rounded-lg
-                    px-5 py-2.5 font-medium text-white
-                    bg-white/10 hover:bg-white/20 backdrop-blur transition-colors">
-            More info
-          </a>
-        {% endif %}
-        {% if hero.imdb_id %}
-          <a href="https://www.imdb.com/title/{{ hero.imdb_id }}/"
-             target="_blank" rel="noopener"
-             class="inline-flex items-center gap-2 rounded-lg
-                    px-4 py-2.5 text-sm font-medium
-                    bg-yellow-500/15 text-yellow-300 border border-yellow-400/30
-                    hover:bg-yellow-500/25 transition-colors">
-            IMDb ↗
-          </a>
-        {% endif %}
+
+      <div class="absolute inset-0
+                  bg-gradient-to-t from-ink-900 via-ink-900/60 to-transparent"></div>
+      <div class="absolute inset-0
+                  bg-gradient-to-r from-ink-900/95 via-ink-900/50 to-transparent"></div>
+
+      <div class="relative h-full flex items-end sm:items-center
+                  px-6 sm:px-10 lg:px-14 pb-10 sm:pb-0">
+        <div class="max-w-2xl text-white">
+          {% if hero.tmdb_kind == 'tv' %}
+            <span class="inline-block text-[10px] uppercase tracking-[0.2em] font-semibold
+                         text-brand-300 mb-2">Series</span>
+          {% endif %}
+          <h2 class="text-3xl sm:text-5xl font-bold tracking-tight drop-shadow-md
+                     line-clamp-2">
+            {{ hero.series_title or hero.title }}
+            {%- if hero.year %}
+              <span class="text-slate-300 font-normal text-2xl sm:text-3xl ml-2">({{ hero.year }})</span>
+            {% endif -%}
+          </h2>
+          {% if hero.tmdb_genres %}
+            <p class="mt-3 text-xs sm:text-sm text-slate-300 tracking-wide">
+              {{ hero.tmdb_genres[:4] | join(' · ') }}
+            </p>
+          {% endif %}
+          {% if hero.overview %}
+            <p class="mt-4 text-sm sm:text-base text-slate-200/90 leading-relaxed
+                      line-clamp-3 sm:line-clamp-4 max-w-xl drop-shadow">
+              {{ hero.overview }}
+            </p>
+          {% endif %}
+          <div class="mt-6 flex flex-wrap gap-3">
+            <a href="{{ watch_path }}"
+               class="inline-flex items-center gap-2 rounded-lg
+                      px-5 py-2.5 font-semibold text-ink-900
+                      bg-white hover:bg-slate-200 transition-colors shadow-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                   fill="currentColor" class="w-4 h-4">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+              Play
+            </a>
+            {% if deep_link != watch_path %}
+              <a href="{{ deep_link }}"
+                 class="inline-flex items-center gap-2 rounded-lg
+                        px-5 py-2.5 font-medium text-white
+                        bg-white/10 hover:bg-white/20 backdrop-blur transition-colors">
+                More info
+              </a>
+            {% endif %}
+            {% if hero.imdb_id %}
+              <a href="https://www.imdb.com/title/{{ hero.imdb_id }}/"
+                 target="_blank" rel="noopener"
+                 class="inline-flex items-center gap-2 rounded-lg
+                        px-4 py-2.5 text-sm font-medium
+                        bg-yellow-500/15 text-yellow-300 border border-yellow-400/30
+                        hover:bg-yellow-500/25 transition-colors">
+                IMDb ↗
+              </a>
+            {% endif %}
+          </div>
+        </div>
       </div>
     </div>
-  </div>
+  {% endfor %}
+
+  {# Prev / next chevrons. Hidden on touch (visible only when the row
+     is hovered on desktop), hidden entirely when there's only one
+     slide so the chrome doesn't lie about navigability. #}
+  {% if heroes | length > 1 %}
+    <button type="button" @click="prev()"
+            class="hidden md:grid absolute left-3 top-1/2 -translate-y-1/2 z-10
+                   place-items-center w-10 h-10 rounded-full
+                   bg-black/40 hover:bg-black/70 text-white
+                   opacity-0 group-hover/hero:opacity-100 transition-opacity">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </button>
+    <button type="button" @click="next()"
+            class="hidden md:grid absolute right-3 top-1/2 -translate-y-1/2 z-10
+                   place-items-center w-10 h-10 rounded-full
+                   bg-black/40 hover:bg-black/70 text-white
+                   opacity-0 group-hover/hero:opacity-100 transition-opacity">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+      </svg>
+    </button>
+
+    {# Indicator dots — click to jump to a slide. #}
+    <div class="absolute bottom-3 sm:bottom-5 left-1/2 -translate-x-1/2 z-10
+                flex items-center gap-2">
+      {% for hero in heroes %}
+        <button type="button" @click="go({{ loop.index0 }})"
+                :class="active === {{ loop.index0 }}
+                        ? 'w-6 bg-white'
+                        : 'w-2 bg-white/40 hover:bg-white/70'"
+                class="h-2 rounded-full transition-all"
+                aria-label="Go to slide {{ loop.index }}"></button>
+      {% endfor %}
+    </div>
+  {% endif %}
 </section>

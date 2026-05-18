@@ -643,27 +643,46 @@ def variants_for_movie(movie_key: str) -> List[HubItem]:
     return vs
 
 
-def pick_hero() -> Optional[HubItem]:
-    """Choose a hero item for the landing-page banner.
+def pick_heroes(limit: int = 6) -> List[HubItem]:
+    """Choose featured items for the landing-page hero carousel.
 
-    Strongly prefers an enriched item with a backdrop image so the hero
-    has something to render. Within the eligible set, picks one of the
-    most-recent few at random for variety across refreshes.
+    Tiered fallback so the hero never goes dark:
+    1. Most recent ``limit`` items with backdrop + overview (best look).
+    2. Items with overview only (poster as bg; happens when TMDB lacks
+       a backdrop, common for older / regional titles).
+    3. Any enriched item (poster + canonical title, no copy).
+    4. Most recent items in the catalogue, period — at least the hero
+       has *something* on a cold start before enrichment lands.
     """
-    import random
-    candidates = [
-        it for it in _items.values()
-        if it.backdrop_path and it.overview
+    by_recent = sorted(_items.values(), key=lambda it: -it.message_id)
+
+    tier1 = [it for it in by_recent if it.backdrop_path and it.overview]
+    if len(tier1) >= 3:
+        return tier1[:limit]
+
+    tier2 = [
+        it for it in by_recent
+        if it.overview and it not in tier1
     ]
-    if not candidates:
-        # Fall back to anything enriched (TMDB without backdrop is rare
-        # but possible for older titles).
-        candidates = [it for it in _items.values() if it.tmdb_id]
-    if not candidates:
-        return None
-    candidates.sort(key=lambda it: -it.message_id)
-    pool = candidates[:8]  # top 8 newest enriched
-    return random.choice(pool)
+    pool = tier1 + tier2
+    if len(pool) >= 3:
+        return pool[:limit]
+
+    tier3 = [it for it in by_recent if it.tmdb_id and it not in pool]
+    pool = pool + tier3
+    if len(pool) >= 3:
+        return pool[:limit]
+
+    # Last resort: pad with the newest unenriched items so the hero shows
+    # *something*. The template handles missing TMDB fields gracefully.
+    tier4 = [it for it in by_recent if it not in pool]
+    return (pool + tier4)[:limit]
+
+
+def pick_hero() -> Optional[HubItem]:
+    """Backwards-compat single-pick for older callers."""
+    heroes = pick_heroes(limit=1)
+    return heroes[0] if heroes else None
 
 
 def shelves(per_shelf: int = 14) -> List[dict]:
