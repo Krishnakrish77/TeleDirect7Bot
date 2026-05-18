@@ -28,10 +28,39 @@
              preview: null,
              previewError: '',
              previewLoading: false,
+             // IMDb-id resolver state.
+             imdb_input: '',
+             imdbError: '',
+             imdbLoading: false,
            };
            // If the row already has a TMDB id, kick off a preview fetch
            // immediately so admin sees what's currently attached.
            if (this.editing.tmdb_id) this.previewTmdb();
+         },
+         async resolveImdb() {
+           const e = this.editing;
+           if (!e) return;
+           const raw = (e.imdb_input || '').trim();
+           e.imdbError = '';
+           if (!raw) return;
+           e.imdbLoading = true;
+           try {
+             const r = await fetch(
+               '/admin/tmdb-resolve-imdb?imdb_id=' + encodeURIComponent(raw),
+             );
+             const data = await r.json();
+             if (!r.ok) {
+               e.imdbError = data.error || ('HTTP ' + r.status);
+             } else {
+               e.tmdb_id = String(data.tmdb_id);
+               e.tmdb_kind = data.kind;
+               await this.previewTmdb();
+             }
+           } catch (err) {
+             e.imdbError = 'Network error';
+           } finally {
+             e.imdbLoading = false;
+           }
          },
          async previewTmdb() {
            const e = this.editing;
@@ -449,6 +478,31 @@
                 <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">
                   TMDB override <span class="lowercase tracking-normal text-slate-500">(optional)</span>
                 </p>
+
+                {# IMDb id resolver. Paste a tt-id or the full IMDb URL;
+                   we'll resolve it to TMDB and populate the fields
+                   below. Saves a manual TMDB search step. #}
+                <div class="mb-2 flex items-center gap-2">
+                  <input type="text"
+                         placeholder="IMDb id or URL (tt1234567)"
+                         x-model="editing.imdb_input"
+                         @keydown.enter.prevent="resolveImdb()"
+                         class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                border border-white/5 text-sm
+                                focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  <button type="button"
+                          @click="resolveImdb()"
+                          :disabled="editing.imdbLoading"
+                          class="px-3 py-2 rounded bg-brand-500/80 hover:bg-brand-500
+                                 disabled:opacity-50 text-white text-sm font-medium
+                                 transition-colors whitespace-nowrap">
+                    <span x-show="!editing.imdbLoading">Resolve →</span>
+                    <span x-show="editing.imdbLoading">Resolving…</span>
+                  </button>
+                </div>
+                <p x-show="editing.imdbError" x-cloak
+                   class="mb-2 text-xs text-red-400" x-text="editing.imdbError"></p>
+
                 <div class="flex items-center gap-2">
                   <input type="number" name="tmdb_id" min="1"
                          placeholder="TMDB ID"

@@ -220,6 +220,40 @@ async def lookup_series(title: str, year: Optional[int] = None) -> Optional[TMDB
     return await _lookup("tv", title, year)
 
 
+async def resolve_imdb_id(imdb_id: str) -> Optional[Tuple[int, str]]:
+    """Map an IMDb tt-id to its TMDB (id, kind) pair via ``/find``.
+
+    Used by admin so an operator can paste an IMDb URL and we'll
+    resolve to the matching TMDB record without making them dig
+    through TMDB search. Returns (tmdb_id, "movie"|"tv") or None
+    when the id isn't found or TMDB isn't configured.
+    """
+    if not is_configured() or not imdb_id:
+        return None
+    imdb_id = imdb_id.strip()
+    if not imdb_id.startswith("tt"):
+        return None
+    async with aiohttp.ClientSession() as session:
+        payload = await _get(
+            session, f"/find/{imdb_id}",
+            external_source="imdb_id",
+        )
+        if not payload:
+            return None
+        movies = payload.get("movie_results") or []
+        if movies:
+            return int(movies[0]["id"]), "movie"
+        tvs = payload.get("tv_results") or []
+        if tvs:
+            return int(tvs[0]["id"]), "tv"
+        # /find also returns tv_episode_results / tv_season_results;
+        # those are scoped to a parent show, so promote to the parent.
+        ep = payload.get("tv_episode_results") or []
+        if ep and ep[0].get("show_id"):
+            return int(ep[0]["show_id"]), "tv"
+        return None
+
+
 async def fetch_by_id(tmdb_id: int, kind: str) -> Optional[TMDBHit]:
     """Hit /movie/{id} or /tv/{id} directly — no title search, no
     confidence scoring. Used by admin when they want to attach a

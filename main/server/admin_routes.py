@@ -188,6 +188,37 @@ async def admin_tmdb_preview(request: web.Request) -> web.Response:
     })
 
 
+@routes.get("/admin/tmdb-resolve-imdb")
+async def admin_tmdb_resolve_imdb(request: web.Request) -> web.Response:
+    """Resolve an IMDb tt-id to a TMDB (id, kind) pair via /find.
+
+    Lets the Edit modal accept an IMDb URL/id and auto-fill the TMDB id
+    + kind fields, sparing the operator a manual TMDB lookup.
+    """
+    _require_session(request)
+    imdb_id = (request.query.get("imdb_id") or "").strip()
+    # Accept either ``tt1234567`` or the full IMDb URL — pull the tt-id
+    # out so the admin can paste either form.
+    import re as _re
+    m = _re.search(r"tt\d{6,10}", imdb_id)
+    if not m:
+        return web.json_response(
+            {"error": "Provide an IMDb tt-id like tt1234567"}, status=400,
+        )
+    imdb_id = m.group(0)
+
+    from main.utils import tmdb
+    if not tmdb.is_configured():
+        return web.json_response({"error": "TMDB_API_KEY not set"}, status=503)
+    resolved = await tmdb.resolve_imdb_id(imdb_id)
+    if resolved is None:
+        return web.json_response(
+            {"error": "No TMDB record for that IMDb id"}, status=404,
+        )
+    tmdb_id, kind = resolved
+    return web.json_response({"tmdb_id": tmdb_id, "kind": kind, "imdb_id": imdb_id})
+
+
 @routes.get("/admin/status")
 async def admin_status(request: web.Request) -> web.Response:
     """JSON snapshot of the seed + enrichment progress. The admin page
