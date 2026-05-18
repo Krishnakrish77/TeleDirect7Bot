@@ -18,8 +18,12 @@
   x-init="restart()"
   @mouseenter="if (timer) { clearInterval(timer); timer = null; }"
   @mouseleave="restart()"
+  {# Aspect ratio: taller on mobile so Series chip + h2 + genres +
+     buttons all fit without the title overflowing above the
+     ``overflow-hidden`` clip. 4:3 gives roughly 33% more vertical
+     room than 16:9 at the same width. #}
   class="relative -mx-4 sm:-mx-6 lg:-mx-10 mb-10
-         aspect-[16/9] sm:aspect-[21/9] max-h-[70vh]
+         aspect-[4/3] sm:aspect-[21/9] max-h-[70vh]
          overflow-hidden rounded-xl group/hero">
 
   {% for hero in heroes %}
@@ -86,8 +90,14 @@
             </p>
           {% endif %}
           {% if hero.overview %}
-            <p class="mt-4 text-sm sm:text-base text-slate-200/90 leading-relaxed
-                      line-clamp-3 sm:line-clamp-4 max-w-xl drop-shadow">
+            {# Hidden on mobile — the overview is 3-4 lines tall and
+               would push the h2 title above the overflow clip. The
+               desktop hero is wide enough to fit everything. Series
+               + h2 + genres + buttons stay on mobile, which is
+               enough context for the user to recognise the title. #}
+            <p class="hidden sm:block mt-4 text-sm sm:text-base text-slate-200/90
+                      leading-relaxed line-clamp-3 sm:line-clamp-4
+                      max-w-xl drop-shadow">
               {{ hero.overview }}
             </p>
           {% endif %}
