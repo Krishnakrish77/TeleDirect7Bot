@@ -85,9 +85,13 @@ async def private_receive_handler(c: Client, m: Message):
             quote=True
         )
     except FloodWait as e:
-        logging.warning(f"Sleeping for {e.x}s")
+        # Log it; don't echo a notice into BIN_CHANNEL. The channel is
+        # the catalogue stream — operator notices belong in logs.
+        logging.warning(
+            "FloodWait %ss handling upload from user %s",
+            e.x, getattr(m.from_user, "id", "?"),
+        )
         await asyncio.sleep(e.x)
-        await c.send_message(chat_id=Var.BIN_CHANNEL, text=f"Got Floodwait Of {str(e.x)}s from [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n\n**User ID :** `{str(m.from_user.id)}`", disable_web_page_preview=True,)
 
 @StreamBot.on_message(filters.channel & ~filters.user(Var.BANNED_USERS) & (filters.document | filters.video), group=-1)
 async def channel_receive_handler(bot, broadcast: Message):
@@ -138,11 +142,11 @@ async def channel_receive_handler(bot, broadcast: Message):
                     broadcast.chat.title, broadcast.id, edit_exc,
                 )
     except FloodWait as w:
-        logging.warning(f"Sleeping for {w.x}s")
+        logging.warning(
+            "FloodWait %ss handling channel upload from %s/%d",
+            w.x, broadcast.chat.title, broadcast.chat.id,
+        )
         await asyncio.sleep(w.x)
-        await bot.send_message(chat_id=Var.BIN_CHANNEL,
-                             text=f"Got Floodwait Of {str(w.x)}s from {broadcast.chat.title}\n\n**Channel ID:** `{str(broadcast.chat.id)}`",
-                             disable_web_page_preview=True,)
     except Exception as e:
         # Real failure of the forward / reply flow — log it, but don't
         # spam BIN_CHANNEL with a traceback message. That was leaving a
@@ -167,7 +171,9 @@ async def group_receive_handler(c: Client, m: Message):
             quote=True
         )
     except FloodWait as e:
-        logging.warning(f"Sleeping for {e.x}s")
+        logging.warning(
+            "FloodWait %ss handling group upload from %s/%d",
+            e.x, m.chat.title, m.chat.id,
+        )
         await asyncio.sleep(e.x)
-        await c.send_message(chat_id=Var.BIN_CHANNEL, text=f"Got Floodwait Of {str(e.x)}s in group `{m.chat.title}` ({m.chat.id})", disable_web_page_preview=True)
 

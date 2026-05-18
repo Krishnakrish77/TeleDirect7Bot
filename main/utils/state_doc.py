@@ -26,7 +26,7 @@ from __future__ import annotations
 import io
 import json
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 from main.vars import Var
 
@@ -93,9 +93,12 @@ async def save(bot, payload: dict,
     return msg.id
 
 
-async def load(bot) -> Optional[dict]:
-    """Download the pinned snapshot and parse it. Returns None if no
-    valid snapshot is pinned or the download/parse fails.
+async def load(bot) -> Optional[Tuple[dict, int]]:
+    """Download the pinned snapshot and parse it. Returns
+    ``(payload, message_id)`` on success or None if no valid snapshot
+    is pinned or the download/parse fails. Callers should remember
+    the returned message id so the next ``save()`` can delete this
+    snapshot when it uploads a new one.
     """
     try:
         chat = await bot.get_chat(Var.BIN_CHANNEL)
@@ -127,7 +130,7 @@ async def load(bot) -> Optional[dict]:
 
     logging.info("state_doc: restored snapshot from bin:%d (%d bytes)",
                  pinned.id, len(raw))
-    return payload
+    return payload, int(pinned.id)
 
 
 async def _previous_snapshot_id(bot) -> Optional[int]:

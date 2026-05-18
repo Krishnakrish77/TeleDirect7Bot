@@ -79,20 +79,16 @@ async def cb_data(bot, update: CallbackQuery):
                 else:
                     await update.answer("Message id and file_unique_id miss match", show_alert=True)
             except MessageDeleteForbidden as e:
+                # Don't pollute BIN_CHANNEL with traceback messages; logs
+                # carry the same information without cluttering the
+                # catalogue stream.
                 logging.warning("MessageDeleteForbidden: %s", e)
-                await bot.send_message(
-                    chat_id=Var.BIN_CHANNEL,
-                    text=f"**#ᴇʀʀᴏʀ_ᴛʀᴀᴄᴇʙᴀᴄᴋ:** `{e}`\n#Delete_Link", disable_web_page_preview=True,
-                )
                 await update.answer(text='Message too old', show_alert=True)
-            except Exception as e:
+            except Exception:
                 logging.exception("Failed to delete callback message")
-                error_id=await bot.send_message(
-                    chat_id=Var.BIN_CHANNEL,
-                    text=f"**#ᴇʀʀᴏʀ_ᴛʀᴀᴄᴇʙᴀᴄᴋ:** `{e}`\n#Delete_Link", disable_web_page_preview=True, 
-                )
-                await update.message.reply_text(
-                    text=f"**#ᴇʀʀᴏʀ_ᴛʀᴀᴄᴇʙᴀᴄᴋ:** `message-id={error_id.id}`", disable_web_page_preview=True,
+                await update.answer(
+                    "Couldn't delete the link — try again later.",
+                    show_alert=True,
                 )
         else:
             await update.message.delete()

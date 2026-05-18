@@ -1182,10 +1182,11 @@ async def restore_from_telegram(bot) -> bool:
     ``seed()`` when ``/tmp`` is empty — recovers full enrichment state
     (poster paths, tmdb_ids, etc.) without re-hitting TMDB.
     """
-    global _latest_seen_id
-    payload = await state_doc.load(bot)
-    if payload is None:
+    global _latest_seen_id, _snapshot_msg_id
+    result = await state_doc.load(bot)
+    if result is None:
         return False
+    payload, snapshot_id = result
     items_data = payload.get("items") or []
     persisted_latest = int(payload.get("latest_seen_id") or 0)
     loaded = 0
@@ -1199,6 +1200,11 @@ async def restore_from_telegram(bot) -> bool:
                 continue
         local_max = max((it.message_id for it in _items.values()), default=0)
         _latest_seen_id = max(_latest_seen_id, persisted_latest, local_max)
+        # Remember the snapshot's message id so the next snapshot_to_telegram
+        # call can delete it before uploading the replacement. Without this
+        # hint, cold-start saves can't dedup and BIN_CHANNEL accumulates
+        # an unbounded stream of stale snapshot docs.
+        _snapshot_msg_id = snapshot_id
         _persist_unlocked()
     logging.info(
         "media_index: restored %d entries from Telegram snapshot (latest=%d)",
