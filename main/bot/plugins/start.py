@@ -73,12 +73,21 @@ async def admin_link(bot, message):
 
     token = admin_auth.issue_one_time_token(requester_id)
     url = urljoin(Var.URL, f"admin/login?t={token}")
+    link_minutes = max(1, round(admin_auth.TOKEN_TTL / 60))
+    session_minutes = max(1, round(admin_auth.SESSION_TTL / 60))
+    # Pretty-format the session TTL: ``60 minutes`` reads worse than
+    # ``1 hour`` when the operator has set a multi-hour window.
+    if session_minutes >= 60 and session_minutes % 60 == 0:
+        hours = session_minutes // 60
+        session_human = f"{hours} hour" + ("s" if hours != 1 else "")
+    else:
+        session_human = f"{session_minutes} minutes"
     await message.reply_text(
         text=(
             "🔐 **Admin access**\n\n"
             f"{url}\n\n"
-            "• Open this link within **15 minutes** — it expires after that.\n"
-            "• Once you open it, your admin session stays signed in for **1 hour**."
+            f"• Open this link within **{link_minutes} minutes** — it expires after that.\n"
+            f"• Once you open it, your admin session stays signed in for **{session_human}**."
         ),
         disable_web_page_preview=True,
         quote=True,

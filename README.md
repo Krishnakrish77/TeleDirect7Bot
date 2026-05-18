@@ -148,6 +148,10 @@ you may also add as many as bots you want. (max limit is not tested yet)
 
 `PING_INTERVAL` : The time in ms you want the servers to be pinged each time to avoid sleeping (Only for Heroku). Defaults to `1200` or 20 minutes.
 
+`ADMIN_TOKEN_TTL_MIN` : Minutes the one-time `/admin` DM link stays valid. Defaults to `15`. Bump it (e.g. `120`) during testing so you don't have to keep re-requesting the link.
+
+`ADMIN_SESSION_TTL_MIN` : Minutes an admin session cookie stays signed in after the one-time link is opened. Defaults to `60`. Set higher (e.g. `480` for an 8-hour session) when you're iterating on admin features.
+
 
 
 ## How to use the bot

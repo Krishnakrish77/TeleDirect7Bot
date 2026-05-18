@@ -27,8 +27,26 @@ from typing import Optional
 from main.vars import Var
 
 
-_TOKEN_TTL = 15 * 60       # one-time link expires 15 min after issue
-_SESSION_TTL = 60 * 60     # session cookie good for one hour
+# Both windows are env-tunable so testers can extend the session
+# without redeploying. Defaults match the prior hard-coded values.
+#   ADMIN_TOKEN_TTL_MIN    — one-time link expiry, minutes (default 15)
+#   ADMIN_SESSION_TTL_MIN  — session cookie expiry, minutes (default 60)
+def _ttl_from_env(name: str, default_minutes: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default_minutes * 60
+    try:
+        minutes = int(raw)
+    except ValueError:
+        return default_minutes * 60
+    # Clamp to a sane range so a typo can't lock the admin out forever
+    # or expire the session in negative time.
+    minutes = max(1, min(minutes, 60 * 24 * 30))  # 1 min .. 30 days
+    return minutes * 60
+
+
+_TOKEN_TTL = _ttl_from_env("ADMIN_TOKEN_TTL_MIN", 15)
+_SESSION_TTL = _ttl_from_env("ADMIN_SESSION_TTL_MIN", 60)
 _COOKIE_NAME = "admin_session"
 
 
@@ -116,3 +134,4 @@ def verify_one_time(token: str) -> Optional[int]:
 
 COOKIE_NAME = _COOKIE_NAME
 SESSION_TTL = _SESSION_TTL
+TOKEN_TTL = _TOKEN_TTL
