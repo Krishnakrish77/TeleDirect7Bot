@@ -1241,9 +1241,14 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
     item.tmdb_genres = list(hit.genres)
     item.enriched_at = time.time()
 
-    if hit.title:
+    # For TV episodes we deliberately preserve the per-episode title that
+    # was parsed from the filename (e.g. "Tangerines.S01E03.WEBRip") —
+    # otherwise every episode card ends up showing the show name and
+    # they're indistinguishable. Movies and standalone uploads do
+    # take TMDB's canonical title.
+    if hit.kind != "tv" and hit.title:
         item.title = hit.title
-    if hit.year:
+    if hit.year and hit.kind != "tv":
         item.year = hit.year
 
     # Recompute grouping keys against the canonical title.
@@ -1313,16 +1318,36 @@ async def enrich_one(message_id: int, bot=None) -> bool:
     else:
         # Movie: try cleaned-title variants in order, fall through to TV if
         # everything misses (some standalone uploads are TV specials).
-        candidates: list = []
+        # We also generate "drop leading word" variants so titles with
+        # uploader / group prefixes that survived clean_for_search
+        # ("world Raavan" → "Raavan", "idiots Poojai" → "Poojai") still
+        # find their target on TMDB after a few iterations.
+        bases: list = []
         seen: set = set()
         for raw in (item.title, item.file_name):
             cleaned = clean_for_search(raw, item.file_name)
             if cleaned and cleaned not in seen:
-                candidates.append(cleaned)
+                bases.append(cleaned)
                 seen.add(cleaned)
-        # Last-ditch: the title as-is. Useful for hand-edited entries.
         if item.title and item.title not in seen:
-            candidates.append(item.title)
+            bases.append(item.title)
+
+        candidates: list = []
+        cand_seen: set = set()
+        for base in bases:
+            words = base.split()
+            # Try the base, then progressively drop leading words. Stop
+            # before the variant becomes meaningless (<= 1 word and < 4
+            # chars). Capped at 4 strip steps so we don't burn TMDB
+            # quota on garbage inputs.
+            for skip in range(min(5, len(words))):
+                variant = " ".join(words[skip:]).strip()
+                if len(variant) < 2:
+                    continue
+                if variant in cand_seen:
+                    continue
+                candidates.append(variant)
+                cand_seen.add(variant)
 
         hit = None
         for q in candidates:

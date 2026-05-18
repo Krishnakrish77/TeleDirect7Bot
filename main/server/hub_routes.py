@@ -329,10 +329,20 @@ async def hub_series(request: web.Request) -> web.Response:
     if not episodes:
         raise web.HTTPNotFound(text="series not found")
 
-    # Group episodes by season for the template.
+    # Numbered seasons in the catalogue (excludes the None bucket).
+    numbered_seasons = sorted({e.season for e in episodes if e.season})
+
     seasons: dict = {}
-    for ep in episodes:
-        seasons.setdefault(ep.season or 0, []).append(ep)
+    if len(numbered_seasons) == 1:
+        # Single-season show: even uploads without SxxEyy in their filename
+        # must belong to that one season. Folding them in avoids the
+        # confusing "Episodes" bucket sitting alongside "Season N".
+        only_season = numbered_seasons[0]
+        seasons[only_season] = list(episodes)
+    else:
+        for ep in episodes:
+            seasons.setdefault(ep.season or 0, []).append(ep)
+
     season_blocks = [
         {"season": s, "episodes": eps}
         for s, eps in sorted(seasons.items())
@@ -347,7 +357,9 @@ async def hub_series(request: web.Request) -> web.Response:
         series_key=key,
         season_blocks=season_blocks,
         episode_count=len(episodes),
-        season_count=len(seasons),
+        # Don't count the unknown-season bucket as a season; if every
+        # episode is unbucketed (no SxxEyy anywhere) fall back to 1.
+        season_count=max(1, len(numbered_seasons)),
     )
     return _html(body)
 

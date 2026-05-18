@@ -75,6 +75,14 @@ def clean_for_search(title: str, file_name: str = "") -> str:
     # don't accidentally eat the whole title.
     text = re.sub(r"^\s*@\w+\s+", "", text)
 
+    # ``www TamilBlasters buzz Hey Sinamika`` — drop the www and the
+    # uploader-domain words that follow it. Pattern: ``www`` followed by
+    # a few alnum tokens, then ``buzz`` / ``net`` / ``com`` / etc.
+    text = re.sub(
+        r"^\s*www\s+\S+(?:\s+(?:buzz|net|com|org|info|io|cc))?\s+",
+        "", text, flags=re.IGNORECASE,
+    )
+
     # Strip the release-noise tokens but leave the rest of the title's
     # casing/punctuation intact for natural-language search.
     text = _NOISE_TOKENS.sub(" ", text)
