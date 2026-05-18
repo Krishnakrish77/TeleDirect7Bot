@@ -224,8 +224,13 @@ def _item_from_message(message) -> Optional[HubItem]:
     is_tv_by_id = parsed.tmdb_kind == "tv" and parsed.tmdb_id
 
     if sm:
-        series_key = sm.key
-        series_title = sm.title
+        # series.parse keeps any leading channel-prefix the filename had
+        # (``rodeo When Life Gives You Tangerines``). Run it through the
+        # same cleaner the movie path uses so series_title is presentable.
+        from main.utils.dedup import clean_for_search
+        cleaned_series_title = clean_for_search(sm.title) or sm.title
+        series_key = series_parse.slugify(cleaned_series_title) or sm.key
+        series_title = cleaned_series_title
         season = sm.season
         episode = sm.episode
         movie_key = ""
@@ -1586,8 +1591,15 @@ async def reindex_all(bot=None) -> dict:
 
                 sm = series_parse.parse(it.file_name) or series_parse.parse(it.title)
                 if sm:
-                    new_series_key = sm.key
-                    new_series_title = sm.title
+                    # series.parse extracts the title-portion verbatim, so
+                    # ``rodeo When Life Gives You Tangerines S01E14`` keeps
+                    # the channel prefix. Run it through clean_for_search
+                    # to drop leading junk words; if the cleaner empties
+                    # the title, fall back to the raw series-parse output.
+                    from main.utils.dedup import clean_for_search
+                    cleaned_series_title = clean_for_search(sm.title) or sm.title
+                    new_series_key = series_parse.slugify(cleaned_series_title) or sm.key
+                    new_series_title = cleaned_series_title
                     new_season = sm.season
                     new_episode = sm.episode
                     new_movie_key = ""

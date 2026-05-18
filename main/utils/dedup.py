@@ -154,6 +154,18 @@ def clean_for_search(title: str, file_name: str = "") -> str:
     while words and words[0].lower() in _LEADING_JUNK_ALWAYS:
         words = words[1:]
         stripped_prefix = True
+    # ALSO strip an AFTER_PREFIX word when it leaks in without an
+    # @-prefix but is clearly a channel handle: leading word is
+    # entirely lowercase and the next word starts uppercase. Real
+    # titles ``Red Sparrow``/``World War Z``/``Cinematic Universe``
+    # always have the leading word title-cased, so this leaves them
+    # alone while catching ``rodeo When Life Gives You Tangerines``.
+    if (not stripped_prefix and len(words) >= 2
+            and words[0].islower()
+            and words[0] in _LEADING_JUNK_AFTER_PREFIX
+            and words[1][:1].isupper()):
+        words = words[1:]
+        stripped_prefix = True
     if stripped_prefix:
         while words and words[0].lower() in _LEADING_JUNK_AFTER_PREFIX:
             words = words[1:]
