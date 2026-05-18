@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from main.bot import StreamBot
+from main.utils import media_index
 from main.utils.file_properties import gen_link
 from main.utils.indexer import schedule_index, schedule_subtitle_pairing
 from main.utils.subtitles import is_subtitle_filename, is_subtitle_mime
@@ -8,6 +9,32 @@ from main.vars import Var
 from pyrogram import filters, Client
 from pyrogram.errors import FloodWait
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+
+
+@StreamBot.on_deleted_messages(filters.chat(Var.BIN_CHANNEL))
+async def bin_message_deleted(_client: Client, messages):
+    """Prune the catalogue when messages are deleted from BIN_CHANNEL.
+
+    Telegram pushes a deletion event whenever a message in BIN_CHANNEL
+    is removed — by an admin via a Telegram client, by our own bulk
+    delete, or by anything else. Reacting here keeps the hub honest
+    without any periodic-sweep cost: the row disappears on the next
+    page refresh.
+    """
+    removed = 0
+    for msg in messages:
+        try:
+            mid = int(getattr(msg, "id", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if mid <= 0:
+            continue
+        if media_index.get_item(mid) is None:
+            continue
+        await media_index.remove(mid)
+        removed += 1
+    if removed:
+        logging.info("media_index: pruned %d entries on BIN deletion", removed)
 
 
 def _looks_like_subtitle(m: Message) -> bool:
