@@ -241,28 +241,41 @@
     }
 
     function watchForUndecodableCodec(video) {
-      // hls.js can happily deliver segments while the browser's MSE
-      // pipeline silently rejects the codec (10-bit HEVC / AV1 / DV).
-      // Symptom: video.paused=false and currentTime advances but
-      // videoWidth stays 0. After 6s of "playback" with no frames, show
-      // the codec overlay so the user knows to open VLC.
+      // Two failure modes trigger the codec/format overlay:
+      //   1. hls.js delivers segments fine but MSE silently rejects them
+      //      because the codec isn't supported (10-bit HEVC / AV1 / DV).
+      //      Symptom: currentTime advances but videoWidth stays 0.
+      //   2. The browser raises a MediaError mid-decode — usually
+      //      DTS-not-monotonic chunk-demuxer errors on B-frame-heavy
+      //      sources that don't survive HLS segmentation cleanly.
+      //      Symptom: video.error is set and playback halts.
       const overlay = document.getElementById("codecOverlay");
       if (!overlay) return;
       let shown = false;
-      const check = () => {
+      const show = (reason) => {
         if (shown) return;
-        if (!video.paused && video.currentTime > 1 && video.videoWidth === 0) {
-          overlay.classList.remove("hidden");
-          shown = true;
-        }
+        overlay.classList.remove("hidden");
+        shown = true;
+        if (reason) console.warn("Codec overlay shown:", reason);
       };
-      // Poll for a few seconds after first playback starts; cheaper than
-      // adding a long-running interval.
+
+      // Mode 2: explicit media error.
+      video.addEventListener("error", () => {
+        if (video.error) {
+          show(video.error.message || `code ${video.error.code}`);
+        }
+      });
+
+      // Mode 1: playing but no frames. Poll only after the first 'playing'
+      // event so we don't fight a still-buffering player.
       video.addEventListener("playing", () => {
         let ticks = 0;
         const id = setInterval(() => {
-          check();
-          if (shown || ++ticks > 10) clearInterval(id);
+          if (shown) { clearInterval(id); return; }
+          if (!video.paused && video.currentTime > 1 && video.videoWidth === 0) {
+            show("videoWidth=0 after playback start");
+          }
+          if (++ticks > 10) clearInterval(id);
         }, 1000);
       }, { once: true });
     }

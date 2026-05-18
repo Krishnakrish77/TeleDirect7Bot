@@ -99,6 +99,13 @@ class HlsSession:
             "-y",
             "-hide_banner",
             "-loglevel", "error",
+            # Regenerate PTS from DTS on the input so B-frame-heavy
+            # sources don't surface non-monotonic timestamps to the
+            # browser's MSE pipeline (which raises
+            # CHUNK_DEMUXER_ERROR_APPEND_FAILED and stalls playback).
+            # +discardcorrupt drops frames with broken timestamps rather
+            # than emitting them and breaking the segment.
+            "-fflags", "+genpts+discardcorrupt",
             "-ss", f"{start_sec:.3f}",
             "-i", self.source_url,
             "-c:v", "copy",
