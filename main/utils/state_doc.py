@@ -35,20 +35,27 @@ SNAPSHOT_FILENAME = "media-index-snapshot.json"
 SNAPSHOT_MARKER = "media-index-snapshot/v1"
 
 
-async def save(bot, payload: dict) -> Optional[int]:
+async def save(bot, payload: dict,
+               prev_id_hint: Optional[int] = None) -> Optional[int]:
     """Upload a JSON snapshot and pin it; delete the previous snapshot.
 
-    Returns the message id of the new snapshot or None on failure. The
-    caller doesn't need that id (the next ``load`` finds the pinned
-    message), but it's handy for logging.
+    ``prev_id_hint`` is the message id the caller remembers from the
+    last successful save. We prefer it over re-discovering via
+    ``chat.pinned_message`` because pinning isn't guaranteed (bot may
+    lack the pin permission); without the hint, accumulated snapshots
+    would silently pile up.
+
+    Returns the message id of the new snapshot or None on failure.
     """
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     fh = io.BytesIO(raw)
     fh.name = SNAPSHOT_FILENAME
 
-    # Find the previous pinned snapshot so we can delete it after the
-    # new one is up — keeps the channel from accumulating stale copies.
-    prev_id = await _previous_snapshot_id(bot)
+    # Pre-resolve the previous snapshot id. Hint wins, pinned-message
+    # check fills in if the caller doesn't have one.
+    prev_id = prev_id_hint
+    if not prev_id:
+        prev_id = await _previous_snapshot_id(bot)
 
     try:
         msg = await bot.send_document(

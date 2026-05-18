@@ -73,6 +73,10 @@ _seeded = False
 # Highest BIN_CHANNEL message id we've ever observed. Persisted so a
 # warm-restart can resume scanning without sending a probe.
 _latest_seen_id: int = 0
+# Message id of the most recent snapshot doc uploaded to BIN_CHANNEL.
+# Persisted so subsequent saves can delete the prior snapshot even when
+# pinning silently failed (bot may lack pin permission).
+_snapshot_msg_id: int = 0
 
 # In-memory progress state for the two long-running pipelines (seed and
 # enrich). The admin UI polls /admin/status which serialises both.
@@ -346,6 +350,7 @@ def _persist_unlocked() -> None:
         _INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "latest_seen_id": _latest_seen_id,
+            "snapshot_msg_id": _snapshot_msg_id,
             "items": [_to_serializable(it) for it in _items.values()],
         }
         with _INDEX_FILE.open("w", encoding="utf-8") as f:
@@ -355,7 +360,7 @@ def _persist_unlocked() -> None:
 
 
 def _load() -> None:
-    global _latest_seen_id
+    global _latest_seen_id, _snapshot_msg_id
     if not _INDEX_FILE.exists():
         return
     try:
@@ -365,9 +370,11 @@ def _load() -> None:
         if isinstance(raw, list):
             data = raw
             persisted_latest = 0
+            persisted_snapshot = 0
         else:
             data = raw.get("items") or []
             persisted_latest = int(raw.get("latest_seen_id") or 0)
+            persisted_snapshot = int(raw.get("snapshot_msg_id") or 0)
         for d in data:
             try:
                 item = _from_serializable(d)
@@ -378,9 +385,10 @@ def _load() -> None:
         # file still gives us a sensible floor.
         local_max = max((it.message_id for it in _items.values()), default=0)
         _latest_seen_id = max(persisted_latest, local_max)
+        _snapshot_msg_id = persisted_snapshot
         logging.info(
-            "media_index: loaded %d entries from %s (latest_seen_id=%d)",
-            len(_items), _INDEX_FILE, _latest_seen_id,
+            "media_index: loaded %d entries from %s (latest_seen_id=%d, snapshot=%d)",
+            len(_items), _INDEX_FILE, _latest_seen_id, _snapshot_msg_id,
         )
     except Exception:
         logging.warning("media_index: failed to load %s", _INDEX_FILE, exc_info=True)
@@ -1061,7 +1069,11 @@ async def snapshot_to_telegram(bot) -> Optional[int]:
     read from — /tmp/media_index.json is just a hot cache on top.
     Failures don't block the caller; the catalogue is still in memory
     and the BIN captions remain a fallback recovery path.
+
+    Remembers the message id of the new snapshot so the next save can
+    delete the previous copy even when pinning is unavailable.
     """
+    global _snapshot_msg_id
     try:
         payload = {
             "version": 1,
@@ -1069,7 +1081,12 @@ async def snapshot_to_telegram(bot) -> Optional[int]:
             "latest_seen_id": _latest_seen_id,
             "items": [_to_serializable(it) for it in _items.values()],
         }
-        return await state_doc.save(bot, payload)
+        new_id = await state_doc.save(bot, payload, prev_id_hint=_snapshot_msg_id)
+        if new_id:
+            async with _lock:
+                _snapshot_msg_id = new_id
+                _persist_unlocked()
+        return new_id
     except Exception:
         logging.exception("media_index: snapshot_to_telegram failed (non-fatal)")
         return None
