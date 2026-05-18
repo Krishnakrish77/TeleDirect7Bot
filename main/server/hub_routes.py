@@ -162,6 +162,17 @@ def _empty_text(params: dict) -> str:
 @routes.get("/")
 async def hub_home(request: web.Request) -> web.Response:
     params = _parse_filters(request)
+
+    # Native form submissions (Enter key on the search box) bypass htmx and
+    # produce dirty URLs like /?q=foo&year=&quality=&sort=newest because the
+    # browser serializes every form input. Redirect full-page requests to
+    # the canonical URL so the address bar stays clean. HTMX requests are
+    # handled below via the HX-Push-Url header.
+    if not _is_htmx(request):
+        canonical = _canonical_url(params)
+        if request.rel_url.path_qs != canonical:
+            raise web.HTTPFound(canonical)
+
     # Grouped view collapses all episodes of a series into a single card.
     # When the user is filtering by tag, year, or quality we still group:
     # the filter applies to the underlying episodes and the group shows

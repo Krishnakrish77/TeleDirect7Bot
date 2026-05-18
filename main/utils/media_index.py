@@ -62,6 +62,9 @@ _FETCH_BATCH = 100  # get_messages caps around 200; 100 is well within limits.
 _items: Dict[int, HubItem] = {}
 _lock = asyncio.Lock()
 _seeded = False
+# Highest BIN_CHANNEL message id we've ever observed. Persisted so a
+# warm-restart can resume scanning without sending a probe.
+_latest_seen_id: int = 0
 
 
 def _to_serializable(item: HubItem) -> dict:
@@ -174,8 +177,17 @@ def _item_from_message(message) -> Optional[HubItem]:
 
 
 async def add_from_message(message) -> None:
+    global _latest_seen_id
     item = _item_from_message(message)
     if item is None:
+        # Even non-video messages (e.g. .srt sidecars, deleted/empty msgs)
+        # tell us "the channel has reached at least this id" — record it
+        # so the next restart can skip the probe.
+        mid = getattr(message, "id", 0) or 0
+        if mid > _latest_seen_id:
+            async with _lock:
+                _latest_seen_id = mid
+                _persist_unlocked()
         return
     async with _lock:
         # Preserve any sidecar subtitle pairings across re-indexing.
@@ -183,6 +195,8 @@ async def add_from_message(message) -> None:
         if existing and existing.subtitles:
             item.subtitles = existing.subtitles
         _items[item.message_id] = item
+        if item.message_id > _latest_seen_id:
+            _latest_seen_id = item.message_id
         _persist_unlocked()
 
 
@@ -241,39 +255,90 @@ async def remove(message_id: int) -> None:
 def _persist_unlocked() -> None:
     try:
         _INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "latest_seen_id": _latest_seen_id,
+            "items": [_to_serializable(it) for it in _items.values()],
+        }
         with _INDEX_FILE.open("w", encoding="utf-8") as f:
-            json.dump([_to_serializable(it) for it in _items.values()], f)
+            json.dump(payload, f)
     except Exception:
         logging.debug("media_index: persist failed (non-fatal)", exc_info=True)
 
 
 def _load() -> None:
+    global _latest_seen_id
     if not _INDEX_FILE.exists():
         return
     try:
         with _INDEX_FILE.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+            raw = json.load(f)
+        # Backwards-compat: older builds wrote a bare list of items.
+        if isinstance(raw, list):
+            data = raw
+            persisted_latest = 0
+        else:
+            data = raw.get("items") or []
+            persisted_latest = int(raw.get("latest_seen_id") or 0)
         for d in data:
             try:
                 item = _from_serializable(d)
                 _items[item.message_id] = item
             except Exception:
                 continue
-        logging.info("media_index: loaded %d entries from %s", len(_items), _INDEX_FILE)
+        # Highest of (persisted, max indexed) so a hand-edited or partial
+        # file still gives us a sensible floor.
+        local_max = max((it.message_id for it in _items.values()), default=0)
+        _latest_seen_id = max(persisted_latest, local_max)
+        logging.info(
+            "media_index: loaded %d entries from %s (latest_seen_id=%d)",
+            len(_items), _INDEX_FILE, _latest_seen_id,
+        )
     except Exception:
         logging.warning("media_index: failed to load %s", _INDEX_FILE, exc_info=True)
+
+
+async def _delete_probe(bot, channel_id: int, probe_id: int) -> None:
+    """Delete a freshly-sent probe message with checked retries.
+
+    Pyrogram's Message.delete() returns silently on some failure modes
+    (rate limits, permission edge cases). We call delete_messages directly,
+    check the integer return value, and retry with exponential backoff.
+    Anything left visible afterwards gets logged loudly so an operator can
+    clean it up manually.
+    """
+    delay = 0.3
+    for attempt in range(5):
+        try:
+            n = await bot.delete_messages(channel_id, probe_id)
+            if n and int(n) > 0:
+                return
+            logging.warning(
+                "media_index: probe delete returned 0 (attempt %d/%d, bin:%d)",
+                attempt + 1, 5, probe_id,
+            )
+        except Exception as exc:
+            logging.warning(
+                "media_index: probe delete raised %s (attempt %d/%d, bin:%d)",
+                exc.__class__.__name__, attempt + 1, 5, probe_id,
+            )
+        await asyncio.sleep(delay)
+        delay *= 2  # 0.3 → 0.6 → 1.2 → 2.4 → 4.8s
+    logging.error(
+        "media_index: probe bin:%d still in channel after 5 attempts — "
+        "delete it manually or the channel will show a leftover dot",
+        probe_id,
+    )
 
 
 async def seed(bot, channel_id: int) -> None:
     """Populate the index from BIN_CHANNEL history.
 
-    Bots can't call ``messages.getHistory`` (Pyrogram's ``get_chat_history``
-    raises an RPCError for bot accounts), so we discover the latest message
-    id by sending a tiny probe to the channel and reading its returned id,
-    then deleting the probe. The probe body is a single dot — Telegram
-    refuses empty / whitespace-only / zero-width messages with
-    MESSAGE_EMPTY, but a literal "." passes the validator while staying
-    visually minimal if a client renders it before the delete lands.
+    Bots can't call ``messages.getHistory``, so on a cold start we discover
+    the latest message id by sending a tiny dot to the channel and reading
+    its returned id. On warm restarts we already know ``_latest_seen_id``
+    from the persisted JSON — the auto-indexer bumps it on every BIN
+    message — so we skip the probe entirely. This makes a visible "."
+    appear at most ONCE in the channel's lifetime, not on every restart.
     """
     global _seeded
     if _seeded:
@@ -281,31 +346,31 @@ async def seed(bot, channel_id: int) -> None:
 
     _load()  # Restore whatever was on disk first.
 
-    try:
-        probe = await bot.send_message(channel_id, ".")
-    except Exception:
-        logging.exception("media_index: probe send failed; seed skipped")
-        _seeded = True
-        return
-
-    latest_id = probe.id
-    # Best-effort delete with one retry — the visible-probe complaint is
-    # rare but worth defending against. We do this BEFORE the long history
-    # scan so the channel cleans up fast.
-    for _ in range(2):
+    latest_id = _latest_seen_id
+    if latest_id <= 0:
+        # No persisted state — first run. Send a probe to learn the id, then
+        # erase it with delete_messages + retries.
         try:
-            await probe.delete()
-            break
+            probe = await bot.send_message(channel_id, ".")
         except Exception:
-            await asyncio.sleep(0.5)
+            logging.exception("media_index: probe send failed; seed skipped")
+            _seeded = True
+            return
+        latest_id = probe.id
+        await _delete_probe(bot, channel_id, probe.id)
     else:
-        logging.warning(
-            "media_index: probe delete failed after retries (bin:%d)", latest_id
+        logging.info(
+            "media_index: skipping probe — resuming from persisted id %d",
+            latest_id,
         )
+
+    global _latest_seen_id
+    if latest_id > _latest_seen_id:
+        _latest_seen_id = latest_id
 
     scanned = 0
     floor = max(1, latest_id - _SEED_DEPTH)
-    high = latest_id - 1  # the probe itself is gone; start one below it
+    high = latest_id
     logging.info(
         "media_index: seeding %d…%d (depth=%d)", high, floor, _SEED_DEPTH
     )
