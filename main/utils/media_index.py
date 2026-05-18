@@ -1000,10 +1000,21 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
     # Recompute grouping keys against the canonical title.
     sm = series_parse.parse(item.file_name) or series_parse.parse(item.title)
     if sm:
+        # Filename or title carries an SxxEyy / 1x03 / Season N pattern.
         item.series_key = sm.key
         item.series_title = hit.title if hit.kind == "tv" and hit.title else sm.title
         item.season = sm.season
         item.episode = sm.episode
+        item.movie_key = ""
+    elif hit.kind == "tv" and hit.title:
+        # TMDB says the title is a TV show, but the source filename lacks
+        # any episode locator. Still a series — group by TMDB title so
+        # multiple uploads of the same show collapse into one card and
+        # don't leak into the movie-variants surface.
+        item.series_key = series_parse.slugify(hit.title)
+        item.series_title = hit.title
+        item.season = None
+        item.episode = None
         item.movie_key = ""
     else:
         item.series_key = ""
@@ -1181,15 +1192,29 @@ async def reindex_all() -> dict:
         async with _lock:
             for it in _items.values():
                 sm = series_parse.parse(it.file_name) or series_parse.parse(it.title)
-                new_series_key = sm.key if sm else ""
-                new_series_title = sm.title if sm else ""
-                new_season = sm.season if sm else None
-                new_episode = sm.episode if sm else None
-                new_movie_key = (
-                    ""
-                    if sm
-                    else compute_movie_key(it.title or it.file_name, it.year, it.file_name)
-                )
+                if sm:
+                    new_series_key = sm.key
+                    new_series_title = sm.title
+                    new_season = sm.season
+                    new_episode = sm.episode
+                    new_movie_key = ""
+                elif it.tmdb_kind == "tv" and it.title:
+                    # Same logic as the enrich path: TMDB says TV, no
+                    # filename SxxEyy → still a series, collapse by
+                    # canonical title.
+                    new_series_key = series_parse.slugify(it.title)
+                    new_series_title = it.title
+                    new_season = None
+                    new_episode = None
+                    new_movie_key = ""
+                else:
+                    new_series_key = ""
+                    new_series_title = ""
+                    new_season = None
+                    new_episode = None
+                    new_movie_key = compute_movie_key(
+                        it.title or it.file_name, it.year, it.file_name,
+                    )
                 new_quality = _extract_quality(it.title, it.file_name, it.description)
 
                 if (it.series_key, it.season, it.episode) != (new_series_key, new_season, new_episode):
