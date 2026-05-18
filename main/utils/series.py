@@ -41,7 +41,25 @@ _PATTERNS = [
         r"^(?P<title>.+?)[\s._\-]+season\s*(?P<season>\d{1,2})[\s._\-]+episode\s*(?P<episode>\d{1,3})\b",
         re.IGNORECASE,
     ),
+    # Daily-aired serial format: ``<EpNum><Title> MM-DD-YY``
+    # (e.g. ``61Mahabharatham 01-02-14``). Common for Tamil/Indian
+    # TV serials where each upload is a single day's episode. The
+    # leading number is the episode counter, the trailing piece
+    # is the air date. Season isn't expressed; we synthesise it
+    # from the date's year for stable grouping per-season.
+    # Episode number is optional (some uploads skip the prefix).
+    re.compile(
+        r"^(?P<episode>\d{1,4})?\s*"
+        r"(?P<title>[A-Za-z][A-Za-z\s.]+?)\s+"
+        r"(?P<m>\d{1,2})[-_/](?P<d>\d{1,2})[-_/](?P<y>\d{2,4})\s*$",
+        re.IGNORECASE,
+    ),
 ]
+
+# Patterns above that don't carry a season group — parse() synthesises
+# season=1 (or a date-derived value) for these so SeriesMatch.season
+# remains an int.
+_DAILY_PATTERN_INDEX = 3
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -86,7 +104,7 @@ def parse(text: str) -> Optional[SeriesMatch]:
         return None
     # Normalise common release separators to spaces for the title portion.
     candidate = text.strip()
-    for pat in _PATTERNS:
+    for idx, pat in enumerate(_PATTERNS):
         m = pat.match(candidate)
         if not m:
             continue
@@ -98,6 +116,31 @@ def parse(text: str) -> Optional[SeriesMatch]:
         title = _humanise_title(raw_title)
         if not title:
             continue
+        # Daily-aired serial pattern doesn't carry an explicit season —
+        # synthesise one from the air-date year so each broadcast year
+        # is its own season bucket. Fallback to season=1 when no date
+        # group is present.
+        if idx == _DAILY_PATTERN_INDEX:
+            year_grp = m.groupdict().get("y") or ""
+            try:
+                year_num = int(year_grp)
+                # 2-digit years → assume 20xx (this format is post-2000
+                # daily TV; older serials don't usually surface here).
+                synthetic_season = year_num if year_num >= 100 else 2000 + year_num
+            except ValueError:
+                synthetic_season = 1
+            ep_grp = m.groupdict().get("episode") or "0"
+            try:
+                episode_num = int(ep_grp)
+            except ValueError:
+                episode_num = 0
+            return SeriesMatch(
+                title=title,
+                season=synthetic_season,
+                episode=episode_num,
+                key=slugify(title),
+                raw_title=raw_separator_normalised,
+            )
         return SeriesMatch(
             title=title,
             season=int(m.group("season")),
