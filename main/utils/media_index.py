@@ -265,34 +265,46 @@ def _load() -> None:
 
 
 async def seed(bot, channel_id: int) -> None:
-    """Populate the index from BIN_CHANNEL history. Reads the latest message
-    id via get_chat_history (no probe needed) and iterates backward fetching
-    by id batches. Safe to call multiple times — already-seen entries get
-    refreshed."""
+    """Populate the index from BIN_CHANNEL history.
+
+    Bots can't call ``messages.getHistory`` (Pyrogram's ``get_chat_history``
+    raises an RPCError for bot accounts), so we discover the latest message
+    id by sending a tiny probe to the channel and reading its returned id,
+    then deleting the probe. The probe ``​`` is a zero-width space —
+    if a client renders it before delete lands, the message is at worst a
+    single blank cell rather than human-readable text.
+    """
     global _seeded
     if _seeded:
         return
 
     _load()  # Restore whatever was on disk first.
 
-    latest_id: Optional[int] = None
     try:
-        async for msg in bot.get_chat_history(channel_id, limit=1):
-            latest_id = msg.id
-            break
+        probe = await bot.send_message(channel_id, "​")
     except Exception:
-        logging.exception("media_index: failed to read latest id; seed skipped")
+        logging.exception("media_index: probe send failed; seed skipped")
         _seeded = True
         return
 
-    if latest_id is None:
-        logging.info("media_index: BIN_CHANNEL is empty; nothing to seed")
-        _seeded = True
-        return
+    latest_id = probe.id
+    # Best-effort delete with one retry — the visible-probe complaint is
+    # rare but worth defending against. We do this BEFORE the long history
+    # scan so the channel cleans up fast.
+    for _ in range(2):
+        try:
+            await probe.delete()
+            break
+        except Exception:
+            await asyncio.sleep(0.5)
+    else:
+        logging.warning(
+            "media_index: probe delete failed after retries (bin:%d)", latest_id
+        )
 
     scanned = 0
     floor = max(1, latest_id - _SEED_DEPTH)
-    high = latest_id
+    high = latest_id - 1  # the probe itself is gone; start one below it
     logging.info(
         "media_index: seeding %d…%d (depth=%d)", high, floor, _SEED_DEPTH
     )
