@@ -2356,8 +2356,13 @@ def stats() -> dict:
             missing_poster += 1
         if not it.has_thumb:
             missing_thumb += 1
-        if it.secure_hash:
-            by_hash.setdefault(it.secure_hash, []).append(it)
+        # Joint key (secure_hash, file_size) — secure_hash alone is the
+        # first 6 chars of file_unique_id and shares ~4 chars of
+        # constant prefix across bot-uploaded media, so 6-char hash
+        # collisions are real at any non-trivial catalogue size.
+        # file_size makes the combined key effectively collision-free.
+        if it.secure_hash and it.file_size:
+            by_hash.setdefault((it.secure_hash, it.file_size), []).append(it)
     # Movie-variant collapse: 2+ uploads of the same film count as
     # one "movie group", the rest become standalone-equivalent.
     movie_variant_groups = sum(1 for v in movie_groups.values() if len(v) >= 2)

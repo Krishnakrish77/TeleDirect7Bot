@@ -157,17 +157,23 @@ async def admin_home(request: web.Request) -> web.Response:
         key=lambda it: it.message_id, reverse=True,
     )
 
-    # Detect duplicate groups so the template can mark rows + filter
-    # by them. A "duplicate" here means the secure_hash is shared by
-    # 2+ rows — the same byte stream forwarded into BIN_CHANNEL more
-    # than once. Quality variants of the same episode have DIFFERENT
-    # secure_hashes (different encodes), so they are NOT marked.
-    by_hash: dict = {}
+    # Detect duplicate groups. A "duplicate" means two rows that
+    # point at the SAME underlying file — the same byte stream
+    # forwarded into BIN_CHANNEL more than once.
+    #
+    # secure_hash alone is NOT enough: it's only the first 6 chars
+    # of Telegram's file_unique_id, and bot-uploaded media share a
+    # constant ~4-char prefix ("AgAD…"). That leaves ~2 chars =
+    # 4096 buckets, giving wildly high birthday-paradox false-
+    # positive rates even at a few hundred items. Joint key with
+    # ``file_size`` collapses the FP probability to near zero
+    # while keeping the check cheap.
+    by_key: dict = {}
     for it in items_all:
-        if it.secure_hash:
-            by_hash.setdefault(it.secure_hash, []).append(it)
+        if it.secure_hash and it.file_size:
+            by_key.setdefault((it.secure_hash, it.file_size), []).append(it)
     duplicate_message_ids: set = set()
-    for h, members in by_hash.items():
+    for k, members in by_key.items():
         if len(members) > 1:
             for m in members:
                 duplicate_message_ids.add(m.message_id)
@@ -371,15 +377,20 @@ async def admin_dedupe(request: web.Request) -> web.Response:
     forwarded into BIN_CHANNEL more than once.
     """
     _require_session(request)
-    by_hash: dict = {}
+    # Joint key — secure_hash alone has too few effective bits (the
+    # leading ~4 chars of file_unique_id are constant across all
+    # bot-uploaded media) so hash-only matching false-positives
+    # different files into the same group. file_size catches what
+    # the hash misses.
+    by_key: dict = {}
     for it in media_index._items.values():
-        if not it.secure_hash:
+        if not it.secure_hash or not it.file_size:
             continue
-        by_hash.setdefault(it.secure_hash, []).append(it)
+        by_key.setdefault((it.secure_hash, it.file_size), []).append(it)
 
     deleted = 0
     groups = 0
-    for h, items in by_hash.items():
+    for k, items in by_key.items():
         if len(items) <= 1:
             continue
         groups += 1
