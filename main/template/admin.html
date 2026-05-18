@@ -7,7 +7,21 @@
      per-row edit modal. The edit modal lives outside the bulk form (nested
      forms aren't valid), so the shared state has to be on the outer div. #}
   <div class="w-full max-w-6xl"
-       x-data="{ selected: [], allChecked: false, editing: null }">
+       x-data="{
+         selected: [],
+         allChecked: false,
+         editing: null,
+         openEdit(btn) {
+           const d = btn.dataset;
+           this.editing = {
+             id: parseInt(d.id, 10),
+             title: d.title || '',
+             year: d.year || '',
+             tags: d.tags || '',
+             description: d.description || '',
+           };
+         }
+       }">
     <header class="mb-6 flex items-end justify-between gap-3">
       <div>
         <h1 class="text-3xl font-bold text-white tracking-tight">Admin</h1>
@@ -241,16 +255,7 @@
                           data-year="{{ item.year or '' }}"
                           data-tags="{{ item.tags | join(' ') }}"
                           data-description="{{ item.description }}"
-                          @click="
-                            const d = $event.currentTarget.dataset;
-                            editing = {
-                              id: parseInt(d.id, 10),
-                              title: d.title,
-                              year: d.year,
-                              tags: d.tags,
-                              description: d.description,
-                            };
-                          "
+                          @click="openEdit($event.currentTarget)"
                           class="text-xs px-2 py-1 rounded
                                  bg-brand-500/15 text-brand-300
                                  border border-brand-400/30
