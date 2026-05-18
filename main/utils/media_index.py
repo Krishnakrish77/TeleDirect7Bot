@@ -236,8 +236,15 @@ def _item_from_message(message) -> Optional[HubItem]:
         episode = sm.episode
         movie_key = ""
     elif is_tv_by_id and parsed.title:
-        series_key = series_parse.slugify(parsed.title)
-        series_title = parsed.title
+        # Caption-derived title can carry a channel prefix the original
+        # write-back captured (``rodeo When Life Gives You Tangerines``).
+        # Clean it so the series_title we restore is presentable and
+        # collapses with the cleaned reindex output rather than living
+        # as a polluted duplicate.
+        from main.utils.dedup import clean_for_search
+        cleaned_tv_title = clean_for_search(parsed.title) or parsed.title
+        series_key = series_parse.slugify(cleaned_tv_title)
+        series_title = cleaned_tv_title
         season = None
         episode = None
         movie_key = ""
