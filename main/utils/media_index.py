@@ -413,10 +413,20 @@ async def attach_subtitle(video_message_id: int, sub: ExternalSubtitle) -> bool:
         return True
 
 
-async def remove(message_id: int) -> None:
+async def remove(message_id: int, bot=None) -> None:
+    """Drop an entry from the catalogue.
+
+    Pass ``bot`` so the change also lands in the pinned Telegram
+    snapshot (debounced). Without that, restarting the bot would
+    restore the entry from the older snapshot and the deletion
+    silently reverts.
+    """
     async with _lock:
-        _items.pop(message_id, None)
-        _persist_unlocked()
+        existed = _items.pop(message_id, None) is not None
+        if existed:
+            _persist_unlocked()
+    if existed and bot is not None:
+        schedule_snapshot(bot)
 
 
 async def persist_now() -> None:
@@ -566,6 +576,12 @@ async def seed(bot, channel_id: int) -> None:
     floor = max(1, latest_id - _SEED_DEPTH)
     high = latest_id
     total_to_scan = high - floor + 1
+    # Track which message ids the BIN actually still has — at end of
+    # seed, any _items entry within the walk range that wasn't seen
+    # corresponds to a deleted BIN message and gets pruned. Catches
+    # deletions that happened while the bot was offline (when the
+    # on_deleted_messages handler can't fire).
+    seen_ids: set = set()
     _seed_state.update(
         running=True,
         scanned=0,
@@ -589,6 +605,17 @@ async def seed(bot, channel_id: int) -> None:
                 batch = [batch]
             async with _lock:
                 for m in batch:
+                    # Non-empty messages are alive in BIN. Track them
+                    # regardless of whether they're media — text /
+                    # photo posts still exist and shouldn't trigger
+                    # a stale-prune for any matching id (defensive;
+                    # we only prune _items entries which only ever
+                    # come from video messages).
+                    if m is not None and not getattr(m, "empty", False):
+                        try:
+                            seen_ids.add(int(m.id))
+                        except (TypeError, ValueError):
+                            pass
                     new_item = _item_from_message(m)
                     if new_item is None:
                         continue
@@ -662,6 +689,29 @@ async def seed(bot, channel_id: int) -> None:
             # Yield to the loop so a long seed doesn't starve other work.
             await asyncio.sleep(0)
     finally:
+        # Stale-prune pass: any _items entry whose message_id sits
+        # within the walked range [floor, latest_id] but wasn't seen
+        # in the seen_ids set is a deleted BIN message. Drop it so
+        # the catalogue reflects offline deletions.
+        pruned = 0
+        if seen_ids:
+            async with _lock:
+                stale_ids = [
+                    mid for mid in list(_items.keys())
+                    if floor <= mid <= latest_id and mid not in seen_ids
+                ]
+                for mid in stale_ids:
+                    _items.pop(mid, None)
+                    pruned += 1
+                if pruned:
+                    _persist_unlocked()
+        if pruned:
+            logging.info(
+                "media_index: pruned %d stale entries (deleted from BIN)",
+                pruned,
+            )
+            # Update the snapshot so the prune survives restart.
+            schedule_snapshot(bot)
         _seeded = True
         _seed_state["running"] = False
         _seed_state["finished_at"] = time.time()

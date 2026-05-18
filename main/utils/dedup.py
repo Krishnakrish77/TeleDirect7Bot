@@ -66,6 +66,16 @@ _LEADING_JUNK_ALWAYS = {
 _LEADING_JUNK_AFTER_PREFIX = {
     "red", "rodeo", "world", "mobile", "team", "cinematic",
     "real", "cf", "mc", "mp", "ms",
+    # TamilBlasters and similar trackers prepend a release-group
+    # codename between the channel URL and the actual title:
+    # ``www_1TamilBlasters_Garden_Karuppu_2026_…`` — after the
+    # www-strip removes "1TamilBlasters", "Garden" survives and
+    # leaks into the catalogue. Listing them here means the
+    # stripped_prefix=True branch drops them. Movie titles that
+    # legitimately begin with these words (Garden State, etc.) are
+    # safe because the AFTER_PREFIX list only runs when an earlier
+    # prefix-strip already fired.
+    "garden", "mango", "sleazy",
 }
 
 # Run-on initialisms left behind by release-group prefixes like

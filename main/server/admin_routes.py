@@ -470,7 +470,7 @@ async def _bulk_delete(ids: List[int]) -> int:
         except Exception:
             logging.exception("admin: delete failed for bin:%d", mid)
             continue
-        await media_index.remove(mid)
+        await media_index.remove(mid, bot=StreamBot)
         deleted += 1
     return deleted
 
@@ -564,7 +564,7 @@ async def _rewrite_caption(message_id: int, mutate) -> Tuple[str, str]:
         logging.info(
             "admin: bin:%d truly absent on Telegram; removing", message_id,
         )
-        await media_index.remove(message_id)
+        await media_index.remove(message_id, bot=StreamBot)
         return "removed", ""
     except _EDIT_TIME_EXPIRED as exc:
         logging.info(

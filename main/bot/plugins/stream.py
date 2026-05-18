@@ -12,14 +12,15 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 
 @StreamBot.on_deleted_messages(filters.chat(Var.BIN_CHANNEL))
-async def bin_message_deleted(_client: Client, messages):
+async def bin_message_deleted(client: Client, messages):
     """Prune the catalogue when messages are deleted from BIN_CHANNEL.
 
     Telegram pushes a deletion event whenever a message in BIN_CHANNEL
     is removed — by an admin via a Telegram client, by our own bulk
     delete, or by anything else. Reacting here keeps the hub honest
     without any periodic-sweep cost: the row disappears on the next
-    page refresh.
+    page refresh. Passes ``client`` to remove() so the snapshot also
+    drops the entry — otherwise restarts would resurrect deletes.
     """
     removed = 0
     for msg in messages:
@@ -31,7 +32,7 @@ async def bin_message_deleted(_client: Client, messages):
             continue
         if media_index.get_item(mid) is None:
             continue
-        await media_index.remove(mid)
+        await media_index.remove(mid, bot=client)
         removed += 1
     if removed:
         logging.info("media_index: pruned %d entries on BIN deletion", removed)
