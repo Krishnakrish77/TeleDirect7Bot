@@ -1691,14 +1691,26 @@ async def _fill_episode_metadata(item: HubItem) -> bool:
     Returns True on a populated update. Uses tmdb.fetch_season's cache
     so all episodes of a season collapse onto one network call —
     the second-and-beyond episodes of a 500-ep show pay nothing.
+
+    Two-pass lookup:
+      1. Direct (season, episode) hit against the matching season.
+      2. Fallback: if (1) misses, treat ``episode`` as an absolute
+         episode count across the whole series and walk seasons in
+         order. This catches anime/long-running shows where the
+         filename uses global episode numbering (Naruto Shippuden
+         "S16 EP351" really means the 351st episode of the entire
+         show, not the 351st of season 16).
     """
     if (item.tmdb_kind != "tv" or not item.tmdb_id
             or item.season is None or item.episode is None):
         return False
+    ep = None
     payload = await tmdb.fetch_season(item.tmdb_id, item.season)
-    if not payload:
-        return False
-    ep = tmdb.episode_from_season(payload, item.episode)
+    if payload:
+        ep = tmdb.episode_from_season(payload, item.episode)
+    if ep is None:
+        # Fallback to absolute episode numbering.
+        ep = await _resolve_absolute_episode(item.tmdb_id, item.episode)
     if not ep:
         return False
     new_title = (ep.get("name") or "").strip()
@@ -1716,6 +1728,33 @@ async def _fill_episode_metadata(item: HubItem) -> bool:
     item.episode_still_path = new_still
     item.episode_air_date = new_air
     return changed
+
+
+async def _resolve_absolute_episode(tmdb_id: int, abs_episode: int) -> Optional[dict]:
+    """Walk seasons 1..N accumulating episode counts until we hit
+    ``abs_episode``. Used as a fallback when a show's filename uses
+    global episode numbering instead of per-season (common in anime
+    and long-running serials).
+
+    Each season fetch is cached at the tmdb module level, so for a
+    bulk pass over a 500-episode show we do at most ~one fetch per
+    season, then every absolute-lookup against that season is free.
+    Caps at 50 seasons as a safety so a borked tmdb_id can't loop.
+    """
+    seen = 0
+    for season_num in range(1, 51):
+        payload = await tmdb.fetch_season(tmdb_id, season_num)
+        if not payload:
+            # No more seasons (TMDB 404'd) — give up.
+            return None
+        episodes = payload.get("episodes") or []
+        if not episodes:
+            return None
+        for ep in episodes:
+            seen += 1
+            if seen == abs_episode:
+                return ep
+    return None
 
 
 async def enrich_one(message_id: int, bot=None) -> bool:
