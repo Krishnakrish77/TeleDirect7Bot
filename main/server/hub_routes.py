@@ -93,6 +93,8 @@ def _canonical_url(params: dict, include_offset: bool = False) -> str:
         qs["year"] = params["year"]
     if params.get("quality"):
         qs["quality"] = params["quality"]
+    if params.get("view"):
+        qs["view"] = params["view"]
     sort = params.get("sort") or "newest"
     if sort != "newest":
         qs["sort"] = sort
@@ -120,8 +122,12 @@ def _parse_filters(request: web.Request) -> dict:
         offset = max(0, int(request.query.get("offset") or 0))
     except ValueError:
         offset = 0
+    view = (request.query.get("view") or "").strip().lower()
+    if view not in {"movies", "series", ""}:
+        view = ""
     return dict(
         q=q, tag=tag, quality=quality, year=year, sort=sort, offset=offset,
+        view=view,
     )
 
 
@@ -205,6 +211,7 @@ async def hub_home(request: web.Request) -> web.Response:
         and not params["tag"]
         and not params["year"]
         and not params["quality"]
+        and not params["view"]
         and params["sort"] == "newest"
         and params["offset"] == 0
     )
@@ -225,7 +232,7 @@ async def hub_home(request: web.Request) -> web.Response:
 
     items, total = media_index.query_grouped(
         q=params["q"], year=params["year"], quality=params["quality"],
-        tag=params["tag"], sort=params["sort"],
+        tag=params["tag"], sort=params["sort"], view=params["view"],
         offset=params["offset"], limit=PAGE_SIZE,
     )
     next_offset = params["offset"] + PAGE_SIZE

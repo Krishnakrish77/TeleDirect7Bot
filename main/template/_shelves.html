@@ -8,7 +8,7 @@
                flex items-baseline gap-2">
       <span>{{ shelf.name | safe }}</span>
       <span class="text-[10px] uppercase tracking-widest text-slate-500">
-        {{ shelf['items'] | length }}
+        {{ shelf.total if shelf.total is defined else shelf['items'] | length }}
       </span>
     </h2>
     <div class="relative">

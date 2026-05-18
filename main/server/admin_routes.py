@@ -213,7 +213,13 @@ async def admin_action(request: web.Request) -> web.Response:
 
 @routes.post(r"/admin/edit/{id:\d+}")
 async def admin_edit(request: web.Request) -> web.Response:
-    """Per-row edit: title, year, tags, description in one go."""
+    """Per-row edit: title, year, tags, description in one go.
+
+    After saving, fire a background re-enrich for this single entry so a
+    title fix immediately retries the TMDB lookup with the new query —
+    the operator doesn't have to also click "Enrich" to refresh
+    misclassified items.
+    """
     _require_session(request)
     message_id = int(request.match_info["id"])
     form = await request.post()
@@ -234,6 +240,12 @@ async def admin_edit(request: web.Request) -> web.Response:
         from urllib.parse import quote
         raise web.HTTPFound(f"/admin?flash={quote('Title is required')}")
 
+    # Capture what the operator typed so we can decide whether to
+    # re-enrich after the caption write.
+    item_before = media_index.get_item(message_id)
+    title_changed = item_before and item_before.title != new_title
+    year_changed = item_before and item_before.year != new_year
+
     def apply(entry, _item):
         entry.title = new_title
         entry.year = new_year
@@ -241,9 +253,35 @@ async def admin_edit(request: web.Request) -> web.Response:
         entry.description = new_description
 
     ok = await _rewrite_caption(message_id, apply)
+
+    # If the title or year changed and TMDB is configured, retry the
+    # lookup so misclassified entries can be corrected by editing alone.
+    # Reset the existing TMDB ID so enrich_one searches fresh by the new
+    # title rather than just refreshing the old record.
+    if ok and (title_changed or year_changed):
+        from main.utils import tmdb
+        if tmdb.is_configured():
+            item = media_index.get_item(message_id)
+            if item is not None:
+                item.tmdb_id = None
+                item.tmdb_kind = ""
+                item.imdb_id = ""
+                item.poster_path = ""
+                item.backdrop_path = ""
+                item.overview = ""
+                item.tmdb_genres = []
+                item.enriched_at = 0.0
+            import asyncio as _aio
+            _aio.create_task(
+                media_index.enrich_one(message_id, bot=StreamBot)
+            )
+
     from urllib.parse import quote
     if ok:
-        raise web.HTTPFound(f"/admin?flash={quote('Updated bin:' + str(message_id))}")
+        msg = "Updated bin:" + str(message_id)
+        if title_changed or year_changed:
+            msg += " — re-enrich queued"
+        raise web.HTTPFound(f"/admin?flash={quote(msg)}")
     raise web.HTTPFound(f"/admin?flash={quote('Edit failed for bin:' + str(message_id))}")
 
 

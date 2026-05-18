@@ -620,6 +620,7 @@ def query_grouped(
     quality: str = "",
     tag: str = "",
     sort: str = "newest",
+    view: str = "",
     offset: int = 0,
     limit: int = 24,
 ) -> Tuple[List, int]:
@@ -656,6 +657,14 @@ def query_grouped(
             grouped_movies.append(_build_movie_group(variants))
         else:
             standalone.append(variants[0])
+
+    if view == "series":
+        # Only show series cards in this view.
+        grouped_movies = []
+        standalone = []
+    elif view == "movies":
+        # Only movies and standalone non-series items.
+        grouped_series = []
 
     if sort == "newest":
         sort_key = lambda x: -_card_message_id(x)
@@ -801,7 +810,7 @@ def pick_hero() -> Optional[HubItem]:
     return heroes[0] if heroes else None
 
 
-def shelves(per_shelf: int = 14) -> List[dict]:
+def shelves(per_shelf: int = 25) -> List[dict]:
     """Curated horizontal rows for the hub's no-filter landing view.
 
     Recent first, then series, then movies, then up to three genre shelves
@@ -847,14 +856,28 @@ def shelves(per_shelf: int = 14) -> List[dict]:
     out: List[dict] = []
 
     if all_cards:
-        out.append({"name": "Recently added", "items": newest(all_cards)})
+        # Recently added isn't filterable to a smaller superset; "see all"
+        # for it is just the flat newest-first grid (?sort=newest).
+        out.append({
+            "name": "Recently added",
+            "items": newest(all_cards),
+            "link": None,
+            "total": len(all_cards),
+        })
     if series_groups:
         out.append({
             "name": "Series",
             "items": newest(series_groups, key=lambda s: s.latest_message_id),
+            "link": "/?view=series",
+            "total": len(series_groups),
         })
     if all_movies:
-        out.append({"name": "Movies", "items": newest(all_movies)})
+        out.append({
+            "name": "Movies",
+            "items": newest(all_movies),
+            "link": "/?view=movies",
+            "total": len(all_movies),
+        })
 
     # --- genre shelves from TMDB enrichment ---
     # Map each genre slug → list of items that carry it. Pick the top 3
@@ -898,7 +921,15 @@ def shelves(per_shelf: int = 14) -> List[dict]:
                 if len(row_cards) >= per_shelf:
                     break
             if row_cards:
-                out.append({"name": genre, "items": row_cards})
+                # Genre shelves link into the tag-filter view so "see all
+                # Drama" lands on the existing /?tag=drama page.
+                slug = re.sub(r"[^a-z0-9]+", "-", genre.lower()).strip("-")
+                out.append({
+                    "name": genre,
+                    "items": row_cards,
+                    "link": f"/?tag={slug}" if slug else None,
+                    "total": len(members),
+                })
 
     return out
 
