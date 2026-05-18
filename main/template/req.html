@@ -110,6 +110,47 @@
       </a>
     </div>
 
+    {% if meta and meta.tmdb_id %}
+      <section class="mt-10 rounded-lg border border-white/5 bg-ink-800/40 p-5">
+        <div class="flex flex-col sm:flex-row gap-5">
+          {% if meta.poster_path %}
+            <img src="https://image.tmdb.org/t/p/w342{{ meta.poster_path }}"
+                 alt="" loading="lazy"
+                 class="w-28 sm:w-32 rounded-lg shadow flex-shrink-0" />
+          {% endif %}
+          <div class="min-w-0 flex-1">
+            <h2 class="text-lg font-semibold text-white">
+              {{ meta.title }}
+              {%- if meta.year %} <span class="text-slate-400 font-normal">({{ meta.year }})</span>{% endif -%}
+              {% if meta.season and meta.episode %}
+                <span class="ml-2 text-sm text-slate-400 tabular-nums">
+                  S{{ '%02d' % meta.season }}E{{ '%02d' % meta.episode }}
+                </span>
+              {% endif %}
+            </h2>
+            {% if meta.overview %}
+              <p class="mt-2 text-sm text-slate-300 leading-relaxed">{{ meta.overview }}</p>
+            {% endif %}
+            <div class="mt-3 flex flex-wrap gap-2 text-xs">
+              {% for g in meta.tmdb_genres %}
+                <span class="px-2 py-0.5 rounded bg-brand-500/15 text-brand-300
+                             border border-brand-400/30">{{ g }}</span>
+              {% endfor %}
+              {% if meta.imdb_id %}
+                <a href="https://www.imdb.com/title/{{ meta.imdb_id }}/"
+                   target="_blank" rel="noopener"
+                   class="px-2 py-0.5 rounded bg-yellow-500/15 text-yellow-300
+                          border border-yellow-400/30 hover:bg-yellow-500/25
+                          transition-colors">
+                  IMDb ↗
+                </a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
+    {% endif %}
+
     <p class="mt-10 text-center text-xs text-slate-500">Powered by Telegram · @TeleDirect7Bot</p>
   </div>
 {% endblock %}

@@ -6,6 +6,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main.vars import Var
 from main.bot import StreamBot
+from main.utils import media_index
 from main.utils.human_readable import humanbytes
 from main.utils.file_properties import get_file_ids
 from main.server.exceptions import InvalidHash
@@ -44,6 +45,9 @@ async def render_page(message_id, secure_hash):
             urllib.parse.urljoin(Var.URL, f'sub/{secure_hash}{message_id}').rstrip("/")
             if mime_type == "video" else None
         )
+        # TMDB metadata, if the catalogue has it for this entry. Optional —
+        # template guards on `meta and meta.tmdb_id`.
+        meta = media_index.get_item(int(message_id))
         return _REQ_TEMPLATE.render(
             tag=mime_type,
             heading=heading,
@@ -51,6 +55,7 @@ async def render_page(message_id, secure_hash):
             hls_src=hls_src,
             sub_path=sub_path,
             file_name=file_data.file_name,
+            meta=meta,
         )
     heading = f"Download {file_data.file_name}"
     return _DL_TEMPLATE.render(

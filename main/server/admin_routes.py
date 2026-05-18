@@ -113,6 +113,28 @@ async def admin_home(request: web.Request) -> web.Response:
     return _html(body)
 
 
+@routes.post("/admin/enrich")
+async def admin_enrich(request: web.Request) -> web.Response:
+    """Bulk-enrich every catalogue entry that hasn't been touched by TMDB
+    yet. Uses the in-process per-title cache, so series with many episodes
+    contribute one network request total. Form field ``force=1`` re-enriches
+    everything, including entries that already have a tmdb_id.
+    """
+    _require_session(request)
+    form = await request.post()
+    force = bool(form.get("force"))
+    summary = await media_index.enrich_all(force=force)
+    from urllib.parse import quote
+    if summary.get("skipped_no_api_key"):
+        flash = "TMDB_API_KEY not set — enrichment skipped"
+    else:
+        flash = (
+            f"Enrichment finished: {summary['enriched']}/{summary['total']} "
+            f"enriched, {summary['failed']} no match"
+        )
+    raise web.HTTPFound(f"/admin?flash={quote(flash)}")
+
+
 @routes.post("/admin/reindex")
 async def admin_reindex(request: web.Request) -> web.Response:
     """Recompute series/movie/quality fields on every existing HubItem.

@@ -18,7 +18,7 @@
         </svg>
       </div>
       <img
-        src="/thumb/{{ poster.secure_hash }}{{ poster.message_id }}.jpg"
+        src="{% if poster.poster_path %}https://image.tmdb.org/t/p/w342{{ poster.poster_path }}{% else %}/thumb/{{ poster.secure_hash }}{{ poster.message_id }}.jpg{% endif %}"
         alt=""
         loading="lazy"
         onerror="this.remove()"
@@ -56,7 +56,7 @@
         </svg>
       </div>
       <img
-        src="/thumb/{{ poster.secure_hash }}{{ poster.message_id }}.jpg"
+        src="{% if poster.poster_path %}https://image.tmdb.org/t/p/w342{{ poster.poster_path }}{% else %}/thumb/{{ poster.secure_hash }}{{ poster.message_id }}.jpg{% endif %}"
         alt=""
         loading="lazy"
         onerror="this.remove()"
@@ -98,7 +98,7 @@
         </svg>
       </div>
       <img
-        src="/thumb/{{ item.secure_hash }}{{ item.message_id }}.jpg"
+        src="{% if item.poster_path %}https://image.tmdb.org/t/p/w342{{ item.poster_path }}{% else %}/thumb/{{ item.secure_hash }}{{ item.message_id }}.jpg{% endif %}"
         alt=""
         loading="lazy"
         onerror="this.remove()"

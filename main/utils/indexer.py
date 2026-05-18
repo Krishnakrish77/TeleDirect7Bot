@@ -101,6 +101,18 @@ async def index_bin_message(bot: Client, bin_msg: Message) -> None:
         await media_index.add_from_message(fresh)
     except Exception:
         logging.debug("media_index add failed for bin:%d", bin_msg.id, exc_info=True)
+        return
+
+    # Fire-and-forget TMDB enrichment. The lookup is cached per
+    # (title, year) so multiple episodes of the same series share one
+    # network request.
+    try:
+        from main.utils import tmdb
+        if tmdb.is_configured():
+            asyncio.create_task(media_index.enrich_one(bin_msg.id))
+    except Exception:
+        logging.debug("enrichment schedule failed for bin:%d", bin_msg.id,
+                      exc_info=True)
 
 
 def schedule_index(bot: Client, bin_msg: Message) -> None:

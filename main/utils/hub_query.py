@@ -45,6 +45,15 @@ class HubItem:
     # Slug shared by every upload of the same film (different filenames /
     # release groups). "" for series episodes and uniquely-titled uploads.
     movie_key: str = ""
+    # --- TMDB enrichment (optional; populated by the enrich pipeline) ---
+    tmdb_id: Optional[int] = None
+    tmdb_kind: str = ""            # "movie" or "tv", "" if unenriched
+    imdb_id: str = ""
+    poster_path: str = ""          # TMDB relative path; prepend image base
+    backdrop_path: str = ""
+    overview: str = ""
+    tmdb_genres: List[str] = field(default_factory=list)
+    enriched_at: float = 0.0       # unix ts; 0 means never attempted
 
 
 @dataclass

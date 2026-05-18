@@ -52,6 +52,10 @@ class Var(object):
 
     UPDATES_CHANNEL = "TechZBots"
     OWNER_ID = int(environ.get("OWNER_ID", "777000"))
+    # Optional TMDB API key for catalogue enrichment (posters, overviews,
+    # IMDb ids). Free at themoviedb.org → Settings → API. Without it the
+    # enrichment pipeline no-ops silently.
+    TMDB_API_KEY = environ.get("TMDB_API_KEY", "").strip()
 
     BANNED_CHANNELS = list({int(x) for x in str(environ.get("BANNED_CHANNELS", "")).split()})
     BANNED_USERS = list({int(x) for x in str(environ.get("BANNED_USERS", "")).split()})

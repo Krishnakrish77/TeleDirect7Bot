@@ -274,13 +274,16 @@ async def hub_movie(request: web.Request) -> web.Response:
     if not variants:
         raise web.HTTPNotFound(text="movie not found")
 
-    canonical = variants[0]
+    # Prefer the enriched variant for the page's TMDB metadata — any one
+    # variant works since they all point at the same film.
+    enriched = next((v for v in variants if v.tmdb_id), variants[0])
     tpl = _env.get_template("movie.html")
     body = await tpl.render_async(
-        title=canonical.title,
-        year=canonical.year,
+        title=enriched.title,
+        year=enriched.year,
         variant_count=len(variants),
         variants=variants,
+        meta=enriched,
     )
     return _html(body)
 
@@ -302,8 +305,11 @@ async def hub_series(request: web.Request) -> web.Response:
         for s, eps in sorted(seasons.items())
     ]
 
+    # First enriched episode (if any) carries the show-level TMDB data.
+    enriched = next((e for e in episodes if e.tmdb_id), episodes[0])
     tpl = _env.get_template("series.html")
     body = await tpl.render_async(
+        meta=enriched,
         series_title=episodes[0].series_title or key,
         series_key=key,
         season_blocks=season_blocks,

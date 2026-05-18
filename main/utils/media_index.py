@@ -35,6 +35,7 @@ from main.utils.index_entry import IndexEntry, parse, title_from_filename
 from main.utils import series as series_parse
 from main.utils.dedup import movie_key as compute_movie_key
 from main.utils.subtitles import stem_for_pairing
+from main.utils import tmdb
 
 
 # Buckets we recognise in filenames/captions. Order matters: longest match
@@ -86,6 +87,14 @@ def _to_serializable(item: HubItem) -> dict:
         "season": item.season,
         "episode": item.episode,
         "movie_key": item.movie_key,
+        "tmdb_id": item.tmdb_id,
+        "tmdb_kind": item.tmdb_kind,
+        "imdb_id": item.imdb_id,
+        "poster_path": item.poster_path,
+        "backdrop_path": item.backdrop_path,
+        "overview": item.overview,
+        "tmdb_genres": item.tmdb_genres,
+        "enriched_at": item.enriched_at,
         "subtitles": [
             {
                 "bin_message_id": s.bin_message_id,
@@ -116,6 +125,14 @@ def _from_serializable(d: dict) -> HubItem:
         season=d.get("season"),
         episode=d.get("episode"),
         movie_key=d.get("movie_key", "") or "",
+        tmdb_id=d.get("tmdb_id"),
+        tmdb_kind=d.get("tmdb_kind", "") or "",
+        imdb_id=d.get("imdb_id", "") or "",
+        poster_path=d.get("poster_path", "") or "",
+        backdrop_path=d.get("backdrop_path", "") or "",
+        overview=d.get("overview", "") or "",
+        tmdb_genres=d.get("tmdb_genres", []) or [],
+        enriched_at=float(d.get("enriched_at", 0) or 0),
         subtitles=[
             ExternalSubtitle(
                 bin_message_id=s["bin_message_id"],
@@ -690,6 +707,126 @@ def shelves(per_shelf: int = 12) -> List[dict]:
         })
 
     return out
+
+
+def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
+    """Merge TMDB data into an existing HubItem. Replaces the title/year
+    with TMDB's canonical pair when confidence was high enough for the
+    hit to be returned at all, then recomputes movie_key/series_key from
+    the new title so deduplication kicks in.
+
+    Genres are merged into the tag set so the existing tag filter and
+    tag-cloud surface them, without dropping any user-set tags.
+    """
+    item.tmdb_id = hit.tmdb_id
+    item.tmdb_kind = hit.kind
+    item.imdb_id = hit.imdb_id
+    item.poster_path = hit.poster_path
+    item.backdrop_path = hit.backdrop_path
+    item.overview = hit.overview
+    item.tmdb_genres = list(hit.genres)
+    item.enriched_at = time.time()
+
+    if hit.title:
+        item.title = hit.title
+    if hit.year:
+        item.year = hit.year
+
+    # Recompute grouping keys against the canonical title.
+    sm = series_parse.parse(item.file_name) or series_parse.parse(item.title)
+    if sm:
+        item.series_key = sm.key
+        item.series_title = hit.title if hit.kind == "tv" and hit.title else sm.title
+        item.season = sm.season
+        item.episode = sm.episode
+        item.movie_key = ""
+    else:
+        item.series_key = ""
+        item.series_title = ""
+        item.season = None
+        item.episode = None
+        item.movie_key = compute_movie_key(item.title, item.year, item.file_name)
+
+    # Merge TMDB genres into tags without duplicating existing entries.
+    existing = set(item.tags)
+    for g in hit.genres:
+        slug = re.sub(r"[^a-z0-9]+", "-", g.lower()).strip("-")
+        if slug and slug not in existing:
+            item.tags.append(slug)
+            existing.add(slug)
+
+
+async def enrich_one(message_id: int) -> bool:
+    """Look up and apply TMDB enrichment for a single catalogue entry.
+
+    Returns True if the entry got enriched, False otherwise. Idempotent:
+    re-running on an already-enriched item refreshes its data.
+    """
+    if not tmdb.is_configured():
+        return False
+    item = _items.get(message_id)
+    if item is None:
+        return False
+
+    # Use the parsed series title for TV episodes so we look up the show,
+    # not the episode-specific filename.
+    if item.series_key and item.series_title:
+        hit = await tmdb.lookup_series(item.series_title, item.year)
+    else:
+        # Movie path: strip any leading channel tag (the dedup module
+        # already does this for keys, but the raw title is what TMDB
+        # search sees).
+        title = item.title or item.file_name
+        hit = await tmdb.lookup_movie(title, item.year)
+        if hit is None:
+            # Some episodes get parsed without SxxEyy in the title (e.g.
+            # standalone uploads of a TV special). Try a TV lookup as a
+            # fallback.
+            hit = await tmdb.lookup_series(title, item.year)
+
+    if hit is None:
+        async with _lock:
+            # Record the attempt so enrich_all doesn't keep retrying every
+            # unenriched item on every run.
+            item.enriched_at = time.time()
+            _persist_unlocked()
+        return False
+
+    async with _lock:
+        _apply_tmdb_to_item(item, hit)
+        _persist_unlocked()
+    return True
+
+
+async def enrich_all(force: bool = False) -> dict:
+    """Background-enrich every entry that hasn't been enriched yet.
+
+    With ``force=True`` re-enriches everything, including entries that
+    already have TMDB data. Episodes of the same series share TMDB calls
+    via the tmdb module's in-process cache so a long-running show makes
+    only one network round trip per enrichment pass.
+    """
+    if not tmdb.is_configured():
+        return {"total": len(_items), "enriched": 0, "skipped_no_api_key": True}
+
+    ids = list(_items.keys())
+    enriched = 0
+    failed = 0
+    for mid in ids:
+        item = _items.get(mid)
+        if item is None:
+            continue
+        if not force and item.tmdb_id:
+            continue
+        ok = await enrich_one(mid)
+        if ok:
+            enriched += 1
+        else:
+            failed += 1
+        # Yield to the loop so the web server stays responsive during a
+        # bulk enrich.
+        await asyncio.sleep(0)
+    return {"total": len(_items), "enriched": enriched, "failed": failed}
 
 
 async def reindex_all() -> dict:
