@@ -252,13 +252,14 @@ async def admin_edit(request: web.Request) -> web.Response:
         entry.tags = new_tags
         entry.description = new_description
 
-    ok = await _rewrite_caption(message_id, apply)
+    status = await _rewrite_caption(message_id, apply)
 
     # If the title or year changed and TMDB is configured, retry the
     # lookup so misclassified entries can be corrected by editing alone.
     # Reset the existing TMDB ID so enrich_one searches fresh by the new
-    # title rather than just refreshing the old record.
-    if ok and (title_changed or year_changed):
+    # title rather than just refreshing the old record. Skip for
+    # 'removed' / 'failed' — there's nothing to re-enrich.
+    if status in ("written", "local-only") and (title_changed or year_changed):
         from main.utils import tmdb
         if tmdb.is_configured():
             item = media_index.get_item(message_id)
@@ -277,12 +278,27 @@ async def admin_edit(request: web.Request) -> web.Response:
             )
 
     from urllib.parse import quote
-    if ok:
-        msg = "Updated bin:" + str(message_id)
+    if status == "written":
+        msg = f"Updated bin:{message_id}"
         if title_changed or year_changed:
             msg += " — re-enrich queued"
-        raise web.HTTPFound(f"/admin?flash={quote(msg)}")
-    raise web.HTTPFound(f"/admin?flash={quote('Edit failed for bin:' + str(message_id))}")
+    elif status == "local-only":
+        msg = (
+            f"Updated bin:{message_id} in the catalogue. The BIN_CHANNEL "
+            "caption couldn't be edited (the message was posted to the "
+            "channel directly rather than forwarded through the bot, so "
+            "the bot doesn't own its caption)."
+        )
+        if title_changed or year_changed:
+            msg += " Re-enrich queued."
+    elif status == "removed":
+        msg = (
+            f"bin:{message_id} doesn't exist on BIN_CHANNEL anymore — "
+            "removed from the catalogue. Refresh to drop the row."
+        )
+    else:
+        msg = f"Edit failed for bin:{message_id} (see server logs)"
+    raise web.HTTPFound(f"/admin?flash={quote(msg)}")
 
 
 # --- Bulk operations --------------------------------------------------
@@ -306,20 +322,55 @@ async def _bulk_delete(ids: List[int]) -> int:
     return deleted
 
 
-async def _rewrite_caption(message_id: int, mutate) -> bool:
+async def _rewrite_caption(message_id: int, mutate) -> str:
     """Fetch a BIN message, rebuild its IndexEntry, mutate, and persist.
 
-    ``mutate(entry, item)`` modifies the IndexEntry in place. Returns True
-    if the caption was rewritten and the media_index entry refreshed.
+    ``mutate(entry, item)`` modifies the IndexEntry in place. Returns a
+    status string:
+      • ``"written"`` — caption was edited on Telegram and the in-memory
+        entry was refreshed from the rewritten caption.
+      • ``"local-only"`` — Telegram refused the edit (message exists but
+        the bot doesn't own it) so we kept the in-memory mutation but
+        didn't push it.
+      • ``"removed"`` — the message truly no longer exists on the
+        channel; the catalogue entry has been dropped.
+      • ``"failed"`` — unexpected error; no state changes.
+
+    Telegram errors we expect to see:
+      • MessageIdInvalid — overloaded: either the message is gone OR
+        the bot doesn't own it. We probe with get_messages to tell
+        them apart.
+      • InlineBotRequired / MessageAuthorRequired — same "can't edit"
+        outcome as the not-bot-owned case.
+      • MessageNotModified — same caption, treat as success.
     """
+    from pyrogram.errors import MessageNotModified
+    from pyrogram.errors.exceptions.bad_request_400 import MessageIdInvalid
+    _UNEDITABLE: tuple = ()
+    try:
+        from pyrogram.errors.exceptions.forbidden_403 import InlineBotRequired
+        _UNEDITABLE += (InlineBotRequired,)
+    except ImportError:
+        pass
+    try:
+        from pyrogram.errors.exceptions.forbidden_403 import MessageAuthorRequired
+        _UNEDITABLE += (MessageAuthorRequired,)
+    except ImportError:
+        pass
+
     item = media_index.get_item(message_id)
     if item is None:
-        return False
+        return "failed"
     entry = IndexEntry(
         title=item.title,
         year=item.year,
         description=item.description,
         tags=list(item.tags),
+        tmdb_id=item.tmdb_id,
+        tmdb_kind=item.tmdb_kind,
+        imdb_id=item.imdb_id,
+        poster_path=item.poster_path,
+        backdrop_path=item.backdrop_path,
     )
     mutate(entry, item)
     try:
@@ -328,16 +379,65 @@ async def _rewrite_caption(message_id: int, mutate) -> bool:
             message_id=message_id,
             caption=render(entry),
         )
+    except MessageNotModified:
+        return "written"
+    except MessageIdInvalid:
+        # Telegram's MESSAGE_ID_INVALID is overloaded: it fires both when
+        # the message truly is gone AND when the bot doesn't own the
+        # message (admin posted it directly to the channel rather than
+        # forwarded through the bot). Probe with get_messages — if it
+        # comes back non-empty, the message exists and we just can't
+        # edit its caption. Keep the entry, apply the mutation in
+        # memory, and let the admin know.
+        try:
+            probe = await StreamBot.get_messages(Var.BIN_CHANNEL, message_id)
+            still_exists = probe is not None and not getattr(probe, "empty", False)
+        except Exception:
+            still_exists = False
+        if still_exists:
+            logging.info(
+                "admin: bin:%d not bot-owned; in-memory edit only", message_id,
+            )
+            _apply_local_only(message_id, entry)
+            return "local-only"
+        logging.info(
+            "admin: bin:%d truly absent on Telegram; removing from catalogue",
+            message_id,
+        )
+        await media_index.remove(message_id)
+        return "removed"
+    except _UNEDITABLE as exc:
+        logging.info(
+            "admin: bin:%d caption read-only (%s); skipping caption write",
+            message_id, exc.__class__.__name__,
+        )
+        _apply_local_only(message_id, entry)
+        return "local-only"
     except Exception:
         logging.exception("admin: edit_caption failed for bin:%d", message_id)
-        return False
+        return "failed"
+
     # Refresh the in-memory entry from the rewritten caption.
     try:
         fresh = await StreamBot.get_messages(Var.BIN_CHANNEL, message_id)
         await media_index.add_from_message(fresh)
     except Exception:
         logging.exception("admin: post-edit refresh failed for bin:%d", message_id)
-    return True
+    return "written"
+
+
+def _apply_local_only(message_id: int, entry) -> None:
+    """Update the in-memory HubItem fields when we couldn't push the
+    edit to Telegram. Lets renames/retags still take effect on the hub
+    even when the underlying channel message is read-only for our bot.
+    """
+    existing = media_index.get_item(message_id)
+    if existing is None:
+        return
+    existing.title = entry.title
+    existing.year = entry.year
+    existing.description = entry.description
+    existing.tags = list(entry.tags)
 
 
 async def _bulk_retag(ids: List[int], tags: List[str]) -> int:
@@ -345,7 +445,8 @@ async def _bulk_retag(ids: List[int], tags: List[str]) -> int:
         entry.tags = list(tags)
     n = 0
     for mid in ids:
-        if await _rewrite_caption(mid, apply):
+        status = await _rewrite_caption(mid, apply)
+        if status in ("written", "local-only"):
             n += 1
     return n
 
@@ -364,6 +465,7 @@ async def _bulk_quality(ids: List[int], quality: str) -> int:
         entry.description = (quality + (" · " + desc if desc else "")).strip()
     n = 0
     for mid in ids:
-        if await _rewrite_caption(mid, apply):
+        status = await _rewrite_caption(mid, apply)
+        if status in ("written", "local-only"):
             n += 1
     return n
