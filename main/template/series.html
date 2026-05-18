@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}{{ series_title }}{% endblock %}
+
+{% block content %}
+  <div class="w-full max-w-6xl">
+    <header class="mb-8">
+      <a href="/" class="inline-flex items-center gap-1 text-sm text-slate-400
+                        hover:text-brand-300 transition-colors mb-3">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M15.75 19.5 8.25 12l7.5-7.5"/>
+        </svg>
+        Back to library
+      </a>
+      <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+        {{ series_title }}
+      </h1>
+      <p class="mt-1 text-sm text-slate-400">
+        {{ season_count }} season{{ '' if season_count == 1 else 's' }} ·
+        {{ episode_count }} episode{{ '' if episode_count == 1 else 's' }}
+      </p>
+    </header>
+
+    {% for block in season_blocks %}
+      <section class="mb-10">
+        <h2 class="text-lg font-semibold text-slate-200 mb-3">
+          {% if block.season %}Season {{ block.season }}{% else %}Episodes{% endif %}
+        </h2>
+        <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {% for ep in block.episodes %}
+            <li>
+              <a href="/watch/{{ ep.secure_hash }}{{ ep.message_id }}"
+                 class="group flex gap-3 p-3 rounded-lg bg-ink-800/60 border border-white/5
+                        hover:border-brand-400/40 hover:bg-ink-800 transition-colors">
+                <div class="flex-shrink-0 w-32 aspect-video bg-ink-900 rounded
+                            relative overflow-hidden">
+                  {% if ep.has_thumb %}
+                    <img
+                      src="/thumb/{{ ep.secure_hash }}{{ ep.message_id }}.jpg"
+                      alt=""
+                      loading="lazy"
+                      class="absolute inset-0 w-full h-full object-cover"
+                    />
+                  {% endif %}
+                  {% if ep.duration %}
+                    <span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded
+                                 bg-black/70 text-[10px] font-medium text-white
+                                 tabular-nums">
+                      {{ ep.duration | duration }}
+                    </span>
+                  {% endif %}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs text-slate-500 tabular-nums">
+                    {% if ep.season and ep.episode %}
+                      S{{ '%02d' % ep.season }}E{{ '%02d' % ep.episode }}
+                    {% elif ep.episode %}
+                      Episode {{ ep.episode }}
+                    {% endif %}
+                  </p>
+                  <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
+                             group-hover:text-brand-300 transition-colors">
+                    {{ ep.title }}
+                  </h3>
+                  {% if ep.quality or ep.file_size %}
+                    <p class="mt-1 text-xs text-slate-500">
+                      {% if ep.quality %}{{ ep.quality }}{% endif %}
+                      {% if ep.quality and ep.file_size %} · {% endif %}
+                      {% if ep.file_size %}{{ ep.file_size | humansize }}{% endif %}
+                    </p>
+                  {% endif %}
+                </div>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  </div>
+{% endblock %}

@@ -162,10 +162,15 @@ def _empty_text(params: dict) -> str:
 @routes.get("/")
 async def hub_home(request: web.Request) -> web.Response:
     params = _parse_filters(request)
-    items, next_cursor = await hub_query.query(
+    # Grouped view collapses all episodes of a series into a single card.
+    # When the user is filtering by tag, year, or quality we still group:
+    # the filter applies to the underlying episodes and the group shows
+    # only the matching ones.
+    items = media_index.query_grouped(
         q=params["q"], year=params["year"], quality=params["quality"],
-        tag=params["tag"], sort=params["sort"], before_id=params["before_id"],
+        tag=params["tag"], sort=params["sort"],
     )
+    next_cursor = None  # Grouped view paginates client-side; catalogue is small.
     empty = _empty_text(params)
 
     if _is_htmx(request):
@@ -183,6 +188,34 @@ async def hub_tag(request: web.Request) -> web.Response:
     page picks it up with all filters available."""
     name = request.match_info["name"]
     raise web.HTTPFound(f"/?tag={name}")
+
+
+@routes.get(r"/series/{key:[a-z0-9][a-z0-9\-]*}")
+async def hub_series(request: web.Request) -> web.Response:
+    """One series: episode list grouped by season."""
+    key = request.match_info["key"]
+    episodes = media_index.episodes_for_series(key)
+    if not episodes:
+        raise web.HTTPNotFound(text="series not found")
+
+    # Group episodes by season for the template.
+    seasons: dict = {}
+    for ep in episodes:
+        seasons.setdefault(ep.season or 0, []).append(ep)
+    season_blocks = [
+        {"season": s, "episodes": eps}
+        for s, eps in sorted(seasons.items())
+    ]
+
+    tpl = _env.get_template("series.html")
+    body = await tpl.render_async(
+        series_title=episodes[0].series_title or key,
+        series_key=key,
+        season_blocks=season_blocks,
+        episode_count=len(episodes),
+        season_count=len(seasons),
+    )
+    return _html(body)
 
 
 @routes.get(r"/thumb/{hash:[a-zA-Z0-9_-]{6}}{id:\d+}.jpg")

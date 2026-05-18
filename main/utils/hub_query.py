@@ -38,6 +38,22 @@ class HubItem:
     quality: str = ""  # parsed resolution bucket: 480p / 720p / 1080p / 4K / ""
     file_name: str = ""  # original media filename, retained for sidecar matching
     subtitles: List[ExternalSubtitle] = field(default_factory=list)
+    series_key: str = ""           # slug; "" for movies/standalone uploads
+    series_title: str = ""         # human-friendly series name
+    season: Optional[int] = None
+    episode: Optional[int] = None
+
+
+@dataclass
+class SeriesGroup:
+    """A virtual hub entry collapsing all episodes of one series."""
+    series_key: str
+    series_title: str
+    episode_count: int
+    season_count: int
+    latest_message_id: int  # for newest-first ordering of the hub page
+    poster_item: "HubItem"  # representative episode used for thumb/year/tags
+    has_thumb: bool = False
 
 
 # Imports kept at the bottom to avoid a circular import with media_index,

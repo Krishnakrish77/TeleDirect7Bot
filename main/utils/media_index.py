@@ -30,8 +30,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from main.utils.file_properties import get_hash
-from main.utils.hub_query import ExternalSubtitle, HubItem
+from main.utils.hub_query import ExternalSubtitle, HubItem, SeriesGroup
 from main.utils.index_entry import IndexEntry, parse, title_from_filename
+from main.utils import series as series_parse
 from main.utils.subtitles import stem_for_pairing
 
 
@@ -76,6 +77,10 @@ def _to_serializable(item: HubItem) -> dict:
         "has_thumb": item.has_thumb,
         "quality": item.quality,
         "file_name": item.file_name,
+        "series_key": item.series_key,
+        "series_title": item.series_title,
+        "season": item.season,
+        "episode": item.episode,
         "subtitles": [
             {
                 "bin_message_id": s.bin_message_id,
@@ -101,6 +106,10 @@ def _from_serializable(d: dict) -> HubItem:
         has_thumb=d.get("has_thumb", False),
         quality=d.get("quality", "") or "",
         file_name=d.get("file_name", "") or "",
+        series_key=d.get("series_key", "") or "",
+        series_title=d.get("series_title", "") or "",
+        season=d.get("season"),
+        episode=d.get("episode"),
         subtitles=[
             ExternalSubtitle(
                 bin_message_id=s["bin_message_id"],
@@ -141,6 +150,10 @@ def _item_from_message(message) -> Optional[HubItem]:
     parsed = parse(message.caption or "")
     if parsed is None:
         parsed = IndexEntry(title=title_from_filename(file_name))
+    # Try filename first (release names follow conventions), fall back to the
+    # parsed caption title for hand-written entries.
+    sm = series_parse.parse(file_name) or series_parse.parse(parsed.title)
+
     return HubItem(
         message_id=message.id,
         secure_hash=get_hash(message),
@@ -153,6 +166,10 @@ def _item_from_message(message) -> Optional[HubItem]:
         has_thumb=bool(getattr(media, "thumbs", None)),
         quality=_extract_quality(parsed.title, file_name, parsed.description),
         file_name=file_name,
+        series_key=sm.key if sm else "",
+        series_title=sm.title if sm else "",
+        season=sm.season if sm else None,
+        episode=sm.episode if sm else None,
     )
 
 
@@ -364,6 +381,85 @@ def query(
     if len(page) == limit and sort in ("newest", "oldest"):
         next_cursor = page[-1].message_id
     return page, next_cursor
+
+
+def _build_series_group(episodes: List[HubItem]) -> SeriesGroup:
+    """Construct a SeriesGroup from at least one episode HubItem."""
+    poster = next(
+        (e for e in episodes if e.has_thumb),
+        max(episodes, key=lambda e: e.message_id),
+    )
+    seasons = {e.season for e in episodes if e.season is not None}
+    return SeriesGroup(
+        series_key=episodes[0].series_key,
+        series_title=episodes[0].series_title or episodes[0].title,
+        episode_count=len(episodes),
+        season_count=len(seasons) or 1,
+        latest_message_id=max(e.message_id for e in episodes),
+        poster_item=poster,
+        has_thumb=any(e.has_thumb for e in episodes),
+    )
+
+
+def query_grouped(
+    *,
+    q: str = "",
+    year: Optional[int] = None,
+    quality: str = "",
+    tag: str = "",
+    sort: str = "newest",
+    limit: int = 24,
+) -> List:
+    """Like query() but collapses items sharing a series_key into one card.
+
+    Returned list mixes HubItem (standalone) and SeriesGroup (series).
+    Series search match-on-title: a query for ``office`` matches the series
+    name itself in addition to per-episode titles, so groups don't get
+    filtered away when the user types the show name.
+    """
+    items_all = [
+        it for it in _items.values()
+        if _matches(it, q, year, quality, tag) or _series_matches_query(it, q)
+    ]
+
+    groups: dict = {}
+    standalone: List[HubItem] = []
+    for it in items_all:
+        if it.series_key:
+            groups.setdefault(it.series_key, []).append(it)
+        else:
+            standalone.append(it)
+
+    grouped = [_build_series_group(eps) for eps in groups.values()]
+
+    if sort == "newest":
+        sort_key = lambda x: -(x.latest_message_id if isinstance(x, SeriesGroup) else x.message_id)
+    elif sort == "oldest":
+        sort_key = lambda x: (x.latest_message_id if isinstance(x, SeriesGroup) else x.message_id)
+    elif sort == "title_az":
+        sort_key = lambda x: (x.series_title if isinstance(x, SeriesGroup) else x.title).lower()
+    elif sort == "title_za":
+        sort_key = lambda x: tuple(-ord(c) for c in (x.series_title if isinstance(x, SeriesGroup) else x.title).lower())
+    elif sort == "largest":
+        sort_key = lambda x: -(sum(e.file_size for e in groups.get(x.series_key, [])) if isinstance(x, SeriesGroup) else x.file_size)
+    else:
+        sort_key = lambda x: -(x.latest_message_id if isinstance(x, SeriesGroup) else x.message_id)
+
+    combined = sorted(grouped + standalone, key=sort_key)
+    return combined[:limit]
+
+
+def _series_matches_query(it: HubItem, q: str) -> bool:
+    if not q or not it.series_key:
+        return False
+    return q.lower().lstrip("#") in it.series_title.lower()
+
+
+def episodes_for_series(series_key: str) -> List[HubItem]:
+    """All episodes for a series, sorted by season then episode."""
+    eps = [it for it in _items.values() if it.series_key == series_key]
+    eps.sort(key=lambda e: (e.season or 0, e.episode or 0, e.message_id))
+    return eps
 
 
 def distinct_years() -> List[int]:
