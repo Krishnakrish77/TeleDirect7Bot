@@ -270,9 +270,10 @@ async def seed(bot, channel_id: int) -> None:
     Bots can't call ``messages.getHistory`` (Pyrogram's ``get_chat_history``
     raises an RPCError for bot accounts), so we discover the latest message
     id by sending a tiny probe to the channel and reading its returned id,
-    then deleting the probe. The probe ``​`` is a zero-width space —
-    if a client renders it before delete lands, the message is at worst a
-    single blank cell rather than human-readable text.
+    then deleting the probe. The probe body is a single dot — Telegram
+    refuses empty / whitespace-only / zero-width messages with
+    MESSAGE_EMPTY, but a literal "." passes the validator while staying
+    visually minimal if a client renders it before the delete lands.
     """
     global _seeded
     if _seeded:
@@ -281,7 +282,7 @@ async def seed(bot, channel_id: int) -> None:
     _load()  # Restore whatever was on disk first.
 
     try:
-        probe = await bot.send_message(channel_id, "​")
+        probe = await bot.send_message(channel_id, ".")
     except Exception:
         logging.exception("media_index: probe send failed; seed skipped")
         _seeded = True
