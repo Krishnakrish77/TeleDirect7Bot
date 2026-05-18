@@ -53,14 +53,22 @@
                     from-brand-500/20 via-ink-900 to-ink-900"></div>
       {% endif %}
 
+      {# Triple-layer dim so the title/overview are readable over any
+         backdrop — bright daylight scenes, white-heavy posters, etc.
+         (1) vertical bottom fade pulling the page bg up over the lower
+             two thirds, (2) horizontal left fade biased to the side
+             where the copy lives, (3) a soft ink layer behind the text
+             itself for the worst-case images. #}
       <div class="absolute inset-0
-                  bg-gradient-to-t from-ink-900 via-ink-900/60 to-transparent"></div>
+                  bg-gradient-to-t from-ink-900 via-ink-900/70 to-ink-900/10"></div>
       <div class="absolute inset-0
-                  bg-gradient-to-r from-ink-900/95 via-ink-900/50 to-transparent"></div>
+                  bg-gradient-to-r from-ink-900/95 via-ink-900/70 to-transparent"></div>
 
       <div class="relative h-full flex items-end sm:items-center
                   px-6 sm:px-10 lg:px-14 pb-10 sm:pb-0">
-        <div class="max-w-2xl text-white">
+        <div class="max-w-2xl text-white
+                    [&amp;_h2]:[text-shadow:0_2px_8px_rgba(0,0,0,0.6)]
+                    [&amp;_p]:[text-shadow:0_1px_4px_rgba(0,0,0,0.7)]">
           {% if hero.tmdb_kind == 'tv' %}
             <span class="inline-block text-[10px] uppercase tracking-[0.2em] font-semibold
                          text-brand-300 mb-2">Series</span>
