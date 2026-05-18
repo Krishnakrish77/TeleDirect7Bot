@@ -388,9 +388,14 @@ async def admin_edit(request: web.Request) -> web.Response:
     elif status == "local-only":
         msg = (
             f"Updated bin:{message_id} in the catalogue. The BIN_CHANNEL "
-            "caption couldn't be edited (the message was posted to the "
-            "channel directly rather than forwarded through the bot, so "
-            "the bot doesn't own its caption)."
+            "caption couldn't be edited — Telegram refused the edit. Two "
+            "common causes: (1) the message was posted to the channel "
+            "directly so the bot doesn't own it, or (2) the message was "
+            "FORWARDED into BIN_CHANNEL — Telegram restricts caption "
+            "edits on messages that carry a 'Forwarded from' header even "
+            "for the forwarder. New uploads now use copy() instead of "
+            "forward() to avoid (2); older entries stay editable in "
+            "memory only."
         )
         if title_changed or year_changed:
             msg += " Re-enrich queued."

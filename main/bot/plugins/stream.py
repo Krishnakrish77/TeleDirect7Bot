@@ -64,7 +64,12 @@ def _looks_like_subtitle(m: Message) -> bool:
 )
 async def private_receive_handler(c: Client, m: Message):
     try:
-        log_msg = await m.forward(chat_id=Var.BIN_CHANNEL)
+        # Use copy() not forward(): forwarded messages carry a visible
+        # "Forwarded from" header which makes their captions
+        # non-editable even by the bot that did the forwarding. Copy
+        # reposts as a fresh bot-authored message, keeping admin
+        # re-enrichment / caption rewrites working.
+        log_msg = await m.copy(chat_id=Var.BIN_CHANNEL)
 
         if _looks_like_subtitle(m):
             schedule_subtitle_pairing(c, log_msg, m)
@@ -99,7 +104,10 @@ async def channel_receive_handler(bot, broadcast: Message):
         await bot.leave_chat(broadcast.chat.id)
         return
     try:
-        log_msg = await broadcast.forward(chat_id=Var.BIN_CHANNEL)
+        # See private_receive_handler — copy keeps the bin caption
+        # editable. The reply-text below still carries the source
+        # channel attribution, so we don't lose that context.
+        log_msg = await broadcast.copy(chat_id=Var.BIN_CHANNEL)
         schedule_index(bot, log_msg)
         stream_link = "https://{}/{}".format(Var.FQDN, log_msg.id) if Var.ON_HEROKU or Var.NO_PORT else \
             "http://{}:{}/{}".format(Var.FQDN,
@@ -159,7 +167,8 @@ async def channel_receive_handler(bot, broadcast: Message):
 @StreamBot.on_message(filters.group & ~filters.user(Var.BANNED_USERS) & (filters.document | filters.video | filters.audio), group=4)
 async def group_receive_handler(c: Client, m: Message):
     try:
-        log_msg = await m.forward(chat_id=Var.BIN_CHANNEL)
+        # See private_receive_handler — copy keeps captions editable.
+        log_msg = await m.copy(chat_id=Var.BIN_CHANNEL)
         schedule_index(c, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=True)
         await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
