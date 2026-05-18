@@ -4,3 +4,4 @@ python-dotenv
 pytgcrypto
 jinja2
 uvloop
+motor>=3.6

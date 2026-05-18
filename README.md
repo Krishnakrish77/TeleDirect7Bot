@@ -158,6 +158,20 @@ you may also add as many as bots you want. (max limit is not tested yet)
 
 `HUB_GENRE_SHELVES` : How many TMDB-genre rows to surface on the hub landing page in addition to the Recently added / Series / Movies rows. Defaults to `3`. Clamped to `[1, 20]`.
 
+### MongoDB (optional — recommended once the catalogue passes a few thousand items)
+
+`STORE_BACKEND` : Set to `mongo` to switch durable storage from the legacy `/tmp` JSON + pinned-Telegram-snapshot to MongoDB. Unset (the default) keeps the legacy path. The in-memory dict still serves all reads — Mongo is only the durable mirror.
+
+`MONGO_URI` : Atlas SRV connection string (`mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority`). Required when `STORE_BACKEND=mongo`.
+
+`MONGO_DB` : Database name. Defaults to `teledirect`.
+
+`MONGO_COLLECTION` : Items collection name. Defaults to `items`.
+
+`MONGO_META_COLLECTION` : Meta (singleton key/values like `latest_seen_id`) collection name. Defaults to `meta`.
+
+**Migration flow**: set `MONGO_URI` first (leave `STORE_BACKEND` unset), boot the bot, click **Migrate → Mongo** on `/admin`. After the count is verified in Atlas, set `STORE_BACKEND=mongo` and redeploy. Snapshots-to-BIN-channel become a no-op from then on.
+
 
 
 ## How to use the bot

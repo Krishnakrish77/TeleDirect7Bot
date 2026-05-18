@@ -161,6 +161,16 @@
             Fetch episode details
           </button>
         </form>
+        <form method="post" action="/admin/migrate-to-mongo"
+              onsubmit="return confirm('Migrate the in-memory catalogue to MongoDB? Requires MONGO_URI to be set.');"
+              class="inline">
+          <button type="submit"
+                  class="text-sm px-3 py-1.5 rounded bg-amber-500/15 text-amber-200
+                         border border-amber-400/30 hover:bg-amber-500/25 transition-colors"
+                  title="One-shot: bulk-upsert every catalogue item into MongoDB Atlas. Run once after MONGO_URI is set, then flip STORE_BACKEND=mongo and restart.">
+            Migrate → Mongo
+          </button>
+        </form>
         <a href="/admin/logout"
            class="text-sm text-slate-400 hover:text-brand-300 transition-colors">
           Sign out

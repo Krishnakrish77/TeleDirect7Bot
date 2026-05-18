@@ -50,6 +50,10 @@ async def start_services():
     print("---------------------- Initializing Clients ----------------------")
     await initialize_clients()
     print("------------------------------ DONE ------------------------------")
+    # Initialise the durable store (Mongo when STORE_BACKEND=mongo) BEFORE
+    # seed() runs — seed will preload from the store when available and
+    # skip the pinned-snapshot dance.
+    await media_index.init_store()
     # Seed the hub's in-process catalogue from BIN_CHANNEL history. Runs in
     # the background so it doesn't block web server startup; the hub starts
     # empty and fills in over the next ~30s as message metadata streams in.

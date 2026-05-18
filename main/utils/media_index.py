@@ -42,6 +42,7 @@ from main.utils.dedup import movie_key as compute_movie_key
 from main.utils.subtitles import stem_for_pairing
 from main.utils import tmdb
 from main.utils import state_doc
+from main.utils import store as _store_module
 
 
 # Buckets we recognise in filenames/captions. Order matters: longest match
@@ -91,6 +92,54 @@ _reindex_state: dict = {"running": False, "done": 0, "total": 0,
                         "quality_changed": 0,
                         "started_at": 0.0, "finished_at": 0.0}
 
+# --- Durable store (Mongo when configured) ---------------------------------
+# When ``STORE_BACKEND=mongo``, every mutation also writes-through to
+# MongoDB Atlas. The in-memory ``_items`` dict stays authoritative
+# during runtime — Mongo is the durable mirror that survives a /tmp
+# wipe without needing the pinned-snapshot kludge.
+_store: Optional["object"] = None  # store.Store at runtime
+
+
+def _store_active() -> bool:
+    return _store is not None
+
+
+async def _store_upsert(item: HubItem) -> None:
+    if _store is None:
+        return
+    try:
+        await _store.upsert(_to_serializable(item))
+    except Exception:
+        logging.exception("media_index: store.upsert failed for bin:%d",
+                          item.message_id)
+
+
+async def _store_remove(message_id: int) -> None:
+    if _store is None:
+        return
+    try:
+        await _store.remove(message_id)
+    except Exception:
+        logging.exception("media_index: store.remove failed for bin:%d",
+                          message_id)
+
+
+async def init_store() -> None:
+    """Initialise the configured durable store (if any). Call once at
+    bot startup, before seed()."""
+    global _store
+    candidate = _store_module.from_env()
+    if candidate is None:
+        logging.info("media_index: durable store DISABLED (JSON fallback)")
+        return
+    try:
+        await candidate.init()
+        _store = candidate
+    except Exception:
+        logging.exception("media_index: store.init() failed, sticking with JSON")
+        _store = None
+
+
 # --- Snapshot debouncer ----------------------------------------------------
 # Pinned-snapshot writes are expensive (upload+pin+delete-prior) and noisy
 # (each shows up in BIN_CHANNEL until the delete-prior succeeds). Calls
@@ -109,8 +158,14 @@ def schedule_snapshot(bot) -> None:
     so a rapid burst of mutations produces exactly one snapshot save
     after the burst finishes. Pass ``bot=None`` to disable (we can't
     save without a client).
+
+    When the durable Mongo store is active the pinned-snapshot
+    mechanism is redundant — every mutation has already been written
+    through to Mongo, so we skip the upload entirely.
     """
     global _pending_snapshot_task
+    if _store_active():
+        return
     if bot is None:
         return
     try:
@@ -363,6 +418,11 @@ async def add_from_message(message) -> None:
             async with _lock:
                 _latest_seen_id = mid
                 _persist_unlocked()
+            if _store_active():
+                try:
+                    await _store.set_meta("latest_seen_id", _latest_seen_id)
+                except Exception:
+                    logging.debug("store.set_meta failed", exc_info=True)
         return
     async with _lock:
         # Preserve any sidecar subtitle pairings across re-indexing.
@@ -373,6 +433,13 @@ async def add_from_message(message) -> None:
         if item.message_id > _latest_seen_id:
             _latest_seen_id = item.message_id
         _persist_unlocked()
+    # Write-through to Mongo (outside the lock — network call).
+    await _store_upsert(item)
+    if _store_active():
+        try:
+            await _store.set_meta("latest_seen_id", _latest_seen_id)
+        except Exception:
+            logging.debug("store.set_meta failed", exc_info=True)
 
 
 def get_item(message_id: int) -> Optional[HubItem]:
@@ -424,17 +491,19 @@ async def attach_subtitle(video_message_id: int, sub: ExternalSubtitle) -> bool:
 async def remove(message_id: int, bot=None) -> None:
     """Drop an entry from the catalogue.
 
-    Pass ``bot`` so the change also lands in the pinned Telegram
-    snapshot (debounced). Without that, restarting the bot would
-    restore the entry from the older snapshot and the deletion
-    silently reverts.
+    Writes-through to Mongo when configured so deletions survive
+    restart; otherwise schedules a Telegram-snapshot save via the
+    legacy path.
     """
     async with _lock:
         existed = _items.pop(message_id, None) is not None
         if existed:
             _persist_unlocked()
-    if existed and bot is not None:
-        schedule_snapshot(bot)
+    if not existed:
+        return
+    await _store_remove(message_id)
+    if bot is not None:
+        schedule_snapshot(bot)  # No-op when Mongo is active.
 
 
 async def persist_now() -> None:
@@ -553,12 +622,47 @@ async def seed(bot, channel_id: int) -> None:
     if _seeded:
         return
 
-    _load()  # Restore whatever was on disk first.
+    _load()  # Restore whatever was on disk first (legacy /tmp cache).
 
-    # If /tmp was empty (cold container restart on Koyeb) try the
-    # Telegram-pinned snapshot before walking BIN. The snapshot carries
-    # full TMDB enrichment state — poster paths, tmdb_ids, the lot — so
-    # a redeploy doesn't lose hard-won enrichment data.
+    # Durable Mongo store wins if configured. Loads the whole
+    # catalogue in one shot, then we still probe BIN below to pick
+    # up anything uploaded between the last Mongo write and now.
+    if _store_active() and not _items:
+        try:
+            docs = await _store.load_all()
+            async with _lock:
+                for d in docs:
+                    try:
+                        item = _from_serializable(d)
+                        _items[item.message_id] = item
+                    except Exception:
+                        logging.debug(
+                            "media_index: bad Mongo doc skipped",
+                            exc_info=True,
+                        )
+                if _items:
+                    local_max = max(_items.keys())
+                    _latest_seen_id = max(_latest_seen_id, local_max)
+                # Pull persisted meta values (latest_seen_id) so the seed
+                # walk can resume from a sane high-water mark.
+                try:
+                    stored_latest = await _store.get_meta("latest_seen_id")
+                    if isinstance(stored_latest, int) and stored_latest > _latest_seen_id:
+                        _latest_seen_id = stored_latest
+                except Exception:
+                    pass
+            logging.info(
+                "media_index: loaded %d items from Mongo (latest=%d)",
+                len(_items), _latest_seen_id,
+            )
+        except Exception:
+            logging.exception(
+                "media_index: Mongo load_all failed — falling through to"
+                " legacy snapshot restore",
+            )
+
+    # If neither /tmp nor Mongo populated _items, try the
+    # Telegram-pinned snapshot as a last resort.
     if not _items:
         try:
             await restore_from_telegram(bot)
@@ -1674,6 +1778,7 @@ async def enrich_one(message_id: int, bot=None) -> bool:
             # unenriched item on every run.
             item.enriched_at = time.time()
             _persist_unlocked()
+        await _store_upsert(item)
         return False
 
     async with _lock:
@@ -1684,6 +1789,7 @@ async def enrich_one(message_id: int, bot=None) -> bool:
     # TMDB season fetch doesn't block other catalogue mutations.
     await _fill_episode_metadata(item)
     await persist_now()
+    await _store_upsert(item)
 
     if bot is not None:
         # Best-effort caption write-back. A failure here doesn't undo the
@@ -1719,6 +1825,7 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
         _persist_unlocked()
     await _fill_episode_metadata(item)
     await persist_now()
+    await _store_upsert(item)
     if bot is not None:
         await persist_canonical_to_bin(bot, message_id)
         # Manual admin override — coalesce snapshot like the auto path.
@@ -1769,6 +1876,20 @@ async def fill_episode_details(bot=None) -> dict:
                               it.message_id, exc_info=True)
             _episode_fill_state["done"] += 1
         await persist_now()
+        # Flush touched rows to Mongo. We re-upsert the whole TV
+        # subset for simplicity; the upsert is keyed by message_id
+        # so this is idempotent.
+        if _store_active():
+            try:
+                docs = [
+                    _to_serializable(it) for it in _items.values()
+                    if it.tmdb_kind == "tv"
+                ]
+                await _store.upsert_many(docs)
+            except Exception:
+                logging.exception(
+                    "media_index: post-fill_episodes Mongo flush failed"
+                )
         if bot is not None:
             schedule_snapshot(bot)
     finally:
@@ -1956,9 +2077,17 @@ async def reindex_all(bot=None) -> dict:
         _reindex_state["running"] = False
         _reindex_state["finished_at"] = time.time()
 
+    # Push every (potentially-changed) row to Mongo in one bulk write.
+    if _store_active():
+        try:
+            docs = [_to_serializable(it) for it in _items.values()]
+            await _store.upsert_many(docs)
+        except Exception:
+            logging.exception("media_index: post-reindex Mongo flush failed")
+
     if bot is not None:
         try:
-            await snapshot_to_telegram(bot)
+            await snapshot_to_telegram(bot)  # No-op when Mongo active.
         except Exception:
             logging.exception(
                 "media_index: post-reindex snapshot failed (non-fatal)"

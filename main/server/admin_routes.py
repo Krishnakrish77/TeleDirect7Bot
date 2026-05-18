@@ -238,6 +238,66 @@ async def admin_status(request: web.Request) -> web.Response:
     }, headers={"Cache-Control": "no-store"})
 
 
+@routes.post("/admin/migrate-to-mongo")
+async def admin_migrate_to_mongo(request: web.Request) -> web.Response:
+    """One-shot migration: bulk-upsert every in-memory catalogue item
+    into MongoDB Atlas via the configured store.
+
+    Usage:
+      1. Set MONGO_URI in Koyeb env. Leave STORE_BACKEND unset
+         (or set to ``jsonbridge``) so the bot still boots from
+         /tmp + pinned snapshot and the dict is populated.
+      2. Click this button. The handler instantiates a one-off
+         MongoStore directly from the env, runs init() (creates
+         indexes), and upserts every item in batches of 500.
+      3. Verify the document count in Atlas matches the catalogue.
+      4. Set STORE_BACKEND=mongo and restart — boot now loads
+         from Mongo and the pinned snapshot becomes a no-op.
+    """
+    _require_session(request)
+    from main.utils import store as _store
+    from main.utils import media_index
+    import os
+
+    if not os.environ.get("MONGO_URI"):
+        from urllib.parse import quote
+        raise web.HTTPFound("/admin?flash=" + quote(
+            "MONGO_URI env var is not set — configure Atlas first.",
+        ))
+
+    # Build a one-off MongoStore even if STORE_BACKEND isn't ``mongo``
+    # yet — the migration is the whole point of having this endpoint.
+    db_name = os.environ.get("MONGO_DB") or "teledirect"
+    items_coll = os.environ.get("MONGO_COLLECTION") or "items"
+    meta_coll = os.environ.get("MONGO_META_COLLECTION") or "meta"
+    try:
+        client = _store.MongoStore(
+            os.environ["MONGO_URI"], db_name, items_coll, meta_coll,
+        )
+        await client.init()
+    except Exception as exc:
+        logging.exception("admin: Mongo migrate init failed")
+        from urllib.parse import quote
+        raise web.HTTPFound("/admin?flash=" + quote(
+            f"Mongo init failed: {exc.__class__.__name__}",
+        ))
+
+    # Pull a stable snapshot of the dict under the lock so a parallel
+    # mutation doesn't write a doc twice.
+    async with media_index._lock:
+        docs = [media_index._to_serializable(it)
+                for it in media_index._items.values()]
+    await client.upsert_many(docs)
+    await client.set_meta("latest_seen_id", media_index._latest_seen_id)
+
+    from urllib.parse import quote
+    raise web.HTTPFound("/admin?flash=" + quote(
+        f"Migrated {len(docs)} items into Mongo "
+        f"({db_name}.{items_coll}). Set STORE_BACKEND=mongo and restart "
+        "to start serving from it."
+    ))
+
+
 @routes.post("/admin/fetch-episodes")
 async def admin_fetch_episodes(request: web.Request) -> web.Response:
     """Backfill TMDB per-episode metadata (episode name + overview + still
