@@ -152,6 +152,10 @@ you may also add as many as bots you want. (max limit is not tested yet)
 
 `ADMIN_SESSION_TTL_MIN` : Minutes an admin session cookie stays signed in after the one-time link is opened. Defaults to `60`. Set higher (e.g. `480` for an 8-hour session) when you're iterating on admin features.
 
+`INDEX_CONCURRENCY` : Max number of bin messages the auto-indexer (caption rewrite + TMDB enrich) processes at once. Defaults to `3`. Higher lets bursts of uploads land faster; lower reduces FloodWait risk on busy Telegram accounts.
+
+`CODEC_PROBE_CONCURRENCY` : Max parallel ffprobe subprocesses across both per-upload and the bulk `/admin/probe-codecs` pass. Defaults to `3`. Each probe holds a Telegram range stream + an ffprobe process, so keep this modest unless your container is generously sized.
+
 
 
 ## How to use the bot

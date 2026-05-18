@@ -154,10 +154,34 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     return True
 
 
-# In-memory throttle so a bulk pass never runs more than N ffprobes
-# in parallel — each probe holds an aiohttp range stream open and a
-# subprocess, both finite.
-_BULK_CONCURRENCY = 3
+# In-memory throttle so neither the bulk admin pass NOR per-upload
+# auto-probes ever run more than N ffprobes in parallel — each probe
+# holds an aiohttp range stream open and a subprocess, both finite.
+# Env-configurable: ``CODEC_PROBE_CONCURRENCY`` (default 3).
+def _probe_conc_from_env() -> int:
+    import os as _os
+    raw = (_os.environ.get("CODEC_PROBE_CONCURRENCY", "") or "").strip()
+    if not raw:
+        return 3
+    try:
+        n = int(raw)
+    except ValueError:
+        return 3
+    return max(1, min(n, 16))
+
+
+_BULK_CONCURRENCY = _probe_conc_from_env()
+# Shared semaphore across bulk + per-upload paths so the cap applies
+# whichever channel kicks off a probe. Lazy-init for the same
+# event-loop reason as in indexer.py.
+_probe_sem: Optional[asyncio.Semaphore] = None
+
+
+def _semaphore() -> asyncio.Semaphore:
+    global _probe_sem
+    if _probe_sem is None:
+        _probe_sem = asyncio.Semaphore(_BULK_CONCURRENCY)
+    return _probe_sem
 
 
 # Module-level state for an admin-triggered batch probe.
@@ -199,7 +223,7 @@ async def probe_all_missing() -> dict:
         finished_at=0.0,
     )
 
-    sem = asyncio.Semaphore(_BULK_CONCURRENCY)
+    sem = _semaphore()
 
     async def _one(it):
         async with sem:
@@ -237,8 +261,13 @@ def schedule_probe(message_id: int) -> None:
 
 
 async def _probe_quietly(item) -> None:
+    """Per-upload background probe. Shares the semaphore with the bulk
+    pass so simultaneous schedules never run more than
+    ``_BULK_CONCURRENCY`` ffprobes at once.
+    """
     try:
-        await probe_item(item)
+        async with _semaphore():
+            await probe_item(item)
     except Exception:
         logging.exception("codec_probe: background probe failed for bin:%d",
                           item.message_id)

@@ -14,7 +14,44 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Optional
+
+
+# Bound concurrency of the per-message indexer + downstream
+# enrichment so a burst of N parallel uploads (10 episodes of a
+# series sent at once) doesn't fan out into N caption edits +
+# N TMDB lookups + N ffprobe subprocesses simultaneously. Telegram
+# rate-limits caption edits (FloodWait), TMDB rate-limits search
+# (HTTP 429), and ffprobe holds a range stream + subprocess each
+# — all three behave badly when fired in parallel without bound.
+#
+# Tunable via env so heavy operators can lift the cap. Default
+# matches Pyrogram's WORKERS default and the existing
+# codec_probe bulk concurrency, so behavior is consistent.
+def _conc_from_env(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        n = int(raw)
+    except ValueError:
+        return default
+    return max(1, min(n, 32))
+
+
+_INDEX_CONCURRENCY = _conc_from_env("INDEX_CONCURRENCY", 3)
+_index_sem: Optional[asyncio.Semaphore] = None
+
+
+def _semaphore() -> asyncio.Semaphore:
+    """Lazy-init the semaphore on first use — the indexer is imported
+    at module load before the asyncio loop exists, so we can't build
+    it at top level."""
+    global _index_sem
+    if _index_sem is None:
+        _index_sem = asyncio.Semaphore(_INDEX_CONCURRENCY)
+    return _index_sem
 
 from pyrogram import Client
 from pyrogram.errors import FloodWait, MessageNotModified
@@ -77,7 +114,17 @@ def _build_caption(message: Message) -> Optional[str]:
 
 async def index_bin_message(bot: Client, bin_msg: Message) -> None:
     """Edit a BIN_CHANNEL message's caption into the structured index format,
-    then register the entry in the in-process catalogue used by the hub."""
+    then register the entry in the in-process catalogue used by the hub.
+
+    Bounded by ``_INDEX_CONCURRENCY`` (env ``INDEX_CONCURRENCY``, default 3)
+    so a burst of parallel uploads doesn't FloodWait Telegram or stack
+    ffprobe subprocesses.
+    """
+    async with _semaphore():
+        await _index_bin_message_impl(bot, bin_msg)
+
+
+async def _index_bin_message_impl(bot: Client, bin_msg: Message) -> None:
     from main.utils import media_index
 
     caption = _build_caption(bin_msg)
@@ -95,7 +142,10 @@ async def index_bin_message(bot: Client, bin_msg: Message) -> None:
         wait = getattr(e, "value", None) or getattr(e, "x", 0)
         logging.warning("FloodWait editing bin:%d — sleeping %ss", bin_msg.id, wait)
         await asyncio.sleep(wait)
-        await index_bin_message(bot, bin_msg)
+        # Recurse on the impl (NOT the public function) so we don't
+        # re-acquire the semaphore from inside the same task — that
+        # would deadlock against the slot we're already holding.
+        await _index_bin_message_impl(bot, bin_msg)
         return
     except Exception:
         logging.exception("Failed to index bin:%d", bin_msg.id)
@@ -118,17 +168,20 @@ async def index_bin_message(bot: Client, bin_msg: Message) -> None:
     # via the debouncer so a 70-episode burst is one upload, not 70.
     media_index.schedule_snapshot(bot)
 
-    # Fire-and-forget TMDB enrichment. The lookup is cached per
-    # (title, year) so multiple episodes of the same series share one
-    # network request. Pass `bot` so the canonical metadata gets written
-    # back to the BIN caption when a match lands — that makes the
-    # Telegram channel the durable source of truth.
+    # AWAIT (not fire-and-forget) the TMDB enrichment so the
+    # indexer's semaphore slot also bounds parallel enrichments —
+    # otherwise 10 simultaneous uploads schedule 10 simultaneous
+    # TMDB lookups + 10 simultaneous caption write-backs, blowing
+    # past Telegram's edit-message rate limit. With the semaphore,
+    # at most _INDEX_CONCURRENCY enrichments run at once.
+    # tmdb._locks already serialises same-(title,year) calls so
+    # multiple episodes of one series share the network round-trip.
     try:
         from main.utils import tmdb
         if tmdb.is_configured():
-            asyncio.create_task(media_index.enrich_one(bin_msg.id, bot=bot))
+            await media_index.enrich_one(bin_msg.id, bot=bot)
     except Exception:
-        logging.debug("enrichment schedule failed for bin:%d", bin_msg.id,
+        logging.debug("enrichment failed for bin:%d", bin_msg.id,
                       exc_info=True)
 
     # Fire-and-forget ffprobe so the watch page knows whether this
