@@ -482,46 +482,56 @@
                 {# IMDb id resolver. Paste a tt-id or the full IMDb URL;
                    we'll resolve it to TMDB and populate the fields
                    below. Saves a manual TMDB search step. #}
-                <div class="mb-2 flex items-center gap-2">
-                  <input type="text"
-                         placeholder="IMDb id or URL (tt1234567)"
-                         x-model="editing.imdb_input"
-                         @keydown.enter.prevent="resolveImdb()"
-                         class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
-                                border border-white/5 text-sm
-                                focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
-                  <button type="button"
-                          @click="resolveImdb()"
-                          :disabled="editing.imdbLoading"
-                          class="px-3 py-2 rounded bg-brand-500/80 hover:bg-brand-500
-                                 disabled:opacity-50 text-white text-sm font-medium
-                                 transition-colors whitespace-nowrap">
-                    <span x-show="!editing.imdbLoading">Resolve →</span>
-                    <span x-show="editing.imdbLoading">Resolving…</span>
-                  </button>
-                </div>
+                <label class="block mb-2">
+                  <span class="text-[11px] uppercase tracking-wider text-slate-500">
+                    IMDb id or URL
+                  </span>
+                  <div class="mt-1 flex items-center gap-2">
+                    <input type="text" inputmode="text"
+                           placeholder="tt1234567 or https://imdb.com/title/tt1234567/"
+                           x-model="editing.imdb_input"
+                           @keydown.enter.prevent="resolveImdb()"
+                           class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                    <button type="button"
+                            @click="resolveImdb()"
+                            :disabled="editing.imdbLoading"
+                            class="px-3 py-2 rounded bg-brand-500/80 hover:bg-brand-500
+                                   disabled:opacity-50 text-white text-sm font-medium
+                                   transition-colors whitespace-nowrap">
+                      <span x-show="!editing.imdbLoading">Resolve →</span>
+                      <span x-show="editing.imdbLoading">Resolving…</span>
+                    </button>
+                  </div>
+                </label>
                 <p x-show="editing.imdbError" x-cloak
                    class="mb-2 text-xs text-red-400" x-text="editing.imdbError"></p>
 
-                <div class="flex items-center gap-2">
-                  <input type="number" name="tmdb_id" min="1"
-                         placeholder="TMDB ID"
-                         x-model="editing.tmdb_id"
-                         @input.debounce.500ms="previewTmdb()"
-                         class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
-                                border border-white/5
-                                focus:outline-none focus:ring-2 focus:ring-brand-400/60
-                                tabular-nums" />
-                  <select name="tmdb_kind"
-                          x-model="editing.tmdb_kind"
-                          @change="previewTmdb()"
-                          class="px-3 py-2 rounded bg-ink-800/70 text-slate-100
-                                 border border-white/5
-                                 focus:outline-none focus:ring-2 focus:ring-brand-400/60">
-                    <option value="movie">Movie</option>
-                    <option value="tv">TV</option>
-                  </select>
-                </div>
+                <label class="block">
+                  <span class="text-[11px] uppercase tracking-wider text-slate-500">
+                    TMDB id (numeric)
+                  </span>
+                  <div class="mt-1 flex items-center gap-2">
+                    <input type="number" name="tmdb_id" min="1"
+                           placeholder="e.g. 27205"
+                           x-model="editing.tmdb_id"
+                           @input.debounce.500ms="previewTmdb()"
+                           class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                                  tabular-nums" />
+                    <select name="tmdb_kind"
+                            x-model="editing.tmdb_kind"
+                            @change="previewTmdb()"
+                            class="px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                   border border-white/5
+                                   focus:outline-none focus:ring-2 focus:ring-brand-400/60">
+                      <option value="movie">Movie</option>
+                      <option value="tv">TV</option>
+                    </select>
+                  </div>
+                </label>
                 <p class="mt-1.5 text-xs text-slate-500 leading-relaxed">
                   Set this and Save to attach a specific TMDB record
                   by id — overrides the title-search fallback. Find
