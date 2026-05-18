@@ -168,7 +168,7 @@
       Player not loading? Open the stream in VLC for any container format.
     </div>
 
-    <div class="mt-6 flex justify-center">
+    <div class="mt-6 flex flex-wrap justify-center items-center gap-3">
       <a id="vlcButton"
          href="vlc://{{ src }}"
          data-stream-url="{{ src }}"
@@ -183,7 +183,28 @@
         </svg>
         Open in VLC
       </a>
+
+      {# Manual subtitle upload. Hidden file input + visible button —
+         clicking the button opens the picker. The JS handler also
+         listens for drag-and-drop onto the player container, so
+         either path works. #}
+      <label class="inline-flex items-center justify-center gap-2
+                    rounded-lg px-5 py-3 font-medium text-slate-100
+                    bg-ink-800/70 hover:bg-ink-800 border border-white/5
+                    transition-colors cursor-pointer">
+        <input id="subUpload" type="file"
+               accept=".srt,.vtt,.SRT,.VTT,text/vtt,application/x-subrip"
+               class="sr-only" />
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2"
+             class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 12l4.5 4.5m0 0L16.5 12m-4.5 4.5V3"/>
+        </svg>
+        Load subtitles
+      </label>
     </div>
+    <p id="subStatus" class="mt-2 text-center text-xs text-slate-500"></p>
     {% endif %}
 
     {% if meta and meta.tmdb_id %}
@@ -314,6 +335,143 @@
       video.src = directSrc;
     }
 
+    // ---- Manual subtitle upload ----------------------------------------
+    //
+    // Adds a user-selected .srt or .vtt file as a <track> element on the
+    // video so it shows up in Plyr's captions menu. SRT gets converted to
+    // VTT in-browser because <track> only accepts WebVTT. The text is
+    // also cached in localStorage so a page refresh restores it without
+    // making the user re-pick the file.
+
+    const SUB_CACHE_KEY = "td:sub:";  // suffix is the watch key
+
+    function watchKey() {
+      const m = location.pathname.match(/\/watch\/([a-zA-Z0-9_-]+)$/);
+      return m ? m[1] : null;
+    }
+
+    function srtToVtt(srt) {
+      // Strip UTF-8 BOM if present.
+      if (srt.charCodeAt(0) === 0xfeff) srt = srt.slice(1);
+      // SRT uses commas for ms separators; VTT requires periods.
+      const body = srt.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
+      return "WEBVTT\n\n" + body;
+    }
+
+    function looksLikeVtt(text) {
+      return /^\s*WEBVTT\b/.test(text);
+    }
+
+    function addUserSubtitle(video, vttText, label) {
+      // Remove a previously-added user track if one exists — we only
+      // want one custom track at a time.
+      video.querySelectorAll("track[data-user-sub]").forEach(t => t.remove());
+
+      const blob = new Blob([vttText], { type: "text/vtt" });
+      const url = URL.createObjectURL(blob);
+      const track = document.createElement("track");
+      track.kind = "subtitles";
+      track.label = label || "Custom";
+      track.srclang = "und";  // unknown language; user can rename in UI later
+      track.src = url;
+      track.default = true;
+      track.dataset.userSub = "1";
+      video.appendChild(track);
+
+      // Activate immediately. Plyr's captions module reads the textTracks
+      // collection — flip the mode to "showing" on the newly-added track.
+      const tt = video.textTracks[video.textTracks.length - 1];
+      if (tt) {
+        // Disable other tracks so Plyr doesn't auto-pick one of the
+        // embedded ones over the user's choice.
+        for (let i = 0; i < video.textTracks.length - 1; i++) {
+          video.textTracks[i].mode = "disabled";
+        }
+        tt.mode = "showing";
+      }
+    }
+
+    function attachSubtitleUpload(video) {
+      const input = document.getElementById("subUpload");
+      const status = document.getElementById("subStatus");
+      if (!input || !video) return;
+
+      const handleFile = (file) => {
+        if (!file) return;
+        const name = (file.name || "").toLowerCase();
+        const isSrt = name.endsWith(".srt");
+        const isVtt = name.endsWith(".vtt");
+        if (!isSrt && !isVtt) {
+          status.textContent = "Only .srt and .vtt files are supported.";
+          status.className = "mt-2 text-center text-xs text-amber-300";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          let text = String(ev.target.result || "");
+          if (isSrt || !looksLikeVtt(text)) {
+            text = srtToVtt(text);
+          }
+          const label = file.name.replace(/\.[^.]+$/, "");
+          addUserSubtitle(video, text, label);
+          status.textContent = `Loaded "${file.name}" as subtitles.`;
+          status.className = "mt-2 text-center text-xs text-emerald-300";
+          // Cache for refresh.
+          const k = watchKey();
+          if (k) {
+            try {
+              localStorage.setItem(SUB_CACHE_KEY + k, JSON.stringify({
+                label, vtt: text, t: Date.now(),
+              }));
+            } catch (e) { /* quota — silently ignore */ }
+          }
+        };
+        reader.onerror = () => {
+          status.textContent = "Couldn't read that file.";
+          status.className = "mt-2 text-center text-xs text-red-400";
+        };
+        reader.readAsText(file, "utf-8");
+      };
+
+      input.addEventListener("change", () => handleFile(input.files && input.files[0]));
+
+      // Drag-and-drop onto the player container.
+      const playerWrap = video.closest(".aspect-video");
+      if (playerWrap) {
+        const setHover = (on) => {
+          playerWrap.classList.toggle("ring-2", on);
+          playerWrap.classList.toggle("ring-brand-400", on);
+        };
+        playerWrap.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          setHover(true);
+        });
+        playerWrap.addEventListener("dragleave", () => setHover(false));
+        playerWrap.addEventListener("drop", (e) => {
+          e.preventDefault();
+          setHover(false);
+          const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+          if (f) handleFile(f);
+        });
+      }
+
+      // Restore a previously-loaded subtitle from localStorage.
+      const k = watchKey();
+      if (k) {
+        try {
+          const raw = localStorage.getItem(SUB_CACHE_KEY + k);
+          if (raw) {
+            const cached = JSON.parse(raw);
+            if (cached && cached.vtt) {
+              addUserSubtitle(video, cached.vtt, cached.label || "Custom");
+              status.textContent = `Restored "${cached.label}" subtitles from earlier.`;
+              status.className = "mt-2 text-center text-xs text-slate-500";
+            }
+          }
+        } catch (e) { /* ignore */ }
+      }
+    }
+
     async function injectSubtitleTracks(video) {
       const subPath = video.dataset.subPath;
       if (!subPath) return;
@@ -425,6 +583,7 @@
       if (video) {
         injectSubtitleTracks(video);
         attachWatchProgress(video);
+        attachSubtitleUpload(video);
       }
 
       document.querySelectorAll("[data-stream-url]").forEach((el) => {
