@@ -292,64 +292,53 @@ async def admin_status(request: web.Request) -> web.Response:
         "reindex": media_index.reindex_state(),
         "probe": codec_probe.state(),
         "episode_fill": media_index.episode_fill_state(),
+        "migrate": media_index.migrate_state(),
         "catalogue_size": media_index.size(),
     }, headers={"Cache-Control": "no-store"})
 
 
 @routes.post("/admin/migrate-to-mongo")
 async def admin_migrate_to_mongo(request: web.Request) -> web.Response:
-    """One-shot migration: bulk-upsert every in-memory catalogue item
-    into MongoDB Atlas via the configured store.
+    """Kick off a Mongo migration in the background. Progress flows
+    through ``/admin/status`` (the same widget as the other long-
+    running pipelines), so the admin page can keep updating the bar
+    without holding an HTTP connection open.
 
-    Usage:
-      1. Set MONGO_URI in Koyeb env. Leave STORE_BACKEND unset
-         (or set to ``jsonbridge``) so the bot still boots from
-         /tmp + pinned snapshot and the dict is populated.
-      2. Click this button. The handler instantiates a one-off
-         MongoStore directly from the env, runs init() (creates
-         indexes), and upserts every item in batches of 500.
-      3. Verify the document count in Atlas matches the catalogue.
-      4. Set STORE_BACKEND=mongo and restart — boot now loads
-         from Mongo and the pinned snapshot becomes a no-op.
+    The endpoint itself only validates configuration + spawns the
+    task. Real work happens in ``media_index.migrate_to_mongo``,
+    which:
+      * Builds a MongoStore + pings the cluster (connectivity check
+        — bad URI / network / auth surfaces upfront, not mid-write).
+      * Snapshots the in-memory dict under the lock so a parallel
+        upload doesn't double-write.
+      * Bulk-upserts in batches of 500 with done-counter bumps so
+        the progress bar advances smoothly.
     """
     _require_session(request)
-    from main.utils import store as _store
-    from main.utils import media_index
     import os
-
     if not os.environ.get("MONGO_URI"):
         raise _redirect_with_flash(
             "MONGO_URI env var is not set — configure Atlas first.",
         )
 
-    # Build a one-off MongoStore even if STORE_BACKEND isn't ``mongo``
-    # yet — the migration is the whole point of having this endpoint.
+    if media_index.migrate_state().get("running"):
+        if _is_htmx(request):
+            return web.Response(status=204)
+        raise _redirect_with_flash("Migration already running")
+
     db_name = os.environ.get("MONGO_DB") or "teledirect"
     items_coll = os.environ.get("MONGO_COLLECTION") or "items"
     meta_coll = os.environ.get("MONGO_META_COLLECTION") or "meta"
-    try:
-        client = _store.MongoStore(
-            os.environ["MONGO_URI"], db_name, items_coll, meta_coll,
-        )
-        await client.init()
-    except Exception as exc:
-        logging.exception("admin: Mongo migrate init failed")
-        raise _redirect_with_flash(
-            f"Mongo init failed: {exc.__class__.__name__}",
-        )
 
-    # Pull a stable snapshot of the dict under the lock so a parallel
-    # mutation doesn't write a doc twice.
-    async with media_index._lock:
-        docs = [media_index._to_serializable(it)
-                for it in media_index._items.values()]
-    await client.upsert_many(docs)
-    await client.set_meta("latest_seen_id", media_index._latest_seen_id)
-
+    import asyncio as _aio
+    _aio.create_task(media_index.migrate_to_mongo(
+        os.environ["MONGO_URI"], db_name, items_coll, meta_coll,
+    ))
+    if _is_htmx(request):
+        return web.Response(status=204)
     raise _redirect_with_flash(
-        f"Migrated {len(docs)} items into Mongo "
-        f"({db_name}.{items_coll}). Set STORE_BACKEND=mongo and restart "
-        "to start serving from it."
+        f"Migration started against {db_name}.{items_coll} — watch the "
+        "progress widget below.",
     )
 
 

@@ -1845,6 +1845,107 @@ def episode_fill_state() -> dict:
     return dict(_episode_fill_state)
 
 
+# Mongo migration progress state. Same shape as the other pipelines
+# so the admin status endpoint can serialise it uniformly.
+_migrate_state: dict = {
+    "running": False, "done": 0, "total": 0,
+    "phase": "",          # "connecting" / "indexing" / "writing" / "done" / "failed"
+    "error": "",          # populated on failure for the flash message
+    "started_at": 0.0, "finished_at": 0.0,
+}
+
+
+def migrate_state() -> dict:
+    return dict(_migrate_state)
+
+
+async def migrate_to_mongo(uri: str, db_name: str,
+                           items_coll: str, meta_coll: str) -> dict:
+    """Background-friendly Mongo migration with progress + connectivity
+    check.
+
+    Phases:
+      1. ``connecting``  — instantiate MongoStore, run init() (creates
+                           indexes), and ping the cluster via a 1-doc
+                           limit query against the items collection. A
+                           bad URI / wrong region / blocked IP fails
+                           here, before we touch the catalogue.
+      2. ``indexing``    — snapshot the in-memory dict under the lock
+                           and convert each item to a doc. ``total`` is
+                           known after this phase.
+      3. ``writing``     — bulk-upsert in batches of 500, updating
+                           ``done`` after each batch so the admin
+                           progress bar advances smoothly even on
+                           large catalogues.
+
+    Returns ``{"total", "migrated", "error"}``.
+    """
+    if _migrate_state["running"]:
+        return {"already_running": True}
+
+    _migrate_state.update(
+        running=True, done=0, total=0,
+        phase="connecting", error="",
+        started_at=time.time(), finished_at=0.0,
+    )
+
+    try:
+        client = _store_module.MongoStore(uri, db_name, items_coll, meta_coll)
+        await client.init()
+        # Connectivity probe — Atlas free tier can lazily build the
+        # cluster connection, so we issue a cheap query and let any
+        # auth/network error surface before we walk the catalogue.
+        await client._items.find_one({}, projection={"_id": True})
+    except Exception as exc:
+        logging.exception("migrate: Mongo connection probe failed")
+        _migrate_state.update(
+            running=False, phase="failed",
+            error=f"{exc.__class__.__name__}: {exc}",
+            finished_at=time.time(),
+        )
+        return {"total": 0, "migrated": 0,
+                "error": _migrate_state["error"]}
+
+    _migrate_state["phase"] = "indexing"
+    async with _lock:
+        docs = [_to_serializable(it) for it in _items.values()]
+    _migrate_state["total"] = len(docs)
+
+    _migrate_state["phase"] = "writing"
+    BATCH = 500
+    try:
+        from pymongo import ReplaceOne
+        for i in range(0, len(docs), BATCH):
+            batch = docs[i:i + BATCH]
+            ops = [
+                ReplaceOne({"message_id": int(d["message_id"])}, d, upsert=True)
+                for d in batch
+                if int(d.get("message_id") or 0) > 0
+            ]
+            if ops:
+                await client._items.bulk_write(ops, ordered=False)
+            _migrate_state["done"] = min(i + BATCH, len(docs))
+        # Persist the high-water mark so the next boot from Mongo
+        # resumes the seed walk from the right id.
+        await client.set_meta("latest_seen_id", _latest_seen_id)
+    except Exception as exc:
+        logging.exception("migrate: bulk write failed")
+        _migrate_state.update(
+            running=False, phase="failed",
+            error=f"{exc.__class__.__name__}: {exc}",
+            finished_at=time.time(),
+        )
+        return {"total": _migrate_state["total"],
+                "migrated": _migrate_state["done"],
+                "error": _migrate_state["error"]}
+
+    _migrate_state.update(
+        running=False, phase="done", finished_at=time.time(),
+    )
+    return {"total": _migrate_state["total"],
+            "migrated": _migrate_state["done"], "error": ""}
+
+
 async def fill_episode_details(bot=None) -> dict:
     """Backfill TMDB per-episode metadata for TV rows that don't have
     it yet. Cheap thanks to the season-level cache in tmdb.fetch_season

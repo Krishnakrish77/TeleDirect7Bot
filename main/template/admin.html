@@ -161,13 +161,15 @@
             Fetch episode details
           </button>
         </form>
-        <form method="post" action="/admin/migrate-to-mongo"
-              onsubmit="return confirm('Migrate the in-memory catalogue to MongoDB? Requires MONGO_URI to be set.');"
+        <form hx-post="/admin/migrate-to-mongo"
+              hx-swap="none"
+              hx-confirm="Migrate the in-memory catalogue to MongoDB? Requires MONGO_URI to be set."
+              @htmx:after-request.camel="$dispatch('admin-progress-tick')"
               class="inline">
           <button type="submit"
                   class="text-sm px-3 py-1.5 rounded bg-amber-500/15 text-amber-200
                          border border-amber-400/30 hover:bg-amber-500/25 transition-colors"
-                  title="One-shot: bulk-upsert every catalogue item into MongoDB Atlas. Run once after MONGO_URI is set, then flip STORE_BACKEND=mongo and restart.">
+                  title="Bulk-upsert every catalogue item into MongoDB Atlas. Tracks progress live below.">
             Migrate → Mongo
           </button>
         </form>
@@ -195,6 +197,7 @@
            reindex: null,
            probe: null,
            episode_fill: null,
+           migrate: null,
            pollHandle: null,
            start() {
              this.tick();
@@ -212,9 +215,11 @@
                this.reindex = data.reindex;
                this.probe = data.probe;
                this.episode_fill = data.episode_fill;
+               this.migrate = data.migrate;
                const any = (data.seed.running || data.enrich.running || data.reindex.running
                  || (data.probe &amp;&amp; data.probe.running)
-                 || (data.episode_fill &amp;&amp; data.episode_fill.running));
+                 || (data.episode_fill &amp;&amp; data.episode_fill.running)
+                 || (data.migrate &amp;&amp; data.migrate.running));
                if (!any) {
                  if (this.pollHandle) {
                    clearInterval(this.pollHandle);
@@ -296,6 +301,32 @@
           <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
             <div class="h-full bg-brand-400 transition-all duration-500"
                  :style="`width:${pct(episode_fill)}%`"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="migrate &amp;&amp; (migrate.running || migrate.phase === 'failed')">
+        <div class="rounded-lg p-4"
+             :class="migrate.phase === 'failed'
+               ? 'border border-red-400/40 bg-red-500/10'
+               : 'border border-amber-400/30 bg-amber-400/5'">
+          <div class="flex items-center justify-between text-sm">
+            <span :class="migrate.phase === 'failed' ? 'text-red-300' : 'text-amber-200'">
+              <span x-show="migrate.phase === 'connecting'">Connecting to MongoDB…</span>
+              <span x-show="migrate.phase === 'indexing'">Snapshotting catalogue…</span>
+              <span x-show="migrate.phase === 'writing'">Writing to MongoDB</span>
+              <span x-show="migrate.phase === 'done'">Migration done</span>
+              <span x-show="migrate.phase === 'failed'">Migration failed</span>
+            </span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${migrate.done}/${migrate.total} written`"></span>
+          </div>
+          <p x-show="migrate.phase === 'failed' &amp;&amp; migrate.error"
+             class="mt-1 text-xs text-red-300/80" x-text="migrate.error"></p>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full transition-all duration-500"
+                 :class="migrate.phase === 'failed' ? 'bg-red-400' : 'bg-amber-400'"
+                 :style="`width:${pct(migrate)}%`"></div>
           </div>
         </div>
       </template>
