@@ -1,0 +1,226 @@
+"""Admin UI for catalogue cleanup.
+
+The owner DMs ``/admin`` to the bot and receives a one-time URL. Visiting
+that URL exchanges the token for a session cookie, then renders a paged
+list of indexed BIN_CHANNEL entries with checkboxes. Bulk actions:
+
+  • Delete: removes the BIN message AND the in-memory hub entry.
+  • Re-tag: replaces the tag set on every selected entry.
+  • Set quality: stamps a quality bucket on every selected entry.
+
+Both re-tag and set-quality re-render the BIN caption via the same
+IndexEntry pipeline used at index time so the on-channel representation
+stays in sync.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import List, Optional
+
+from aiohttp import web
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from main import StreamBot
+from main.utils import admin_auth, media_index
+from main.utils.human_readable import humanbytes
+from main.utils.index_entry import IndexEntry, render
+from main.vars import Var
+
+
+routes = web.RouteTableDef()
+
+_TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
+_env = Environment(
+    loader=FileSystemLoader(str(_TEMPLATE_DIR)),
+    autoescape=select_autoescape(["html"]),
+    enable_async=True,
+)
+_env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
+
+
+def _current_user(request: web.Request) -> Optional[int]:
+    cookie = request.cookies.get(admin_auth.COOKIE_NAME)
+    return admin_auth.verify_session(cookie or "")
+
+
+def _require_session(request: web.Request) -> int:
+    user_id = _current_user(request)
+    if user_id is None:
+        raise web.HTTPFound("/admin/login?error=expired")
+    return user_id
+
+
+def _html(body: str, *, status: int = 200) -> web.Response:
+    return web.Response(
+        text=body,
+        status=status,
+        content_type="text/html",
+        charset="utf-8",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@routes.get("/admin/login")
+async def admin_login(request: web.Request) -> web.Response:
+    """Exchange a one-time DM token for a session cookie.
+
+    Expected URL: /admin/login?t=<one-time-token>. On success, redirect to
+    /admin with the cookie set; on failure, render a tiny error page.
+    """
+    token = request.query.get("t", "")
+    user_id = admin_auth.verify_one_time(token) if token else None
+    if user_id is None:
+        return _html(
+            "<h1>Admin link invalid or expired</h1>"
+            "<p>DM <code>/admin</code> to the bot to get a new link.</p>",
+            status=403,
+        )
+    session = admin_auth.issue_session_token(user_id)
+    resp = web.HTTPFound("/admin")
+    resp.set_cookie(
+        admin_auth.COOKIE_NAME, session,
+        max_age=admin_auth.SESSION_TTL,
+        httponly=True, samesite="Lax", path="/admin",
+    )
+    raise resp
+
+
+@routes.get("/admin/logout")
+async def admin_logout(request: web.Request) -> web.Response:
+    resp = web.HTTPFound("/")
+    resp.del_cookie(admin_auth.COOKIE_NAME, path="/admin")
+    raise resp
+
+
+@routes.get("/admin")
+async def admin_home(request: web.Request) -> web.Response:
+    _require_session(request)
+
+    items_all = sorted(
+        media_index._items.values(),  # internal access — admin layer co-owns the store
+        key=lambda it: it.message_id, reverse=True,
+    )
+
+    flash = request.query.get("flash", "")
+    tpl = _env.get_template("admin.html")
+    body = await tpl.render_async(
+        items=items_all,
+        catalogue_size=media_index.size(),
+        flash=flash,
+    )
+    return _html(body)
+
+
+@routes.post("/admin/action")
+async def admin_action(request: web.Request) -> web.Response:
+    _require_session(request)
+
+    form = await request.post()
+    action = form.get("action", "")
+    ids = [int(x) for x in form.getall("ids") if str(x).isdigit()]
+    if not ids:
+        raise web.HTTPFound("/admin?flash=Nothing+selected")
+
+    if action == "delete":
+        n = await _bulk_delete(ids)
+        raise web.HTTPFound(f"/admin?flash=Deleted+{n}+entries")
+
+    if action == "retag":
+        tags = _normalise_tags(form.get("tags", ""))
+        n = await _bulk_retag(ids, tags)
+        raise web.HTTPFound(f"/admin?flash=Re-tagged+{n}+entries")
+
+    if action == "quality":
+        quality = (form.get("quality") or "").strip()
+        if quality not in {"480p", "720p", "1080p", "4K"}:
+            raise web.HTTPFound("/admin?flash=Invalid+quality")
+        n = await _bulk_quality(ids, quality)
+        raise web.HTTPFound(f"/admin?flash=Updated+quality+on+{n}+entries")
+
+    raise web.HTTPFound("/admin?flash=Unknown+action")
+
+
+# --- Bulk operations --------------------------------------------------
+
+
+def _normalise_tags(raw: str) -> List[str]:
+    parts = [p.strip().lstrip("#").lower() for p in raw.replace(",", " ").split()]
+    return [p for p in parts if p]
+
+
+async def _bulk_delete(ids: List[int]) -> int:
+    deleted = 0
+    for mid in ids:
+        try:
+            await StreamBot.delete_messages(Var.BIN_CHANNEL, mid)
+        except Exception:
+            logging.exception("admin: delete failed for bin:%d", mid)
+            continue
+        await media_index.remove(mid)
+        deleted += 1
+    return deleted
+
+
+async def _rewrite_caption(message_id: int, mutate) -> bool:
+    """Fetch a BIN message, rebuild its IndexEntry, mutate, and persist.
+
+    ``mutate(entry, item)`` modifies the IndexEntry in place. Returns True
+    if the caption was rewritten and the media_index entry refreshed.
+    """
+    item = media_index.get_item(message_id)
+    if item is None:
+        return False
+    entry = IndexEntry(
+        title=item.title,
+        year=item.year,
+        description=item.description,
+        tags=list(item.tags),
+    )
+    mutate(entry, item)
+    try:
+        await StreamBot.edit_message_caption(
+            chat_id=Var.BIN_CHANNEL,
+            message_id=message_id,
+            caption=render(entry),
+        )
+    except Exception:
+        logging.exception("admin: edit_caption failed for bin:%d", message_id)
+        return False
+    # Refresh the in-memory entry from the rewritten caption.
+    try:
+        fresh = await StreamBot.get_messages(Var.BIN_CHANNEL, message_id)
+        await media_index.add_from_message(fresh)
+    except Exception:
+        logging.exception("admin: post-edit refresh failed for bin:%d", message_id)
+    return True
+
+
+async def _bulk_retag(ids: List[int], tags: List[str]) -> int:
+    def apply(entry, _item):
+        entry.tags = list(tags)
+    n = 0
+    for mid in ids:
+        if await _rewrite_caption(mid, apply):
+            n += 1
+    return n
+
+
+async def _bulk_quality(ids: List[int], quality: str) -> int:
+    # Quality is encoded into the description line so it round-trips
+    # through the existing _extract_quality() regex used at index time.
+    def apply(entry, item):
+        # Replace an existing quality token if one is at the head of the
+        # description, otherwise prepend.
+        desc = (item.description or "").strip()
+        for q in ("4K", "1080p", "720p", "480p", "2160p", "UHD", "FHD", "HD", "SD"):
+            if desc.lower().startswith(q.lower()):
+                desc = desc[len(q):].lstrip(" ·-—")
+                break
+        entry.description = (quality + (" · " + desc if desc else "")).strip()
+    n = 0
+    for mid in ids:
+        if await _rewrite_caption(mid, apply):
+            n += 1
+    return n

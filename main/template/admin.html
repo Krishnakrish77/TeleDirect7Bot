@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Admin · TeleDirect{% endblock %}
+
+{% block content %}
+  <div class="w-full max-w-6xl">
+    <header class="mb-6 flex items-end justify-between gap-3">
+      <div>
+        <h1 class="text-3xl font-bold text-white tracking-tight">Admin</h1>
+        <p class="mt-1 text-sm text-slate-400">
+          {{ catalogue_size }} indexed entr{{ 'y' if catalogue_size == 1 else 'ies' }}.
+          Select rows, then run a bulk action below.
+        </p>
+      </div>
+      <a href="/admin/logout"
+         class="text-sm text-slate-400 hover:text-brand-300 transition-colors">
+        Sign out
+      </a>
+    </header>
+
+    {% if flash %}
+      <div class="mb-4 rounded-lg border border-brand-400/30 bg-brand-400/10
+                  px-4 py-2 text-sm text-brand-200">
+        {{ flash }}
+      </div>
+    {% endif %}
+
+    <form method="post" action="/admin/action"
+          x-data="{ selected: [], allChecked: false }"
+          @reset="selected = []; allChecked = false">
+      <div class="mb-4 flex flex-wrap items-center gap-2 sticky top-0 z-10
+                  bg-ink-900/95 backdrop-blur py-3 -mx-2 px-2 border-b border-white/5">
+        <span class="text-xs text-slate-400" x-text="selected.length + ' selected'"></span>
+
+        <button type="submit" name="action" value="delete"
+                @click="if (!confirm('Delete ' + selected.length + ' entries? This removes them from BIN_CHANNEL.')) $event.preventDefault()"
+                class="ml-auto px-3 py-1.5 rounded text-xs font-medium
+                       bg-red-500/15 text-red-300 border border-red-400/30
+                       hover:bg-red-500/25 transition-colors"
+                :disabled="selected.length === 0">
+          Delete
+        </button>
+
+        <div class="flex items-center gap-1">
+          <input type="text" name="tags" placeholder="space-separated tags"
+                 class="px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                        border border-white/5 w-48" />
+          <button type="submit" name="action" value="retag"
+                  class="px-3 py-1.5 rounded text-xs font-medium
+                         bg-ink-800 text-slate-200 border border-white/5
+                         hover:bg-ink-700 transition-colors"
+                  :disabled="selected.length === 0">
+            Re-tag
+          </button>
+        </div>
+
+        <div class="flex items-center gap-1">
+          <select name="quality"
+                  class="px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                         border border-white/5">
+            <option value="480p">480p</option>
+            <option value="720p">720p</option>
+            <option value="1080p" selected>1080p</option>
+            <option value="4K">4K</option>
+          </select>
+          <button type="submit" name="action" value="quality"
+                  class="px-3 py-1.5 rounded text-xs font-medium
+                         bg-ink-800 text-slate-200 border border-white/5
+                         hover:bg-ink-700 transition-colors"
+                  :disabled="selected.length === 0">
+            Set quality
+          </button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded-lg border border-white/5">
+        <table class="w-full text-sm">
+          <thead class="text-xs uppercase tracking-wider text-slate-500
+                        bg-ink-800/60 border-b border-white/5">
+            <tr>
+              <th class="px-3 py-2 text-left">
+                <input type="checkbox" x-model="allChecked"
+                       @change="selected = allChecked ? Array.from(document.querySelectorAll('input[name=ids]')).map(c => c.value) : []" />
+              </th>
+              <th class="px-3 py-2 text-left">Title</th>
+              <th class="px-3 py-2 text-left">Series</th>
+              <th class="px-3 py-2 text-left">Quality</th>
+              <th class="px-3 py-2 text-left">Tags</th>
+              <th class="px-3 py-2 text-left">Size</th>
+              <th class="px-3 py-2 text-left">Bin ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+              <tr class="border-b border-white/5 hover:bg-ink-800/40">
+                <td class="px-3 py-2">
+                  <input type="checkbox" name="ids" value="{{ item.message_id }}"
+                         x-model="selected" />
+                </td>
+                <td class="px-3 py-2 text-slate-200">
+                  <a href="/watch/{{ item.secure_hash }}{{ item.message_id }}"
+                     target="_blank"
+                     class="hover:text-brand-300">
+                    {{ item.title }}{% if item.year %} ({{ item.year }}){% endif %}
+                  </a>
+                </td>
+                <td class="px-3 py-2 text-slate-400 text-xs">
+                  {% if item.series_key %}
+                    {{ item.series_title }}
+                    {% if item.season and item.episode %}
+                      <span class="text-slate-500">S{{ '%02d' % item.season }}E{{ '%02d' % item.episode }}</span>
+                    {% endif %}
+                  {% else %}—{% endif %}
+                </td>
+                <td class="px-3 py-2 text-slate-400">{{ item.quality or '—' }}</td>
+                <td class="px-3 py-2 text-slate-400 text-xs">
+                  {% if item.tags %}{{ item.tags | join(' ') }}{% else %}—{% endif %}
+                </td>
+                <td class="px-3 py-2 text-slate-400 text-xs tabular-nums">
+                  {{ item.file_size | humansize }}
+                </td>
+                <td class="px-3 py-2 text-slate-500 text-xs tabular-nums">
+                  {{ item.message_id }}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+  </div>
+{% endblock %}
