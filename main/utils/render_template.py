@@ -22,6 +22,17 @@ _REQ_TEMPLATE = _env.get_template("req.html")
 _DL_TEMPLATE = _env.get_template("dl.html")
 
 
+# Containers the browser can decode straight from a byte-range stream.
+# Anything else (MKV, AVI, WMV...) gets routed through HLS because the
+# container itself isn't supported in MSE, not just the codecs inside.
+_BROWSER_NATIVE_CONTAINERS = {
+    "video/mp4",
+    "video/quicktime",   # .mov
+    "video/x-m4v",
+    "video/webm",
+}
+
+
 async def render_page(message_id, secure_hash):
     file_data = await get_file_ids(StreamBot, int(Var.BIN_CHANNEL), int(message_id))
     if file_data.unique_id[:6] != secure_hash:
@@ -29,16 +40,21 @@ async def render_page(message_id, secure_hash):
         logging.debug(f"Invalid hash for message with - ID {message_id}")
         raise InvalidHash
     src = urllib.parse.urljoin(Var.URL, f'{secure_hash}{message_id}')
-    mime_type = (file_data.mime_type or "").split('/')[0].strip()
+    full_mime = (file_data.mime_type or "").lower().strip()
+    mime_type = full_mime.split('/')[0]
     if mime_type in ("video", "audio"):
         heading = ("Watch " if mime_type == "video" else "Listen ") + (file_data.file_name or "")
-        # HLS is offered only for video; the playlist endpoint will 415 if the
-        # source codecs aren't transmuxable to TS, and the client falls back
-        # to the direct src.
-        hls_src = (
-            urllib.parse.urljoin(Var.URL, f'hls/{secure_hash}{message_id}/playlist.m3u8')
-            if mime_type == "video" else None
-        )
+        # Route through HLS only when the container actually needs it.
+        # MP4/MOV/M4V/WebM byte-stream directly to <video src=...>;
+        # MKV/AVI/etc. need ffmpeg to transmux into MPEG-TS. Skipping the
+        # HLS path for browser-native containers avoids spinning ffmpeg
+        # and any DTS-monotonicity demuxer errors that can surface when
+        # segmenting B-frame-heavy MP4s.
+        hls_src = None
+        if mime_type == "video" and full_mime and full_mime not in _BROWSER_NATIVE_CONTAINERS:
+            hls_src = urllib.parse.urljoin(
+                Var.URL, f'hls/{secure_hash}{message_id}/playlist.m3u8',
+            )
         # Base path for subtitle endpoints — the client appends /list.json
         # and /{n}.vtt itself.
         sub_path = (
