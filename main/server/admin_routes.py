@@ -123,7 +123,10 @@ async def admin_enrich(request: web.Request) -> web.Response:
     _require_session(request)
     form = await request.post()
     force = bool(form.get("force"))
-    summary = await media_index.enrich_all(force=force)
+    # Pass StreamBot so the enriched canonical metadata gets written back
+    # to BIN_CHANNEL captions. Telegram's per-channel edit rate limit
+    # (~30/min for bots) is handled by the throttle inside enrich_all.
+    summary = await media_index.enrich_all(bot=StreamBot, force=force)
     from urllib.parse import quote
     if summary.get("skipped_no_api_key"):
         flash = "TMDB_API_KEY not set — enrichment skipped"

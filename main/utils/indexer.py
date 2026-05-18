@@ -23,7 +23,12 @@ from pyrogram.types import Message
 from main.utils.file_properties import get_hash, get_media_file_unique_id
 from main.utils.hub_query import ExternalSubtitle
 from main.utils.human_readable import humanbytes
-from main.utils.index_entry import IndexEntry, render, title_from_filename
+from main.utils.index_entry import (
+    IndexEntry,
+    render,
+    title_from_filename,
+    year_from_filename,
+)
 from main.utils.subtitles import (
     derive_label,
     is_subtitle_filename,
@@ -61,6 +66,7 @@ def _build_caption(message: Message) -> Optional[str]:
 
     entry = IndexEntry(
         title=title_from_filename(file_name),
+        year=year_from_filename(file_name),
         description=humanbytes(file_size) if file_size else "",
     )
     # No FileVariant entries: in the single-channel layout, the message IS
@@ -105,11 +111,13 @@ async def index_bin_message(bot: Client, bin_msg: Message) -> None:
 
     # Fire-and-forget TMDB enrichment. The lookup is cached per
     # (title, year) so multiple episodes of the same series share one
-    # network request.
+    # network request. Pass `bot` so the canonical metadata gets written
+    # back to the BIN caption when a match lands — that makes the
+    # Telegram channel the durable source of truth.
     try:
         from main.utils import tmdb
         if tmdb.is_configured():
-            asyncio.create_task(media_index.enrich_one(bin_msg.id))
+            asyncio.create_task(media_index.enrich_one(bin_msg.id, bot=bot))
     except Exception:
         logging.debug("enrichment schedule failed for bin:%d", bin_msg.id,
                       exc_info=True)

@@ -31,7 +31,12 @@ from typing import Dict, List, Optional, Tuple
 
 from main.utils.file_properties import get_hash
 from main.utils.hub_query import ExternalSubtitle, HubItem, MovieGroup, SeriesGroup
-from main.utils.index_entry import IndexEntry, parse, title_from_filename
+from main.utils.index_entry import (
+    IndexEntry,
+    parse,
+    title_from_filename,
+    year_from_filename,
+)
 from main.utils import series as series_parse
 from main.utils.dedup import movie_key as compute_movie_key
 from main.utils.subtitles import stem_for_pairing
@@ -172,7 +177,14 @@ def _item_from_message(message) -> Optional[HubItem]:
     file_name = getattr(media, "file_name", None) or ""
     parsed = parse(message.caption or "")
     if parsed is None:
-        parsed = IndexEntry(title=title_from_filename(file_name))
+        parsed = IndexEntry(
+            title=title_from_filename(file_name),
+            year=year_from_filename(file_name),
+        )
+    elif parsed.year is None:
+        # Caption parser found a title but no year; backfill from the
+        # filename so the year filter and movie_key both work.
+        parsed.year = year_from_filename(file_name)
     # Try filename first (release names follow conventions), fall back to the
     # parsed caption title for hand-written entries.
     sm = series_parse.parse(file_name) or series_parse.parse(parsed.title)
@@ -756,6 +768,66 @@ def shelves(per_shelf: int = 14) -> List[dict]:
     return out
 
 
+async def persist_canonical_to_bin(bot, message_id: int) -> bool:
+    """Edit a BIN_CHANNEL message's caption to reflect the HubItem's
+    current canonical state.
+
+    This is what makes the catalogue scalable across container restarts:
+    /tmp/media_index.json is ephemeral on Koyeb, but the Telegram channel
+    isn't. A cold restart re-seeds from BIN, parses cleaned captions for
+    titles and years, then re-enriches via TMDB to recover poster URLs
+    etc. The hub never falls back to "[MS] F1 The Movie 2025 720p HDRip"
+    state.
+
+    Handles FloodWait by sleeping and retrying; MessageNotModified counts
+    as success (the caption is already what we want). Returns True on
+    successful edit (or no-op), False on hard failure.
+    """
+    from pyrogram.errors import FloodWait, MessageNotModified
+    from main.utils.index_entry import render
+    from main.vars import Var
+
+    item = _items.get(message_id)
+    if item is None:
+        return False
+
+    entry = IndexEntry(
+        title=item.title or "(untitled)",
+        year=item.year,
+        description=item.overview or item.description or "",
+        tags=list(item.tags),
+    )
+    caption = render(entry)
+    try:
+        await bot.edit_message_caption(
+            chat_id=Var.BIN_CHANNEL,
+            message_id=message_id,
+            caption=caption,
+        )
+        return True
+    except MessageNotModified:
+        return True
+    except FloodWait as e:
+        wait = getattr(e, "value", None) or getattr(e, "x", 0) or 1
+        logging.warning("FloodWait writing caption bin:%d — sleeping %ss",
+                        message_id, wait)
+        await asyncio.sleep(wait)
+        try:
+            await bot.edit_message_caption(
+                chat_id=Var.BIN_CHANNEL,
+                message_id=message_id,
+                caption=caption,
+            )
+            return True
+        except Exception:
+            logging.exception("Caption write failed after FloodWait for bin:%d",
+                              message_id)
+            return False
+    except Exception:
+        logging.exception("Caption write failed for bin:%d", message_id)
+        return False
+
+
 def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
     """Merge TMDB data into an existing HubItem. Replaces the title/year
     with TMDB's canonical pair when confidence was high enough for the
@@ -803,7 +875,7 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
             existing.add(slug)
 
 
-async def enrich_one(message_id: int) -> bool:
+async def enrich_one(message_id: int, bot=None) -> bool:
     """Look up and apply TMDB enrichment for a single catalogue entry.
 
     Returns True if the entry got enriched, False otherwise. Idempotent:
@@ -815,6 +887,11 @@ async def enrich_one(message_id: int) -> bool:
     2. ``clean_for_search`` on the file_name (fallback when the title got
        degraded by an earlier indexer)
     3. The raw title as TMDB sees it
+
+    When ``bot`` is provided, the enriched canonical metadata is also
+    written back to the BIN_CHANNEL message caption — making the Telegram
+    channel itself the durable source of truth, so a /tmp wipe doesn't
+    lose hard-won enrichment data.
     """
     from main.utils.dedup import clean_for_search
 
@@ -863,10 +940,15 @@ async def enrich_one(message_id: int) -> bool:
     async with _lock:
         _apply_tmdb_to_item(item, hit)
         _persist_unlocked()
+
+    if bot is not None:
+        # Best-effort caption write-back. A failure here doesn't undo the
+        # in-memory enrichment; the next enrich pass will retry.
+        await persist_canonical_to_bin(bot, message_id)
     return True
 
 
-async def enrich_all(force: bool = False) -> dict:
+async def enrich_all(bot=None, force: bool = False) -> dict:
     """Background-enrich every entry that hasn't been enriched yet.
 
     With ``force=True`` re-enriches everything, including entries that
@@ -886,14 +968,16 @@ async def enrich_all(force: bool = False) -> dict:
             continue
         if not force and item.tmdb_id:
             continue
-        ok = await enrich_one(mid)
+        ok = await enrich_one(mid, bot=bot)
         if ok:
             enriched += 1
         else:
             failed += 1
         # Yield to the loop so the web server stays responsive during a
-        # bulk enrich.
-        await asyncio.sleep(0)
+        # bulk enrich. Sleep slightly longer when writing back to BIN to
+        # stay under Telegram's per-channel editMessage rate limit
+        # (~30/minute for bots).
+        await asyncio.sleep(2.0 if bot is not None else 0)
     return {"total": len(_items), "enriched": enriched, "failed": failed}
 
 

@@ -146,10 +146,39 @@ def render(entry: IndexEntry) -> str:
 
 
 def title_from_filename(filename: Optional[str]) -> str:
-    """Derive a starter title from a media filename. Strips the common video
-    extensions; admin can /edit_index to clean further. Falls back to a
-    generic placeholder when no name is available."""
+    """Derive a starter title from a media filename. Returns the readable
+    portion of the name with release-noise + channel prefixes stripped —
+    so even unenriched entries display "F1 The Movie" instead of the raw
+    "[MS] F1 The Movie 2025 720p HDRip" once they land in the catalogue.
+    Falls back to a generic placeholder when no name is available.
+    """
     if not filename:
         return "(untitled)"
-    cleaned = _VIDEO_EXT_RE.sub("", filename).strip()
-    return cleaned or "(untitled)"
+    # Lazy import to avoid a cycle (dedup → series; series stays leaf).
+    from main.utils.dedup import clean_for_search
+    cleaned = clean_for_search(filename)
+    if cleaned:
+        return cleaned
+    bare = _VIDEO_EXT_RE.sub("", filename).strip()
+    return bare or "(untitled)"
+
+
+def year_from_filename(filename: Optional[str]) -> Optional[int]:
+    """Pull a 4-digit year out of a filename, ignoring resolution-shaped
+    numbers like 1080. Used at index time so the entry's ``year`` field
+    is populated even before TMDB enrichment runs.
+    """
+    if not filename:
+        return None
+    # Match years between 1900 and 2099, requiring word boundaries — runs
+    # of digits glued to letters (1986Tamil) are handled by the same
+    # split logic clean_for_search applies.
+    text = filename
+    text = text.replace(".", " ").replace("_", " ")
+    import re as _re
+    m = _re.search(r"\b(19|20)\d{2}\b", text)
+    if m:
+        return int(m.group(0))
+    # Fall back: digits-stuck-to-letters case (Minsaram1986)
+    m = _re.search(r"(?<=\D)((?:19|20)\d{2})(?=\D|$)", filename)
+    return int(m.group(1)) if m else None
