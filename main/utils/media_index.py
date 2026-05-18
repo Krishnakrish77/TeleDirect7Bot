@@ -1474,20 +1474,24 @@ async def persist_canonical_to_bin(bot, message_id: int) -> bool:
     """Edit a BIN_CHANNEL message's caption to reflect the HubItem's
     current canonical state.
 
-    This is what makes the catalogue scalable across container restarts:
-    /tmp/media_index.json is ephemeral on Koyeb, but the Telegram channel
-    isn't. A cold restart re-seeds from BIN, parses cleaned captions for
-    titles and years, then re-enriches via TMDB to recover poster URLs
-    etc. The hub never falls back to "[MS] F1 The Movie 2025 720p HDRip"
-    state.
+    Originally this was the durable backup: /tmp wipe + container
+    restart could rehydrate the catalogue by walking BIN_CHANNEL and
+    parsing structured captions. With ``STORE_BACKEND=mongo`` Mongo
+    IS the durable store, so the caption rewrite is pure cosmetics
+    — and it costs us MESSAGE_AUTHOR_REQUIRED errors on every
+    legacy forwarded entry. Short-circuit when Mongo is active.
 
-    Handles FloodWait by sleeping and retrying; MessageNotModified counts
-    as success (the caption is already what we want). When Telegram
-    returns MessageIdInvalid the in-memory entry is stale (the source
-    message was deleted on the channel) — we drop it from the catalogue
-    so subsequent seeds don't repeat the work. Returns True on
-    successful edit (or no-op), False on hard failure.
+    Handles FloodWait by sleeping and retrying; MessageNotModified
+    counts as success (the caption is already what we want). When
+    Telegram returns MessageIdInvalid the in-memory entry is stale
+    (the source message was deleted on the channel) — we drop it
+    from the catalogue so subsequent seeds don't repeat the work.
+    Returns True on successful edit (or skip when Mongo handles
+    durability), False on hard failure.
     """
+    # Mongo is the source of truth — BIN captions are now redundant.
+    if _store_active():
+        return True
     from pyrogram.errors import FloodWait, MessageNotModified
     from pyrogram.errors.exceptions.bad_request_400 import (
         MessageIdInvalid, ChannelInvalid,

@@ -702,6 +702,16 @@ async def _rewrite_caption(message_id: int, mutate) -> Tuple[str, str]:
         backdrop_path=item.backdrop_path,
     )
     mutate(entry, item)
+
+    # Mongo holds the authoritative catalogue now, so the BIN caption
+    # rewrite is redundant — and historically the source of the
+    # MESSAGE_AUTHOR_REQUIRED errors on legacy forwarded entries.
+    # Skip the Telegram edit entirely; apply locally + Mongo only.
+    if media_index._store_active():
+        _apply_local_only(message_id, entry)
+        await media_index._store_upsert(media_index.get_item(message_id))
+        return "written", ""
+
     try:
         await StreamBot.edit_message_caption(
             chat_id=Var.BIN_CHANNEL,

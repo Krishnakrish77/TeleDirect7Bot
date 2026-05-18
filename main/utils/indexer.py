@@ -130,25 +130,36 @@ async def _index_bin_message_impl(bot: Client, bin_msg: Message) -> None:
     caption = _build_caption(bin_msg)
     if caption is None:
         return
-    try:
-        await bot.edit_message_caption(
-            chat_id=bin_msg.chat.id,
-            message_id=bin_msg.id,
-            caption=caption,
+    # Mongo holds the canonical catalogue now — the BIN caption is
+    # redundant cosmetic round-tripping. Skip the Telegram edit so we
+    # don't FloodWait or burn quota on it. The add_from_message call
+    # below uses the file's original caption (or filename) and writes
+    # the structured fields to Mongo, which is all the hub needs.
+    if media_index._store_active():
+        logging.debug(
+            "indexer: bin:%d caption-write skipped (Mongo active)",
+            bin_msg.id,
         )
-    except MessageNotModified:
-        pass
-    except FloodWait as e:
-        wait = getattr(e, "value", None) or getattr(e, "x", 0)
-        logging.warning("FloodWait editing bin:%d — sleeping %ss", bin_msg.id, wait)
-        await asyncio.sleep(wait)
-        # Recurse on the impl (NOT the public function) so we don't
-        # re-acquire the semaphore from inside the same task — that
-        # would deadlock against the slot we're already holding.
-        await _index_bin_message_impl(bot, bin_msg)
-        return
-    except Exception:
-        logging.exception("Failed to index bin:%d", bin_msg.id)
+    else:
+        try:
+            await bot.edit_message_caption(
+                chat_id=bin_msg.chat.id,
+                message_id=bin_msg.id,
+                caption=caption,
+            )
+        except MessageNotModified:
+            pass
+        except FloodWait as e:
+            wait = getattr(e, "value", None) or getattr(e, "x", 0)
+            logging.warning("FloodWait editing bin:%d — sleeping %ss", bin_msg.id, wait)
+            await asyncio.sleep(wait)
+            # Recurse on the impl (NOT the public function) so we don't
+            # re-acquire the semaphore from inside the same task — that
+            # would deadlock against the slot we're already holding.
+            await _index_bin_message_impl(bot, bin_msg)
+            return
+        except Exception:
+            logging.exception("Failed to index bin:%d", bin_msg.id)
 
     # Re-fetch the message so the caption we just wrote is the one that
     # gets parsed into the index entry. Even when the caption-edit
