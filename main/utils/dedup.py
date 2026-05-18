@@ -33,10 +33,19 @@ _NOISE_TOKENS = re.compile(
     r"esub|esubs|dual[-]?audio|multi|"
     r"tamil|english|hindi|malayalam|telugu|kannada|"
     r"untouched|proper|repack|extended|directors?|cut|"
-    r"hq|sunnxt|amzn|dsnp|nf"
+    r"hq|sunnxt|amzn|dsnp|nf|"
+    # Container extensions — appear as standalone words after the
+    # dot-to-space normalization step.
+    r"mkv|mp4|avi|mov|m4v|wmv|flv|webm|mpg|mpeg|ts"
     r")\b",
     re.IGNORECASE,
 )
+
+# Channel handle tokens like ``@T4TVSeries`` or ``@MoviesShop`` appearing
+# anywhere in the filename. Auto-indexer carries them through from the
+# uploader's filename if there's no clear separator anchoring them to
+# the start.
+_INLINE_HANDLE_RE = re.compile(r"@\w+")
 
 _YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 
@@ -82,6 +91,11 @@ def clean_for_search(title: str, file_name: str = "") -> str:
         r"^\s*www\s+\S+(?:\s+(?:buzz|net|com|org|info|io|cc))?\s+",
         "", text, flags=re.IGNORECASE,
     )
+
+    # Strip @channelname tokens wherever they appear. Earlier passes
+    # only caught leading @-prefixes; trailing ones like
+    # ``Good Witch S07E02 @T4TVSeries mkv`` slipped through.
+    text = _INLINE_HANDLE_RE.sub(" ", text)
 
     # Strip the release-noise tokens but leave the rest of the title's
     # casing/punctuation intact for natural-language search.
