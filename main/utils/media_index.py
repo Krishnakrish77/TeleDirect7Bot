@@ -1519,7 +1519,14 @@ async def snapshot_to_telegram(bot) -> Optional[int]:
 
     Remembers the message id of the new snapshot so the next save can
     delete the previous copy even when pinning is unavailable.
+
+    No-op when the durable Mongo store is active — every mutation is
+    already written through to Mongo, so the Telegram snapshot is
+    redundant. This guard applies regardless of how this function was
+    called (schedule_snapshot, enrich_all, reindex, etc.).
     """
+    if _store_active():
+        return None
     global _snapshot_msg_id
     try:
         payload = {
