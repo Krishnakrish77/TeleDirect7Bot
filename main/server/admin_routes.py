@@ -15,6 +15,7 @@ stays in sync.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -660,9 +661,16 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         async with aiohttp.ClientSession() as sess:
             async with sess.post(
                 gemini_url, json=payload,
-                timeout=aiohttp.ClientTimeout(total=30),
+                timeout=aiohttp.ClientTimeout(total=90),
             ) as r:
-                resp_data = await r.json()
+                try:
+                    resp_data = await r.json(content_type=None)
+                except Exception:
+                    body = await r.text()
+                    return web.json_response(
+                        {"error": f"Gemini returned non-JSON (HTTP {r.status}): {body[:200]}"},
+                        status=502,
+                    )
                 if r.status != 200:
                     err = resp_data.get("error", {}).get("message", str(resp_data))
                     return web.json_response({"error": f"Gemini: {err}"}, status=502)
@@ -678,6 +686,11 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         }
         return web.json_response(clean)
 
+    except asyncio.TimeoutError:
+        return web.json_response(
+            {"error": "Gemini timed out (90 s) — thumbnail may be too large; try a model without vision or re-try"},
+            status=504,
+        )
     except Exception:
         logging.exception("admin: Gemini suggest failed for bin:%d", message_id)
         return web.json_response(
