@@ -828,6 +828,7 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         "Format: 'Series Name - Episode Title.mp4' for courses/episodes, "
         "'Movie Title (Year).mkv' for movies. Never leave file_name empty if you "
         "identified the content — it is the primary display label.\n"
+        "• tags: at most 3 tags, space-separated, lowercase (e.g. 'action thriller 2020s').\n"
         "• Use 0 or empty string only for fields you truly cannot determine.\n"
         "• In 'reasoning' briefly explain what you found in the thumbnail."
     )
@@ -851,7 +852,7 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
             "series_title": {"type": "STRING"},
             "season":       {"type": "INTEGER"},
             "episode":      {"type": "INTEGER"},
-            "tags":         {"type": "STRING"},
+            "tags":         {"type": "STRING", "description": "Up to 3 most relevant space-separated tags, lowercase"},
             "description":  {"type": "STRING"},
             "reasoning":    {"type": "STRING"},
         },
@@ -903,6 +904,9 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
             if not (isinstance(v, int) and v == 0)
             and not (isinstance(v, str) and not v.strip())
         }
+        # Cap tags at 3 regardless of what Gemini returned.
+        if "tags" in clean:
+            clean["tags"] = " ".join(clean["tags"].split()[:3])
         return web.json_response(clean)
 
     except asyncio.TimeoutError:
