@@ -60,7 +60,7 @@ def get_media_file_size(m):
 
 def get_name(media_msg: Message) -> str:
     media = get_media_from_message(media_msg)
-    return str(getattr(media, "file_name", "None"))
+    return getattr(media, "file_name", None) or ""
 
 def get_media_mime_type(m):
     media = get_media_from_message(m)

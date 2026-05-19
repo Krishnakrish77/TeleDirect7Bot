@@ -87,7 +87,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         "-probesize", "5M",
         "-analyzeduration", "5000000",
         "-select_streams", "v:0",
-        "-show_entries", "stream=codec_name,pix_fmt,profile,width,height",
+        "-show_entries", "stream=codec_name,pix_fmt,profile,width,height:format_tags=title",
         "-of", "json",
         stream_url,
     ]
@@ -145,6 +145,13 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     s = streams[0]
     item.video_codec = (s.get("codec_name") or "").lower()
     item.pix_fmt = (s.get("pix_fmt") or "").lower()
+    # Use the embedded title tag as a filename fallback for video-type
+    # uploads that Telegram strips the original name from.
+    if not item.file_name:
+        fmt_tags = (payload.get("format") or {}).get("tags") or {}
+        embedded_title = (fmt_tags.get("title") or fmt_tags.get("Title") or "").strip()
+        if embedded_title:
+            item.file_name = embedded_title
     # Derive quality bucket from the actual encoded height when the
     # filename didn't reveal one. ffprobe's truth wins over the
     # filename-parsed bucket — release groups frequently mislabel

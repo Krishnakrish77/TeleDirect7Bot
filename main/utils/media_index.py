@@ -317,11 +317,38 @@ def _is_video_message(message) -> bool:
     return mime.startswith("video/")
 
 
+_MIME_TO_EXT = {
+    "mp4": "mp4", "x-matroska": "mkv", "quicktime": "mov",
+    "x-msvideo": "avi", "webm": "webm", "x-ms-wmv": "wmv",
+    "mpeg": "mpg", "3gpp": "3gp",
+}
+
+def _synthesize_filename(title: str, year, media) -> str:
+    """Last-resort display name for video-type uploads with no file_name."""
+    if not title:
+        return ""
+    mime = (getattr(media, "mime_type", "") or "").lower()
+    sub = mime.split("/")[-1] if "/" in mime else "mp4"
+    ext = _MIME_TO_EXT.get(sub, "mp4")
+    return f"{title} ({year}).{ext}" if year else f"{title}.{ext}"
+
+
 def _item_from_message(message) -> Optional[HubItem]:
     if not _is_video_message(message):
         return None
     media = _media_of(message)
     file_name = getattr(media, "file_name", None) or ""
+    # Video-type uploads (not documents) carry no file_name. Try the
+    # caption first — it's often the original filename when the user
+    # pastes it in. If the caption is absent or unhelpful, synthesise a
+    # display name from the title + year + mime extension after parsing.
+    if not file_name:
+        cap = (message.caption or "").strip()
+        if cap and re.search(
+            r'\.(mkv|mp4|avi|mov|wmv|flv|webm|m4v|ts|m2ts)\s*$',
+            cap, re.IGNORECASE,
+        ):
+            file_name = cap
     parsed = parse(message.caption or "")
     if parsed is None:
         parsed = IndexEntry(
@@ -389,7 +416,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         file_size=int(getattr(media, "file_size", 0) or 0),
         has_thumb=bool(getattr(media, "thumbs", None)),
         quality=_extract_quality(parsed.title, file_name, parsed.description),
-        file_name=file_name,
+        file_name=file_name or _synthesize_filename(parsed.title, parsed.year, media),
         series_key=series_key,
         series_title=series_title,
         season=season,
