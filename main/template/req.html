@@ -813,17 +813,17 @@
         const dy = touch.y - touch.y0;
         const moved = Math.hypot(dx, dy);
 
-        if (touch.axis === "h" &amp;&amp; isFinite(video.duration)) {
+        if (touch.axis === "h" && isFinite(video.duration)) {
           // Commit the seek.
           const seekDelta = dx / HORIZONTAL_SEEK_PX_PER_SEC;
           const target = Math.max(0, Math.min(video.duration, touch.startTime + seekDelta));
           video.currentTime = target;
-        } else if (moved < MOVE_THRESHOLD &amp;&amp; (now - touch.startedAt) < 250) {
+        } else if (moved < MOVE_THRESHOLD && (now - touch.startedAt) < 250) {
           // Tap — check for double-tap. Plyr already handles single-tap
           // play/pause, so we only act on the SECOND tap.
           const dt = now - lastTapAt;
           const distFromLast = Math.abs(touch.x - lastTapX);
-          if (dt < DOUBLE_TAP_MS &amp;&amp; distFromLast < DOUBLE_TAP_DIST) {
+          if (dt < DOUBLE_TAP_MS && distFromLast < DOUBLE_TAP_DIST) {
             const delta = touch.rightHalf ? 10 : -10;
             const target = Math.max(0, Math.min(
               video.duration || Infinity,
