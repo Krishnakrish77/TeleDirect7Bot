@@ -70,6 +70,7 @@ class HubItem:
     episode_overview: str = ""
     episode_still_path: str = ""
     episode_air_date: str = ""
+    trailer_key: str = ""          # YouTube video ID; "" if not available
 
 
 @dataclass

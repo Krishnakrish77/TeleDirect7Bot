@@ -341,3 +341,23 @@ def episode_from_season(season_payload: dict, episode: int) -> Optional[dict]:
         except (TypeError, ValueError):
             continue
     return None
+
+
+async def fetch_trailer(tmdb_id: int, kind: str) -> str:
+    """Return the YouTube video ID for the first official trailer, or ""."""
+    if not is_configured() or not tmdb_id:
+        return ""
+    path = f"/{kind}/{tmdb_id}/videos"
+    async with aiohttp.ClientSession() as session:
+        data = await _get(session, path)
+    if not data:
+        return ""
+    results = data.get("results") or []
+    # Prefer official YouTube trailers; fall back to any YouTube trailer.
+    for official_pass in (True, False):
+        for v in results:
+            if (v.get("site") == "YouTube"
+                    and v.get("type") == "Trailer"
+                    and (not official_pass or v.get("official"))):
+                return v.get("key", "")
+    return ""

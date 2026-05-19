@@ -240,6 +240,7 @@ def _to_serializable(item: HubItem) -> dict:
         "episode_overview": item.episode_overview,
         "episode_still_path": item.episode_still_path,
         "episode_air_date": item.episode_air_date,
+        "trailer_key": item.trailer_key,
         "subtitles": [
             {
                 "bin_message_id": s.bin_message_id,
@@ -285,6 +286,7 @@ def _from_serializable(d: dict) -> HubItem:
         episode_overview=d.get("episode_overview", "") or "",
         episode_still_path=d.get("episode_still_path", "") or "",
         episode_air_date=d.get("episode_air_date", "") or "",
+        trailer_key=d.get("trailer_key", "") or "",
         subtitles=[
             ExternalSubtitle(
                 bin_message_id=s["bin_message_id"],
@@ -868,11 +870,12 @@ async def seed(bot, channel_id: int) -> None:
                             new_item.description = existing.description
                         if existing.overview and not new_item.overview:
                             new_item.overview = existing.overview
-                        # file_name is never in the BIN caption and is
-                        # easily cleared by the kurigram-strip or
-                        # device-name filter; preserve admin edits.
+                        # file_name and trailer_key are never in the BIN
+                        # caption; preserve admin edits / enrichment results.
                         if existing.file_name and not new_item.file_name:
                             new_item.file_name = existing.file_name
+                        if existing.trailer_key and not new_item.trailer_key:
+                            new_item.trailer_key = existing.trailer_key
                         # Episode metadata and probe results are never
                         # round-tripped through the BIN caption — always
                         # carry them forward from the snapshot/store so a
@@ -1962,6 +1965,12 @@ async def enrich_one(message_id: int, bot=None) -> bool:
     # Per-episode enrichment is async — do it outside the lock so the
     # TMDB season fetch doesn't block other catalogue mutations.
     await _fill_episode_metadata(item)
+    # Fetch YouTube trailer key if not already set (one extra TMDB call
+    # per title but cached at the series/movie level by tmdb module).
+    if not item.trailer_key and item.tmdb_id:
+        item.trailer_key = await tmdb.fetch_trailer(
+            item.tmdb_id, item.tmdb_kind or "movie"
+        )
     await persist_now()
     await _store_upsert(item)
 
