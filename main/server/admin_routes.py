@@ -509,6 +509,47 @@ async def admin_action(request: web.Request) -> web.Response:
     raise _redirect_with_flash("Unknown action")
 
 
+@routes.get("/admin/ai-models")
+async def admin_ai_models(request: web.Request) -> web.Response:
+    """Return models available for the configured GEMINI_API_KEY.
+
+    Calls Google's model-list endpoint and filters to those that support
+    generateContent (i.e. can be used with our suggest endpoint).
+    Returns an empty list when the key is not configured.
+    """
+    _require_session(request)
+    if not Var.GEMINI_API_KEY:
+        return web.json_response([])
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models"
+        f"?key={Var.GEMINI_API_KEY}&pageSize=200"
+    )
+    try:
+        async with aiohttp.ClientSession() as sess:
+            async with sess.get(url, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                if r.status != 200:
+                    return web.json_response([])
+                data = await r.json()
+
+        models = []
+        for m in data.get("models", []):
+            if "generateContent" not in m.get("supportedGenerationMethods", []):
+                continue
+            raw_name = m.get("name", "")          # "models/gemini-2.5-flash"
+            model_id = raw_name.split("/")[-1] if "/" in raw_name else raw_name
+            display  = m.get("displayName", model_id)
+            models.append({"id": model_id, "name": display})
+
+        return web.json_response(
+            models,
+            headers={"Cache-Control": "private, max-age=300"},
+        )
+    except Exception:
+        logging.exception("admin: failed to list Gemini models")
+        return web.json_response([])
+
+
 async def _fetch_thumb_bytes(item) -> Optional[bytes]:
     """Fetch the video thumbnail via our own /thumb/ endpoint."""
     if not item.has_thumb:
@@ -598,13 +639,11 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
                      "season", "episode", "tags", "description", "reasoning"],
     }
 
-    _ALLOWED_MODELS = {
-        "gemini-2.0-flash", "gemini-2.0-flash-lite",
-        "gemini-1.5-flash", "gemini-1.5-pro",
-    }
-    model = request.rel_url.query.get("model", "gemini-2.0-flash")
-    if model not in _ALLOWED_MODELS:
-        model = "gemini-2.0-flash"
+    import re as _re
+    model = request.rel_url.query.get("model", "gemini-2.5-flash-lite")
+    # Sanitise: only allow alphanumeric + hyphens + dots (no path traversal)
+    if not _re.fullmatch(r"[a-zA-Z0-9][-a-zA-Z0-9._]*", model):
+        model = "gemini-2.5-flash-lite"
     gemini_url = (
         f"https://generativelanguage.googleapis.com/v1beta/models"
         f"/{model}:generateContent?key={Var.GEMINI_API_KEY}"
@@ -644,6 +683,42 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": "Gemini request failed — check server logs"}, status=500
         )
+
+
+@routes.post(r"/admin/clear-tmdb/{id:\d+}")
+async def admin_clear_tmdb(request: web.Request) -> web.Response:
+    """Wipe all TMDB-derived fields for a catalogue entry.
+
+    Useful when auto-enrichment matched the wrong movie/show. Clears
+    tmdb_id, poster, backdrop, genres, overview, imdb_id, and resets
+    enriched_at so the next enrich pass will search fresh.
+    """
+    _require_session(request)
+    message_id = int(request.match_info["id"])
+    item = media_index.get_item(message_id)
+    if item is None:
+        from urllib.parse import quote
+        raise _redirect_with_flash(f"bin:{message_id} not found")
+
+    async with media_index._lock:
+        item.tmdb_id = None
+        item.tmdb_kind = ""
+        item.imdb_id = ""
+        item.poster_path = ""
+        item.backdrop_path = ""
+        item.overview = ""
+        item.tmdb_genres = []
+        item.enriched_at = 0.0
+        item.episode_title = ""
+        item.episode_overview = ""
+        item.episode_still_path = ""
+        item.episode_air_date = ""
+        media_index._persist_unlocked()
+
+    await media_index._store_upsert(item)
+
+    from urllib.parse import quote
+    raise _redirect_with_flash(f"TMDB enrichment cleared for bin:{message_id}")
 
 
 @routes.post(r"/admin/edit/{id:\d+}")

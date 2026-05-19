@@ -14,6 +14,17 @@
          query: '',
          filter: 'all',
          visibleCount: 0,
+         aiModels: [],
+         aiModelsLoading: false,
+         async fetchAiModels() {
+           if (this.aiModels.length || this.aiModelsLoading) return;
+           this.aiModelsLoading = true;
+           try {
+             const r = await fetch('/admin/ai-models');
+             if (r.ok) this.aiModels = await r.json();
+           } catch (_) {}
+           this.aiModelsLoading = false;
+         },
          openEdit(btn) {
            const d = btn.dataset;
            this.editing = {
@@ -45,6 +56,8 @@
            // If the row already has a TMDB id, kick off a preview fetch
            // immediately so admin sees what's currently attached.
            if (this.editing.tmdb_id) this.previewTmdb();
+           // Lazy-load the model list on first modal open.
+           this.fetchAiModels();
          },
          async resolveImdb() {
            const e = this.editing;
@@ -80,8 +93,10 @@
            try {
              localStorage.setItem('td:ai-model', e.aiModel);
              const r = await fetch('/admin/ai-suggest/' + e.id + '?model=' + encodeURIComponent(e.aiModel), { method: 'POST' });
-             const data = await r.json();
-             if (!r.ok) { e.aiError = data.error || ('HTTP ' + r.status); return; }
+             let data;
+             try { data = await r.json(); }
+             catch (_) { e.aiError = `HTTP ${r.status} — response was not JSON (check GEMINI_API_KEY is set)`; return; }
+             if (!r.ok) { e.aiError = data.error || `HTTP ${r.status}`; return; }
              if (data.title)        e.title        = data.title;
              if (data.year)         e.year         = String(data.year);
              if (data.file_name)    e.file_name    = data.file_name;
@@ -92,7 +107,7 @@
              if (data.description)  e.description  = data.description;
              e.aiReasoning = data.reasoning || '';
            } catch (err) {
-             e.aiError = 'Network error';
+             e.aiError = err?.message || 'Request failed';
            } finally {
              e.aiLoading = false;
            }
@@ -781,13 +796,19 @@
               </h2>
               {% if var.GEMINI_API_KEY %}
               <select x-model="editing.aiModel"
+                      :disabled="aiModelsLoading"
                       class="px-2 py-1.5 rounded-lg text-xs bg-ink-800/70 text-slate-300
                              border border-white/10 focus:outline-none focus:ring-1
-                             focus:ring-violet-400/60 flex-shrink-0">
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                             focus:ring-violet-400/60 flex-shrink-0 max-w-[160px] truncate">
+                <template x-if="aiModelsLoading">
+                  <option value="">Loading models…</option>
+                </template>
+                <template x-if="!aiModelsLoading && !aiModels.length">
+                  <option value="">No models found</option>
+                </template>
+                <template x-for="m in aiModels" :key="m.id">
+                  <option :value="m.id" :selected="m.id === editing.aiModel" x-text="m.name"></option>
+                </template>
               </select>
               <button type="button" @click="askAI()"
                       :disabled="editing.aiLoading"
@@ -1036,7 +1057,16 @@
               </div>
             </div>
 
-            <footer class="px-5 py-3 flex items-center justify-end gap-2 flex-shrink-0">
+            <footer class="px-5 py-3 flex items-center gap-2 flex-shrink-0">
+              {# Clear TMDB: wipes enrichment fields so the item can be
+                 re-enriched fresh or left as a plain upload entry. #}
+              <button type="submit" name="action" value="clear-tmdb"
+                      @click.prevent="if (confirm('Clear all TMDB enrichment for this item (poster, genres, overview, TMDB id)?')) { $el.form.action = '/admin/clear-tmdb/' + editing.id; $el.form.submit(); }"
+                      class="mr-auto px-3 py-1.5 rounded text-xs
+                             text-red-400 border border-red-400/20
+                             hover:bg-red-500/10 transition-colors">
+                Clear TMDB
+              </button>
               <button type="button" @click="editing = null"
                       class="px-3 py-1.5 rounded text-sm
                              bg-ink-800 text-slate-300 border border-white/5
