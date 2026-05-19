@@ -1160,11 +1160,7 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
             if it.movie_key in seen_movie:
                 continue
             seen_movie.add(it.movie_key)
-            # MovieGroup page only exists when there are 2+ variants; we
-            # can't tell from a single item here without scanning, so
-            # always link to /watch and let users click into variants
-            # from there if needed.
-            url = f"/watch/{it.secure_hash}{it.message_id}"
+            url = f"/movie/{it.movie_key}"
             title = it.title
             kind = "movie"
         else:

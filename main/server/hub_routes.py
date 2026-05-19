@@ -12,6 +12,7 @@ without a full reload. Non-HTMX requests get the full templated page.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import List, Optional
@@ -275,6 +276,27 @@ _FAVICON_SVG = (
     b'<path d="M22 20l24 12-24 12z" fill="#fff"/>'
     b'</svg>'
 )
+
+
+_MANIFEST_JSON = json.dumps({
+    "name": "TeleDirect",
+    "short_name": "TeleDirect",
+    "description": "Your personal media streaming library",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0f1115",
+    "theme_color": "#f97316",
+    "icons": [{"src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}],
+    "categories": ["entertainment"],
+}, separators=(",", ":"))
+
+@routes.get("/manifest.json")
+async def pwa_manifest(_request: web.Request) -> web.Response:
+    return web.Response(
+        text=_MANIFEST_JSON,
+        content_type="application/manifest+json",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @routes.get("/favicon.ico")

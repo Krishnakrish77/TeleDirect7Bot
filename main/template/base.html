@@ -17,6 +17,13 @@
 
     <script defer src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script defer src="https://unpkg.com/alpinejs@3.13.10/dist/cdn.min.js"></script>
+
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#f97316" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TeleDirect" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
   </head>
 
   <body
@@ -27,6 +34,186 @@
       {% block content %}{% endblock %}
     </main>
 
+    <div id="_pwa-banner" hidden
+         class="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-80
+                bg-ink-800 border border-white/10 rounded-xl shadow-2xl
+                flex items-center gap-3 px-4 py-3 z-50 text-sm">
+      <div class="flex-1 min-w-0">
+        <p class="font-semibold text-white">Add TeleDirect to home screen</p>
+        <p class="text-xs text-slate-400 mt-0.5">Watch from your home screen — no browser bar</p>
+      </div>
+      <button onclick="_pwaBannerInstall()"
+              class="flex-shrink-0 px-3 py-1.5 rounded-lg font-medium
+                     bg-brand-500 hover:bg-brand-600 text-white transition-colors">Add</button>
+      <button onclick="_pwaBannerDismiss()" aria-label="Dismiss"
+              class="flex-shrink-0 text-slate-500 hover:text-white transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <div id="_search-modal"
+         x-data="globalSearch()"
+         x-show="open"
+         x-cloak
+         class="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] px-4">
+      <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="close()"></div>
+      <div class="relative w-full max-w-xl bg-ink-950 border border-white/10
+                  rounded-xl shadow-2xl overflow-hidden">
+        <label class="flex items-center gap-3 px-4 py-3 border-b border-white/5">
+          <svg class="w-4 h-4 text-slate-400 flex-shrink-0" xmlns="http://www.w3.org/2000/svg"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
+          </svg>
+          <input x-ref="inp" type="search" placeholder="Search everything…"
+                 x-model="q"
+                 @input="schedule()"
+                 @keydown.arrow-down.prevent="move(1)"
+                 @keydown.arrow-up.prevent="move(-1)"
+                 @keydown.enter.prevent="confirm()"
+                 class="w-full bg-transparent text-sm text-slate-100
+                        placeholder-slate-500 focus:outline-none" />
+          <kbd class="hidden sm:block flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded
+                      border border-white/10 text-slate-500 font-mono">Esc</kbd>
+        </label>
+
+        <ul x-show="items.length" class="max-h-72 overflow-y-auto py-1">
+          <template x-for="(it, idx) in items" :key="it.url">
+            <li>
+              <a :href="it.url"
+                 @mouseenter="active = idx"
+                 :class="active === idx ? 'bg-brand-500/15 text-white' : 'text-slate-200 hover:bg-ink-800'"
+                 class="flex items-center gap-3 px-4 py-2.5 transition-colors">
+                <template x-if="it.poster_path">
+                  <img :src="'https://image.tmdb.org/t/p/w92' + it.poster_path" alt=""
+                       loading="lazy"
+                       class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
+                </template>
+                <template x-if="!it.poster_path">
+                  <div class="w-8 h-12 rounded bg-ink-800 flex-shrink-0
+                              grid place-items-center text-slate-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                            d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                    </svg>
+                  </div>
+                </template>
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium truncate" x-text="it.title"></p>
+                  <p class="text-xs text-slate-500">
+                    <span x-text="it.year || ''"></span>
+                    <span class="ml-2 uppercase tracking-wider text-[10px]" x-text="it.kind"></span>
+                  </p>
+                </div>
+              </a>
+            </li>
+          </template>
+        </ul>
+
+        <template x-if="q && !items.length">
+          <p class="px-4 py-6 text-center text-sm text-slate-500">
+            No results for "<span class="text-slate-300" x-text="q"></span>"
+          </p>
+        </template>
+
+        <div class="px-4 py-2 border-t border-white/5 flex items-center justify-between
+                    text-xs text-slate-600">
+          <span class="hidden sm:block">↑↓ navigate · ↵ open · Esc close</span>
+          <a :href="q ? '/?q=' + encodeURIComponent(q) : '/'"
+             class="text-slate-400 hover:text-brand-300 transition-colors ml-auto">
+            See all results →
+          </a>
+        </div>
+      </div>
+    </div>
+
     {% block scripts %}{% endblock %}
+
+    <script>
+(function () {
+  // PWA install banner
+  var _prompt = null;
+  var DISMISS = 'td:pwa-dismiss';
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    if (localStorage.getItem(DISMISS)) return;
+    _prompt = e;
+    var b = document.getElementById('_pwa-banner');
+    if (b) b.hidden = false;
+  });
+  window.addEventListener('appinstalled', function () {
+    var b = document.getElementById('_pwa-banner');
+    if (b) b.hidden = true;
+    _prompt = null;
+  });
+  window._pwaBannerInstall = function () {
+    if (!_prompt) return;
+    _prompt.prompt();
+    _prompt.userChoice.then(function () {
+      _prompt = null;
+      var b = document.getElementById('_pwa-banner');
+      if (b) b.hidden = true;
+    });
+  };
+  window._pwaBannerDismiss = function () {
+    localStorage.setItem(DISMISS, '1');
+    var b = document.getElementById('_pwa-banner');
+    if (b) b.hidden = true;
+  };
+})();
+
+function globalSearch() {
+  return {
+    open: false,
+    q: '',
+    items: [],
+    active: -1,
+    _t: null,
+    init() {
+      window.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+          e.preventDefault(); this.toggle(); return;
+        }
+        if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(
+            (document.activeElement || {}).tagName || '')) {
+          e.preventDefault(); this.toggle();
+        }
+      });
+    },
+    toggle() {
+      this.open = !this.open;
+      if (this.open) this.$nextTick(() => { if (this.$refs.inp) this.$refs.inp.focus(); });
+      else { this.q = ''; this.items = []; this.active = -1; }
+    },
+    close() { this.open = false; this.q = ''; this.items = []; this.active = -1; },
+    schedule() {
+      clearTimeout(this._t);
+      const v = this.q.trim();
+      if (!v) { this.items = []; this.active = -1; return; }
+      this._t = setTimeout(async () => {
+        try {
+          const r = await fetch('/search/suggest?q=' + encodeURIComponent(v) + '&limit=8');
+          if (r.ok) { this.items = await r.json(); this.active = -1; }
+        } catch (_) {}
+      }, 150);
+    },
+    move(d) {
+      if (!this.items.length) return;
+      this.active = (this.active + d + this.items.length) % this.items.length;
+    },
+    confirm() {
+      if (this.active >= 0 && this.active < this.items.length) {
+        window.location = this.items[this.active].url;
+      } else if (this.q.trim()) {
+        window.location = '/?q=' + encodeURIComponent(this.q.trim());
+      }
+    },
+  };
+}
+</script>
   </body>
 </html>
