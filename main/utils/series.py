@@ -53,7 +53,7 @@ _PATTERNS = [
     re.compile(
         r"^(?P<episode>\d{1,4})?\s*"
         r"(?P<title>[A-Za-z][A-Za-z\s.]+?)\s+"
-        r"(?P<m>\d{1,2})[-_/](?P<d>\d{1,2})[-_/](?P<y>\d{2,4})\s*$",
+        r"(?P<m>\d{1,2})[-_/\s](?P<d>\d{1,2})[-_/\s](?P<y>\d{2,4})\s*$",
         re.IGNORECASE,
     ),
 ]
