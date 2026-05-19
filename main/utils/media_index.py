@@ -811,6 +811,18 @@ async def seed(bot, channel_id: int) -> None:
                         new_item.enriched_at = (
                             existing.enriched_at or new_item.enriched_at
                         )
+                        # If the item was previously unrecognised as a
+                        # series (no series_key) but now parses as one,
+                        # reset enriched_at so the next enrich pass
+                        # retries with the correct series context.
+                        # Without this, a parser improvement leaves items
+                        # permanently stuck: enriched_at is stamped from
+                        # the failed title-based attempt but tmdb_id is
+                        # never set.
+                        if (new_item.series_key
+                                and not existing.series_key
+                                and not existing.tmdb_id):
+                            new_item.enriched_at = 0.0
                         # When the caption-write succeeded the caption
                         # carries the TMDB id, title, year, poster, etc.
                         # — let new_item (the parse result) win in that
