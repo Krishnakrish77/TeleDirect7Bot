@@ -61,13 +61,13 @@ async def start_services():
     # Start the HLS-session reaper so idle ffmpeg processes + their /tmp
     # segment dirs get freed.
     hls_session.ensure_reaper_running()
-    if Var.ON_HEROKU:
+    if Var.ON_KOYEB:
         print("------------------ Starting Keep Alive Service ------------------")
         print()
         asyncio.create_task(utils.ping_server())
     print("--------------------- Initalizing Web Server ---------------------")
     await server.setup()
-    bind_address = "0.0.0.0" if Var.ON_HEROKU else Var.BIND_ADDRESS
+    bind_address = "0.0.0.0" if Var.ON_KOYEB else Var.BIND_ADDRESS
     await web.TCPSite(server, bind_address, Var.PORT).start()
     print("------------------------------ DONE ------------------------------")
     print()
@@ -76,7 +76,7 @@ async def start_services():
     if bot_info.dc_id:
         print("                        DC ID =>> {}".format(str(bot_info.dc_id)))
     print("                        server ip =>> {}:{}".format(bind_address, Var.PORT))
-    if Var.ON_HEROKU:
+    if Var.ON_KOYEB:
         print("                        app running on =>> {}".format(Var.FQDN))
     print("------------------------------------------------------------------")
     print()

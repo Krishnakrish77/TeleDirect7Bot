@@ -28,17 +28,9 @@ class Var(object):
     PING_INTERVAL = int(environ.get("PING_INTERVAL", "1200"))
     HAS_SSL = str(environ.get("HAS_SSL", "")).lower() == "true"
     NO_PORT = str(environ.get("NO_PORT", "")).lower() == "true"
-    if "DYNO" in environ:
-        ON_HEROKU = True
-        APP_NAME = _require("APP_NAME")
-    else:
-        ON_HEROKU = False
-    FQDN = (
-        str(environ.get("FQDN", BIND_ADDRESS))
-        if not ON_HEROKU or environ.get("FQDN")
-        else APP_NAME + ".herokuapp.com"
-    )
-    if ON_HEROKU:
+    ON_KOYEB = "KOYEB_REGION" in environ
+    FQDN = str(environ.get("FQDN") or environ.get("KOYEB_PUBLIC_DOMAIN") or BIND_ADDRESS)
+    if ON_KOYEB:
         URL = f"https://{FQDN}/"
     else:
         URL = "http{}://{}{}/".format(

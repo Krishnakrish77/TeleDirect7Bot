@@ -110,7 +110,7 @@ async def channel_receive_handler(bot, broadcast: Message):
         # channel attribution, so we don't lose that context.
         log_msg = await broadcast.copy(chat_id=Var.BIN_CHANNEL)
         schedule_index(bot, log_msg)
-        stream_link = "https://{}/{}".format(Var.FQDN, log_msg.id) if Var.ON_HEROKU or Var.NO_PORT else \
+        stream_link = "https://{}/{}".format(Var.FQDN, log_msg.id) if Var.ON_KOYEB or Var.NO_PORT else \
             "http://{}:{}/{}".format(Var.FQDN,
                                     Var.PORT,
                                     log_msg.id)
