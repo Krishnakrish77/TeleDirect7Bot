@@ -13,6 +13,11 @@ from main.utils.Translation import Language, BUTTON
 # matches it accidentally.
 _OWNER_UNSET = 777000
 
+# Dedup: track the last message_id we replied to per user so a duplicate
+# update delivery (e.g. two instances racing during a rolling redeploy)
+# doesn't send two links.
+_last_admin_msg: dict = {}
+
 @StreamBot.on_message(~filters.user(Var.BANNED_USERS) & filters.command('start'))
 async def start(b, m):
     lang = getattr(Language, "en")
@@ -70,6 +75,12 @@ async def admin_link(bot, message):
     if requester_id != owner_id:
         # Silently ignore so the admin surface isn't advertised to randos.
         return
+
+    # Dedup: if we already replied to this exact message, drop the duplicate.
+    msg_id = message.id
+    if _last_admin_msg.get(requester_id) == msg_id:
+        return
+    _last_admin_msg[requester_id] = msg_id
 
     token = admin_auth.issue_one_time_token(requester_id)
     url = urljoin(Var.URL, f"admin/login?t={token}")

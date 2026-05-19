@@ -61,10 +61,10 @@
                     bg-ink-800/60 border border-white/5
                     hover:border-brand-400/40 hover:bg-ink-800
                     transition-colors">
-            <div class="flex-shrink-0 w-32 aspect-video bg-ink-900 rounded
+            <div class="flex-shrink-0 w-32 {% if v.poster_path %}aspect-[2/3]{% else %}aspect-video{% endif %} bg-ink-900 rounded
                         relative overflow-hidden">
               <img
-                src="/thumb/{{ v.secure_hash }}{{ v.message_id }}.jpg"
+                src="{% if v.poster_path %}https://image.tmdb.org/t/p/w185{{ v.poster_path }}{% else %}/thumb/{{ v.secure_hash }}{{ v.message_id }}.jpg{% endif %}"
                 alt=""
                 loading="lazy"
                 onerror="this.remove()"

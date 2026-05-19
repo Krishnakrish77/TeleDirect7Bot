@@ -107,7 +107,7 @@
             {% set ep = entry.rep %}
             <li data-ep-title="{{ (ep.title or '') | lower }} {{ (ep.episode_title or '') | lower }} {{ (ep.file_name or '') | lower }}{% if ep.season and ep.episode %} s{{ '%02d' % ep.season }}e{{ '%02d' % ep.episode }}{% endif %}">
               <div class="group flex gap-3 p-3 rounded-lg bg-ink-800/60 border border-white/5
-                          hover:border-brand-400/40 hover:bg-ink-800 transition-colors">
+                          hover:border-brand-400/40 hover:bg-ink-800 transition-colors h-full">
                 <a href="/watch/{{ ep.secure_hash }}{{ ep.message_id }}"
                    class="flex-shrink-0 w-32 aspect-video bg-ink-900 rounded
                           relative overflow-hidden">
