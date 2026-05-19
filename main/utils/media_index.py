@@ -323,7 +323,7 @@ _KURIGRAM_TS_RE = re.compile(r"^video_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.mp4$"
 _DEVICE_NAME_RE = re.compile(
     r"""
     ^(
-        untitled                          # generic "Untitled.mp4"
+        \(?untitled\)?                    # "Untitled.mp4" or "(untitled).mp4"
       | video                             # bare "video.mp4"
       | movie                             # bare "movie.mp4"
       | recording                         # screen/audio recording

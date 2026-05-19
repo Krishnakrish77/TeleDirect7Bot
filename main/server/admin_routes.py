@@ -606,11 +606,16 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         "• Watermarks, UI elements, URLs, browser tabs\n"
         "• Any branding that identifies the content\n\n"
         f"File metadata:\n{meta_text}\n\n"
-        "Populate every field you can confidently identify. "
-        "For series/courses set series_title + season + episode. "
-        "For movies set title + year. "
-        "Use 0 or empty string for truly unknown fields. "
-        "In 'reasoning' briefly explain what you found."
+        "Rules:\n"
+        "• Populate every field you can confidently identify.\n"
+        "• For courses/series: set series_title, season (default 1), episode.\n"
+        "• For movies: set title and year.\n"
+        "• file_name: ALWAYS generate a descriptive filename based on what you found. "
+        "Format: 'Series Name - Episode Title.mp4' for courses/episodes, "
+        "'Movie Title (Year).mkv' for movies. Never leave file_name empty if you "
+        "identified the content — it is the primary display label.\n"
+        "• Use 0 or empty string only for fields you truly cannot determine.\n"
+        "• In 'reasoning' briefly explain what you found in the thumbnail."
     )
 
     parts = []
