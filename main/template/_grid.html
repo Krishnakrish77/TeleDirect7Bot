@@ -10,7 +10,7 @@
     <p class="text-slate-400 text-sm">{{ empty_text }}</p>
   </div>
 {% else %}
-  <ul class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
+  <ul class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 sm:gap-6">
     {% for item in items %}
       <li>{% include "_card.html" %}</li>
     {% endfor %}
