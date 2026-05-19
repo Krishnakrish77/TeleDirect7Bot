@@ -510,6 +510,25 @@ async def admin_action(request: web.Request) -> web.Response:
         n = await _bulk_quality(ids, quality)
         raise _redirect_with_flash(f"Updated quality on {n} entries")
 
+    if action == "enrich":
+        import asyncio as _aio
+        force = bool(form.get("force"))
+
+        async def _run(id_list: list) -> None:
+            done = enriched = 0
+            for mid in id_list:
+                ok = await media_index.enrich_one(mid, bot=StreamBot)
+                if ok:
+                    enriched += 1
+                done += 1
+                await _aio.sleep(0)  # yield between TMDB calls
+            logging.info("bulk enrich: %d/%d enriched", enriched, done)
+
+        _aio.create_task(_run(ids))
+        raise _redirect_with_flash(
+            f"Enrichment queued for {len(ids)} items — TMDB results appear as they complete"
+        )
+
     raise _redirect_with_flash("Unknown action")
 
 

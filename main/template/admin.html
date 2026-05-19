@@ -642,6 +642,15 @@
           </button>
         </div>
 
+        <button type="submit" name="action" value="enrich"
+                class="px-3 py-1.5 rounded text-xs font-medium
+                       bg-brand-500/15 text-brand-300 border border-brand-400/30
+                       hover:bg-brand-500/25 transition-colors
+                       disabled:opacity-40 disabled:cursor-not-allowed"
+                :disabled="selected.length === 0">
+          Enrich
+        </button>
+
         {% if var.GEMINI_API_KEY %}
         <button type="button"
                 hx-post="/admin/ai-review"
