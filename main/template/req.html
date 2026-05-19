@@ -123,6 +123,46 @@
         playsinline
       ></{{ tag }}>
 
+      {# Next-episode card — visible only for TV episodes that have a
+         successor. Appears when playback ends; counts down then
+         auto-navigates. #}
+      {% if next_ep %}
+      <div id="nextEpCard"
+           style="display:none"
+           class="absolute bottom-4 right-4 z-20 w-60 sm:w-72
+                  bg-black/90 backdrop-blur-sm border border-white/10
+                  rounded-xl p-4 shadow-2xl">
+        <p class="text-[11px] text-slate-400 mb-1">
+          Up next · <span id="nextEpCountdown">5</span>s
+        </p>
+        <p class="text-sm font-semibold text-white line-clamp-2 leading-snug">
+          {{ next_ep.title }}
+        </p>
+        {% if next_ep.season and next_ep.episode %}
+          <p class="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+            S{{ '%02d' % next_ep.season }}E{{ '%02d' % next_ep.episode }}
+          </p>
+        {% endif %}
+        <div class="mt-3 flex gap-2">
+          <a href="{{ next_ep.url }}"
+             class="flex-1 text-center py-1.5 rounded-lg text-xs font-semibold
+                    bg-brand-500 hover:bg-brand-600 text-white transition-colors">
+            Play now
+          </a>
+          <button id="nextEpCancel"
+                  class="px-3 py-1.5 rounded-lg border border-white/10
+                         text-xs text-slate-300 hover:text-white transition-colors">
+            Cancel
+          </button>
+        </div>
+        <div class="mt-2.5 h-0.5 bg-white/10 rounded-full overflow-hidden">
+          <div id="nextEpBar"
+               class="h-full bg-brand-400 rounded-full"
+               style="width:100%"></div>
+        </div>
+      </div>
+      {% endif %}
+
       {# Shown via JS when playback advances past several seconds without
          any actual video frames being decoded (videoWidth === 0). The
          usual cause is 10-bit HEVC / AV1 / DV: hls.js feeds segments but
@@ -579,6 +619,51 @@
       }, { once: true });
     }
 
+    {% if next_ep %}
+    function attachNextEpisode(video) {
+      const card = document.getElementById("nextEpCard");
+      const countEl = document.getElementById("nextEpCountdown");
+      const bar = document.getElementById("nextEpBar");
+      const cancelBtn = document.getElementById("nextEpCancel");
+      if (!card || !video) return;
+
+      const NEXT_URL = "{{ next_ep.url }}";
+      const DELAY = 5;
+      let timer = null;
+      let cancelled = false;
+
+      const hideCard = () => {
+        cancelled = true;
+        clearInterval(timer);
+        card.style.display = "none";
+      };
+
+      cancelBtn.addEventListener("click", hideCard);
+
+      video.addEventListener("ended", () => {
+        if (cancelled) return;
+        card.style.display = "block";
+        let remaining = DELAY;
+        countEl.textContent = remaining;
+        bar.style.transition = "none";
+        bar.style.width = "100%";
+        // Kick off CSS transition on next frame
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          bar.style.transition = `width ${DELAY}s linear`;
+          bar.style.width = "0%";
+        }));
+        timer = setInterval(() => {
+          remaining--;
+          countEl.textContent = remaining;
+          if (remaining <= 0) {
+            clearInterval(timer);
+            window.location.href = NEXT_URL;
+          }
+        }, 1000);
+      });
+    }
+    {% endif %}
+
     document.addEventListener("DOMContentLoaded", () => {
       const video = document.getElementById("player");
       if (video) {
@@ -612,6 +697,10 @@
       document.querySelectorAll("[data-stream-url]").forEach((el) => {
         if (el.dataset.streamUrl) el.href = buildVlcUrl(el.dataset.streamUrl);
       });
+
+      {% if next_ep %}
+      attachNextEpisode(video);
+      {% endif %}
     });
 
     // ---- Continue-watching support --------------------------------------

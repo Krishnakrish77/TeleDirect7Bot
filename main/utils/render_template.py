@@ -64,6 +64,7 @@ async def render_page(message_id, secure_hash):
         # TMDB metadata, if the catalogue has it for this entry. Optional —
         # template guards on `meta and meta.tmdb_id`.
         meta = media_index.get_item(int(message_id))
+        next_ep = media_index.next_episode(meta) if meta else None
         # If ffprobe at index time flagged the file as a codec the
         # browser can't decode (HEVC, 10-bit, AV1 inside MKV, etc.),
         # short-circuit straight to the "open in VLC" page instead
@@ -86,6 +87,7 @@ async def render_page(message_id, secure_hash):
             known_unplayable=known_unplayable,
             video_codec=(meta.video_codec if meta else "") or "",
             pix_fmt=(meta.pix_fmt if meta else "") or "",
+            next_ep=next_ep,
         )
     heading = f"Download {file_data.file_name}"
     return _DL_TEMPLATE.render(

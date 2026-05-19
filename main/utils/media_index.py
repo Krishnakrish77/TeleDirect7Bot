@@ -1110,6 +1110,24 @@ def episodes_for_series(series_key: str) -> List[HubItem]:
     return eps
 
 
+def next_episode(item: HubItem) -> Optional[dict]:
+    """Return watch URL + label for the episode after ``item``, or None."""
+    if not item.series_key or item.episode is None:
+        return None
+    eps = episodes_for_series(item.series_key)
+    for i, ep in enumerate(eps):
+        if ep.message_id == item.message_id and i + 1 < len(eps):
+            nxt = eps[i + 1]
+            label = nxt.episode_title or nxt.title or f"Episode {nxt.episode}"
+            return {
+                "url": f"/watch/{nxt.secure_hash}{nxt.message_id}",
+                "title": label,
+                "season": nxt.season,
+                "episode": nxt.episode,
+            }
+    return None
+
+
 def suggest(q: str, limit: int = 8) -> List[dict]:
     """Lightweight search for the nav dropdown.
 
