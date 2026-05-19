@@ -797,104 +797,68 @@ async def seed(bot, channel_id: int) -> None:
                     if new_item is None:
                         continue
                     existing = _items.get(new_item.message_id)
-                    if existing is not None:
-                        # Merge with prior snapshot/in-memory state.
-                        #
-                        # Snapshot always wins for fields that aren't
-                        # round-tripped through the caption: TMDB
-                        # genres, attached subtitle sidecars, the
-                        # enriched_at timestamp.
-                        new_item.tmdb_genres = (
-                            existing.tmdb_genres or new_item.tmdb_genres
-                        )
-                        new_item.subtitles = (
-                            existing.subtitles or new_item.subtitles
-                        )
-                        new_item.enriched_at = (
-                            existing.enriched_at or new_item.enriched_at
-                        )
-                        # If the item was previously unrecognised as a
-                        # series (no series_key) but now parses as one,
-                        # reset enriched_at so the next enrich pass
-                        # retries with the correct series context.
-                        # Without this, a parser improvement leaves items
-                        # permanently stuck: enriched_at is stamped from
-                        # the failed title-based attempt but tmdb_id is
-                        # never set.
+                    if existing is not None and _store_active():
+                        # ── MongoDB path ──────────────────────────────────
+                        # MongoDB is the durable source of truth for every
+                        # enrichment/admin-edited field.  The seed only
+                        # provides three things the BIN message can change:
+                        #   • file_size  (re-upload, compression)
+                        #   • duration   (Telegram media property)
+                        #   • has_thumb  (thumbnail availability)
+                        # Everything else — title, year, file_name, series,
+                        # TMDB, episode metadata, probe results, tags,
+                        # trailer_key — lives in MongoDB and must not be
+                        # overwritten by the raw-parse result.
+                        existing.file_size = new_item.file_size or existing.file_size
+                        existing.duration  = new_item.duration  or existing.duration
+                        existing.has_thumb = new_item.has_thumb or existing.has_thumb
+                        # If a parser improvement gives the item a
+                        # series_key it didn't have before, reset
+                        # enriched_at so the next enrich pass retries.
                         if (new_item.series_key
                                 and not existing.series_key
                                 and not existing.tmdb_id):
-                            new_item.enriched_at = 0.0
-                        # When the caption-write succeeded the caption
-                        # carries the TMDB id, title, year, poster, etc.
-                        # — let new_item (the parse result) win in that
-                        # case so manual admin edits land too.
-                        #
-                        # When the snapshot says the row was enriched
-                        # but the parsed caption did NOT recover a
-                        # tmdb_id, the caption write-back must have
-                        # been rejected (uneditable bin). The caption
-                        # is then the raw upload text and new_item's
-                        # title/year/etc. are filename-derived and
-                        # worse than what the snapshot already has.
-                        # Preserve every enrichment-derived field.
-                        caption_lost_enrichment = (
-                            existing.tmdb_id and not new_item.tmdb_id
-                        )
+                            existing.enriched_at = 0.0
+                        _items[existing.message_id] = existing
+                    elif existing is not None:
+                        # ── JSON-snapshot / no-store path ─────────────────
+                        # Caption write-backs are used when there is no
+                        # persistent store; the parsed caption carries
+                        # enrichment data so new_item should win for TMDB
+                        # fields.  Carry forward only the fields that are
+                        # never in captions.
+                        new_item.tmdb_genres  = existing.tmdb_genres  or new_item.tmdb_genres
+                        new_item.subtitles    = existing.subtitles    or new_item.subtitles
+                        new_item.enriched_at  = existing.enriched_at  or new_item.enriched_at
+                        caption_lost_enrichment = existing.tmdb_id and not new_item.tmdb_id
                         if caption_lost_enrichment:
-                            new_item.title = existing.title or new_item.title
-                            new_item.year = existing.year or new_item.year
-                            new_item.tmdb_id = existing.tmdb_id
-                            new_item.tmdb_kind = existing.tmdb_kind
-                            new_item.imdb_id = existing.imdb_id or new_item.imdb_id
-                            new_item.poster_path = (
-                                existing.poster_path or new_item.poster_path
-                            )
-                            new_item.backdrop_path = (
-                                existing.backdrop_path or new_item.backdrop_path
-                            )
-                            # series_title / series_key are derived from
-                            # the (now-restored) title for TV rows.
+                            new_item.title        = existing.title        or new_item.title
+                            new_item.year         = existing.year         or new_item.year
+                            new_item.tmdb_id      = existing.tmdb_id
+                            new_item.tmdb_kind    = existing.tmdb_kind
+                            new_item.imdb_id      = existing.imdb_id      or new_item.imdb_id
+                            new_item.poster_path  = existing.poster_path  or new_item.poster_path
+                            new_item.backdrop_path= existing.backdrop_path or new_item.backdrop_path
                             if existing.tmdb_kind == "tv":
-                                new_item.series_title = (
-                                    existing.series_title or new_item.series_title
-                                )
-                                new_item.series_key = (
-                                    existing.series_key or new_item.series_key
-                                )
+                                new_item.series_title = existing.series_title or new_item.series_title
+                                new_item.series_key   = existing.series_key   or new_item.series_key
                             if existing.movie_key and not new_item.movie_key:
                                 new_item.movie_key = existing.movie_key
-                        if existing.tags and not new_item.tags:
-                            new_item.tags = existing.tags
-                        if existing.description and not new_item.description:
-                            new_item.description = existing.description
-                        if existing.overview and not new_item.overview:
-                            new_item.overview = existing.overview
-                        # file_name and trailer_key are never in the BIN
-                        # caption; preserve admin edits / enrichment results.
-                        if existing.file_name and not new_item.file_name:
-                            new_item.file_name = existing.file_name
-                        if existing.trailer_key and not new_item.trailer_key:
-                            new_item.trailer_key = existing.trailer_key
-                        # Episode metadata and probe results are never
-                        # round-tripped through the BIN caption — always
-                        # carry them forward from the snapshot/store so a
-                        # seed pass doesn't silently drop them.
-                        if existing.episode_title and not new_item.episode_title:
-                            new_item.episode_title = existing.episode_title
-                        if existing.episode_overview and not new_item.episode_overview:
-                            new_item.episode_overview = existing.episode_overview
-                        if existing.episode_still_path and not new_item.episode_still_path:
-                            new_item.episode_still_path = existing.episode_still_path
-                        if existing.episode_air_date and not new_item.episode_air_date:
-                            new_item.episode_air_date = existing.episode_air_date
+                        for attr in ("tags", "description", "overview", "file_name",
+                                     "trailer_key", "episode_title", "episode_overview",
+                                     "episode_still_path", "episode_air_date"):
+                            if getattr(existing, attr) and not getattr(new_item, attr):
+                                setattr(new_item, attr, getattr(existing, attr))
                         if existing.probed_at:
-                            new_item.probed_at = existing.probed_at
+                            new_item.probed_at   = existing.probed_at
                             new_item.video_codec = existing.video_codec or new_item.video_codec
-                            new_item.pix_fmt = existing.pix_fmt or new_item.pix_fmt
+                            new_item.pix_fmt     = existing.pix_fmt     or new_item.pix_fmt
                             if existing.quality:
                                 new_item.quality = existing.quality
-                    _items[new_item.message_id] = new_item
+                        _items[new_item.message_id] = new_item
+                    else:
+                        # ── New item not previously seen ───────────────────
+                        _items[new_item.message_id] = new_item
                 _persist_unlocked()
             _seed_state["scanned"] += len(ids)
             _seed_state["indexed"] = len(_items)
