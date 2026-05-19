@@ -868,6 +868,11 @@ async def seed(bot, channel_id: int) -> None:
                             new_item.description = existing.description
                         if existing.overview and not new_item.overview:
                             new_item.overview = existing.overview
+                        # file_name is never in the BIN caption and is
+                        # easily cleared by the kurigram-strip or
+                        # device-name filter; preserve admin edits.
+                        if existing.file_name and not new_item.file_name:
+                            new_item.file_name = existing.file_name
                         # Episode metadata and probe results are never
                         # round-tripped through the BIN caption — always
                         # carry them forward from the snapshot/store so a

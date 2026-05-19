@@ -640,12 +640,23 @@
         </div>
 
         {% if var.GEMINI_API_KEY %}
-        <button type="submit" name="action" value="ai-clean"
-                @click="if (!confirm('Run AI filename clean on ' + selected.length + ' selected items? Each calls Gemini once.')) $event.preventDefault()"
+        <button type="button"
+                hx-post="/admin/ai-review"
+                hx-include="input[name='ids']:checked"
+                hx-target="#ai-review-panel"
+                hx-swap="innerHTML show:#ai-review-panel:top"
+                hx-indicator="#ai-review-spinner"
+                :hx-confirm="'Analyse ' + selected.length + ' selected filenames with Gemini?'"
                 class="px-3 py-1.5 rounded text-xs font-medium
                        bg-violet-500/15 text-violet-300 border border-violet-400/30
-                       hover:bg-violet-500/25 transition-colors"
+                       hover:bg-violet-500/25 transition-colors flex items-center gap-1.5"
                 :disabled="selected.length === 0">
+          <span id="ai-review-spinner" class="htmx-indicator">
+            <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+            </svg>
+          </span>
           ✦ AI clean
         </button>
         {% endif %}
@@ -693,6 +704,9 @@
         <span class="ml-auto text-xs text-slate-500 tabular-nums"
               x-text="`${visibleCount} of {{ catalogue_size }}`"></span>
       </div>
+
+      {# AI review panel — populated by HTMX after clicking '✦ AI clean' #}
+      <div id="ai-review-panel"></div>
 
       <div class="overflow-x-auto rounded-lg border border-white/5">
         <table class="w-full text-sm">

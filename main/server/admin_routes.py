@@ -19,6 +19,8 @@ import asyncio
 import base64
 import json
 import logging
+import secrets
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -508,33 +510,6 @@ async def admin_action(request: web.Request) -> web.Response:
         n = await _bulk_quality(ids, quality)
         raise _redirect_with_flash(f"Updated quality on {n} entries")
 
-    if action == "ai-clean":
-        if not Var.GEMINI_API_KEY:
-            raise _redirect_with_flash("GEMINI_API_KEY not configured")
-        import asyncio as _aio
-        from main.utils import filename_ai
-
-        async def _run(id_list: list) -> None:
-            changed = 0
-            for mid in id_list:
-                item = media_index.get_item(mid)
-                if item is None or not item.file_name:
-                    continue
-                updated = await filename_ai.apply_to_item(item, item.file_name)
-                if updated:
-                    await media_index._store_upsert(item)
-                    changed += 1
-            if changed:
-                await media_index.persist_now()
-            logging.info(
-                "filename_ai bulk: %d/%d items updated", changed, len(id_list)
-            )
-
-        _aio.create_task(_run(ids))
-        raise _redirect_with_flash(
-            f"AI filename clean queued for {len(ids)} items — check logs for results"
-        )
-
     raise _redirect_with_flash("Unknown action")
 
 
@@ -592,6 +567,198 @@ async def _fetch_thumb_bytes(item) -> Optional[bytes]:
     except Exception:
         pass
     return None
+
+
+# Temporary store for pending AI filename proposals.
+# { token: {"expires": float, "proposals": [{"message_id", "current_file_name",
+#            "current_title", "proposed_file_name", "proposed_title",
+#            "proposed_year", "proposed_quality", "reasoning"}, ...]} }
+_pending_proposals: dict = {}
+_PROPOSAL_TTL = 600  # 10 minutes
+
+
+def _prune_proposals() -> None:
+    now = time.time()
+    stale = [k for k, v in _pending_proposals.items() if v["expires"] < now]
+    for k in stale:
+        _pending_proposals.pop(k, None)
+
+
+@routes.post("/admin/ai-review")
+async def admin_ai_review(request: web.Request) -> web.Response:
+    """Run Gemini on selected items and return an HTML review panel.
+
+    Called via HTMX from the bulk action toolbar. Proposals are stored
+    server-side keyed by a short-lived token; the review panel embeds
+    the token so /admin/ai-apply knows which batch to commit.
+    """
+    _require_session(request)
+    if not Var.GEMINI_API_KEY:
+        return web.Response(
+            text='<p class="text-red-400 text-sm p-4">GEMINI_API_KEY not configured.</p>',
+            content_type="text/html",
+        )
+
+    form = await request.post()
+    ids = [int(x) for x in form.getall("ids") if str(x).isdigit()]
+    if not ids:
+        return web.Response(
+            text='<p class="text-slate-400 text-sm p-4">No items selected.</p>',
+            content_type="text/html",
+        )
+
+    from main.utils import filename_ai as _fnai
+
+    proposals = []
+    for mid in ids:
+        item = media_index.get_item(mid)
+        if item is None or not item.file_name:
+            continue
+        result = await _fnai.parse_filename(item.file_name)
+        if result is None:
+            continue
+        prop: dict = {
+            "message_id": mid,
+            "current_file_name": item.file_name,
+            "current_title": item.title or "",
+        }
+        if result.get("is_device_generated"):
+            prop["proposed_file_name"] = ""
+            prop["proposed_title"] = item.title or ""
+            prop["proposed_year"] = item.year or 0
+            prop["proposed_quality"] = item.quality or ""
+            prop["reasoning"] = result.get("reasoning", "Device-generated filename")
+        else:
+            prop["proposed_file_name"] = (result.get("clean_filename") or "").strip()
+            prop["proposed_title"] = (result.get("title") or "").strip() or item.title or ""
+            prop["proposed_year"] = result.get("year") or item.year or 0
+            prop["proposed_quality"] = (result.get("quality") or "").strip() or item.quality or ""
+            prop["reasoning"] = result.get("reasoning", "")
+        # Skip if nothing would actually change
+        if (prop["proposed_file_name"] == item.file_name
+                and prop["proposed_title"] == (item.title or "")
+                and prop["proposed_year"] == (item.year or 0)
+                and prop["proposed_quality"] == (item.quality or "")):
+            continue
+        proposals.append(prop)
+
+    if not proposals:
+        return web.Response(
+            text='<p class="text-slate-400 text-sm p-4">No changes suggested — filenames already look clean.</p>',
+            content_type="text/html",
+        )
+
+    _prune_proposals()
+    token = secrets.token_hex(12)
+    _pending_proposals[token] = {
+        "expires": time.time() + _PROPOSAL_TTL,
+        "proposals": proposals,
+    }
+
+    rows_html = ""
+    for p in proposals:
+        fn_change = ""
+        if p["proposed_file_name"] != p["current_file_name"]:
+            fn_change = (
+                f'<div class="flex items-baseline gap-1.5 flex-wrap">'
+                f'<span class="text-slate-500 line-through text-[11px]">{p["current_file_name"] or "(blank)"}</span>'
+                f'<span class="text-slate-400 text-[11px]">→</span>'
+                f'<span class="text-violet-300 text-[11px]">{p["proposed_file_name"] or "(clear)"}</span>'
+                f'</div>'
+            )
+        title_change = ""
+        if p["proposed_title"] != p["current_title"]:
+            title_change = (
+                f'<div class="flex items-baseline gap-1.5 flex-wrap">'
+                f'<span class="text-[10px] text-slate-600">Title:</span>'
+                f'<span class="text-slate-500 line-through text-[11px]">{p["current_title"] or "(blank)"}</span>'
+                f'<span class="text-slate-400 text-[11px]">→</span>'
+                f'<span class="text-violet-200 text-[11px]">{p["proposed_title"]}</span>'
+                f'</div>'
+            )
+        rows_html += (
+            f'<label class="flex items-start gap-3 p-3 rounded-lg bg-ink-800/60 cursor-pointer'
+            f' border border-white/5 hover:border-violet-400/30 transition-colors">'
+            f'  <input type="checkbox" name="approve" value="{p["message_id"]}" checked'
+            f'         class="mt-0.5 accent-violet-400 flex-shrink-0" />'
+            f'  <div class="min-w-0 flex-1 space-y-0.5">'
+            f'    {fn_change}{title_change}'
+            f'    <p class="text-[10px] text-slate-600 italic">{p["reasoning"]}</p>'
+            f'  </div>'
+            f'</label>'
+        )
+
+    html = f"""
+<div class="mt-6 rounded-xl border border-violet-400/20 bg-violet-500/5 p-5">
+  <div class="flex items-center justify-between mb-4">
+    <h3 class="text-sm font-semibold text-white">
+      AI Filename Suggestions
+      <span class="text-slate-400 font-normal ml-1">({len(proposals)} proposals)</span>
+    </h3>
+    <button type="button"
+            onclick="document.getElementById('ai-review-panel').innerHTML=''"
+            class="text-slate-500 hover:text-white text-sm transition-colors">✕</button>
+  </div>
+  <form method="post" action="/admin/ai-apply">
+    <input type="hidden" name="token" value="{token}" />
+    <div class="space-y-2 mb-5 max-h-96 overflow-y-auto pr-1">
+      {rows_html}
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="submit"
+              class="px-4 py-2 rounded-lg text-sm font-medium
+                     bg-violet-500 hover:bg-violet-600 text-white transition-colors">
+        Apply approved
+      </button>
+      <button type="button"
+              onclick="document.getElementById('ai-review-panel').innerHTML=''"
+              class="px-4 py-2 rounded-lg text-sm
+                     bg-ink-800 text-slate-300 border border-white/5
+                     hover:bg-ink-700 transition-colors">
+        Dismiss
+      </button>
+    </div>
+  </form>
+</div>
+"""
+    return web.Response(text=html, content_type="text/html")
+
+
+@routes.post("/admin/ai-apply")
+async def admin_ai_apply(request: web.Request) -> web.Response:
+    """Commit admin-approved AI filename proposals."""
+    _require_session(request)
+    form = await request.post()
+    token = (form.get("token") or "").strip()
+    approved = {int(x) for x in form.getall("approve") if str(x).isdigit()}
+
+    batch = _pending_proposals.pop(token, None)
+    if batch is None:
+        raise _redirect_with_flash("Proposals expired or not found — run AI clean again")
+
+    proposals = batch["proposals"]
+    changed = 0
+    for p in proposals:
+        if p["message_id"] not in approved:
+            continue
+        item = media_index.get_item(p["message_id"])
+        if item is None:
+            continue
+        if p["proposed_file_name"] != item.file_name:
+            item.file_name = p["proposed_file_name"]
+        if p["proposed_title"] and p["proposed_title"] != item.title:
+            item.title = p["proposed_title"]
+        if p["proposed_year"] and p["proposed_year"] != item.year:
+            item.year = p["proposed_year"]
+        if p["proposed_quality"] and p["proposed_quality"] != item.quality:
+            item.quality = p["proposed_quality"]
+        await media_index._store_upsert(item)
+        changed += 1
+
+    if changed:
+        await media_index.persist_now()
+
+    raise _redirect_with_flash(f"Applied {changed} of {len(approved)} approved proposals")
 
 
 @routes.post(r"/admin/ai-suggest/{id:\d+}")
