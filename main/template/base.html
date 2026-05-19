@@ -34,7 +34,7 @@
       {% block content %}{% endblock %}
     </main>
 
-    <div id="_pwa-banner" hidden
+    <div id="_pwa-banner" style="display:none"
          class="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-80
                 bg-ink-800 border border-white/10 rounded-xl shadow-2xl
                 flex items-center gap-3 px-4 py-3 z-50 text-sm">
@@ -143,11 +143,11 @@
     if (localStorage.getItem(DISMISS)) return;
     _prompt = e;
     var b = document.getElementById('_pwa-banner');
-    if (b) b.hidden = false;
+    if (b) b.style.display = 'flex';
   });
   window.addEventListener('appinstalled', function () {
     var b = document.getElementById('_pwa-banner');
-    if (b) b.hidden = true;
+    if (b) b.style.display = 'none';
     _prompt = null;
   });
   window._pwaBannerInstall = function () {
@@ -156,13 +156,13 @@
     _prompt.userChoice.then(function () {
       _prompt = null;
       var b = document.getElementById('_pwa-banner');
-      if (b) b.hidden = true;
+      if (b) b.style.display = 'none';
     });
   };
   window._pwaBannerDismiss = function () {
     localStorage.setItem(DISMISS, '1');
     var b = document.getElementById('_pwa-banner');
-    if (b) b.hidden = true;
+    if (b) b.style.display = 'none';
   };
 })();
 
