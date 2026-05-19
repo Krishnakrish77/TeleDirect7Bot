@@ -793,6 +793,24 @@ async def seed(bot, channel_id: int) -> None:
                             new_item.description = existing.description
                         if existing.overview and not new_item.overview:
                             new_item.overview = existing.overview
+                        # Episode metadata and probe results are never
+                        # round-tripped through the BIN caption — always
+                        # carry them forward from the snapshot/store so a
+                        # seed pass doesn't silently drop them.
+                        if existing.episode_title and not new_item.episode_title:
+                            new_item.episode_title = existing.episode_title
+                        if existing.episode_overview and not new_item.episode_overview:
+                            new_item.episode_overview = existing.episode_overview
+                        if existing.episode_still_path and not new_item.episode_still_path:
+                            new_item.episode_still_path = existing.episode_still_path
+                        if existing.episode_air_date and not new_item.episode_air_date:
+                            new_item.episode_air_date = existing.episode_air_date
+                        if existing.probed_at:
+                            new_item.probed_at = existing.probed_at
+                            new_item.video_codec = existing.video_codec or new_item.video_codec
+                            new_item.pix_fmt = existing.pix_fmt or new_item.pix_fmt
+                            if existing.quality:
+                                new_item.quality = existing.quality
                     _items[new_item.message_id] = new_item
                 _persist_unlocked()
             _seed_state["scanned"] += len(ids)
