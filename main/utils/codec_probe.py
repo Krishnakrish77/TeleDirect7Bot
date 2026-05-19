@@ -109,6 +109,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         logging.warning("codec_probe: ffprobe timed out for bin:%d", item.message_id)
         item.probed_at = time.time()
         await media_index.persist_now()
+        await media_index._store_upsert(item)
         return False
     except FileNotFoundError:
         logging.error("codec_probe: ffprobe binary not found on PATH")
@@ -117,6 +118,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         logging.exception("codec_probe: ffprobe failed for bin:%d", item.message_id)
         item.probed_at = time.time()
         await media_index.persist_now()
+        await media_index._store_upsert(item)
         return False
 
     if proc.returncode != 0:
@@ -127,6 +129,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         )
         item.probed_at = time.time()
         await media_index.persist_now()
+        await media_index._store_upsert(item)
         return False
 
     try:
@@ -135,12 +138,14 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         logging.warning("codec_probe: JSON parse failed for bin:%d", item.message_id)
         item.probed_at = time.time()
         await media_index.persist_now()
+        await media_index._store_upsert(item)
         return False
 
     streams = payload.get("streams") or []
     if not streams:
         item.probed_at = time.time()
         await media_index.persist_now()
+        await media_index._store_upsert(item)
         return False
     s = streams[0]
     item.video_codec = (s.get("codec_name") or "").lower()
@@ -166,6 +171,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
             item.quality = probed_quality
     item.probed_at = time.time()
     await media_index.persist_now()
+    await media_index._store_upsert(item)
     logging.info(
         "codec_probe: bin:%d → codec=%s pix_fmt=%s height=%s quality=%s",
         item.message_id, item.video_codec, item.pix_fmt,

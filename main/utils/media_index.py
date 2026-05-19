@@ -318,11 +318,39 @@ def _is_video_message(message) -> bool:
 
 
 _KURIGRAM_TS_RE = re.compile(r"^video_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.mp4$")
+# Other device-generated or meaningless filenames that should not be used
+# as TMDB search titles.
+_DEVICE_NAME_RE = re.compile(
+    r"""
+    ^(
+        untitled                          # generic "Untitled.mp4"
+      | video                             # bare "video.mp4"
+      | movie                             # bare "movie.mp4"
+      | recording                         # screen/audio recording
+      | capture                           # screen capture
+      | clip                              # generic clip name
+      | screen[\s_-]?recording
+      | VID_\d{8}_\d{6}                  # Android default (VID_20260519_125106)
+      | MOV_\d{8}_\d{6}                  # iOS default
+      | IMG_\d{4,}                        # iOS image sequence
+      | DCIM_\d+                          # DCIM folder auto-name
+      | \d{8}[_\-]\d{6}                  # raw timestamp only
+    )(\.[a-z0-9]{2,4})?$                  # optional extension
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 def _clean_file_name(name: str) -> str:
-    """Strip kurigram-generated timestamp filenames; pass everything else through."""
-    return "" if name and _KURIGRAM_TS_RE.match(name) else name
+    """Strip device-generated / meaningless filenames so they don't
+    pollute TMDB searches or appear as display names."""
+    if not name:
+        return name
+    if _KURIGRAM_TS_RE.match(name):
+        return ""
+    if _DEVICE_NAME_RE.match(name):
+        return ""
+    return name
 
 
 _MIME_TO_EXT = {
@@ -1848,6 +1876,18 @@ async def enrich_one(message_id: int, bot=None) -> bool:
         return False
     item = _items.get(message_id)
     if item is None:
+        return False
+
+    # Don't burn a TMDB search on items with no meaningful title.
+    # Device-generated names ("Untitled", "Video", bare timestamps) are
+    # already stripped by _clean_file_name, so an empty or very short
+    # title here means we genuinely have nothing to search with.
+    _search_signal = (item.series_title or item.title or "").strip()
+    if len(_search_signal) < 3:
+        async with _lock:
+            item.enriched_at = time.time()
+            _persist_unlocked()
+        await _store_upsert(item)
         return False
 
     if item.series_key and item.series_title:
