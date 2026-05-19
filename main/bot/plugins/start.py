@@ -1,4 +1,5 @@
 import logging
+import time
 from urllib.parse import urljoin
 
 from main.bot import StreamBot
@@ -76,7 +77,23 @@ async def admin_link(bot, message):
         # Silently ignore so the admin surface isn't advertised to randos.
         return
 
-    # Dedup: if we already replied to this exact message, drop the duplicate.
+    # Dedup — two layers:
+    # 1. Message age: Telegram re-delivers unacknowledged updates to the new
+    #    instance after a rolling deploy. Re-deliveries always carry the
+    #    original message.date (minutes old); fresh commands are ~0s old.
+    #    Discard anything older than 45 seconds.
+    msg_date = getattr(message, "date", None)
+    if msg_date is not None:
+        try:
+            ts = msg_date.timestamp() if hasattr(msg_date, "timestamp") else float(msg_date)
+            if time.time() - ts > 45:
+                logging.info("/admin dedup: message is %.0fs old — skipping re-delivery",
+                             time.time() - ts)
+                return
+        except Exception:
+            pass
+    # 2. In-memory dedup: catches duplicates within the same instance
+    #    (e.g. Pyrogram firing the handler twice for the same update).
     msg_id = message.id
     if _last_admin_msg.get(requester_id) == msg_id:
         return
