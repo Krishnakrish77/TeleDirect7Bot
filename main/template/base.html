@@ -34,6 +34,20 @@
       {% block content %}{% endblock %}
     </main>
 
+    <button id="_scroll-top"
+            onclick="window.scrollTo({top:0,behavior:'smooth'})"
+            aria-label="Scroll to top"
+            style="display:none"
+            class="fixed bottom-20 right-4 z-40 w-10 h-10 rounded-full
+                   bg-ink-800/90 border border-white/10 shadow-lg
+                   text-slate-400 hover:text-white hover:bg-ink-700
+                   transition-colors grid place-items-center">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75 12 8.25l7.5 7.5"/>
+      </svg>
+    </button>
+
     <div id="_pwa-banner" style="display:none"
          class="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-80
                 bg-ink-800 border border-white/10 rounded-xl shadow-2xl
@@ -135,6 +149,14 @@
 
     <script>
 (function () {
+  // Scroll-to-top button
+  var _st = document.getElementById('_scroll-top');
+  if (_st) {
+    window.addEventListener('scroll', function () {
+      _st.style.display = window.scrollY > 300 ? 'grid' : 'none';
+    }, { passive: true });
+  }
+
   // PWA install banner — only surfaces after 3+ visits, once per session,
   // and with a 10s delay so it doesn't interrupt on landing.
   var _prompt = null;
