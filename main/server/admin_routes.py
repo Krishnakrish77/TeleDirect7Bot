@@ -458,6 +458,48 @@ async def admin_probe_codecs(request: web.Request) -> web.Response:
     raise _redirect_with_flash('Codec probe queued')
 
 
+@routes.post("/admin/ai-clean-filenames")
+async def admin_ai_clean_filenames(request: web.Request) -> web.Response:
+    """Run AI filename sanitiser over all catalogue entries that have
+    a raw or noisy file_name (channel prefixes, release tags, etc.).
+
+    Requires GEMINI_API_KEY. Fire-and-forget — returns immediately.
+    """
+    _require_session(request)
+    if not Var.GEMINI_API_KEY:
+        from urllib.parse import quote
+        raise _redirect_with_flash('GEMINI_API_KEY not configured')
+
+    import asyncio as _aio
+    from main.utils import filename_ai, media_index as _mi
+
+    async def _run_all() -> None:
+        items = list(_mi._items.values())
+        logging.info("filename_ai: bulk clean starting for %d items", len(items))
+        done = changed = 0
+        for it in items:
+            if not it.file_name:
+                continue
+            raw = it.file_name
+            result = await filename_ai.apply_to_item(it, raw)
+            if result:
+                await _mi._store_upsert(it)
+                changed += 1
+            done += 1
+            if done % 20 == 0:
+                await asyncio.sleep(0)  # yield to event loop
+        await _mi.persist_now()
+        logging.info(
+            "filename_ai: bulk clean done — %d/%d items updated", changed, done
+        )
+
+    _aio.create_task(_run_all())
+    if _is_htmx(request):
+        return web.Response(status=204)
+    from urllib.parse import quote
+    raise _redirect_with_flash('AI filename clean queued — check logs for progress')
+
+
 @routes.post("/admin/reindex")
 async def admin_reindex(request: web.Request) -> web.Response:
     """Recompute series/movie/quality fields on every existing HubItem.

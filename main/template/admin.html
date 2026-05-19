@@ -253,6 +253,19 @@
                 <span class="block text-xs text-slate-500">ffprobe to flag HEVC / 10-bit / AV1 files.</span>
               </button>
             </form>
+            {% if var.GEMINI_API_KEY %}
+            <form hx-post="/admin/ai-clean-filenames" hx-swap="none"
+                  hx-confirm="Run AI filename sanitiser on all catalogue entries? This calls the Gemini API once per item with a file_name — check rate limits first."
+                  @htmx:after-request.camel="menuOpen = false"
+                  class="block">
+              <button type="submit"
+                      class="w-full text-left px-4 py-2 text-sm text-slate-200
+                             hover:bg-ink-800 transition-colors">
+                <span class="block font-medium">✦ AI clean filenames</span>
+                <span class="block text-xs text-slate-500">Strip channel prefixes &amp; release noise from all file names using Gemini.</span>
+              </button>
+            </form>
+            {% endif %}
             <form hx-post="/admin/fetch-episodes" hx-swap="none"
                   @htmx:after-request.camel="$dispatch('admin-progress-tick'); menuOpen = false"
                   class="block">
