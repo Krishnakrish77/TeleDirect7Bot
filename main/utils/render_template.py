@@ -1,4 +1,5 @@
 import logging
+import re
 import urllib.parse
 from pathlib import Path
 
@@ -25,6 +26,19 @@ _DL_TEMPLATE = _env.get_template("dl.html")
 # Containers the browser can decode straight from a byte-range stream.
 # Anything else (MKV, AVI, WMV...) gets routed through HLS because the
 # container itself isn't supported in MSE, not just the codecs inside.
+_KURIGRAM_TS_RE = re.compile(r"^video_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.mp4$")
+
+
+def _best_file_name(api_name: str, meta) -> str:
+    """Return the most useful filename: catalogue > API (if not a kurigram
+    timestamp) > empty string."""
+    if meta and meta.file_name:
+        return meta.file_name
+    if api_name and not _KURIGRAM_TS_RE.match(api_name):
+        return api_name
+    return ""
+
+
 _BROWSER_NATIVE_CONTAINERS = {
     "video/mp4",
     "video/quicktime",   # .mov
@@ -65,6 +79,7 @@ async def render_page(message_id, secure_hash):
         # template guards on `meta and meta.tmdb_id`.
         meta = media_index.get_item(int(message_id))
         next_ep = media_index.next_episode(meta) if meta else None
+        file_name = _best_file_name(file_data.file_name, meta)
         # If ffprobe at index time flagged the file as a codec the
         # browser can't decode (HEVC, 10-bit, AV1 inside MKV, etc.),
         # short-circuit straight to the "open in VLC" page instead
@@ -78,21 +93,22 @@ async def render_page(message_id, secure_hash):
         )
         return _REQ_TEMPLATE.render(
             tag=mime_type,
-            heading=heading,
+            heading=("Watch " if mime_type == "video" else "Listen ") + file_name,
             src=src,
             hls_src=hls_src,
             sub_path=sub_path,
-            file_name=file_data.file_name,
+            file_name=file_name,
             meta=meta,
             known_unplayable=known_unplayable,
             video_codec=(meta.video_codec if meta else "") or "",
             pix_fmt=(meta.pix_fmt if meta else "") or "",
             next_ep=next_ep,
         )
-    heading = f"Download {file_data.file_name}"
+    file_name = _best_file_name(file_data.file_name, None)
+    heading = f"Download {file_name}"
     return _DL_TEMPLATE.render(
         heading=heading,
-        file_name=file_data.file_name,
+        file_name=file_name,
         file_size=humanbytes(file_data.file_size),
         src=src,
     )

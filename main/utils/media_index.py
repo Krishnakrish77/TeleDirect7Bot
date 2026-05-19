@@ -264,7 +264,7 @@ def _from_serializable(d: dict) -> HubItem:
         file_size=d.get("file_size", 0) or 0,
         has_thumb=d.get("has_thumb", False),
         quality=d.get("quality", "") or "",
-        file_name=d.get("file_name", "") or "",
+        file_name=_clean_file_name(d.get("file_name", "") or ""),
         series_key=d.get("series_key", "") or "",
         series_title=d.get("series_title", "") or "",
         season=d.get("season"),
@@ -317,6 +317,14 @@ def _is_video_message(message) -> bool:
     return mime.startswith("video/")
 
 
+_KURIGRAM_TS_RE = re.compile(r"^video_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.mp4$")
+
+
+def _clean_file_name(name: str) -> str:
+    """Strip kurigram-generated timestamp filenames; pass everything else through."""
+    return "" if name and _KURIGRAM_TS_RE.match(name) else name
+
+
 _MIME_TO_EXT = {
     "mp4": "mp4", "x-matroska": "mkv", "quicktime": "mov",
     "x-msvideo": "avi", "webm": "webm", "x-ms-wmv": "wmv",
@@ -337,14 +345,7 @@ def _item_from_message(message) -> Optional[HubItem]:
     if not _is_video_message(message):
         return None
     media = _media_of(message)
-    file_name = getattr(media, "file_name", None) or ""
-    # kurigram generates "video_YYYY-MM-DD_HH-MM-SS.mp4" when the
-    # Telegram video message carries no real filename. Treat that as
-    # absent so the caption / synthesised-name fallbacks kick in.
-    if file_name and re.match(
-        r"^video_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.mp4$", file_name
-    ):
-        file_name = ""
+    file_name = _clean_file_name(getattr(media, "file_name", None) or "")
     # Video-type uploads (not documents) carry no file_name. Try the
     # caption first — it's often the original filename when the user
     # pastes it in. If the caption is absent or unhelpful, synthesise a
