@@ -48,6 +48,9 @@ class Var(object):
     # IMDb ids). Free at themoviedb.org → Settings → API. Without it the
     # enrichment pipeline no-ops silently.
     TMDB_API_KEY = environ.get("TMDB_API_KEY", "").strip()
+    # Optional Gemini API key for thumbnail-based metadata suggestions in admin.
+    # Free tier at aistudio.google.com — no credit card required.
+    GEMINI_API_KEY = environ.get("GEMINI_API_KEY", "").strip()
 
     BANNED_CHANNELS = list({int(x) for x in str(environ.get("BANNED_CHANNELS", "")).split()})
     BANNED_USERS = list({int(x) for x in str(environ.get("BANNED_USERS", "")).split()})

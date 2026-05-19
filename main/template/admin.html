@@ -40,6 +40,7 @@
              aiLoading: false,
              aiError: '',
              aiReasoning: '',
+             aiModel: localStorage.getItem('td:ai-model') || 'gemini-2.0-flash',
            };
            // If the row already has a TMDB id, kick off a preview fetch
            // immediately so admin sees what's currently attached.
@@ -77,7 +78,8 @@
            e.aiError = '';
            e.aiReasoning = '';
            try {
-             const r = await fetch('/admin/ai-suggest/' + e.id, { method: 'POST' });
+             localStorage.setItem('td:ai-model', e.aiModel);
+             const r = await fetch('/admin/ai-suggest/' + e.id + '?model=' + encodeURIComponent(e.aiModel), { method: 'POST' });
              const data = await r.json();
              if (!r.ok) { e.aiError = data.error || ('HTTP ' + r.status); return; }
              if (data.title)        e.title        = data.title;
@@ -777,7 +779,16 @@
               <h2 class="text-base font-semibold text-white flex-1 min-w-0">
                 Edit bin:<span x-text="editing.id"></span>
               </h2>
-              {% if var.TMDB_API_KEY %}
+              {% if var.GEMINI_API_KEY %}
+              <select x-model="editing.aiModel"
+                      class="px-2 py-1.5 rounded-lg text-xs bg-ink-800/70 text-slate-300
+                             border border-white/10 focus:outline-none focus:ring-1
+                             focus:ring-violet-400/60 flex-shrink-0">
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              </select>
               <button type="button" @click="askAI()"
                       :disabled="editing.aiLoading"
                       class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium

@@ -15,11 +15,13 @@ stays in sync.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import aiohttp
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -507,20 +509,34 @@ async def admin_action(request: web.Request) -> web.Response:
     raise _redirect_with_flash("Unknown action")
 
 
+async def _fetch_thumb_bytes(item) -> Optional[bytes]:
+    """Fetch the video thumbnail via our own /thumb/ endpoint."""
+    if not item.has_thumb:
+        return None
+    url = f"http://127.0.0.1:{Var.PORT}/thumb/{item.secure_hash}{item.message_id}.jpg"
+    try:
+        async with aiohttp.ClientSession() as sess:
+            async with sess.get(url, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                if r.status == 200:
+                    return await r.read()
+    except Exception:
+        pass
+    return None
+
+
 @routes.post(r"/admin/ai-suggest/{id:\d+}")
 async def admin_ai_suggest(request: web.Request) -> web.Response:
-    """Suggest metadata for a catalogue entry using TMDB (free).
+    """Gemini Vision thumbnail analysis → structured metadata suggestions.
 
-    Searches TMDB with the item's parsed title and returns the best
-    match as pre-filled suggestions. Also runs the filename parser to
-    recover series/episode fields not yet in the catalogue.
-    Returns JSON with any subset of: title, year, file_name,
-    series_title, season, episode, tags, description, reasoning.
+    Sends the video thumbnail + basic metadata to Gemini 2.0 Flash (free).
+    Gemini reads any visible text in the thumbnail (course UI, show title,
+    episode markers, watermarks, URLs) to identify the content and return
+    pre-filled suggestions for title, series, season, episode, etc.
     """
     _require_session(request)
-    if not Var.TMDB_API_KEY:
+    if not Var.GEMINI_API_KEY:
         return web.json_response(
-            {"error": "TMDB_API_KEY not configured — add it to your env vars"},
+            {"error": "GEMINI_API_KEY not configured — get a free key at aistudio.google.com"},
             status=503,
         )
     message_id = int(request.match_info["id"])
@@ -528,72 +544,106 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     if item is None:
         return web.json_response({"error": "Item not found"}, status=404)
 
-    from main.utils import tmdb
-    from main.utils.dedup import clean_for_search
-    from main.utils.index_entry import title_from_filename, year_from_filename
-    from main.utils import series as series_parse_mod
+    thumb_bytes = await _fetch_thumb_bytes(item)
 
-    out: dict = {}
-    notes: list = []
+    meta_text = "\n".join([
+        f"Filename: {item.file_name or '(none)'}",
+        f"Current title: {item.title or '(none)'}",
+        f"Current series: {item.series_title or '(none)'}",
+        f"Duration: {item.duration}s" if item.duration else "Duration: unknown",
+        f"File size: {humanbytes(item.file_size)}" if item.file_size else "",
+    ])
 
-    # --- 1. Filename-parser pass: recover fields from the raw filename ---
-    raw_name = item.file_name or ""
-    if raw_name:
-        sm = series_parse_mod.parse(raw_name)
-        if sm:
-            if not item.series_key:
-                out["series_title"] = sm.title
-                out["season"] = sm.season
-                if sm.episode:
-                    out["episode"] = sm.episode
-                notes.append(f"Series pattern detected in filename → '{sm.title}'")
-        else:
-            derived_title = title_from_filename(raw_name)
-            derived_year = year_from_filename(raw_name)
-            if derived_title and not item.title:
-                out["title"] = derived_title
-                notes.append(f"Title parsed from filename → '{derived_title}'")
-            if derived_year and not item.year:
-                out["year"] = derived_year
+    prompt = (
+        "You are a media catalogue assistant. Analyse this video file and suggest "
+        "accurate catalogue metadata.\n\n"
+        "If a thumbnail image is provided, carefully read ALL visible text including:\n"
+        "• Course / platform names (e.g. Three.js Journey, Udemy, YouTube)\n"
+        "• Show or movie titles displayed on screen\n"
+        "• Lesson / episode numbers or titles\n"
+        "• Watermarks, UI elements, URLs, browser tabs\n"
+        "• Any branding that identifies the content\n\n"
+        f"File metadata:\n{meta_text}\n\n"
+        "Populate every field you can confidently identify. "
+        "For series/courses set series_title + season + episode. "
+        "For movies set title + year. "
+        "Use 0 or empty string for truly unknown fields. "
+        "In 'reasoning' briefly explain what you found."
+    )
 
-    # --- 2. TMDB search: find matching movie or TV show ---
-    search_title = item.series_title or item.title or out.get("title") or ""
-    search_title = clean_for_search(search_title) or search_title
-    search_year = item.year or out.get("year")
+    parts = []
+    if thumb_bytes:
+        parts.append({
+            "inline_data": {
+                "mime_type": "image/jpeg",
+                "data": base64.b64encode(thumb_bytes).decode(),
+            }
+        })
+    parts.append({"text": prompt})
 
-    hit = None
-    if search_title:
-        # Try movie first, then TV
-        hit = await tmdb.lookup_movie(search_title, search_year)
-        kind = "movie"
-        if hit is None:
-            hit = await tmdb.lookup_series(search_title, search_year)
-            kind = "tv"
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "title":        {"type": "STRING"},
+            "year":         {"type": "INTEGER"},
+            "file_name":    {"type": "STRING"},
+            "series_title": {"type": "STRING"},
+            "season":       {"type": "INTEGER"},
+            "episode":      {"type": "INTEGER"},
+            "tags":         {"type": "STRING"},
+            "description":  {"type": "STRING"},
+            "reasoning":    {"type": "STRING"},
+        },
+        "required": ["title", "year", "file_name", "series_title",
+                     "season", "episode", "tags", "description", "reasoning"],
+    }
 
-    if hit:
-        if not item.title and hit.title:
-            out["title"] = hit.title
-        if not item.year and hit.year:
-            out["year"] = hit.year
-        if not item.description and hit.description:
-            out["description"] = hit.description
-        tags_from_tmdb = " ".join(
-            g.lower().replace(" ", "-") for g in (hit.genres or [])
+    _ALLOWED_MODELS = {
+        "gemini-2.0-flash", "gemini-2.0-flash-lite",
+        "gemini-1.5-flash", "gemini-1.5-pro",
+    }
+    model = request.rel_url.query.get("model", "gemini-2.0-flash")
+    if model not in _ALLOWED_MODELS:
+        model = "gemini-2.0-flash"
+    gemini_url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models"
+        f"/{model}:generateContent?key={Var.GEMINI_API_KEY}"
+    )
+    payload = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "response_mime_type": "application/json",
+            "response_schema": schema,
+        },
+    }
+
+    try:
+        async with aiohttp.ClientSession() as sess:
+            async with sess.post(
+                gemini_url, json=payload,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as r:
+                resp_data = await r.json()
+                if r.status != 200:
+                    err = resp_data.get("error", {}).get("message", str(resp_data))
+                    return web.json_response({"error": f"Gemini: {err}"}, status=502)
+
+        text = resp_data["candidates"][0]["content"]["parts"][0]["text"]
+        data = json.loads(text)
+
+        # Drop zero / blank fields so the modal only fills what Gemini knows.
+        clean = {
+            k: v for k, v in data.items()
+            if not (isinstance(v, int) and v == 0)
+            and not (isinstance(v, str) and not v.strip())
+        }
+        return web.json_response(clean)
+
+    except Exception:
+        logging.exception("admin: Gemini suggest failed for bin:%d", message_id)
+        return web.json_response(
+            {"error": "Gemini request failed — check server logs"}, status=500
         )
-        if tags_from_tmdb and not item.tags:
-            out["tags"] = tags_from_tmdb
-        if kind == "tv" and not item.series_key and hit.title:
-            out["series_title"] = hit.title
-        notes.append(
-            f"TMDB matched '{hit.title}' ({hit.year}) as {kind}"
-            + (f" · tmdb:{hit.tmdb_id}" if hit.tmdb_id else "")
-        )
-
-    if not out and not notes:
-        notes.append("No strong signals found — try editing the title manually first")
-
-    out["reasoning"] = "; ".join(notes)
-    return web.json_response(out)
 
 
 @routes.post(r"/admin/edit/{id:\d+}")
