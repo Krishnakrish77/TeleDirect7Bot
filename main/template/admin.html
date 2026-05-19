@@ -36,6 +36,10 @@
              imdb_input: '',
              imdbError: '',
              imdbLoading: false,
+             // AI suggest state.
+             aiLoading: false,
+             aiError: '',
+             aiReasoning: '',
            };
            // If the row already has a TMDB id, kick off a preview fetch
            // immediately so admin sees what's currently attached.
@@ -64,6 +68,31 @@
              e.imdbError = 'Network error';
            } finally {
              e.imdbLoading = false;
+           }
+         },
+         async askAI() {
+           const e = this.editing;
+           if (!e) return;
+           e.aiLoading = true;
+           e.aiError = '';
+           e.aiReasoning = '';
+           try {
+             const r = await fetch('/admin/ai-suggest/' + e.id, { method: 'POST' });
+             const data = await r.json();
+             if (!r.ok) { e.aiError = data.error || ('HTTP ' + r.status); return; }
+             if (data.title)        e.title        = data.title;
+             if (data.year)         e.year         = String(data.year);
+             if (data.file_name)    e.file_name    = data.file_name;
+             if (data.series_title) e.series_title = data.series_title;
+             if (data.season)       e.season       = String(data.season);
+             if (data.episode)      e.episode      = String(data.episode);
+             if (data.tags)         e.tags         = data.tags;
+             if (data.description)  e.description  = data.description;
+             e.aiReasoning = data.reasoning || '';
+           } catch (err) {
+             e.aiError = 'Network error';
+           } finally {
+             e.aiLoading = false;
            }
          },
          async previewTmdb() {
@@ -744,12 +773,31 @@
                     shadow-2xl max-h-[90vh] flex flex-col">
           <form method="post" :action="'/admin/edit/' + editing.id"
                 class="flex flex-col min-h-0 flex-1 divide-y divide-white/5">
-            <header class="px-5 py-3 flex items-center justify-between flex-shrink-0">
-              <h2 class="text-base font-semibold text-white">
+            <header class="px-5 py-3 flex items-center gap-3 flex-shrink-0">
+              <h2 class="text-base font-semibold text-white flex-1 min-w-0">
                 Edit bin:<span x-text="editing.id"></span>
               </h2>
+              {% if var.TMDB_API_KEY %}
+              <button type="button" @click="askAI()"
+                      :disabled="editing.aiLoading"
+                      class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                             bg-violet-500/20 hover:bg-violet-500/30 text-violet-300
+                             border border-violet-400/30 transition-colors
+                             disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                     class="w-3.5 h-3.5" x-show="!editing.aiLoading">
+                  <path d="M12 2a1 1 0 0 1 .967.744L14.146 7.2 17.5 9.134a1 1 0 0 1 0 1.732l-3.354 1.935-1.18 4.455a1 1 0 0 1-1.933 0L9.854 12.8 6.5 10.866a1 1 0 0 1 0-1.732L9.854 7.2l1.179-4.456A1 1 0 0 1 12 2Z"/>
+                </svg>
+                <svg x-show="editing.aiLoading" class="w-3.5 h-3.5 animate-spin"
+                     xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+                <span x-text="editing.aiLoading ? 'Searching…' : 'Suggest'"></span>
+              </button>
+              {% endif %}
               <button type="button" @click="editing = null"
-                      class="text-slate-400 hover:text-white">✕</button>
+                      class="text-slate-400 hover:text-white flex-shrink-0">✕</button>
             </header>
 
             {# Scrollable body — the modal can grow taller than the
@@ -758,6 +806,14 @@
                scroll internally. Header + footer stay anchored so
                the Save button is always reachable. #}
             <div class="px-5 py-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
+              <p x-show="editing.aiError" x-cloak
+                 class="text-xs text-red-400 px-3 py-2 rounded bg-red-500/10 border border-red-400/20"
+                 x-text="editing.aiError"></p>
+              <div x-show="editing.aiReasoning" x-cloak
+                   class="text-xs text-violet-300/80 px-3 py-2 rounded bg-violet-500/10
+                          border border-violet-400/20 leading-relaxed">
+                <span class="font-semibold text-violet-300">AI: </span><span x-text="editing.aiReasoning"></span>
+              </div>
               <label class="block">
                 <span class="text-xs uppercase tracking-wider text-slate-400">Title</span>
                 <input type="text" name="title" required

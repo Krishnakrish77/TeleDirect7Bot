@@ -200,6 +200,7 @@ async def admin_home(request: web.Request) -> web.Response:
         stats=media_index.stats(),
         duplicate_message_ids=duplicate_message_ids,
         flash=flash,
+        var=Var,
     )
     resp = _html(body)
     if raw:
@@ -504,6 +505,95 @@ async def admin_action(request: web.Request) -> web.Response:
         raise _redirect_with_flash(f"Updated quality on {n} entries")
 
     raise _redirect_with_flash("Unknown action")
+
+
+@routes.post(r"/admin/ai-suggest/{id:\d+}")
+async def admin_ai_suggest(request: web.Request) -> web.Response:
+    """Suggest metadata for a catalogue entry using TMDB (free).
+
+    Searches TMDB with the item's parsed title and returns the best
+    match as pre-filled suggestions. Also runs the filename parser to
+    recover series/episode fields not yet in the catalogue.
+    Returns JSON with any subset of: title, year, file_name,
+    series_title, season, episode, tags, description, reasoning.
+    """
+    _require_session(request)
+    if not Var.TMDB_API_KEY:
+        return web.json_response(
+            {"error": "TMDB_API_KEY not configured — add it to your env vars"},
+            status=503,
+        )
+    message_id = int(request.match_info["id"])
+    item = media_index.get_item(message_id)
+    if item is None:
+        return web.json_response({"error": "Item not found"}, status=404)
+
+    from main.utils import tmdb
+    from main.utils.dedup import clean_for_search
+    from main.utils.index_entry import title_from_filename, year_from_filename
+    from main.utils import series as series_parse_mod
+
+    out: dict = {}
+    notes: list = []
+
+    # --- 1. Filename-parser pass: recover fields from the raw filename ---
+    raw_name = item.file_name or ""
+    if raw_name:
+        sm = series_parse_mod.parse(raw_name)
+        if sm:
+            if not item.series_key:
+                out["series_title"] = sm.title
+                out["season"] = sm.season
+                if sm.episode:
+                    out["episode"] = sm.episode
+                notes.append(f"Series pattern detected in filename → '{sm.title}'")
+        else:
+            derived_title = title_from_filename(raw_name)
+            derived_year = year_from_filename(raw_name)
+            if derived_title and not item.title:
+                out["title"] = derived_title
+                notes.append(f"Title parsed from filename → '{derived_title}'")
+            if derived_year and not item.year:
+                out["year"] = derived_year
+
+    # --- 2. TMDB search: find matching movie or TV show ---
+    search_title = item.series_title or item.title or out.get("title") or ""
+    search_title = clean_for_search(search_title) or search_title
+    search_year = item.year or out.get("year")
+
+    hit = None
+    if search_title:
+        # Try movie first, then TV
+        hit = await tmdb.lookup_movie(search_title, search_year)
+        kind = "movie"
+        if hit is None:
+            hit = await tmdb.lookup_series(search_title, search_year)
+            kind = "tv"
+
+    if hit:
+        if not item.title and hit.title:
+            out["title"] = hit.title
+        if not item.year and hit.year:
+            out["year"] = hit.year
+        if not item.description and hit.description:
+            out["description"] = hit.description
+        tags_from_tmdb = " ".join(
+            g.lower().replace(" ", "-") for g in (hit.genres or [])
+        )
+        if tags_from_tmdb and not item.tags:
+            out["tags"] = tags_from_tmdb
+        if kind == "tv" and not item.series_key and hit.title:
+            out["series_title"] = hit.title
+        notes.append(
+            f"TMDB matched '{hit.title}' ({hit.year}) as {kind}"
+            + (f" · tmdb:{hit.tmdb_id}" if hit.tmdb_id else "")
+        )
+
+    if not out and not notes:
+        notes.append("No strong signals found — try editing the title manually first")
+
+    out["reasoning"] = "; ".join(notes)
+    return web.json_response(out)
 
 
 @routes.post(r"/admin/edit/{id:\d+}")
