@@ -338,6 +338,13 @@ def _item_from_message(message) -> Optional[HubItem]:
         return None
     media = _media_of(message)
     file_name = getattr(media, "file_name", None) or ""
+    # kurigram generates "video_YYYY-MM-DD_HH-MM-SS.mp4" when the
+    # Telegram video message carries no real filename. Treat that as
+    # absent so the caption / synthesised-name fallbacks kick in.
+    if file_name and re.match(
+        r"^video_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.mp4$", file_name
+    ):
+        file_name = ""
     # Video-type uploads (not documents) carry no file_name. Try the
     # caption first — it's often the original filename when the user
     # pastes it in. If the caption is absent or unhelpful, synthesise a
