@@ -27,6 +27,8 @@ from main import StreamBot
 from main.utils import admin_auth, media_index
 from main.utils.human_readable import humanbytes
 from main.utils.index_entry import IndexEntry, render
+from main.utils import series as series_parse
+from main.utils.media_index import compute_movie_key
 from main.vars import Var
 
 
@@ -528,6 +530,12 @@ async def admin_edit(request: web.Request) -> web.Response:
             raise _redirect_with_flash('Year must be a number')
     new_tags = _normalise_tags(form.get("tags") or "")
     new_description = (form.get("description") or "").strip()
+    new_file_name = (form.get("file_name") or "").strip()
+    new_series_title = (form.get("series_title") or "").strip()
+    season_raw = (form.get("season") or "").strip()
+    episode_raw = (form.get("episode") or "").strip()
+    new_season: Optional[int] = int(season_raw) if season_raw.isdigit() else None
+    new_episode: Optional[int] = int(episode_raw) if episode_raw.isdigit() else None
 
     # Optional manual TMDB-id override. When present, it bypasses the
     # title-search path entirely — admin tells us which record to use
@@ -555,11 +563,30 @@ async def admin_edit(request: web.Request) -> web.Response:
     title_changed = item_before and item_before.title != new_title
     year_changed = item_before and item_before.year != new_year
 
-    def apply(entry, _item):
+    def apply(entry, item):
         entry.title = new_title
         entry.year = new_year
         entry.tags = new_tags
         entry.description = new_description
+        # file_name override — not in the caption format, applied directly.
+        item.file_name = new_file_name
+        # Series assignment — groups standalone videos into a series page.
+        if new_series_title:
+            item.series_title = new_series_title
+            item.series_key = series_parse.slugify(new_series_title)
+            item.season = new_season if new_season is not None else 1
+            item.episode = new_episode
+            item.movie_key = ""
+        else:
+            # Clearing series_title converts back to a standalone item.
+            item.series_title = ""
+            item.series_key = ""
+            item.season = None
+            item.episode = None
+            if not item.movie_key:
+                item.movie_key = compute_movie_key(
+                    new_title, new_year, new_file_name or item.file_name
+                )
 
     status, reason = await _rewrite_caption(message_id, apply)
 

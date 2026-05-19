@@ -22,6 +22,10 @@
              year: d.year || '',
              tags: d.tags || '',
              description: d.description || '',
+             file_name: d.fileName || '',
+             series_title: d.seriesTitle || '',
+             season: d.season || '',
+             episode: d.episode || '',
              tmdb_id: d.tmdbId || '',
              tmdb_kind: d.tmdbKind || 'movie',
              // Preview state populated by previewTmdb().
@@ -705,6 +709,10 @@
                           data-year="{{ item.year or '' }}"
                           data-tags="{{ item.tags | join(' ') }}"
                           data-description="{{ item.description }}"
+                          data-file-name="{{ item.file_name or '' }}"
+                          data-series-title="{{ item.series_title or '' }}"
+                          data-season="{{ item.season or '' }}"
+                          data-episode="{{ item.episode or '' }}"
                           data-tmdb-id="{{ item.tmdb_id or '' }}"
                           data-tmdb-kind="{{ item.tmdb_kind or 'movie' }}"
                           @click.stop="openEdit($event.currentTarget)"
@@ -780,6 +788,18 @@
               </label>
 
               <label class="block">
+                <span class="text-xs uppercase tracking-wider text-slate-400">Display name
+                  <span class="lowercase tracking-normal text-slate-500">(filename override)</span>
+                </span>
+                <input type="text" name="file_name"
+                       placeholder="e.g. Three.js Journey - Lesson 24.mp4"
+                       x-model="editing.file_name"
+                       class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                              border border-white/5
+                              focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+              </label>
+
+              <label class="block">
                 <span class="text-xs uppercase tracking-wider text-slate-400">Description</span>
                 <textarea name="description" rows="3"
                           x-model="editing.description"
@@ -788,6 +808,45 @@
                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60
                                  resize-y"></textarea>
               </label>
+
+              {# Series grouping — assign standalone videos to a series. #}
+              <div class="pt-3 border-t border-white/5">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">
+                  Series <span class="lowercase tracking-normal text-slate-500">(optional — groups into a /series/ page)</span>
+                </p>
+                <label class="block mb-2">
+                  <span class="text-[11px] uppercase tracking-wider text-slate-500">Series title</span>
+                  <input type="text" name="series_title"
+                         placeholder="e.g. Three.js Journey"
+                         x-model="editing.series_title"
+                         class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                border border-white/5 text-sm
+                                focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                </label>
+                <div class="flex gap-3">
+                  <label class="block flex-1">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Season</span>
+                    <input type="number" name="season" min="1"
+                           placeholder="1"
+                           x-model="editing.season"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm tabular-nums
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                  <label class="block flex-1">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Episode</span>
+                    <input type="number" name="episode" min="1"
+                           placeholder="24"
+                           x-model="editing.episode"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm tabular-nums
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                </div>
+                <p class="mt-1.5 text-xs text-slate-500">
+                  Clear the series title to restore as a standalone item.
+                </p>
+              </div>
 
               {# Optional TMDB id override. When set, the backend skips
                  search-by-title and applies the specified record
