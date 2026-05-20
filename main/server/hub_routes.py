@@ -529,6 +529,21 @@ async def hub_thumb(request: web.Request) -> web.Response:
         if item is None or item.secure_hash != secure_hash:
             return None
         source_url = hls.internal_stream_url(secure_hash, message_id)
+        # Pre-check: HEAD the stream URL before spawning ffmpeg. If the
+        # streaming route returns non-200 (missing file, bad hash, etc.)
+        # ffmpeg would report "End of file" / "error reading header".
+        import aiohttp as _aiohttp
+        try:
+            async with _aiohttp.ClientSession() as s:
+                async with s.head(
+                    source_url,
+                    timeout=_aiohttp.ClientTimeout(total=5),
+                    allow_redirects=True,
+                ) as r:
+                    if r.status != 200:
+                        return None
+        except Exception:
+            return None
         return await hls.grab_thumbnail(source_url, duration=float(item.duration or 0))
 
     data = await thumb_cache.cached_or_fetch(message_id, fetch)
