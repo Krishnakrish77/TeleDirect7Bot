@@ -149,6 +149,7 @@
            if (this.filter === 'movies' &amp;&amp; ds.kind !== 'movie') return false;
            if (this.filter === 'no-poster' &amp;&amp; ds.hasPoster === '1') return false;
            if (this.filter === 'duplicates' &amp;&amp; ds.duplicate !== '1') return false;
+           if (this.filter === 'no-thumb' &amp;&amp; (ds.hasThumb === '1' || ds.hasDuration === '1')) return false;
            const q = this.query.trim().toLowerCase();
            if (q &amp;&amp; !(ds.searchable || '').includes(q)) return false;
            return true;
@@ -728,6 +729,7 @@
               { id: 'series', label: 'Series' },
               { id: 'movies', label: 'Movies' },
               { id: 'no-poster', label: 'No poster' },
+              { id: 'no-thumb', label: 'No thumb' },
               { id: 'duplicates', label: 'Duplicates' }
             ]" :key="chip.id">
           <button type="button"
@@ -776,7 +778,9 @@
                   data-has-poster="{{ '1' if item.poster_path else '0' }}"
                   data-duplicate="{{ '1' if is_dup else '0' }}"
                   data-hash="{{ item.secure_hash or '' }}"
-                  data-bin-id="{{ item.message_id }}">
+                  data-bin-id="{{ item.message_id }}"
+                  data-has-thumb="{{ '1' if item.has_thumb else '0' }}"
+                  data-has-duration="{{ '1' if item.duration else '0' }}">
                 <td class="px-3 py-2">
                   <input type="checkbox" name="ids" value="{{ item.message_id }}"
                          x-model="selected" />
@@ -787,6 +791,13 @@
                      class="hover:text-brand-300">
                     {{ item.title }}{% if item.year %} ({{ item.year }}){% endif %}
                   </a>
+                  {% if not item.has_thumb and not item.duration %}
+                  <span class="ml-1.5 px-1 py-0.5 rounded text-[10px] font-medium
+                               bg-amber-500/15 text-amber-300 border border-amber-400/20"
+                        title="Uploaded as document — no thumbnail or duration. Re-grab to fix.">
+                    no thumb
+                  </span>
+                  {% endif %}
                 </td>
                 <td class="px-3 py-2 text-slate-400 text-xs">
                   {% if item.series_key %}
