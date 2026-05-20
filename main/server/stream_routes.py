@@ -187,6 +187,28 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
             headers={**common_headers, "Content-Length": str(len(cached_body))},
         )
 
+    # For a full-file GET (no Range header, from_bytes=0): serve only the
+    # skeleton HEAD (first 2 MB) as a 206 partial response showing the real
+    # Content-Range. This prevents streaming 200-300 sequential GetFile calls
+    # to Telegram (which Telegram drops), while giving ffprobe/ffmpeg enough
+    # bytes to identify the container format. They will then make targeted
+    # Range requests for the MOOV/Cues block (served from the tail cache) and
+    # the actual seek position — no full-file stream required.
+    if not range_header and from_bytes == 0 and file_size > skeleton_cache.HEAD_SIZE:
+        head = await skeleton_cache.get_or_fetch_head(
+            message_id, file_size, tg_connect, file_id, index
+        )
+        head_end = len(head) - 1
+        return web.Response(
+            status=206,
+            body=head,
+            headers={
+                **common_headers,
+                "Content-Range": f"bytes 0-{head_end}/{file_size}",
+                "Content-Length": str(len(head)),
+            },
+        )
+
     req_length = until_bytes - from_bytes
     new_chunk_size = utils.chunk_size(req_length)
     offset = utils.offset_fix(from_bytes, new_chunk_size)
