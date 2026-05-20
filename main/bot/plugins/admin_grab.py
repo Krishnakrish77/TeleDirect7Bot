@@ -164,8 +164,11 @@ async def _build_page(chat_id: int, offset_id: int):
         if len(media_msgs) >= PAGE_SIZE:
             break
 
-    has_more = len(media_msgs) >= PAGE_SIZE and last_id > 0
-    return media_msgs, last_id, has_more
+    # get_chat_history offset_id is inclusive, so subtract 1 to avoid
+    # re-showing the last message on the next page.
+    next_offset = max(0, last_id - 1)
+    has_more = len(media_msgs) >= PAGE_SIZE and next_offset > 0
+    return media_msgs, next_offset, has_more
 
 
 def _file_label(msg: Message, selected: bool) -> str:
@@ -412,47 +415,58 @@ async def grablist_cb(client: Client, cb: CallbackQuery):
 
 @StreamBot.on_callback_query(filters.regex(r"^grabsel_") & _owner_filter)
 async def grabsel_cb(client: Client, cb: CallbackQuery):
-    """Grab all selected files sequentially."""
+    """Grab all selected files, showing live progress."""
     parts = cb.data.split("_", 1)
     chat_id = int(parts[1])
 
     key = (cb.from_user.id, cb.message.id)
-    sel = _selections.pop(key, set())
-    if not sel:
+    sel = list(_selections.pop(key, set()))
+    total = len(sel)
+    if not total:
         await cb.answer("Nothing selected.", show_alert=True)
         return
 
-    await cb.answer(f"Grabbing {len(sel)} file(s)…")
+    await cb.answer(f"Starting {total} grab(s)…")
     progress = await cb.message.reply_text(
-        f"⬇️ Grabbing {len(sel)} file(s)…", quote=True,
+        f"⏳ 0 / {total} grabbed…", quote=True,
     )
     done, failed = 0, 0
-    for msg_id in sel:
+    for i, msg_id in enumerate(sel, 1):
         try:
+            await progress.edit_text(f"⬇️ {i}/{total} — downloading…")
             user = await _get_user_client()
             src = await user.get_messages(chat_id, msg_id)
             if src.empty or not get_media_from_message(src):
                 failed += 1
+                await progress.edit_text(f"⚠️ {i}/{total} — no media, skipping.")
                 continue
+
+            media = get_media_from_message(src)
+            name = getattr(media, "file_name", None) or f"msg {msg_id}"
+            await progress.edit_text(f"⬆️ {i}/{total} — uploading **{name}**…")
+
             log_msg = await _reupload(src)
             schedule_index(client, log_msg)
             await log_msg.reply_text(
-                f"**Grabbed via list** | source `{chat_id}/{msg_id}`",
+                f"**Grabbed** | source `{chat_id}/{msg_id}`",
                 disable_web_page_preview=True,
                 quote=True,
             )
             reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
-            await progress.reply_text(
-                stream_text, disable_web_page_preview=True, reply_markup=reply_markup,
+            # Send stream link as a direct reply to the list message so it's easy to find
+            await cb.message.reply_text(
+                stream_text, disable_web_page_preview=True,
+                reply_markup=reply_markup, quote=True,
             )
             done += 1
         except Exception as e:
-            logger.exception("grabsel_cb item failed")
+            logger.exception("grabsel_cb item %s failed", msg_id)
             failed += 1
+            await progress.edit_text(f"❌ {i}/{total} — error: {e}")
 
-    summary = f"✅ Grabbed {done} file(s)."
+    summary = f"✅ Done — {done}/{total} grabbed."
     if failed:
-        summary += f" ❌ {failed} failed."
+        summary += f" {failed} failed."
     await progress.edit_text(summary)
 
 
