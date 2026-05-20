@@ -37,8 +37,9 @@ async def _get_user_client() -> Client:
         if _user_client is None:
             if not Var.USER_SESSION:
                 raise RuntimeError("USER_SESSION is not configured in .env")
+            from pyrogram.storage import StringSession
             _user_client = Client(
-                name=Var.USER_SESSION,
+                name=StringSession(Var.USER_SESSION),
                 api_id=Var.API_ID,
                 api_hash=Var.API_HASH,
                 no_updates=True,
