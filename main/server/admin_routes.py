@@ -541,46 +541,68 @@ async def admin_action(request: web.Request) -> web.Response:
 
     if action == "enrich":
         import asyncio as _aio
-        force = bool(form.get("force"))
+        import time as _time
 
         async def _run(id_list: list) -> None:
+            # Mirror state into _enrich_state so the progress bar picks it
+            # up automatically via /admin/status polling.
+            media_index._enrich_state.update(
+                running=True, done=0, total=len(id_list),
+                enriched=0, failed=0, last_title="",
+                started_at=_time.time(), finished_at=0.0,
+            )
             done = enriched = 0
             for mid in id_list:
+                item = media_index.get_item(mid)
+                if item:
+                    media_index._enrich_state["last_title"] = item.title or ""
                 ok = await media_index.enrich_one(mid, bot=StreamBot)
                 if ok:
                     enriched += 1
                 done += 1
-                await _aio.sleep(0)  # yield between TMDB calls
+                media_index._enrich_state.update(
+                    done=done, enriched=enriched, failed=done - enriched,
+                )
+                await _aio.sleep(0)
+            media_index._enrich_state.update(running=False, finished_at=_time.time())
             logging.info("bulk enrich: %d/%d enriched", enriched, done)
 
         _aio.create_task(_run(ids))
         raise _redirect_with_flash(
-            f"Enrichment queued for {len(ids)} items — TMDB results appear as they complete"
+            f"Enrichment queued for {len(ids)} items — watch the progress bar"
         )
 
     if action == "probe":
         from main.utils import codec_probe
         import asyncio as _aio
+        import time as _time
 
         async def _run_probe(id_list: list) -> None:
+            # Mirror state into probe_state so the probe progress bar
+            # in the UI picks it up automatically via /admin/status polling.
+            codec_probe.probe_state.update(
+                running=True, done=0, total=len(id_list),
+                found_incompatible=0, started_at=_time.time(), finished_at=0.0,
+            )
             done = found = 0
             for mid in id_list:
                 item = media_index.get_item(mid)
                 if item is None:
                     continue
-                # Reset probed_at so codec_probe.probe_item runs even if
-                # previously probed (user explicitly asked for a re-probe).
                 item.probed_at = 0.0
                 ok = await codec_probe.probe_item(item)
                 if ok:
                     found += 1
                 done += 1
+                codec_probe.probe_state["done"] = done
+                codec_probe.probe_state["found_incompatible"] = found
                 await _aio.sleep(0)
+            codec_probe.probe_state.update(running=False, finished_at=_time.time())
             logging.info("bulk probe: %d/%d had video streams", found, done)
 
         _aio.create_task(_run_probe(ids))
         raise _redirect_with_flash(
-            f"Codec probe queued for {len(ids)} item(s) — duration + codec info updates as each completes"
+            f"Probe queued for {len(ids)} item(s) — watch the progress bar"
         )
 
     raise _redirect_with_flash("Unknown action")
