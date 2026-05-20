@@ -196,15 +196,21 @@ async def _reupload(src: Message, status_msg=None) -> Message:
 
         up_cb = _progress_callback("⬆️ Uploading", status_msg, file_size)
         mime = (getattr(media, "mime_type", "") or "").lower()
-        # Use send_video for any video MIME type, even if the source sent it
-        # as a document — Telegram extracts duration only for video messages.
-        if src.video or mime.startswith("video/"):
+        ext = os.path.splitext(file_name)[1].lower()
+        _VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts", ".flv", ".wmv", ".3gp"}
+        _AUDIO_EXTS = {".mp3", ".m4a", ".flac", ".ogg", ".wav", ".aac", ".opus"}
+        # Use send_video for video MIME type OR known video extension.
+        # Many channels send videos as generic documents (mime=application/octet-stream)
+        # — extension check catches those and ensures Telegram extracts duration.
+        is_video = bool(src.video) or mime.startswith("video/") or ext in _VIDEO_EXTS
+        is_audio = bool(src.audio) or mime.startswith("audio/") or ext in _AUDIO_EXTS
+        if is_video:
             return await StreamBot.send_video(
                 Var.BIN_CHANNEL, tmp_path,
                 file_name=file_name, caption=caption, supports_streaming=True,
                 progress=up_cb,
             )
-        if src.audio or mime.startswith("audio/"):
+        if is_audio:
             return await StreamBot.send_audio(
                 Var.BIN_CHANNEL, tmp_path, file_name=file_name, caption=caption,
                 progress=up_cb,
