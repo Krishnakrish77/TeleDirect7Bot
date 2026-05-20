@@ -43,9 +43,10 @@ async def _run(bot: Client, chat_id: int):
             _queues.pop(chat_id, None)
 
     client = Client(
-        name=":memory:",
+        name="gen_session",
         api_id=Var.API_ID,
         api_hash=Var.API_HASH,
+        in_memory=True,
     )
     try:
         await client.connect()
