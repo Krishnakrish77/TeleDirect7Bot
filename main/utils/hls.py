@@ -154,6 +154,11 @@ async def probe(message_id: int, source_url: str) -> ProbeResult:
         # caching it for an hour would lock the item out of codec info.
         if result.duration > 0 or result.video_codec:
             _probe_cache[message_id] = (time.monotonic(), result)
+            # Evict locks for entries that have expired from the cache
+            expired = [mid for mid, (ts, _) in _probe_cache.items() if time.monotonic() - ts > PROBE_TTL]
+            for mid in expired:
+                _probe_cache.pop(mid, None)
+                _probe_locks.pop(mid, None)
         return result
 
 

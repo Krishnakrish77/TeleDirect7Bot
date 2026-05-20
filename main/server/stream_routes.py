@@ -7,6 +7,7 @@ import math
 import logging
 import secrets
 import mimetypes
+import weakref
 from aiohttp import web
 from aiohttp.http_exceptions import BadStatusLine
 from main.bot import multi_clients, work_loads
@@ -104,7 +105,7 @@ async def stream_handler(request: web.Request):
         logging.critical(e.with_traceback(None))
         raise web.HTTPInternalServerError(text=str(e))
 
-class_cache = {}
+class_cache = weakref.WeakKeyDictionary()
 
 async def media_streamer(request: web.Request, message_id: int, secure_hash: str):
     index = min(work_loads, key=work_loads.get)

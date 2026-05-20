@@ -41,7 +41,8 @@ def set_(message_id: int, data: bytes) -> None:
     _cache[message_id] = (time.monotonic(), data)
     _cache.move_to_end(message_id)
     while len(_cache) > MAX_ENTRIES:
-        _cache.popitem(last=False)
+        evicted_key, _ = _cache.popitem(last=False)
+        _locks.pop(evicted_key, None)
 
 
 def lock_for(message_id: int) -> asyncio.Lock:

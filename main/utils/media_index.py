@@ -69,6 +69,7 @@ _SEED_DEPTH = int(os.environ.get("MEDIA_INDEX_SEED_DEPTH", "800"))
 _FETCH_BATCH = 100  # get_messages caps around 200; 100 is well within limits.
 
 _items: Dict[int, HubItem] = {}
+_hash_map: Dict[str, int] = {}  # secure_hash → message_id for O(1) find_by_hash
 _lock = asyncio.Lock()
 _seeded = False
 # Highest BIN_CHANNEL message id we've ever observed. Persisted so a
@@ -495,6 +496,7 @@ async def add_from_message(message) -> None:
         if existing and existing.subtitles:
             item.subtitles = existing.subtitles
         _items[item.message_id] = item
+        _hash_map[item.secure_hash] = item.message_id
         if item.message_id > _latest_seen_id:
             _latest_seen_id = item.message_id
         _persist_unlocked()
@@ -512,13 +514,11 @@ def get_item(message_id: int) -> Optional[HubItem]:
 
 
 def find_by_hash(secure_hash: str) -> Optional[HubItem]:
-    """Linear lookup by secure_hash (first 6 chars of file_unique_id)."""
+    """O(1) lookup by secure_hash via _hash_map index."""
     if not secure_hash:
         return None
-    for it in _items.values():
-        if it.secure_hash == secure_hash:
-            return it
-    return None
+    msg_id = _hash_map.get(secure_hash)
+    return _items.get(msg_id) if msg_id else None
 
 
 def find_by_filename_stem(stem: str) -> Optional[HubItem]:
@@ -561,10 +561,11 @@ async def remove(message_id: int, bot=None) -> None:
     legacy path.
     """
     async with _lock:
-        existed = _items.pop(message_id, None) is not None
-        if existed:
+        existed = _items.pop(message_id, None)
+        if existed is not None:
+            _hash_map.pop(existed.secure_hash, None)
             _persist_unlocked()
-    if not existed:
+    if existed is None:
         return
     await _store_remove(message_id)
     if bot is not None:
@@ -615,6 +616,7 @@ def _load() -> None:
             try:
                 item = _from_serializable(d)
                 _items[item.message_id] = item
+                _hash_map[item.secure_hash] = item.message_id
             except Exception:
                 continue
         # Highest of (persisted, max indexed) so a hand-edited or partial
@@ -700,6 +702,7 @@ async def seed(bot, channel_id: int) -> None:
                     try:
                         item = _from_serializable(d)
                         _items[item.message_id] = item
+                        _hash_map[item.secure_hash] = item.message_id
                     except Exception:
                         logging.debug(
                             "media_index: bad Mongo doc skipped",
@@ -820,6 +823,7 @@ async def seed(bot, channel_id: int) -> None:
                                 and not existing.tmdb_id):
                             existing.enriched_at = 0.0
                         _items[existing.message_id] = existing
+                        _hash_map[existing.secure_hash] = existing.message_id
                     elif existing is not None:
                         # ── JSON-snapshot / no-store path ─────────────────
                         # Caption write-backs are used when there is no
@@ -856,9 +860,11 @@ async def seed(bot, channel_id: int) -> None:
                             if existing.quality:
                                 new_item.quality = existing.quality
                         _items[new_item.message_id] = new_item
+                        _hash_map[new_item.secure_hash] = new_item.message_id
                     else:
                         # ── New item not previously seen ───────────────────
                         _items[new_item.message_id] = new_item
+                        _hash_map[new_item.secure_hash] = new_item.message_id
                 _persist_unlocked()
             _seed_state["scanned"] += len(ids)
             _seed_state["indexed"] = len(_items)
@@ -878,7 +884,9 @@ async def seed(bot, channel_id: int) -> None:
                     if floor <= mid <= latest_id and mid not in seen_ids
                 ]
                 for mid in stale_ids:
-                    _items.pop(mid, None)
+                    pruned_item = _items.pop(mid, None)
+                    if pruned_item is not None:
+                        _hash_map.pop(pruned_item.secure_hash, None)
                     pruned += 1
                 if pruned:
                     _persist_unlocked()
@@ -1538,6 +1546,7 @@ async def restore_from_telegram(bot) -> bool:
             try:
                 item = _from_serializable(d)
                 _items[item.message_id] = item
+                _hash_map[item.secure_hash] = item.message_id
                 loaded += 1
             except Exception:
                 continue
