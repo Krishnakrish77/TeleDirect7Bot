@@ -149,7 +149,11 @@ async def probe(message_id: int, source_url: str) -> ProbeResult:
             return cached[1]
 
         result = await _run_ffprobe(source_url)
-        _probe_cache[message_id] = (time.monotonic(), result)
+        # Only cache successful probes. A failed probe (duration=0, no codec)
+        # is usually transient (server starting up, loopback contention) —
+        # caching it for an hour would lock the item out of codec info.
+        if result.duration > 0 or result.video_codec:
+            _probe_cache[message_id] = (time.monotonic(), result)
         return result
 
 
