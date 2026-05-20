@@ -561,10 +561,6 @@ async def admin_ai_models(request: web.Request) -> web.Response:
                 continue
             raw_name = m.get("name", "")          # "models/gemini-2.5-flash"
             model_id = raw_name.split("/")[-1] if "/" in raw_name else raw_name
-            # Gemma models don't support response_mime_type=application/json
-            # (structured output) and are too slow for interactive use.
-            if model_id.startswith("gemma"):
-                continue
             display  = m.get("displayName", model_id)
             models.append({"id": model_id, "name": display})
 
