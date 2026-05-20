@@ -498,7 +498,11 @@ async def gtog_cb(client: Client, cb: CallbackQuery):
             callback_data=f"grabsel_{chat_id}",
         )])
 
-    await cb.message.edit_reply_markup(InlineKeyboardMarkup(new_rows))
+    try:
+        await cb.message.edit_reply_markup(InlineKeyboardMarkup(new_rows))
+    except Exception as e:
+        if "MESSAGE_NOT_MODIFIED" not in str(e):
+            logger.warning("gtog_cb edit_reply_markup failed: %s", e)
     await cb.answer()
 
 
