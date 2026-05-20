@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import tempfile
-from typing import Dict, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
@@ -156,28 +156,40 @@ async def _reupload(src: Message) -> Message:
 # (user_id, bot_message_id) → set of source message IDs selected
 _selections: Dict[Tuple[int, int], set] = {}
 
+# (user_id, bot_message_id) → list of before_id anchors, one per page visited.
+# before_id=0 means "from the newest message". We use offset_id with a
+# small add_offset=-1 trick: fetch messages where id < before_id by passing
+# offset_id=before_id with add_offset=0 (Pyrogram exclusive semantics).
+_nav: Dict[Tuple[int, int], List[int]] = {}
 
-async def _build_page(chat_id: int, skip: int):
+
+async def _build_page(chat_id: int, before_id: int):
     """
-    Scan up to SCAN_LIMIT messages from chat_id, skipping the first `skip`
-    messages (newest-first). Returns (media_msgs, next_skip, has_more).
-    Uses the count-based `offset` parameter to avoid offset_id inclusive/
-    exclusive ambiguity across Pyrogram/kurigram versions.
+    Return up to PAGE_SIZE media messages from chat_id, going backwards from
+    before_id (exclusive: messages with id < before_id, i.e. older messages).
+    before_id=0 means start from the newest message.
+
+    Returns (media_msgs, oldest_id_on_page, has_more).
+    oldest_id_on_page is the id of the last (oldest) message we scanned —
+    pass it as before_id on the next call to continue from there.
     """
     user = await _get_user_client()
     media_msgs = []
-    scanned = 0
+    oldest_id = 0
 
-    async for msg in user.get_chat_history(chat_id, limit=SCAN_LIMIT, offset=skip):
-        scanned += 1
+    kwargs = {"limit": SCAN_LIMIT}
+    if before_id:
+        kwargs["offset_id"] = before_id
+
+    async for msg in user.get_chat_history(chat_id, **kwargs):
+        oldest_id = msg.id
         if get_media_from_message(msg):
             media_msgs.append(msg)
         if len(media_msgs) >= PAGE_SIZE:
             break
 
-    next_skip = skip + scanned
-    has_more = len(media_msgs) >= PAGE_SIZE
-    return media_msgs, next_skip, has_more
+    has_more = len(media_msgs) >= PAGE_SIZE and oldest_id > 1
+    return media_msgs, oldest_id, has_more
 
 
 def _file_label(msg: Message, selected: bool) -> str:
@@ -195,9 +207,10 @@ def _file_label(msg: Message, selected: bool) -> str:
 def _build_markup(
     chat_id: int,
     media_msgs,
-    next_offset: int,
+    oldest_id: int,
     has_more: bool,
     selected: set,
+    has_prev: bool,
 ) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(
@@ -206,19 +219,20 @@ def _build_markup(
         )]
         for msg in media_msgs
     ]
-    bottom = []
+    # Navigation row
+    nav = []
+    if has_prev:
+        nav.append(InlineKeyboardButton("◀ Prev", callback_data=f"grabprev_{chat_id}"))
+    if has_more:
+        nav.append(InlineKeyboardButton("Next ▶", callback_data=f"grabnext_{chat_id}_{oldest_id}"))
+    if nav:
+        rows.append(nav)
+    # Grab selected row
     if selected:
-        bottom.append(InlineKeyboardButton(
+        rows.append([InlineKeyboardButton(
             f"✅ Grab Selected ({len(selected)})",
             callback_data=f"grabsel_{chat_id}",
-        ))
-    if has_more:
-        bottom.append(InlineKeyboardButton(
-            "Load More ▶",
-            callback_data=f"grablist_{chat_id}_{next_offset}",
-        ))
-    if bottom:
-        rows.append(bottom)
+        )])
     return InlineKeyboardMarkup(rows)
 
 
@@ -315,16 +329,21 @@ async def grablist_handler(client: Client, m: Message):
         chat_id = chat_obj.id
         chat_title = getattr(chat_obj, "title", str(chat_id))
 
-        media_msgs, next_offset, has_more = await _build_page(chat_id, skip=0)
+        media_msgs, oldest_id, has_more = await _build_page(chat_id, before_id=0)
         if not media_msgs:
             await status.edit_text("No media found in this channel.")
             return
 
-        markup = _build_markup(chat_id, media_msgs, next_offset, has_more, selected=set())
+        markup = _build_markup(
+            chat_id, media_msgs, oldest_id, has_more,
+            selected=set(), has_prev=False,
+        )
         await status.edit_text(
             f"**{chat_title}** — select files then tap Grab Selected:",
             reply_markup=markup,
         )
+        # Initialise nav history: page 1 starts at before_id=0
+        _nav[(m.from_user.id, status.id)] = [0]
 
     except ValueError as e:
         await status.edit_text(str(e))
@@ -383,9 +402,9 @@ async def gtog_cb(client: Client, cb: CallbackQuery):
         if new_row:
             new_rows.append(new_row)
 
-    # Ensure Grab Selected button exists if something is selected
-    bottom = new_rows[-1] if new_rows else []
-    has_grab_sel = any(b.callback_data and b.callback_data.startswith("grabsel_") for b in bottom)
+    # Ensure Grab Selected exists at the end (after nav row) if something selected
+    flat = [b for row in new_rows for b in row]
+    has_grab_sel = any(b.callback_data and b.callback_data.startswith("grabsel_") for b in flat)
     if sel and not has_grab_sel:
         new_rows.append([InlineKeyboardButton(
             f"✅ Grab Selected ({len(sel)})",
@@ -396,29 +415,67 @@ async def gtog_cb(client: Client, cb: CallbackQuery):
     await cb.answer()
 
 
-@StreamBot.on_callback_query(filters.regex(r"^grablist_") & _owner_filter)
-async def grablist_cb(client: Client, cb: CallbackQuery):
-    """Load next page — clears selections since the list changes."""
+async def _load_page(cb: CallbackQuery, client: Client, chat_id: int, before_id: int, has_prev: bool):
+    """Shared helper: fetch a page and edit the list message."""
+    key = (cb.from_user.id, cb.message.id)
+    _selections.pop(key, None)
+    media_msgs, oldest_id, has_more = await _build_page(chat_id, before_id)
+    if not media_msgs:
+        await cb.answer("No more media found.", show_alert=True)
+        return False
+    markup = _build_markup(
+        chat_id, media_msgs, oldest_id, has_more,
+        selected=set(), has_prev=has_prev,
+    )
+    try:
+        await cb.message.edit_reply_markup(reply_markup=markup)
+    except Exception as e:
+        if "MESSAGE_NOT_MODIFIED" not in str(e):
+            raise
+    return True
+
+
+@StreamBot.on_callback_query(filters.regex(r"^grabnext_") & _owner_filter)
+async def grabnext_cb(client: Client, cb: CallbackQuery):
+    """Navigate to the next (older) page."""
     parts = cb.data.split("_", 2)
     chat_id = int(parts[1])
-    skip = int(parts[2])
+    before_id = int(parts[2])
+
+    key = (cb.from_user.id, cb.message.id)
+    nav = _nav.setdefault(key, [0])
 
     await cb.answer("Loading…")
-    # Clear selections for this message when the page changes
-    _selections.pop((cb.from_user.id, cb.message.id), None)
     try:
-        media_msgs, next_offset, has_more = await _build_page(chat_id, skip)
-        if not media_msgs:
-            await cb.message.edit_text("No more media found.")
-            return
-        markup = _build_markup(chat_id, media_msgs, next_offset, has_more, selected=set())
-        try:
-            await cb.message.edit_reply_markup(reply_markup=markup)
-        except Exception as edit_err:
-            if "MESSAGE_NOT_MODIFIED" not in str(edit_err):
-                raise
+        ok = await _load_page(cb, client, chat_id, before_id, has_prev=True)
+        if ok:
+            nav.append(before_id)
     except Exception as e:
-        logger.exception("grablist_cb failed")
+        logger.exception("grabnext_cb failed")
+        await cb.answer(f"Error: {e}", show_alert=True)
+
+
+@StreamBot.on_callback_query(filters.regex(r"^grabprev_") & _owner_filter)
+async def grabprev_cb(client: Client, cb: CallbackQuery):
+    """Navigate back to the previous (newer) page."""
+    parts = cb.data.split("_", 1)
+    chat_id = int(parts[1])
+
+    key = (cb.from_user.id, cb.message.id)
+    nav = _nav.get(key, [0])
+
+    if len(nav) <= 1:
+        await cb.answer("Already on the first page.", show_alert=True)
+        return
+
+    nav.pop()                      # remove current page's before_id
+    prev_before_id = nav[-1]       # the page before that
+
+    await cb.answer("Loading…")
+    try:
+        await _load_page(cb, client, chat_id, prev_before_id, has_prev=len(nav) > 1)
+    except Exception as e:
+        logger.exception("grabprev_cb failed")
         await cb.answer(f"Error: {e}", show_alert=True)
 
 
