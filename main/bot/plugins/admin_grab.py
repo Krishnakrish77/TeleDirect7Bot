@@ -48,8 +48,11 @@ def _schedule_idle_disconnect() -> None:
         global _user_client
         async with _user_client_lock:
             if _user_client and _user_client.is_connected:
-                await _user_client.disconnect()
-                logger.info("grab: user client disconnected (idle)")
+                try:
+                    await _user_client.stop()
+                    logger.info("grab: user client stopped (idle)")
+                except Exception as e:
+                    logger.warning("grab: idle stop failed: %s", e)
             _user_client = None
 
     _idle_disconnect_task = asyncio.ensure_future(_disconnect_after_idle())
