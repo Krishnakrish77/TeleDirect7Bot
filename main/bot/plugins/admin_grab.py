@@ -173,13 +173,16 @@ async def _reupload(src: Message, status_msg=None) -> Message:
         logger.info("grab: download complete — %s, uploading to BIN_CHANNEL", file_name)
 
         up_cb = _progress_callback("⬆️ Uploading", status_msg, file_size)
-        if src.video:
+        mime = (getattr(media, "mime_type", "") or "").lower()
+        # Use send_video for any video MIME type, even if the source sent it
+        # as a document — Telegram extracts duration only for video messages.
+        if src.video or mime.startswith("video/"):
             return await StreamBot.send_video(
                 Var.BIN_CHANNEL, tmp_path,
                 file_name=file_name, caption=caption, supports_streaming=True,
                 progress=up_cb,
             )
-        if src.audio:
+        if src.audio or mime.startswith("audio/"):
             return await StreamBot.send_audio(
                 Var.BIN_CHANNEL, tmp_path, file_name=file_name, caption=caption,
                 progress=up_cb,
