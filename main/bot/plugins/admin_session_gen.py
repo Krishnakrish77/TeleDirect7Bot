@@ -1,10 +1,8 @@
 """
 /gensession — interactive session string generator for the bot owner.
 
-The entire auth flow runs as a single background coroutine.
-asyncio.Future objects are used to pipe user replies into it, so
-the Pyrogram send_code → sign_in sequence stays in one place with
-no state-machine split across messages.
+Uses asyncio.Queue (running-loop-safe) to pipe user replies into the
+single _run() coroutine that owns the entire auth flow.
 """
 import asyncio
 import logging
@@ -24,27 +22,25 @@ from main.vars import Var
 
 logger = logging.getLogger(__name__)
 
-# user_id → Future[str] awaiting the next text reply
-_pending: Dict[int, "asyncio.Future[str]"] = {}
+# user_id → Queue[str] receiving the next reply
+_queues: Dict[int, asyncio.Queue] = {}
 
 _owner = filters.private & filters.user(Var.OWNER_ID)
 
 
 async def _run(bot: Client, chat_id: int):
-    """Full session generation flow in one coroutine."""
-    loop = asyncio.get_event_loop()
+    """Full session-generation flow in one coroutine."""
 
     async def ask(prompt: str) -> str:
-        """Send prompt, wait for the next user reply."""
-        fut: asyncio.Future[str] = loop.create_future()
-        _pending[chat_id] = fut
+        q: asyncio.Queue = asyncio.Queue(maxsize=1)
+        _queues[chat_id] = q
         await bot.send_message(chat_id, prompt)
         try:
-            return await asyncio.wait_for(asyncio.shield(fut), timeout=300)
+            return await asyncio.wait_for(q.get(), timeout=300)
         except asyncio.TimeoutError:
-            raise TimeoutError("No reply in 5 minutes — session generation cancelled.")
+            raise TimeoutError("No reply in 5 minutes — run /gensession to restart.")
         finally:
-            _pending.pop(chat_id, None)
+            _queues.pop(chat_id, None)
 
     client = Client(
         name=":memory:",
@@ -56,41 +52,48 @@ async def _run(bot: Client, chat_id: int):
 
         phone = (await ask(
             "Send your phone number in international format.\n"
-            "Example: `+919876543210`"
+            "Example: `+919876543210`\n\n"
+            "/cancel to abort."
         )).strip()
 
         try:
             sent = await client.send_code(phone)
         except FloodWait as e:
-            await bot.send_message(chat_id, f"FloodWait — try again after {e.x}s.")
+            await bot.send_message(chat_id, f"FloodWait — retry after {e.x}s.")
+            return
+        except Exception as e:
+            await bot.send_message(chat_id, f"send\\_code failed: `{type(e).__name__}: {e}`")
             return
 
         code_raw = await ask(
-            "OTP sent! Enter the code you received.\n"
-            "If it looks like `1 2345`, send it as `12345`."
+            "OTP sent!\n"
+            "Enter the digits only — no spaces or dashes."
         )
         code = code_raw.strip().replace(" ", "").replace("-", "")
 
         try:
             await client.sign_in(phone, sent.phone_code_hash, code)
         except PhoneCodeInvalid:
-            await bot.send_message(chat_id, "Invalid code. Run /gensession to try again.")
+            await bot.send_message(chat_id, "Wrong code — run /gensession to try again.")
             return
         except PhoneCodeExpired:
-            await bot.send_message(chat_id, "Code expired. Run /gensession to try again.")
+            await bot.send_message(chat_id, "Code expired — run /gensession to request a new one.")
             return
         except SessionPasswordNeeded:
-            password = await ask("2FA is enabled. Enter your cloud password:")
+            password = await ask("2FA enabled — enter your cloud password:")
             try:
                 await client.check_password(password)
             except Exception as e:
-                await bot.send_message(chat_id, f"Password check failed: {e}")
+                await bot.send_message(chat_id, f"Password failed: `{type(e).__name__}: {e}`")
                 return
+        except Exception as e:
+            await bot.send_message(chat_id, f"sign\\_in failed: `{type(e).__name__}: {e}`")
+            return
 
         session = await client.export_session_string()
         await bot.send_message(
             chat_id,
-            "✅ Done! Set this as `USER_SESSION` in your environment variables, "
+            "✅ Done! Set this as `USER_SESSION` in your environment, "
             "then **delete this message**.\n\n"
             f"`{session}`",
         )
@@ -98,10 +101,10 @@ async def _run(bot: Client, chat_id: int):
     except TimeoutError as e:
         await bot.send_message(chat_id, str(e))
     except Exception as e:
-        logger.exception("gensession flow failed")
-        await bot.send_message(chat_id, f"Error: {e}")
+        logger.exception("gensession _run failed")
+        await bot.send_message(chat_id, f"Unexpected error: `{type(e).__name__}: {e}`")
     finally:
-        _pending.pop(chat_id, None)
+        _queues.pop(chat_id, None)
         try:
             if client.is_connected:
                 await client.disconnect()
@@ -109,17 +112,25 @@ async def _run(bot: Client, chat_id: int):
             pass
 
 
+# ── /gensession ───────────────────────────────────────────────────────────────
+
 @StreamBot.on_message(_owner & filters.command("gensession"), group=1)
 async def gensession_start(bot: Client, m: Message):
-    # Cancel any in-progress flow for this user
-    fut = _pending.pop(m.from_user.id, None)
-    if fut and not fut.done():
-        fut.cancel()
+    # Cancel any in-progress session for this user
+    _queues.pop(m.from_user.id, None)
     asyncio.ensure_future(_run(bot, m.from_user.id))
 
 
-@StreamBot.on_message(_owner & filters.text & ~filters.command([""]), group=3)
+# ── text replies (phone / OTP / password) ─────────────────────────────────────
+
+async def _has_queue(_, __, m: Message) -> bool:
+    return m.from_user is not None and m.from_user.id in _queues
+
+_waiting_filter = filters.create(_has_queue)
+
+
+@StreamBot.on_message(_owner & filters.text & _waiting_filter, group=0)
 async def gensession_reply(bot: Client, m: Message):
-    fut = _pending.get(m.from_user.id)
-    if fut and not fut.done():
-        fut.set_result(m.text)
+    q = _queues.get(m.from_user.id)
+    if q and q.empty():
+        await q.put(m.text)
