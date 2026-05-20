@@ -4,8 +4,7 @@
 Flow:  /gensession  →  phone number  →  OTP code  →  (2FA password if set)
        →  bot replies with the USER_SESSION string.
 
-All state is kept in _state (in-process memory). Restart clears it, which
-is fine — the user just runs /gensession again.
+State is kept in-process. Restart clears it; just run /gensession again.
 """
 import logging
 from typing import Dict, Any
@@ -17,6 +16,7 @@ from pyrogram.errors import (
     SessionPasswordNeeded,
     FloodWait,
 )
+from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
 
 from main.bot import StreamBot
@@ -24,8 +24,7 @@ from main.vars import Var
 
 logger = logging.getLogger(__name__)
 
-# state keyed by user_id
-# { user_id: { "step": "phone"|"code"|"password", "client": Client, "phone": str, "phone_code_hash": str } }
+# { user_id: { "step": "phone"|"code"|"password", "client": Client, ... } }
 _state: Dict[int, Dict[str, Any]] = {}
 
 _owner = filters.private & filters.user(Var.OWNER_ID)
@@ -36,20 +35,22 @@ def _make_client() -> Client:
         name=":memory:",
         api_id=Var.API_ID,
         api_hash=Var.API_HASH,
-        in_memory=True,
     )
 
 
 async def _cleanup(user_id: int):
     entry = _state.pop(user_id, None)
-    if entry:
-        client: Client = entry.get("client")
-        if client and client.is_connected:
-            try:
-                await client.disconnect()
-            except Exception:
-                pass
+    if not entry:
+        return
+    client: Client = entry.get("client")
+    if client and client.is_connected:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
 
+
+# ── /gensession ──────────────────────────────────────────────────────────────
 
 @StreamBot.on_message(_owner & filters.command("gensession"), group=1)
 async def gensession_start(bot: Client, m: Message):
@@ -61,25 +62,35 @@ async def gensession_start(bot: Client, m: Message):
         "Send /cancel to abort.",
         quote=True,
     )
+    raise StopIteration  # stop this message reaching the text handler below
 
+
+# ── /cancel ───────────────────────────────────────────────────────────────────
 
 @StreamBot.on_message(_owner & filters.command("cancel"), group=1)
 async def gensession_cancel(bot: Client, m: Message):
     if m.from_user.id in _state:
         await _cleanup(m.from_user.id)
         await m.reply_text("Session generation cancelled.", quote=True)
+    raise StopIteration
 
 
-@StreamBot.on_message(_owner & filters.text & ~filters.command([""]), group=2)
+# ── Text input (phone / OTP / password) ──────────────────────────────────────
+
+@StreamBot.on_message(_owner & filters.text, group=3)
 async def gensession_input(bot: Client, m: Message):
     uid = m.from_user.id
     entry = _state.get(uid)
     if not entry:
         return
 
+    # Ignore commands that weren't caught above
+    if m.text.startswith("/"):
+        return
+
     step = entry["step"]
 
-    # ── Phone number ────────────────────────────────────────────────────────
+    # ── Phone number ──────────────────────────────────────────────────────────
     if step == "phone":
         phone = m.text.strip()
         status = await m.reply_text("Sending OTP…", quote=True)
@@ -94,17 +105,19 @@ async def gensession_input(bot: Client, m: Message):
                 "phone_code_hash": sent.phone_code_hash,
             })
             await status.edit_text(
-                "OTP sent! Enter the code you received.\n"
-                "Tip: if Telegram sent `1 2345`, enter `12345` (no spaces)."
+                "OTP sent!\n"
+                "Enter the code Telegram sent you.\n"
+                "If it looks like `1 2345`, send it as `12345` (no spaces)."
             )
         except FloodWait as e:
             await _cleanup(uid)
             await status.edit_text(f"FloodWait — try again after {e.x}s.")
         except Exception as e:
             await _cleanup(uid)
+            logger.exception("gensession send_code failed")
             await status.edit_text(f"Failed to send OTP: {e}")
 
-    # ── OTP code ─────────────────────────────────────────────────────────────
+    # ── OTP code ──────────────────────────────────────────────────────────────
     elif step == "code":
         code = m.text.strip().replace(" ", "")
         client: Client = entry["client"]
@@ -118,23 +131,26 @@ async def gensession_input(bot: Client, m: Message):
             session = await client.export_session_string()
             await _cleanup(uid)
             await status.edit_text(
-                "✅ Done! Here is your `USER_SESSION` string:\n\n"
-                f"`{session}`\n\n"
-                "Add it to your environment variables, then **delete this message**."
+                "✅ Done! Copy the string below and set it as `USER_SESSION` "
+                "in your environment variables, then **delete this message**.\n\n"
+                f"`{session}`"
             )
         except PhoneCodeInvalid:
             await status.edit_text("Invalid code — try again.")
         except PhoneCodeExpired:
             await _cleanup(uid)
-            await status.edit_text("Code expired. Run /gensession to start over.")
+            await status.edit_text("Code expired. Send /gensession to start over.")
         except SessionPasswordNeeded:
             entry["step"] = "password"
-            await status.edit_text("2FA is enabled. Enter your cloud password:")
+            await status.edit_text(
+                "2FA is enabled on this account. Enter your cloud password:"
+            )
         except Exception as e:
             await _cleanup(uid)
+            logger.exception("gensession sign_in failed")
             await status.edit_text(f"Sign-in failed: {e}")
 
-    # ── 2FA password ─────────────────────────────────────────────────────────
+    # ── 2FA password ──────────────────────────────────────────────────────────
     elif step == "password":
         password = m.text.strip()
         client: Client = entry["client"]
@@ -144,10 +160,11 @@ async def gensession_input(bot: Client, m: Message):
             session = await client.export_session_string()
             await _cleanup(uid)
             await status.edit_text(
-                "✅ Done! Here is your `USER_SESSION` string:\n\n"
-                f"`{session}`\n\n"
-                "Add it to your environment variables, then **delete this message**."
+                "✅ Done! Copy the string below and set it as `USER_SESSION` "
+                "in your environment variables, then **delete this message**.\n\n"
+                f"`{session}`"
             )
         except Exception as e:
             await _cleanup(uid)
+            logger.exception("gensession check_password failed")
             await status.edit_text(f"Password check failed: {e}")
