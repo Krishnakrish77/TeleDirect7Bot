@@ -28,16 +28,37 @@ SCAN_LIMIT = 200       # max messages to scan per page to find PAGE_SIZE media i
 
 _user_client: Optional[Client] = None
 _user_client_lock = asyncio.Lock()
+_idle_disconnect_task: Optional[asyncio.Task] = None
+_IDLE_TIMEOUT = 300  # disconnect after 5 min of inactivity
 
 
 # ---------------------------------------------------------------------------
 # User client helpers
 # ---------------------------------------------------------------------------
 
+def _schedule_idle_disconnect() -> None:
+    """Reset the idle timer. Client disconnects after _IDLE_TIMEOUT seconds
+    of no grab activity, freeing ~40 MB of MTProto session overhead."""
+    global _idle_disconnect_task
+    if _idle_disconnect_task and not _idle_disconnect_task.done():
+        _idle_disconnect_task.cancel()
+
+    async def _disconnect_after_idle():
+        await asyncio.sleep(_IDLE_TIMEOUT)
+        global _user_client
+        async with _user_client_lock:
+            if _user_client and _user_client.is_connected:
+                await _user_client.disconnect()
+                logger.info("grab: user client disconnected (idle)")
+            _user_client = None
+
+    _idle_disconnect_task = asyncio.ensure_future(_disconnect_after_idle())
+
+
 async def _get_user_client() -> Client:
     global _user_client
     async with _user_client_lock:
-        if _user_client is None:
+        if _user_client is None or not _user_client.is_connected:
             if not Var.USER_SESSION:
                 raise RuntimeError("USER_SESSION is not configured in .env")
             _user_client = await Client(
@@ -48,6 +69,7 @@ async def _get_user_client() -> Client:
                 no_updates=True,
             ).start()
             logger.info("grab: user client started")
+    _schedule_idle_disconnect()
     return _user_client
 
 

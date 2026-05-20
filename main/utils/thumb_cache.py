@@ -16,7 +16,7 @@ from collections import OrderedDict
 from typing import Dict, Optional, Tuple
 
 
-MAX_ENTRIES = int(__import__("os").environ.get("THUMB_CACHE_MAX", "512"))
+MAX_ENTRIES = int(__import__("os").environ.get("THUMB_CACHE_MAX", "256"))
 TTL_SECONDS = 6 * 60 * 60  # 6h — thumbs don't change; just bound staleness
 
 
