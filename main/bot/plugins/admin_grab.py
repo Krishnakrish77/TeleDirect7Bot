@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import os
 import re
+import tempfile
 from typing import Dict, Optional, Set, Tuple, Union
 
 from pyrogram import Client, filters
@@ -113,27 +115,38 @@ def _parse_channel_arg(text: str) -> Union[int, str]:
 # ---------------------------------------------------------------------------
 
 async def _reupload(src: Message) -> Message:
-    """Download src via user client, re-upload to BIN_CHANNEL via StreamBot."""
-    user = await _get_user_client()
-    buf = await user.download_media(src, in_memory=True)
-    buf.seek(0)
+    """Download src via user client to a temp file, re-upload via StreamBot.
 
+    Temp file avoids loading the whole file into RAM (in_memory=True caused
+    OOM on large files — an 800 MB file = 800 MB heap spike).
+    """
+    user = await _get_user_client()
     media = get_media_from_message(src)
     file_name = getattr(media, "file_name", None) or "file"
     caption = src.caption or ""
 
-    if src.video:
-        return await StreamBot.send_video(
-            Var.BIN_CHANNEL, buf,
-            file_name=file_name, caption=caption, supports_streaming=True,
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=f"_grab_{file_name}")
+    os.close(tmp_fd)
+    try:
+        await user.download_media(src, file_name=tmp_path)
+
+        if src.video:
+            return await StreamBot.send_video(
+                Var.BIN_CHANNEL, tmp_path,
+                file_name=file_name, caption=caption, supports_streaming=True,
+            )
+        if src.audio:
+            return await StreamBot.send_audio(
+                Var.BIN_CHANNEL, tmp_path, file_name=file_name, caption=caption,
+            )
+        return await StreamBot.send_document(
+            Var.BIN_CHANNEL, tmp_path, file_name=file_name, caption=caption,
         )
-    if src.audio:
-        return await StreamBot.send_audio(
-            Var.BIN_CHANNEL, buf, file_name=file_name, caption=caption,
-        )
-    return await StreamBot.send_document(
-        Var.BIN_CHANNEL, buf, file_name=file_name, caption=caption,
-    )
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
