@@ -949,7 +949,31 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
                     err = resp_data.get("error", {}).get("message", str(resp_data))
                     return web.json_response({"error": f"Gemini: {err}"}, status=502)
 
-        text = resp_data["candidates"][0]["content"]["parts"][0]["text"]
+        candidates = resp_data.get("candidates") or []
+        if not candidates:
+            # Gemini blocked the response (safety filter, token limit, etc.)
+            block_reason = (
+                resp_data.get("promptFeedback", {}).get("blockReason")
+                or resp_data.get("candidates", [{}])[0].get("finishReason")
+                or "no candidates returned"
+            )
+            return web.json_response(
+                {"error": f"Gemini blocked the response: {block_reason}"},
+                status=502,
+            )
+        finish_reason = candidates[0].get("finishReason", "")
+        if finish_reason not in ("STOP", "MAX_TOKENS", ""):
+            return web.json_response(
+                {"error": f"Gemini stopped early: {finish_reason}"},
+                status=502,
+            )
+        try:
+            text = candidates[0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError) as e:
+            return web.json_response(
+                {"error": f"Unexpected Gemini response structure: {e} — {str(resp_data)[:200]}"},
+                status=502,
+            )
         data = json.loads(text)
 
         # Drop zero / blank fields so the modal only fills what Gemini knows.
