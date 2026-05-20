@@ -400,7 +400,11 @@ async def grablist_cb(client: Client, cb: CallbackQuery):
             await cb.message.edit_text("No more media found.")
             return
         markup = _build_markup(chat_id, media_msgs, next_offset, has_more, selected=set())
-        await cb.message.edit_reply_markup(reply_markup=markup)
+        try:
+            await cb.message.edit_reply_markup(reply_markup=markup)
+        except Exception as edit_err:
+            if "MESSAGE_NOT_MODIFIED" not in str(edit_err):
+                raise
     except Exception as e:
         logger.exception("grablist_cb failed")
         await cb.answer(f"Error: {e}", show_alert=True)
