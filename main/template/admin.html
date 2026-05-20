@@ -822,7 +822,7 @@
     <template x-if="editing">
       <div x-cloak
            @keydown.escape.window="editing = null"
-           class="fixed inset-0 z-30 grid place-items-center bg-black/70 backdrop-blur-sm p-4">
+           class="fixed inset-0 z-30 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
         <div @click.outside="editing = null"
              class="w-full max-w-lg rounded-xl bg-ink-900 border border-white/10
                     shadow-2xl max-h-[90vh] flex flex-col">
