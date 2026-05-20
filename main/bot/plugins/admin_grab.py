@@ -3,7 +3,8 @@ import logging
 import os
 import re
 import tempfile
-from typing import Dict, List, Optional, Set, Tuple, Union
+import time
+from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
@@ -114,35 +115,81 @@ def _parse_channel_arg(text: str) -> Union[int, str]:
 # Re-upload helper
 # ---------------------------------------------------------------------------
 
-async def _reupload(src: Message) -> Message:
+def _progress_callback(label: str, status_msg, total_size: int) -> Callable:
+    """
+    Returns a Pyrogram progress callback that:
+    - Logs every 10% to the server log
+    - Edits status_msg every 5 seconds or every 10% (whichever comes first)
+    """
+    last_edit = [0.0]
+    last_pct = [-1]
+
+    async def cb(current: int, total: int):
+        if not total:
+            return
+        pct = current * 100 // total
+        now = time.monotonic()
+        if pct == last_pct[0]:
+            return
+        if pct - last_pct[0] < 10 and now - last_edit[0] < 5:
+            return
+
+        last_pct[0] = pct
+        last_edit[0] = now
+        done_str = humanbytes(current)
+        total_str = humanbytes(total)
+        logger.info("grab %s: %d%% (%s / %s)", label, pct, done_str, total_str)
+        if status_msg:
+            try:
+                await status_msg.edit_text(
+                    f"{label} {pct}%  ({done_str} / {total_str})"
+                )
+            except Exception:
+                pass
+
+    return cb
+
+
+async def _reupload(src: Message, status_msg=None) -> Message:
     """Download src via user client to a temp file, re-upload via StreamBot.
 
     Temp file avoids loading the whole file into RAM (in_memory=True caused
     OOM on large files — an 800 MB file = 800 MB heap spike).
+    status_msg: optional Message to edit with live download/upload progress.
     """
     user = await _get_user_client()
     media = get_media_from_message(src)
     file_name = getattr(media, "file_name", None) or "file"
+    file_size = getattr(media, "file_size", 0) or 0
     caption = src.caption or ""
+
+    logger.info("grab: starting download — %s (%s)", file_name, humanbytes(file_size))
 
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=f"_grab_{file_name}")
     os.close(tmp_fd)
     try:
-        await user.download_media(src, file_name=tmp_path)
+        dl_cb = _progress_callback("⬇️ Downloading", status_msg, file_size)
+        await user.download_media(src, file_name=tmp_path, progress=dl_cb)
+        logger.info("grab: download complete — %s, uploading to BIN_CHANNEL", file_name)
 
+        up_cb = _progress_callback("⬆️ Uploading", status_msg, file_size)
         if src.video:
             return await StreamBot.send_video(
                 Var.BIN_CHANNEL, tmp_path,
                 file_name=file_name, caption=caption, supports_streaming=True,
+                progress=up_cb,
             )
         if src.audio:
             return await StreamBot.send_audio(
                 Var.BIN_CHANNEL, tmp_path, file_name=file_name, caption=caption,
+                progress=up_cb,
             )
         return await StreamBot.send_document(
             Var.BIN_CHANNEL, tmp_path, file_name=file_name, caption=caption,
+            progress=up_cb,
         )
     finally:
+        logger.info("grab: cleaning up temp file for %s", file_name)
         try:
             os.unlink(tmp_path)
         except OSError:
@@ -277,8 +324,8 @@ async def grab_handler(client: Client, m: Message):
             await status.edit_text("Message not found or contains no media.")
             return
 
-        await status.edit_text("Downloading and re-uploading…")
-        log_msg = await _reupload(src)
+        await status.edit_text("⬇️ Downloading 0%…")
+        log_msg = await _reupload(src, status_msg=status)
         schedule_index(client, log_msg)
 
         await log_msg.reply_text(
@@ -505,7 +552,6 @@ async def grabsel_cb(client: Client, cb: CallbackQuery):
     done, failed = 0, 0
     for i, msg_id in enumerate(sel, 1):
         try:
-            await progress.edit_text(f"⬇️ {i}/{total} — downloading…")
             user = await _get_user_client()
             src = await user.get_messages(chat_id, msg_id)
             if src.empty or not get_media_from_message(src):
@@ -515,9 +561,9 @@ async def grabsel_cb(client: Client, cb: CallbackQuery):
 
             media = get_media_from_message(src)
             name = getattr(media, "file_name", None) or f"msg {msg_id}"
-            await progress.edit_text(f"⬆️ {i}/{total} — uploading **{name}**…")
+            await progress.edit_text(f"⬇️ {i}/{total} — downloading **{name}** 0%…")
 
-            log_msg = await _reupload(src)
+            log_msg = await _reupload(src, status_msg=progress)
             schedule_index(client, log_msg)
             await log_msg.reply_text(
                 f"**Grabbed** | source `{chat_id}/{msg_id}`",
@@ -562,9 +608,9 @@ async def grabdo_cb(client: Client, cb: CallbackQuery):
 
         media = get_media_from_message(src)
         file_name = getattr(media, "file_name", None) or f"[{msg_id}]"
-        await progress.edit_text(f"⬆️ Re-uploading **{file_name}**…")
+        await progress.edit_text(f"⬇️ Downloading **{file_name}** 0%…")
 
-        log_msg = await _reupload(src)
+        log_msg = await _reupload(src, status_msg=progress)
         schedule_index(client, log_msg)
 
         await log_msg.reply_text(
