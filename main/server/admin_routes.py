@@ -423,6 +423,35 @@ async def admin_dedupe(request: web.Request) -> web.Response:
     )
 
 
+@routes.post("/admin/prune-stale")
+async def admin_prune_stale(request: web.Request) -> web.Response:
+    """Remove index entries whose BIN_CHANNEL messages no longer exist.
+
+    Stale entries accumulate when the bot misses deletion events (OOM
+    crash, restart). Checks every indexed message_id against BIN_CHANNEL
+    in batches of 100 and removes any that come back empty.
+    """
+    _require_session(request)
+    ids = list(media_index._items.keys())
+    removed = 0
+    BATCH = 100
+    for i in range(0, len(ids), BATCH):
+        batch = ids[i: i + BATCH]
+        try:
+            msgs = await StreamBot.get_messages(Var.BIN_CHANNEL, batch)
+        except Exception:
+            logging.exception("admin: prune-stale batch fetch failed")
+            continue
+        for msg in msgs:
+            if msg.empty:
+                await media_index.remove(msg.id, bot=StreamBot)
+                removed += 1
+    raise _redirect_with_flash(
+        f"Pruned {removed} stale entr{'y' if removed == 1 else 'ies'} "
+        f"(checked {len(ids)} items)."
+    )
+
+
 @routes.post("/admin/fetch-episodes")
 async def admin_fetch_episodes(request: web.Request) -> web.Response:
     """Backfill TMDB per-episode metadata (episode name + overview + still

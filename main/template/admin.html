@@ -279,6 +279,17 @@
                 <span class="block text-xs text-slate-500">Remove extra copies of the same file. Variants survive.</span>
               </button>
             </form>
+            <form hx-post="/admin/prune-stale" hx-swap="none"
+                  hx-confirm="Check every indexed entry against BIN_CHANNEL and remove any whose messages are gone?"
+                  @htmx:after-request.camel="$dispatch('admin-progress-tick'); menuOpen = false"
+                  class="block">
+              <button type="submit"
+                      class="w-full text-left px-4 py-2 text-sm text-slate-200
+                             hover:bg-ink-800 transition-colors">
+                <span class="block font-medium">Prune stale entries</span>
+                <span class="block text-xs text-slate-500">Remove catalogue rows whose BIN_CHANNEL messages no longer exist.</span>
+              </button>
+            </form>
             <div class="my-1 border-t border-white/5"></div>
             <form hx-post="/admin/migrate-to-mongo" hx-swap="none"
                   hx-confirm="Migrate the in-memory catalogue to MongoDB? Requires MONGO_URI to be set."
