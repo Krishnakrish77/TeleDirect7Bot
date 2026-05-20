@@ -583,6 +583,11 @@ async def persist_now() -> None:
 
 
 def _persist_unlocked() -> None:
+    # When MongoDB is the durable store every mutation is already written
+    # through there. Writing to /tmp JSON is redundant — Koyeb wipes /tmp
+    # on restart and the bot re-seeds from Mongo anyway.
+    if _store_active():
+        return
     try:
         _INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -689,7 +694,11 @@ async def seed(bot, channel_id: int) -> None:
     if _seeded:
         return
 
-    _load()  # Restore whatever was on disk first (legacy /tmp cache).
+    # Only load from /tmp JSON when Mongo isn't active. With Mongo, /tmp is
+    # wiped on restart and seeding from the stale JSON would just be noise
+    # before the Mongo load overwrites it anyway.
+    if not _store_active():
+        _load()
 
     # Durable Mongo store wins if configured. Loads the whole
     # catalogue in one shot, then we still probe BIN below to pick
