@@ -895,7 +895,11 @@ async def seed(bot, channel_id: int) -> None:
                 "media_index: pruned %d stale entries (deleted from BIN)",
                 pruned,
             )
-            # Update the snapshot so the prune survives restart.
+            # Write-through to durable store so the prune survives restart.
+            # Without this, pruned items remain in MongoDB and re-appear
+            # every boot even after being deleted from BIN_CHANNEL.
+            for mid in stale_ids:
+                await _store_remove(mid)
             schedule_snapshot(bot)
         _seeded = True
         _seed_state["running"] = False
