@@ -119,3 +119,5 @@ dmypy.json
 .env
 test.py
 test2.py
+gen_session.py
+gen_session.session
