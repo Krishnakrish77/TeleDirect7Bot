@@ -280,13 +280,9 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0) -> Optional[byt
     args = [
         "ffmpeg",
         "-hide_banner", "-loglevel", "error",
-        # Hard-cap how much data ffmpeg reads from the HTTP source. 5 MB is
-        # more than enough to reach the first keyframe in any sane container.
-        "-probesize", "5M",
-        "-analyzeduration", "2000000",  # 2s
-        # HTTP-level read timeout (microseconds) so ffmpeg doesn't hang
-        # waiting for the loopback stream when the server is under load.
-        "-timeout", "20000000",         # 20s
+        # HTTP-level read timeout (microseconds) so ffmpeg fails fast if the
+        # loopback stream is slow rather than hanging until our Python timeout.
+        "-timeout", "20000000",         # 20s per HTTP request
         "-ss", f"{seek:.2f}",
         "-i", source_url,
         "-frames:v", "1",
