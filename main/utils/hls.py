@@ -271,21 +271,27 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0) -> Optional[byt
     only reads the part of the source needed to land on the keyframe, not
     the full file. Returns None on failure.
     """
-    # Aim for ~5% into the video, capped between 3s and 30s. Short clips
-    # don't have 30s of intro; long ones often start with title cards.
-    if duration > 0:
-        seek = max(3.0, min(30.0, duration * 0.05))
-    else:
-        seek = 5.0
+    # Seek to 1 second — close enough to show meaningful content without
+    # requiring ffmpeg to scan deep into the file. Seeking too far (e.g. 30s)
+    # on large document-type files makes ffmpeg download megabytes of data
+    # over the loopback before it can grab a frame, causing timeouts.
+    seek = 1.0
 
     args = [
         "ffmpeg",
         "-hide_banner", "-loglevel", "error",
+        # Hard-cap how much data ffmpeg reads from the HTTP source. 5 MB is
+        # more than enough to reach the first keyframe in any sane container.
+        "-probesize", "5M",
+        "-analyzeduration", "2000000",  # 2s
+        # HTTP-level read timeout (microseconds) so ffmpeg doesn't hang
+        # waiting for the loopback stream when the server is under load.
+        "-timeout", "20000000",         # 20s
         "-ss", f"{seek:.2f}",
         "-i", source_url,
         "-frames:v", "1",
         "-q:v", "5",
-        "-vf", "scale=320:-2",  # constrain width; cards are 200-260px wide
+        "-vf", "scale=320:-2",
         "-f", "image2pipe",
         "-vcodec", "mjpeg",
         "-",
@@ -297,7 +303,7 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0) -> Optional[byt
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=25)
         except asyncio.TimeoutError:
             logging.warning("thumbnail grab timed out for %s", source_url)
             return None
@@ -305,9 +311,10 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0) -> Optional[byt
             logging.exception("thumbnail grab failed for %s", source_url)
             return None
     if proc.returncode != 0 or not stdout:
-        logging.debug(
-            "ffmpeg thumb grab exit=%s stderr=%s",
-            proc.returncode, (stderr or b"")[:200].decode("utf-8", "replace"),
+        logging.warning(
+            "ffmpeg thumb grab failed exit=%s url=%s stderr=%s",
+            proc.returncode, source_url,
+            (stderr or b"")[:300].decode("utf-8", "replace"),
         )
         return None
     return stdout
