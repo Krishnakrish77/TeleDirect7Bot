@@ -77,6 +77,11 @@ async def watch_handler(request: web.Request):
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
         raise web.HTTPNotFound(text=e.message)
+    except web.HTTPException:
+        # We raised this ourselves with a deliberate status code (e.g. 503
+        # for a truncated skeleton fetch). Let aiohttp propagate it instead
+        # of re-wrapping as 500.
+        raise
     except (AttributeError, BadStatusLine, ConnectionResetError):
         return web.HTTPInternalServerError(text="A server error occurred.")
     except Exception as e:
@@ -99,6 +104,11 @@ async def stream_handler(request: web.Request):
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
         raise web.HTTPNotFound(text=e.message)
+    except web.HTTPException:
+        # We raised this ourselves with a deliberate status code (e.g. 503
+        # for a truncated skeleton fetch). Let aiohttp propagate it instead
+        # of re-wrapping as 500.
+        raise
     except (AttributeError, BadStatusLine, ConnectionResetError):
         return web.HTTPInternalServerError(text="A server error occurred.")
     except Exception as e:

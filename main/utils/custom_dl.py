@@ -6,6 +6,8 @@ from main import Var
 from typing import Dict, Tuple, Union
 from main.bot import work_loads
 from pyrogram import Client, utils, raw
+from pyrogram.crypto import aes
+from pyrogram.errors import CDNFileHashMismatch, VolumeLocNotFound
 from .file_properties import get_file_ids
 from pyrogram.session import Session
 from main.server.exceptions import FIleNotFound
@@ -138,12 +140,41 @@ class ByteStreamer:
 
         location = await self.get_location(file_id)
 
+        cdn_session: Union[Session, None] = None
         try:
-            r = await media_session.send(
-                raw.functions.upload.GetFile(
-                    location=location, offset=offset, limit=chunk_size
-                ),
-            )
+            # Retry the *initial* GetFile a few times. Under thumbnail batch
+            # load, the first call for a given (file, offset) sometimes
+            # times out — the silent ``except TimeoutError: pass`` below
+            # then yields zero bytes, and the skeleton cache truncation
+            # guard surfaces it as a 503. A short retry loop here gives
+            # the media session a second chance before we give up.
+            r = None
+            last_err: Union[BaseException, None] = None
+            for attempt in range(3):
+                try:
+                    r = await media_session.send(
+                        raw.functions.upload.GetFile(
+                            location=location, offset=offset, limit=chunk_size
+                        ),
+                    )
+                    break
+                except (TimeoutError, asyncio.TimeoutError) as e:
+                    last_err = e
+                    logging.warning(
+                        "yield_file: initial GetFile timeout (attempt %d/3) "
+                        "media_id=%s offset=%d limit=%d",
+                        attempt + 1,
+                        getattr(file_id, "media_id", "?"),
+                        offset, chunk_size,
+                    )
+                    await asyncio.sleep(0.5 * (attempt + 1))
+            if r is None:
+                logging.warning(
+                    "yield_file: giving up after initial GetFile timeouts "
+                    "media_id=%s offset=%d (last error: %r)",
+                    getattr(file_id, "media_id", "?"), offset, last_err,
+                )
+                return
             if isinstance(r, raw.types.upload.File):
                 while current_part <= part_count:
                     chunk = r.bytes
@@ -165,11 +196,84 @@ class ByteStreamer:
                     )
 
                     current_part += 1
-        except (TimeoutError, AttributeError):
-            pass
+            elif isinstance(r, raw.types.upload.FileCdnRedirect):
+                # Telegram serves popular/large files from edge CDNs. The
+                # initial DC responds with a redirect; the bytes live on
+                # ``r.dc_id`` and arrive encrypted (CTR-256). Without this
+                # branch yield_file would silently return zero bytes, which
+                # is the root cause of the "End of file" thumbnail failures
+                # for these specific message ids.
+                cdn_session = await client.get_session(
+                    r.dc_id, is_cdn=True, temporary=True
+                )
+                while current_part <= part_count:
+                    r2 = await cdn_session.send(
+                        raw.functions.upload.GetCdnFile(
+                            file_token=r.file_token,
+                            offset=offset,
+                            limit=chunk_size,
+                        )
+                    )
+                    if isinstance(r2, raw.types.upload.CdnFileReuploadNeeded):
+                        # CDN node hasn't been primed yet — ask the home DC
+                        # to push the file, then retry the same offset.
+                        try:
+                            await media_session.send(
+                                raw.functions.upload.ReuploadCdnFile(
+                                    file_token=r.file_token,
+                                    request_token=r2.request_token,
+                                )
+                            )
+                        except VolumeLocNotFound:
+                            break
+                        continue
+
+                    chunk = r2.bytes
+                    if not chunk:
+                        break
+
+                    # https://core.telegram.org/cdn#decrypting-files
+                    iv = bytearray(
+                        r.encryption_iv[:-4]
+                        + (offset // 16).to_bytes(4, "big")
+                    )
+                    decrypted = aes.ctr256_decrypt(chunk, r.encryption_key, iv)
+
+                    offset += chunk_size
+                    if part_count == 1:
+                        yield decrypted[first_part_cut:last_part_cut]
+                        break
+                    if current_part == 1:
+                        yield decrypted[first_part_cut:]
+                    if 1 < current_part <= part_count:
+                        yield decrypted
+                    current_part += 1
+            else:
+                # Some other unexpected response type — log instead of
+                # silently returning so it's obvious next time.
+                logging.warning(
+                    "yield_file: unexpected upload.GetFile response %r "
+                    "(media_id=%s offset=%d)",
+                    type(r).__name__, getattr(file_id, "media_id", "?"), offset,
+                )
+        except (TimeoutError, asyncio.TimeoutError, AttributeError) as e:
+            # Mid-stream timeout or detached session — log so we can tell this
+            # apart from "everything finished" in the diagnostics.
+            logging.warning(
+                "yield_file: aborted mid-stream after part %d/%d "
+                "media_id=%s offset=%d (%s)",
+                current_part, part_count,
+                getattr(file_id, "media_id", "?"),
+                offset, type(e).__name__,
+            )
         finally:
             logging.debug(f"Finished yielding file with {current_part} parts.")
             work_loads[index] -= 1
+            if cdn_session is not None:
+                try:
+                    await cdn_session.stop()
+                except Exception:
+                    pass
 
     
     async def clean_cache(self) -> None:
