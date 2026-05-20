@@ -95,7 +95,12 @@
              const r = await fetch('/admin/ai-suggest/' + e.id + '?model=' + encodeURIComponent(e.aiModel), { method: 'POST' });
              let data;
              try { data = await r.json(); }
-             catch (_) { e.aiError = `HTTP ${r.status} — response was not JSON (check GEMINI_API_KEY is set)`; return; }
+             catch (_) {
+               e.aiError = r.status === 502 || r.status === 503
+                 ? `HTTP ${r.status} — server unavailable (still starting up? try again in a few seconds)`
+                 : `HTTP ${r.status} — unexpected response (check GEMINI_API_KEY is set)`;
+               return;
+             }
              if (!r.ok) { e.aiError = data.error || `HTTP ${r.status}`; return; }
              if (data.title)        e.title        = data.title;
              if (data.year)         e.year         = String(data.year);
