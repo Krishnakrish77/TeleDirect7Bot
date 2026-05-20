@@ -283,15 +283,15 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0) -> Optional[byt
         # HTTP-level read timeout (microseconds) so ffmpeg fails fast if the
         # loopback stream is slow rather than hanging until our Python timeout.
         "-timeout", "20000000",         # 20s per HTTP request
-        # Be lenient about broken MP4 indices (STCO/STSC mismatches).
-        # Browsers handle these fine; we want thumbnails even for them.
+        # Tolerate broken MP4 indices (STCO/STSC mismatches).
         "-fflags", "+ignidx+igndts+discardcorrupt",
         "-err_detect", "ignore_err",
-        "-i", source_url,
-        # Output-side seek (-ss after -i): reads sequentially from start
-        # rather than index-seeking. Slower but works on files with broken
-        # STCO/STSC atoms that cause input-seek to abort during header parse.
+        # Input-side seek (-ss before -i): ffmpeg uses the MOOV index to jump
+        # directly to the seek position via a Range request — reads ~100 KB
+        # total. Output-side seek reads all data from 0 to seek point which
+        # can be many MB for long videos, causing loopback timeouts.
         "-ss", f"{seek:.2f}",
+        "-i", source_url,
         "-frames:v", "1",
         "-q:v", "5",
         "-vf", "scale=320:-2",
