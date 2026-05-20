@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from typing import Optional, Tuple, Union
+from typing import Dict, Optional, Set, Tuple, Union
 
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
@@ -137,14 +137,17 @@ async def _reupload(src: Message) -> Message:
 
 
 # ---------------------------------------------------------------------------
-# Grablist page builder
+# Grablist page builder + selection state
 # ---------------------------------------------------------------------------
+
+# (user_id, bot_message_id) → set of source message IDs selected
+_selections: Dict[Tuple[int, int], set] = {}
+
 
 async def _build_page(chat_id: int, offset_id: int):
     """
     Scan up to SCAN_LIMIT messages from chat_id starting before offset_id.
     Returns (media_msgs, next_offset_id, has_more).
-    next_offset_id is 0 when there are no more messages.
     """
     user = await _get_user_client()
     media_msgs = []
@@ -161,37 +164,49 @@ async def _build_page(chat_id: int, offset_id: int):
         if len(media_msgs) >= PAGE_SIZE:
             break
 
-    # has_more is True only if we hit PAGE_SIZE and there may be older messages
     has_more = len(media_msgs) >= PAGE_SIZE and last_id > 0
     return media_msgs, last_id, has_more
 
 
-def _file_button_label(msg: Message) -> str:
+def _file_label(msg: Message, selected: bool) -> str:
     media = get_media_from_message(msg)
     name = getattr(media, "file_name", None) or f"[{msg.id}]"
     size = getattr(media, "file_size", 0) or 0
     size_str = humanbytes(size) if size else "?"
-    max_name = 44 - len(size_str)
+    prefix = "☑" if selected else "☐"
+    max_name = 42 - len(size_str)
     if len(name) > max_name:
         name = name[: max_name - 1] + "…"
-    return f"🔽 {name} · {size_str}"
+    return f"{prefix} {name} · {size_str}"
 
 
-def _build_markup(chat_id: int, media_msgs, next_offset: int, has_more: bool) -> InlineKeyboardMarkup:
+def _build_markup(
+    chat_id: int,
+    media_msgs,
+    next_offset: int,
+    has_more: bool,
+    selected: set,
+) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(
-            _file_button_label(msg),
-            callback_data=f"grabdo_{chat_id}_{msg.id}",
+            _file_label(msg, msg.id in selected),
+            callback_data=f"gtog_{chat_id}_{msg.id}",
         )]
         for msg in media_msgs
     ]
+    bottom = []
+    if selected:
+        bottom.append(InlineKeyboardButton(
+            f"✅ Grab Selected ({len(selected)})",
+            callback_data=f"grabsel_{chat_id}",
+        ))
     if has_more:
-        rows.append([
-            InlineKeyboardButton(
-                "Load More ▶",
-                callback_data=f"grablist_{chat_id}_{next_offset}",
-            )
-        ])
+        bottom.append(InlineKeyboardButton(
+            "Load More ▶",
+            callback_data=f"grablist_{chat_id}_{next_offset}",
+        ))
+    if bottom:
+        rows.append(bottom)
     return InlineKeyboardMarkup(rows)
 
 
@@ -293,9 +308,9 @@ async def grablist_handler(client: Client, m: Message):
             await status.edit_text("No media found in this channel.")
             return
 
-        markup = _build_markup(chat_id, media_msgs, next_offset, has_more)
+        markup = _build_markup(chat_id, media_msgs, next_offset, has_more, selected=set())
         await status.edit_text(
-            f"**{chat_title}** — tap a file to grab it:",
+            f"**{chat_title}** — select files then tap Grab Selected:",
             reply_markup=markup,
         )
 
@@ -313,26 +328,128 @@ async def grablist_handler(client: Client, m: Message):
 _owner_filter = filters.user(Var.OWNER_ID)
 
 
+@StreamBot.on_callback_query(filters.regex(r"^gtog_") & _owner_filter)
+async def gtog_cb(client: Client, cb: CallbackQuery):
+    """Toggle selection of a single file."""
+    parts = cb.data.split("_", 2)
+    chat_id = int(parts[1])
+    msg_id = int(parts[2])
+
+    key = (cb.from_user.id, cb.message.id)
+    sel = _selections.setdefault(key, set())
+    if msg_id in sel:
+        sel.discard(msg_id)
+    else:
+        sel.add(msg_id)
+
+    # Rebuild the current keyboard with updated checkboxes.
+    # Re-read buttons from existing markup to avoid re-fetching Telegram.
+    old_rows = cb.message.reply_markup.inline_keyboard
+    new_rows = []
+    for row in old_rows:
+        new_row = []
+        for btn in row:
+            d = btn.callback_data or ""
+            if d.startswith("gtog_"):
+                p = d.split("_", 2)
+                mid = int(p[2])
+                checked = mid in sel
+                label = btn.text
+                # Replace leading checkbox char
+                label = ("☑" if checked else "☐") + label[1:]
+                new_row.append(InlineKeyboardButton(label, callback_data=d))
+            elif d.startswith("grabsel_"):
+                # Update count or remove if nothing selected
+                if sel:
+                    new_row.append(InlineKeyboardButton(
+                        f"✅ Grab Selected ({len(sel)})",
+                        callback_data=d,
+                    ))
+                # else: drop the button entirely
+            else:
+                new_row.append(btn)
+        if new_row:
+            new_rows.append(new_row)
+
+    # Ensure Grab Selected button exists if something is selected
+    bottom = new_rows[-1] if new_rows else []
+    has_grab_sel = any(b.callback_data and b.callback_data.startswith("grabsel_") for b in bottom)
+    if sel and not has_grab_sel:
+        new_rows.append([InlineKeyboardButton(
+            f"✅ Grab Selected ({len(sel)})",
+            callback_data=f"grabsel_{chat_id}",
+        )])
+
+    await cb.message.edit_reply_markup(InlineKeyboardMarkup(new_rows))
+    await cb.answer()
+
+
 @StreamBot.on_callback_query(filters.regex(r"^grablist_") & _owner_filter)
 async def grablist_cb(client: Client, cb: CallbackQuery):
-    _, chat_id_str, offset_str = cb.data.split("_", 2)
-    chat_id = int(chat_id_str)
-    offset_id = int(offset_str)
+    """Load next page — clears selections since the list changes."""
+    parts = cb.data.split("_", 2)
+    chat_id = int(parts[1])
+    offset_id = int(parts[2])
 
     await cb.answer("Loading…")
+    # Clear selections for this message when the page changes
+    _selections.pop((cb.from_user.id, cb.message.id), None)
     try:
         media_msgs, next_offset, has_more = await _build_page(chat_id, offset_id)
         if not media_msgs:
             await cb.message.edit_text("No more media found.")
             return
-
-        markup = _build_markup(chat_id, media_msgs, next_offset, has_more)
-        # Keep same header text, just swap the keyboard
+        markup = _build_markup(chat_id, media_msgs, next_offset, has_more, selected=set())
         await cb.message.edit_reply_markup(reply_markup=markup)
-
     except Exception as e:
         logger.exception("grablist_cb failed")
         await cb.answer(f"Error: {e}", show_alert=True)
+
+
+@StreamBot.on_callback_query(filters.regex(r"^grabsel_") & _owner_filter)
+async def grabsel_cb(client: Client, cb: CallbackQuery):
+    """Grab all selected files sequentially."""
+    parts = cb.data.split("_", 1)
+    chat_id = int(parts[1])
+
+    key = (cb.from_user.id, cb.message.id)
+    sel = _selections.pop(key, set())
+    if not sel:
+        await cb.answer("Nothing selected.", show_alert=True)
+        return
+
+    await cb.answer(f"Grabbing {len(sel)} file(s)…")
+    progress = await cb.message.reply_text(
+        f"⬇️ Grabbing {len(sel)} file(s)…", quote=True,
+    )
+    done, failed = 0, 0
+    for msg_id in sel:
+        try:
+            user = await _get_user_client()
+            src = await user.get_messages(chat_id, msg_id)
+            if src.empty or not get_media_from_message(src):
+                failed += 1
+                continue
+            log_msg = await _reupload(src)
+            schedule_index(client, log_msg)
+            await log_msg.reply_text(
+                f"**Grabbed via list** | source `{chat_id}/{msg_id}`",
+                disable_web_page_preview=True,
+                quote=True,
+            )
+            reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
+            await progress.reply_text(
+                stream_text, disable_web_page_preview=True, reply_markup=reply_markup,
+            )
+            done += 1
+        except Exception as e:
+            logger.exception("grabsel_cb item failed")
+            failed += 1
+
+    summary = f"✅ Grabbed {done} file(s)."
+    if failed:
+        summary += f" ❌ {failed} failed."
+    await progress.edit_text(summary)
 
 
 @StreamBot.on_callback_query(filters.regex(r"^grabdo_") & _owner_filter)

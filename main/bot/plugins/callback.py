@@ -91,4 +91,4 @@ async def cb_data(bot, update: CallbackQuery):
                     show_alert=True,
                 )
         else:
-            await update.message.delete()
+            await update.answer()  # unrecognised — just dismiss the spinner
