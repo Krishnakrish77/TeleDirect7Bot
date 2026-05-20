@@ -558,6 +558,31 @@ async def admin_action(request: web.Request) -> web.Response:
             f"Enrichment queued for {len(ids)} items — TMDB results appear as they complete"
         )
 
+    if action == "probe":
+        from main.utils import codec_probe
+        import asyncio as _aio
+
+        async def _run_probe(id_list: list) -> None:
+            done = found = 0
+            for mid in id_list:
+                item = media_index.get_item(mid)
+                if item is None:
+                    continue
+                # Reset probed_at so codec_probe.probe_item runs even if
+                # previously probed (user explicitly asked for a re-probe).
+                item.probed_at = 0.0
+                ok = await codec_probe.probe_item(item)
+                if ok:
+                    found += 1
+                done += 1
+                await _aio.sleep(0)
+            logging.info("bulk probe: %d/%d had video streams", found, done)
+
+        _aio.create_task(_run_probe(ids))
+        raise _redirect_with_flash(
+            f"Codec probe queued for {len(ids)} item(s) — duration + codec info updates as each completes"
+        )
+
     raise _redirect_with_flash("Unknown action")
 
 
