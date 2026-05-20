@@ -532,6 +532,22 @@ async def hub_thumb(request: web.Request) -> web.Response:
         if item is None or item.secure_hash != secure_hash:
             return None
         source_url = hls.internal_stream_url(secure_hash, message_id)
+        # Warm the skeleton cache tail before ffmpeg. A full-file GET bypasses
+        # the skeleton cache and streams from Telegram — the connection drops
+        # before ffmpeg can find the MOOV atom (for non-faststart MP4).
+        if item.file_size and item.file_size > 1024:
+            import aiohttp as _aiohttp
+            try:
+                tail_start = max(0, item.file_size - 1024)
+                async with _aiohttp.ClientSession() as _s:
+                    async with _s.get(
+                        source_url,
+                        headers={"Range": f"bytes={tail_start}-"},
+                        timeout=_aiohttp.ClientTimeout(total=45),
+                    ) as _r:
+                        await _r.read()
+            except Exception:
+                pass
         return await hls.grab_thumbnail(source_url, duration=float(item.duration or 0))
 
     data = await thumb_cache.cached_or_fetch(message_id, fetch)

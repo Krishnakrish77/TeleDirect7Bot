@@ -79,13 +79,32 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     Always sets ``probed_at`` so a transient failure doesn't cause
     the next sweep to keep retrying.
     """
-    stream_url = f"{Var.URL}{item.secure_hash}{item.message_id}"
+    from main.utils.hls import internal_stream_url
+    import aiohttp as _aiohttp
+    stream_url = internal_stream_url(item.secure_hash, item.message_id)
+
+    # Warm the skeleton cache tail before ffprobe. A full-file GET bypasses
+    # the skeleton cache and streams from Telegram — the connection drops
+    # before ffprobe can find the MOOV atom. A tail Range request fetches
+    # 512 KB into cache so ffprobe's subsequent MOOV seek is served locally.
+    if item.file_size and item.file_size > 1024:
+        try:
+            tail_start = max(0, item.file_size - 1024)
+            async with _aiohttp.ClientSession() as _s:
+                async with _s.get(
+                    stream_url,
+                    headers={"Range": f"bytes={tail_start}-"},
+                    timeout=_aiohttp.ClientTimeout(total=45),
+                ) as _r:
+                    await _r.read()
+        except Exception:
+            pass  # best-effort; ffprobe will still try
+
     cmd = [
         "ffprobe",
         "-v", "error",
         "-hide_banner",
-        # Allow 45s per HTTP request — the skeleton cache tail warmup
-        # (512 KB from Telegram) can take 3-10s on a cold connection.
+        # Allow 45s per HTTP request — skeleton cache warmup can take ~5s.
         "-timeout", "45000000",
         # Tolerate broken MP4 index atoms.
         "-fflags", "+ignidx+igndts",
