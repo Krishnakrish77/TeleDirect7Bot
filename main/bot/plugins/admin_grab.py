@@ -163,23 +163,25 @@ _selections: Dict[Tuple[int, int], set] = {}
 _nav: Dict[Tuple[int, int], List[int]] = {}
 
 
-async def _build_page(chat_id: int, before_id: int):
+async def _build_page(chat_id: int, max_id: int):
     """
-    Return up to PAGE_SIZE media messages from chat_id, going backwards from
-    before_id (exclusive: messages with id < before_id, i.e. older messages).
-    before_id=0 means start from the newest message.
+    Return up to PAGE_SIZE media messages from chat_id.
 
-    Returns (media_msgs, oldest_id_on_page, has_more).
-    oldest_id_on_page is the id of the last (oldest) message we scanned —
-    pass it as before_id on the next call to continue from there.
+    max_id=0  → start from the newest message (no upper bound).
+    max_id=X  → only messages with id ≤ X (kurigram makes max_id inclusive
+                 by adding 1 internally before the raw API call).
+
+    Returns (media_msgs, next_max_id, has_more).
+    next_max_id is oldest_id_seen - 1, ready to pass as max_id for the
+    next page so it returns messages strictly older than this page.
     """
     user = await _get_user_client()
     media_msgs = []
     oldest_id = 0
 
-    kwargs = {"limit": SCAN_LIMIT}
-    if before_id:
-        kwargs["offset_id"] = before_id
+    kwargs: dict = {"limit": SCAN_LIMIT}
+    if max_id:
+        kwargs["max_id"] = max_id
 
     async for msg in user.get_chat_history(chat_id, **kwargs):
         oldest_id = msg.id
@@ -188,8 +190,11 @@ async def _build_page(chat_id: int, before_id: int):
         if len(media_msgs) >= PAGE_SIZE:
             break
 
+    # kurigram max_id is inclusive, so next page needs oldest_id - 1
+    # to avoid re-showing the oldest message on this page.
+    next_max_id = oldest_id - 1 if oldest_id > 1 else 0
     has_more = len(media_msgs) >= PAGE_SIZE and oldest_id > 1
-    return media_msgs, oldest_id, has_more
+    return media_msgs, next_max_id, has_more
 
 
 def _file_label(msg: Message, selected: bool) -> str:
@@ -329,20 +334,21 @@ async def grablist_handler(client: Client, m: Message):
         chat_id = chat_obj.id
         chat_title = getattr(chat_obj, "title", str(chat_id))
 
-        media_msgs, oldest_id, has_more = await _build_page(chat_id, before_id=0)
+        media_msgs, next_max_id, has_more = await _build_page(chat_id, max_id=0)
         if not media_msgs:
             await status.edit_text("No media found in this channel.")
             return
 
         markup = _build_markup(
-            chat_id, media_msgs, oldest_id, has_more,
+            chat_id, media_msgs, next_max_id, has_more,
             selected=set(), has_prev=False,
         )
         await status.edit_text(
             f"**{chat_title}** — select files then tap Grab Selected:",
             reply_markup=markup,
         )
-        # Initialise nav history: page 1 starts at before_id=0
+        # Nav stack stores the max_id used to load each page.
+        # Page 1 uses max_id=0 (no upper bound).
         _nav[(m.from_user.id, status.id)] = [0]
 
     except ValueError as e:
@@ -415,16 +421,16 @@ async def gtog_cb(client: Client, cb: CallbackQuery):
     await cb.answer()
 
 
-async def _load_page(cb: CallbackQuery, client: Client, chat_id: int, before_id: int, has_prev: bool):
-    """Shared helper: fetch a page and edit the list message."""
+async def _load_page(cb: CallbackQuery, client: Client, chat_id: int, max_id: int, has_prev: bool):
+    """Fetch a page with max_id and update the list message."""
     key = (cb.from_user.id, cb.message.id)
     _selections.pop(key, None)
-    media_msgs, oldest_id, has_more = await _build_page(chat_id, before_id)
+    media_msgs, next_max_id, has_more = await _build_page(chat_id, max_id)
     if not media_msgs:
         await cb.answer("No more media found.", show_alert=True)
         return False
     markup = _build_markup(
-        chat_id, media_msgs, oldest_id, has_more,
+        chat_id, media_msgs, next_max_id, has_more,
         selected=set(), has_prev=has_prev,
     )
     try:
@@ -440,16 +446,16 @@ async def grabnext_cb(client: Client, cb: CallbackQuery):
     """Navigate to the next (older) page."""
     parts = cb.data.split("_", 2)
     chat_id = int(parts[1])
-    before_id = int(parts[2])
+    next_max_id = int(parts[2])   # oldest_id-1 from the previous page
 
     key = (cb.from_user.id, cb.message.id)
     nav = _nav.setdefault(key, [0])
 
     await cb.answer("Loading…")
     try:
-        ok = await _load_page(cb, client, chat_id, before_id, has_prev=True)
+        ok = await _load_page(cb, client, chat_id, next_max_id, has_prev=True)
         if ok:
-            nav.append(before_id)
+            nav.append(next_max_id)
     except Exception as e:
         logger.exception("grabnext_cb failed")
         await cb.answer(f"Error: {e}", show_alert=True)
@@ -468,12 +474,12 @@ async def grabprev_cb(client: Client, cb: CallbackQuery):
         await cb.answer("Already on the first page.", show_alert=True)
         return
 
-    nav.pop()                      # remove current page's before_id
-    prev_before_id = nav[-1]       # the page before that
+    nav.pop()                    # discard current page's max_id
+    prev_max_id = nav[-1]        # max_id that loads the previous page
 
     await cb.answer("Loading…")
     try:
-        await _load_page(cb, client, chat_id, prev_before_id, has_prev=len(nav) > 1)
+        await _load_page(cb, client, chat_id, prev_max_id, has_prev=len(nav) > 1)
     except Exception as e:
         logger.exception("grabprev_cb failed")
         await cb.answer(f"Error: {e}", show_alert=True)
