@@ -521,29 +521,17 @@ async def hub_thumb(request: web.Request) -> web.Response:
                     except Exception:
                         pass  # fall through to ffmpeg fallback
 
-        # Fallback: grab a frame via ffmpeg. Cheap thanks to input-seek
-        # (only the bytes around the chosen timestamp are fetched from the
-        # source). thumb_cache holds the result for 6h so we don't redo
-        # this work on every page refresh.
+        # Fallback: grab a frame via ffmpeg. Only attempt if the BIN_CHANNEL
+        # message actually exists — if it's missing or empty, ffmpeg would
+        # report "End of file" / "error reading header".
+        # Reuse the already-fetched `message` rather than a second loopback
+        # HEAD request (the stream route only accepts GET, not HEAD).
+        if message is None or getattr(message, "empty", True):
+            return None
         item = media_index.get_item(message_id)
         if item is None or item.secure_hash != secure_hash:
             return None
         source_url = hls.internal_stream_url(secure_hash, message_id)
-        # Pre-check: HEAD the stream URL before spawning ffmpeg. If the
-        # streaming route returns non-200 (missing file, bad hash, etc.)
-        # ffmpeg would report "End of file" / "error reading header".
-        import aiohttp as _aiohttp
-        try:
-            async with _aiohttp.ClientSession() as s:
-                async with s.head(
-                    source_url,
-                    timeout=_aiohttp.ClientTimeout(total=5),
-                    allow_redirects=True,
-                ) as r:
-                    if r.status != 200:
-                        return None
-        except Exception:
-            return None
         return await hls.grab_thumbnail(source_url, duration=float(item.duration or 0))
 
     data = await thumb_cache.cached_or_fetch(message_id, fetch)
