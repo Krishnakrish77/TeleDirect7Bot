@@ -236,7 +236,14 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     offset = utils.offset_fix(from_bytes, new_chunk_size)
     first_part_cut = from_bytes - offset
     last_part_cut = (until_bytes % new_chunk_size) + 1
-    part_count = math.ceil(req_length / new_chunk_size)
+    # Count chunks by start/end chunk index, not by ceil(req_length/chunk).
+    # The latter form ignores first_part_cut, so a Range starting mid-chunk
+    # (e.g. ffmpeg seeking to moov-at-end at byte 213268712 inside a 1 MB
+    # chunk grid) is short by one chunk — yield_file then closes the stream
+    # before delivering the trailing bytes the Content-Range header claimed,
+    # and ffmpeg hits AVERROR_EOF mid-moov-parse. Counting chunks by index
+    # always covers [from_bytes, until_bytes] exactly.
+    part_count = (until_bytes // new_chunk_size) - (from_bytes // new_chunk_size) + 1
     body = tg_connect.yield_file(
         file_id, index, offset, first_part_cut, last_part_cut, part_count, new_chunk_size
     )

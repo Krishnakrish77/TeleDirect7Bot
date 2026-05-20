@@ -186,7 +186,12 @@ class ByteStreamer:
                         break
                     if current_part == 1:
                         yield chunk[first_part_cut:]
-                    if 1 < current_part <= part_count:
+                    elif current_part == part_count:
+                        # Trim the trailing bytes so the range that ends
+                        # mid-chunk doesn't overshoot what the Content-Range
+                        # header promised.
+                        yield chunk[:last_part_cut]
+                    else:
                         yield chunk
 
                     r = await media_session.send(
@@ -245,7 +250,9 @@ class ByteStreamer:
                         break
                     if current_part == 1:
                         yield decrypted[first_part_cut:]
-                    if 1 < current_part <= part_count:
+                    elif current_part == part_count:
+                        yield decrypted[:last_part_cut]
+                    else:
                         yield decrypted
                     current_part += 1
             else:
