@@ -49,6 +49,20 @@ class _Entry:
 _cache: Dict[int, _Entry] = {}
 
 
+class SkeletonFetchError(RuntimeError):
+    """Raised when a head/tail fetch comes back short.
+
+    ``ByteStreamer.yield_file`` swallows ``TimeoutError`` mid-stream and just
+    stops yielding, so a truncated Telegram fetch returns fewer bytes than the
+    chunk-aligned window we asked for. If we cached and served those bytes, the
+    response would claim the full requested range in ``Content-Range`` while
+    delivering less — ffmpeg's HTTP reader then hits EOF mid-parse, returns
+    AVERROR_EOF (exit 187), and the MP4 demuxer aborts with "error reading
+    header". Treat short reads as an outright failure so the entry stays
+    uncached and the next request gets a fresh attempt.
+    """
+
+
 def _entry(message_id: int, file_size: int) -> _Entry:
     entry = _cache.get(message_id)
     now = time.monotonic()
@@ -98,6 +112,11 @@ async def _collect_range(
         chunks.append(chunk)
     raw = b"".join(chunks)
     rel_start = start - aligned_start
+    if len(raw) < rel_start + length:
+        raise SkeletonFetchError(
+            f"truncated fetch for [{start},{end}]: got {len(raw)} bytes, "
+            f"need {rel_start + length}"
+        )
     return raw[rel_start : rel_start + length]
 
 
@@ -164,5 +183,9 @@ async def prefetch_skeleton(
             get_or_fetch_head(message_id, file_size, byte_streamer, file_id, index),
             get_or_fetch_tail(message_id, file_size, byte_streamer, file_id, index),
         )
+    except SkeletonFetchError as exc:
+        # Expected under load when yield_file times out mid-stream. Log at
+        # warning level (not exception) — next request re-fetches.
+        logging.warning("Skeleton prefetch incomplete for msg %d: %s", message_id, exc)
     except Exception:
         logging.exception("Skeleton prefetch failed for msg %d", message_id)

@@ -163,22 +163,30 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     # header or tail, serve from memory and skip the Telegram round-trip.
     # ffmpeg hits these regions on every seek (MKV header + Cues block) so
     # this turns N round-trips into 1 per file.
+    #
+    # SkeletonFetchError means yield_file timed out mid-stream and we'd be
+    # caching truncated bytes — surface a 503 so the ffmpeg side reconnects
+    # rather than serving a Content-Range that overpromises the body length.
     cached_body = None
-    if until_bytes <= skeleton_cache.head_limit(file_size):
-        cached_body = skeleton_cache.serve_head(message_id, from_bytes, until_bytes)
-        if cached_body is None:
-            head = await skeleton_cache.get_or_fetch_head(
-                message_id, file_size, tg_connect, file_id, index
-            )
-            cached_body = head[from_bytes : until_bytes + 1]
-    elif from_bytes >= skeleton_cache.tail_floor(file_size):
-        cached_body = skeleton_cache.serve_tail(message_id, from_bytes, until_bytes)
-        if cached_body is None:
-            tail = await skeleton_cache.get_or_fetch_tail(
-                message_id, file_size, tg_connect, file_id, index
-            )
-            t_start = file_size - len(tail)
-            cached_body = tail[from_bytes - t_start : until_bytes - t_start + 1]
+    try:
+        if until_bytes <= skeleton_cache.head_limit(file_size):
+            cached_body = skeleton_cache.serve_head(message_id, from_bytes, until_bytes)
+            if cached_body is None:
+                head = await skeleton_cache.get_or_fetch_head(
+                    message_id, file_size, tg_connect, file_id, index
+                )
+                cached_body = head[from_bytes : until_bytes + 1]
+        elif from_bytes >= skeleton_cache.tail_floor(file_size):
+            cached_body = skeleton_cache.serve_tail(message_id, from_bytes, until_bytes)
+            if cached_body is None:
+                tail = await skeleton_cache.get_or_fetch_tail(
+                    message_id, file_size, tg_connect, file_id, index
+                )
+                t_start = file_size - len(tail)
+                cached_body = tail[from_bytes - t_start : until_bytes - t_start + 1]
+    except skeleton_cache.SkeletonFetchError as exc:
+        logging.warning("skeleton fetch failed for msg %d: %s", message_id, exc)
+        raise web.HTTPServiceUnavailable(text="skeleton fetch incomplete; retry")
 
     if cached_body is not None:
         return web.Response(
@@ -195,9 +203,13 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     # Range requests for the MOOV/Cues block (served from the tail cache) and
     # the actual seek position — no full-file stream required.
     if not range_header and from_bytes == 0 and file_size > skeleton_cache.HEAD_SIZE:
-        head = await skeleton_cache.get_or_fetch_head(
-            message_id, file_size, tg_connect, file_id, index
-        )
+        try:
+            head = await skeleton_cache.get_or_fetch_head(
+                message_id, file_size, tg_connect, file_id, index
+            )
+        except skeleton_cache.SkeletonFetchError as exc:
+            logging.warning("skeleton head fetch failed for msg %d: %s", message_id, exc)
+            raise web.HTTPServiceUnavailable(text="skeleton fetch incomplete; retry")
         head_end = len(head) - 1
         return web.Response(
             status=206,

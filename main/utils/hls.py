@@ -186,6 +186,13 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
     args = [
         "ffprobe",
         "-v", "error",
+        # Match the reconnect handling used by grab_thumbnail — without these
+        # flags, our 206-with-only-the-skeleton-head response would cause
+        # ffprobe to hit EOF mid-parse on files that need more than 2 MB.
+        "-reconnect", "1",
+        "-reconnect_at_eof", "1",
+        "-reconnect_streamed", "1",
+        "-reconnect_delay_max", "5",
         # Also pull tags so we know the subtitle's language + title.
         "-show_entries",
         "format=duration:stream=index,codec_type,codec_name:stream_tags=language,title",
@@ -283,6 +290,19 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0) -> Optional[byt
         # HTTP-level read timeout (microseconds). Cold-cache tail warmup
         # fetches 512 KB from Telegram which takes ~3-10s; give enough room.
         "-timeout", "45000000",         # 45s per HTTP request
+        # Our stream route returns a 206 with only the 2 MB skeleton head in
+        # response to ffmpeg's initial no-Range GET (see stream_routes.py).
+        # If the MP4 demuxer reads sequentially past that 2 MB — large moov
+        # at start, or many small boxes before mdat — libavformat would
+        # otherwise treat the end of the response body as terminal EOF and
+        # abort with AVERROR_EOF / "error reading header" (exit 187). These
+        # flags make ffmpeg reissue a Range request from the current offset
+        # instead, which our route serves from cache (head/tail) or from
+        # Telegram. reconnect_at_eof is the load-bearing one.
+        "-reconnect", "1",
+        "-reconnect_at_eof", "1",
+        "-reconnect_streamed", "1",
+        "-reconnect_delay_max", "5",
         # Tolerate broken MP4 indices (STCO/STSC mismatches).
         "-fflags", "+ignidx+igndts+discardcorrupt",
         "-err_detect", "ignore_err",

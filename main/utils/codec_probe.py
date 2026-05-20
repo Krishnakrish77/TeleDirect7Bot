@@ -106,6 +106,15 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         "-hide_banner",
         # Allow 45s per HTTP request — skeleton cache warmup can take ~5s.
         "-timeout", "45000000",
+        # Our stream route serves only the 2 MB skeleton head for the initial
+        # no-Range GET. Without -reconnect_at_eof, ffprobe would treat the
+        # end of that response as terminal EOF and abort with AVERROR_EOF
+        # on any file whose moov sits past 2 MB. These flags let it reopen
+        # the connection with a Range request and continue parsing.
+        "-reconnect", "1",
+        "-reconnect_at_eof", "1",
+        "-reconnect_streamed", "1",
+        "-reconnect_delay_max", "5",
         # Tolerate broken MP4 index atoms.
         "-fflags", "+ignidx+igndts",
         "-err_detect", "ignore_err",
