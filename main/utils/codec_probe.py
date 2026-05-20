@@ -59,14 +59,17 @@ def is_browser_playable(video_codec: str, pix_fmt: str) -> bool:
 
 
 def needs_probe(item) -> bool:
-    """True if the HubItem hasn't been probed yet.
+    """True if the HubItem needs a codec probe.
 
-    ``probed_at == 0`` means we've never tried. We don't probe
-    items with no streaming hash (defensive — shouldn't happen).
+    Probes items that have never been tried (probed_at==0) OR items that
+    were probed but have duration=0 — covers files that were uploaded as
+    documents (Telegram doesn't extract duration for those).
     """
     if not getattr(item, "secure_hash", "") or not getattr(item, "message_id", 0):
         return False
-    return float(getattr(item, "probed_at", 0) or 0) <= 0
+    never_probed = float(getattr(item, "probed_at", 0) or 0) <= 0
+    missing_duration = int(getattr(item, "duration", 0) or 0) <= 0
+    return never_probed or missing_duration
 
 
 async def probe_item(item, *, timeout: float = 30.0) -> bool:
@@ -87,7 +90,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         "-probesize", "5M",
         "-analyzeduration", "5000000",
         "-select_streams", "v:0",
-        "-show_entries", "stream=codec_name,pix_fmt,profile,width,height:format_tags=title",
+        "-show_entries", "stream=codec_name,pix_fmt,profile,width,height:format=duration:format_tags=title",
         "-of", "json",
         stream_url,
     ]
@@ -150,6 +153,14 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     s = streams[0]
     item.video_codec = (s.get("codec_name") or "").lower()
     item.pix_fmt = (s.get("pix_fmt") or "").lower()
+    # Fill duration from ffprobe if Telegram didn't extract it (e.g. document uploads)
+    if not item.duration:
+        try:
+            probed_duration = float((payload.get("format") or {}).get("duration") or 0)
+            if probed_duration > 0:
+                item.duration = int(probed_duration)
+        except (TypeError, ValueError):
+            pass
     # Use the embedded title tag as a filename fallback for video-type
     # uploads that Telegram strips the original name from.
     if not item.file_name:
