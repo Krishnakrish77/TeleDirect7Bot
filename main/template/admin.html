@@ -828,46 +828,52 @@
                     shadow-2xl max-h-[90vh] flex flex-col">
           <form method="post" :action="'/admin/edit/' + editing.id"
                 class="flex flex-col min-h-0 flex-1 divide-y divide-white/5">
-            <header class="px-5 py-3 flex items-center gap-3 flex-shrink-0">
-              <h2 class="text-base font-semibold text-white flex-1 min-w-0">
-                Edit bin:<span x-text="editing.id"></span>
-              </h2>
+            <header class="px-4 py-3 flex flex-col gap-2 flex-shrink-0">
+              {# Title row — always full width with close on the right #}
+              <div class="flex items-center gap-2">
+                <h2 class="text-base font-semibold text-white flex-1 min-w-0 truncate">
+                  Edit bin:<span x-text="editing.id"></span>
+                </h2>
+                <button type="button" @click="editing = null"
+                        class="text-slate-400 hover:text-white flex-shrink-0 p-1 -mr-1">✕</button>
+              </div>
               {% if var.GEMINI_API_KEY %}
-              <select x-model="editing.aiModel"
-                      :disabled="aiModelsLoading"
-                      class="px-2 py-1.5 rounded-lg text-xs bg-ink-800/70 text-slate-300
-                             border border-white/10 focus:outline-none focus:ring-1
-                             focus:ring-violet-400/60 flex-shrink-0 max-w-[160px] truncate">
-                <template x-if="aiModelsLoading">
-                  <option value="">Loading models…</option>
-                </template>
-                <template x-if="!aiModelsLoading && !aiModels.length">
-                  <option value="">No models found</option>
-                </template>
-                <template x-for="m in aiModels" :key="m.id">
-                  <option :value="m.id" :selected="m.id === editing.aiModel" x-text="m.name"></option>
-                </template>
-              </select>
-              <button type="button" @click="askAI()"
-                      :disabled="editing.aiLoading"
-                      class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-                             bg-violet-500/20 hover:bg-violet-500/30 text-violet-300
-                             border border-violet-400/30 transition-colors
-                             disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
-                     class="w-3.5 h-3.5" x-show="!editing.aiLoading">
-                  <path d="M12 2a1 1 0 0 1 .967.744L14.146 7.2 17.5 9.134a1 1 0 0 1 0 1.732l-3.354 1.935-1.18 4.455a1 1 0 0 1-1.933 0L9.854 12.8 6.5 10.866a1 1 0 0 1 0-1.732L9.854 7.2l1.179-4.456A1 1 0 0 1 12 2Z"/>
-                </svg>
-                <svg x-show="editing.aiLoading" class="w-3.5 h-3.5 animate-spin"
-                     xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                </svg>
-                <span x-text="editing.aiLoading ? 'Searching…' : 'Suggest'"></span>
-              </button>
+              {# AI controls on their own row so they have room on narrow screens #}
+              <div class="flex items-center gap-2">
+                <select x-model="editing.aiModel"
+                        :disabled="aiModelsLoading"
+                        class="flex-1 min-w-0 px-2 py-2 rounded-lg text-xs bg-ink-800/70 text-slate-300
+                               border border-white/10 focus:outline-none focus:ring-1
+                               focus:ring-violet-400/60 truncate">
+                  <template x-if="aiModelsLoading">
+                    <option value="">Loading models…</option>
+                  </template>
+                  <template x-if="!aiModelsLoading && !aiModels.length">
+                    <option value="">No models found</option>
+                  </template>
+                  <template x-for="m in aiModels" :key="m.id">
+                    <option :value="m.id" :selected="m.id === editing.aiModel" x-text="m.name"></option>
+                  </template>
+                </select>
+                <button type="button" @click="askAI()"
+                        :disabled="editing.aiLoading"
+                        class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium
+                               bg-violet-500/20 hover:bg-violet-500/30 text-violet-300
+                               border border-violet-400/30 transition-colors
+                               disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                       class="w-3.5 h-3.5" x-show="!editing.aiLoading">
+                    <path d="M12 2a1 1 0 0 1 .967.744L14.146 7.2 17.5 9.134a1 1 0 0 1 0 1.732l-3.354 1.935-1.18 4.455a1 1 0 0 1-1.933 0L9.854 12.8 6.5 10.866a1 1 0 0 1 0-1.732L9.854 7.2l1.179-4.456A1 1 0 0 1 12 2Z"/>
+                  </svg>
+                  <svg x-show="editing.aiLoading" class="w-3.5 h-3.5 animate-spin"
+                       xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  <span x-text="editing.aiLoading ? 'Searching…' : 'Suggest'"></span>
+                </button>
+              </div>
               {% endif %}
-              <button type="button" @click="editing = null"
-                      class="text-slate-400 hover:text-white flex-shrink-0">✕</button>
             </header>
 
             {# Scrollable body — the modal can grow taller than the
@@ -875,7 +881,7 @@
                cap the container at 90vh and let the body region
                scroll internally. Header + footer stay anchored so
                the Save button is always reachable. #}
-            <div class="px-5 py-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
+            <div class="px-4 py-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
               <p x-show="editing.aiError" x-cloak
                  class="text-xs text-red-400 px-3 py-2 rounded bg-red-500/10 border border-red-400/20"
                  x-text="editing.aiError"></p>
@@ -1095,24 +1101,24 @@
               </div>
             </div>
 
-            <footer class="px-5 py-3 flex items-center gap-2 flex-shrink-0">
+            <footer class="px-4 py-3 flex items-center gap-2 flex-shrink-0 flex-wrap">
               {# Clear TMDB: wipes enrichment fields so the item can be
                  re-enriched fresh or left as a plain upload entry. #}
               <button type="submit" name="action" value="clear-tmdb"
                       @click.prevent="if (confirm('Clear all TMDB enrichment for this item (poster, genres, overview, TMDB id)?')) { $el.form.action = '/admin/clear-tmdb/' + editing.id; $el.form.submit(); }"
-                      class="mr-auto px-3 py-1.5 rounded text-xs
+                      class="mr-auto px-3 py-2 rounded text-xs
                              text-red-400 border border-red-400/20
                              hover:bg-red-500/10 transition-colors">
                 Clear TMDB
               </button>
               <button type="button" @click="editing = null"
-                      class="px-3 py-1.5 rounded text-sm
+                      class="px-4 py-2 rounded text-sm
                              bg-ink-800 text-slate-300 border border-white/5
                              hover:bg-ink-700 transition-colors">
                 Cancel
               </button>
               <button type="submit"
-                      class="px-4 py-1.5 rounded text-sm font-medium
+                      class="px-5 py-2 rounded text-sm font-medium
                              bg-brand-500 text-white
                              hover:bg-brand-600 transition-colors">
                 Save

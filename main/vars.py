@@ -54,3 +54,8 @@ class Var(object):
 
     BANNED_CHANNELS = list({int(x) for x in str(environ.get("BANNED_CHANNELS", "")).split()})
     BANNED_USERS = list({int(x) for x in str(environ.get("BANNED_USERS", "")).split()})
+
+    # Optional user-account session string for grabbing media from protected
+    # (copy/forward-restricted) channels. Generate with any Pyrogram string
+    # session script and set USER_SESSION in .env.
+    USER_SESSION = environ.get("USER_SESSION", "").strip()
