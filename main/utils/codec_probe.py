@@ -84,9 +84,12 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         "ffprobe",
         "-v", "error",
         "-hide_banner",
-        # Limit how much ffprobe pulls. ~5MB is more than enough to
-        # read MOOV / EBML / MPEG-PS headers; keeps probe latency
-        # bounded for huge files.
+        # Allow 45s per HTTP request — the skeleton cache tail warmup
+        # (512 KB from Telegram) can take 3-10s on a cold connection.
+        "-timeout", "45000000",
+        # Tolerate broken MP4 index atoms.
+        "-fflags", "+ignidx+igndts",
+        "-err_detect", "ignore_err",
         "-probesize", "5M",
         "-analyzeduration", "5000000",
         "-select_streams", "v:0",

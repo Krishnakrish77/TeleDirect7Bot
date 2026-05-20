@@ -28,8 +28,10 @@ from typing import Dict, Optional
 from main.utils import chunk_size as _chunk_size, offset_fix as _offset_fix
 
 
-HEAD_SIZE = 2 * 1024 * 1024   # 2 MB
-TAIL_SIZE = 2 * 1024 * 1024   # 2 MB
+HEAD_SIZE = 2 * 1024 * 1024     # 2 MB  — covers MKV header + SeekHead
+TAIL_SIZE = 512 * 1024          # 512 KB — covers MP4 MOOV (usually <200 KB);
+                                 # smaller = faster cold-cache warmup for
+                                 # ffprobe/ffmpeg thumbnail seeks
 TTL_SECONDS = 60 * 60         # 1 hour
 
 

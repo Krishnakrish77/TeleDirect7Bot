@@ -280,9 +280,9 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0) -> Optional[byt
     args = [
         "ffmpeg",
         "-hide_banner", "-loglevel", "error",
-        # HTTP-level read timeout (microseconds) so ffmpeg fails fast if the
-        # loopback stream is slow rather than hanging until our Python timeout.
-        "-timeout", "20000000",         # 20s per HTTP request
+        # HTTP-level read timeout (microseconds). Cold-cache tail warmup
+        # fetches 512 KB from Telegram which takes ~3-10s; give enough room.
+        "-timeout", "45000000",         # 45s per HTTP request
         # Tolerate broken MP4 indices (STCO/STSC mismatches).
         "-fflags", "+ignidx+igndts+discardcorrupt",
         "-err_detect", "ignore_err",
@@ -306,7 +306,7 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0) -> Optional[byt
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=25)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
         except asyncio.TimeoutError:
             logging.warning("thumbnail grab timed out for %s", source_url)
             return None
