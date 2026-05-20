@@ -42,19 +42,33 @@ async def _run(bot: Client, chat_id: int):
         finally:
             _queues.pop(chat_id, None)
 
+    # Prompt for separate API credentials — reusing the bot's api_id from the
+    # same server IP causes Telegram to flag the login as suspicious.
+    try:
+        api_id_str = (await ask(
+            "Send your **API ID** (integer).\n"
+            "Get one at my.telegram.org → App configuration.\n\n"
+            "/cancel to abort."
+        )).strip()
+        api_id = int(api_id_str)
+    except ValueError:
+        await bot.send_message(chat_id, "Invalid API ID — must be a number. Run /gensession to retry.")
+        return
+
+    api_hash = (await ask("Now send your **API HASH**:")).strip()
+
     client = Client(
         name="gen_session",
-        api_id=Var.API_ID,
-        api_hash=Var.API_HASH,
+        api_id=api_id,
+        api_hash=api_hash,
         in_memory=True,
     )
     try:
         await client.connect()
 
         phone = (await ask(
-            "Send your phone number in international format.\n"
-            "Example: `+919876543210`\n\n"
-            "/cancel to abort."
+            "Now send your phone number in international format.\n"
+            "Example: `+919876543210`"
         )).strip()
 
         try:

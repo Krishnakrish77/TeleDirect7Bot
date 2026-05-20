@@ -39,8 +39,8 @@ async def _get_user_client() -> Client:
                 raise RuntimeError("USER_SESSION is not configured in .env")
             _user_client = await Client(
                 name="grab_user",
-                api_id=Var.API_ID,
-                api_hash=Var.API_HASH,
+                api_id=Var.USER_API_ID or Var.API_ID,
+                api_hash=Var.USER_API_HASH or Var.API_HASH,
                 session_string=Var.USER_SESSION,  # implies in_memory=True
                 no_updates=True,
             ).start()

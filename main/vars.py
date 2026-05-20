@@ -56,6 +56,9 @@ class Var(object):
     BANNED_USERS = list({int(x) for x in str(environ.get("BANNED_USERS", "")).split()})
 
     # Optional user-account session string for grabbing media from protected
-    # (copy/forward-restricted) channels. Generate with any Pyrogram string
-    # session script and set USER_SESSION in .env.
+    # (copy/forward-restricted) channels. Generate via /gensession command.
+    # Use a SEPARATE api_id/api_hash from the bot to avoid Telegram flagging
+    # the login — create one at my.telegram.org → App configuration.
     USER_SESSION = environ.get("USER_SESSION", "").strip()
+    USER_API_ID = int(environ.get("USER_API_ID", "0") or "0")
+    USER_API_HASH = environ.get("USER_API_HASH", "").strip()
