@@ -144,31 +144,27 @@ async def _reupload(src: Message) -> Message:
 _selections: Dict[Tuple[int, int], set] = {}
 
 
-async def _build_page(chat_id: int, offset_id: int):
+async def _build_page(chat_id: int, skip: int):
     """
-    Scan up to SCAN_LIMIT messages from chat_id starting before offset_id.
-    Returns (media_msgs, next_offset_id, has_more).
+    Scan up to SCAN_LIMIT messages from chat_id, skipping the first `skip`
+    messages (newest-first). Returns (media_msgs, next_skip, has_more).
+    Uses the count-based `offset` parameter to avoid offset_id inclusive/
+    exclusive ambiguity across Pyrogram/kurigram versions.
     """
     user = await _get_user_client()
     media_msgs = []
-    last_id = 0
+    scanned = 0
 
-    kwargs = {"limit": SCAN_LIMIT}
-    if offset_id:
-        kwargs["offset_id"] = offset_id
-
-    async for msg in user.get_chat_history(chat_id, **kwargs):
-        last_id = msg.id
+    async for msg in user.get_chat_history(chat_id, limit=SCAN_LIMIT, offset=skip):
+        scanned += 1
         if get_media_from_message(msg):
             media_msgs.append(msg)
         if len(media_msgs) >= PAGE_SIZE:
             break
 
-    # get_chat_history offset_id is inclusive, so subtract 1 to avoid
-    # re-showing the last message on the next page.
-    next_offset = max(0, last_id - 1)
-    has_more = len(media_msgs) >= PAGE_SIZE and next_offset > 0
-    return media_msgs, next_offset, has_more
+    next_skip = skip + scanned
+    has_more = len(media_msgs) >= PAGE_SIZE
+    return media_msgs, next_skip, has_more
 
 
 def _file_label(msg: Message, selected: bool) -> str:
@@ -306,7 +302,7 @@ async def grablist_handler(client: Client, m: Message):
         chat_id = chat_obj.id
         chat_title = getattr(chat_obj, "title", str(chat_id))
 
-        media_msgs, next_offset, has_more = await _build_page(chat_id, offset_id=0)
+        media_msgs, next_offset, has_more = await _build_page(chat_id, skip=0)
         if not media_msgs:
             await status.edit_text("No media found in this channel.")
             return
@@ -392,13 +388,13 @@ async def grablist_cb(client: Client, cb: CallbackQuery):
     """Load next page — clears selections since the list changes."""
     parts = cb.data.split("_", 2)
     chat_id = int(parts[1])
-    offset_id = int(parts[2])
+    skip = int(parts[2])
 
     await cb.answer("Loading…")
     # Clear selections for this message when the page changes
     _selections.pop((cb.from_user.id, cb.message.id), None)
     try:
-        media_msgs, next_offset, has_more = await _build_page(chat_id, offset_id)
+        media_msgs, next_offset, has_more = await _build_page(chat_id, skip)
         if not media_msgs:
             await cb.message.edit_text("No more media found.")
             return
