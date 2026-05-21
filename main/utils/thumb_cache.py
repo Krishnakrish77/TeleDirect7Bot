@@ -118,14 +118,24 @@ async def cached_or_fetch(message_id: int, fetcher) -> Optional[bytes]:
         if data is not None:
             set_(message_id, data)
             _failures.pop(message_id, None)
-            # Write through to L2 so the next deploy doesn't re-run ffmpeg.
-            if store is not None:
-                try:
-                    await store.set_thumb(message_id, data)
-                except Exception:
-                    logging.exception(
-                        "thumb_cache: L2 set failed for msg %d", message_id,
-                    )
         else:
             _failures[message_id] = time.monotonic()
-        return data
+
+    # ── outside lock_for(message_id) ──
+    # Fire-and-forget L2 write so a slow Mongo round trip doesn't block
+    # other concurrent /thumb requests for the same message. The bytes
+    # are already in L1 so subsequent in-process hits are still fast;
+    # the durable mirror is best-effort.
+    if data is not None and store is not None:
+        async def _persist():
+            try:
+                await store.set_thumb(message_id, data)
+            except Exception:
+                logging.exception(
+                    "thumb_cache: L2 set failed for msg %d", message_id,
+                )
+        try:
+            asyncio.create_task(_persist())
+        except RuntimeError:
+            pass  # no running loop; skip
+    return data

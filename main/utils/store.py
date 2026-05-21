@@ -36,6 +36,14 @@ import logging
 import os
 from typing import AsyncIterator, Iterable, List, Optional, Protocol
 
+# Motor pulls in pymongo which pulls in bson. Importing the Binary
+# wrapper at module level (rather than inside the hot set_thumb path)
+# avoids paying the import lookup on every persisted thumbnail.
+try:
+    from bson.binary import Binary as _Binary
+except ImportError:  # pragma: no cover — only matters for Mongo deployments
+    _Binary = bytes  # type: ignore[assignment,misc]
+
 
 class Store(Protocol):
     """Catalogue persistence contract.
@@ -137,12 +145,18 @@ class MongoStore:
             logging.exception("store.mongo: get_thumb failed for bin:%d", message_id)
             return None
 
+    # Defensive cap. MongoDB BSON docs are limited to 16 MB; real JPEG
+    # thumbs are ≤30 KB. A future fetcher producing huge bytes would
+    # otherwise crash the write — quietly skip persisting instead.
+    _THUMB_MAX_BYTES = 15 * 1024 * 1024
+
     async def set_thumb(self, message_id: int, data: bytes) -> None:
+        if not data or len(data) > self._THUMB_MAX_BYTES:
+            return
         try:
-            from bson.binary import Binary
             await self._thumbs.replace_one(
                 {"_id": int(message_id)},
-                {"_id": int(message_id), "data": Binary(data)},
+                {"_id": int(message_id), "data": _Binary(data)},
                 upsert=True,
             )
         except Exception:

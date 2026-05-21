@@ -570,7 +570,7 @@ async def remove(message_id: int, bot=None) -> None:
     await _store_remove(message_id)
     # Drop the cached thumbnail too so the thumbs collection doesn't
     # accumulate orphans. No-op for non-Mongo stores.
-    if _store is not None:
+    if _store_active():
         try:
             await _store.remove_thumb(message_id)
         except Exception:
