@@ -1753,8 +1753,14 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
         # Filename or title carries an SxxEyy / 1x03 / Season N pattern.
         item.series_key = sm.key
         item.series_title = hit.title if hit.kind == "tv" and hit.title else sm.title
-        item.season = sm.season
-        item.episode = sm.episode
+        # Preserve admin-set season/episode (when non-None). Only fall back
+        # to the filename parser's values when the item doesn't already
+        # have an explicit number — otherwise an admin edit gets silently
+        # reverted every time enrich_with_tmdb_id runs.
+        if item.season is None:
+            item.season = sm.season
+        if item.episode is None:
+            item.episode = sm.episode
         item.movie_key = ""
     elif hit.kind == "tv" and hit.title:
         # TMDB says the title is a TV show, but the source filename lacks
