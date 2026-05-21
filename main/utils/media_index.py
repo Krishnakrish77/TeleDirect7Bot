@@ -2538,3 +2538,86 @@ def stats() -> dict:
         "duplicate_groups": duplicate_groups,
         "duplicate_extras": duplicate_extras,
     }
+
+
+def dashboard_stats() -> dict:
+    """Richer aggregation for the /admin/dashboard view.
+
+    Builds on top of stats() with insights that don't belong in the slim
+    inline summary: storage breakdown by quality + codec, recent additions,
+    largest items, top series by episode count, year distribution.
+    """
+    base = stats()
+    storage_by_quality: dict = {}
+    storage_by_codec: dict = {}
+    year_buckets: dict = {}
+    series_episode_counts: dict = {}
+    series_titles: dict = {}
+    recent: list = []
+    largest: list = []
+    for it in _items.values():
+        size = it.file_size or 0
+        q = it.quality or "unknown"
+        storage_by_quality[q] = storage_by_quality.get(q, 0) + size
+        codec = (it.video_codec or "unprobed").lower()
+        storage_by_codec[codec] = storage_by_codec.get(codec, 0) + size
+        if it.year:
+            decade = (it.year // 10) * 10
+            year_buckets[decade] = year_buckets.get(decade, 0) + 1
+        if it.series_key:
+            series_episode_counts[it.series_key] = series_episode_counts.get(it.series_key, 0) + 1
+            if it.series_key not in series_titles and it.series_title:
+                series_titles[it.series_key] = it.series_title
+        recent.append(it)
+        largest.append(it)
+
+    recent.sort(key=lambda x: x.message_id, reverse=True)
+    largest.sort(key=lambda x: x.file_size or 0, reverse=True)
+    top_series = sorted(
+        series_episode_counts.items(), key=lambda kv: (-kv[1], kv[0]),
+    )[:10]
+
+    quality_order = ["4K", "1080p", "720p", "480p", "unknown"]
+    storage_quality_sorted = [
+        (q, storage_by_quality.get(q, 0)) for q in quality_order if storage_by_quality.get(q)
+    ]
+    codec_sorted = sorted(
+        storage_by_codec.items(), key=lambda kv: (-kv[1], kv[0]),
+    )
+    year_sorted = sorted(year_buckets.items(), key=lambda kv: kv[0])
+
+    return {
+        **base,
+        "storage_by_quality": storage_quality_sorted,
+        "storage_by_codec": codec_sorted,
+        "year_distribution": year_sorted,
+        "top_series": [
+            {"key": k, "title": series_titles.get(k, k), "count": n}
+            for k, n in top_series
+        ],
+        "recent_additions": [
+            {
+                "message_id": it.message_id,
+                "secure_hash": it.secure_hash,
+                "title": it.title,
+                "year": it.year,
+                "file_size": it.file_size,
+                "series_title": it.series_title,
+                "season": it.season,
+                "episode": it.episode,
+                "quality": it.quality,
+            }
+            for it in recent[:10]
+        ],
+        "largest_items": [
+            {
+                "message_id": it.message_id,
+                "secure_hash": it.secure_hash,
+                "title": it.title,
+                "year": it.year,
+                "file_size": it.file_size,
+                "quality": it.quality,
+            }
+            for it in largest[:10]
+        ],
+    }

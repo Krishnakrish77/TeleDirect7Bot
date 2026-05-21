@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard · TeleDirect{% endblock %}
+
+{% block content %}
+  <div class="w-full max-w-6xl">
+    <header class="mb-6 flex items-end justify-between gap-3 flex-wrap">
+      <div>
+        <h1 class="text-2xl font-semibold text-slate-100">Catalogue dashboard</h1>
+        <p class="text-sm text-slate-400 mt-1">
+          {{ stats.total }} item{{ '' if stats.total == 1 else 's' }}
+          {% if stats.total_size_bytes %}
+            · {{ stats.total_size_bytes | humansize }} total
+          {% endif %}
+        </p>
+      </div>
+      <a href="/admin"
+         class="text-sm px-3 py-1.5 rounded bg-ink-800 text-slate-200
+                border border-white/5 hover:bg-ink-700 transition-colors">
+        ← Admin
+      </a>
+    </header>
+
+    {# ── Composition + Quality + Codec storage breakdown ─────────────── #}
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Composition</p>
+        <div class="space-y-1.5 text-sm text-slate-300 tabular-nums">
+          <div class="flex justify-between"><span>Series episodes</span>
+            <span>{{ stats.kinds.series_episodes }}</span></div>
+          <div class="flex justify-between"><span>Movie variants</span>
+            <span>{{ stats.kinds.movie_variants }}</span></div>
+          <div class="flex justify-between"><span>Standalone</span>
+            <span>{{ stats.kinds.standalone }}</span></div>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Storage by quality</p>
+        <div class="space-y-1.5 text-sm text-slate-300 tabular-nums">
+          {% for q, bytes in stats.storage_by_quality %}
+            <div class="flex justify-between">
+              <span>{{ q }} <span class="text-slate-500">· {{ stats.quality_buckets | selectattr('0', 'eq', q) | map(attribute=1) | first | default(0) }} items</span></span>
+              <span>{{ bytes | humansize }}</span>
+            </div>
+          {% else %}
+            <p class="text-xs text-slate-500">No data yet.</p>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Storage by codec</p>
+        <div class="space-y-1.5 text-sm text-slate-300 tabular-nums">
+          {% for codec, bytes in stats.storage_by_codec %}
+            <div class="flex justify-between">
+              <span class="{% if codec == 'unprobed' %}text-slate-500{% endif %}">{{ codec }}</span>
+              <span>{{ bytes | humansize }}</span>
+            </div>
+          {% else %}
+            <p class="text-xs text-slate-500">Run Probe codecs to populate.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    {# ── Enrichment + Codec health + Top genres ──────────────────────── #}
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">TMDB enrichment</p>
+        <div class="space-y-1.5 text-sm text-slate-300 tabular-nums">
+          <div class="flex justify-between">
+            <span class="text-emerald-300">Enriched</span>
+            <span>{{ stats.enrichment.enriched }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-amber-300">Attempted, no match</span>
+            <span>{{ stats.enrichment.attempted_no_match }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Never attempted</span>
+            <span>{{ stats.enrichment.never_attempted }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Codec compatibility</p>
+        <div class="space-y-1.5 text-sm text-slate-300 tabular-nums">
+          <div class="flex justify-between">
+            <span class="text-emerald-300">Browser-playable</span>
+            <span>{{ stats.codec_health.probed_playable }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-red-300">Needs native player</span>
+            <span>{{ stats.codec_health.probed_unplayable }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Not probed yet</span>
+            <span>{{ stats.codec_health.never_probed }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Top genres</p>
+        <div class="flex flex-wrap gap-1.5">
+          {% for g, n in stats.top_genres %}
+            <span class="px-2 py-0.5 rounded text-xs
+                         bg-brand-500/15 text-brand-300
+                         border border-brand-400/30 tabular-nums">
+              {{ g }} · {{ n }}
+            </span>
+          {% else %}
+            <p class="text-xs text-slate-500">Run Enrich (TMDB) to populate.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    {# ── Issues to clean up ──────────────────────────────────────────── #}
+    <section class="mb-6">
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Issues to clean up</p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm text-slate-300 tabular-nums">
+          <div>
+            <a href="/admin?filter=duplicates"
+               class="block hover:text-amber-200 transition-colors {% if stats.duplicate_extras %}text-amber-300{% endif %}">
+              <span class="block text-xs text-slate-500">Duplicates</span>
+              {% if stats.duplicate_extras %}
+                <span>{{ stats.duplicate_extras }} extras · {{ stats.duplicate_groups }} files</span>
+              {% else %}
+                <span>none</span>
+              {% endif %}
+            </a>
+          </div>
+          <div>
+            <a href="/admin?filter=no-poster"
+               class="block hover:text-amber-200 transition-colors {% if stats.missing_poster %}text-amber-300{% endif %}">
+              <span class="block text-xs text-slate-500">Missing poster</span>
+              <span>{{ stats.missing_poster }}</span>
+            </a>
+          </div>
+          <div>
+            <a href="/admin?filter=no-thumb"
+               class="block hover:text-amber-200 transition-colors {% if stats.missing_thumb %}text-amber-300{% endif %}">
+              <span class="block text-xs text-slate-500">Missing thumbnail</span>
+              <span>{{ stats.missing_thumb }}</span>
+            </a>
+          </div>
+          <div>
+            <a href="/admin?filter=unenriched"
+               class="block hover:text-amber-200 transition-colors {% if stats.enrichment.never_attempted %}text-amber-300{% endif %}">
+              <span class="block text-xs text-slate-500">Unenriched</span>
+              <span>{{ stats.enrichment.never_attempted }}</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {# ── Top series + Year distribution ──────────────────────────────── #}
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Top series</p>
+        {% if stats.top_series %}
+          <ol class="space-y-1.5 text-sm text-slate-300">
+            {% for s in stats.top_series %}
+              <li class="flex justify-between gap-3">
+                <a href="/series/{{ s.key }}" target="_blank"
+                   class="truncate hover:text-brand-300 transition-colors">
+                  {{ s.title }}
+                </a>
+                <span class="text-slate-400 tabular-nums flex-shrink-0">{{ s.count }} ep</span>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}
+          <p class="text-xs text-slate-500">No series yet.</p>
+        {% endif %}
+      </div>
+
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Year distribution</p>
+        {% if stats.year_distribution %}
+          {% set max_count = stats.year_distribution | map(attribute=1) | max %}
+          <div class="space-y-1.5">
+            {% for decade, count in stats.year_distribution %}
+              <div class="flex items-center gap-3 text-sm">
+                <span class="text-slate-400 tabular-nums w-12 flex-shrink-0">{{ decade }}s</span>
+                <div class="flex-1 h-2 bg-ink-900 rounded overflow-hidden">
+                  <div class="h-full bg-brand-400/60"
+                       style="width: {{ (count * 100 / max_count) | round(1) }}%"></div>
+                </div>
+                <span class="text-slate-300 tabular-nums w-8 text-right">{{ count }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-xs text-slate-500">No year metadata yet.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    {# ── Recent additions + Largest items ────────────────────────────── #}
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Recent additions</p>
+        <ol class="space-y-1.5 text-sm text-slate-300">
+          {% for it in stats.recent_additions %}
+            <li class="flex justify-between gap-3">
+              <a href="/watch/{{ it.secure_hash }}{{ it.message_id }}" target="_blank"
+                 class="truncate hover:text-brand-300 transition-colors">
+                {{ it.title }}{% if it.year %} ({{ it.year }}){% endif %}
+                {% if it.season and it.episode %}
+                  <span class="text-slate-500 text-xs">S{{ '%02d' % it.season }}E{{ '%02d' % it.episode }}</span>
+                {% endif %}
+              </a>
+              <span class="text-slate-500 text-xs tabular-nums flex-shrink-0">
+                {% if it.quality %}{{ it.quality }} · {% endif %}{{ it.file_size | humansize }}
+              </span>
+            </li>
+          {% endfor %}
+        </ol>
+      </div>
+
+      <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
+        <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Largest items</p>
+        <ol class="space-y-1.5 text-sm text-slate-300">
+          {% for it in stats.largest_items %}
+            <li class="flex justify-between gap-3">
+              <a href="/watch/{{ it.secure_hash }}{{ it.message_id }}" target="_blank"
+                 class="truncate hover:text-brand-300 transition-colors">
+                {{ it.title }}{% if it.year %} ({{ it.year }}){% endif %}
+              </a>
+              <span class="text-slate-400 text-xs tabular-nums flex-shrink-0">
+                {% if it.quality %}{{ it.quality }} · {% endif %}{{ it.file_size | humansize }}
+              </span>
+            </li>
+          {% endfor %}
+        </ol>
+      </div>
+    </section>
+  </div>
+{% endblock %}

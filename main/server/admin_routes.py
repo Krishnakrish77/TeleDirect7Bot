@@ -213,6 +213,20 @@ async def admin_home(request: web.Request) -> web.Response:
     return resp
 
 
+@routes.get("/admin/dashboard")
+async def admin_dashboard(request: web.Request) -> web.Response:
+    """Catalogue insights dashboard — health metrics, storage breakdown,
+    recent additions, top series, largest files, year distribution.
+    """
+    _require_session(request)
+    tpl = _env.get_template("dashboard.html")
+    body = await tpl.render_async(
+        stats=media_index.dashboard_stats(),
+        var=Var,
+    )
+    return _html(body)
+
+
 def _is_htmx(request: web.Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
