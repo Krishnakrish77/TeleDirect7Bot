@@ -92,17 +92,17 @@
            filter(value) {
              const v = (value || '').trim().toLowerCase();
              this.q = v;
-             const lis = $root.querySelectorAll('li[data-ep-title]');
-             let hidden = 0;
+             // The <li> items live outside this x-data scope (in sibling
+             // <section>s below), so $root won't find them — use document.
+             const lis = document.querySelectorAll('li[data-ep-title]');
              lis.forEach(li => {
                const title = li.dataset.epTitle || '';
                const match = !v || title.includes(v);
                li.style.display = match ? '' : 'none';
-               if (!match) hidden++;
              });
              // Hide empty season sections so the layout doesn't keep
              // dead headers around.
-             $root.querySelectorAll('section[data-season]').forEach(s => {
+             document.querySelectorAll('section[data-season]').forEach(s => {
                const any = Array.from(s.querySelectorAll('li[data-ep-title]'))
                                 .some(li => li.style.display !== 'none');
                s.style.display = any ? '' : 'none';
