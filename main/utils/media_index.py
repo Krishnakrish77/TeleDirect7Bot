@@ -568,6 +568,14 @@ async def remove(message_id: int, bot=None) -> None:
     if existed is None:
         return
     await _store_remove(message_id)
+    # Drop the cached thumbnail too so the thumbs collection doesn't
+    # accumulate orphans. No-op for non-Mongo stores.
+    if _store is not None:
+        try:
+            await _store.remove_thumb(message_id)
+        except Exception:
+            logging.debug("remove: thumb cleanup failed for bin:%d",
+                          message_id, exc_info=True)
     if bot is not None:
         schedule_snapshot(bot)  # No-op when Mongo is active.
 

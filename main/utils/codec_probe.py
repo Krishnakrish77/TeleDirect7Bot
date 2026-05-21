@@ -348,10 +348,24 @@ async def _probe_quietly(item) -> None:
     """Per-upload background probe. Shares the semaphore with the bulk
     pass so simultaneous schedules never run more than
     ``_BULK_CONCURRENCY`` ffprobes at once.
+
+    Brand-new uploads frequently fail the first attempt because the
+    streaming server's skeleton cache for that file is stone-cold and
+    Telegram's metadata propagation can lag a few seconds. Retry once
+    after a short delay if the first attempt didn't produce a duration.
     """
     try:
         async with _semaphore():
             await probe_item(item)
+        if (not getattr(item, "duration", 0)
+                and not getattr(item, "video_codec", None)):
+            # First attempt produced nothing usable. Wait for the file
+            # to settle, then retry once. This catches cold-cache races
+            # without making the bulk Probe sweep mandatory.
+            item.probed_at = 0.0  # let probe_item run again
+            await asyncio.sleep(15)
+            async with _semaphore():
+                await probe_item(item)
     except Exception:
         logging.exception("codec_probe: background probe failed for bin:%d",
                           item.message_id)

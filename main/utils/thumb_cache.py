@@ -1,10 +1,20 @@
 """
-In-memory LRU cache for thumbnail JPEGs.
+Two-tier thumbnail cache.
 
-Every browser hitting / triggers ~24 separate /thumb/* requests. Without
-this cache, each one calls Telegram's download_media for the JPEG bytes.
-Thumbnails are tiny (≤30 KB JPEG) and immutable per message — perfect for
-a small in-process cache.
+Layer 1: in-memory LRU per process. Layer 2: persistent MongoDB
+collection (when configured). Survives restart so series-page
+thumbnails don't re-run ffmpeg from cold every deploy — which was
+costing ~5-10 s per item × 50 items per series page.
+
+Every browser hitting / triggers ~24 separate /thumb/* requests. Each
+call hierarchy:
+
+   ┌── L1 (in-memory) hit ── return
+   │
+   ├── L2 (Mongo) hit ────── hydrate L1, return
+   │
+   └── fetcher() (Telegram download_media or ffmpeg frame grab)
+        └── on success → write through to L1 + L2
 """
 
 from __future__ import annotations
@@ -25,6 +35,17 @@ _cache: "OrderedDict[int, Tuple[float, bytes]]" = OrderedDict()
 _locks: Dict[int, asyncio.Lock] = {}
 _failures: Dict[int, float] = {}  # message_id → timestamp of last fetch failure
 _global_lock = asyncio.Lock()
+
+
+def _store():
+    """Lazy accessor for the MongoDB-backed durable store. Returns None
+    when no Mongo is configured — callers fall back to L1-only behaviour.
+    Import lazily to avoid a startup-time circular import via media_index."""
+    try:
+        from main.utils import media_index
+        return media_index._store
+    except Exception:
+        return None
 
 
 def get(message_id: int) -> Optional[bytes]:
@@ -59,10 +80,11 @@ async def cached_or_fetch(message_id: int, fetcher) -> Optional[bytes]:
     Failed fetches are remembered for FAIL_TTL_SECONDS so broken files
     (corrupt MP4, revoked file_id) don't spawn a new ffmpeg process on
     every page load."""
+    # L1 — in-memory LRU
     data = get(message_id)
     if data is not None:
         return data
-    # Short-circuit if we already know this thumb can't be generated.
+    # Failure short-circuit (don't keep retrying broken files this hour)
     fail_ts = _failures.get(message_id, 0.0)
     if fail_ts and (time.monotonic() - fail_ts) < FAIL_TTL_SECONDS:
         return None
@@ -74,6 +96,19 @@ async def cached_or_fetch(message_id: int, fetcher) -> Optional[bytes]:
         fail_ts = _failures.get(message_id, 0.0)
         if fail_ts and (time.monotonic() - fail_ts) < FAIL_TTL_SECONDS:
             return None
+        # L2 — durable store (MongoDB). Hydrate L1 on hit so subsequent
+        # requests in the same process are L1-fast.
+        store = _store()
+        if store is not None:
+            try:
+                persisted = await store.get_thumb(message_id)
+            except Exception:
+                logging.exception("thumb_cache: L2 get failed for msg %d", message_id)
+                persisted = None
+            if persisted:
+                set_(message_id, persisted)
+                return persisted
+        # Miss everywhere — fetch fresh.
         try:
             data = await fetcher()
         except Exception:
@@ -83,6 +118,14 @@ async def cached_or_fetch(message_id: int, fetcher) -> Optional[bytes]:
         if data is not None:
             set_(message_id, data)
             _failures.pop(message_id, None)
+            # Write through to L2 so the next deploy doesn't re-run ffmpeg.
+            if store is not None:
+                try:
+                    await store.set_thumb(message_id, data)
+                except Exception:
+                    logging.exception(
+                        "thumb_cache: L2 set failed for msg %d", message_id,
+                    )
         else:
             _failures[message_id] = time.monotonic()
         return data

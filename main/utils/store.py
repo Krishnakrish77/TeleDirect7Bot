@@ -83,6 +83,11 @@ class MongoStore:
         self._meta_coll_name = meta_coll
         self._items = self._client[db_name][items_coll]
         self._meta = self._client[db_name][meta_coll]
+        # Persistent thumbnail cache. Keeps generated JPEGs (Telegram
+        # native + ffmpeg fallback) across restarts so cold series pages
+        # don't re-run ffmpeg on every deploy. Collection name doesn't
+        # need env-tuning — fixed sibling of items/meta.
+        self._thumbs = self._client[db_name]["thumbs"]
         self._initialised = False
 
     async def init(self) -> None:
@@ -114,6 +119,40 @@ class MongoStore:
         except Exception:
             logging.exception("store.mongo: init failed")
             raise
+
+    # ── Thumbnail persistence ────────────────────────────────────────
+    # JPEG bytes are stored as BSON Binary keyed by message_id. Survives
+    # restarts so series pages don't re-run ffmpeg from cold.
+
+    async def get_thumb(self, message_id: int) -> Optional[bytes]:
+        try:
+            doc = await self._thumbs.find_one(
+                {"_id": int(message_id)}, projection={"data": 1},
+            )
+            if not doc:
+                return None
+            data = doc.get("data")
+            return bytes(data) if data else None
+        except Exception:
+            logging.exception("store.mongo: get_thumb failed for bin:%d", message_id)
+            return None
+
+    async def set_thumb(self, message_id: int, data: bytes) -> None:
+        try:
+            from bson.binary import Binary
+            await self._thumbs.replace_one(
+                {"_id": int(message_id)},
+                {"_id": int(message_id), "data": Binary(data)},
+                upsert=True,
+            )
+        except Exception:
+            logging.exception("store.mongo: set_thumb failed for bin:%d", message_id)
+
+    async def remove_thumb(self, message_id: int) -> None:
+        try:
+            await self._thumbs.delete_one({"_id": int(message_id)})
+        except Exception:
+            logging.exception("store.mongo: remove_thumb failed for bin:%d", message_id)
 
     async def load_all(self) -> List[dict]:
         """Return every item as a list of dicts in HubItem-shape.
