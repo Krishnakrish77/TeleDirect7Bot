@@ -550,69 +550,72 @@
       {%- set qs_base = 'filter=' ~ filter_name -%}
       {%- if search_q -%}{%- set qs_base = qs_base ~ '&q=' ~ (search_q|urlencode) -%}{%- endif -%}
 
-      {# Row 1: search · count · pagination — all packed to the left so
-         a wide screen doesn't leave a giant gap between search and count. #}
-      <div class="mb-2 flex flex-wrap items-center gap-3">
-        <form method="get" action="/admin" id="admin-filter-form" class="w-80 flex-shrink-0">
-          <input type="hidden" name="filter" value="{{ filter_name }}" />
-          <label class="relative block">
-            <span class="sr-only">Search</span>
-            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
-                 xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round"
-                    d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
-            </svg>
-            <input type="search" name="q" placeholder="Search title, file, tag, bin id…"
-                   value="{{ search_q }}" autocomplete="off"
-                   x-data
-                   x-init="
-                     let t;
-                     $el.addEventListener('input', () => {
-                       clearTimeout(t);
-                       t = setTimeout(() => $el.form.submit(), 400);
-                     });"
-                   class="w-full pl-9 pr-3 py-1.5 text-sm rounded
-                          bg-ink-800/70 text-slate-100 placeholder-slate-500
-                          border border-white/5
-                          focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
-          </label>
-        </form>
+      {# Single toolbar row, GitHub-issues / Linear style:
+         left  = search + filter chips (chips wrap inline)
+         right = count + pagination (justified to the right edge) #}
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div class="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+          <form method="get" action="/admin" id="admin-filter-form" class="w-64 flex-shrink-0">
+            <input type="hidden" name="filter" value="{{ filter_name }}" />
+            <label class="relative block">
+              <span class="sr-only">Search</span>
+              <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
+                   xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
+              </svg>
+              <input type="search" name="q" placeholder="Search title, file, tag, bin id…"
+                     value="{{ search_q }}" autocomplete="off"
+                     x-data
+                     x-init="
+                       let t;
+                       $el.addEventListener('input', () => {
+                         clearTimeout(t);
+                         t = setTimeout(() => $el.form.submit(), 400);
+                       });"
+                     class="w-full pl-9 pr-3 py-1.5 text-sm rounded
+                            bg-ink-800/70 text-slate-100 placeholder-slate-500
+                            border border-white/5
+                            focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+            </label>
+          </form>
 
-        <span class="text-xs text-slate-500 tabular-nums">
-          {{ filtered_count }} of {{ catalogue_size }}
-        </span>
-
-        {% if total_pages > 1 %}
-          <div class="flex items-center gap-1 text-xs text-slate-400 tabular-nums">
-            {%- if page > 1 %}
-              <a href="/admin?{{ qs_base }}&page={{ page - 1 }}"
-                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
-                 title="Previous page">‹</a>
-            {%- else %}
-              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">‹</span>
-            {%- endif %}
-            <span class="px-1">Page {{ page }} of {{ total_pages }}</span>
-            {%- if page < total_pages %}
-              <a href="/admin?{{ qs_base }}&page={{ page + 1 }}"
-                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
-                 title="Next page">›</a>
-            {%- else %}
-              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">›</span>
-            {%- endif %}
+          <div class="flex flex-wrap items-center gap-1.5">
+            {% for cid, clabel in chips %}
+              <a href="/admin?filter={{ cid }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}"
+                 class="px-2.5 py-1 text-xs rounded-full border transition-colors
+                        {% if filter_name == cid %}bg-brand-500/20 text-brand-200 border-brand-400/40{% else %}bg-ink-800/60 text-slate-300 border-white/5 hover:bg-ink-800{% endif %}">
+                {{ clabel }}
+              </a>
+            {% endfor %}
           </div>
-        {% endif %}
-      </div>
+        </div>
 
-      {# Row 2: filter chips (left-aligned, wrap as needed) #}
-      <div class="mb-3 flex flex-wrap items-center gap-1.5">
-        {% for cid, clabel in chips %}
-          <a href="/admin?filter={{ cid }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}"
-             class="px-2.5 py-1 text-xs rounded-full border transition-colors
-                    {% if filter_name == cid %}bg-brand-500/20 text-brand-200 border-brand-400/40{% else %}bg-ink-800/60 text-slate-300 border-white/5 hover:bg-ink-800{% endif %}">
-            {{ clabel }}
-          </a>
-        {% endfor %}
+        <div class="flex items-center gap-3 text-xs text-slate-400 tabular-nums flex-shrink-0">
+          <span class="text-slate-500">
+            {{ filtered_count }} of {{ catalogue_size }}
+          </span>
+          {% if total_pages > 1 %}
+            <div class="flex items-center gap-1">
+              {%- if page > 1 %}
+                <a href="/admin?{{ qs_base }}&page={{ page - 1 }}"
+                   class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
+                   title="Previous page">‹</a>
+              {%- else %}
+                <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">‹</span>
+              {%- endif %}
+              <span class="px-1">Page {{ page }} of {{ total_pages }}</span>
+              {%- if page < total_pages %}
+                <a href="/admin?{{ qs_base }}&page={{ page + 1 }}"
+                   class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
+                   title="Next page">›</a>
+              {%- else %}
+                <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">›</span>
+              {%- endif %}
+            </div>
+          {% endif %}
+        </div>
       </div>
 
       {# AI review panel — populated by HTMX after clicking '✦ AI clean' #}
