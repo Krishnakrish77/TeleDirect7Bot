@@ -1914,15 +1914,22 @@ async def enrich_one(message_id: int, bot=None) -> bool:
         # 2025). Now that clean_for_search handles the channel-prefix
         # cases on its own, only the full-base queries are tried; if
         # they all miss, admin edit is the recovery path.
+        # Try the raw item.title FIRST. clean_for_search aggressively strips
+        # tokens it thinks are release tags / language markers — e.g. it
+        # turns "Johnny English" into "Johnny" because "English" looks like a
+        # language tag. That would replace the admin's careful title with a
+        # mismatched TMDB record. Honour the operator's exact title before
+        # falling back to cleaned variants.
         candidates: list = []
         seen: set = set()
+        if item.title and len(item.title) >= 2:
+            candidates.append(item.title)
+            seen.add(item.title)
         for raw in (item.title, item.file_name):
             cleaned = clean_for_search(raw, item.file_name)
             if cleaned and cleaned not in seen and len(cleaned) >= 2:
                 candidates.append(cleaned)
                 seen.add(cleaned)
-        if item.title and item.title not in seen and len(item.title) >= 2:
-            candidates.append(item.title)
 
         hit = None
         for q in candidates:
