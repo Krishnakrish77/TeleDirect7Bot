@@ -550,9 +550,10 @@
       {%- set qs_base = 'filter=' ~ filter_name -%}
       {%- if search_q -%}{%- set qs_base = qs_base ~ '&q=' ~ (search_q|urlencode) -%}{%- endif -%}
 
-      {# Row 1: search (left) · count + pagination (right) #}
+      {# Row 1: search · count · pagination — all packed to the left so
+         a wide screen doesn't leave a giant gap between search and count. #}
       <div class="mb-2 flex flex-wrap items-center gap-3">
-        <form method="get" action="/admin" id="admin-filter-form" class="flex-1 min-w-[14rem] max-w-md">
+        <form method="get" action="/admin" id="admin-filter-form" class="w-80 flex-shrink-0">
           <input type="hidden" name="filter" value="{{ filter_name }}" />
           <label class="relative block">
             <span class="sr-only">Search</span>
@@ -578,30 +579,29 @@
           </label>
         </form>
 
-        <div class="ml-auto flex items-center gap-3 text-xs text-slate-400 tabular-nums">
-          <span class="text-slate-500">
-            {{ filtered_count }} of {{ catalogue_size }}
-          </span>
-          {% if total_pages > 1 %}
-            <div class="flex items-center gap-1">
-              {%- if page > 1 %}
-                <a href="/admin?{{ qs_base }}&page={{ page - 1 }}"
-                   class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
-                   title="Previous page">‹</a>
-              {%- else %}
-                <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">‹</span>
-              {%- endif %}
-              <span class="px-1">Page {{ page }} of {{ total_pages }}</span>
-              {%- if page < total_pages %}
-                <a href="/admin?{{ qs_base }}&page={{ page + 1 }}"
-                   class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
-                   title="Next page">›</a>
-              {%- else %}
-                <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">›</span>
-              {%- endif %}
-            </div>
-          {% endif %}
-        </div>
+        <span class="text-xs text-slate-500 tabular-nums">
+          {{ filtered_count }} of {{ catalogue_size }}
+        </span>
+
+        {% if total_pages > 1 %}
+          <div class="flex items-center gap-1 text-xs text-slate-400 tabular-nums">
+            {%- if page > 1 %}
+              <a href="/admin?{{ qs_base }}&page={{ page - 1 }}"
+                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
+                 title="Previous page">‹</a>
+            {%- else %}
+              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">‹</span>
+            {%- endif %}
+            <span class="px-1">Page {{ page }} of {{ total_pages }}</span>
+            {%- if page < total_pages %}
+              <a href="/admin?{{ qs_base }}&page={{ page + 1 }}"
+                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
+                 title="Next page">›</a>
+            {%- else %}
+              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">›</span>
+            {%- endif %}
+          </div>
+        {% endif %}
       </div>
 
       {# Row 2: filter chips (left-aligned, wrap as needed) #}
