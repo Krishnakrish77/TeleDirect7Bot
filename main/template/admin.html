@@ -439,7 +439,7 @@
       </template>
     </div>
 
-    <form method="post" action="/admin/action"
+    <form method="post" action="/admin/action" id="admin-bulk-form"
           @reset="selected = []; allChecked = false">
       {# Preserve the current view state so bulk actions return us here. #}
       <input type="hidden" name="_filter" value="{{ filter_name }}" />
@@ -533,6 +533,9 @@
         </button>
         {% endif %}
       </div>
+    </form>{# /admin-bulk-form — closed here so the search form below
+              isn't a nested-form (illegal HTML). Checkboxes in the
+              table bind back to this form via the HTML5 form=" " attr. #}
 
       {# Single condensed row: search · filter chips · count · pagination.
          All URL-driven. Search auto-submits 400ms after typing pauses
@@ -646,6 +649,7 @@
                   data-bin-id="{{ item.message_id }}">
                 <td class="px-3 py-2">
                   <input type="checkbox" name="ids" value="{{ item.message_id }}"
+                         form="admin-bulk-form"
                          x-model="selected" />
                 </td>
                 <td class="px-3 py-2 text-slate-200">
@@ -751,7 +755,6 @@
           </div>
         </nav>
       {% endif %}
-    </form>
 
     {# Inline-edit modal. Rendered outside the bulk form so it doesn't
        nest. The modal body is wrapped in <template x-if="editing"> so

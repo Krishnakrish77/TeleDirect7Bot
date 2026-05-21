@@ -589,7 +589,10 @@ async def admin_action(request: web.Request) -> web.Response:
 
     form = await request.post()
     action = form.get("action", "")
-    ids = [int(x) for x in form.getall("ids") if str(x).isdigit()]
+    # MultiDict.getall() raises KeyError when the key is missing; pass
+    # a default so an empty form (mis-submission, no rows selected) just
+    # falls into the 'nothing selected' branch instead of 500ing.
+    ids = [int(x) for x in form.getall("ids", []) if str(x).isdigit()]
 
     # Preserve the current view (filter + page + search) across the redirect
     # so a bulk action from page 4 doesn't dump the operator back on page 1.
