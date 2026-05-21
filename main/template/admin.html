@@ -504,108 +504,140 @@
           Delete
         </button>
 
-        <div class="flex items-center gap-1">
-          <input type="text" name="tags" placeholder="space-separated tags"
-                 class="px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
-                        border border-white/5 w-48" />
-          <button type="submit" name="action" value="retag"
+        {# Edit ▼ popover — collapses the four 'set a field' compound
+           actions (tags, quality, series, TMDB) into one button so the
+           toolbar isn't a wall of inputs. Each row inside the popover
+           has its own submit button so admin can apply one field at a
+           time without affecting the others. #}
+        <div class="relative"
+             x-data="{ editOpen: false }"
+             @keydown.escape.window="editOpen = false"
+             @click.outside="editOpen = false">
+          <button type="button"
+                  @click="editOpen = !editOpen"
+                  :aria-expanded="editOpen.toString()"
                   class="px-3 py-1.5 rounded text-xs font-medium
                          bg-ink-800 text-slate-200 border border-white/5
                          hover:bg-ink-700 transition-colors
-                         disabled:opacity-40 disabled:cursor-not-allowed"
-                  :disabled="selected.length === 0">
-            Re-tag
+                         inline-flex items-center gap-1.5">
+            Edit fields
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2"
+                 class="w-3 h-3" :class="editOpen ? 'rotate-180' : ''">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="m19.5 8.25-7.5 7.5-7.5-7.5"/>
+            </svg>
           </button>
-        </div>
+          <div x-show="editOpen" x-cloak x-transition.opacity.duration.150ms
+               class="absolute left-0 top-full mt-2 z-30 w-80
+                      rounded-lg border border-white/10 bg-ink-900
+                      shadow-2xl p-3 space-y-2">
 
-        <div class="flex items-center gap-1">
-          <select name="quality"
-                  class="px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
-                         border border-white/5">
-            <option value="480p">480p</option>
-            <option value="720p">720p</option>
-            <option value="1080p" selected>1080p</option>
-            <option value="4K">4K</option>
-          </select>
-          <button type="submit" name="action" value="quality"
-                  class="px-3 py-1.5 rounded text-xs font-medium
-                         bg-ink-800 text-slate-200 border border-white/5
-                         hover:bg-ink-700 transition-colors
-                         disabled:opacity-40 disabled:cursor-not-allowed"
-                  :disabled="selected.length === 0">
-            Set quality
-          </button>
-        </div>
+            {# Tags #}
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">Tags</label>
+              <div class="flex items-center gap-1.5">
+                <input type="text" name="tags" placeholder="space-separated"
+                       class="flex-1 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                              border border-white/5 placeholder-slate-500
+                              focus:outline-none focus:ring-1 focus:ring-brand-400/60" />
+                <button type="submit" name="action" value="retag"
+                        class="px-3 py-1.5 rounded text-xs font-medium
+                               bg-ink-800 text-slate-200 border border-white/5
+                               hover:bg-ink-700 transition-colors">
+                  Set
+                </button>
+              </div>
+            </div>
 
-        {# Bulk series-title assign. Stamp the same series title (and
-           optional starting season) onto every selected item so they
-           group together on /series/. #}
-        <div class="flex items-center gap-1">
-          <input type="text" name="series_title_bulk" placeholder="series title"
-                 list="known-series-list"
-                 class="w-40 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
-                        border border-white/5 placeholder-slate-500
-                        focus:outline-none focus:ring-1 focus:ring-brand-400/60" />
-          <input type="number" name="season_bulk" min="1" placeholder="S"
-                 class="w-12 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
-                        border border-white/5 placeholder-slate-500
-                        focus:outline-none focus:ring-1 focus:ring-brand-400/60
-                        tabular-nums" />
-          <button type="submit" name="action" value="series"
-                  @click="if (!confirm('Assign series to ' + selected.length + ' selected item(s)? Episode numbers will be auto-numbered by bin id.')) $event.preventDefault()"
-                  class="px-3 py-1.5 rounded text-xs font-medium
-                         bg-ink-800 text-slate-200 border border-white/5
-                         hover:bg-ink-700 transition-colors
-                         disabled:opacity-40 disabled:cursor-not-allowed"
-                  :disabled="selected.length === 0">
-            Set series
-          </button>
+            {# Quality #}
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">Quality</label>
+              <div class="flex items-center gap-1.5">
+                <select name="quality"
+                        class="flex-1 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                               border border-white/5
+                               focus:outline-none focus:ring-1 focus:ring-brand-400/60">
+                  <option value="480p">480p</option>
+                  <option value="720p">720p</option>
+                  <option value="1080p" selected>1080p</option>
+                  <option value="4K">4K</option>
+                </select>
+                <button type="submit" name="action" value="quality"
+                        class="px-3 py-1.5 rounded text-xs font-medium
+                               bg-ink-800 text-slate-200 border border-white/5
+                               hover:bg-ink-700 transition-colors">
+                  Set
+                </button>
+              </div>
+            </div>
+
+            {# Series #}
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">Series</label>
+              <div class="flex items-center gap-1.5">
+                <input type="text" name="series_title_bulk" placeholder="series title"
+                       list="known-series-list"
+                       class="flex-1 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                              border border-white/5 placeholder-slate-500
+                              focus:outline-none focus:ring-1 focus:ring-brand-400/60" />
+                <input type="number" name="season_bulk" min="1" placeholder="S"
+                       class="w-12 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                              border border-white/5 placeholder-slate-500
+                              focus:outline-none focus:ring-1 focus:ring-brand-400/60
+                              tabular-nums" />
+                <button type="submit" name="action" value="series"
+                        @click="if (!confirm('Assign series to ' + selected.length + ' selected item(s)? Episode numbers will be auto-numbered by bin id.')) $event.preventDefault()"
+                        class="px-3 py-1.5 rounded text-xs font-medium
+                               bg-ink-800 text-slate-200 border border-white/5
+                               hover:bg-ink-700 transition-colors">
+                  Set
+                </button>
+              </div>
+            </div>
+
+            {# TMDB id override #}
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">TMDB id</label>
+              <div class="flex items-center gap-1.5">
+                <input type="number" name="tmdb_id_bulk" min="1" placeholder="numeric id"
+                       class="flex-1 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                              border border-white/5 placeholder-slate-500
+                              focus:outline-none focus:ring-1 focus:ring-brand-400/60
+                              tabular-nums" />
+                <select name="tmdb_kind_bulk"
+                        class="px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                               border border-white/5
+                               focus:outline-none focus:ring-1 focus:ring-brand-400/60">
+                  <option value="tv">TV</option>
+                  <option value="movie">Movie</option>
+                </select>
+                <button type="submit" name="action" value="tmdb-id"
+                        @click="if (!confirm('Apply TMDB id to ' + selected.length + ' selected item(s)?')) $event.preventDefault()"
+                        class="px-3 py-1.5 rounded text-xs font-medium
+                               bg-ink-800 text-slate-200 border border-white/5
+                               hover:bg-ink-700 transition-colors">
+                  Apply
+                </button>
+              </div>
+            </div>
+
+          </div>
         </div>
 
         <button type="submit" name="action" value="enrich"
                 class="px-3 py-1.5 rounded text-xs font-medium
                        bg-brand-500/15 text-brand-300 border border-brand-400/30
-                       hover:bg-brand-500/25 transition-colors
-                       disabled:opacity-40 disabled:cursor-not-allowed"
-                :disabled="selected.length === 0">
+                       hover:bg-brand-500/25 transition-colors">
           Enrich
         </button>
 
         <button type="submit" name="action" value="probe"
                 class="px-3 py-1.5 rounded text-xs font-medium
                        bg-sky-500/15 text-sky-300 border border-sky-400/30
-                       hover:bg-sky-500/25 transition-colors
-                       disabled:opacity-40 disabled:cursor-not-allowed"
-                :disabled="selected.length === 0">
+                       hover:bg-sky-500/25 transition-colors">
           Probe
         </button>
-
-        {# Bulk TMDB-id assign. Useful for series where automatic search
-           matched the wrong show — admin pastes the right TMDB id once,
-           applies to all selected episodes, propagation handles the rest. #}
-        <div class="flex items-center gap-1">
-          <input type="number" name="tmdb_id_bulk" min="1" placeholder="TMDB id"
-                 class="w-24 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
-                        border border-white/5 placeholder-slate-500
-                        focus:outline-none focus:ring-1 focus:ring-brand-400/60
-                        tabular-nums" />
-          <select name="tmdb_kind_bulk"
-                  class="px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
-                         border border-white/5
-                         focus:outline-none focus:ring-1 focus:ring-brand-400/60">
-            <option value="tv">TV</option>
-            <option value="movie">Movie</option>
-          </select>
-          <button type="submit" name="action" value="tmdb-id"
-                  @click="if (!confirm('Apply TMDB id to ' + selected.length + ' selected item(s)?')) $event.preventDefault()"
-                  class="px-3 py-1.5 rounded text-xs font-medium
-                         bg-ink-800 text-slate-200 border border-white/5
-                         hover:bg-ink-700 transition-colors
-                         disabled:opacity-40 disabled:cursor-not-allowed"
-                  :disabled="selected.length === 0">
-            Apply TMDB
-          </button>
-        </div>
 
         {% if var.GEMINI_API_KEY %}
         <button type="button"
