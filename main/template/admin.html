@@ -147,7 +147,10 @@
            if (this.filter === 'enriched' &amp;&amp; ds.enriched !== '1') return false;
            if (this.filter === 'series' &amp;&amp; ds.kind !== 'series') return false;
            if (this.filter === 'movies' &amp;&amp; ds.kind !== 'movie') return false;
-           if (this.filter === 'no-poster' &amp;&amp; ds.hasPoster === '1') return false;
+           // No-poster = enriched item with no poster_path. Unenriched
+           // items naturally have no poster, so excluding them keeps the
+           // chip focused on cases that need attention.
+           if (this.filter === 'no-poster' &amp;&amp; (ds.hasPoster === '1' || ds.enriched !== '1')) return false;
            if (this.filter === 'duplicates' &amp;&amp; ds.duplicate !== '1') return false;
            if (this.filter === 'no-thumb' &amp;&amp; (ds.hasThumb === '1' || ds.hasDuration === '1')) return false;
            const q = this.query.trim().toLowerCase();

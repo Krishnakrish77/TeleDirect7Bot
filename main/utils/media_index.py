@@ -2487,7 +2487,12 @@ def stats() -> dict:
             genre_counts[g] = genre_counts.get(g, 0) + 1
         if it.tmdb_id and not it.poster_path:
             missing_poster += 1
-        if not it.has_thumb:
+        # "Missing thumbnail" — match the admin /no-thumb filter:
+        # items uploaded as documents (no native Telegram thumbnail AND
+        # no duration) where the ffmpeg fallback usually fails too.
+        # Plain has_thumb=False with duration>0 still gets a generated
+        # thumb via /thumb/* so it's not actually "missing" on the UI.
+        if not it.has_thumb and not it.duration:
             missing_thumb += 1
         # Joint key (secure_hash, file_size) — secure_hash alone is the
         # first 6 chars of file_unique_id and shares ~4 chars of
