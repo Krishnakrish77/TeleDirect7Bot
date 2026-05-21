@@ -1024,7 +1024,24 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     if item is None:
         return web.json_response({"error": "Item not found"}, status=404)
 
-    thumb_bytes = await _fetch_thumb_bytes(item)
+    # Optional ?fields=tags,file_name limits the response (and prompt focus)
+    # to specific fields. Used by the inline ✨ buttons next to individual
+    # form inputs. Default — all fields — drives the main 'Suggest' button.
+    _ALL_FIELDS = {"title", "year", "file_name", "series_title",
+                   "season", "episode", "tags", "description"}
+    raw_fields = (request.rel_url.query.get("fields") or "").strip()
+    if raw_fields:
+        wanted = {f.strip() for f in raw_fields.split(",") if f.strip() in _ALL_FIELDS}
+        if not wanted:
+            wanted = _ALL_FIELDS
+    else:
+        wanted = _ALL_FIELDS
+    targeted = wanted != _ALL_FIELDS
+
+    # Targeted requests (tags, file_name only) don't need the thumbnail —
+    # the existing title/series text is enough context and skipping the
+    # image makes the round-trip 10× faster and cheaper.
+    thumb_bytes = None if targeted else await _fetch_thumb_bytes(item)
 
     meta_text = "\n".join([
         f"Filename: {item.file_name or '(none)'}",
@@ -1049,35 +1066,71 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     series_list = ", ".join(f'"{s}" ({n})' for s, n in top_series) or "(none yet)"
     tag_list = ", ".join(t for t, _ in top_tags) or "(none yet)"
 
-    prompt = (
-        "You are a media catalogue assistant. Analyse this video file and suggest "
-        "accurate catalogue metadata.\n\n"
-        "If a thumbnail image is provided, carefully read ALL visible text including:\n"
-        "• Course / platform names (e.g. Three.js Journey, Udemy, YouTube)\n"
-        "• Show or movie titles displayed on screen\n"
-        "• Lesson / episode numbers or titles\n"
-        "• Watermarks, UI elements, URLs, browser tabs\n"
-        "• Any branding that identifies the content\n\n"
-        f"File metadata:\n{meta_text}\n\n"
-        "Existing catalogue context (use these spellings if a match exists "
-        "— a near-duplicate would split a series into two):\n"
-        f"  Known series titles: {series_list}\n"
-        f"  Common tags: {tag_list}\n\n"
-        "Rules:\n"
-        "• Populate every field you can confidently identify.\n"
-        "• For courses/series: set series_title, season (default 1), episode. "
-        "If this item belongs to a known series above, use that EXACT spelling.\n"
-        "• For movies: set title and year.\n"
-        "• file_name: ALWAYS generate a descriptive filename based on what you found. "
-        "Format: 'Series Name - Episode Title.mp4' for courses/episodes, "
-        "'Movie Title (Year).mkv' for movies. Never leave file_name empty if you "
-        "identified the content — it is the primary display label.\n"
-        "• tags: at most 3 tags, space-separated, lowercase. Prefer tags already "
-        "in the common-tags list above; only invent new tags when no existing "
-        "tag fits.\n"
-        "• Use 0 or empty string only for fields you truly cannot determine.\n"
-        "• In 'reasoning' briefly explain what you found in the thumbnail."
-    )
+    if targeted:
+        # Focused prompt for inline ✨ buttons: only the requested field(s).
+        focus_lines = []
+        if "tags" in wanted:
+            focus_lines.append(
+                "• tags: at most 3 lowercase tags, space-separated. Prefer tags "
+                "from the common-tags list; only invent new ones when no existing "
+                "tag fits the content."
+            )
+        if "file_name" in wanted:
+            focus_lines.append(
+                "• file_name: build a clean descriptive filename. "
+                "'Series Name - Episode Title.mp4' for series/courses, "
+                "'Movie Title (Year).mkv' for movies."
+            )
+        if "description" in wanted:
+            focus_lines.append(
+                "• description: a one- to two-sentence summary of the content."
+            )
+        if "title" in wanted:
+            focus_lines.append(
+                "• title: the canonical title. For series items prefer the "
+                "show name; for movies use the official title."
+            )
+        prompt = (
+            "You are a media catalogue assistant. Generate ONLY the requested "
+            "fields based on the existing metadata below.\n\n"
+            f"File metadata:\n{meta_text}\n\n"
+            "Existing catalogue context (match these spellings/vocabulary):\n"
+            f"  Known series titles: {series_list}\n"
+            f"  Common tags: {tag_list}\n\n"
+            "Rules:\n"
+            + "\n".join(focus_lines) + "\n"
+            "• In 'reasoning' briefly explain your choices."
+        )
+    else:
+        prompt = (
+            "You are a media catalogue assistant. Analyse this video file and suggest "
+            "accurate catalogue metadata.\n\n"
+            "If a thumbnail image is provided, carefully read ALL visible text including:\n"
+            "• Course / platform names (e.g. Three.js Journey, Udemy, YouTube)\n"
+            "• Show or movie titles displayed on screen\n"
+            "• Lesson / episode numbers or titles\n"
+            "• Watermarks, UI elements, URLs, browser tabs\n"
+            "• Any branding that identifies the content\n\n"
+            f"File metadata:\n{meta_text}\n\n"
+            "Existing catalogue context (use these spellings if a match exists "
+            "— a near-duplicate would split a series into two):\n"
+            f"  Known series titles: {series_list}\n"
+            f"  Common tags: {tag_list}\n\n"
+            "Rules:\n"
+            "• Populate every field you can confidently identify.\n"
+            "• For courses/series: set series_title, season (default 1), episode. "
+            "If this item belongs to a known series above, use that EXACT spelling.\n"
+            "• For movies: set title and year.\n"
+            "• file_name: ALWAYS generate a descriptive filename based on what you found. "
+            "Format: 'Series Name - Episode Title.mp4' for courses/episodes, "
+            "'Movie Title (Year).mkv' for movies. Never leave file_name empty if you "
+            "identified the content — it is the primary display label.\n"
+            "• tags: at most 3 tags, space-separated, lowercase. Prefer tags already "
+            "in the common-tags list above; only invent new tags when no existing "
+            "tag fits.\n"
+            "• Use 0 or empty string only for fields you truly cannot determine.\n"
+            "• In 'reasoning' briefly explain what you found in the thumbnail."
+        )
 
     parts = []
     if thumb_bytes:
@@ -1089,21 +1142,23 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         })
     parts.append({"text": prompt})
 
+    _ALL_PROPS = {
+        "title":        {"type": "STRING"},
+        "year":         {"type": "INTEGER"},
+        "file_name":    {"type": "STRING"},
+        "series_title": {"type": "STRING"},
+        "season":       {"type": "INTEGER"},
+        "episode":      {"type": "INTEGER"},
+        "tags":         {"type": "STRING", "description": "Up to 3 most relevant space-separated tags, lowercase"},
+        "description":  {"type": "STRING"},
+    }
     schema = {
         "type": "OBJECT",
         "properties": {
-            "title":        {"type": "STRING"},
-            "year":         {"type": "INTEGER"},
-            "file_name":    {"type": "STRING"},
-            "series_title": {"type": "STRING"},
-            "season":       {"type": "INTEGER"},
-            "episode":      {"type": "INTEGER"},
-            "tags":         {"type": "STRING", "description": "Up to 3 most relevant space-separated tags, lowercase"},
-            "description":  {"type": "STRING"},
+            **{k: v for k, v in _ALL_PROPS.items() if k in wanted},
             "reasoning":    {"type": "STRING"},
         },
-        "required": ["title", "year", "file_name", "series_title",
-                     "season", "episode", "tags", "description", "reasoning"],
+        "required": sorted(wanted) + ["reasoning"],
     }
 
     import re as _re

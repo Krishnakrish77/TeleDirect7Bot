@@ -46,6 +46,7 @@
              imdbLoading: false,
              // AI suggest state.
              aiLoading: false,
+             aiLoadingField: '',  // name of the single-field button in flight
              aiError: '',
              aiReasoning: '',
              aiModel: localStorage.getItem('td:ai-model') || 'gemini-2.0-flash',
@@ -112,6 +113,39 @@
              e.aiError = err?.message || 'Request failed';
            } finally {
              e.aiLoading = false;
+           }
+         },
+         async askAIField(field) {
+           // Targeted AI suggest for a single field (tags, file_name,
+           // description, title). Faster + cheaper than the full Suggest
+           // since the backend skips the thumbnail fetch.
+           const e = this.editing;
+           if (!e) return;
+           e.aiLoadingField = field;
+           e.aiError = '';
+           try {
+             const r = await fetch(
+               '/admin/ai-suggest/' + e.id +
+               '?model=' + encodeURIComponent(e.aiModel) +
+               '&fields=' + encodeURIComponent(field),
+               { method: 'POST' },
+             );
+             let data;
+             try { data = await r.json(); }
+             catch (_) {
+               e.aiError = `HTTP ${r.status} — unexpected response`;
+               return;
+             }
+             if (!r.ok) { e.aiError = data.error || `HTTP ${r.status}`; return; }
+             if (field === 'tags' && data.tags) e.tags = data.tags;
+             if (field === 'file_name' && data.file_name) e.file_name = data.file_name;
+             if (field === 'description' && data.description) e.description = data.description;
+             if (field === 'title' && data.title) e.title = data.title;
+             if (data.reasoning) e.aiReasoning = data.reasoning;
+           } catch (err) {
+             e.aiError = err?.message || 'Request failed';
+           } finally {
+             e.aiLoadingField = '';
            }
          },
          async previewTmdb() {
@@ -878,36 +912,70 @@
                               tabular-nums" />
               </label>
 
+              {% if var.GEMINI_API_KEY %}
+              {%- set _ai_btn_cls = "flex-shrink-0 px-2 py-1 rounded text-[11px] font-medium bg-violet-500/15 text-violet-300 border border-violet-400/30 hover:bg-violet-500/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" -%}
+              {% endif %}
+
               <label class="block">
                 <span class="text-xs uppercase tracking-wider text-slate-400">Tags</span>
-                <input type="text" name="tags"
-                       placeholder="space-separated, no # prefix"
-                       x-model="editing.tags"
-                       class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
-                              border border-white/5
-                              focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                <div class="mt-1 flex items-center gap-2">
+                  <input type="text" name="tags"
+                         placeholder="space-separated, no # prefix"
+                         x-model="editing.tags"
+                         class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                border border-white/5
+                                focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  {% if var.GEMINI_API_KEY %}
+                  <button type="button" @click="askAIField('tags')"
+                          :disabled="editing.aiLoadingField === 'tags'"
+                          class="{{ _ai_btn_cls }}">
+                    <span x-show="editing.aiLoadingField !== 'tags'">✨ Tags</span>
+                    <span x-show="editing.aiLoadingField === 'tags'">…</span>
+                  </button>
+                  {% endif %}
+                </div>
               </label>
 
               <label class="block">
                 <span class="text-xs uppercase tracking-wider text-slate-400">Display name
                   <span class="lowercase tracking-normal text-slate-500">(filename override)</span>
                 </span>
-                <input type="text" name="file_name"
-                       placeholder="e.g. Three.js Journey - Lesson 24.mp4"
-                       x-model="editing.file_name"
-                       class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
-                              border border-white/5
-                              focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                <div class="mt-1 flex items-center gap-2">
+                  <input type="text" name="file_name"
+                         placeholder="e.g. Three.js Journey - Lesson 24.mp4"
+                         x-model="editing.file_name"
+                         class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                border border-white/5
+                                focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  {% if var.GEMINI_API_KEY %}
+                  <button type="button" @click="askAIField('file_name')"
+                          :disabled="editing.aiLoadingField === 'file_name'"
+                          class="{{ _ai_btn_cls }}">
+                    <span x-show="editing.aiLoadingField !== 'file_name'">✨ Clean</span>
+                    <span x-show="editing.aiLoadingField === 'file_name'">…</span>
+                  </button>
+                  {% endif %}
+                </div>
               </label>
 
               <label class="block">
                 <span class="text-xs uppercase tracking-wider text-slate-400">Description</span>
-                <textarea name="description" rows="3"
-                          x-model="editing.description"
-                          class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
-                                 border border-white/5
-                                 focus:outline-none focus:ring-2 focus:ring-brand-400/60
-                                 resize-y"></textarea>
+                <div class="mt-1 flex items-start gap-2">
+                  <textarea name="description" rows="3"
+                            x-model="editing.description"
+                            class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                   border border-white/5
+                                   focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                                   resize-y"></textarea>
+                  {% if var.GEMINI_API_KEY %}
+                  <button type="button" @click="askAIField('description')"
+                          :disabled="editing.aiLoadingField === 'description'"
+                          class="{{ _ai_btn_cls }}">
+                    <span x-show="editing.aiLoadingField !== 'description'">✨ Write</span>
+                    <span x-show="editing.aiLoadingField === 'description'">…</span>
+                  </button>
+                  {% endif %}
+                </div>
               </label>
 
               {# Series grouping — assign standalone videos to a series. #}
