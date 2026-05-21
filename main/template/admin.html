@@ -473,6 +473,11 @@
       </template>
     </div>
 
+    {# Autocomplete vocabulary for the bulk 'series_title_bulk' input. #}
+    <datalist id="known-series-list">
+      {% for s in known_series %}<option value="{{ s }}">{% endfor %}
+    </datalist>
+
     <form method="post" action="/admin/action" id="admin-bulk-form"
           @reset="selected = []; allChecked = false">
       {# Preserve the current view state so bulk actions return us here. #}
@@ -523,6 +528,31 @@
                          disabled:opacity-40 disabled:cursor-not-allowed"
                   :disabled="selected.length === 0">
             Set quality
+          </button>
+        </div>
+
+        {# Bulk series-title assign. Stamp the same series title (and
+           optional starting season) onto every selected item so they
+           group together on /series/. #}
+        <div class="flex items-center gap-1">
+          <input type="text" name="series_title_bulk" placeholder="series title"
+                 list="known-series-list"
+                 class="w-40 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                        border border-white/5 placeholder-slate-500
+                        focus:outline-none focus:ring-1 focus:ring-brand-400/60" />
+          <input type="number" name="season_bulk" min="1" placeholder="S"
+                 class="w-12 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                        border border-white/5 placeholder-slate-500
+                        focus:outline-none focus:ring-1 focus:ring-brand-400/60
+                        tabular-nums" />
+          <button type="submit" name="action" value="series"
+                  @click="if (!confirm('Assign series to ' + selected.length + ' selected item(s)? Episode numbers will be auto-numbered by bin id.')) $event.preventDefault()"
+                  class="px-3 py-1.5 rounded text-xs font-medium
+                         bg-ink-800 text-slate-200 border border-white/5
+                         hover:bg-ink-700 transition-colors
+                         disabled:opacity-40 disabled:cursor-not-allowed"
+                  :disabled="selected.length === 0">
+            Set series
           </button>
         </div>
 
@@ -912,9 +942,7 @@
                               tabular-nums" />
               </label>
 
-              {% if var.GEMINI_API_KEY %}
               {%- set _ai_btn_cls = "flex-shrink-0 px-2 py-1 rounded text-[11px] font-medium bg-violet-500/15 text-violet-300 border border-violet-400/30 hover:bg-violet-500/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" -%}
-              {% endif %}
 
               <label class="block">
                 <span class="text-xs uppercase tracking-wider text-slate-400">Tags</span>

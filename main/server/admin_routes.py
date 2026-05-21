@@ -248,6 +248,15 @@ async def admin_home(request: web.Request) -> web.Response:
         except Exception:
             flash = ""
 
+    # Distinct series titles for the bulk 'Set series' datalist autocomplete.
+    _series_counts: dict = {}
+    for _it in media_index._items.values():
+        if _it.series_title:
+            _series_counts[_it.series_title] = _series_counts.get(_it.series_title, 0) + 1
+    known_series = [s for s, _ in sorted(
+        _series_counts.items(), key=lambda kv: (-kv[1], kv[0]),
+    )]
+
     tpl = _env.get_template("admin.html")
     body = await tpl.render_async(
         items=items_page,
@@ -260,6 +269,7 @@ async def admin_home(request: web.Request) -> web.Response:
         search_q=request.query.get("q") or "",
         stats=media_index.stats(),
         duplicate_message_ids=duplicate_message_ids,
+        known_series=known_series,
         flash=flash,
         var=Var,
     )
@@ -624,6 +634,61 @@ async def admin_action(request: web.Request) -> web.Response:
             raise _redirect_with_flash("Invalid quality", target=_target)
         n = await _bulk_quality(ids, quality)
         raise _redirect_with_flash(f"Updated quality on {n} entries", target=_target)
+
+    if action == "series":
+        series_title = (form.get("series_title_bulk") or "").strip()
+        season_raw = (form.get("season_bulk") or "").strip()
+        if not series_title:
+            raise _redirect_with_flash(
+                "Series title can't be empty", target=_target,
+            )
+        try:
+            season_num = int(season_raw) if season_raw else 1
+        except ValueError:
+            season_num = 1
+        # series_parse is the module-level alias for main.utils.series.
+        series_key = series_parse.slugify(series_title)
+
+        # Sort ascending so episode numbers track upload order
+        # (oldest selected item = first episode). Preserve any
+        # explicit episode numbers already on items.
+        sorted_ids = sorted(ids)
+        affected: list = []
+        async with media_index._lock:
+            existing_eps = set()
+            for mid in sorted_ids:
+                it = media_index.get_item(mid)
+                if it and it.episode:
+                    existing_eps.add(it.episode)
+            next_ep = 1
+            for mid in sorted_ids:
+                it = media_index.get_item(mid)
+                if it is None:
+                    continue
+                it.series_title = series_title
+                it.series_key   = series_key
+                it.season       = season_num
+                if not it.episode:
+                    while next_ep in existing_eps:
+                        next_ep += 1
+                    it.episode = next_ep
+                    existing_eps.add(next_ep)
+                    next_ep += 1
+                it.movie_key = ""
+                affected.append(it)
+            # No-op when Mongo is the durable store, but keeps the
+            # JSON-snapshot path correct for non-Mongo deployments.
+            media_index._persist_unlocked()
+
+        # Write-through to Mongo (no-op when not configured).
+        for it in affected:
+            await media_index._store_upsert(it)
+
+        raise _redirect_with_flash(
+            f"Assigned series '{series_title}' (S{season_num:02d}) to "
+            f"{len(affected)} item(s)",
+            target=_target,
+        )
 
     if action == "enrich":
         import asyncio as _aio
