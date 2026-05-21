@@ -96,6 +96,16 @@ class MongoStore:
             await self._items.create_index("movie_key")
             await self._items.create_index("tmdb_id", sparse=True)
             await self._items.create_index([("year", -1)])
+            # Additional indexes for scale (10K+ items):
+            await self._items.create_index("secure_hash", sparse=True)
+            # Compound for ordered episode listing within a series.
+            await self._items.create_index([
+                ("series_key", 1), ("season", 1), ("episode", 1),
+            ], sparse=True)
+            # Sparse indexes on the "needs work" timestamps so maintenance
+            # sweeps that look for missing enrichment/probe data are fast.
+            await self._items.create_index("enriched_at", sparse=True)
+            await self._items.create_index("probed_at", sparse=True)
             self._initialised = True
             logging.info(
                 "store.mongo: connected to %s.%s", self._db_name,

@@ -159,22 +159,24 @@ def _pop_flash(request: web.Request, resp: web.Response) -> str:
 async def admin_home(request: web.Request) -> web.Response:
     _require_session(request)
 
+    # ── Query params: filter, search, pagination ──────────────────────
+    try:
+        page = max(1, int(request.query.get("page", "1") or "1"))
+    except ValueError:
+        page = 1
+    filter_name = (request.query.get("filter") or "all").strip()
+    q = (request.query.get("q") or "").strip().lower()
+    PAGE_SIZE = 100
+
     items_all = sorted(
         media_index._items.values(),  # internal access — admin layer co-owns the store
         key=lambda it: it.message_id, reverse=True,
     )
+    catalogue_size = len(items_all)
 
-    # Detect duplicate groups. A "duplicate" means two rows that
-    # point at the SAME underlying file — the same byte stream
-    # forwarded into BIN_CHANNEL more than once.
-    #
-    # secure_hash alone is NOT enough: it's only the first 6 chars
-    # of Telegram's file_unique_id, and bot-uploaded media share a
-    # constant ~4-char prefix ("AgAD…"). That leaves ~2 chars =
-    # 4096 buckets, giving wildly high birthday-paradox false-
-    # positive rates even at a few hundred items. Joint key with
-    # ``file_size`` collapses the FP probability to near zero
-    # while keeping the check cheap.
+    # ── Duplicate detection — must run over the full catalogue, not the
+    # paged slice, so the "duplicates" filter still finds groups whose
+    # members span pages.
     by_key: dict = {}
     for it in items_all:
         if it.secure_hash and it.file_size:
@@ -185,10 +187,58 @@ async def admin_home(request: web.Request) -> web.Response:
             for m in members:
                 duplicate_message_ids.add(m.message_id)
 
-    # Read the flash cookie up front so we render once. The cookie
-    # gets cleared on the response below regardless of whether it
-    # was set, so a refresh after the toast disappears doesn't
-    # re-show it.
+    # ── Server-side filter — mirrors the (now-removed) JS rowVisible() ──
+    def _passes_filter(it) -> bool:
+        if filter_name == "unenriched" and it.tmdb_id:
+            return False
+        if filter_name == "enriched" and not it.tmdb_id:
+            return False
+        if filter_name == "series" and not it.series_key:
+            return False
+        if filter_name == "movies" and it.series_key:
+            return False
+        # No-poster = enriched item with no poster_path (matches the
+        # admin chip definition: unenriched items naturally lack posters).
+        if filter_name == "no-poster" and (it.poster_path or not it.tmdb_id):
+            return False
+        if filter_name == "duplicates" and it.message_id not in duplicate_message_ids:
+            return False
+        # No-thumb = uploaded as document (no native thumb + no duration).
+        if filter_name == "no-thumb" and (it.has_thumb or it.duration):
+            return False
+        return True
+
+    filtered = [it for it in items_all if _passes_filter(it)]
+
+    # ── Server-side search — case-insensitive substring across the same
+    # field blob the JS code used (title, series_title, file_name, tags,
+    # imdb_id, bin:msg_id).
+    if q:
+        def _matches(it) -> bool:
+            blob = " ".join((
+                it.title or "",
+                it.series_title or "",
+                it.file_name or "",
+                " ".join(it.tags or []),
+                it.imdb_id or "",
+                f"bin:{it.message_id}",
+            )).lower()
+            return q in blob
+        filtered = [it for it in filtered if _matches(it)]
+
+    # Duplicates view sorts groups together so canonicals + extras are
+    # adjacent — matches the old JS behaviour.
+    if filter_name == "duplicates":
+        filtered.sort(key=lambda it: (it.secure_hash or "", it.message_id))
+
+    # ── Pagination ────────────────────────────────────────────────────
+    filtered_count = len(filtered)
+    total_pages = max(1, (filtered_count + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = min(page, total_pages)
+    start = (page - 1) * PAGE_SIZE
+    items_page = filtered[start : start + PAGE_SIZE]
+
+    # Flash cookie (unchanged).
     raw = request.cookies.get(_FLASH_COOKIE) or ""
     flash = ""
     if raw:
@@ -200,8 +250,14 @@ async def admin_home(request: web.Request) -> web.Response:
 
     tpl = _env.get_template("admin.html")
     body = await tpl.render_async(
-        items=items_all,
-        catalogue_size=media_index.size(),
+        items=items_page,
+        catalogue_size=catalogue_size,
+        filtered_count=filtered_count,
+        page=page,
+        total_pages=total_pages,
+        page_size=PAGE_SIZE,
+        filter_name=filter_name,
+        search_q=request.query.get("q") or "",
         stats=media_index.stats(),
         duplicate_message_ids=duplicate_message_ids,
         flash=flash,
@@ -534,24 +590,37 @@ async def admin_action(request: web.Request) -> web.Response:
     form = await request.post()
     action = form.get("action", "")
     ids = [int(x) for x in form.getall("ids") if str(x).isdigit()]
+
+    # Preserve the current view (filter + page + search) across the redirect
+    # so a bulk action from page 4 doesn't dump the operator back on page 1.
+    from urllib.parse import urlencode as _urlencode
+    _view_qs = {}
+    if form.get("_filter"):
+        _view_qs["filter"] = form.get("_filter")
+    if form.get("_page"):
+        _view_qs["page"] = form.get("_page")
+    if form.get("_q"):
+        _view_qs["q"] = form.get("_q")
+    _target = "/admin" + (("?" + _urlencode(_view_qs)) if _view_qs else "")
+
     if not ids:
-        raise _redirect_with_flash("Nothing selected")
+        raise _redirect_with_flash("Nothing selected", target=_target)
 
     if action == "delete":
         n = await _bulk_delete(ids)
-        raise _redirect_with_flash(f"Deleted {n} entries")
+        raise _redirect_with_flash(f"Deleted {n} entries", target=_target)
 
     if action == "retag":
         tags = _normalise_tags(form.get("tags", ""))
         n = await _bulk_retag(ids, tags)
-        raise _redirect_with_flash(f"Re-tagged {n} entries")
+        raise _redirect_with_flash(f"Re-tagged {n} entries", target=_target)
 
     if action == "quality":
         quality = (form.get("quality") or "").strip()
         if quality not in {"480p", "720p", "1080p", "4K"}:
-            raise _redirect_with_flash("Invalid quality")
+            raise _redirect_with_flash("Invalid quality", target=_target)
         n = await _bulk_quality(ids, quality)
-        raise _redirect_with_flash(f"Updated quality on {n} entries")
+        raise _redirect_with_flash(f"Updated quality on {n} entries", target=_target)
 
     if action == "enrich":
         import asyncio as _aio
@@ -583,7 +652,8 @@ async def admin_action(request: web.Request) -> web.Response:
 
         _aio.create_task(_run(ids))
         raise _redirect_with_flash(
-            f"Enrichment queued for {len(ids)} items — watch the progress bar"
+            f"Enrichment queued for {len(ids)} items — watch the progress bar",
+            target=_target,
         )
 
     if action == "probe":
@@ -616,10 +686,11 @@ async def admin_action(request: web.Request) -> web.Response:
 
         _aio.create_task(_run_probe(ids))
         raise _redirect_with_flash(
-            f"Probe queued for {len(ids)} item(s) — watch the progress bar"
+            f"Probe queued for {len(ids)} item(s) — watch the progress bar",
+            target=_target,
         )
 
-    raise _redirect_with_flash("Unknown action")
+    raise _redirect_with_flash("Unknown action", target=_target)
 
 
 @routes.get("/admin/ai-models")

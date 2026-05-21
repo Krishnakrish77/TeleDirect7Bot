@@ -11,9 +11,6 @@
          selected: [],
          allChecked: false,
          editing: null,
-         query: '',
-         filter: (new URLSearchParams(window.location.search).get('filter')) || 'all',
-         visibleCount: 0,
          aiModels: [],
          aiModelsLoading: false,
          async fetchAiModels() {
@@ -141,60 +138,7 @@
              e.previewLoading = false;
            }
          },
-         rowVisible(row) {
-           const ds = row.dataset;
-           if (this.filter === 'unenriched' &amp;&amp; ds.enriched === '1') return false;
-           if (this.filter === 'enriched' &amp;&amp; ds.enriched !== '1') return false;
-           if (this.filter === 'series' &amp;&amp; ds.kind !== 'series') return false;
-           if (this.filter === 'movies' &amp;&amp; ds.kind !== 'movie') return false;
-           // No-poster = enriched item with no poster_path. Unenriched
-           // items naturally have no poster, so excluding them keeps the
-           // chip focused on cases that need attention.
-           if (this.filter === 'no-poster' &amp;&amp; (ds.hasPoster === '1' || ds.enriched !== '1')) return false;
-           if (this.filter === 'duplicates' &amp;&amp; ds.duplicate !== '1') return false;
-           if (this.filter === 'no-thumb' &amp;&amp; (ds.hasThumb === '1' || ds.hasDuration === '1')) return false;
-           const q = this.query.trim().toLowerCase();
-           if (q &amp;&amp; !(ds.searchable || '').includes(q)) return false;
-           return true;
-         },
-         refresh() {
-           const rows = this.$root.querySelectorAll('tbody tr[data-searchable]');
-           let n = 0;
-           rows.forEach(r => {
-             const show = this.rowVisible(r);
-             r.style.display = show ? '' : 'none';
-             if (show) n++;
-           });
-           this.visibleCount = n;
-           // Re-sort the DOM whenever filter changes so leaving the
-           // duplicates view restores the default bin-id-desc order.
-           // Default (any filter except 'duplicates') = bin_id desc.
-           // Duplicates view = secure_hash asc, then bin_id asc so
-           // group members sit adjacent and the canonical (oldest)
-           // row appears first within each group.
-           if (rows.length) {
-             const tbody = rows[0].parentNode;
-             const all = [...rows];
-             if (this.filter === 'duplicates') {
-               all.sort((a, b) => {
-                 const ha = a.dataset.hash || '';
-                 const hb = b.dataset.hash || '';
-                 if (ha !== hb) return ha < hb ? -1 : 1;
-                 return parseInt(a.dataset.binId || '0', 10) -
-                        parseInt(b.dataset.binId || '0', 10);
-               });
-             } else {
-               all.sort((a, b) =>
-                 parseInt(b.dataset.binId || '0', 10) -
-                 parseInt(a.dataset.binId || '0', 10),
-               );
-             }
-             all.forEach(r => tbody.appendChild(r));
-           }
-         }
-       }"
-       x-init="$nextTick(() => refresh())"
-       x-effect="query; filter; refresh()">
+       }">
     <header class="mb-6 flex items-end justify-between gap-3">
       <div>
         <h1 class="text-3xl font-bold text-white tracking-tight">Admin</h1>
@@ -497,6 +441,10 @@
 
     <form method="post" action="/admin/action"
           @reset="selected = []; allChecked = false">
+      {# Preserve the current view state so bulk actions return us here. #}
+      <input type="hidden" name="_filter" value="{{ filter_name }}" />
+      <input type="hidden" name="_page" value="{{ page }}" />
+      <input type="hidden" name="_q" value="{{ search_q }}" />
       <div class="mb-4 flex flex-wrap items-center gap-2 sticky top-0 z-10
                   bg-ink-900/95 backdrop-blur py-3 -mx-2 px-2 border-b border-white/5">
         <span class="text-xs text-slate-400" x-text="selected.length + ' selected'"></span>
@@ -586,11 +534,13 @@
         {% endif %}
       </div>
 
-      {# Search + filter chips. All client-side — instant filtering of
-         the rendered rows. For catalogues much larger than ~1000 items
-         we'd want server-side pagination, but on a hub-sized dataset
-         this scales fine and the operator gets sub-frame feedback. #}
-      <div class="mb-3 flex flex-wrap items-center gap-2">
+      {# Search + filter chips — URL-driven (server-side filter + paging).
+         Search submits as a GET form to /admin?q=…&filter=… so the URL
+         carries all view state (back/forward, bookmarks, share). #}
+      <form method="get" action="/admin"
+            class="mb-3 flex flex-wrap items-center gap-2">
+        {# Preserve current filter when typing in search. Page resets to 1. #}
+        <input type="hidden" name="filter" value="{{ filter_name }}" />
         <label class="relative flex-1 min-w-[16rem] max-w-md">
           <span class="sr-only">Search</span>
           <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
@@ -599,36 +549,38 @@
             <path stroke-linecap="round" stroke-linejoin="round"
                   d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
           </svg>
-          <input type="search" placeholder="Search title, file, tag, bin id…"
-                 x-model="query"
+          <input type="search" name="q" placeholder="Search title, file, tag, bin id…"
+                 value="{{ search_q }}"
                  class="w-full pl-9 pr-3 py-1.5 text-sm rounded
                         bg-ink-800/70 text-slate-100 placeholder-slate-500
                         border border-white/5
                         focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
         </label>
 
-        <template x-for="chip in [
-              { id: 'all', label: 'All' },
-              { id: 'unenriched', label: 'Unenriched' },
-              { id: 'enriched', label: 'Enriched' },
-              { id: 'series', label: 'Series' },
-              { id: 'movies', label: 'Movies' },
-              { id: 'no-poster', label: 'No poster' },
-              { id: 'no-thumb', label: 'No thumb' },
-              { id: 'duplicates', label: 'Duplicates' }
-            ]" :key="chip.id">
-          <button type="button"
-                  @click="filter = chip.id"
-                  :class="filter === chip.id
-                          ? 'bg-brand-500/20 text-brand-200 border-brand-400/40'
-                          : 'bg-ink-800/60 text-slate-300 border-white/5 hover:bg-ink-800'"
-                  class="px-3 py-1.5 text-xs rounded-full border transition-colors"
-                  x-text="chip.label"></button>
-        </template>
+        {# Filter chips → plain links carrying the search but resetting page=1. #}
+        {%- set chips = [
+              ('all',         'All'),
+              ('unenriched',  'Unenriched'),
+              ('enriched',    'Enriched'),
+              ('series',      'Series'),
+              ('movies',      'Movies'),
+              ('no-poster',   'No poster'),
+              ('no-thumb',    'No thumb'),
+              ('duplicates',  'Duplicates'),
+            ] -%}
+        {% for cid, clabel in chips %}
+          <a href="/admin?filter={{ cid }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}"
+             class="px-3 py-1.5 text-xs rounded-full border transition-colors
+                    {% if filter_name == cid %}bg-brand-500/20 text-brand-200 border-brand-400/40{% else %}bg-ink-800/60 text-slate-300 border-white/5 hover:bg-ink-800{% endif %}">
+            {{ clabel }}
+          </a>
+        {% endfor %}
 
-        <span class="ml-auto text-xs text-slate-500 tabular-nums"
-              x-text="`${visibleCount} of {{ catalogue_size }}`"></span>
-      </div>
+        <span class="ml-auto text-xs text-slate-500 tabular-nums">
+          {{ filtered_count }} of {{ catalogue_size }}
+          {%- if total_pages > 1 %} · page {{ page }}/{{ total_pages }}{% endif -%}
+        </span>
+      </form>
 
       {# AI review panel — populated by HTMX after clicking '✦ AI clean' #}
       <div id="ai-review-panel"></div>
@@ -653,19 +605,9 @@
           </thead>
           <tbody>
             {% for item in items %}
-              {%- set kind = 'series' if item.series_key else 'movie' -%}
               {%- set is_dup = item.message_id in duplicate_message_ids -%}
-              {%- set searchable = ((item.title or '') ~ ' ' ~ (item.series_title or '') ~ ' ' ~ (item.file_name or '') ~ ' ' ~ (item.tags | join(' ')) ~ ' ' ~ (item.imdb_id or '') ~ ' bin:' ~ item.message_id) | lower -%}
               <tr class="border-b border-white/5 hover:bg-ink-800/40 {% if is_dup %}border-l-2 border-l-amber-400/60{% endif %}"
-                  data-searchable="{{ searchable }}"
-                  data-kind="{{ kind }}"
-                  data-enriched="{{ '1' if item.tmdb_id else '0' }}"
-                  data-has-poster="{{ '1' if item.poster_path else '0' }}"
-                  data-duplicate="{{ '1' if is_dup else '0' }}"
-                  data-hash="{{ item.secure_hash or '' }}"
-                  data-bin-id="{{ item.message_id }}"
-                  data-has-thumb="{{ '1' if item.has_thumb else '0' }}"
-                  data-has-duration="{{ '1' if item.duration else '0' }}">
+                  data-bin-id="{{ item.message_id }}">
                 <td class="px-3 py-2">
                   <input type="checkbox" name="ids" value="{{ item.message_id }}"
                          x-model="selected" />
@@ -736,6 +678,39 @@
           </tbody>
         </table>
       </div>
+
+      {# Pagination — only rendered when there's more than one page.
+         Links preserve filter + q so the user stays in the same view. #}
+      {% if total_pages > 1 %}
+        {%- set qs_base = 'filter=' ~ filter_name -%}
+        {%- if search_q -%}{%- set qs_base = qs_base ~ '&q=' ~ (search_q|urlencode) -%}{%- endif -%}
+        <nav class="mt-3 flex items-center justify-between gap-2 text-xs text-slate-400">
+          <span class="tabular-nums">
+            Showing {{ (page - 1) * page_size + 1 }}–{{ ((page - 1) * page_size) + items|length }} of {{ filtered_count }}
+          </span>
+          <div class="flex items-center gap-1">
+            {%- if page > 1 %}
+              <a href="/admin?{{ qs_base }}&page=1"
+                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5">« First</a>
+              <a href="/admin?{{ qs_base }}&page={{ page - 1 }}"
+                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5">‹ Prev</a>
+            {%- else %}
+              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">« First</span>
+              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">‹ Prev</span>
+            {%- endif %}
+            <span class="px-2 py-1 tabular-nums">Page {{ page }} of {{ total_pages }}</span>
+            {%- if page < total_pages %}
+              <a href="/admin?{{ qs_base }}&page={{ page + 1 }}"
+                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5">Next ›</a>
+              <a href="/admin?{{ qs_base }}&page={{ total_pages }}"
+                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5">Last »</a>
+            {%- else %}
+              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">Next ›</span>
+              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">Last »</span>
+            {%- endif %}
+          </div>
+        </nav>
+      {% endif %}
     </form>
 
     {# Inline-edit modal. Rendered outside the bulk form so it doesn't
