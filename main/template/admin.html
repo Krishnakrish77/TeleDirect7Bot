@@ -534,15 +534,26 @@
         {% endif %}
       </div>
 
-      {# Search + filter chips — URL-driven (server-side filter + paging).
-         Search auto-submits 400ms after the user pauses typing so the
-         filtering feels instant without spamming the server on each
-         keystroke. #}
-      <form method="get" action="/admin" id="admin-filter-form"
-            class="mb-3 space-y-2">
-        <input type="hidden" name="filter" value="{{ filter_name }}" />
-        <div class="flex flex-wrap items-center gap-2">
-          <label class="relative flex-1 min-w-[16rem] max-w-md">
+      {# Single condensed row: search · filter chips · count · pagination.
+         All URL-driven. Search auto-submits 400ms after typing pauses
+         so filtering feels instant without spamming the server. #}
+      {%- set chips = [
+            ('all',         'All'),
+            ('unenriched',  'Unenriched'),
+            ('enriched',    'Enriched'),
+            ('series',      'Series'),
+            ('movies',      'Movies'),
+            ('no-poster',   'No poster'),
+            ('no-thumb',    'No thumb'),
+            ('duplicates',  'Duplicates'),
+          ] -%}
+      {%- set qs_base = 'filter=' ~ filter_name -%}
+      {%- if search_q -%}{%- set qs_base = qs_base ~ '&q=' ~ (search_q|urlencode) -%}{%- endif -%}
+
+      <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <form method="get" action="/admin" id="admin-filter-form" class="contents">
+          <input type="hidden" name="filter" value="{{ filter_name }}" />
+          <label class="relative flex-1 min-w-[14rem] max-w-sm">
             <span class="sr-only">Search</span>
             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
                  xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -564,61 +575,41 @@
                           border border-white/5
                           focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
           </label>
-          <span class="ml-auto text-xs text-slate-500 tabular-nums">
-            {{ filtered_count }} of {{ catalogue_size }}
-            {%- if total_pages > 1 %} · page {{ page }}/{{ total_pages }}{% endif -%}
-          </span>
-        </div>
+        </form>
 
-        {# Filter chips → plain links carrying the search but resetting page=1. #}
-        {%- set chips = [
-              ('all',         'All'),
-              ('unenriched',  'Unenriched'),
-              ('enriched',    'Enriched'),
-              ('series',      'Series'),
-              ('movies',      'Movies'),
-              ('no-poster',   'No poster'),
-              ('no-thumb',    'No thumb'),
-              ('duplicates',  'Duplicates'),
-            ] -%}
         <div class="flex flex-wrap items-center gap-1.5">
           {% for cid, clabel in chips %}
             <a href="/admin?filter={{ cid }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}"
-               class="px-3 py-1.5 text-xs rounded-full border transition-colors
+               class="px-2.5 py-1 text-xs rounded-full border transition-colors
                       {% if filter_name == cid %}bg-brand-500/20 text-brand-200 border-brand-400/40{% else %}bg-ink-800/60 text-slate-300 border-white/5 hover:bg-ink-800{% endif %}">
               {{ clabel }}
             </a>
           {% endfor %}
         </div>
-      </form>
 
-      {# Top pagination — same controls as the bottom row so the operator
-         doesn't need to scroll a 100-row table just to flip pages. #}
-      {% if total_pages > 1 %}
-        {%- set qs_base = 'filter=' ~ filter_name -%}
-        {%- if search_q -%}{%- set qs_base = qs_base ~ '&q=' ~ (search_q|urlencode) -%}{%- endif -%}
-        <nav class="mb-3 flex items-center justify-end gap-1 text-xs text-slate-400">
-          {%- if page > 1 %}
-            <a href="/admin?{{ qs_base }}&page=1"
-               class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5">« First</a>
-            <a href="/admin?{{ qs_base }}&page={{ page - 1 }}"
-               class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5">‹ Prev</a>
-          {%- else %}
-            <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">« First</span>
-            <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">‹ Prev</span>
-          {%- endif %}
-          <span class="px-2 py-1 tabular-nums">Page {{ page }} of {{ total_pages }}</span>
-          {%- if page < total_pages %}
-            <a href="/admin?{{ qs_base }}&page={{ page + 1 }}"
-               class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5">Next ›</a>
-            <a href="/admin?{{ qs_base }}&page={{ total_pages }}"
-               class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5">Last »</a>
-          {%- else %}
-            <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">Next ›</span>
-            <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">Last »</span>
-          {%- endif %}
-        </nav>
-      {% endif %}
+        <div class="ml-auto flex items-center gap-2 text-xs text-slate-400 tabular-nums">
+          <span class="text-slate-500">
+            {{ filtered_count }} / {{ catalogue_size }}
+          </span>
+          {% if total_pages > 1 %}
+            {%- if page > 1 %}
+              <a href="/admin?{{ qs_base }}&page={{ page - 1 }}"
+                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
+                 title="Previous page">‹</a>
+            {%- else %}
+              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">‹</span>
+            {%- endif %}
+            <span class="px-1">Page {{ page }} / {{ total_pages }}</span>
+            {%- if page < total_pages %}
+              <a href="/admin?{{ qs_base }}&page={{ page + 1 }}"
+                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
+                 title="Next page">›</a>
+            {%- else %}
+              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">›</span>
+            {%- endif %}
+          {% endif %}
+        </div>
+      </div>
 
       {# AI review panel — populated by HTMX after clicking '✦ AI clean' #}
       <div id="ai-review-panel"></div>
