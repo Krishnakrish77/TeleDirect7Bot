@@ -134,10 +134,10 @@
         <h2 class="text-lg font-semibold text-slate-200 mb-3">
           {% if block.season %}Season {{ block.season }}{% else %}Episodes{% endif %}
         </h2>
-        <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr">
           {% for entry in block.entries %}
             {% set ep = entry.rep %}
-            <li data-ep-title="{{ (ep.title or '') | lower }} {{ (ep.episode_title or '') | lower }} {{ (ep.file_name or '') | lower }}{% if ep.season and ep.episode %} s{{ '%02d' % ep.season }}e{{ '%02d' % ep.episode }}{% endif %}">
+            <li class="h-full" data-ep-title="{{ (ep.title or '') | lower }} {{ (ep.episode_title or '') | lower }} {{ (ep.file_name or '') | lower }}{% if ep.season and ep.episode %} s{{ '%02d' % ep.season }}e{{ '%02d' % ep.episode }}{% endif %}">
               <div class="group flex gap-3 p-3 rounded-lg bg-ink-800/60 border border-white/5
                           hover:border-brand-400/40 hover:bg-ink-800 transition-colors h-full">
                 <a href="/watch/{{ ep.secure_hash }}{{ ep.message_id }}"
