@@ -192,6 +192,7 @@
                           group-hover:border-brand-400/40 transition-colors">
                 <template x-if="e.poster_url">
                   <img :src="e.poster_url" alt="" loading="lazy"
+                       onerror="this.style.display='none'"
                        class="absolute inset-0 w-full h-full object-cover" />
                 </template>
                 {# Resume progress bar. Width = pos/dur as a CSS percent. #}

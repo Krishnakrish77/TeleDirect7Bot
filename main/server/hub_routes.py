@@ -369,7 +369,11 @@ async def api_items(request: web.Request) -> web.Response:
             "poster_path": item.poster_path or "",
             "kind": "series" if item.series_key else ("movie" if item.movie_key else ""),
             "watch_url": f"/watch/{item.secure_hash}{item.message_id}",
-            "thumb_url": f"/thumb/{item.secure_hash}{item.message_id}.jpg" if item.has_thumb else "",
+            # Always return a /thumb/ URL — the endpoint has an ffmpeg
+            # fallback for items without a native Telegram thumb. The
+            # <img onerror> in the consumer will hide the image if even
+            # the fallback fails (truly broken file).
+            "thumb_url": f"/thumb/{item.secure_hash}{item.message_id}.jpg",
         })
     return web.json_response(out, headers={"Cache-Control": "no-store"})
 
