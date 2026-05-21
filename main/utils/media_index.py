@@ -2564,7 +2564,16 @@ def dashboard_stats() -> dict:
         size = it.file_size or 0
         q = it.quality or "unknown"
         storage_by_quality[q] = storage_by_quality.get(q, 0) + size
-        codec = (it.video_codec or "unprobed").lower()
+        # Three distinct codec states:
+        #   - named codec     → bucket by codec name
+        #   - probed but blank → "unknown" (ffprobe ran, found no video stream)
+        #   - probed_at == 0  → "not probed"
+        if it.video_codec:
+            codec = it.video_codec.lower()
+        elif it.probed_at and it.probed_at > 0:
+            codec = "unknown"
+        else:
+            codec = "not probed"
         storage_by_codec[codec] = storage_by_codec.get(codec, 0) + size
         if it.year:
             decade = (it.year // 10) * 10

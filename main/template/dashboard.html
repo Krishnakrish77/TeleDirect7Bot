@@ -54,7 +54,7 @@
         <div class="space-y-1.5 text-sm text-slate-300 tabular-nums">
           {% for codec, bytes in stats.storage_by_codec %}
             <div class="flex justify-between">
-              <span class="{% if codec == 'unprobed' %}text-slate-500{% endif %}">{{ codec }}</span>
+              <span class="{% if codec in ('not probed', 'unknown') %}text-slate-500{% endif %}">{{ codec }}</span>
               <span>{{ bytes | humansize }}</span>
             </div>
           {% else %}
