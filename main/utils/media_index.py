@@ -2041,8 +2041,43 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
         return False
     async with _lock:
         _apply_tmdb_to_item(item, hit)
+        # Propagate TV series enrichment to every sibling sharing the
+        # same series_key — same logic as enrich_one(). One manual TMDB
+        # override should stamp the whole series, not just one episode.
+        propagated: list = []
+        if hit.kind == "tv" and item.tmdb_id and item.series_key:
+            for sib in _items.values():
+                if sib.message_id == item.message_id:
+                    continue
+                if sib.series_key != item.series_key:
+                    continue
+                if sib.tmdb_id == item.tmdb_id:
+                    continue
+                sib.tmdb_id      = item.tmdb_id
+                sib.tmdb_kind    = item.tmdb_kind
+                sib.imdb_id      = item.imdb_id      or sib.imdb_id
+                sib.poster_path  = item.poster_path  or sib.poster_path
+                sib.backdrop_path= item.backdrop_path or sib.backdrop_path
+                sib.tmdb_genres  = list(item.tmdb_genres) or sib.tmdb_genres
+                sib.overview     = sib.overview or item.overview
+                sib.series_title = item.series_title or sib.series_title
+                sib.enriched_at  = time.time()
+                # Clear stale per-episode fields so the next pass re-resolves.
+                sib.episode_title       = ""
+                sib.episode_overview    = ""
+                sib.episode_still_path  = ""
+                sib.episode_air_date    = ""
+                propagated.append(sib)
         _persist_unlocked()
     await _fill_episode_metadata(item)
+    for sib in propagated:
+        try:
+            await _fill_episode_metadata(sib)
+            await _store_upsert(sib)
+        except Exception:
+            logging.exception(
+                "enrich_with_tmdb_id: sibling fill failed for bin:%d", sib.message_id,
+            )
     await persist_now()
     await _store_upsert(item)
     if bot is not None:
