@@ -693,6 +693,54 @@ async def admin_action(request: web.Request) -> web.Response:
             target=_target,
         )
 
+    if action == "tmdb-id":
+        tmdb_id_raw = (form.get("tmdb_id_bulk") or "").strip()
+        tmdb_kind = (form.get("tmdb_kind_bulk") or "tv").strip().lower()
+        if tmdb_kind not in ("tv", "movie"):
+            tmdb_kind = "tv"
+        try:
+            tmdb_id_int = int(tmdb_id_raw)
+        except ValueError:
+            raise _redirect_with_flash("Enter a numeric TMDB id", target=_target)
+
+        import asyncio as _aio
+        import time as _time
+
+        async def _run_tmdb(id_list: list, tid: int, tkind: str) -> None:
+            # Reuse the enrichment state tracker so the existing progress
+            # bar in the UI picks it up.
+            media_index._enrich_state.update(
+                running=True, done=0, total=len(id_list),
+                enriched=0, failed=0, last_title="",
+                started_at=_time.time(), finished_at=0.0,
+            )
+            done = enriched = 0
+            for mid in id_list:
+                item = media_index.get_item(mid)
+                if item:
+                    media_index._enrich_state["last_title"] = item.title or ""
+                ok = await media_index.enrich_with_tmdb_id(
+                    mid, tid, tkind, bot=StreamBot,
+                )
+                if ok:
+                    enriched += 1
+                done += 1
+                media_index._enrich_state.update(
+                    done=done, enriched=enriched, failed=done - enriched,
+                )
+                await _aio.sleep(0)
+            media_index._enrich_state.update(running=False, finished_at=_time.time())
+            logging.info(
+                "bulk tmdb-id (%s/%d): %d/%d applied", tkind, tid, enriched, done,
+            )
+
+        _aio.create_task(_run_tmdb(ids, tmdb_id_int, tmdb_kind))
+        raise _redirect_with_flash(
+            f"TMDB id {tmdb_id_int} ({tmdb_kind}) queued for {len(ids)} item(s) — "
+            "watch the progress bar",
+            target=_target,
+        )
+
     raise _redirect_with_flash("Unknown action", target=_target)
 
 

@@ -510,6 +510,33 @@
           Probe
         </button>
 
+        {# Bulk TMDB-id assign. Useful for series where automatic search
+           matched the wrong show — admin pastes the right TMDB id once,
+           applies to all selected episodes, propagation handles the rest. #}
+        <div class="flex items-center gap-1">
+          <input type="number" name="tmdb_id_bulk" min="1" placeholder="TMDB id"
+                 class="w-24 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                        border border-white/5 placeholder-slate-500
+                        focus:outline-none focus:ring-1 focus:ring-brand-400/60
+                        tabular-nums" />
+          <select name="tmdb_kind_bulk"
+                  class="px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                         border border-white/5
+                         focus:outline-none focus:ring-1 focus:ring-brand-400/60">
+            <option value="tv">TV</option>
+            <option value="movie">Movie</option>
+          </select>
+          <button type="submit" name="action" value="tmdb-id"
+                  @click="if (!confirm('Apply TMDB id to ' + selected.length + ' selected item(s)?')) $event.preventDefault()"
+                  class="px-3 py-1.5 rounded text-xs font-medium
+                         bg-ink-800 text-slate-200 border border-white/5
+                         hover:bg-ink-700 transition-colors
+                         disabled:opacity-40 disabled:cursor-not-allowed"
+                  :disabled="selected.length === 0">
+            Apply TMDB
+          </button>
+        </div>
+
         {% if var.GEMINI_API_KEY %}
         <button type="button"
                 hx-post="/admin/ai-review"
