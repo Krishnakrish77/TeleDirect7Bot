@@ -85,48 +85,83 @@
       {% endif %}
     </header>
 
-    {# Client-side episode filter. No server roundtrip — just hides
-       non-matching <li>s by data-title substring match. #}
-    <div x-data="{
-           q: '',
-           filter(value) {
-             const v = (value || '').trim().toLowerCase();
-             this.q = v;
-             // The <li> items live outside this x-data scope (in sibling
-             // <section>s below), so $root won't find them — use document.
-             const lis = document.querySelectorAll('li[data-ep-title]');
-             lis.forEach(li => {
-               const title = li.dataset.epTitle || '';
-               const match = !v || title.includes(v);
-               li.style.display = match ? '' : 'none';
-             });
-             // Hide empty season sections so the layout doesn't keep
-             // dead headers around.
-             document.querySelectorAll('section[data-season]').forEach(s => {
-               const any = Array.from(s.querySelectorAll('li[data-ep-title]'))
-                                .some(li => li.style.display !== 'none');
-               s.style.display = any ? '' : 'none';
-             });
-           }
-         }"
-         class="mb-6">
-      <label class="relative block max-w-md">
-        <span class="sr-only">Filter episodes</span>
-        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
-             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round"
-                d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
-        </svg>
-        <input type="search"
-               placeholder="Filter episodes…"
-               @input="filter($event.target.value)"
-               class="w-full pl-9 pr-3 py-2 rounded-lg
-                      bg-ink-800/70 text-sm text-slate-100 placeholder-slate-500
-                      border border-white/5
-                      focus:outline-none focus:ring-2 focus:ring-brand-400/60
-                      transition" />
-      </label>
+    {# Toolbar: season selector (server-side) + client-side title filter.
+       The selector navigates to /series/<key>?season=<value> so each
+       season renders independently — only its episodes hit the DOM and
+       only its thumbs get fetched. The title filter is scoped to the
+       currently rendered season; use "All seasons" to search everything. #}
+    <div class="mb-6 flex flex-col sm:flex-row gap-3 sm:items-center">
+      {% if show_selector %}
+        <form method="get" action="/series/{{ series_key }}" class="shrink-0">
+          <label class="sr-only" for="season-select">Season</label>
+          <select id="season-select" name="season"
+                  onchange="this.form.submit()"
+                  class="px-3 py-2 rounded-lg bg-ink-800/70 text-sm text-slate-100
+                         border border-white/5 focus:outline-none
+                         focus:ring-2 focus:ring-brand-400/60 transition
+                         min-w-[10rem]">
+            {% for opt in season_options %}
+              <option value="{{ opt.value }}"
+                      {% if opt.value == selected_season %}selected{% endif %}>
+                {{ opt.label }}
+              </option>
+            {% endfor %}
+          </select>
+          <noscript>
+            <button type="submit"
+                    class="ml-2 px-3 py-2 rounded-lg bg-brand-500 text-white text-sm">
+              Go
+            </button>
+          </noscript>
+        </form>
+      {% endif %}
+
+      <div x-data="{
+             q: '',
+             filter(value) {
+               const v = (value || '').trim().toLowerCase();
+               this.q = v;
+               const lis = document.querySelectorAll('li[data-ep-title]');
+               lis.forEach(li => {
+                 const title = li.dataset.epTitle || '';
+                 const match = !v || title.includes(v);
+                 li.style.display = match ? '' : 'none';
+               });
+               document.querySelectorAll('section[data-season]').forEach(s => {
+                 const any = Array.from(s.querySelectorAll('li[data-ep-title]'))
+                                  .some(li => li.style.display !== 'none');
+                 s.style.display = any ? '' : 'none';
+               });
+             }
+           }"
+           class="flex-1">
+        <label class="relative block max-w-md">
+          <span class="sr-only">Filter episodes</span>
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
+               xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
+          </svg>
+          <input type="search"
+                 placeholder="Filter episodes…"
+                 @input="filter($event.target.value)"
+                 class="w-full pl-9 pr-3 py-2 rounded-lg
+                        bg-ink-800/70 text-sm text-slate-100 placeholder-slate-500
+                        border border-white/5
+                        focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                        transition" />
+        </label>
+        {# Make it obvious the filter is scoped to the rendered season —
+           offer the cross-season fallback in one click. #}
+        {% if show_selector and selected_season != 'all' %}
+          <p class="mt-1.5 text-[11px] text-slate-500">
+            Searches the current season only ·
+            <a href="/series/{{ series_key }}?season=all"
+               class="text-brand-300 hover:text-brand-200">Search all seasons →</a>
+          </p>
+        {% endif %}
+      </div>
     </div>
 
     {% for block in season_blocks %}

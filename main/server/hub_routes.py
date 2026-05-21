@@ -405,7 +405,13 @@ async def hub_movie(request: web.Request) -> web.Response:
 
 @routes.get(r"/series/{key:[a-z0-9][a-z0-9\-]*}")
 async def hub_series(request: web.Request) -> web.Response:
-    """One series: episode list grouped by season."""
+    """One series: episode list grouped by season.
+
+    Server-side season pagination: ``?season=<N|misc|all>`` selects which
+    bucket to render. Default for multi-season shows is the latest
+    numbered season — keeps DOM size + thumb fetches bounded even on
+    100+ episode catalogues.
+    """
     key = request.match_info["key"]
     episodes = media_index.episodes_for_series(key)
     if not episodes:
@@ -414,7 +420,10 @@ async def hub_series(request: web.Request) -> web.Response:
         )
 
     # Numbered seasons in the catalogue (excludes the None bucket).
-    numbered_seasons = sorted({e.season for e in episodes if e.season})
+    # Use ``is not None`` rather than truthiness so a Season 0 ("specials"
+    # in TVDB convention) is kept distinct from misc/unbucketed episodes.
+    numbered_seasons = sorted({e.season for e in episodes if e.season is not None})
+    has_misc = any(e.season is None for e in episodes)
 
     seasons: dict = {}
     if len(numbered_seasons) == 1:
@@ -423,9 +432,13 @@ async def hub_series(request: web.Request) -> web.Response:
         # confusing "Episodes" bucket sitting alongside "Season N".
         only_season = numbered_seasons[0]
         seasons[only_season] = list(episodes)
+        has_misc = False
     else:
+        # Key by season number (``None`` for misc). Keeping None as the
+        # bucket key — rather than coercing to 0 — preserves the
+        # distinction between Season 0 specials and unbucketed misc.
         for ep in episodes:
-            seasons.setdefault(ep.season or 0, []).append(ep)
+            seasons.setdefault(ep.season, []).append(ep)
 
     # Within each season, collapse episodes that share the same episode
     # number into a single card whose ``variants`` list holds every
@@ -435,7 +448,10 @@ async def hub_series(request: web.Request) -> web.Response:
     # ``secure_hash`` are true duplicates — surfaced as a count so the
     # operator knows to clean them up.
     season_blocks = []
-    for s, eps in sorted(seasons.items()):
+    # Sort by season number, putting the None (misc) bucket last so it
+    # always renders below the numbered seasons. ``None`` can't be
+    # compared to int directly so we sort on a tuple.
+    for s, eps in sorted(seasons.items(), key=lambda kv: (kv[0] is None, kv[0])):
         by_ep: dict = {}
         extras: list = []
         for e in eps:
@@ -471,12 +487,62 @@ async def hub_series(request: web.Request) -> web.Response:
             })
         season_blocks.append({"season": s, "entries": entries})
 
+    # ── Season selection (server-side pagination) ─────────────────────
+    # Build the dropdown options first so the template has a complete
+    # picture regardless of what the user picked. Options are:
+    #   - one per numbered season (oldest → newest reads naturally for TV)
+    #   - "Other" iff there are unnumbered episodes (multi-season only)
+    #   - "All seasons" as the cross-season search escape hatch
+    season_options: list = []
+    for s in numbered_seasons:
+        season_options.append({"value": str(s), "label": f"Season {s}"})
+    if has_misc:
+        season_options.append({"value": "misc", "label": "Other episodes"})
+    show_selector = len(season_options) > 1
+    if show_selector:
+        season_options.append({"value": "all", "label": "All seasons"})
+
+    # Parse + validate ?season=...
+    sel_raw = (request.query.get("season") or "").strip().lower()
+    valid_values = {opt["value"] for opt in season_options}
+    if sel_raw in valid_values:
+        selected = sel_raw
+    elif show_selector:
+        # Default to the latest numbered season — matches the "what's
+        # new" expectation for ongoing shows.
+        selected = str(numbered_seasons[-1]) if numbered_seasons else "misc"
+    else:
+        selected = "all"  # single-season or all-misc: render everything
+
+    # Filter the rendered blocks. ``season_blocks`` is keyed by season
+    # number (None for misc/unbucketed).
+    if selected == "all":
+        visible_blocks = season_blocks
+    elif selected == "misc":
+        visible_blocks = [b for b in season_blocks if b["season"] is None]
+    else:
+        try:
+            sel_int = int(selected)
+        except ValueError:
+            visible_blocks = []
+        else:
+            visible_blocks = [b for b in season_blocks if b["season"] == sel_int]
+
+    # Thumbnails are rendered only for the representative entry, not for
+    # each variant (variant chips show quality/size, no image). Scope
+    # the L2 hydration to ``rep`` only.
+    visible_episodes = [
+        entry["rep"].message_id
+        for blk in visible_blocks
+        for entry in blk["entries"]
+    ]
+
     # Bulk-hydrate L1 thumbnail cache from L2 (Mongo) so the browser's
     # parallel /thumb/ requests all hit warm L1 instead of doing one
-    # find_one each. One Mongo round trip replaces N — big win for
-    # 50+ ep series pages on a cold cache after a deploy.
+    # find_one each. Scoped to *visible* episodes only — that's the whole
+    # point of paginating server-side.
     try:
-        await thumb_cache.prewarm_from_store(e.message_id for e in episodes)
+        await thumb_cache.prewarm_from_store(visible_episodes)
     except Exception:
         logging.debug("series: thumb prewarm failed", exc_info=True)
 
@@ -487,7 +553,10 @@ async def hub_series(request: web.Request) -> web.Response:
         meta=enriched,
         series_title=episodes[0].series_title or key,
         series_key=key,
-        season_blocks=season_blocks,
+        season_blocks=visible_blocks,
+        season_options=season_options,
+        show_selector=show_selector,
+        selected_season=selected,
         # Distinct (season, episode) tuples; falls back to the raw row
         # count when no episode is numbered. Surfaces "12 episodes"
         # instead of "37 uploads" when there are heavy variant clusters.
