@@ -486,15 +486,21 @@
       <input type="hidden" name="_q" value="{{ search_q }}" />
       <div class="mb-4 flex flex-wrap items-center gap-2 sticky top-0 z-10
                   bg-ink-900/95 backdrop-blur py-3 -mx-2 px-2 border-b border-white/5">
-        <span class="text-xs text-slate-400" x-text="selected.length + ' selected'"></span>
+        <span class="text-xs"
+              :class="selected.length === 0 ? 'text-slate-500' : 'text-brand-300 font-medium'"
+              x-text="selected.length === 0
+                       ? 'Select rows to enable bulk actions'
+                       : selected.length + ' selected'"></span>
+
+        {# Bulk actions block — only rendered when something is selected,
+           so the page isn't a wall of disabled controls at rest. #}
+        <div class="contents" x-show="selected.length > 0">
 
         <button type="submit" name="action" value="delete"
                 @click="if (!confirm('Delete ' + selected.length + ' entries? This removes them from BIN_CHANNEL.')) $event.preventDefault()"
                 class="ml-auto px-3 py-1.5 rounded text-xs font-medium
                        bg-red-500/15 text-red-300 border border-red-400/30
-                       hover:bg-red-500/25 transition-colors
-                       disabled:opacity-40 disabled:cursor-not-allowed"
-                :disabled="selected.length === 0">
+                       hover:bg-red-500/25 transition-colors">
           Delete
         </button>
 
@@ -623,6 +629,8 @@
           ✦ AI clean
         </button>
         {% endif %}
+
+        </div>{# /bulk-actions-visible-when-selected #}
       </div>
     </form>{# /admin-bulk-form — closed here so the search form below
               isn't a nested-form (illegal HTML). Checkboxes in the
