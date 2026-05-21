@@ -550,10 +550,11 @@
       {%- set qs_base = 'filter=' ~ filter_name -%}
       {%- if search_q -%}{%- set qs_base = qs_base ~ '&q=' ~ (search_q|urlencode) -%}{%- endif -%}
 
-      <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <form method="get" action="/admin" id="admin-filter-form" class="contents">
+      {# Row 1: search (left) · count + pagination (right) #}
+      <div class="mb-2 flex flex-wrap items-center gap-3">
+        <form method="get" action="/admin" id="admin-filter-form" class="flex-1 min-w-[14rem] max-w-md">
           <input type="hidden" name="filter" value="{{ filter_name }}" />
-          <label class="relative flex-1 min-w-[14rem] max-w-sm">
+          <label class="relative block">
             <span class="sr-only">Search</span>
             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
                  xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -577,38 +578,41 @@
           </label>
         </form>
 
-        <div class="flex flex-wrap items-center gap-1.5">
-          {% for cid, clabel in chips %}
-            <a href="/admin?filter={{ cid }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}"
-               class="px-2.5 py-1 text-xs rounded-full border transition-colors
-                      {% if filter_name == cid %}bg-brand-500/20 text-brand-200 border-brand-400/40{% else %}bg-ink-800/60 text-slate-300 border-white/5 hover:bg-ink-800{% endif %}">
-              {{ clabel }}
-            </a>
-          {% endfor %}
-        </div>
-
-        <div class="ml-auto flex items-center gap-2 text-xs text-slate-400 tabular-nums">
+        <div class="ml-auto flex items-center gap-3 text-xs text-slate-400 tabular-nums">
           <span class="text-slate-500">
-            {{ filtered_count }} / {{ catalogue_size }}
+            {{ filtered_count }} of {{ catalogue_size }}
           </span>
           {% if total_pages > 1 %}
-            {%- if page > 1 %}
-              <a href="/admin?{{ qs_base }}&page={{ page - 1 }}"
-                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
-                 title="Previous page">‹</a>
-            {%- else %}
-              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">‹</span>
-            {%- endif %}
-            <span class="px-1">Page {{ page }} / {{ total_pages }}</span>
-            {%- if page < total_pages %}
-              <a href="/admin?{{ qs_base }}&page={{ page + 1 }}"
-                 class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
-                 title="Next page">›</a>
-            {%- else %}
-              <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">›</span>
-            {%- endif %}
+            <div class="flex items-center gap-1">
+              {%- if page > 1 %}
+                <a href="/admin?{{ qs_base }}&page={{ page - 1 }}"
+                   class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
+                   title="Previous page">‹</a>
+              {%- else %}
+                <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">‹</span>
+              {%- endif %}
+              <span class="px-1">Page {{ page }} of {{ total_pages }}</span>
+              {%- if page < total_pages %}
+                <a href="/admin?{{ qs_base }}&page={{ page + 1 }}"
+                   class="px-2 py-1 rounded bg-ink-800/60 hover:bg-ink-800 text-slate-300 border border-white/5"
+                   title="Next page">›</a>
+              {%- else %}
+                <span class="px-2 py-1 rounded bg-ink-900/40 text-slate-600 border border-white/5">›</span>
+              {%- endif %}
+            </div>
           {% endif %}
         </div>
+      </div>
+
+      {# Row 2: filter chips (left-aligned, wrap as needed) #}
+      <div class="mb-3 flex flex-wrap items-center gap-1.5">
+        {% for cid, clabel in chips %}
+          <a href="/admin?filter={{ cid }}{% if search_q %}&q={{ search_q|urlencode }}{% endif %}"
+             class="px-2.5 py-1 text-xs rounded-full border transition-colors
+                    {% if filter_name == cid %}bg-brand-500/20 text-brand-200 border-brand-400/40{% else %}bg-ink-800/60 text-slate-300 border-white/5 hover:bg-ink-800{% endif %}">
+            {{ clabel }}
+          </a>
+        {% endfor %}
       </div>
 
       {# AI review panel — populated by HTMX after clicking '✦ AI clean' #}
