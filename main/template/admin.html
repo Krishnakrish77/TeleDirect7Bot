@@ -697,7 +697,11 @@
                           data-season="{{ item.season or '' }}"
                           data-episode="{{ item.episode or '' }}"
                           data-tmdb-id="{{ item.tmdb_id or '' }}"
-                          data-tmdb-kind="{{ item.tmdb_kind or 'movie' }}"
+                          {# Default to 'tv' when the item already looks like
+                             a TV episode (has a series_key) so the manual
+                             TMDB ID override doesn't accidentally get
+                             applied as a movie record. #}
+                          data-tmdb-kind="{{ item.tmdb_kind or ('tv' if item.series_key else 'movie') }}"
                           @click.stop="openEdit($event.currentTarget)"
                           class="text-xs px-2 py-1 rounded
                                  bg-brand-500/15 text-brand-300
