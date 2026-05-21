@@ -2588,6 +2588,15 @@ def stats() -> dict:
             by_hash.setdefault((it.secure_hash, it.file_size), []).append(it)
     # Movie-variant collapse: 2+ uploads of the same film count as
     # one "movie group", the rest become standalone-equivalent.
+    # Movie counts:
+    #   movie_items         — every item that has a movie_key, regardless
+    #                          of how many variants of that movie exist.
+    #                          Used so series_eps + movies + standalone
+    #                          adds up to the total catalogue size.
+    #   movie_variant_extras — extras across multi-variant groups, exposed
+    #                          for the "duplicate uploads" / variant
+    #                          insight. NOT used in the headline composition.
+    movie_items = sum(len(v) for v in movie_groups.values())
     movie_variant_groups = sum(1 for v in movie_groups.values() if len(v) >= 2)
     movie_variant_extras = sum(len(v) - 1 for v in movie_groups.values() if len(v) >= 2)
     # Quality order — keep ranked from highest resolution down with
@@ -2608,7 +2617,14 @@ def stats() -> dict:
         "total_size_bytes": total_size,
         "kinds": {
             "series_episodes": series_eps,
-            "movie_variants": movie_variant_groups + movie_variant_extras,
+            # All items with a movie_key, including single-variant movies.
+            # series_eps + movies + standalone == total catalogue size.
+            "movies": movie_items,
+            # Number of multi-variant groups (movies with >=2 uploads) and
+            # the extra-upload count across those groups — surfaced for the
+            # 'Issues to clean up' / dedupe view.
+            "movie_variant_groups": movie_variant_groups,
+            "movie_variant_extras": movie_variant_extras,
             "standalone": standalone,
         },
         "quality_buckets": quality_buckets,

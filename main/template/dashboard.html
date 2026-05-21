@@ -28,10 +28,15 @@
         <div class="space-y-1.5 text-sm text-slate-300 tabular-nums">
           <div class="flex justify-between"><span>Series episodes</span>
             <span>{{ stats.kinds.series_episodes }}</span></div>
-          <div class="flex justify-between"><span>Movie variants</span>
-            <span>{{ stats.kinds.movie_variants }}</span></div>
+          <div class="flex justify-between"><span>Movies</span>
+            <span>{{ stats.kinds.movies }}</span></div>
           <div class="flex justify-between"><span>Standalone</span>
             <span>{{ stats.kinds.standalone }}</span></div>
+          {% if stats.kinds.movie_variant_extras %}
+            <div class="flex justify-between text-xs text-slate-500 mt-2 pt-2 border-t border-white/5">
+              <span>{{ stats.kinds.movie_variant_extras }} extra variant{{ '' if stats.kinds.movie_variant_extras == 1 else 's' }} across {{ stats.kinds.movie_variant_groups }} movie{{ '' if stats.kinds.movie_variant_groups == 1 else 's' }}</span>
+            </div>
+          {% endif %}
         </div>
       </div>
 
