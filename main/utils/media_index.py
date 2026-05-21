@@ -1771,16 +1771,17 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
         # default to S1 when one or more siblings are SxxEyy-labelled.
         item.series_key = series_parse.slugify(hit.title)
         item.series_title = hit.title
-        inferred_ep = (
-            series_parse.infer_episode_loose(item.file_name)
-            or series_parse.infer_episode_loose(item.title)
-        )
-        if inferred_ep is not None:
-            item.season = 1  # default; a smarter probe could read TMDB
-            item.episode = inferred_ep
-        else:
-            item.season = None
-            item.episode = None
+        # Preserve admin-set season/episode (same rule as the SxxEyy branch).
+        if item.season is None or item.episode is None:
+            inferred_ep = (
+                series_parse.infer_episode_loose(item.file_name)
+                or series_parse.infer_episode_loose(item.title)
+            )
+            if inferred_ep is not None:
+                if item.season is None:
+                    item.season = 1
+                if item.episode is None:
+                    item.episode = inferred_ep
         item.movie_key = ""
     else:
         item.series_key = ""
