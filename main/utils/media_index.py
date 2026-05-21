@@ -2585,12 +2585,18 @@ def dashboard_stats() -> dict:
         storage_by_codec.items(), key=lambda kv: (-kv[1], kv[0]),
     )
     year_sorted = sorted(year_buckets.items(), key=lambda kv: kv[0])
+    year_max = max((c for _, c in year_sorted), default=0)
+    # dict form of quality_buckets so the template can look up item counts
+    # by quality without map(attribute=…) / selectattr gymnastics.
+    quality_counts_by_q = {q: n for q, n in base["quality_buckets"]}
 
     return {
         **base,
         "storage_by_quality": storage_quality_sorted,
         "storage_by_codec": codec_sorted,
         "year_distribution": year_sorted,
+        "year_distribution_max": year_max,
+        "quality_counts": quality_counts_by_q,
         "top_series": [
             {"key": k, "title": series_titles.get(k, k), "count": n}
             for k, n in top_series

@@ -40,7 +40,7 @@
         <div class="space-y-1.5 text-sm text-slate-300 tabular-nums">
           {% for q, bytes in stats.storage_by_quality %}
             <div class="flex justify-between">
-              <span>{{ q }} <span class="text-slate-500">· {{ stats.quality_buckets | selectattr('0', 'eq', q) | map(attribute=1) | first | default(0) }} items</span></span>
+              <span>{{ q }} <span class="text-slate-500">· {{ stats.quality_counts.get(q, 0) }} items</span></span>
               <span>{{ bytes | humansize }}</span>
             </div>
           {% else %}
@@ -183,14 +183,13 @@
       <div class="rounded-lg border border-white/5 bg-ink-800/30 p-4">
         <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Year distribution</p>
         {% if stats.year_distribution %}
-          {% set max_count = stats.year_distribution | map(attribute=1) | max %}
           <div class="space-y-1.5">
             {% for decade, count in stats.year_distribution %}
               <div class="flex items-center gap-3 text-sm">
                 <span class="text-slate-400 tabular-nums w-12 flex-shrink-0">{{ decade }}s</span>
                 <div class="flex-1 h-2 bg-ink-900 rounded overflow-hidden">
                   <div class="h-full bg-brand-400/60"
-                       style="width: {{ (count * 100 / max_count) | round(1) }}%"></div>
+                       style="width: {{ (count * 100 / stats.year_distribution_max) | round(1) }}%"></div>
                 </div>
                 <span class="text-slate-300 tabular-nums w-8 text-right">{{ count }}</span>
               </div>
