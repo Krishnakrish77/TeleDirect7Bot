@@ -1953,11 +1953,54 @@ async def enrich_one(message_id: int, bot=None) -> bool:
 
     async with _lock:
         _apply_tmdb_to_item(item, hit)
+        # For TV series, propagate the show-level enrichment (tmdb_id,
+        # poster, backdrop, overview, genres, series_title) to every
+        # other episode sharing the same series_key. Without this, only
+        # the explicitly-enriched episode gets the TMDB id, so the next
+        # 'Fetch episode details' pass can't fill per-episode metadata
+        # on its siblings.
+        propagated: list = []
+        if hit.kind == "tv" and item.tmdb_id and item.series_key:
+            for sib in _items.values():
+                if sib.message_id == item.message_id:
+                    continue
+                if sib.series_key != item.series_key:
+                    continue
+                if sib.tmdb_id == item.tmdb_id:
+                    continue
+                sib.tmdb_id      = item.tmdb_id
+                sib.tmdb_kind    = item.tmdb_kind
+                sib.imdb_id      = item.imdb_id      or sib.imdb_id
+                sib.poster_path  = item.poster_path  or sib.poster_path
+                sib.backdrop_path= item.backdrop_path or sib.backdrop_path
+                sib.tmdb_genres  = list(item.tmdb_genres) or sib.tmdb_genres
+                sib.overview     = sib.overview or item.overview
+                sib.series_title = item.series_title or sib.series_title
+                sib.enriched_at  = time.time()
+                # Clear stale per-episode fields so the upcoming
+                # _fill_episode_metadata pass re-resolves them against
+                # the freshly-stamped TMDB id.
+                sib.episode_title       = ""
+                sib.episode_overview    = ""
+                sib.episode_still_path  = ""
+                sib.episode_air_date    = ""
+                propagated.append(sib)
         _persist_unlocked()
 
     # Per-episode enrichment is async — do it outside the lock so the
     # TMDB season fetch doesn't block other catalogue mutations.
     await _fill_episode_metadata(item)
+    # Same per-episode fill for the propagated siblings. fetch_season is
+    # cached at the (tmdb_id, season) level so a 70-episode show only
+    # costs one TMDB call per season regardless of sibling count.
+    for sib in propagated:
+        try:
+            await _fill_episode_metadata(sib)
+            await _store_upsert(sib)
+        except Exception:
+            logging.exception(
+                "enrich_one: sibling fill failed for bin:%d", sib.message_id,
+            )
     # Fetch YouTube trailer key if not already set (one extra TMDB call
     # per title but cached at the series/movie level by tmdb module).
     if not item.trailer_key and item.tmdb_id:
