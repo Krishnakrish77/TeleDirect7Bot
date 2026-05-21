@@ -48,6 +48,33 @@ def _store():
         return None
 
 
+async def prewarm_from_store(message_ids) -> int:
+    """Bulk-hydrate L1 from L2 for a list of message_ids.
+
+    Designed to be called by page renderers right before they emit N
+    /thumb/ URLs. One Mongo round-trip replaces N find_one calls. Returns
+    the number of entries it placed into L1.
+
+    Skips IDs already in L1 (no work) and IDs the store doesn't have
+    (later /thumb/ requests will fetch + persist them).
+    """
+    ids = [int(m) for m in message_ids if get(int(m)) is None]
+    if not ids:
+        return 0
+    store = _store()
+    if store is None:
+        return 0
+    try:
+        results = await store.get_thumbs_bulk(ids)
+    except Exception:
+        logging.exception("thumb_cache: prewarm bulk fetch failed")
+        return 0
+    for mid, data in results.items():
+        if data:
+            set_(mid, data)
+    return len(results)
+
+
 def get(message_id: int) -> Optional[bytes]:
     entry = _cache.get(message_id)
     if entry is None:
@@ -123,17 +150,24 @@ async def cached_or_fetch(message_id: int, fetcher) -> Optional[bytes]:
 
     # ── outside lock_for(message_id) ──
     # Fire-and-forget L2 write so a slow Mongo round trip doesn't block
-    # other concurrent /thumb requests for the same message. The bytes
-    # are already in L1 so subsequent in-process hits are still fast;
-    # the durable mirror is best-effort.
+    # other concurrent /thumb requests for the same message. One retry
+    # after a 2 s pause catches transient Mongo flaps; if the second
+    # write also fails the bytes stay only in L1 and the next orphan
+    # sweep / regenerate cycle will pick it up.
     if data is not None and store is not None:
         async def _persist():
-            try:
-                await store.set_thumb(message_id, data)
-            except Exception:
-                logging.exception(
-                    "thumb_cache: L2 set failed for msg %d", message_id,
-                )
+            for attempt in (1, 2):
+                try:
+                    await store.set_thumb(message_id, data)
+                    return
+                except Exception:
+                    if attempt == 1:
+                        await asyncio.sleep(2)
+                        continue
+                    logging.exception(
+                        "thumb_cache: L2 set failed for msg %d (gave up after retry)",
+                        message_id,
+                    )
         try:
             asyncio.create_task(_persist())
         except RuntimeError:

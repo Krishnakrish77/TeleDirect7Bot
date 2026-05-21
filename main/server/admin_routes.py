@@ -526,10 +526,35 @@ async def admin_prune_stale(request: web.Request) -> web.Response:
             if msg.empty:
                 await media_index.remove(msg.id, bot=StreamBot)
                 removed += 1
-    raise _redirect_with_flash(
+
+    # Orphan thumbs — entries that no longer have a matching item in the
+    # catalogue. These can accumulate via paths that bypass remove()
+    # (manual Mongo edit, bulk reseed, etc.). Cleanup is cheap: list both
+    # collections and diff in-process.
+    thumbs_removed = 0
+    if media_index._store_active():
+        try:
+            thumb_ids = await media_index._store.thumb_ids()
+            live_ids = set(media_index._items.keys())
+            orphan_ids = [t for t in thumb_ids if t not in live_ids]
+            for orphan in orphan_ids:
+                try:
+                    await media_index._store.remove_thumb(orphan)
+                    thumbs_removed += 1
+                except Exception:
+                    logging.exception(
+                        "admin: orphan thumb delete failed for bin:%d", orphan,
+                    )
+        except Exception:
+            logging.exception("admin: orphan thumb scan failed")
+
+    msg = (
         f"Pruned {removed} stale entr{'y' if removed == 1 else 'ies'} "
         f"(checked {len(ids)} items)."
     )
+    if thumbs_removed:
+        msg += f" Cleared {thumbs_removed} orphan thumb(s)."
+    raise _redirect_with_flash(msg)
 
 
 @routes.post("/admin/fetch-episodes")

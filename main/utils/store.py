@@ -151,22 +151,53 @@ class MongoStore:
     _THUMB_MAX_BYTES = 15 * 1024 * 1024
 
     async def set_thumb(self, message_id: int, data: bytes) -> None:
+        """Persist a thumbnail. Exceptions PROPAGATE so the caller can
+        decide whether to retry (the thumb_cache write-through retries
+        once after a 2 s pause)."""
         if not data or len(data) > self._THUMB_MAX_BYTES:
             return
-        try:
-            await self._thumbs.replace_one(
-                {"_id": int(message_id)},
-                {"_id": int(message_id), "data": _Binary(data)},
-                upsert=True,
-            )
-        except Exception:
-            logging.exception("store.mongo: set_thumb failed for bin:%d", message_id)
+        await self._thumbs.replace_one(
+            {"_id": int(message_id)},
+            {"_id": int(message_id), "data": _Binary(data)},
+            upsert=True,
+        )
 
     async def remove_thumb(self, message_id: int) -> None:
         try:
             await self._thumbs.delete_one({"_id": int(message_id)})
         except Exception:
             logging.exception("store.mongo: remove_thumb failed for bin:%d", message_id)
+
+    async def get_thumbs_bulk(self, message_ids: Iterable[int]) -> "dict":
+        """Hydrate many thumbs in one round-trip — cuts page-render cost
+        on series/hub pages where a single find_one per thumbnail would
+        otherwise become N×latency."""
+        ids = [int(m) for m in message_ids]
+        if not ids:
+            return {}
+        try:
+            cursor = self._thumbs.find(
+                {"_id": {"$in": ids}}, projection={"data": 1},
+            )
+            out: dict = {}
+            async for doc in cursor:
+                data = doc.get("data")
+                if data:
+                    out[int(doc["_id"])] = bytes(data)
+            return out
+        except Exception:
+            logging.exception("store.mongo: get_thumbs_bulk failed")
+            return {}
+
+    async def thumb_ids(self) -> "list":
+        """Return all message_ids that currently have a persisted thumb.
+        Used by the orphan-prune maintenance action."""
+        try:
+            cursor = self._thumbs.find({}, projection={"_id": 1})
+            return [int(doc["_id"]) async for doc in cursor]
+        except Exception:
+            logging.exception("store.mongo: thumb_ids failed")
+            return []
 
     async def load_all(self) -> List[dict]:
         """Return every item as a list of dicts in HubItem-shape.

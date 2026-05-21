@@ -13,6 +13,7 @@ without a full reload. Non-HTMX requests get the full templated page.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import List, Optional
@@ -469,6 +470,15 @@ async def hub_series(request: web.Request) -> web.Response:
                 "rep": e, "variants": [e], "duplicate_count": 0,
             })
         season_blocks.append({"season": s, "entries": entries})
+
+    # Bulk-hydrate L1 thumbnail cache from L2 (Mongo) so the browser's
+    # parallel /thumb/ requests all hit warm L1 instead of doing one
+    # find_one each. One Mongo round trip replaces N — big win for
+    # 50+ ep series pages on a cold cache after a deploy.
+    try:
+        await thumb_cache.prewarm_from_store(e.message_id for e in episodes)
+    except Exception:
+        logging.debug("series: thumb prewarm failed", exc_info=True)
 
     # First enriched episode (if any) carries the show-level TMDB data.
     enriched = next((e for e in episodes if e.tmdb_id), episodes[0])
