@@ -106,8 +106,17 @@ def _sem() -> asyncio.Semaphore:
     return _sem()
 
 
-async def parse_filename(raw_name: str, model: str = "gemini-2.5-flash-lite") -> Optional[dict]:
-    """Call Gemini to parse a raw filename.  Returns the parsed dict or None."""
+async def parse_filename(
+    raw_name: str,
+    model: str = "gemini-2.5-flash-lite",
+    known_series: Optional[list] = None,
+) -> Optional[dict]:
+    """Call Gemini to parse a raw filename. Returns the parsed dict or None.
+
+    known_series: optional list of existing series titles in the catalogue.
+    When provided, the prompt instructs the model to prefer those exact
+    spellings so a near-duplicate doesn't split a series across two cards.
+    """
     if not Var.GEMINI_API_KEY or not raw_name:
         return None
 
@@ -115,8 +124,16 @@ async def parse_filename(raw_name: str, model: str = "gemini-2.5-flash-lite") ->
         f"https://generativelanguage.googleapis.com/v1beta/models"
         f"/{model}:generateContent?key={Var.GEMINI_API_KEY}"
     )
+    context_block = ""
+    if known_series:
+        joined = ", ".join(f'"{s}"' for s in known_series[:30])
+        context_block = (
+            "\nCatalogue context — existing series titles "
+            "(use these exact spellings when the filename matches):\n"
+            f"  {joined}\n\n"
+        )
     payload = {
-        "contents": [{"parts": [{"text": _PROMPT + repr(raw_name)}]}],
+        "contents": [{"parts": [{"text": _PROMPT + context_block + repr(raw_name)}]}],
         "generationConfig": {
             "response_mime_type": "application/json",
             "response_schema": _SCHEMA,

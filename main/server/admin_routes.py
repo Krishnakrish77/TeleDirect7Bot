@@ -840,12 +840,24 @@ async def admin_ai_review(request: web.Request) -> web.Response:
 
     from main.utils import filename_ai as _fnai
 
+    # Send the AI a snapshot of existing series titles so it picks the
+    # right spelling instead of inventing near-duplicates.
+    _series_counts: dict = {}
+    for it in media_index._items.values():
+        if it.series_title:
+            _series_counts[it.series_title] = _series_counts.get(it.series_title, 0) + 1
+    _known_series = [s for s, _ in sorted(
+        _series_counts.items(), key=lambda kv: (-kv[1], kv[0]),
+    )]
+
     proposals = []
     for mid in ids:
         item = media_index.get_item(mid)
         if item is None or not item.file_name:
             continue
-        result = await _fnai.parse_filename(item.file_name)
+        result = await _fnai.parse_filename(
+            item.file_name, known_series=_known_series,
+        )
         if result is None:
             continue
         prop: dict = {
@@ -1022,6 +1034,21 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         f"File size: {humanbytes(item.file_size)}" if item.file_size else "",
     ])
 
+    # Catalogue context so the AI matches existing series/tag vocabulary
+    # instead of inventing near-duplicates (e.g. 'Mahabharat' when we already
+    # have 'Mahabharatham' — would split the series across two cards).
+    series_counts: dict = {}
+    tag_counts: dict = {}
+    for it in media_index._items.values():
+        if it.series_title:
+            series_counts[it.series_title] = series_counts.get(it.series_title, 0) + 1
+        for t in (it.tags or []):
+            tag_counts[t] = tag_counts.get(t, 0) + 1
+    top_series = sorted(series_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:30]
+    top_tags = sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:25]
+    series_list = ", ".join(f'"{s}" ({n})' for s, n in top_series) or "(none yet)"
+    tag_list = ", ".join(t for t, _ in top_tags) or "(none yet)"
+
     prompt = (
         "You are a media catalogue assistant. Analyse this video file and suggest "
         "accurate catalogue metadata.\n\n"
@@ -1032,15 +1059,22 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         "• Watermarks, UI elements, URLs, browser tabs\n"
         "• Any branding that identifies the content\n\n"
         f"File metadata:\n{meta_text}\n\n"
+        "Existing catalogue context (use these spellings if a match exists "
+        "— a near-duplicate would split a series into two):\n"
+        f"  Known series titles: {series_list}\n"
+        f"  Common tags: {tag_list}\n\n"
         "Rules:\n"
         "• Populate every field you can confidently identify.\n"
-        "• For courses/series: set series_title, season (default 1), episode.\n"
+        "• For courses/series: set series_title, season (default 1), episode. "
+        "If this item belongs to a known series above, use that EXACT spelling.\n"
         "• For movies: set title and year.\n"
         "• file_name: ALWAYS generate a descriptive filename based on what you found. "
         "Format: 'Series Name - Episode Title.mp4' for courses/episodes, "
         "'Movie Title (Year).mkv' for movies. Never leave file_name empty if you "
         "identified the content — it is the primary display label.\n"
-        "• tags: at most 3 tags, space-separated, lowercase (e.g. 'action thriller 2020s').\n"
+        "• tags: at most 3 tags, space-separated, lowercase. Prefer tags already "
+        "in the common-tags list above; only invent new tags when no existing "
+        "tag fits.\n"
         "• Use 0 or empty string only for fields you truly cannot determine.\n"
         "• In 'reasoning' briefly explain what you found in the thumbnail."
     )
