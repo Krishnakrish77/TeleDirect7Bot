@@ -202,10 +202,7 @@
       </div>
     </div>
 
-    <div id="audioTracksBar" class="hidden mt-3 flex flex-wrap gap-2 items-center">
-      <span class="text-xs text-slate-500 mr-1">Audio:</span>
-      <!-- buttons injected by JS -->
-    </div>
+    {# Audio track button injected into Plyr's controls bar by JS. #}
 
     <div class="mt-6 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3
                 text-sm text-amber-200/90 text-center">
@@ -462,9 +459,8 @@
 
     async function attachAudioTracks(video) {
       const hlsSrc = video.dataset.hlsSrc;
-      if (!hlsSrc) return;  // direct stream — can't switch tracks without HLS
+      if (!hlsSrc) return;  // direct stream — no track switching without HLS
 
-      // Derive the audio-list URL from the playlist URL.
       const audioListUrl = hlsSrc.replace("playlist.m3u8", "audio-list.json");
       let tracks;
       try {
@@ -476,70 +472,181 @@
       }
       if (!tracks || tracks.length === 0) return;
 
-      const bar = document.getElementById("audioTracksBar");
-      if (!bar) return;
+      // Find Plyr's controls bar (rendered synchronously before this async fn).
+      const plyrEl = video.closest(".plyr");
+      const controls = plyrEl && plyrEl.querySelector(".plyr__controls");
+      if (!controls) return;
 
-      // Active HLS src (may be updated as user switches tracks).
       let currentSrc = hlsSrc;
-      let activeIndex = 0;  // default: track 0
+      let activeIndex = 0;
+      let menuOpen = false;
 
-      function buildAudioUrl(trackIndex) {
-        // Replace or append the ?a= param in currentSrc.
-        const base = currentSrc.split("?")[0];
-        return `${base}?a=${trackIndex}`;
+      function buildAudioUrl(idx) {
+        return `${currentSrc.split("?")[0]}?a=${idx}`;
       }
 
-      function renderButtons(activeIdx) {
-        // Remove existing buttons (keep the label span).
-        bar.querySelectorAll("button[data-audio-idx]").forEach(b => b.remove());
-        tracks.forEach((t) => {
-          const btn = document.createElement("button");
-          btn.dataset.audioIdx = String(t.index);
-          btn.textContent = t.label || `Track ${t.index + 1}`;
-          btn.className = [
-            "text-xs rounded-lg px-3 py-1.5 font-medium transition-colors",
-            t.index === activeIdx
-              ? "bg-brand-500 text-white"
-              : "bg-ink-800/70 text-slate-300 hover:bg-ink-800 border border-white/5",
-          ].join(" ");
-          btn.addEventListener("click", () => {
-            if (t.index === activeIndex) return;
-            const savedTime = video.currentTime;
-            const newSrc = buildAudioUrl(t.index);
-            currentSrc = newSrc;
-            activeIndex = t.index;
-            renderButtons(activeIndex);
+      function switchTo(idx) {
+        if (idx === activeIndex) return;
+        const savedTime = video.currentTime;
+        const newSrc = buildAudioUrl(idx);
+        currentSrc = newSrc;
+        activeIndex = idx;
+        updateLabel();
+        updateMenuItems();
 
-            if (window._playerHls) {
-              // Remove any handler from a previous rapid switch before
-              // registering the new one — prevents N stacked handlers firing
-              // on the same MANIFEST_PARSED event with stale savedTime values.
-              if (window._pendingOnParsed) {
-                window._playerHls.off(Hls.Events.MANIFEST_PARSED, window._pendingOnParsed);
-                window._pendingOnParsed = null;
-              }
-              window._playerHls.loadSource(newSrc);
-              const onParsed = () => {
-                window._playerHls.off(Hls.Events.MANIFEST_PARSED, onParsed);
-                window._pendingOnParsed = null;
-                video.currentTime = savedTime;
-                video.play().catch(() => {});
-              };
-              window._pendingOnParsed = onParsed;
-              window._playerHls.on(Hls.Events.MANIFEST_PARSED, onParsed);
-            } else {
-              // Safari native HLS.
-              video.src = newSrc;
-              video.currentTime = savedTime;
-              video.play().catch(() => {});
-            }
+        if (window._playerHls) {
+          if (window._pendingOnParsed) {
+            window._playerHls.off(Hls.Events.MANIFEST_PARSED, window._pendingOnParsed);
+            window._pendingOnParsed = null;
+          }
+          window._playerHls.loadSource(newSrc);
+          const onParsed = () => {
+            window._playerHls.off(Hls.Events.MANIFEST_PARSED, onParsed);
+            window._pendingOnParsed = null;
+            video.currentTime = savedTime;
+            video.play().catch(() => {});
+          };
+          window._pendingOnParsed = onParsed;
+          window._playerHls.on(Hls.Events.MANIFEST_PARSED, onParsed);
+        } else {
+          video.src = newSrc;
+          video.currentTime = savedTime;
+          video.play().catch(() => {});
+        }
+      }
+
+      // ── Build the Plyr control button ──────────────────────────────────
+      //
+      // Structure:
+      //   <div class="plyr__controls__item" style="position:relative">
+      //     <button class="plyr__control" aria-label="Audio language">
+      //       [speaker icon] [current track label]
+      //     </button>
+      //     <div role="menu" ...dropdown...>
+      //       <button role="menuitem">Tamil</button>
+      //       ...
+      //     </div>
+      //   </div>
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "plyr__controls__item";
+      wrapper.style.cssText = "position:relative;display:flex;align-items:center;";
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "plyr__control";
+      btn.setAttribute("aria-label", "Audio language");
+      btn.setAttribute("aria-haspopup", "true");
+      // Speaker icon (stroke-based, matches Plyr's 18×18 icon style).
+      btn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" fill="none"
+             stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M3 6.5h2.75L9.5 3.5v11l-3.75-3H3v-4z"/>
+          <path stroke-linecap="round"
+                d="M12 6c.9.7 1.5 1.8 1.5 3s-.6 2.3-1.5 3
+                   M14 4c1.7 1.3 2.75 3.3 2.75 5s-1.05 3.7-2.75 5"/>
+        </svg>
+        <span class="plyr__sr-only">Audio language</span>
+      `;
+
+      // Small text label showing the active track name (e.g. "Tamil").
+      const label = document.createElement("span");
+      label.style.cssText = "font-size:10px;line-height:1;margin-left:3px;max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:0.85;pointer-events:none;";
+      btn.appendChild(label);
+
+      function updateLabel() {
+        const active = tracks.find(t => t.index === activeIndex);
+        label.textContent = active ? (active.label || `Track ${active.index + 1}`) : "";
+      }
+
+      // ── Dropdown menu ──────────────────────────────────────────────────
+      const menu = document.createElement("div");
+      menu.setAttribute("role", "menu");
+      menu.style.cssText = [
+        "position:absolute",
+        "bottom:calc(100% + 6px)",
+        "right:0",
+        "min-width:120px",
+        "background:rgba(0,0,0,0.92)",
+        "backdrop-filter:blur(8px)",
+        "-webkit-backdrop-filter:blur(8px)",
+        "border:1px solid rgba(255,255,255,0.12)",
+        "border-radius:8px",
+        "padding:4px",
+        "z-index:9999",
+        "display:none",
+        "box-shadow:0 4px 24px rgba(0,0,0,0.5)",
+      ].join(";");
+
+      function updateMenuItems() {
+        menu.innerHTML = "";
+        tracks.forEach((t) => {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.setAttribute("role", "menuitem");
+          item.textContent = t.label || `Track ${t.index + 1}`;
+          const isActive = t.index === activeIndex;
+          item.style.cssText = [
+            "display:block",
+            "width:100%",
+            "text-align:left",
+            "padding:6px 10px",
+            "border-radius:5px",
+            "font-size:12px",
+            "font-weight:" + (isActive ? "600" : "400"),
+            "color:" + (isActive ? "#f97316" : "rgba(255,255,255,0.85)"),
+            "background:" + (isActive ? "rgba(249,115,22,0.12)" : "transparent"),
+            "border:none",
+            "cursor:pointer",
+            "transition:background 0.1s",
+          ].join(";");
+          item.addEventListener("mouseenter", () => {
+            if (!isActive) item.style.background = "rgba(255,255,255,0.08)";
           });
-          bar.appendChild(btn);
+          item.addEventListener("mouseleave", () => {
+            item.style.background = isActive ? "rgba(249,115,22,0.12)" : "transparent";
+          });
+          item.addEventListener("click", (e) => {
+            e.stopPropagation();
+            closeMenu();
+            switchTo(t.index);
+          });
+          menu.appendChild(item);
         });
       }
 
-      renderButtons(activeIndex);
-      bar.classList.remove("hidden");
+      function openMenu() {
+        menuOpen = true;
+        menu.style.display = "block";
+        btn.setAttribute("aria-expanded", "true");
+      }
+
+      function closeMenu() {
+        menuOpen = false;
+        menu.style.display = "none";
+        btn.setAttribute("aria-expanded", "false");
+      }
+
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menuOpen ? closeMenu() : openMenu();
+      });
+
+      // Close on outside click.
+      document.addEventListener("click", closeMenu);
+      // Close when player enters fullscreen (controls re-render).
+      plyrEl.addEventListener("enterfullscreen", closeMenu);
+
+      wrapper.appendChild(btn);
+      wrapper.appendChild(menu);
+
+      // Insert before the fullscreen button (last control).
+      const fullscreenBtn = controls.querySelector('[data-plyr="fullscreen"]');
+      controls.insertBefore(wrapper, fullscreenBtn || null);
+
+      updateLabel();
+      updateMenuItems();
     }
 
     function attachSubtitleUpload(video) {
