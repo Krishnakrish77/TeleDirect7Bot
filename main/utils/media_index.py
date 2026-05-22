@@ -1049,10 +1049,16 @@ def _build_series_group(episodes: List[HubItem]) -> SeriesGroup:
         max(episodes, key=lambda e: e.message_id),
     )
     seasons = {e.season for e in episodes if e.season is not None}
+    # Count distinct (season, episode) pairs so variant uploads of the
+    # same episode (or the same range file) don't inflate the number.
+    # Falls back to raw file count only when no episode numbers exist.
+    distinct_eps = len(
+        {(e.season, e.episode) for e in episodes if e.episode is not None}
+    ) or len(episodes)
     return SeriesGroup(
         series_key=episodes[0].series_key,
         series_title=episodes[0].series_title or episodes[0].title,
-        episode_count=len(episodes),
+        episode_count=distinct_eps,
         season_count=len(seasons) or 1,
         latest_message_id=max(e.message_id for e in episodes),
         poster_item=poster,
