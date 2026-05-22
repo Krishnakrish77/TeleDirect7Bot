@@ -491,7 +491,7 @@
         const newSrc = buildAudioUrl(idx);
         currentSrc = newSrc;
         activeIndex = idx;
-        updateLabel();
+        updateButtonState();
         updateMenuItems();
 
         if (window._playerHls) {
@@ -537,7 +537,10 @@
       btn.className = "plyr__control";
       btn.setAttribute("aria-label", "Audio language");
       btn.setAttribute("aria-haspopup", "true");
-      // Speaker icon (stroke-based, matches Plyr's 18×18 icon style).
+      // Speaker icon — same 18×18 stroke style as Plyr's built-in icons.
+      // No visible text label in the button: just the icon, matching how
+      // Plyr's CC button works. The active track gets a checkmark in the
+      // dropdown and the button gets the pressed highlight when non-default.
       btn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" fill="none"
              stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -550,14 +553,16 @@
         <span class="plyr__sr-only">Audio language</span>
       `;
 
-      // Small text label showing the active track name (e.g. "Tamil").
-      const label = document.createElement("span");
-      label.style.cssText = "font-size:10px;line-height:1;margin-left:3px;max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:0.85;pointer-events:none;";
-      btn.appendChild(label);
-
-      function updateLabel() {
-        const active = tracks.find(t => t.index === activeIndex);
-        label.textContent = active ? (active.label || `Track ${active.index + 1}`) : "";
+      // Highlight the button (like Plyr's CC active state) when a
+      // non-default track is selected so the user knows it's in effect.
+      function updateButtonState() {
+        if (activeIndex === 0) {
+          btn.removeAttribute("aria-pressed");
+          btn.style.color = "";
+        } else {
+          btn.setAttribute("aria-pressed", "true");
+          btn.style.color = "#f97316";  // brand orange — mirrors Plyr's pressed tint
+        }
       }
 
       // ── Dropdown menu ──────────────────────────────────────────────────
@@ -586,10 +591,20 @@
           const item = document.createElement("button");
           item.type = "button";
           item.setAttribute("role", "menuitem");
-          item.textContent = t.label || `Track ${t.index + 1}`;
           const isActive = t.index === activeIndex;
+          // Checkmark + label row, same layout as Plyr's settings sub-menus.
+          item.innerHTML = `
+            <span style="display:inline-block;width:14px;margin-right:6px;
+                         color:#f97316;font-size:11px;flex-shrink:0;">
+              ${isActive ? "✓" : ""}
+            </span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${t.label || `Track ${t.index + 1}`}
+            </span>
+          `;
           item.style.cssText = [
-            "display:block",
+            "display:flex",
+            "align-items:center",
             "width:100%",
             "text-align:left",
             "padding:6px 10px",
@@ -603,7 +618,6 @@
             "transition:background 0.1s",
             "white-space:nowrap",
             "overflow:hidden",
-            "text-overflow:ellipsis",
           ].join(";");
           item.addEventListener("mouseenter", () => {
             if (!isActive) item.style.background = "rgba(255,255,255,0.08)";
@@ -651,7 +665,7 @@
       const fullscreenBtn = controls.querySelector('[data-plyr="fullscreen"]');
       controls.insertBefore(wrapper, fullscreenBtn || null);
 
-      updateLabel();
+      updateButtonState();
       updateMenuItems();
     }
 
