@@ -611,32 +611,6 @@ async def prune_stale(bot, channel_id: int, batch_size: int = 100) -> int:
     return removed
 
 
-async def _prune_loop(bot, channel_id: int, interval: int = 30 * 60) -> None:
-    """Background task: prune stale entries every ``interval`` seconds.
-
-    Telegram delivery of deleteChannelMessages to bots is unreliable for
-    private channels, so we sweep periodically as a safety net. Default
-    interval is 30 minutes — cheap enough (batched get_messages) to run
-    continuously without hitting rate limits.
-    """
-    # Wait one full interval after startup so the seed has time to finish
-    # and we don't race against the initial catalogue load.
-    await asyncio.sleep(interval)
-    while True:
-        try:
-            removed = await prune_stale(bot, channel_id)
-            if removed:
-                logging.info("background prune: removed %d stale entries", removed)
-        except Exception:
-            logging.exception("background prune loop error")
-        await asyncio.sleep(interval)
-
-
-def start_prune_loop(bot, channel_id: int, interval: int = 30 * 60) -> None:
-    """Schedule the background prune loop as a fire-and-forget task."""
-    asyncio.create_task(_prune_loop(bot, channel_id, interval))
-
-
 async def persist_now() -> None:
     """Public helper: take the lock and flush the /tmp JSON cache.
 

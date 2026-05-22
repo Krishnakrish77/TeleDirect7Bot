@@ -61,10 +61,6 @@ async def start_services():
     # Start the HLS-session reaper so idle ffmpeg processes + their /tmp
     # segment dirs get freed.
     hls_session.ensure_reaper_running()
-    # Background prune: check BIN_CHANNEL every 30 min for deleted messages
-    # the on_deleted_messages event may have missed (private-channel bots
-    # don't always receive updateDeletedChannelMessages from Telegram).
-    media_index.start_prune_loop(StreamBot, Var.BIN_CHANNEL)
     if Var.ON_KOYEB:
         print("------------------ Starting Keep Alive Service ------------------")
         print()

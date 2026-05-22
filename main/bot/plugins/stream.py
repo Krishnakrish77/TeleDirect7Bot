@@ -11,20 +11,25 @@ from pyrogram.errors import FloodWait
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 
-@StreamBot.on_deleted_messages()
+@StreamBot.on_deleted_messages(filters.channel)
 async def bin_message_deleted(client: Client, messages):
     """Prune the catalogue when messages are deleted from BIN_CHANNEL.
 
-    No filters.chat() — deleted-message objects from channel updates may
-    not carry a fully-resolved chat, so filter results are unreliable.
-    We guard manually by checking each message's chat.id below.
+    Uses filters.channel (checks chat.type == CHANNEL only) rather than
+    filters.chat(BIN_CHANNEL): the minimal Chat stub built by kurigram
+    for deleted-message updates only has id+type, and filters.chat() does
+    a set-membership check that silently fails on type mismatches between
+    the string env-var and the integer chat.id.
+
+    Pattern from Telegram-Stremio (weebzone/Telegram-Stremio): use
+    filters.channel to gate on channel updates, then guard the specific
+    channel with an explicit int comparison inside the handler.
     """
     bin_id = int(Var.BIN_CHANNEL)
     removed = 0
     for msg in messages:
-        # Only act on deletions from our own BIN_CHANNEL.
         chat = getattr(msg, "chat", None)
-        if chat is not None and getattr(chat, "id", None) != bin_id:
+        if getattr(chat, "id", None) != bin_id:
             continue
         try:
             mid = int(getattr(msg, "id", 0) or 0)
@@ -38,12 +43,6 @@ async def bin_message_deleted(client: Client, messages):
         removed += 1
     if removed:
         logging.info("media_index: pruned %d entries on BIN deletion", removed)
-    else:
-        logging.debug(
-            "bin_message_deleted fired (chat filter passed) but no catalogue "
-            "entries matched — %d message id(s) in update",
-            len(messages),
-        )
 
 
 def _looks_like_subtitle(m: Message) -> bool:
