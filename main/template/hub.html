@@ -313,7 +313,7 @@
     {# Secondary filter dropdowns. Only shown when the user has narrowed
        at all OR when they're not on the curated landing — keeping the
        hero+shelves view as uncluttered as possible. #}
-    {% set filtering = params.q or params.tag or params.year or params.quality or params.genre or params.sort != 'newest' %}
+    {% set filtering = params.q or params.tag or params.year or params.quality or params.genre or params.sort != 'newest' or params.view %}
     {% if filtering or not shelves %}
       <div class="mb-5 flex flex-wrap items-center gap-2">
         <select name="year" aria-label="Year"
@@ -358,16 +358,28 @@
         </select>
 
         {% if params.tag %}
-          <span class="px-2 py-1 text-xs rounded bg-brand-500/15 text-brand-300
-                       border border-brand-400/30">
-            #{{ params.tag }}
-          </span>
+          <a href="/?{{ ('view=' ~ params.view ~ '&') if params.view else '' }}{{ ('q=' ~ params.q ~ '&') if params.q else '' }}"
+             class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded
+                    bg-brand-500/15 text-brand-300 border border-brand-400/30
+                    hover:bg-brand-500/25 transition-colors">
+            #{{ params.tag }} <span class="opacity-60">×</span>
+          </a>
+        {% endif %}
+
+        {% if params.view in ('series', 'movies') %}
+          <a href="{{ '/?q=' ~ params.q if params.q else '/' }}"
+             class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded
+                    bg-sky-500/15 text-sky-300 border border-sky-400/30
+                    hover:bg-sky-500/25 transition-colors">
+            {{ 'Series' if params.view == 'series' else 'Movies' }}
+            <span class="opacity-60">×</span>
+          </a>
         {% endif %}
 
         {% if filtering %}
           <a href="/" class="ml-auto text-xs text-slate-400 hover:text-white
                             transition-colors">
-            Clear
+            Clear all
           </a>
         {% endif %}
       </div>
