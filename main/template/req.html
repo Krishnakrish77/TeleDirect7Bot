@@ -511,12 +511,21 @@
             renderButtons(activeIndex);
 
             if (window._playerHls) {
+              // Remove any handler from a previous rapid switch before
+              // registering the new one — prevents N stacked handlers firing
+              // on the same MANIFEST_PARSED event with stale savedTime values.
+              if (window._pendingOnParsed) {
+                window._playerHls.off(Hls.Events.MANIFEST_PARSED, window._pendingOnParsed);
+                window._pendingOnParsed = null;
+              }
               window._playerHls.loadSource(newSrc);
               const onParsed = () => {
                 window._playerHls.off(Hls.Events.MANIFEST_PARSED, onParsed);
+                window._pendingOnParsed = null;
                 video.currentTime = savedTime;
                 video.play().catch(() => {});
               };
+              window._pendingOnParsed = onParsed;
               window._playerHls.on(Hls.Events.MANIFEST_PARSED, onParsed);
             } else {
               // Safari native HLS.

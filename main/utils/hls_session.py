@@ -36,11 +36,12 @@ from main.utils import hls as hls_module
 SEGMENT_SECONDS = hls_module.SEGMENT_SECONDS
 WORK_ROOT = Path(os.environ.get("HLS_SESSION_ROOT", "/tmp/hls"))
 IDLE_TTL = int(os.environ.get("HLS_SESSION_IDLE_TTL", str(30 * 60)))
-# Sessions are now keyed on (message_id, audio_index), so a file with N
-# audio tracks can consume up to N slots. Raise the default from 2 → 6 so
-# a typical dual-audio (Tamil/English) file still has room for 3 concurrent
-# viewers. Override with HLS_SESSION_MAX env var.
-MAX_SESSIONS = int(os.environ.get("HLS_SESSION_MAX", "6"))
+# Sessions are keyed on (message_id, audio_index). Each session writes the
+# full source file to /tmp as ffmpeg runs (one session ≈ one file's disk).
+# Keep default low (2) on free-tier hosts where /tmp is ~1 GB. For servers
+# with more headroom or multi-audio files (N tracks = N slots per viewer),
+# raise with HLS_SESSION_MAX env var.
+MAX_SESSIONS = int(os.environ.get("HLS_SESSION_MAX", "2"))
 # If a requested segment is more than this many segments ahead of what
 # ffmpeg has produced, restart ffmpeg from the requested segment instead
 # of waiting (which would otherwise mean polling forever).
@@ -151,7 +152,13 @@ class HlsSession:
                     await asyncio.wait_for(self.proc.wait(), timeout=5)
                 except asyncio.TimeoutError:
                     self.proc.kill()
-                    await self.proc.wait()
+                    try:
+                        await asyncio.wait_for(self.proc.wait(), timeout=3)
+                    except asyncio.TimeoutError:
+                        logging.warning(
+                            "hls_session msg=%d: ffmpeg did not exit after SIGKILL",
+                            self.message_id,
+                        )
             except ProcessLookupError:
                 pass
         if self._stderr_task and not self._stderr_task.done():

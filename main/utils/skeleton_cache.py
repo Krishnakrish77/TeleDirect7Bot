@@ -22,7 +22,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 import time
+from collections import OrderedDict
 from typing import Dict, Optional
 
 from main.utils import chunk_size as _chunk_size, offset_fix as _offset_fix
@@ -46,7 +48,10 @@ class _Entry:
         self.lock = asyncio.Lock()
 
 
-_cache: Dict[int, _Entry] = {}
+# Each entry holds up to HEAD_SIZE + TAIL_SIZE ≈ 2.5 MB. Cap at 30 entries
+# (~75 MB) so a bot serving many distinct files doesn't exhaust free-tier RAM.
+_MAX_ENTRIES = int(os.environ.get("SKELETON_CACHE_MAX", "30"))
+_cache: "OrderedDict[int, _Entry]" = OrderedDict()
 
 
 class SkeletonFetchError(RuntimeError):
@@ -73,6 +78,12 @@ def _entry(message_id: int, file_size: int) -> _Entry:
     ):
         entry = _Entry(file_size)
         _cache[message_id] = entry
+        # LRU eviction: drop oldest entry when over cap.
+        while len(_cache) > _MAX_ENTRIES:
+            _cache.popitem(last=False)
+    else:
+        # Bump to most-recently-used end.
+        _cache.move_to_end(message_id)
     return entry
 
 

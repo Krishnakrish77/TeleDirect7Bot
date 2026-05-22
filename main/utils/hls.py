@@ -163,11 +163,18 @@ async def probe(message_id: int, source_url: str) -> ProbeResult:
         # is usually transient (server starting up, loopback contention) —
         # caching it for an hour would lock the item out of codec info.
         if result.duration > 0 or result.video_codec:
-            _probe_cache[message_id] = (time.monotonic(), result)
-            # Evict locks for entries that have expired from the cache
-            expired = [mid for mid, (ts, _) in _probe_cache.items() if time.monotonic() - ts > PROBE_TTL]
+            now = time.monotonic()
+            _probe_cache[message_id] = (now, result)
+            # Purge expired cache entries and any orphaned locks (locks whose
+            # cache entry never succeeded and therefore was never inserted).
+            expired = [mid for mid, (ts, _) in _probe_cache.items()
+                       if now - ts > PROBE_TTL]
             for mid in expired:
                 _probe_cache.pop(mid, None)
+            # Remove locks for IDs absent from the cache (failed probes that
+            # never wrote a cache entry accumulate locks indefinitely otherwise).
+            stale_locks = [mid for mid in _probe_locks if mid not in _probe_cache]
+            for mid in stale_locks:
                 _probe_locks.pop(mid, None)
         return result
 
