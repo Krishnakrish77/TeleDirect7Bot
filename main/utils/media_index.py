@@ -225,6 +225,7 @@ def _to_serializable(item: HubItem) -> dict:
         "series_title": item.series_title,
         "season": item.season,
         "episode": item.episode,
+        "episode_end": item.episode_end,
         "movie_key": item.movie_key,
         "tmdb_id": item.tmdb_id,
         "tmdb_kind": item.tmdb_kind,
@@ -271,6 +272,7 @@ def _from_serializable(d: dict) -> HubItem:
         series_title=d.get("series_title", "") or "",
         season=d.get("season"),
         episode=d.get("episode"),
+        episode_end=d.get("episode_end"),
         movie_key=d.get("movie_key", "") or "",
         tmdb_id=d.get("tmdb_id"),
         tmdb_kind=d.get("tmdb_kind", "") or "",
@@ -417,6 +419,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         series_title = cleaned_series_title
         season = sm.season
         episode = sm.episode
+        episode_end = sm.episode_end
         movie_key = ""
     elif is_tv_by_id and parsed.title:
         # Caption-derived title can carry a channel prefix the original
@@ -430,12 +433,14 @@ def _item_from_message(message) -> Optional[HubItem]:
         series_title = cleaned_tv_title
         season = None
         episode = None
+        episode_end = None
         movie_key = ""
     else:
         series_key = ""
         series_title = ""
         season = None
         episode = None
+        episode_end = None
         movie_key = compute_movie_key(parsed.title or file_name, parsed.year, file_name)
 
     # When the caption carries a TMDB id, the description we just parsed
@@ -460,6 +465,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         series_title=series_title,
         season=season,
         episode=episode,
+        episode_end=episode_end,
         movie_key=movie_key,
         # Provider IDs + artwork paths round-trip through the caption
         # so a re-seed recovers them without needing to hit TMDB again.

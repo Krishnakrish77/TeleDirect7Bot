@@ -30,11 +30,14 @@ _PATTERNS = [
     # S01E03 / s1e3 / S16 EP351 with optional dot/space/dash separators
     # between the season and episode tokens, and an optional ``P``
     # after the episode marker (``EP`` is common in anime releases).
+    # Optional episode-end for multi-episode files: S01E01-E02, S01E01-02,
+    # S01E01E02 (no separator between episodes).
     re.compile(
-        r"^(?P<title>.+?)[\s._\-]+s(?P<season>\d{1,2})[\s._\-]*ep?(?P<episode>\d{1,4})\b",
+        r"^(?P<title>.+?)[\s._\-]+s(?P<season>\d{1,2})[\s._\-]*ep?(?P<episode>\d{1,4})"
+        r"(?:[\-]e?(?P<episode_end>\d{1,4}))?\b",
         re.IGNORECASE,
     ),
-    # 1x03 / 01x003
+    # 1x03 / 01x003 (episode range not common in this format, skipped)
     re.compile(
         r"^(?P<title>.+?)[\s._\-]+(?P<season>\d{1,2})x(?P<episode>\d{1,3})\b",
         re.IGNORECASE,
@@ -94,6 +97,9 @@ class SeriesMatch:
     # heuristics like "leading lowercase word = channel handle" still fire
     # — the humanised ``title`` field has already capitalised everything.
     raw_title: str = ""
+    # Last episode in a range for multi-episode files (e.g. S01E01-E03).
+    # None for normal single-episode entries.
+    episode_end: Optional[int] = None
 
 
 def parse(text: str) -> Optional[SeriesMatch]:
@@ -151,10 +157,18 @@ def parse(text: str) -> Optional[SeriesMatch]:
                 key=slugify(title),
                 raw_title=raw_separator_normalised,
             )
+        ep_end_grp = m.groupdict().get("episode_end")
+        ep_end = int(ep_end_grp) if ep_end_grp else None
+        # Discard episode_end when it's not actually higher than episode
+        # (e.g. a false-positive capture like S01E12-720p matching -72).
+        ep_start = int(m.group("episode"))
+        if ep_end is not None and ep_end <= ep_start:
+            ep_end = None
         return SeriesMatch(
             title=title,
             season=int(m.group("season")),
-            episode=int(m.group("episode")),
+            episode=ep_start,
+            episode_end=ep_end,
             key=slugify(title),
             raw_title=raw_separator_normalised,
         )

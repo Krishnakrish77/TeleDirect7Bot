@@ -42,6 +42,7 @@ class HubItem:
     series_title: str = ""         # human-friendly series name
     season: Optional[int] = None
     episode: Optional[int] = None
+    episode_end: Optional[int] = None  # set for multi-ep files (e.g. S01E01-E03)
     # Slug shared by every upload of the same film (different filenames /
     # release groups). "" for series episodes and uniquely-titled uploads.
     movie_key: str = ""

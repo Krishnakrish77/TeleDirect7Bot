@@ -34,6 +34,7 @@
              series_title: d.seriesTitle || '',
              season: d.season || '',
              episode: d.episode || '',
+             episode_end: d.episodeEnd || '',
              tmdb_id: d.tmdbId || '',
              tmdb_kind: d.tmdbKind || 'movie',
              // Preview state populated by previewTmdb().
@@ -825,6 +826,7 @@
                           data-series-title="{{ item.series_title or '' }}"
                           data-season="{{ item.season or '' }}"
                           data-episode="{{ item.episode or '' }}"
+                          data-episode-end="{{ item.episode_end or '' }}"
                           data-tmdb-id="{{ item.tmdb_id or '' }}"
                           {# Default to 'tv' when the item already looks like
                              a TV episode (has a series_key) so the manual
@@ -1062,16 +1064,26 @@
                                   focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
                   </label>
                   <label class="block flex-1">
-                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Episode</span>
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Ep start</span>
                     <input type="number" name="episode" min="1"
-                           placeholder="24"
+                           placeholder="1"
                            x-model="editing.episode"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm tabular-nums
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                  <label class="block flex-1">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Ep end</span>
+                    <input type="number" name="episode_end" min="2"
+                           placeholder="—"
+                           x-model="editing.episode_end"
                            class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
                                   border border-white/5 text-sm tabular-nums
                                   focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
                   </label>
                 </div>
                 <p class="mt-1.5 text-xs text-slate-500">
+                  Set Ep end only for files spanning multiple episodes (e.g. E01–E03).
                   Clear the series title to restore as a standalone item.
                 </p>
               </div>

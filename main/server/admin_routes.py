@@ -1400,8 +1400,13 @@ async def admin_edit(request: web.Request) -> web.Response:
     new_series_title = (form.get("series_title") or "").strip()
     season_raw = (form.get("season") or "").strip()
     episode_raw = (form.get("episode") or "").strip()
+    episode_end_raw = (form.get("episode_end") or "").strip()
     new_season: Optional[int] = int(season_raw) if season_raw.isdigit() else None
     new_episode: Optional[int] = int(episode_raw) if episode_raw.isdigit() else None
+    new_episode_end: Optional[int] = int(episode_end_raw) if episode_end_raw.isdigit() else None
+    # Discard end if not strictly after start
+    if new_episode_end is not None and new_episode is not None and new_episode_end <= new_episode:
+        new_episode_end = None
 
     # Optional manual TMDB-id override. When present, it bypasses the
     # title-search path entirely — admin tells us which record to use
@@ -1442,6 +1447,7 @@ async def admin_edit(request: web.Request) -> web.Response:
             item.series_key = series_parse.slugify(new_series_title)
             item.season = new_season if new_season is not None else 1
             item.episode = new_episode
+            item.episode_end = new_episode_end
             item.movie_key = ""
         else:
             # Clearing series_title converts back to a standalone item.
@@ -1449,6 +1455,7 @@ async def admin_edit(request: web.Request) -> web.Response:
             item.series_key = ""
             item.season = None
             item.episode = None
+            item.episode_end = None
             if not item.movie_key:
                 item.movie_key = compute_movie_key(
                     new_title, new_year, new_file_name or item.file_name

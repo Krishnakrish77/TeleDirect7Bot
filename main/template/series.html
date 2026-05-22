@@ -172,7 +172,7 @@
         <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr">
           {% for entry in block.entries %}
             {% set ep = entry.rep %}
-            <li class="h-full" data-ep-title="{{ (ep.title or '') | lower }} {{ (ep.episode_title or '') | lower }} {{ (ep.file_name or '') | lower }}{% if ep.season and ep.episode %} s{{ '%02d' % ep.season }}e{{ '%02d' % ep.episode }}{% endif %}">
+            <li class="h-full" data-ep-title="{{ (ep.title or '') | lower }} {{ (ep.episode_title or '') | lower }} {{ (ep.file_name or '') | lower }}{% if ep.season and ep.episode %} s{{ '%02d' % ep.season }}e{{ '%02d' % ep.episode }}{% if ep.episode_end %}-e{{ '%02d' % ep.episode_end }}{% endif %}{% endif %}">
               <div class="group flex gap-3 p-3 rounded-lg bg-ink-800/60 border border-white/5
                           hover:border-brand-400/40 hover:bg-ink-800 transition-colors h-full">
                 <a href="/watch/{{ ep.secure_hash }}{{ ep.message_id }}"
@@ -202,9 +202,9 @@
                 <div class="min-w-0 flex-1">
                   <p class="text-xs text-slate-500 tabular-nums">
                     {% if ep.season and ep.episode %}
-                      S{{ '%02d' % ep.season }}E{{ '%02d' % ep.episode }}
+                      S{{ '%02d' % ep.season }}E{{ '%02d' % ep.episode }}{% if ep.episode_end %}–E{{ '%02d' % ep.episode_end }}{% endif %}
                     {% elif ep.episode %}
-                      Episode {{ ep.episode }}
+                      Episode {{ ep.episode }}{% if ep.episode_end %}–{{ ep.episode_end }}{% endif %}
                     {% endif %}
                     {% if ep.episode_air_date %}
                       · {{ ep.episode_air_date }}
