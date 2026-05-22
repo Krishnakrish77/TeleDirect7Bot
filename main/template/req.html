@@ -530,7 +530,7 @@
 
       const wrapper = document.createElement("div");
       wrapper.className = "plyr__controls__item";
-      wrapper.style.cssText = "position:relative;display:flex;align-items:center;";
+      wrapper.style.cssText = "position:relative;display:flex;align-items:center;flex-shrink:0;";
 
       const btn = document.createElement("button");
       btn.type = "button";
@@ -635,8 +635,10 @@
 
       // Close on outside click.
       document.addEventListener("click", closeMenu);
-      // Close when player enters fullscreen (controls re-render).
-      plyrEl.addEventListener("enterfullscreen", closeMenu);
+      // Plyr 3.x dispatches "enterfullscreen" / "exitfullscreen" on the
+      // <video> element, not the .plyr wrapper — listen on video.
+      video.addEventListener("enterfullscreen", closeMenu);
+      video.addEventListener("exitfullscreen", closeMenu);
 
       wrapper.appendChild(btn);
       wrapper.appendChild(menu);
