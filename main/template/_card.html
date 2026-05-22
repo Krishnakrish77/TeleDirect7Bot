@@ -31,13 +31,13 @@
         {{ item.variant_count }} versions
       </span>
     </div>
-    <div class="p-3 flex flex-col flex-1">
+    <div class="p-3 h-20 flex flex-col overflow-hidden">
       <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
-                 group-hover:text-brand-300 transition-colors flex-1">
+                 group-hover:text-brand-300 transition-colors flex-1 min-h-0">
         {{ item.title }}
         {%- if item.year %} <span class="text-slate-400 font-normal">({{ item.year }})</span>{% endif -%}
       </h3>
-      <p class="mt-1 text-xs text-slate-500">Pick a version →</p>
+      <p class="mt-1 text-xs text-slate-500 shrink-0">Pick a version →</p>
     </div>
   </a>
 {% elif item.episode_count is defined %}
@@ -74,12 +74,12 @@
         {{ item.episode_count }} ep{{ '' if item.episode_count == 1 else 's' }}
       </span>
     </div>
-    <div class="p-3 flex flex-col flex-1">
+    <div class="p-3 h-20 flex flex-col overflow-hidden">
       <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
-                 group-hover:text-brand-300 transition-colors flex-1">
+                 group-hover:text-brand-300 transition-colors flex-1 min-h-0">
         {{ item.series_title }}
       </h3>
-      <p class="mt-1 text-xs text-slate-500">
+      <p class="mt-1 text-xs text-slate-500 shrink-0">
         {{ item.season_count }} season{{ '' if item.season_count == 1 else 's' }}
       </p>
     </div>
@@ -113,15 +113,13 @@
         </span>
       {% endif %}
     </div>
-    <div class="p-3 flex flex-col flex-1">
+    <div class="p-3 h-20 flex flex-col overflow-hidden">
       <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
-                 group-hover:text-brand-300 transition-colors flex-1">
+                 group-hover:text-brand-300 transition-colors flex-1 min-h-0">
         {{ item.title }}
         {%- if item.year %} <span class="text-slate-400 font-normal">({{ item.year }})</span>{% endif -%}
       </h3>
-      {# Always render the subtitle row so all card info-blocks are the
-         same height regardless of whether file_size is available. #}
-      <p class="mt-1 text-xs text-slate-500 tabular-nums">
+      <p class="mt-1 text-xs text-slate-500 tabular-nums shrink-0">
         {{ item.file_size | humansize if item.file_size else "" }}
       </p>
     </div>

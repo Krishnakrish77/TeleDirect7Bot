@@ -1481,18 +1481,20 @@ def shelves(per_shelf: int = 25) -> List[dict]:
             "total": len(recent_items),
         })
     if series_groups:
+        series_items = newest(series_groups, key=lambda s: s.latest_message_id)
         out.append({
             "name": "Series",
-            "items": newest(series_groups, key=lambda s: s.latest_message_id),
+            "items": series_items,
             "link": "/?view=series",
-            "total": len(series_groups),
+            "total": len(series_items),  # displayed count, not full catalogue
         })
     if all_movies:
+        movie_items = newest(all_movies)
         out.append({
             "name": "Movies",
-            "items": newest(all_movies),
+            "items": movie_items,
             "link": "/?view=movies",
-            "total": len(all_movies),
+            "total": len(movie_items),
         })
 
     # --- genre shelves from TMDB enrichment ---
@@ -1546,7 +1548,7 @@ def shelves(per_shelf: int = 25) -> List[dict]:
                     "name": genre,
                     "items": row_cards,
                     "link": f"/?tag={slug}" if slug else None,
-                    "total": len(members),
+                    "total": len(row_cards),  # displayed count
                 })
 
     return out
