@@ -129,7 +129,9 @@ def _parse_filters(request: web.Request) -> dict:
     except ValueError:
         offset = 0
     view = (request.query.get("view") or "").strip().lower()
-    if view not in {"movies", "series", ""}:
+    # "list" bypasses the shelf view and shows a flat newest-first grid
+    # without filtering by type — used by the "Recently added" See all link.
+    if view not in {"movies", "series", "list", ""}:
         view = ""
     return dict(
         q=q, tag=tag, quality=quality, genre=genre, year=year, sort=sort,

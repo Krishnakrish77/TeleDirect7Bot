@@ -1473,7 +1473,11 @@ def shelves(per_shelf: int = 25) -> List[dict]:
         out.append({
             "name": "Recently added",
             "items": recent_items,
-            "link": "/?sort=newest",
+            # view=list bypasses the shelf landing and shows the flat
+            # newest-first grid. /?sort=newest would be stripped to /
+            # by _canonical_url (newest is the default sort), looping
+            # back to the shelf view.
+            "link": "/?view=list",
             "total": len(recent_items),
         })
     if series_groups:
