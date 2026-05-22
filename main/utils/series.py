@@ -30,11 +30,15 @@ _PATTERNS = [
     # S01E03 / s1e3 / S16 EP351 with optional dot/space/dash separators
     # between the season and episode tokens, and an optional ``P``
     # after the episode marker (``EP`` is common in anime releases).
-    # Optional episode-end for multi-episode files: S01E01-E02, S01E01-02,
-    # S01E01E02 (no separator between episodes).
+    # Optional episode-end for multi-episode files:
+    #   S01E01-E02  (dash + E prefix)
+    #   S01E01-02   (dash, no prefix)
+    #   S01E01E02   (concatenated, no separator — the E acts as delimiter)
+    # Triple-episode ranges (S01E01-E03) are supported; only the first
+    # end is captured (S01E01-E02-E03 → episode=1, episode_end=2).
     re.compile(
         r"^(?P<title>.+?)[\s._\-]+s(?P<season>\d{1,2})[\s._\-]*ep?(?P<episode>\d{1,4})"
-        r"(?:[\-]e?(?P<episode_end>\d{1,4}))?\b",
+        r"(?:[-E]e?(?P<episode_end>\d{1,4}))?\b",
         re.IGNORECASE,
     ),
     # 1x03 / 01x003 (episode range not common in this format, skipped)

@@ -458,11 +458,13 @@ async def hub_series(request: web.Request) -> web.Response:
             if e.episode is None:
                 extras.append(e)
             else:
-                by_ep.setdefault(e.episode, []).append(e)
+                # Key on (episode, episode_end) so a range file E01-E03
+                # and a standalone E01 are separate cards, not variants.
+                by_ep.setdefault((e.episode, e.episode_end), []).append(e)
         entries = []
-        for ep_num in sorted(by_ep.keys()):
+        for ep_key in sorted(by_ep.keys()):
             variants_all = sorted(
-                by_ep[ep_num], key=lambda v: -(v.file_size or 0),
+                by_ep[ep_key], key=lambda v: -(v.file_size or 0),
             )
             seen_hash: set = set()
             unique_variants: list = []
