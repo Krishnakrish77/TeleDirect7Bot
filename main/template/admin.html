@@ -685,6 +685,8 @@
         <div class="flex flex-wrap items-center gap-2 flex-1 min-w-0">
           <form method="get" action="/admin" id="admin-filter-form" class="w-64 flex-shrink-0">
             <input type="hidden" name="filter" value="{{ filter_name }}" />
+            <input type="hidden" name="sort" value="{{ sort_col }}" />
+            <input type="hidden" name="dir" value="{{ sort_dir }}" />
             <label class="relative block">
               <span class="sr-only">Search</span>
               <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
@@ -759,7 +761,7 @@
               {% set is_active = sort_col == col %}
               {% set next_dir = "asc" if (is_active and sort_dir == "desc") else "desc" %}
               <th class="px-3 py-2 {{ extra_class }}">
-                <a href="?filter={{ filter_name }}&page=1{% if search_q %}&q={{ search_q }}{% endif %}&sort={{ col }}&dir={{ next_dir }}"
+                <a href="?filter={{ filter_name }}&page=1{% if search_q %}&q={{ search_q|urlencode }}{% endif %}&sort={{ col }}&dir={{ next_dir }}"
                    class="inline-flex items-center gap-1 hover:text-slate-300 transition-colors
                           {{ 'text-slate-200' if is_active else '' }}">
                   {{ label }}

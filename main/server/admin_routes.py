@@ -244,10 +244,14 @@ async def admin_home(request: web.Request) -> web.Response:
             return q in blob
         filtered = [it for it in filtered if _matches(it)]
 
-    # Duplicates view sorts groups together so canonicals + extras are
-    # adjacent — matches the old JS behaviour.
+    # Duplicates view: primary key is the user's chosen column, tiebreaker
+    # is (secure_hash, message_id) so duplicate pairs are always adjacent.
+    # Previously this re-sort unconditionally overwrote the column sort.
     if filter_name == "duplicates":
-        filtered.sort(key=lambda it: (it.secure_hash or "", it.message_id))
+        filtered.sort(
+            key=lambda it: (_sort_key(it), it.secure_hash or "", it.message_id),
+            reverse=(sort_dir == "desc"),
+        )
 
     # ── Pagination ────────────────────────────────────────────────────
     filtered_count = len(filtered)
