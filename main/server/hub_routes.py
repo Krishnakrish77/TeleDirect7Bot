@@ -551,6 +551,22 @@ async def hub_series(request: web.Request) -> web.Response:
     # First enriched episode (if any) carries the show-level TMDB data.
     enriched = next((e for e in episodes if e.tmdb_id), episodes[0])
     tpl = _env.get_template("series.html")
+    # Total distinct episodes across the whole series (used by the hub card
+    # and the "N across M seasons" note when a specific season is selected).
+    total_episode_count = (
+        len({(e.season, e.episode) for e in episodes if e.episode is not None})
+        or len(episodes)
+    )
+
+    # Count only what's currently visible so the header matches the page.
+    # When "all" is selected this equals total_episode_count.
+    visible_entries = [
+        entry
+        for blk in visible_blocks
+        for entry in blk["entries"]
+    ]
+    visible_episode_count = len(visible_entries) or len(visible_blocks)
+
     body = await tpl.render_async(
         meta=enriched,
         series_title=episodes[0].series_title or key,
@@ -559,13 +575,8 @@ async def hub_series(request: web.Request) -> web.Response:
         season_options=season_options,
         show_selector=show_selector,
         selected_season=selected,
-        # Distinct (season, episode) tuples; falls back to the raw row
-        # count when no episode is numbered. Surfaces "12 episodes"
-        # instead of "37 uploads" when there are heavy variant clusters.
-        episode_count=(
-            len({(e.season, e.episode) for e in episodes if e.episode is not None})
-            or len(episodes)
-        ),
+        episode_count=visible_episode_count,
+        total_episode_count=total_episode_count,
         # Don't count the unknown-season bucket as a season; if every
         # episode is unbucketed (no SxxEyy anywhere) fall back to 1.
         season_count=max(1, len(numbered_seasons)),

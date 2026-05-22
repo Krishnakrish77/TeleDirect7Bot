@@ -18,8 +18,17 @@
         {{ series_title }}
       </h1>
       <p class="mt-1 text-sm text-slate-400">
-        {{ season_count }} season{{ '' if season_count == 1 else 's' }} ·
-        {{ episode_count }} episode{{ '' if episode_count == 1 else 's' }}
+        {% if show_selector and selected_season != 'all' %}
+          {{ episode_count }} episode{{ '' if episode_count == 1 else 's' }}
+          <span class="text-slate-600">·</span>
+          <a href="/series/{{ series_key }}?season=all"
+             class="text-slate-500 hover:text-slate-300 transition-colors">
+            {{ total_episode_count }} total
+          </a>
+        {% else %}
+          {{ season_count }} season{{ '' if season_count == 1 else 's' }} ·
+          {{ episode_count }} episode{{ '' if episode_count == 1 else 's' }}
+        {% endif %}
       </p>
       {% if meta and meta.tmdb_id %}
         <div class="mt-5 flex flex-col sm:flex-row gap-5">
