@@ -512,10 +512,12 @@
 
             if (window._playerHls) {
               window._playerHls.loadSource(newSrc);
-              window._playerHls.once(Hls.Events.MANIFEST_PARSED, () => {
+              const onParsed = () => {
+                window._playerHls.off(Hls.Events.MANIFEST_PARSED, onParsed);
                 video.currentTime = savedTime;
                 video.play().catch(() => {});
-              });
+              };
+              window._playerHls.on(Hls.Events.MANIFEST_PARSED, onParsed);
             } else {
               // Safari native HLS.
               video.src = newSrc;

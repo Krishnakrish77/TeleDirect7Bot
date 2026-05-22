@@ -36,7 +36,11 @@ from main.utils import hls as hls_module
 SEGMENT_SECONDS = hls_module.SEGMENT_SECONDS
 WORK_ROOT = Path(os.environ.get("HLS_SESSION_ROOT", "/tmp/hls"))
 IDLE_TTL = int(os.environ.get("HLS_SESSION_IDLE_TTL", str(30 * 60)))
-MAX_SESSIONS = int(os.environ.get("HLS_SESSION_MAX", "2"))
+# Sessions are now keyed on (message_id, audio_index), so a file with N
+# audio tracks can consume up to N slots. Raise the default from 2 → 6 so
+# a typical dual-audio (Tamil/English) file still has room for 3 concurrent
+# viewers. Override with HLS_SESSION_MAX env var.
+MAX_SESSIONS = int(os.environ.get("HLS_SESSION_MAX", "6"))
 # If a requested segment is more than this many segments ahead of what
 # ffmpeg has produced, restart ffmpeg from the requested segment instead
 # of waiting (which would otherwise mean polling forever).
@@ -224,8 +228,12 @@ class HlsSession:
             await self._kill_proc_unlocked()
 
     def cleanup_disk(self) -> None:
+        shutil.rmtree(self.work_dir, ignore_errors=True)
+        # Remove the parent message-id dir if it's now empty (i.e. all
+        # audio-track sub-dirs have been cleaned up). rmdir is a no-op when
+        # sibling aN dirs still exist, so this is always safe to attempt.
         try:
-            shutil.rmtree(self.work_dir, ignore_errors=True)
+            self.work_dir.parent.rmdir()
         except OSError:
             pass
 

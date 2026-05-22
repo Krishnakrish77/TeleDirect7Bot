@@ -78,11 +78,13 @@ async def hls_playlist(request: web.Request) -> web.Response:
         message_id, file_id.file_size, streamer, file_id, index
     ))
 
-    audio_index = int(request.query.get("a", "0"))
-    if probe.audio_tracks:
-        audio_index = max(0, min(audio_index, len(probe.audio_tracks) - 1))
-    else:
-        audio_index = 0
+    # Clamp to the actual track count so a rogue ?a=99 on a video-only file
+    # can't create unbounded (message_id, N) session keys.
+    try:
+        _a = int(request.query.get("a", "0"))
+    except ValueError:
+        _a = 0
+    audio_index = max(0, min(_a, len(probe.audio_tracks) - 1)) if probe.audio_tracks else 0
 
     seg_template = f"seg-{{n}}.ts?a={audio_index}"
     body = hls.build_playlist(probe, seg_template)
@@ -114,11 +116,13 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
     if n >= probe.segment_count:
         raise web.HTTPNotFound(text="Segment out of range")
 
-    audio_index = int(request.query.get("a", "0"))
-    if probe.audio_tracks:
-        audio_index = max(0, min(audio_index, len(probe.audio_tracks) - 1))
-    else:
-        audio_index = 0
+    # Clamp to the actual track count so a rogue ?a=99 on a video-only file
+    # can't create unbounded (message_id, N) session keys.
+    try:
+        _a = int(request.query.get("a", "0"))
+    except ValueError:
+        _a = 0
+    audio_index = max(0, min(_a, len(probe.audio_tracks) - 1)) if probe.audio_tracks else 0
 
     # One long-lived ffmpeg per (file, audio_track) produces segments to /tmp;
     # we just serve the file when it's on disk. Backward seeks within already-
