@@ -20,6 +20,7 @@ standalone uploads stay as individual hub cards.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Optional
 
@@ -161,10 +162,18 @@ def parse(text: str) -> Optional[SeriesMatch]:
 
 
 def slugify(text: str) -> str:
-    """Lowercase, alphanumeric, dash-separated. ``The Office (US)`` → ``the-office-us``."""
+    """Lowercase, alphanumeric, dash-separated. ``The Office (US)`` → ``the-office-us``.
+
+    Unicode letters with diacritics/macrons (e.g. ū, ō, ā common in
+    romanized Japanese titles) are decomposed to their ASCII base before
+    stripping so ``Shippūden`` → ``shippuden`` not ``shipp-den``.
+    """
     if not text:
         return ""
-    return _SLUG_RE.sub("-", text.lower()).strip("-")
+    # NFKD decomposition splits combined chars (ū → u + combining macron);
+    # encoding to ASCII with 'ignore' then drops the combining marks.
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return _SLUG_RE.sub("-", ascii_text.lower()).strip("-")
 
 
 def infer_episode_loose(filename: str) -> Optional[int]:
