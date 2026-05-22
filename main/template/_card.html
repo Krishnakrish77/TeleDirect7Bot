@@ -6,7 +6,7 @@
   {# MovieGroup: 2+ uploads of the same film. Click → /movie/{key} #}
   {% set poster = item.poster_item %}
   <a href="/movie/{{ item.movie_key }}"
-     class="group block rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
+     class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
             hover:border-brand-400/40 hover:bg-ink-800
             transition-colors">
     <div class="aspect-[2/3] bg-ink-900 relative overflow-hidden">
@@ -31,9 +31,9 @@
         {{ item.variant_count }} versions
       </span>
     </div>
-    <div class="p-3">
+    <div class="p-3 flex flex-col flex-1">
       <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
-                 group-hover:text-brand-300 transition-colors">
+                 group-hover:text-brand-300 transition-colors flex-1">
         {{ item.title }}
         {%- if item.year %} <span class="text-slate-400 font-normal">({{ item.year }})</span>{% endif -%}
       </h3>
@@ -44,7 +44,7 @@
   {# SeriesGroup: collapsed card linking to /series/{key} #}
   {% set poster = item.poster_item %}
   <a href="/series/{{ item.series_key }}"
-     class="group block rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
+     class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
             hover:border-brand-400/40 hover:bg-ink-800
             transition-colors">
     <div class="aspect-[2/3] bg-ink-900 relative overflow-hidden">
@@ -74,9 +74,9 @@
         {{ item.episode_count }} ep{{ '' if item.episode_count == 1 else 's' }}
       </span>
     </div>
-    <div class="p-3">
+    <div class="p-3 flex flex-col flex-1">
       <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
-                 group-hover:text-brand-300 transition-colors">
+                 group-hover:text-brand-300 transition-colors flex-1">
         {{ item.series_title }}
       </h3>
       <p class="mt-1 text-xs text-slate-500">
@@ -86,7 +86,7 @@
   </a>
 {% else %}
   <a href="/watch/{{ item.secure_hash }}{{ item.message_id }}"
-     class="group block rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
+     class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
             hover:border-brand-400/40 hover:bg-ink-800
             transition-colors">
     <div class="aspect-[2/3] bg-ink-900 relative overflow-hidden">
@@ -113,15 +113,17 @@
         </span>
       {% endif %}
     </div>
-    <div class="p-3">
+    <div class="p-3 flex flex-col flex-1">
       <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
-                 group-hover:text-brand-300 transition-colors">
+                 group-hover:text-brand-300 transition-colors flex-1">
         {{ item.title }}
         {%- if item.year %} <span class="text-slate-400 font-normal">({{ item.year }})</span>{% endif -%}
       </h3>
-      {% if item.file_size %}
-        <p class="mt-1 text-xs text-slate-500 tabular-nums">{{ item.file_size | humansize }}</p>
-      {% endif %}
+      {# Always render the subtitle row so all card info-blocks are the
+         same height regardless of whether file_size is available. #}
+      <p class="mt-1 text-xs text-slate-500 tabular-nums">
+        {{ item.file_size | humansize if item.file_size else "" }}
+      </p>
     </div>
   </a>
 {% endif %}

@@ -1466,13 +1466,15 @@ def shelves(per_shelf: int = 25) -> List[dict]:
     out: List[dict] = []
 
     if all_cards:
-        # Recently added isn't filterable to a smaller superset; "see all"
-        # for it is just the flat newest-first grid (?sort=newest).
+        recent_items = newest(all_cards)
+        # Don't show the full catalogue count as a badge — the shelf only
+        # displays per_shelf items and has no "see all" link, so showing
+        # the total (e.g. 127) is misleading. Show the displayed count.
         out.append({
             "name": "Recently added",
-            "items": newest(all_cards),
-            "link": None,
-            "total": len(all_cards),
+            "items": recent_items,
+            "link": "/?sort=newest",
+            "total": len(recent_items),
         })
     if series_groups:
         out.append({

@@ -10,6 +10,13 @@
       <span class="text-[10px] uppercase tracking-widest text-slate-500">
         {{ shelf.total if shelf.total is defined else shelf['items'] | length }}
       </span>
+      {% if shelf.get('link') %}
+        <a href="{{ shelf['link'] }}"
+           class="ml-auto text-xs text-slate-500 hover:text-brand-300
+                  transition-colors whitespace-nowrap">
+          See all →
+        </a>
+      {% endif %}
     </h2>
     <div class="relative">
       {# Left arrow: hidden on touch / when already at start. Visible on
@@ -43,7 +50,7 @@
                  [scrollbar-width:none] [-ms-overflow-style:none]
                  [&amp;::-webkit-scrollbar]:hidden">
         {% for item in shelf['items'] %}
-          <li class="snap-start flex-shrink-0
+          <li class="snap-start flex-shrink-0 h-full
                      w-32 sm:w-40 md:w-48 lg:w-52">
             {% include "_card.html" %}
           </li>
