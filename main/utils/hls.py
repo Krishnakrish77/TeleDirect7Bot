@@ -19,6 +19,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Dict, List, Optional, Tuple
@@ -188,12 +189,26 @@ def _normalise_lang(raw: Optional[str]) -> str:
     return _LANG_3_TO_2.get(raw, "")
 
 
+# Patterns that indicate an audio stream title is a release-group watermark
+# or codec metadata rather than a human-readable language name. When matched,
+# the title is discarded and we fall through to language code → Track N.
+_JUNK_TITLE_RE = re.compile(
+    r"www\."            # URL fragment
+    r"|\.\w{2,6}\s*[-–]"  # domain extension followed by separator (e.g. .nexus -)
+    r"|\[\s*\w"         # bracket-wrapped codec/bitrate info, e.g. [AAC 2.0 - 64Kbps]
+    r"|\d+\s*[Kk]bps"  # bare bitrate string
+    r"|^\s*und\s*$",    # "und" = undefined language code
+    re.IGNORECASE,
+)
+
+
 def _label_for(lang: str, title: Optional[str], index: int) -> str:
-    if title:
-        return title
+    # Reject titles that look like release watermarks or codec metadata.
+    if title and not _JUNK_TITLE_RE.search(title):
+        return title.strip()
     if lang and lang in _LANG_LABEL:
         return _LANG_LABEL[lang]
-    if lang:
+    if lang and lang not in ("und", "---"):
         return lang.upper()
     return f"Track {index + 1}"
 
