@@ -28,7 +28,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from main.utils import hls as hls_module
 
@@ -46,15 +46,17 @@ SEGMENT_WAIT_TIMEOUT = float(os.environ.get("HLS_SESSION_WAIT_TIMEOUT", "30.0"))
 
 class HlsSession:
     """One long-lived ffmpeg instance producing HLS segments for a single
-    source file to disk."""
+    source file / audio track combination to disk."""
 
     def __init__(self, message_id: int, source_url: str,
-                 duration: float, audio_codec: Optional[str]):
+                 duration: float, audio_codec: Optional[str],
+                 audio_index: int = 0):
         self.message_id = message_id
         self.source_url = source_url
         self.duration = duration
         self.audio_codec = audio_codec
-        self.work_dir = WORK_ROOT / str(message_id)
+        self.audio_index = audio_index
+        self.work_dir = WORK_ROOT / str(message_id) / f"a{audio_index}"
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.proc: Optional[asyncio.subprocess.Process] = None
         self.proc_lock = asyncio.Lock()
@@ -108,6 +110,8 @@ class HlsSession:
             "-fflags", "+genpts+discardcorrupt",
             "-ss", f"{start_sec:.3f}",
             "-i", self.source_url,
+            "-map", "0:v:0?",
+            "-map", f"0:a:{self.audio_index}?",
             "-c:v", "copy",
             *audio_args,
             "-f", "segment",
@@ -228,27 +232,32 @@ class HlsSession:
 
 # --- Registry of active sessions -------------------------------------
 
-_sessions: Dict[int, HlsSession] = {}
+# Key is (message_id, audio_index) so each audio track gets its own session.
+_sessions: Dict[Tuple[int, int], HlsSession] = {}
 _sessions_lock = asyncio.Lock()
 _reaper_task: Optional[asyncio.Task] = None
 
 
 async def get_or_start(message_id: int, source_url: str,
-                       duration: float, audio_codec: Optional[str]) -> HlsSession:
+                       duration: float, audio_codec: Optional[str],
+                       audio_index: int = 0) -> HlsSession:
+    key = (message_id, audio_index)
     async with _sessions_lock:
-        session = _sessions.get(message_id)
+        session = _sessions.get(key)
         if session is not None:
             return session
 
         # LRU evict if over capacity.
         if len(_sessions) >= MAX_SESSIONS:
-            victim_id = min(_sessions, key=lambda mid: _sessions[mid].last_request)
-            victim = _sessions.pop(victim_id)
+            victim_key = min(_sessions, key=lambda k: _sessions[k].last_request)
+            victim = _sessions.pop(victim_key)
             asyncio.create_task(_retire(victim))
-            logging.info("hls_session evicted msg=%d (capacity)", victim_id)
+            logging.info("hls_session evicted msg=%d audio=%d (capacity)",
+                         victim_key[0], victim_key[1])
 
-        session = HlsSession(message_id, source_url, duration, audio_codec)
-        _sessions[message_id] = session
+        session = HlsSession(message_id, source_url, duration, audio_codec,
+                             audio_index=audio_index)
+        _sessions[key] = session
         return session
 
 
@@ -264,14 +273,15 @@ async def _reaper() -> None:
             now = time.monotonic()
             to_evict = []
             async with _sessions_lock:
-                for mid, sess in list(_sessions.items()):
+                for key, sess in list(_sessions.items()):
                     if now - sess.last_request > IDLE_TTL:
-                        to_evict.append(mid)
-                for mid in to_evict:
-                    sess = _sessions.pop(mid, None)
+                        to_evict.append(key)
+                for key in to_evict:
+                    sess = _sessions.pop(key, None)
                     if sess is not None:
                         asyncio.create_task(_retire(sess))
-                        logging.info("hls_session evicted msg=%d (idle)", mid)
+                        logging.info("hls_session evicted msg=%d audio=%d (idle)",
+                                     key[0], key[1])
         except asyncio.CancelledError:
             raise
         except Exception:

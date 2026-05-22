@@ -72,6 +72,15 @@ _LANG_LABEL = {
 
 
 @dataclass(frozen=True)
+class AudioTrack:
+    """One audio stream available for selection."""
+    index: int        # ffmpeg 0:a:index
+    codec: str
+    language: str     # ISO 639-1, may be ""
+    label: str        # human-readable e.g. "Tamil", "English"
+
+
+@dataclass(frozen=True)
 class SubtitleTrack:
     """One text-based subtitle stream available for WebVTT extraction."""
     index: int          # ffmpeg -map 0:s:index
@@ -86,6 +95,7 @@ class ProbeResult:
     video_codec: Optional[str]
     audio_codec: Optional[str]
     subtitles: Tuple[SubtitleTrack, ...] = ()
+    audio_tracks: Tuple[AudioTrack, ...] = ()
 
     @property
     def hls_compatible(self) -> bool:
@@ -226,15 +236,28 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
     video_codec = None
     audio_codec = None
     subtitle_tracks: List[SubtitleTrack] = []
-    sub_index = 0  # the Nth subtitle stream (for ffmpeg's -map 0:s:N)
+    audio_tracks_list: List[AudioTrack] = []
+    sub_index = 0   # the Nth subtitle stream (for ffmpeg's -map 0:s:N)
+    audio_index = 0  # the Nth audio stream (for ffmpeg's -map 0:a:N)
 
     for stream in data.get("streams", []):
         ctype = stream.get("codec_type")
         cname = stream.get("codec_name")
         if ctype == "video" and video_codec is None:
             video_codec = cname
-        elif ctype == "audio" and audio_codec is None:
-            audio_codec = cname
+        elif ctype == "audio":
+            tags = stream.get("tags", {}) or {}
+            lang = _normalise_lang(tags.get("language"))
+            title = (tags.get("title") or "").strip() or None
+            if audio_codec is None:
+                audio_codec = cname
+            audio_tracks_list.append(AudioTrack(
+                index=audio_index,
+                codec=cname or "",
+                language=lang,
+                label=_label_for(lang, title, audio_index),
+            ))
+            audio_index += 1
         elif ctype == "subtitle":
             if cname in SUB_TEXT_CODECS:
                 tags = stream.get("tags", {}) or {}
@@ -253,6 +276,7 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
         video_codec=video_codec,
         audio_codec=audio_codec,
         subtitles=tuple(subtitle_tracks),
+        audio_tracks=tuple(audio_tracks_list),
     )
 
 

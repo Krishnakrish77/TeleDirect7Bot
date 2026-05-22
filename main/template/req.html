@@ -202,6 +202,11 @@
       </div>
     </div>
 
+    <div id="audioTracksBar" class="hidden mt-3 flex flex-wrap gap-2 items-center">
+      <span class="text-xs text-slate-500 mr-1">Audio:</span>
+      <!-- buttons injected by JS -->
+    </div>
+
     <div class="mt-6 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3
                 text-sm text-amber-200/90 text-center">
       <span class="font-semibold text-amber-200">Note:</span>
@@ -361,6 +366,7 @@
       // handle it. No JS lib needed.
       if (hlsSrc && video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = hlsSrc;
+        window._playerHls = null;
         return;
       }
 
@@ -390,6 +396,7 @@
         });
         hls.loadSource(hlsSrc);
         hls.attachMedia(video);
+        window._playerHls = hls;
         return;
       }
 
@@ -451,6 +458,77 @@
         }
         tt.mode = "showing";
       }
+    }
+
+    async function attachAudioTracks(video) {
+      const hlsSrc = video.dataset.hlsSrc;
+      if (!hlsSrc) return;  // direct stream — can't switch tracks without HLS
+
+      // Derive the audio-list URL from the playlist URL.
+      const audioListUrl = hlsSrc.replace("playlist.m3u8", "audio-list.json");
+      let tracks;
+      try {
+        const resp = await fetch(audioListUrl);
+        if (!resp.ok) return;
+        tracks = await resp.json();
+      } catch (_) {
+        return;
+      }
+      if (!tracks || tracks.length === 0) return;
+
+      const bar = document.getElementById("audioTracksBar");
+      if (!bar) return;
+
+      // Active HLS src (may be updated as user switches tracks).
+      let currentSrc = hlsSrc;
+      let activeIndex = 0;  // default: track 0
+
+      function buildAudioUrl(trackIndex) {
+        // Replace or append the ?a= param in currentSrc.
+        const base = currentSrc.split("?")[0];
+        return `${base}?a=${trackIndex}`;
+      }
+
+      function renderButtons(activeIdx) {
+        // Remove existing buttons (keep the label span).
+        bar.querySelectorAll("button[data-audio-idx]").forEach(b => b.remove());
+        tracks.forEach((t) => {
+          const btn = document.createElement("button");
+          btn.dataset.audioIdx = String(t.index);
+          btn.textContent = t.label || `Track ${t.index + 1}`;
+          btn.className = [
+            "text-xs rounded-lg px-3 py-1.5 font-medium transition-colors",
+            t.index === activeIdx
+              ? "bg-brand-500 text-white"
+              : "bg-ink-800/70 text-slate-300 hover:bg-ink-800 border border-white/5",
+          ].join(" ");
+          btn.addEventListener("click", () => {
+            if (t.index === activeIndex) return;
+            const savedTime = video.currentTime;
+            const newSrc = buildAudioUrl(t.index);
+            currentSrc = newSrc;
+            activeIndex = t.index;
+            renderButtons(activeIndex);
+
+            if (window._playerHls) {
+              window._playerHls.loadSource(newSrc);
+              window._playerHls.once(Hls.Events.MANIFEST_PARSED, () => {
+                video.currentTime = savedTime;
+                video.play().catch(() => {});
+              });
+            } else {
+              // Safari native HLS.
+              video.src = newSrc;
+              video.currentTime = savedTime;
+              video.play().catch(() => {});
+            }
+          });
+          bar.appendChild(btn);
+        });
+      }
+
+      renderButtons(activeIndex);
+      bar.classList.remove("hidden");
     }
 
     function attachSubtitleUpload(video) {
@@ -692,6 +770,7 @@
         attachWatchProgress(video);
         attachSubtitleUpload(video);
         attachMobileGestures(video);
+        attachAudioTracks(video);
       }
 
       document.querySelectorAll("[data-stream-url]").forEach((el) => {

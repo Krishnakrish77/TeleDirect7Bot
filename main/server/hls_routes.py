@@ -78,7 +78,13 @@ async def hls_playlist(request: web.Request) -> web.Response:
         message_id, file_id.file_size, streamer, file_id, index
     ))
 
-    seg_template = f"seg-{{n}}.ts"
+    audio_index = int(request.query.get("a", "0"))
+    if probe.audio_tracks:
+        audio_index = max(0, min(audio_index, len(probe.audio_tracks) - 1))
+    else:
+        audio_index = 0
+
+    seg_template = f"seg-{{n}}.ts?a={audio_index}"
     body = hls.build_playlist(probe, seg_template)
     return web.Response(
         text=body,
@@ -108,12 +114,19 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
     if n >= probe.segment_count:
         raise web.HTTPNotFound(text="Segment out of range")
 
-    # One long-lived ffmpeg per file produces segments to /tmp; we just
-    # serve the file when it's on disk. Backward seeks within already-
+    audio_index = int(request.query.get("a", "0"))
+    if probe.audio_tracks:
+        audio_index = max(0, min(audio_index, len(probe.audio_tracks) - 1))
+    else:
+        audio_index = 0
+
+    # One long-lived ffmpeg per (file, audio_track) produces segments to /tmp;
+    # we just serve the file when it's on disk. Backward seeks within already-
     # produced segments are free; forward seek beyond the current cursor
     # restarts ffmpeg from the seek point.
     session = await hls_session.get_or_start(
         message_id, source_url, probe.duration, probe.audio_codec,
+        audio_index=audio_index,
     )
     seg_path = await session.request(n)
     if seg_path is None:
@@ -126,6 +139,48 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
             "Cache-Control": "public, max-age=3600",
             "Access-Control-Allow-Origin": "*",
             "Content-Type": "video/mp2t",
+        },
+    )
+
+
+# --- Audio track list --------------------------------------------------
+
+@routes.get(r"/hls/{path:[^/]+}/audio-list.json")
+async def hls_audio_list(request: web.Request) -> web.Response:
+    """Return available audio tracks for a media file.
+
+    Returns [] when there is only one audio track (no UI needed).
+    """
+    try:
+        secure_hash, message_id = _parse_path(request.match_info["path"])
+        await _resolve(message_id, secure_hash)
+    except InvalidHash as e:
+        raise web.HTTPForbidden(text=e.message)
+    except FIleNotFound as e:
+        raise web.HTTPNotFound(text=e.message)
+
+    probe = await hls.probe(message_id, hls.internal_stream_url(secure_hash, message_id))
+
+    # Only expose the list when there are multiple tracks — single-track
+    # files return [] so the client knows not to render any switcher UI.
+    if len(probe.audio_tracks) <= 1:
+        tracks = []
+    else:
+        tracks = [
+            {
+                "index": t.index,
+                "language": t.language,
+                "label": t.label,
+                "codec": t.codec,
+            }
+            for t in probe.audio_tracks
+        ]
+
+    return web.json_response(
+        tracks,
+        headers={
+            "Cache-Control": "public, max-age=300",
+            "Access-Control-Allow-Origin": "*",
         },
     )
 
