@@ -159,18 +159,36 @@ def _pop_flash(request: web.Request, resp: web.Response) -> str:
 async def admin_home(request: web.Request) -> web.Response:
     _require_session(request)
 
-    # ── Query params: filter, search, pagination ──────────────────────
+    # ── Query params: filter, search, pagination, sort ───────────────
     try:
         page = max(1, int(request.query.get("page", "1") or "1"))
     except ValueError:
         page = 1
     filter_name = (request.query.get("filter") or "all").strip()
     q = (request.query.get("q") or "").strip().lower()
+    sort_col = (request.query.get("sort") or "date").strip()
+    sort_dir = (request.query.get("dir") or "desc").strip()
+    if sort_col not in {"date", "title", "size", "quality"}:
+        sort_col = "date"
+    if sort_dir not in {"asc", "desc"}:
+        sort_dir = "desc"
     PAGE_SIZE = 100
 
+    _QUALITY_ORDER = {"4K": 4, "2160p": 4, "1080p": 3, "720p": 2, "480p": 1, "": 0}
+
+    def _sort_key(it):
+        if sort_col == "title":
+            return (it.title or "").lower()
+        if sort_col == "size":
+            return it.file_size or 0
+        if sort_col == "quality":
+            return _QUALITY_ORDER.get(it.quality or "", 0)
+        return it.message_id  # date (default)
+
     items_all = sorted(
-        media_index._items.values(),  # internal access — admin layer co-owns the store
-        key=lambda it: it.message_id, reverse=True,
+        media_index._items.values(),
+        key=_sort_key,
+        reverse=(sort_dir == "desc"),
     )
     catalogue_size = len(items_all)
 
@@ -267,6 +285,8 @@ async def admin_home(request: web.Request) -> web.Response:
         page_size=PAGE_SIZE,
         filter_name=filter_name,
         search_q=request.query.get("q") or "",
+        sort_col=sort_col,
+        sort_dir=sort_dir,
         stats=media_index.stats(),
         duplicate_message_ids=duplicate_message_ids,
         known_series=known_series,
@@ -626,6 +646,10 @@ async def admin_action(request: web.Request) -> web.Response:
         _view_qs["page"] = form.get("_page")
     if form.get("_q"):
         _view_qs["q"] = form.get("_q")
+    if form.get("_sort"):
+        _view_qs["sort"] = form.get("_sort")
+    if form.get("_dir"):
+        _view_qs["dir"] = form.get("_dir")
     _target = "/admin" + (("?" + _urlencode(_view_qs)) if _view_qs else "")
 
     if not ids:

@@ -266,3 +266,42 @@
     {% endfor %}
   </div>
 {% endblock %}
+
+{% block scripts %}
+<script>
+// Overlay watch-progress bars on episode thumbnails using the same
+// localStorage CW data the hub uses. Runs after the DOM is ready so it
+// never blocks initial render.
+(function () {
+  var CW_KEY = "td:cw";
+  var FINISH_PCT = 0.95;
+  var MIN_PCT = 0.02;
+  try {
+    var cw = JSON.parse(localStorage.getItem(CW_KEY) || "{}");
+    document.querySelectorAll("li[data-ep-title]").forEach(function (li) {
+      // The watch URL <a> gives us the lookup key ({hash}{id}).
+      var thumbLink = li.querySelector('a[href^="/watch/"]');
+      if (!thumbLink) return;
+      var key = thumbLink.getAttribute("href").replace("/watch/", "");
+      var entry = cw[key];
+      if (!entry || !entry.dur || entry.dur <= 0) return;
+      var pct = Math.min(1, entry.pos / entry.dur);
+      if (pct < MIN_PCT) return;
+
+      // Inject a 3-px bar at the bottom of the thumbnail container.
+      // The <a> is already position:relative overflow:hidden in the template.
+      var track = document.createElement("div");
+      track.style.cssText =
+        "position:absolute;bottom:0;left:0;right:0;height:3px;" +
+        "background:rgba(0,0,0,0.35);pointer-events:none;z-index:1;";
+      var fill = document.createElement("div");
+      fill.style.cssText =
+        "height:100%;width:" + Math.round(pct * 100) + "%;" +
+        "background:" + (pct >= FINISH_PCT ? "#22c55e" : "#f97316") + ";";
+      track.appendChild(fill);
+      thumbLink.appendChild(track);
+    });
+  } catch (_) {}
+})();
+</script>
+{% endblock %}
