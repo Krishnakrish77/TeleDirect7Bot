@@ -586,6 +586,57 @@ async def remove(message_id: int, bot=None) -> None:
         schedule_snapshot(bot)  # No-op when Mongo is active.
 
 
+async def prune_stale(bot, channel_id: int, batch_size: int = 100) -> int:
+    """Check every catalogue entry against BIN_CHANNEL and remove any whose
+    messages no longer exist. Returns the count of removed entries.
+
+    Called by the background prune loop and by the admin prune-stale route
+    so both paths share identical logic.
+    """
+    ids = list(_items.keys())
+    removed = 0
+    for i in range(0, len(ids), batch_size):
+        batch = ids[i: i + batch_size]
+        try:
+            msgs = await bot.get_messages(channel_id, batch)
+        except Exception:
+            logging.exception("media_index.prune_stale: batch fetch failed")
+            continue
+        for msg in msgs:
+            if msg.empty:
+                await remove(msg.id, bot=bot)
+                removed += 1
+    if removed:
+        logging.info("media_index.prune_stale: removed %d stale entries", removed)
+    return removed
+
+
+async def _prune_loop(bot, channel_id: int, interval: int = 30 * 60) -> None:
+    """Background task: prune stale entries every ``interval`` seconds.
+
+    Telegram delivery of deleteChannelMessages to bots is unreliable for
+    private channels, so we sweep periodically as a safety net. Default
+    interval is 30 minutes — cheap enough (batched get_messages) to run
+    continuously without hitting rate limits.
+    """
+    # Wait one full interval after startup so the seed has time to finish
+    # and we don't race against the initial catalogue load.
+    await asyncio.sleep(interval)
+    while True:
+        try:
+            removed = await prune_stale(bot, channel_id)
+            if removed:
+                logging.info("background prune: removed %d stale entries", removed)
+        except Exception:
+            logging.exception("background prune loop error")
+        await asyncio.sleep(interval)
+
+
+def start_prune_loop(bot, channel_id: int, interval: int = 30 * 60) -> None:
+    """Schedule the background prune loop as a fire-and-forget task."""
+    asyncio.create_task(_prune_loop(bot, channel_id, interval))
+
+
 async def persist_now() -> None:
     """Public helper: take the lock and flush the /tmp JSON cache.
 

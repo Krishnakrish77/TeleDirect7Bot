@@ -512,20 +512,7 @@ async def admin_prune_stale(request: web.Request) -> web.Response:
     in batches of 100 and removes any that come back empty.
     """
     _require_session(request)
-    ids = list(media_index._items.keys())
-    removed = 0
-    BATCH = 100
-    for i in range(0, len(ids), BATCH):
-        batch = ids[i: i + BATCH]
-        try:
-            msgs = await StreamBot.get_messages(Var.BIN_CHANNEL, batch)
-        except Exception:
-            logging.exception("admin: prune-stale batch fetch failed")
-            continue
-        for msg in msgs:
-            if msg.empty:
-                await media_index.remove(msg.id, bot=StreamBot)
-                removed += 1
+    removed = await media_index.prune_stale(StreamBot, Var.BIN_CHANNEL)
 
     # Orphan thumbs — entries that no longer have a matching item in the
     # catalogue. These can accumulate via paths that bypass remove()
@@ -550,7 +537,7 @@ async def admin_prune_stale(request: web.Request) -> web.Response:
 
     msg = (
         f"Pruned {removed} stale entr{'y' if removed == 1 else 'ies'} "
-        f"(checked {len(ids)} items)."
+        f"(checked {len(media_index._items)} items)."
     )
     if thumbs_removed:
         msg += f" Cleared {thumbs_removed} orphan thumb(s)."
