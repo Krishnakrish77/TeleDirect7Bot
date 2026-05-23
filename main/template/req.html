@@ -415,7 +415,10 @@
       }
 
       // Last resort: direct progressive byte stream.
-      video.src = directSrc;
+      // Guard: directSrc is absent for known_unplayable files; setting
+      // video.src = undefined coerces to the string "undefined" and
+      // triggers a GET /undefined request.
+      if (directSrc) video.src = directSrc;
     }
 
     // ---- Manual subtitle upload ----------------------------------------
@@ -792,6 +795,9 @@
     }
 
     function watchForUndecodableCodec(video) {
+      // Skip for known_unplayable files — no src, so no events ever fire
+      // and the listeners would just sit dead on the element indefinitely.
+      if (!video.dataset.directSrc && !video.dataset.hlsSrc) return;
       // Two failure modes trigger the overlay:
       //   1. hls.js delivers segments fine but MSE silently rejects them
       //      because the codec isn't supported (10-bit HEVC / AV1 / DV).
@@ -904,10 +910,10 @@
         watchForUndecodableCodec(video);
       }
 
-      // Wrap with Plyr immediately so the browser's native controls are
-      // replaced before the user sees them. Plyr's captions.update flag
-      // makes it pick up <track> elements added afterward.
-      Plyr.setup(".player", {
+      // Wrap with Plyr only when there's an actual source to play.
+      // For known_unplayable files the video has no src; Plyr would
+      // initialise on an empty element and bind dead listeners.
+      if (video && (video.dataset.directSrc || video.dataset.hlsSrc)) Plyr.setup(".player", {
         controls: [
           "play-large", "rewind", "play", "fast-forward", "progress",
           "current-time", "duration", "mute", "volume", "captions",
