@@ -28,6 +28,12 @@
        so this direct-child selector stops matching and the video becomes
        visible without needing a higher-specificity override. */
     .aspect-video > video.player { visibility: hidden; }
+
+    /* Music player — Plyr audio bar styling */
+    .plyr--audio { border-radius: 0.75rem; background: rgba(255,255,255,0.05); }
+    .plyr--audio .plyr__controls { background: transparent; padding: 0.75rem 1rem; }
+    .plyr--audio .plyr__progress__buffer { background: rgba(255,255,255,0.1); }
+    .plyr--audio .plyr__time { color: rgba(148,163,184,0.9); font-size: 0.75rem; }
   </style>
 {% endblock %}
 
@@ -61,6 +67,70 @@
       {{ back_label }}
     </a>
 
+    {% if is_audio %}
+    {# ── Music player layout ─────────────────────────────────────────────
+       Spotify-style: large centered album art, track info, audio controls.
+       None of the video-specific chrome (aspect-video black box, VLC note,
+       subtitle button) makes sense for audio. #}
+    <div class="flex flex-col items-center mt-4 sm:mt-8">
+
+      {# Album art — thumbnail (embedded cover art) or default music icon #}
+      <div class="relative w-56 h-56 sm:w-72 sm:h-72 rounded-2xl overflow-hidden
+                  shadow-2xl bg-ink-800 flex-shrink-0 ring-1 ring-white/10">
+        <img src="/thumb/{{ meta.secure_hash if meta else '' }}{{ meta.message_id if meta else '' }}.jpg"
+             alt="Album art" loading="eager"
+             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+             class="absolute inset-0 w-full h-full object-cover" />
+        {# Fallback music note icon shown when no thumbnail is available #}
+        <div class="absolute inset-0 hidden items-center justify-center bg-ink-800">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="1"
+               class="w-24 h-24 text-slate-600">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+          </svg>
+        </div>
+      </div>
+
+      {# Track info #}
+      <div class="mt-6 text-center max-w-xs sm:max-w-sm px-4">
+        <h2 class="text-xl sm:text-2xl font-bold text-white leading-snug truncate">
+          {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.flac','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') }}
+        </h2>
+        {% if meta and meta.artist %}
+          <p class="mt-1 text-slate-300 text-sm font-medium truncate">{{ meta.artist }}</p>
+        {% endif %}
+        {% if meta and meta.album_title %}
+          <p class="mt-0.5 text-slate-500 text-xs truncate">{{ meta.album_title }}</p>
+        {% endif %}
+      </div>
+
+      {# Audio element — Plyr wraps this #}
+      <div class="mt-6 w-full max-w-md px-2">
+        <audio id="player" class="player"
+               {% if not known_unplayable %}data-direct-src="{{ src }}"{% endif %}
+               preload="metadata">
+        </audio>
+      </div>
+
+      {# Download button #}
+      <div class="mt-4">
+        <a href="{{ src }}"
+           class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
+                  text-sm font-medium text-slate-300 bg-ink-800/70
+                  hover:bg-ink-800 border border-white/5 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 12l4.5 4.5m0 0L16.5 12m-4.5 4.5V3"/>
+          </svg>
+          Download
+        </a>
+      </div>
+    </div>
+
+    {% else %}
+    {# ── Video player layout ──────────────────────────────────────────────#}
     <div class="text-center px-2">
       <h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">TeleDirect</h1>
       <p class="mt-2 text-sm sm:text-base text-slate-400 break-all">{{ file_name }}</p>
@@ -265,6 +335,7 @@
       </div>
     {% endif %}
     {% endif %}
+    {% endif %}{# end video/audio split #}
 
     {% if meta and meta.tmdb_id %}
       <section class="mt-10 rounded-lg border border-white/5 bg-ink-800/40 p-5">
@@ -913,15 +984,21 @@
       // Wrap with Plyr only when there's an actual source to play.
       // For known_unplayable files the video has no src; Plyr would
       // initialise on an empty element and bind dead listeners.
-      if (video && (video.dataset.directSrc || video.dataset.hlsSrc)) Plyr.setup(".player", {
-        controls: [
-          "play-large", "rewind", "play", "fast-forward", "progress",
-          "current-time", "duration", "mute", "volume", "captions",
-          "settings", "speed", "pip", "airplay", "download", "fullscreen",
-        ],
-        captions: { active: true, language: "auto", update: true },
-        keyboard: { focused: true, global: true },
-      });
+      if (video && (video.dataset.directSrc || video.dataset.hlsSrc)) {
+        const isAudio = video.tagName.toLowerCase() === "audio";
+        Plyr.setup(".player", {
+          controls: isAudio
+            // Audio: clean minimal bar — no video controls, no captions
+            ? ["play", "rewind", "progress", "current-time", "duration",
+               "fast-forward", "mute", "volume"]
+            : ["play-large", "rewind", "play", "fast-forward", "progress",
+               "current-time", "duration", "mute", "volume", "captions",
+               "settings", "speed", "pip", "airplay", "download", "fullscreen"],
+          captions: isAudio ? { active: false } : { active: true, language: "auto", update: true },
+          keyboard: { focused: true, global: true },
+          resetOnEnd: false,
+        });
+      }
 
       // Subtitle list requires an ffprobe pass on the source which can take
       // seconds over Telegram. Injecting tracks after Plyr is set up keeps

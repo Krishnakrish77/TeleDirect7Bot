@@ -107,6 +107,7 @@ async def render_page(message_id, secure_hash):
                 ]
         return _REQ_TEMPLATE.render(
             tag=mime_type,
+            is_audio=(mime_type == "audio"),
             heading=("Watch " if mime_type == "video" else "Listen ") + file_name,
             src=src,
             hls_src=hls_src,
