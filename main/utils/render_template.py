@@ -80,17 +80,30 @@ async def render_page(message_id, secure_hash):
         meta = media_index.get_item(int(message_id))
         next_ep = media_index.next_episode(meta) if meta else None
         file_name = _best_file_name(file_data.file_name, meta)
-        # If ffprobe at index time flagged the file as a codec the
-        # browser can't decode (HEVC, 10-bit, AV1 inside MKV, etc.),
-        # short-circuit straight to the "open in VLC" page instead
-        # of loading the player only to fail mid-playback. The probe
-        # is best-effort — when it hasn't run yet, render normally.
         from main.utils import codec_probe
         known_unplayable = (
             mime_type == "video"
             and meta is not None
             and codec_probe.known_unplayable(meta)
         )
+        # Quality variants — other uploads of the same film or episode at
+        # different resolutions / file sizes. Shown as chips on the watch
+        # page so users can switch quality without going back.
+        quality_variants: list = []
+        if meta and mime_type == "video":
+            if meta.movie_key:
+                quality_variants = [
+                    v for v in media_index.variants_for_movie(meta.movie_key)
+                    if v.message_id != meta.message_id
+                ]
+            elif meta.series_key and meta.episode is not None:
+                quality_variants = [
+                    e for e in media_index.episodes_for_series(meta.series_key)
+                    if (e.season == meta.season
+                        and e.episode == meta.episode
+                        and e.episode_end == meta.episode_end
+                        and e.message_id != meta.message_id)
+                ]
         return _REQ_TEMPLATE.render(
             tag=mime_type,
             heading=("Watch " if mime_type == "video" else "Listen ") + file_name,
@@ -103,6 +116,7 @@ async def render_page(message_id, secure_hash):
             video_codec=(meta.video_codec if meta else "") or "",
             pix_fmt=(meta.pix_fmt if meta else "") or "",
             next_ep=next_ep,
+            quality_variants=quality_variants,
         )
     file_name = _best_file_name(file_data.file_name, None)
     heading = f"Download {file_name}"

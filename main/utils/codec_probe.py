@@ -34,7 +34,7 @@ from main.vars import Var
 _BROWSER_FRIENDLY_VIDEO_CODECS = {"h264", "avc1"}
 
 # Pixel formats that are 10-bit or higher. Browsers can decode 8-bit
-# H.264 and 8-bit HEVC (on Safari) but not 10-bit anything in MSE.
+# H.264 and 8-bit HEVC but not 10-bit anything in MSE.
 _HIGH_BIT_DEPTH_HINTS = ("10le", "10be", "p010", "p012", "12le")
 
 
@@ -45,17 +45,27 @@ def is_browser_playable(video_codec: str, pix_fmt: str) -> bool:
     True — we don't know enough to gate the player. The caller
     should treat True as "let the browser try" and reserve the
     early-overlay path for known-bad combos.
+
+    8-bit HEVC is playable on Safari (natively) and Chrome/Edge on
+    most modern hardware via HLS+MSE. We allow it through here and
+    let the JS watchForUndecodableCodec() show the overlay after
+    4 s if frames genuinely never decode — better than blocking
+    immediately and showing a false "can't play" message.
     """
     if not video_codec:
         return True
     vc = video_codec.lower()
     pf = (pix_fmt or "").lower()
-    if vc not in _BROWSER_FRIENDLY_VIDEO_CODECS:
-        return False
+    # 10-bit always blocks — no browser MSE path handles it.
     for hint in _HIGH_BIT_DEPTH_HINTS:
         if hint in pf:
             return False
-    return True
+    # h264 and 8-bit hevc are playable.
+    if vc in _BROWSER_FRIENDLY_VIDEO_CODECS:
+        return True
+    if vc == "hevc":
+        return True
+    return False
 
 
 def needs_probe(item) -> bool:

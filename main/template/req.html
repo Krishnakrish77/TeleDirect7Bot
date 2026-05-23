@@ -80,15 +80,11 @@
                 d="M12 9v3.75m0-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Zm0 13.036h.007v.008H12v-.008Z"/>
         </svg>
         <h2 class="text-xl font-semibold text-white mb-2">
-          This file can't play in your browser
+          This video needs a media player
         </h2>
         <p class="text-sm text-slate-300 max-w-md mx-auto mb-2">
-          Detected codec
-          <code class="px-1.5 py-0.5 rounded bg-ink-800/80 text-amber-200">{{ video_codec or 'unknown' }}</code>
-          {%- if pix_fmt %} with pixel format
-          <code class="px-1.5 py-0.5 rounded bg-ink-800/80 text-amber-200">{{ pix_fmt }}</code>{% endif -%}
-          — browsers can't decode this. Open the stream in VLC or any
-          native media player to watch.
+          This file uses a format that browsers don't support yet.
+          Use VLC or any media player app to watch it — the stream link works great there.
         </p>
         <div class="mt-5 flex flex-wrap items-center justify-center gap-3">
           <a id="vlcButtonEarly"
@@ -179,12 +175,10 @@
                   d="M12 9v3.75m0-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Zm0 13.036h.007v.008H12v-.008Z"/>
           </svg>
           <h3 class="text-lg font-semibold text-white mb-2">
-            This file won't play in the browser
+            This video needs a media player
           </h3>
           <p class="text-sm text-slate-300 mb-4">
-            Could be a codec (10-bit HEVC, AV1, …) the browser can't decode,
-            or a stream-pipeline error. The streaming link still works in
-            VLC and most native players.
+            Your browser couldn't play this file. Open it in VLC or any media player app — the stream link works great there.
           </p>
           <a id="codecOverlayVlc"
              href="vlc://{{ src }}"
@@ -247,6 +241,31 @@
       </label>
     </div>
     <p id="subStatus" class="mt-2 text-center text-xs text-slate-500"></p>
+
+    {# Quality / variant switcher — other uploads of the same film or
+       episode at different resolutions. Only rendered when variants
+       exist; clicking navigates to that file's watch page. #}
+    {% if quality_variants %}
+      <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+        <span class="text-xs text-slate-500">Other versions:</span>
+        {# Current item shown as active chip #}
+        <span class="px-3 py-1.5 rounded-lg text-xs font-semibold
+                     bg-brand-500/20 text-brand-300 border border-brand-400/40">
+          {% if meta %}{{ meta.quality or '' }}{% if meta.quality and meta.file_size %} · {% endif %}{% if meta.file_size %}{{ meta.file_size | humansize }}{% endif %}{% else %}Current{% endif %}
+        </span>
+        {% for v in quality_variants %}
+          <a href="/watch/{{ v.secure_hash }}{{ v.message_id }}"
+             class="px-3 py-1.5 rounded-lg text-xs font-medium
+                    bg-ink-800/70 text-slate-300 border border-white/5
+                    hover:border-brand-400/40 hover:text-brand-300
+                    transition-colors">
+            {{ v.quality or '' }}
+            {%- if v.quality and v.file_size %} · {% endif %}
+            {%- if v.file_size %}{{ v.file_size | humansize }}{% endif %}
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
     {% endif %}
 
     {% if meta and meta.tmdb_id %}
