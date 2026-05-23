@@ -682,8 +682,10 @@
       {# Single toolbar row, GitHub-issues / Linear style:
          left  = search + filter chips (chips wrap inline)
          right = count + pagination (justified to the right edge) #}
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div class="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+      {# On mobile: stack search+chips above pagination (flex-col).
+         On sm+: side-by-side with search+chips on left, pagination right. #}
+      <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-4 sm:gap-y-2">
+        <div class="flex flex-wrap items-center gap-2 sm:flex-1 sm:min-w-0">
           <form method="get" action="/admin" id="admin-filter-form" class="w-full sm:w-64 flex-shrink-0">
             <input type="hidden" name="filter" value="{{ filter_name }}" />
             <input type="hidden" name="sort" value="{{ sort_col }}" />
@@ -723,7 +725,7 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-3 text-xs text-slate-400 tabular-nums flex-shrink-0">
+        <div class="flex items-center gap-3 text-xs text-slate-400 tabular-nums self-end sm:flex-shrink-0">
           <span class="text-slate-500">
             {{ filtered_count }} of {{ catalogue_size }}
           </span>
