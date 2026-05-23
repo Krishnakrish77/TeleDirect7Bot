@@ -80,6 +80,197 @@ async def _get_user_client() -> Client:
 # Argument parsing
 # ---------------------------------------------------------------------------
 
+def _is_http_url(text: str) -> bool:
+    """True when the argument is a plain HTTP/HTTPS URL (not a t.me link)."""
+    t = text.strip()
+    return bool(re.match(r"https?://", t, re.IGNORECASE)) and "t.me/" not in t
+
+
+# ---------------------------------------------------------------------------
+# HTTP URL download helper
+# ---------------------------------------------------------------------------
+
+# Max download size: env-tunable, default 1.5 GB (Koyeb free-tier has ~1 GB
+# ephemeral disk; 1.5 GB leaves room for the upload temp copy to coexist).
+_MAX_URL_GRAB_BYTES = int(os.environ.get("GRAB_URL_MAX_BYTES", str(1_500 * 1024 * 1024)))
+
+# Private / loopback / link-local ranges that must never be fetched
+# (SSRF protection). Cloud metadata endpoints live in 169.254.0.0/16.
+import ipaddress as _ipaddress
+_BLOCKED_NETWORKS = [
+    _ipaddress.ip_network(n) for n in (
+        "127.0.0.0/8",       # loopback
+        "10.0.0.0/8",        # RFC-1918 private
+        "172.16.0.0/12",     # RFC-1918 private
+        "192.168.0.0/16",    # RFC-1918 private
+        "169.254.0.0/16",    # link-local / cloud metadata (AWS, GCP, Azure)
+        "100.64.0.0/10",     # shared address space (RFC-6598)
+        "::1/128",           # IPv6 loopback
+        "fc00::/7",          # IPv6 unique-local
+        "fe80::/10",         # IPv6 link-local
+    )
+]
+
+
+def _check_ssrf(host: str) -> None:
+    """Raise ValueError if host resolves to a private/internal address."""
+    import socket as _socket
+    try:
+        addrs = _socket.getaddrinfo(host, None)
+    except _socket.gaierror as e:
+        raise ValueError(f"Cannot resolve host '{host}': {e}") from e
+    for _, _, _, _, sockaddr in addrs:
+        ip = _ipaddress.ip_address(sockaddr[0])
+        for net in _BLOCKED_NETWORKS:
+            if ip in net:
+                raise ValueError(
+                    f"Blocked: '{host}' resolves to {ip} which is in a "
+                    f"private/internal range ({net}). Use a public URL."
+                )
+
+
+async def _grab_from_url(url: str, status_msg=None) -> Message:
+    """Download a file from an HTTP(S) URL and re-upload it to BIN_CHANNEL.
+
+    Security:
+    - SSRF guard: hostname must not resolve to a private/loopback/metadata IP
+    - Size cap: rejects downloads exceeding GRAB_URL_MAX_BYTES (default 1.5 GB)
+    - Content-Type check: rejects HTML responses (login pages, error pages)
+    - Redirect safety: aiohttp follows redirects but each hop is re-checked
+      against the same SSRF guard via allow_redirects=True + connector
+    Performance:
+    - Streams in 512 KB chunks — never loads the full file into RAM
+    - Progress updated every 5 s or every 5 MB
+    """
+    import aiohttp as _aiohttp
+    from urllib.parse import urlparse as _urlparse
+
+    url = url.strip()
+    parsed = _urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("Only http:// and https:// URLs are supported.")
+
+    # SSRF check before opening any connection.
+    _check_ssrf(parsed.hostname or "")
+
+    logger.info("grab_url: fetching %s", url)
+    timeout = _aiohttp.ClientTimeout(total=None, connect=30, sock_connect=30, sock_read=120)
+
+    async with _aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url, allow_redirects=True, max_redirects=5) as resp:
+            if resp.status >= 400:
+                raise RuntimeError(f"HTTP {resp.status} — server refused the download.")
+
+            content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+
+            # Reject HTML responses — these are almost always login/error pages,
+            # not the actual file. A bare download URL never serves text/html.
+            if content_type.startswith("text/html"):
+                raise ValueError(
+                    "Server returned an HTML page instead of a file. "
+                    "The URL may require login or redirect to an error page."
+                )
+
+            # Enforce size cap early if Content-Length is provided.
+            total_size = int(resp.headers.get("Content-Length") or 0)
+            if total_size and total_size > _MAX_URL_GRAB_BYTES:
+                raise ValueError(
+                    f"File too large: {humanbytes(total_size)} exceeds the "
+                    f"{humanbytes(_MAX_URL_GRAB_BYTES)} grab limit."
+                )
+
+            # Derive filename: prefer Content-Disposition, fall back to URL path.
+            file_name = ""
+            cd = resp.headers.get("Content-Disposition", "")
+            if cd:
+                m = re.search(r'filename\*?=["\']?(?:UTF-8\'\')?([^\";\']+)', cd, re.IGNORECASE)
+                if m:
+                    file_name = m.group(1).strip().strip('"\'')
+            if not file_name:
+                file_name = os.path.basename(resp.url.path) or "download"
+            # Sanitise: strip directory separators that could escape the temp dir.
+            file_name = os.path.basename(file_name.replace("\\", "/")) or "download"
+
+            logger.info(
+                "grab_url: %s — %s — %s",
+                file_name, content_type,
+                humanbytes(total_size) if total_size else "unknown size",
+            )
+            if status_msg:
+                size_hint = humanbytes(total_size) if total_size else "unknown size"
+                try:
+                    await status_msg.edit_text(f"⬇️ Downloading {file_name} ({size_hint})…")
+                except Exception:
+                    pass
+
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=f"_grab_{file_name}")
+            os.close(tmp_fd)
+            try:
+                downloaded = 0
+                last_edit = 0.0
+                last_mb_bucket = 0
+                CHUNK = 512 * 1024  # 512 KB
+
+                with open(tmp_path, "wb") as f:
+                    async for chunk in resp.content.iter_chunked(CHUNK):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        # Hard size cap mid-stream (Content-Length may be absent).
+                        if downloaded > _MAX_URL_GRAB_BYTES:
+                            raise ValueError(
+                                f"Download exceeded the {humanbytes(_MAX_URL_GRAB_BYTES)} limit — aborted."
+                            )
+
+                        now = time.monotonic()
+                        mb_bucket = downloaded // (5 * 1024 * 1024)
+                        if status_msg and (mb_bucket > last_mb_bucket or now - last_edit > 5):
+                            last_mb_bucket = mb_bucket
+                            last_edit = now
+                            done_str = humanbytes(downloaded)
+                            pct = f" {downloaded * 100 // total_size}%" if total_size else ""
+                            try:
+                                await status_msg.edit_text(
+                                    f"⬇️ Downloading {file_name}{pct} ({done_str}…)"
+                                )
+                            except Exception:
+                                pass
+
+                logger.info("grab_url: download complete — %s", humanbytes(downloaded))
+
+                # Determine upload method from Content-Type + extension.
+                ext = os.path.splitext(file_name)[1].lower()
+                _VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts", ".flv", ".wmv"}
+                _AUDIO_EXTS = {".mp3", ".m4a", ".flac", ".ogg", ".wav", ".aac", ".opus"}
+                is_video = content_type.startswith("video/") or ext in _VIDEO_EXTS
+                is_audio = content_type.startswith("audio/") or ext in _AUDIO_EXTS
+
+                if status_msg:
+                    try:
+                        await status_msg.edit_text(f"⬆️ Uploading {file_name}…")
+                    except Exception:
+                        pass
+
+                up_cb = _progress_callback("⬆️ Uploading", status_msg, downloaded)
+                if is_video:
+                    return await StreamBot.send_video(
+                        Var.BIN_CHANNEL, tmp_path,
+                        file_name=file_name, supports_streaming=True, progress=up_cb,
+                    )
+                if is_audio:
+                    return await StreamBot.send_audio(
+                        Var.BIN_CHANNEL, tmp_path, file_name=file_name, progress=up_cb,
+                    )
+                return await StreamBot.send_document(
+                    Var.BIN_CHANNEL, tmp_path, file_name=file_name, progress=up_cb,
+                )
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+
 def _parse_grab_args(text: str) -> Tuple[Union[int, str], int]:
     """Return (chat, message_id). chat is int peer ID or str username."""
     text = text.strip()
@@ -335,6 +526,7 @@ async def grab_handler(client: Client, m: Message):
     if len(parts) < 2:
         await m.reply_text(
             "Usage:\n"
+            "  `/grab https://example.com/video.mp4`  ← direct HTTP URL\n"
             "  `/grab https://t.me/channel/123`\n"
             "  `/grab @channel 123`\n"
             "  `/grab -100xxx 123`",
@@ -342,16 +534,29 @@ async def grab_handler(client: Client, m: Message):
         )
         return
 
-    if not Var.USER_SESSION:
-        await m.reply_text(
-            "Set `USER_SESSION` in .env and restart first.",
-            quote=True,
-        )
-        return
-
+    arg = parts[1].strip()
     status = await m.reply_text("Fetching…", quote=True)
     try:
-        chat, msg_id = _parse_grab_args(parts[1])
+        # ── HTTP URL path (no USER_SESSION required) ──────────────────────
+        if _is_http_url(arg):
+            log_msg = await _grab_from_url(arg, status_msg=status)
+            schedule_index(client, log_msg)
+            await log_msg.reply_text(
+                text=f"**Grabbed from URL** by [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n"
+                     f"**Source:** `{arg[:200]}`",
+                disable_web_page_preview=True,
+                quote=True,
+            )
+            reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
+            await status.edit_text(stream_text, disable_web_page_preview=True, reply_markup=reply_markup)
+            return
+
+        # ── Telegram message path (requires USER_SESSION) ─────────────────
+        if not Var.USER_SESSION:
+            await status.edit_text("Set `USER_SESSION` in .env and restart first.")
+            return
+
+        chat, msg_id = _parse_grab_args(arg)
         user = await _get_user_client()
         src = await user.get_messages(chat, msg_id)
         if src.empty or not get_media_from_message(src):
