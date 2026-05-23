@@ -500,7 +500,8 @@ def _item_from_message(message) -> Optional[HubItem]:
         tags=parsed.tags,
         duration=int(getattr(media, "duration", 0) or 0),
         file_size=int(getattr(media, "file_size", 0) or 0),
-        has_thumb=bool(getattr(media, "thumbs", None)),
+        # Video/Document have thumbs (list); Audio.thumb is singular.
+        has_thumb=bool(getattr(media, "thumbs", None) or getattr(media, "thumb", None)),
         quality=_extract_quality(parsed.title, file_name, parsed.description),
         file_name=file_name or _synthesize_filename(parsed.title, parsed.year, media),
         series_key=series_key,
@@ -922,8 +923,12 @@ async def seed(bot, channel_id: int) -> None:
                         # Phase 1 upgrade).
                         if new_item.artist and not existing.artist:
                             existing.artist = new_item.artist
+                        if new_item.album_title and not existing.album_title:
+                            existing.album_title = new_item.album_title
                         if new_item.album_key and not existing.album_key:
                             existing.album_key = new_item.album_key
+                        if new_item.track_number is not None and existing.track_number is None:
+                            existing.track_number = new_item.track_number
                         if new_item.media_kind and not existing.media_kind:
                             existing.media_kind = new_item.media_kind
                         _items[existing.message_id] = existing
