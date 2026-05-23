@@ -106,6 +106,24 @@
             Download
           </a>
         </div>
+        {# Show quality variants on the VLC page too — a 10-bit HEVC file
+           may have an H264 sibling the user can actually play in browser. #}
+        {% if quality_variants %}
+          <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
+            <span class="text-xs text-slate-500">Other versions:</span>
+            {% for v in quality_variants %}
+              <a href="/watch/{{ v.secure_hash }}{{ v.message_id }}"
+                 class="px-3 py-1.5 rounded-lg text-xs font-medium
+                        bg-ink-800/70 text-slate-300 border border-white/5
+                        hover:border-brand-400/40 hover:text-brand-300
+                        transition-colors">
+                {{ v.quality or '' }}
+                {%- if v.quality and v.file_size %} · {% endif %}
+                {%- if v.file_size %}{{ v.file_size | humansize }}{% endif %}
+              </a>
+            {% endfor %}
+          </div>
+        {% endif %}
       </div>
     {% else %}
     <div class="mt-8 aspect-video bg-black rounded-xl overflow-hidden relative">
@@ -251,7 +269,9 @@
         {# Current item shown as active chip #}
         <span class="px-3 py-1.5 rounded-lg text-xs font-semibold
                      bg-brand-500/20 text-brand-300 border border-brand-400/40">
-          {% if meta %}{{ meta.quality or '' }}{% if meta.quality and meta.file_size %} · {% endif %}{% if meta.file_size %}{{ meta.file_size | humansize }}{% endif %}{% else %}Current{% endif %}
+          {%- set _qlabel = (meta.quality or '') if meta else '' -%}
+          {%- set _slabel = (meta.file_size | humansize) if (meta and meta.file_size) else '' -%}
+          {{ _qlabel }}{% if _qlabel and _slabel %} · {% endif %}{{ _slabel or ('Current' if not _qlabel) }}
         </span>
         {% for v in quality_variants %}
           <a href="/watch/{{ v.secure_hash }}{{ v.message_id }}"
