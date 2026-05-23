@@ -224,6 +224,8 @@ async def admin_home(request: web.Request) -> web.Response:
         # No-thumb = uploaded as document (no native thumb + no duration).
         if filter_name == "no-thumb" and (it.has_thumb or it.duration):
             return False
+        if filter_name == "music" and getattr(it, "media_kind", "") != "audio":
+            return False
         return True
 
     filtered = [it for it in items_all if _passes_filter(it)]
@@ -239,6 +241,8 @@ async def admin_home(request: web.Request) -> web.Response:
                 it.file_name or "",
                 " ".join(it.tags or []),
                 it.imdb_id or "",
+                getattr(it, "artist", "") or "",
+                getattr(it, "album_title", "") or "",
                 f"bin:{it.message_id}",
             )).lower()
             return q in blob

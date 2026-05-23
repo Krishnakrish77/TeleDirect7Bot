@@ -676,6 +676,7 @@
             ('enriched',    'Enriched'),
             ('series',      'Series'),
             ('movies',      'Movies'),
+            ('music',       '🎵 Music'),
             ('no-poster',   'No poster'),
             ('no-thumb',    'No thumb'),
             ('duplicates',  'Duplicates'),
@@ -702,15 +703,8 @@
                 <path stroke-linecap="round" stroke-linejoin="round"
                       d="m21 21-4.34-4.34M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/>
               </svg>
-              <input type="search" name="q" placeholder="Search title, file, tag, bin id…"
+              <input type="search" name="q" placeholder="Search title, file, tag, artist…"
                      value="{{ search_q }}" autocomplete="off"
-                     x-data
-                     x-init="
-                       let t;
-                       $el.addEventListener('input', () => {
-                         clearTimeout(t);
-                         t = setTimeout(() => $el.form.submit(), 400);
-                       });"
                      class="w-full pl-9 pr-3 py-1.5 text-sm rounded
                             bg-ink-800/70 text-slate-100 placeholder-slate-500
                             border border-white/5
@@ -820,7 +814,17 @@
                   {% endif %}
                 </td>
                 <td class="px-3 py-2 text-slate-400 text-xs">
-                  {% if item.series_key %}
+                  {% if item.media_kind == 'audio' %}
+                    {# Show artist/album for audio instead of series info #}
+                    {% if item.artist %}
+                      <span class="text-slate-300">{{ item.artist }}</span>
+                      {% if item.album_title %}
+                        <span class="text-slate-500"> · {{ item.album_title }}</span>
+                      {% endif %}
+                    {% elif item.album_title %}
+                      {{ item.album_title }}
+                    {% else %}—{% endif %}
+                  {% elif item.series_key %}
                     {{ item.series_title }}
                     {% if item.season and item.episode %}
                       <span class="text-slate-500">S{{ '%02d' % item.season }}E{{ '%02d' % item.episode }}</span>
