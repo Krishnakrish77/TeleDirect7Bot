@@ -22,7 +22,12 @@
      buttons all fit without the title overflowing above the
      ``overflow-hidden`` clip. 4:3 gives roughly 33% more vertical
      room than 16:9 at the same width. #}
-  class="relative -mx-4 sm:-mx-6 lg:-mx-10 mb-10
+  {# w-screen overrides flex-stretch so the hero can expand to full
+     viewport width. Inside a flex-col, negative margins shift the
+     element left but don't expand its width — w-screen fixes that.
+     The left-shift (margin-left=-px) aligns the left edge with the
+     viewport; w-screen makes it span all the way to the right. #}
+  class="relative w-screen -mx-4 sm:-mx-6 lg:-mx-8 mb-10
          aspect-[4/3] sm:aspect-[21/9] max-h-[70vh]
          overflow-hidden rounded-xl group/hero">
 
@@ -68,8 +73,12 @@
       <div class="absolute inset-0
                   bg-gradient-to-r from-ink-900/95 via-ink-900/70 to-transparent"></div>
 
+      {# items-center on sm+, but revert to items-end on landscape phones
+         (max-height ≤ 480px) so the title + buttons stay anchored at the
+         bottom and are never clipped when the viewport is short. #}
       <div class="relative h-full flex items-end sm:items-center
-                  px-6 sm:px-10 lg:px-14 pb-10 sm:pb-0">
+                  [@media(max-height:480px)]:items-end
+                  px-6 sm:px-10 lg:px-14 pb-6 sm:pb-0">
         <div class="max-w-2xl text-white
                     [&amp;_h2]:[text-shadow:0_2px_8px_rgba(0,0,0,0.6)]
                     [&amp;_p]:[text-shadow:0_1px_4px_rgba(0,0,0,0.7)]">
@@ -95,7 +104,8 @@
                desktop hero is wide enough to fit everything. Series
                + h2 + genres + buttons stay on mobile, which is
                enough context for the user to recognise the title. #}
-            <p class="hidden sm:block mt-4 text-sm sm:text-base text-slate-200/90
+            <p class="hidden sm:block [@media(max-height:480px)]:hidden
+                      mt-4 text-sm sm:text-base text-slate-200/90
                       leading-relaxed line-clamp-3 sm:line-clamp-4
                       max-w-xl drop-shadow">
               {{ hero.overview }}
