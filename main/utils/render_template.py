@@ -19,6 +19,7 @@ _env = Environment(
     autoescape=select_autoescape(["html"]),
     enable_async=False,
 )
+_env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
 _REQ_TEMPLATE = _env.get_template("req.html")
 _DL_TEMPLATE = _env.get_template("dl.html")
 
