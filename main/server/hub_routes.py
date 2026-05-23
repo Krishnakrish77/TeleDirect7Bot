@@ -603,9 +603,16 @@ async def hub_thumb(request: web.Request) -> web.Response:
                 getattr(message, "video", None)
                 or getattr(message, "animation", None)
                 or getattr(message, "document", None)
+                or getattr(message, "audio", None)
             )
             if media is not None:
+                # Video/Document: thumbs is a list. Audio: thumb is a single
+                # Thumbnail (album art from ID3 APIC tag). Handle both.
                 thumbs = getattr(media, "thumbs", None) or []
+                if not thumbs:
+                    single = getattr(media, "thumb", None)
+                    if single:
+                        thumbs = [single]
                 if thumbs:
                     try:
                         bytesio = await StreamBot.download_media(
