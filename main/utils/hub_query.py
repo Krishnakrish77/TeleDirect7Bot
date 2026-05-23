@@ -72,6 +72,12 @@ class HubItem:
     episode_still_path: str = ""
     episode_air_date: str = ""
     trailer_key: str = ""          # YouTube video ID; "" if not available
+    # --- Music metadata (populated for audio files) ---
+    media_kind: str = ""           # "video" | "audio" | ""
+    artist: str = ""               # performer / artist name
+    album_title: str = ""          # album name (from ffprobe tags or admin)
+    album_key: str = ""            # URL slug: slugify(artist-album) or slugify(artist)
+    track_number: Optional[int] = None  # position in album
 
 
 @dataclass

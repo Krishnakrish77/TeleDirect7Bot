@@ -37,6 +37,10 @@
              episode_end: d.episodeEnd || '',
              tmdb_id: d.tmdbId || '',
              tmdb_kind: d.tmdbKind || 'movie',
+             media_kind: d.mediaKind || '',
+             artist: d.artist || '',
+             album_title: d.albumTitle || '',
+             track_number: d.trackNumber || '',
              // Preview state populated by previewTmdb().
              preview: null,
              previewError: '',
@@ -856,6 +860,10 @@
                              TMDB ID override doesn't accidentally get
                              applied as a movie record. #}
                           data-tmdb-kind="{{ item.tmdb_kind or ('tv' if item.series_key else 'movie') }}"
+                          data-media-kind="{{ item.media_kind or '' }}"
+                          data-artist="{{ item.artist or '' }}"
+                          data-album-title="{{ item.album_title or '' }}"
+                          data-track-number="{{ item.track_number or '' }}"
                           @click.stop="openEdit($event.currentTarget)"
                           class="text-xs px-2 py-1 rounded
                                  bg-brand-500/15 text-brand-300
@@ -1109,6 +1117,37 @@
                   Set Ep end only for files spanning multiple episodes (e.g. E01–E03).
                   Clear the series title to restore as a standalone item.
                 </p>
+              </div>
+
+              {# Music metadata — only shown when editing audio items #}
+              <div class="pt-3 border-t border-white/5" x-show="editing.media_kind === 'audio'" x-cloak>
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Music</p>
+                <div class="space-y-2">
+                  <label class="block">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Artist</span>
+                    <input type="text" name="artist" placeholder="e.g. A.R. Rahman"
+                           x-model="editing.artist"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                  <label class="block">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Album</span>
+                    <input type="text" name="album_title" placeholder="e.g. Roja"
+                           x-model="editing.album_title"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                  <label class="block">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Track #</span>
+                    <input type="number" name="track_number" min="1" placeholder="1"
+                           x-model="editing.track_number"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm tabular-nums
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                </div>
               </div>
 
               {# Optional TMDB id override. When set, the backend skips

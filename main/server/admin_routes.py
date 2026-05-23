@@ -1423,6 +1423,12 @@ async def admin_edit(request: web.Request) -> web.Response:
     if new_episode_end is not None and new_episode is not None and new_episode_end <= new_episode:
         new_episode_end = None
 
+    # Music metadata fields
+    new_artist = (form.get("artist") or "").strip()
+    new_album_title = (form.get("album_title") or "").strip()
+    track_number_raw = (form.get("track_number") or "").strip()
+    new_track_number: Optional[int] = int(track_number_raw) if track_number_raw.isdigit() else None
+
     # Optional manual TMDB-id override. When present, it bypasses the
     # title-search path entirely — admin tells us which record to use
     # by its provider id (handy when titles are too generic for search
@@ -1475,6 +1481,22 @@ async def admin_edit(request: web.Request) -> web.Response:
                 item.movie_key = compute_movie_key(
                     new_title, new_year, new_file_name or item.file_name
                 )
+        # Music metadata — always apply (new_artist / new_album_title may be blank
+        # to intentionally clear the field; track_number None means "not entered").
+        item.artist = new_artist
+        if new_album_title != item.album_title:
+            item.album_title = new_album_title
+            # Recompute album_key with the updated artist/album pair.
+            from main.utils.series import slugify as _slugify
+            if item.artist and item.album_title:
+                item.album_key = _slugify(f"{item.artist}-{item.album_title}")
+            elif item.artist:
+                item.album_key = _slugify(item.artist)
+            elif item.album_title:
+                item.album_key = _slugify(item.album_title)
+            else:
+                item.album_key = ""
+        item.track_number = new_track_number
 
     status, reason = await _rewrite_caption(message_id, apply)
 

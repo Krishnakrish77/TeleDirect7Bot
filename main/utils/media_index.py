@@ -243,6 +243,11 @@ def _to_serializable(item: HubItem) -> dict:
         "episode_still_path": item.episode_still_path,
         "episode_air_date": item.episode_air_date,
         "trailer_key": item.trailer_key,
+        "media_kind": item.media_kind,
+        "artist": item.artist,
+        "album_title": item.album_title,
+        "album_key": item.album_key,
+        "track_number": item.track_number,
         "subtitles": [
             {
                 "bin_message_id": s.bin_message_id,
@@ -290,6 +295,11 @@ def _from_serializable(d: dict) -> HubItem:
         episode_still_path=d.get("episode_still_path", "") or "",
         episode_air_date=d.get("episode_air_date", "") or "",
         trailer_key=d.get("trailer_key", "") or "",
+        media_kind=d.get("media_kind", "") or "",
+        artist=d.get("artist", "") or "",
+        album_title=d.get("album_title", "") or "",
+        album_key=d.get("album_key", "") or "",
+        track_number=d.get("track_number"),
         subtitles=[
             ExternalSubtitle(
                 bin_message_id=s["bin_message_id"],
@@ -305,6 +315,7 @@ def _from_serializable(d: dict) -> HubItem:
 def _media_of(message):
     return (
         getattr(message, "video", None)
+        or getattr(message, "audio", None)
         or getattr(message, "document", None)
         or getattr(message, "animation", None)
     )
@@ -320,6 +331,18 @@ def _is_video_message(message) -> bool:
         return True
     mime = (getattr(media, "mime_type", "") or "").lower()
     return mime.startswith("video/")
+
+
+def _is_audio_message(message) -> bool:
+    if getattr(message, "empty", False):
+        return False
+    if getattr(message, "audio", None) is not None:
+        return True
+    media = _media_of(message)
+    if media is None:
+        return False
+    mime = (getattr(media, "mime_type", "") or "").lower()
+    return mime.startswith("audio/")
 
 
 _KURIGRAM_TS_RE = re.compile(r"^video_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.mp4$")
@@ -375,15 +398,24 @@ def _synthesize_filename(title: str, year, media) -> str:
 
 
 def _item_from_message(message) -> Optional[HubItem]:
-    if not _is_video_message(message):
+    is_audio = _is_audio_message(message)
+    if not _is_video_message(message) and not is_audio:
         return None
+    media_kind = "audio" if is_audio else "video"
     media = _media_of(message)
+    # For audio messages, Telegram extracts performer/title directly
+    audio_obj = getattr(message, "audio", None)
+    tg_performer = (getattr(audio_obj, "performer", None) or "").strip() if audio_obj else ""
+    tg_track_title = (getattr(audio_obj, "title", None) or "").strip() if audio_obj else ""
     file_name = _clean_file_name(getattr(media, "file_name", None) or "")
+    if not file_name and tg_track_title:
+        # Use Telegram's extracted track title as display name
+        file_name = tg_track_title
     # Video-type uploads (not documents) carry no file_name. Try the
     # caption first — it's often the original filename when the user
     # pastes it in. If the caption is absent or unhelpful, synthesise a
     # display name from the title + year + mime extension after parsing.
-    if not file_name:
+    if not file_name and not is_audio:
         cap = (message.caption or "").strip()
         if cap and re.search(
             r'\.(mkv|mp4|avi|mov|wmv|flv|webm|m4v|ts|m2ts)\s*$',
@@ -393,9 +425,13 @@ def _item_from_message(message) -> Optional[HubItem]:
     parsed = parse(message.caption or "")
     if parsed is None:
         parsed = IndexEntry(
-            title=title_from_filename(file_name),
+            title=tg_track_title or title_from_filename(file_name),
             year=year_from_filename(file_name),
         )
+    elif not parsed.title and tg_track_title:
+        parsed.title = tg_track_title
+        if parsed.year is None:
+            parsed.year = year_from_filename(file_name)
     elif parsed.year is None:
         # Caption parser found a title but no year; backfill from the
         # filename so the year filter and movie_key both work.
@@ -449,6 +485,12 @@ def _item_from_message(message) -> Optional[HubItem]:
     # page's overview block populated without needing to re-hit TMDB.
     overview = parsed.description if parsed.tmdb_id else ""
 
+    # Compute artist and album_key for audio items.
+    artist = tg_performer
+    album_key = ""
+    if artist:
+        album_key = series_parse.slugify(artist)
+
     return HubItem(
         message_id=message.id,
         secure_hash=get_hash(message),
@@ -475,6 +517,11 @@ def _item_from_message(message) -> Optional[HubItem]:
         poster_path=parsed.poster_path,
         backdrop_path=parsed.backdrop_path,
         overview=overview,
+        media_kind=media_kind,
+        artist=artist,
+        album_title="",      # filled by background music probe
+        album_key=album_key,
+        track_number=None,   # filled by background music probe
     )
 
 
@@ -870,6 +917,15 @@ async def seed(bot, channel_id: int) -> None:
                                 and not existing.series_key
                                 and not existing.tmdb_id):
                             existing.enriched_at = 0.0
+                        # Carry forward new music metadata if the
+                        # existing item has none (e.g. re-seed after
+                        # Phase 1 upgrade).
+                        if new_item.artist and not existing.artist:
+                            existing.artist = new_item.artist
+                        if new_item.album_key and not existing.album_key:
+                            existing.album_key = new_item.album_key
+                        if new_item.media_kind and not existing.media_kind:
+                            existing.media_kind = new_item.media_kind
                         _items[existing.message_id] = existing
                         _hash_map[existing.secure_hash] = existing.message_id
                     elif existing is not None:
@@ -898,9 +954,12 @@ async def seed(bot, channel_id: int) -> None:
                                 new_item.movie_key = existing.movie_key
                         for attr in ("tags", "description", "overview", "file_name",
                                      "trailer_key", "episode_title", "episode_overview",
-                                     "episode_still_path", "episode_air_date"):
+                                     "episode_still_path", "episode_air_date",
+                                     "artist", "album_title", "album_key", "media_kind"):
                             if getattr(existing, attr) and not getattr(new_item, attr):
                                 setattr(new_item, attr, getattr(existing, attr))
+                        if existing.track_number is not None and new_item.track_number is None:
+                            new_item.track_number = existing.track_number
                         if existing.probed_at:
                             new_item.probed_at   = existing.probed_at
                             new_item.video_codec = existing.video_codec or new_item.video_codec

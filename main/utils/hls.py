@@ -97,6 +97,11 @@ class ProbeResult:
     audio_codec: Optional[str]
     subtitles: Tuple[SubtitleTrack, ...] = ()
     audio_tracks: Tuple[AudioTrack, ...] = ()
+    # Music metadata from format tags (populated for audio files)
+    music_title: str = ""
+    music_artist: str = ""
+    music_album: str = ""
+    music_track: Optional[int] = None
 
     @property
     def hls_compatible(self) -> bool:
@@ -227,9 +232,10 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
         "-reconnect_at_eof", "1",
         "-reconnect_streamed", "1",
         "-reconnect_delay_max", "5",
-        # Also pull tags so we know the subtitle's language + title.
+        # Also pull tags so we know the subtitle's language + title,
+        # and format_tags for music metadata (artist, album, track).
         "-show_entries",
-        "format=duration:stream=index,codec_type,codec_name:stream_tags=language,title",
+        "format=duration:format_tags=title,artist,album_artist,album,track:stream=index,codec_type,codec_name:stream_tags=language,title",
         "-of", "json",
         "-timeout", "15000000",  # 15s connect/read timeout in microseconds
         source_url,
@@ -256,7 +262,25 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
         logging.warning("ffprobe returned non-JSON: %s", stdout[:200])
         return ProbeResult(duration=0.0, video_codec=None, audio_codec=None)
 
-    duration = float(data.get("format", {}).get("duration", 0) or 0)
+    fmt = data.get("format", {}) or {}
+    duration = float(fmt.get("duration", 0) or 0)
+    fmt_tags = fmt.get("tags", {}) or {}
+
+    def _tag(key):
+        # Tags may be uppercase or lowercase depending on the container
+        return (fmt_tags.get(key) or fmt_tags.get(key.upper()) or "").strip()
+
+    music_artist = _tag("artist") or _tag("album_artist")
+    music_album = _tag("album")
+    music_title = _tag("title")
+    track_raw = _tag("track")  # may be "3" or "3/12"
+    music_track = None
+    if track_raw:
+        try:
+            music_track = int(track_raw.split("/")[0])
+        except ValueError:
+            pass
+
     video_codec = None
     audio_codec = None
     subtitle_tracks: List[SubtitleTrack] = []
@@ -301,6 +325,10 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
         audio_codec=audio_codec,
         subtitles=tuple(subtitle_tracks),
         audio_tracks=tuple(audio_tracks_list),
+        music_title=music_title,
+        music_artist=music_artist,
+        music_album=music_album,
+        music_track=music_track,
     )
 
 

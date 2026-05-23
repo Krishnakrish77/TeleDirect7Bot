@@ -221,6 +221,34 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         probed_quality = _quality_from_height(height)
         if probed_quality:
             item.quality = probed_quality
+    # Save music metadata from format tags when present.
+    fmt_tags_all = (payload.get("format") or {}).get("tags") or {}
+    def _ftag(key):
+        return (fmt_tags_all.get(key) or fmt_tags_all.get(key.upper()) or "").strip()
+    probe_artist = _ftag("artist") or _ftag("album_artist")
+    probe_album = _ftag("album")
+    probe_title_tag = _ftag("title")
+    probe_track_raw = _ftag("track")
+    probe_track: Optional[int] = None
+    if probe_track_raw:
+        try:
+            probe_track = int(probe_track_raw.split("/")[0])
+        except ValueError:
+            pass
+    if probe_artist and not item.artist:
+        item.artist = probe_artist
+    if probe_album and not item.album_title:
+        item.album_title = probe_album
+        # Recompute album_key with album info now available
+        from main.utils.series import slugify as _slugify
+        if item.artist:
+            item.album_key = _slugify(f"{item.artist}-{item.album_title}")
+        else:
+            item.album_key = _slugify(item.album_title)
+    if probe_track is not None and item.track_number is None:
+        item.track_number = probe_track
+    if probe_title_tag and getattr(item, "media_kind", "") == "audio" and not item.title:
+        item.title = probe_title_tag
     item.probed_at = time.time()
     await media_index.persist_now()
     await media_index._store_upsert(item)
