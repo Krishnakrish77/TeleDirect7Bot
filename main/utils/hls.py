@@ -197,7 +197,9 @@ _JUNK_TITLE_RE = re.compile(
     r"|\.\w{2,6}\s*[-–]"  # domain extension followed by separator (e.g. .nexus -)
     r"|\[\s*\w"         # bracket-wrapped codec/bitrate info, e.g. [AAC 2.0 - 64Kbps]
     r"|\d+\s*[Kk]bps"  # bare bitrate string
-    r"|^\s*und\s*$",    # "und" = undefined language code
+    r"|^\s*und\s*$"     # "und" = undefined language code
+    r"|@\w+"            # Telegram/social handle promo (e.g. "Join -> @Filmbox_Studios")
+    r"|->\s*@",         # arrow-then-handle variant
     re.IGNORECASE,
 )
 
