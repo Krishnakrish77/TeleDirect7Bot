@@ -95,7 +95,7 @@
       {# Track info #}
       <div class="mt-6 text-center max-w-xs sm:max-w-sm px-4">
         <h2 class="text-xl sm:text-2xl font-bold text-white leading-snug truncate">
-          {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.flac','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') }}
+          {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.MP3','') | replace('.flac','') | replace('.FLAC','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') | replace('.wav','') | replace('.opus','') }}
         </h2>
         {% if meta and meta.artist %}
           <p class="mt-1 text-slate-300 text-sm font-medium truncate">{{ meta.artist }}</p>
