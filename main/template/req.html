@@ -46,7 +46,10 @@
        trail (e.g. came from search → series → variant) returns
        correctly. #}
     {% set back_href = '/' %}
-    {% if meta and meta.series_key %}
+    {% if is_audio %}
+      {# Audio: always back to library — albums/artist pages come in Phase 2 #}
+      {% set back_label = 'Back to library' %}
+    {% elif meta and meta.series_key %}
       {% set back_href = '/series/' ~ meta.series_key %}
       {% set back_label = 'Back to series' %}
     {% elif meta and meta.movie_key %}
@@ -93,20 +96,20 @@
       </div>
 
       {# Track info #}
-      <div class="mt-6 text-center max-w-xs sm:max-w-sm px-4">
-        <h2 class="text-xl sm:text-2xl font-bold text-white leading-snug truncate">
+      <div class="mt-6 text-center w-full max-w-sm px-6">
+        <h2 class="text-xl sm:text-2xl font-bold text-white leading-snug line-clamp-2">
           {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.MP3','') | replace('.flac','') | replace('.FLAC','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') | replace('.wav','') | replace('.opus','') }}
         </h2>
         {% if meta and meta.artist %}
-          <p class="mt-1 text-slate-300 text-sm font-medium truncate">{{ meta.artist }}</p>
+          <p class="mt-2 text-slate-300 text-sm font-medium line-clamp-1">{{ meta.artist }}</p>
         {% endif %}
         {% if meta and meta.album_title %}
-          <p class="mt-0.5 text-slate-500 text-xs truncate">{{ meta.album_title }}</p>
+          <p class="mt-0.5 text-slate-500 text-xs line-clamp-1">{{ meta.album_title }}</p>
         {% endif %}
       </div>
 
       {# Audio element — Plyr wraps this #}
-      <div class="mt-6 w-full max-w-md px-2">
+      <div class="mt-6 w-full max-w-md px-4">
         <audio id="player" class="player"
                {% if not known_unplayable %}data-direct-src="{{ src }}"{% endif %}
                preload="metadata">
