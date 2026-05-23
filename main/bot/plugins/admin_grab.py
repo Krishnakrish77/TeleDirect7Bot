@@ -112,12 +112,16 @@ _BLOCKED_NETWORKS = [
 ]
 
 
-def _check_ssrf(host: str) -> None:
-    """Raise ValueError if host resolves to a private/internal address."""
-    import socket as _socket
+async def _check_ssrf(host: str) -> None:
+    """Raise ValueError if host resolves to a private/internal address.
+
+    Uses asyncio.get_event_loop().getaddrinfo (thread-pool executor) so the
+    DNS call never blocks the event loop, unlike socket.getaddrinfo.
+    """
+    loop = asyncio.get_event_loop()
     try:
-        addrs = _socket.getaddrinfo(host, None)
-    except _socket.gaierror as e:
+        addrs = await loop.getaddrinfo(host, None)
+    except OSError as e:
         raise ValueError(f"Cannot resolve host '{host}': {e}") from e
     for _, _, _, _, sockaddr in addrs:
         ip = _ipaddress.ip_address(sockaddr[0])
@@ -151,7 +155,7 @@ async def _grab_from_url(url: str, status_msg=None) -> Message:
         raise ValueError("Only http:// and https:// URLs are supported.")
 
     # SSRF check before opening any connection.
-    _check_ssrf(parsed.hostname or "")
+    await _check_ssrf(parsed.hostname or "")
 
     logger.info("grab_url: fetching %s", url)
     timeout = _aiohttp.ClientTimeout(total=None, connect=30, sock_connect=30, sock_read=120)
@@ -160,6 +164,14 @@ async def _grab_from_url(url: str, status_msg=None) -> Message:
         async with session.get(url, allow_redirects=True, max_redirects=5) as resp:
             if resp.status >= 400:
                 raise RuntimeError(f"HTTP {resp.status} — server refused the download.")
+
+            # SSRF re-check on the final URL after redirects. aiohttp may have
+            # followed 301/302 redirects to a different host; re-checking here
+            # closes the DNS-rebinding window where the initial check passed
+            # but the actual connection went to an internal address.
+            final_host = resp.url.host
+            if final_host and final_host != parsed.hostname:
+                await _check_ssrf(final_host)
 
             content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
 
@@ -188,8 +200,12 @@ async def _grab_from_url(url: str, status_msg=None) -> Message:
                     file_name = m.group(1).strip().strip('"\'')
             if not file_name:
                 file_name = os.path.basename(resp.url.path) or "download"
-            # Sanitise: strip directory separators that could escape the temp dir.
+            # Sanitise: strip directory separators and null bytes.
+            # Null bytes in Content-Disposition would truncate the OS path and
+            # corrupt the Telegram file_name argument. Truncate to 200 chars so
+            # the tempfile suffix never exceeds Linux's 255-byte filename limit.
             file_name = os.path.basename(file_name.replace("\\", "/")) or "download"
+            file_name = file_name.replace("\x00", "").strip()[:200] or "download"
 
             logger.info(
                 "grab_url: %s — %s — %s",
@@ -203,7 +219,7 @@ async def _grab_from_url(url: str, status_msg=None) -> Message:
                 except Exception:
                     pass
 
-            tmp_fd, tmp_path = tempfile.mkstemp(suffix=f"_grab_{file_name}")
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=f"_grab_{file_name[:50]}")
             os.close(tmp_fd)
             try:
                 downloaded = 0
