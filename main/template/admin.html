@@ -705,6 +705,10 @@
               </svg>
               <input type="search" name="q" placeholder="Search title, file, tag, artist…"
                      value="{{ search_q }}" autocomplete="off"
+                     x-data
+                     x-init="$el.addEventListener('blur', () => {
+                       if ($el.value !== '{{ search_q | e }}') $el.form.submit();
+                     });"
                      class="w-full pl-9 pr-3 py-1.5 text-sm rounded
                             bg-ink-800/70 text-slate-100 placeholder-slate-500
                             border border-white/5
