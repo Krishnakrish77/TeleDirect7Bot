@@ -533,6 +533,7 @@
           </button>
           <div x-show="editOpen" x-cloak x-transition.opacity.duration.150ms
                class="absolute left-0 top-full mt-2 z-30 w-96
+                      max-w-[calc(100vw-1rem)]
                       rounded-lg border border-white/10 bg-ink-900
                       shadow-2xl p-3 space-y-2">
 
@@ -683,7 +684,7 @@
          right = count + pagination (justified to the right edge) #}
       <div class="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div class="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-          <form method="get" action="/admin" id="admin-filter-form" class="w-64 flex-shrink-0">
+          <form method="get" action="/admin" id="admin-filter-form" class="w-full sm:w-64 flex-shrink-0">
             <input type="hidden" name="filter" value="{{ filter_name }}" />
             <input type="hidden" name="sort" value="{{ sort_col }}" />
             <input type="hidden" name="dir" value="{{ sort_dir }}" />
