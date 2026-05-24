@@ -223,9 +223,10 @@
         <div class="mt-6 w-full max-w-md" id="lyricsSection">
           <h3 class="text-xs uppercase tracking-widest text-slate-500 mb-3 px-1">Lyrics</h3>
           {# Synced: each line is a <p> with data-t. Plain: whitespace-pre-line block. #}
+          {# No max-height — page scrolls, like Spotify. The sticky back button
+             keeps navigation accessible while reading through lyrics. #}
           <div id="lyricsContent"
-               class="text-sm leading-relaxed px-1 text-center max-h-64 overflow-y-auto
-                      [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+               class="text-sm leading-relaxed px-2 text-center">
             <span class="text-slate-600 text-xs">Loading…</span>
           </div>
         </div>
@@ -1228,8 +1229,10 @@
 
         function renderSynced(lines) {
           el.innerHTML = lines.map((l, i) =>
-            `<p data-i="${i}" class="py-1 transition-all duration-300 text-slate-600 text-sm cursor-pointer"
-                onclick="document.getElementById('player').currentTime=${l.t}">${l.text || "&nbsp;"}</p>`
+            `<p data-i="${i}"
+                style="transition:all 0.3s ease;color:rgba(100,116,139,0.5);font-size:0.875rem;line-height:1.75rem;cursor:pointer;padding:0.125rem 0"
+                onclick="document.getElementById('player').currentTime=${l.t}"
+            >${l.text || "&nbsp;"}</p>`
           ).join("");
         }
 
@@ -1241,14 +1244,27 @@
           }
           const pTags = el.querySelectorAll("p[data-i]");
           pTags.forEach((p, i) => {
-            const isActive = i === active;
-            p.className = isActive
-              ? "py-1 transition-all duration-300 text-white text-base font-semibold"
-              : (i < active
-                  ? "py-1 transition-all duration-300 text-slate-500 text-sm"
-                  : "py-1 transition-all duration-300 text-slate-600 text-sm");
+            if (i === active) {
+              // Active: large, bright white, bold — Spotify style
+              p.style.color = "rgba(255,255,255,1)";
+              p.style.fontSize = "1.125rem";
+              p.style.fontWeight = "700";
+              p.style.lineHeight = "2rem";
+            } else if (i < active) {
+              // Past: dimmer than future (sung and gone)
+              p.style.color = "rgba(100,116,139,0.35)";
+              p.style.fontSize = "0.875rem";
+              p.style.fontWeight = "400";
+              p.style.lineHeight = "1.75rem";
+            } else {
+              // Future: slightly more visible than past
+              p.style.color = "rgba(148,163,184,0.55)";
+              p.style.fontSize = "0.875rem";
+              p.style.fontWeight = "400";
+              p.style.lineHeight = "1.75rem";
+            }
           });
-          // Auto-scroll active line into view
+          // Auto-scroll active line into view — centered like Spotify
           const activePara = el.querySelector(`p[data-i="${active}"]`);
           if (activePara) activePara.scrollIntoView({ block: "center", behavior: "smooth" });
         }
