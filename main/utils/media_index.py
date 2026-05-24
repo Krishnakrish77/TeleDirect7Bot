@@ -1211,8 +1211,10 @@ def query_grouped(
     movie_groups: dict = {}
     standalone: List[HubItem] = []
     for it in items_all:
-        # Audio items belong to the music view only; skip in series/movies/grid.
-        if getattr(it, "media_kind", "") == "audio":
+        # Audio items belong to the music view when browsing.
+        # When a search query is active, include audio in results so
+        # searching "Indra" returns the track (suggest shows it; grid should too).
+        if getattr(it, "media_kind", "") == "audio" and not q:
             continue
         if it.series_key:
             series_groups.setdefault(it.series_key, []).append(it)
@@ -1371,7 +1373,9 @@ def _build_album_group(tracks: List[HubItem]) -> AlbumGroup:
         display_artist = ""
     return AlbumGroup(
         album_key=canonical_key,
-        album_title=best_album_title or display_artist or rep.title or "",
+        # Don't use display_artist as album_title fallback — "Various Artists"
+        # as a title is misleading. Use track title as a last resort instead.
+        album_title=best_album_title or rep.title or "",
         artist=display_artist,
         track_count=len(tracks),
         latest_message_id=max(t.message_id for t in tracks),
