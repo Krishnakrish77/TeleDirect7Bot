@@ -70,6 +70,13 @@ def _is_htmx(request: web.Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
 
+def _is_boosted(request: web.Request) -> bool:
+    """htmx boost navigation sends HX-Boosted:true; filter/search swaps don't.
+    Boost requests need the full page (so hx-select='#main-content' finds it).
+    Filter swaps can use the smaller grid/shelves fragment."""
+    return request.headers.get("HX-Boosted", "").lower() == "true"
+
+
 def _html(body: str, push_url: Optional[str] = None) -> web.Response:
     headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
     if push_url is not None:
@@ -273,7 +280,10 @@ async def hub_home(request: web.Request) -> web.Response:
     if use_shelves:
         shelves = media_index.shelves()
         heroes = media_index.pick_heroes()
-        if _is_htmx(request):
+        if _is_htmx(request) and not _is_boosted(request):
+            # Filter/search swap: return the shelves fragment only (small, fast).
+            # Boost navigation needs the full page so hx-select="#main-content"
+            # can find its target — fall through to _render_page below.
             return _html(
                 await _render_shelves(shelves, params),
                 push_url=_canonical_url(params, include_offset=True),
@@ -295,7 +305,7 @@ async def hub_home(request: web.Request) -> web.Response:
         next_offset = None
     empty = _empty_text(params)
 
-    if _is_htmx(request):
+    if _is_htmx(request) and not _is_boosted(request):
         return _html(
             await _render_grid(items, next_offset, empty, params),
             push_url=_canonical_url(params, include_offset=True),
