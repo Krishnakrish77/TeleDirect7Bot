@@ -1716,12 +1716,14 @@
 
       menu.appendChild(menuItem(dlIcon, "Download", () => { window.open("{{ src }}", "_blank"); }));
       menu.appendChild(menuItem(vlcIcon, "Open in VLC", () => {
-        const vlcBtn = document.querySelector("[data-stream-url]");
-        if (vlcBtn) window.location.href = vlcBtn.href;
+        // Use the named VLC button (not the hidden codec-overlay link which also has data-stream-url)
+        const vlcBtn = document.getElementById("vlcButton") || document.querySelector("[data-stream-url]");
+        if (vlcBtn) window.location.href = buildVlcUrl(vlcBtn.dataset.streamUrl);
       }));
       menu.appendChild(menuItem(subIcon, "Load subtitles", () => {
-        const subBtn = document.getElementById("subtitleUploadBtn");
-        if (subBtn) subBtn.click();
+        // Trigger the hidden file input — its label has no ID; target the input directly
+        const subInput = document.getElementById("subUpload");
+        if (subInput) subInput.click();
       }));
 
       // ⋮ trigger button styled like Plyr controls
@@ -1735,20 +1737,21 @@
       btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>';
       btn.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(); });
       trigger.appendChild(btn);
-      trigger.appendChild(menu);
       bar.appendChild(trigger);
 
-      // Keep menu relative to the player container (not bar) so it doesn't clip
+      // Attach menu to the player container so it isn't clipped by the bar's overflow
       const playerWrap = plyrEl.closest(".aspect-video") || plyrEl;
       playerWrap.style.position = "relative";
       playerWrap.appendChild(menu);
-      menu.style.position = "absolute";
 
       let open = false;
       function toggleMenu() { open ? closeMenu() : openMenu(); }
       function openMenu()  { open = true;  menu.style.display = "block"; }
       function closeMenu() { open = false; menu.style.display = "none";  }
-      document.addEventListener("click", (e) => { if (open && !trigger.contains(e.target) && !menu.contains(e.target)) closeMenu(); });
+      // Named reference so it can only be registered once
+      function onDocClick(e) { if (open && !trigger.contains(e.target) && !menu.contains(e.target)) closeMenu(); }
+      document.removeEventListener("click", onDocClick);
+      document.addEventListener("click", onDocClick);
     }
 
     function attachMobileGestures(video) {
