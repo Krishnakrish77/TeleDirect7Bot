@@ -77,7 +77,7 @@ from main.utils.subtitles import (
 
 # Media types worth cataloguing for the hub. Photos, stickers, voice notes
 # pass through the bot but aren't library content.
-_INDEXABLE_ATTRS = ("video", "document", "animation")
+_INDEXABLE_ATTRS = ("video", "document", "animation", "audio")
 
 
 def _indexable_media(message: Message):
@@ -85,10 +85,12 @@ def _indexable_media(message: Message):
         media = getattr(message, attr, None)
         if media is None:
             continue
-        # Generic documents (zips, pdfs, etc.) shouldn't end up in the hub —
-        # accept documents only when their MIME type is a video.
         mime = (getattr(media, "mime_type", "") or "").lower()
-        if attr == "document" and not mime.startswith("video/"):
+        # Generic documents (zips, pdfs, etc.) shouldn't end up in the hub —
+        # accept documents only when their MIME type is video or audio.
+        if attr == "document" and not (
+            mime.startswith("video/") or mime.startswith("audio/")
+        ):
             continue
         return media
     return None
