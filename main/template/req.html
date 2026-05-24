@@ -1488,9 +1488,10 @@
       // ── Repeat ─────────────────────────────────────────────────────────────
       var _repeatBtn   = document.getElementById('tdRepeat');
       var _repeatBadge = document.getElementById('tdRepeatBadge');
-      var REPEAT_KEY   = 'td:repeat';
+      var REPEAT_KEY   = 'td:repeat:{% if meta and meta.album_key %}{{ meta.album_key }}{% else %}_{% endif %}';
       var _RMODES      = ['off', 'all', 'one'];
       var _rmode       = localStorage.getItem(REPEAT_KEY) || 'off';
+      if (_RMODES.indexOf(_rmode) === -1) _rmode = 'off';
       function _applyRepeat(mode) {
         _rmode = mode;
         inst.media.loop = (mode === 'one');
