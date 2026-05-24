@@ -172,8 +172,11 @@
        falls back to gracefully hiding when nothing is in-progress.
        Only shown on the unfiltered landing — feels weird to surface
        it alongside an active search. #}
-    {# filtering must be computed here (before use) — the main set is later #}
-    {% set _cw_filtering = params.q or params.tag or params.year or params.quality or params.genre or params.sort != 'newest' or params.view %}
+    {# filtering must be computed here (before use) — the main set is later.
+       Only suppress CW for content-type views (series/movies/music) or
+       active search/filter params. view=list is not a filter — it just
+       bypasses the shelf landing and should still show CW. #}
+    {% set _cw_filtering = params.q or params.tag or params.year or params.quality or params.genre or params.sort != 'newest' or params.view in ('series', 'movies', 'music') %}
     {% if not _cw_filtering %}
       <section x-data="continueWatching()" x-init="init()" x-show="entries.length"
                x-cloak class="mb-10">

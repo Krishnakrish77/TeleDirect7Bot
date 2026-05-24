@@ -1331,9 +1331,12 @@ def _build_album_group(tracks: List[HubItem]) -> AlbumGroup:
     poster = next((t for t in tracks if t.has_thumb),
                   max(tracks, key=lambda t: t.message_id))
     rep = tracks[0]
+    # Pick the best album_title from any track — tracks[0] may not yet be
+    # probed so its album_title might be empty while a later track has it.
+    best_album_title = next((t.album_title for t in tracks if t.album_title), "")
     return AlbumGroup(
         album_key=rep.album_key,
-        album_title=rep.album_title or rep.artist or rep.title or "",
+        album_title=best_album_title or rep.artist or rep.title or "",
         artist=rep.artist or "",
         track_count=len(tracks),
         latest_message_id=max(t.message_id for t in tracks),
