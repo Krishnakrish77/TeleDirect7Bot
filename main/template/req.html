@@ -1387,14 +1387,18 @@
       // initialise on an empty element and bind dead listeners.
       if (video && (video.dataset.directSrc || video.dataset.hlsSrc)) {
         const isAudio = video.tagName.toLowerCase() === "audio";
+        // Mobile video: strip controls down to essentials so the progress
+        // bar isn't squeezed out at 375px. Desktop keeps all controls.
+        const isMobile = window.innerWidth < 640;
         const players = Plyr.setup(".player", {
           controls: isAudio
-            // Audio: keep Plyr's internals running (progress/time/mute needed
-            // for its own state machine) but bar is hidden via CSS.
+            // Audio: keep Plyr's internals running but bar is hidden via CSS.
             ? ["play", "progress", "current-time", "duration", "mute", "volume"]
-            : ["play-large", "rewind", "play", "fast-forward", "progress",
-               "current-time", "duration", "mute", "volume", "captions",
-               "settings", "speed", "pip", "airplay", "download", "fullscreen"],
+            : (isMobile
+              ? ["play-large", "play", "rewind", "progress", "current-time", "mute", "fullscreen"]
+              : ["play-large", "rewind", "play", "fast-forward", "progress",
+                 "current-time", "duration", "mute", "volume", "captions",
+                 "settings", "speed", "pip", "airplay", "download", "fullscreen"]),
           captions: isAudio ? { active: false } : { active: true, language: "auto", update: true },
           keyboard: { focused: true, global: true },
           resetOnEnd: false,
