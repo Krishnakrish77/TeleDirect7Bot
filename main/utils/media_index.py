@@ -1353,10 +1353,19 @@ def _build_album_group(tracks: List[HubItem]) -> AlbumGroup:
         # No album identity at all — use artist slug as fallback so the
         # /album/ route regex ([a-z0-9][a-z0-9-]*) is always satisfied.
         canonical_key = series_parse.slugify(rep.artist or rep.title or str(rep.message_id))
+    # Determine display artist: single name if all tracks share one,
+    # "Various Artists" for soundtracks/compilations with multiple performers.
+    unique_artists = {t.artist for t in tracks if t.artist}
+    if len(unique_artists) == 1:
+        display_artist = unique_artists.pop()
+    elif len(unique_artists) > 1:
+        display_artist = "Various Artists"
+    else:
+        display_artist = ""
     return AlbumGroup(
         album_key=canonical_key,
-        album_title=best_album_title or rep.artist or rep.title or "",
-        artist=rep.artist or "",
+        album_title=best_album_title or display_artist or rep.title or "",
+        artist=display_artist,
         track_count=len(tracks),
         latest_message_id=max(t.message_id for t in tracks),
         poster_item=poster,
