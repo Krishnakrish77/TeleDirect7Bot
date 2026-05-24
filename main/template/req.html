@@ -79,9 +79,8 @@
     {# Back nav. Prefer the deep link to the parent (series or movie
        page) when meta tells us about one — that's the page the user
        likely came from. Otherwise fall back to the library root.
-       The arrow uses history.back() via JS if available so a deeper
-       trail (e.g. came from search → series → variant) returns
-       correctly. #}
+       The href is the authoritative destination; htmx boost handles the
+       click as an AJAX swap so the user always lands on the right page. #}
     {% set back_href = '/' %}
     {% if is_audio %}
       {# Audio: go back to album if known, else library #}
@@ -100,11 +99,10 @@
     {% else %}
       {% set back_label = 'Back to library' %}
     {% endif %}
-    {# Sticky back nav on audio pages so it stays visible while scrolling lyrics.
-       Audio: no onclick — let htmx handle the click so bgAudio persists (AJAX swap).
-       Video: use history.back() so the user returns to the correct depth. #}
+    {# Back nav — href is the authoritative destination (series/movie/album/library).
+       No onclick override: htmx boost handles the click and does an AJAX swap,
+       so the user always lands on the correct page regardless of their history. #}
     <a href="{{ back_href }}"
-       {% if not is_audio %}onclick="if (history.length > 1) { event.preventDefault(); history.back(); }"{% endif %}
        class="inline-flex items-center gap-1 text-sm text-slate-400
               hover:text-brand-300 transition-colors mb-4
               {% if is_audio %}sticky top-2 z-30 self-start
