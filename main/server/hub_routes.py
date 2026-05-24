@@ -643,11 +643,29 @@ async def hub_thumb(request: web.Request) -> web.Response:
         except Exception:
             message = None
         if message is not None:
-            # For audio: skip Telegram's low-res thumb; go to ffmpeg to extract
-            # full-resolution embedded album art (APIC tag) at full quality.
             audio_msg = getattr(message, "audio", None)
             if audio_msg:
-                media = None  # force ffmpeg path below
+                # Audio: try Telegram's stored thumbnail first (it's the APIC
+                # tag art that Telegram already extracted at upload time).
+                # Only fall through to ffmpeg if Telegram has nothing stored.
+                audio_thumb = getattr(audio_msg, "thumbs", None) or []
+                if not audio_thumb:
+                    single = getattr(audio_msg, "thumb", None)
+                    if single:
+                        audio_thumb = [single]
+                if audio_thumb:
+                    try:
+                        bytesio = await StreamBot.download_media(
+                            audio_thumb[-1].file_id, in_memory=True,
+                        )
+                        if bytesio is not None:
+                            return (
+                                bytesio.getvalue()
+                                if hasattr(bytesio, "getvalue") else bytes(bytesio)
+                            )
+                    except Exception:
+                        pass  # fall through to ffmpeg
+                media = None  # no Telegram thumb — force ffmpeg path below
             else:
                 media = (
                     getattr(message, "video", None)
@@ -655,8 +673,6 @@ async def hub_thumb(request: web.Request) -> web.Response:
                     or getattr(message, "document", None)
                 )
             if media is not None:
-                # Video/Document: thumbs is a list. Audio: thumb is a single
-                # Thumbnail (album art from ID3 APIC tag). Handle both.
                 thumbs = getattr(media, "thumbs", None) or []
                 if not thumbs:
                     single = getattr(media, "thumb", None)
