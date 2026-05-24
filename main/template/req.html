@@ -1468,6 +1468,15 @@
         if (video) {
           video.addEventListener('play', function() {
             try { localStorage.setItem('td:nowplaying', JSON.stringify(npData)); } catch(_) {}
+            // iOS audio policy: prime bgAudio during this user gesture so future
+            // bgAudio.play() calls (in _handoffAudioToBg) are allowed without a
+            // new gesture. load() activates the audio element in the iOS context.
+            var bg = document.getElementById('bgAudio');
+            if (bg && !bg._primed) {
+              bg.src = streamSrc;
+              bg.load();
+              bg._primed = true;
+            }
           }, { once: false });
 
           // Hand off to bgAudio so music continues while browsing the library.

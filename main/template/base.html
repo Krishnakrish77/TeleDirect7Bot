@@ -171,9 +171,13 @@
        played an audio track. Reads from localStorage td:nowplaying so
        the bar persists across navigation — like Spotify's bottom bar. #}
     <div id="_mini-player" style="display:none"
-         class="fixed bottom-0 left-0 right-0 z-40
+         class="fixed bottom-0 left-0 right-0 z-40 relative
                 bg-ink-950/95 backdrop-blur-md border-t border-white/10
                 px-4 py-2.5 flex items-center gap-3 shadow-2xl">
+      {# Progress bar — thin orange line at the very top of the bar #}
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:rgba(255,255,255,0.06);pointer-events:none">
+        <div id="_mp-progress" style="height:100%;width:0%;background:#f97316;transition:width 0.5s linear"></div>
+      </div>
       {# Album art + track info — tap to go to player #}
       <a id="_mp-link" href="#"
          class="flex items-center gap-3 flex-1 min-w-0 group">
@@ -257,6 +261,12 @@
   if (_bgAudio) {
     _bgAudio.addEventListener('play',  _mpSyncIcon);
     _bgAudio.addEventListener('pause', _mpSyncIcon);
+    _bgAudio.addEventListener('timeupdate', function() {
+      var bar = document.getElementById('_mp-progress');
+      if (!bar) return;
+      var pct = _bgAudio.duration > 0 ? (_bgAudio.currentTime / _bgAudio.duration * 100) : 0;
+      bar.style.width = pct.toFixed(1) + '%';
+    });
     _bgAudio.addEventListener('ended', function() {
       // Auto-advance: load next track URL from localStorage
       var np;
