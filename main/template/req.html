@@ -102,7 +102,8 @@
               hover:text-brand-300 transition-colors mb-4
               {% if is_audio %}sticky top-2 z-30 self-start
                 bg-ink-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full
-                border border-white/5 shadow-lg{% endif %}">
+                border border-white/5 shadow-lg
+              {% else %}[@media(max-height:480px)]:hidden{% endif %}">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
            stroke="currentColor" stroke-width="2" class="w-4 h-4">
         <path stroke-linecap="round" stroke-linejoin="round"
@@ -394,7 +395,7 @@
     {# Player wrapper always rendered so #codecOverlay exists in the DOM.
        For known_unplayable files the video has no src (no network call)
        and the overlay is shown immediately via inline style. #}
-    <div class="mt-8 [@media(max-height:480px)]:mt-1 aspect-video bg-black rounded-xl overflow-hidden relative">
+    <div class="mt-8 [@media(max-height:480px)]:mt-0 aspect-video bg-black rounded-xl overflow-hidden relative">
       <{{ tag }}
         id="player"
         class="player"
