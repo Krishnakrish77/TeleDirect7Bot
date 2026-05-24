@@ -1316,10 +1316,20 @@ def episodes_for_series(series_key: str) -> List[HubItem]:
 
 
 def tracks_for_album(album_key: str) -> List[HubItem]:
-    """All audio tracks for an album, sorted by track_number then message_id."""
-    tracks = [it for it in _items.values()
-              if getattr(it, "album_key", "") == album_key
-              and getattr(it, "media_kind", "") == "audio"]
+    """All audio tracks for an album, sorted by track_number then message_id.
+
+    Matches by stored album_key OR by slugify(album_title) so that tracks
+    with stale legacy keys (artist+album) are still found via the corrected
+    title-only slug without requiring a re-probe.
+    """
+    def _matches(it) -> bool:
+        if getattr(it, "media_kind", "") != "audio":
+            return False
+        if getattr(it, "album_key", "") == album_key:
+            return True
+        at = getattr(it, "album_title", "") or ""
+        return bool(at) and series_parse.slugify(at) == album_key
+    tracks = [it for it in _items.values() if _matches(it)]
     return sorted(tracks, key=lambda t: (
         t.track_number if t.track_number is not None else 9999,
         t.message_id,
@@ -1334,8 +1344,13 @@ def _build_album_group(tracks: List[HubItem]) -> AlbumGroup:
     # Pick the best album_title from any track — tracks[0] may not yet be
     # probed so its album_title might be empty while a later track has it.
     best_album_title = next((t.album_title for t in tracks if t.album_title), "")
+    # Use normalised title slug as the canonical key so the /album/ URL is
+    # stable regardless of what legacy key is stored on individual tracks.
+    canonical_key = series_parse.slugify(best_album_title) if best_album_title else (
+        getattr(rep, "album_key", "") or ""
+    )
     return AlbumGroup(
-        album_key=rep.album_key,
+        album_key=canonical_key,
         album_title=best_album_title or rep.artist or rep.title or "",
         artist=rep.artist or "",
         track_count=len(tracks),
@@ -1347,21 +1362,32 @@ def _build_album_group(tracks: List[HubItem]) -> AlbumGroup:
 
 
 def all_albums() -> List:
-    """All AlbumGroups, newest-first."""
+    """All AlbumGroups, newest-first.
+
+    Buckets by slugify(album_title) when available so tracks with stale
+    legacy album_keys (artist+album slugs) still group correctly without
+    requiring a re-probe.
+    """
     buckets: dict = {}
     for it in _items.values():
-        if getattr(it, "media_kind", "") == "audio" and getattr(it, "album_key", ""):
-            buckets.setdefault(it.album_key, []).append(it)
+        if getattr(it, "media_kind", "") != "audio":
+            continue
+        at = getattr(it, "album_title", "") or ""
+        ak = getattr(it, "album_key", "") or ""
+        # Prefer normalised title slug; fall back to stored key.
+        bucket_key = series_parse.slugify(at) if at else ak
+        if bucket_key:
+            buckets.setdefault(bucket_key, []).append(it)
     groups = [_build_album_group(tracks) for tracks in buckets.values()]
     return sorted(groups, key=lambda g: -g.latest_message_id)
 
 
 def standalone_audio_tracks() -> List[HubItem]:
-    """Audio items with no album_key — ungrouped singles."""
+    """Audio items with no album affiliation — ungrouped singles."""
     return sorted(
         [it for it in _items.values()
          if getattr(it, "media_kind", "") == "audio"
-         and not getattr(it, "album_key", "")],
+         and not (getattr(it, "album_key", "") or getattr(it, "album_title", ""))],
         key=lambda t: -t.message_id,
     )
 
