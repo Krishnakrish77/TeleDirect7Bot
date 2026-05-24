@@ -65,8 +65,8 @@ _BROWSER_NATIVE_CONTAINERS = {
 
 async def render_page(message_id, secure_hash):
     file_data = await get_file_ids(StreamBot, int(Var.BIN_CHANNEL), int(message_id))
-    if file_data.unique_id[:6] != secure_hash:
-        logging.debug(f'link hash: {secure_hash} - {file_data.unique_id[:6]}')
+    if not secure_hash or file_data.unique_id[:len(secure_hash)] != secure_hash:
+        logging.debug(f'link hash: {secure_hash} - {file_data.unique_id[:len(secure_hash) if secure_hash else 6]}')
         logging.debug(f"Invalid hash for message with - ID {message_id}")
         raise InvalidHash
     src = urllib.parse.urljoin(Var.URL, f'{secure_hash}{message_id}')

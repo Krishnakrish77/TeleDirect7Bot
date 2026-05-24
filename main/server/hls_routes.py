@@ -25,7 +25,7 @@ from main.vars import Var
 
 
 routes = web.RouteTableDef()
-_PATH_RE = re.compile(r"^([a-zA-Z0-9_-]{6})(\d+)$")
+_PATH_RE = re.compile(r"^([a-zA-Z0-9_-]{16}|[a-zA-Z0-9_-]{6})(\d+)$")
 
 _class_cache: dict = {}
 
@@ -46,7 +46,7 @@ async def _resolve(message_id: int, secure_hash: str):
         streamer = ByteStreamer(client)
         _class_cache[client] = streamer
     file_id = await streamer.get_file_properties(message_id)
-    if file_id.unique_id[:6] != secure_hash:
+    if file_id.unique_id[:len(secure_hash)] != secure_hash:
         raise InvalidHash
     return file_id, streamer, index
 

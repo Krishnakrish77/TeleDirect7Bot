@@ -24,12 +24,20 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="TeleDirect" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
+    <style>
+      #_htmx-bar{position:fixed;top:0;left:0;right:0;height:2px;z-index:9999;pointer-events:none;background:#f97316;opacity:0;transform:scaleX(0);transform-origin:left}
+      #_htmx-bar.htmx-request{opacity:1;animation:_hb 1.5s ease-out forwards}
+      @keyframes _hb{0%{transform:scaleX(0)}60%{transform:scaleX(.7)}100%{transform:scaleX(.85)}}
+      #_htmx-bar.htmx-complete{transform:scaleX(1);transition:transform .1s ease-out,opacity .3s .1s;opacity:0}
+    </style>
   </head>
 
   <body
     class="min-h-full font-sans antialiased text-slate-100 bg-ink-900
            selection:bg-brand-500/40 selection:text-white"
   >
+    <div id="_htmx-bar"></div>
+
     {# hx-boost: intercept internal link clicks and swap only <main> via AJAX
        so the persistent bgAudio element (outside main) keeps playing.
        /watch/ and /admin are excluded via htmx:configRequest below. #}
@@ -236,6 +244,23 @@
 
     <script>
 (function () {
+  // ── htmx loading bar ─────────────────────────────────────────────────────
+  var _hbar = document.getElementById('_htmx-bar');
+  if (_hbar) {
+    function _hbarDone() {
+      _hbar.classList.remove('htmx-request');
+      _hbar.classList.add('htmx-complete');
+      setTimeout(function() { _hbar.classList.remove('htmx-complete'); }, 500);
+    }
+    document.body.addEventListener('htmx:beforeRequest', function() {
+      _hbar.classList.remove('htmx-complete');
+      _hbar.classList.add('htmx-request');
+    });
+    document.body.addEventListener('htmx:afterSettle', _hbarDone);
+    document.body.addEventListener('htmx:responseError', _hbarDone);
+    document.body.addEventListener('htmx:sendError', _hbarDone);
+  }
+
   // Scroll-to-top button
   var _st = document.getElementById('_scroll-top');
   if (_st) {
@@ -351,7 +376,7 @@
     // Watch + admin pages need full page loads (complex JS that relies on DOMContentLoaded).
     // Stream URLs (/{hash}{id}) must not be AJAX-fetched — they return binary audio/video.
     if (pathname.startsWith('/watch/') || pathname.startsWith('/admin') ||
-        /^\/[A-Za-z0-9_-]{6}\d+$/.test(pathname)) {
+        /^\/([A-Za-z0-9_-]{16}|[A-Za-z0-9_-]{6})\d+$/.test(pathname)) {
       e.preventDefault();
       window.location.href = rawPath;
     }

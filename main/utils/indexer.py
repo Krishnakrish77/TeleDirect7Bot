@@ -235,7 +235,7 @@ async def pair_subtitle(bin_msg: Message, source_msg: Optional[Message]) -> Opti
 
     Pairing strategy (in order):
       1. ``source_msg.reply_to_message`` (user replied to their own video DM)
-         — match by file_unique_id[:6].
+         — match by file_unique_id[:16].
       2. Filename stem match against existing HubItems.
     """
     from main.utils import media_index
@@ -249,7 +249,7 @@ async def pair_subtitle(bin_msg: Message, source_msg: Optional[Message]) -> Opti
     target = None
     reply = getattr(source_msg, "reply_to_message", None) if source_msg else None
     if reply is not None:
-        reply_uid = (get_media_file_unique_id(reply) or "")[:6]
+        reply_uid = (get_media_file_unique_id(reply) or "")[:16]
         if reply_uid:
             target = media_index.find_by_hash(reply_uid)
 

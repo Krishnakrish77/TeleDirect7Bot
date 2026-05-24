@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 
+{% block head_extra %}
+<style>
+details[data-season]>summary{list-style:none}
+details[data-season]>summary::-webkit-details-marker{display:none}
+details[data-season]>summary .season-chevron{transition:transform .2s}
+details[data-season][open]>summary .season-chevron{transform:rotate(180deg)}
+</style>
+{% endblock %}
+
 {% block title %}{{ series_title }}{% endblock %}
 
 {% block content %}
@@ -136,7 +145,8 @@
                  const match = !v || title.includes(v);
                  li.style.display = match ? '' : 'none';
                });
-               document.querySelectorAll('section[data-season]').forEach(s => {
+               document.querySelectorAll('details[data-season]').forEach(d => { d.open = !!v; });
+               document.querySelectorAll('[data-season]').forEach(s => {
                  const any = Array.from(s.querySelectorAll('li[data-ep-title]'))
                                   .some(li => li.style.display !== 'none');
                  s.style.display = any ? '' : 'none';
@@ -174,10 +184,24 @@
     </div>
 
     {% for block in season_blocks %}
+      {% if selected_season == 'all' and season_blocks|length > 1 %}
+      <details data-season="{{ block.season or 'misc' }}" class="mb-10"
+               {% if loop.first %}open{% endif %}>
+        <summary class="flex items-center justify-between mb-3 cursor-pointer select-none
+                        text-lg font-semibold text-slate-200 hover:text-white transition-colors">
+          <span>{% if block.season %}Season {{ block.season }}{% else %}Episodes{% endif %}</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2"
+               class="w-4 h-4 season-chevron flex-shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m19 9-7 7-7-7"/>
+          </svg>
+        </summary>
+      {% else %}
       <section data-season="{{ block.season or 'misc' }}" class="mb-10">
         <h2 class="text-lg font-semibold text-slate-200 mb-3">
           {% if block.season %}Season {{ block.season }}{% else %}Episodes{% endif %}
         </h2>
+      {% endif %}
         <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr">
           {% for entry in block.entries %}
             {% set ep = entry.rep %}
@@ -262,7 +286,11 @@
             </li>
           {% endfor %}
         </ul>
+      {% if selected_season == 'all' and season_blocks|length > 1 %}
+      </details>
+      {% else %}
       </section>
+      {% endif %}
     {% endfor %}
   </div>
 {% endblock %}

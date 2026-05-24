@@ -65,7 +65,7 @@ async def status_route_handler(_):
 async def watch_handler(request: web.Request):
     try:
         path = request.match_info["path"]
-        match = re.search(r"^([a-zA-Z0-9_-]{6})(\d+)$", path)
+        match = re.search(r"^([a-zA-Z0-9_-]{16}|[a-zA-Z0-9_-]{6})(\d+)$", path)
         if match:
             secure_hash = match.group(1)
             message_id = int(match.group(2))
@@ -85,14 +85,14 @@ async def watch_handler(request: web.Request):
     except (AttributeError, BadStatusLine, ConnectionResetError):
         return web.HTTPInternalServerError(text="A server error occurred.")
     except Exception as e:
-        logging.critical(e.with_traceback(None))
-        raise web.HTTPInternalServerError(text=str(e))
+        logging.exception("Unhandled server error")
+        raise web.HTTPInternalServerError(text="A server error occurred.")
 
 @routes.get(r"/{path:\S+}", allow_head=True)
 async def stream_handler(request: web.Request):
     try:
         path = request.match_info["path"]
-        match = re.search(r"^([a-zA-Z0-9_-]{6})(\d+)$", path)
+        match = re.search(r"^([a-zA-Z0-9_-]{16}|[a-zA-Z0-9_-]{6})(\d+)$", path)
         if match:
             secure_hash = match.group(1)
             message_id = int(match.group(2))
@@ -112,8 +112,8 @@ async def stream_handler(request: web.Request):
     except (AttributeError, BadStatusLine, ConnectionResetError):
         return web.HTTPInternalServerError(text="A server error occurred.")
     except Exception as e:
-        logging.critical(e.with_traceback(None))
-        raise web.HTTPInternalServerError(text=str(e))
+        logging.exception("Unhandled server error")
+        raise web.HTTPInternalServerError(text="A server error occurred.")
 
 class_cache = weakref.WeakKeyDictionary()
 
@@ -133,7 +133,7 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         class_cache[faster_client] = tg_connect
     file_id = await tg_connect.get_file_properties(message_id)
 
-    if file_id.unique_id[:6] != secure_hash:
+    if not secure_hash or file_id.unique_id[:len(secure_hash)] != secure_hash:
         logging.debug(f"Invalid hash for message with ID {message_id}")
         raise InvalidHash
 
