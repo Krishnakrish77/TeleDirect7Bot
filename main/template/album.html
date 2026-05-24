@@ -27,7 +27,7 @@
             {{ album_title }}
           </h1>
           {% if artist %}
-            <p class="mt-1 text-slate-300 font-medium">{{ artist }}</p>
+            <p class="mt-1 text-slate-300 font-medium">{{ artist | clean_music_tag }}</p>
           {% endif %}
           <p class="mt-1 text-sm text-slate-500">
             {{ track_count }} track{{ '' if track_count == 1 else 's' }}
@@ -85,10 +85,10 @@
             {# Title #}
             <div class="min-w-0 flex-1">
               <p class="text-sm font-medium text-white truncate group-hover:text-brand-300 transition-colors">
-                {{ track.title or track.file_name }}
+                {{ (track.title or track.file_name) | clean_music_tag }}
               </p>
               {% if track.artist and track.artist != artist %}
-                <p class="text-xs text-slate-500 truncate">{{ track.artist }}</p>
+                <p class="text-xs text-slate-500 truncate">{{ track.artist | clean_music_tag }}</p>
               {% endif %}
             </div>
             {# Duration #}

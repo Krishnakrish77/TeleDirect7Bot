@@ -20,8 +20,30 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Optional
+
+
+# Strip common distribution-site watermarks from ID3 title/artist tags.
+# Pattern: trailing " - SiteName" or " - SiteName.tld" or " - @Handle".
+_MUSIC_WATERMARK_RE = re.compile(
+    r'\s*[-–]\s*(?:'
+    r'@\w+'                              # @Handle
+    r'|www\.\S+'                         # www.site.com
+    r'|\w+\.(?:dev|com|net|org|io|in)'  # site.dev / site.com
+    r'|Mass(?:Tamilan)?'                 # MassTamilan (common Tamil music site)
+    r')\s*$',
+    re.IGNORECASE,
+)
+
+
+def _clean_music_tag(text: str) -> str:
+    """Strip distribution-site watermarks from an ID3 title or artist field."""
+    if not text:
+        return text
+    cleaned = _MUSIC_WATERMARK_RE.sub("", text).strip()
+    return cleaned or text  # never return empty if original was non-empty
 
 from main.utils import media_index
 from main.vars import Var
@@ -236,8 +258,13 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
 
     is_audio = getattr(item, "media_kind", "") == "audio"
 
-    if probe_artist and not item.artist:
-        item.artist = probe_artist
+    if probe_artist:
+        clean_artist = _clean_music_tag(probe_artist)
+        if not item.artist:
+            item.artist = clean_artist
+        elif item.artist != clean_artist and _MUSIC_WATERMARK_RE.search(item.artist):
+            # Fix already-stored watermarked artist on re-probe
+            item.artist = clean_artist
     from main.utils.series import slugify as _slugify
     if probe_album and not item.album_title:
         item.album_title = probe_album
@@ -248,9 +275,14 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
             item.album_key = correct_key
     if probe_track is not None and item.track_number is None:
         item.track_number = probe_track
-    # For audio: use embedded title as track title when not yet set.
-    if probe_title_tag and is_audio and not item.title:
-        item.title = probe_title_tag
+    # For audio: use embedded title as track title (cleaned of watermarks).
+    if probe_title_tag and is_audio:
+        clean_title = _clean_music_tag(probe_title_tag)
+        if not item.title:
+            item.title = clean_title
+        elif item.title != clean_title and _MUSIC_WATERMARK_RE.search(item.title):
+            # Fix already-stored watermarked title on re-probe
+            item.title = clean_title
     # Year from tags: fills in audio year (Telegram doesn't extract it).
     if probe_year and not item.year:
         item.year = probe_year

@@ -52,6 +52,8 @@ def _fmt_duration(seconds: int) -> str:
 
 _env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
 _env.filters["duration"] = lambda s: _fmt_duration(int(s)) if s else ""
+from main.utils.codec_probe import _clean_music_tag as _cmt
+_env.filters["clean_music_tag"] = lambda s: _cmt(s) if s else s
 
 
 SORT_OPTIONS = [

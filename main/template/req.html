@@ -100,10 +100,10 @@
       {# Track info #}
       <div class="mt-6 text-center w-full max-w-sm px-6">
         <h2 class="text-xl sm:text-2xl font-bold text-white leading-snug line-clamp-2">
-          {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.MP3','') | replace('.flac','') | replace('.FLAC','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') | replace('.wav','') | replace('.opus','') }}
+          {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.MP3','') | replace('.flac','') | replace('.FLAC','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') | replace('.wav','') | replace('.opus','') | clean_music_tag }}
         </h2>
         {% if meta and meta.artist %}
-          <p class="mt-2 text-slate-300 text-sm font-medium line-clamp-1">{{ meta.artist }}</p>
+          <p class="mt-2 text-slate-300 text-sm font-medium line-clamp-1">{{ meta.artist | clean_music_tag }}</p>
         {% endif %}
         {% if meta and meta.album_title %}
           <p class="mt-0.5 text-slate-500 text-xs line-clamp-1">{{ meta.album_title }}</p>
@@ -198,7 +198,7 @@
                   </div>
                   <p class="text-sm text-slate-300 truncate flex-1
                              group-hover:text-brand-300 transition-colors">
-                    {{ t.title or t.file_name }}
+                    {{ (t.title or t.file_name) | clean_music_tag }}
                   </p>
                   {% if t.duration %}
                     <span class="text-xs text-slate-600 tabular-nums flex-shrink-0">
@@ -209,6 +209,19 @@
               </li>
             {% endfor %}
           </ul>
+        </div>
+      {% endif %}
+
+      {# Lyrics — fetched from LRCLIB (free, no API key) by title + artist #}
+      {% if meta and meta.title %}
+        <div class="mt-6 w-full max-w-md" id="lyricsSection">
+          <h3 class="text-xs uppercase tracking-widest text-slate-500 mb-3 px-1">Lyrics</h3>
+          <div id="lyricsContent"
+               class="text-sm text-slate-300 leading-relaxed whitespace-pre-line px-1
+                      text-center max-h-64 overflow-y-auto
+                      [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <span class="text-slate-600 text-xs">Loading…</span>
+          </div>
         </div>
       {% endif %}
     </div>
@@ -1166,6 +1179,31 @@
       {% endif %}
       {% if next_track %}
       attachNextTrack(video);
+      {% endif %}
+
+      // Lyrics via LRCLIB (audio only)
+      {% if is_audio and meta and meta.title %}
+      (async () => {
+        const el = document.getElementById("lyricsContent");
+        if (!el) return;
+        const title = {{ (meta.title | clean_music_tag) | tojson }};
+        const artist = {{ ((meta.artist or '') | clean_music_tag) | tojson }};
+        try {
+          const params = new URLSearchParams({ track_name: title, artist_name: artist });
+          const r = await fetch("https://lrclib.net/api/get?" + params);
+          if (!r.ok) throw new Error("not found");
+          const data = await r.json();
+          const text = data.plainLyrics || data.syncedLyrics?.replace(/\[\d+:\d+\.\d+\]/g, "").trim();
+          if (text) {
+            el.textContent = text;
+          } else {
+            el.textContent = "";
+            document.getElementById("lyricsSection")?.remove();
+          }
+        } catch (_) {
+          document.getElementById("lyricsSection")?.remove();
+        }
+      })();
       {% endif %}
     });
 
