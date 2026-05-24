@@ -103,7 +103,11 @@
        Spotify-style: large centered album art, track info, audio controls.
        None of the video-specific chrome (aspect-video black box, VLC note,
        subtitle button) makes sense for audio. #}
-    <div class="flex flex-col items-center mt-4 sm:mt-8">
+    {# Landscape: flex-row — art on left, controls on right.
+       Portrait: flex-col centered (default). #}
+    <div class="flex flex-col items-center mt-4 sm:mt-8
+                [@media(max-height:480px)]:flex-row [@media(max-height:480px)]:items-start
+                [@media(max-height:480px)]:mt-2 [@media(max-height:480px)]:gap-5 [@media(max-height:480px)]:px-3">
 
       {# Flip card: front = album art, back = lyrics. Tap to flip. #}
       <div class="flip-card w-56 h-56 sm:w-72 sm:h-72 [@media(max-height:480px)]:w-32 [@media(max-height:480px)]:h-32
@@ -145,13 +149,17 @@
         </div>
       </div>
 
+      {# Right column in landscape: track info + player controls #}
+      <div class="flex flex-col items-center w-full
+                  [@media(max-height:480px)]:flex-1 [@media(max-height:480px)]:items-start [@media(max-height:480px)]:min-w-0">
+
       {# Track info — reduced top margin and font on landscape phones #}
-      <div class="mt-4 [@media(max-height:480px)]:mt-2 text-center w-full max-w-sm px-6">
-        <h2 class="text-xl sm:text-2xl [@media(max-height:480px)]:text-base font-bold text-white leading-snug line-clamp-2">
+      <div class="mt-4 [@media(max-height:480px)]:mt-0 text-center [@media(max-height:480px)]:text-left w-full max-w-sm px-6 [@media(max-height:480px)]:px-0">
+        <h2 class="text-xl sm:text-2xl [@media(max-height:480px)]:text-sm font-bold text-white leading-snug line-clamp-2">
           {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.MP3','') | replace('.flac','') | replace('.FLAC','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') | replace('.wav','') | replace('.opus','') | clean_music_tag }}
         </h2>
         {% if meta and meta.artist %}
-          <p class="mt-2 text-slate-300 text-sm font-medium line-clamp-1">{{ meta.artist | clean_music_tag }}</p>
+          <p class="mt-1 text-slate-300 text-sm [@media(max-height:480px)]:text-xs font-medium line-clamp-1">{{ meta.artist | clean_music_tag }}</p>
         {% endif %}
         {% if meta and meta.album_title %}
           <p class="mt-0.5 text-slate-500 text-xs line-clamp-1">{{ meta.album_title }}</p>
@@ -159,7 +167,7 @@
       </div>
 
       {# Audio element — Plyr wraps this (its controls bar is hidden; custom UI below) #}
-      <div class="mt-6 w-full max-w-md px-4">
+      <div class="mt-6 [@media(max-height:480px)]:mt-2 w-full max-w-md px-4 [@media(max-height:480px)]:px-0">
         <audio id="player" class="player"
                {% if not known_unplayable %}data-direct-src="{{ src }}"{% endif %}
                preload="metadata">
@@ -168,7 +176,7 @@
 
       {# ── Custom Spotify-style audio controls ─────────────────────────────
          Hidden until loadedmetadata fires (JS sets display:'') #}
-      <div id="tdAudioControls" class="w-full max-w-sm px-6 mt-2" style="display:none">
+      <div id="tdAudioControls" class="w-full max-w-sm px-6 [@media(max-height:480px)]:px-0 mt-2" style="display:none">
 
         {# Progress bar row #}
         <div class="flex items-center gap-3">
@@ -262,6 +270,8 @@
         </div>
 
       </div>
+
+      </div>{# end right-column wrapper #}
 
       {# Download + Shuffle buttons #}
       <div class="mt-4 flex flex-wrap items-center justify-center gap-3">
@@ -362,7 +372,8 @@
 
     {% else %}
     {# ── Video player layout ──────────────────────────────────────────────#}
-    <div class="text-center px-2">
+    {# Hide title block in landscape — every pixel of height is precious #}
+    <div class="text-center px-2 [@media(max-height:480px)]:hidden">
       <h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">TeleDirect</h1>
       <p class="mt-2 text-sm sm:text-base text-slate-400 break-all">{{ file_name }}</p>
     </div>
@@ -370,7 +381,7 @@
     {# Player wrapper always rendered so #codecOverlay exists in the DOM.
        For known_unplayable files the video has no src (no network call)
        and the overlay is shown immediately via inline style. #}
-    <div class="mt-8 aspect-video bg-black rounded-xl overflow-hidden relative">
+    <div class="mt-8 [@media(max-height:480px)]:mt-1 aspect-video bg-black rounded-xl overflow-hidden relative">
       <{{ tag }}
         id="player"
         class="player"
