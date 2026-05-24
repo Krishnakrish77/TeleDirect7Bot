@@ -1013,7 +1013,8 @@
       // the player visible immediately.
       if (video) {
         injectSubtitleTracks(video);
-        attachWatchProgress(video);
+        // Skip CW tracking for audio — "3 min left" on a song makes no sense
+        {% if not is_audio %}attachWatchProgress(video);{% endif %}
         attachSubtitleUpload(video);
         attachMobileGestures(video);
         attachAudioTracks(video);

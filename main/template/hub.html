@@ -172,7 +172,9 @@
        falls back to gracefully hiding when nothing is in-progress.
        Only shown on the unfiltered landing — feels weird to surface
        it alongside an active search. #}
-    {% if not filtering %}
+    {# filtering must be computed here (before use) — the main set is later #}
+    {% set _cw_filtering = params.q or params.tag or params.year or params.quality or params.genre or params.sort != 'newest' or params.view %}
+    {% if not _cw_filtering %}
       <section x-data="continueWatching()" x-init="init()" x-show="entries.length"
                x-cloak class="mb-10">
         <div class="flex items-end justify-between mb-3">
