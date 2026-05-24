@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import html as _html_lib
 import json
 import logging
 import secrets
@@ -70,21 +71,73 @@ def _html(body: str, *, status: int = 200) -> web.Response:
     )
 
 
-@routes.get("/admin/login")
-async def admin_login(request: web.Request) -> web.Response:
-    """Exchange a one-time DM token for a session cookie.
+def _login_error():
+    """Lazy-load render_error to avoid a circular import at module level."""
+    from main.server import render_error
+    return render_error
 
-    Expected URL: /admin/login?t=<one-time-token>. On success, redirect to
-    /admin with the cookie set; on failure, render a tiny error page.
+
+@routes.get("/admin/login")
+async def admin_login_get(request: web.Request) -> web.Response:
+    """Render a POST bridge page for the one-time DM token.
+
+    The GET URL (with ?t=) is only an intermediate step — it renders a
+    self-submitting form so the token lands in the POST body, not the URL.
+    history.replaceState() runs before the form submits, so the browser
+    never stores the token-bearing URL in history. Referer headers on
+    subsequent requests point at /admin, not this page.
+
+    The GET is still server-logged (unavoidable), but the token is
+    one-time use with a short TTL, making the log entry harmless.
     """
     token = request.query.get("t", "")
+    if not token:
+        link_minutes = max(1, round(admin_auth.TOKEN_TTL / 60))
+        return await _login_error()(
+            403,
+            title="Admin link invalid or expired",
+            message=(
+                f"One-time admin links expire {link_minutes} minutes after "
+                "they're issued. DM <code>/admin</code> to the bot to get "
+                "a new one."
+            ),
+            action_href="https://t.me/" + (StreamBot.username or ""),
+            action_label="Open bot in Telegram",
+        )
+    safe_token = _html_lib.escape(token, quote=True)
+    return web.Response(
+        content_type="text/html",
+        charset="utf-8",
+        headers={"Cache-Control": "no-store"},
+        text=f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Signing in…</title>
+  <script>history.replaceState(null, '', '/admin/login');</script>
+</head>
+<body>
+  <form id="f" method="POST" action="/admin/login">
+    <input type="hidden" name="t" value="{safe_token}">
+  </form>
+  <script>document.getElementById('f').submit();</script>
+  <noscript><p>Enable JavaScript to sign in, or
+    <button form="f" type="submit">click here</button>.</p></noscript>
+</body>
+</html>""",
+    )
+
+
+@routes.post("/admin/login")
+async def admin_login_post(request: web.Request) -> web.Response:
+    """Exchange the one-time token (POST body) for a session cookie."""
+    data = await request.post()
+    token = data.get("t", "")
     user_id = admin_auth.verify_one_time(token) if token else None
     if user_id is None:
-        # Lazy import — the server module owns the renderer and importing
-        # at module load would create a circular dependency.
-        from main.server import render_error
         link_minutes = max(1, round(admin_auth.TOKEN_TTL / 60))
-        return await render_error(
+        return await _login_error()(
             403,
             title="Admin link invalid or expired",
             message=(
