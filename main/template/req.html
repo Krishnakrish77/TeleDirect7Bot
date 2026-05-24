@@ -189,6 +189,7 @@
       <div class="mt-6 [@media(max-height:480px)]:mt-2 w-full max-w-md px-4 [@media(max-height:480px)]:px-0">
         <audio id="player" class="player"
                {% if not known_unplayable %}data-direct-src="{{ src }}"{% endif %}
+               {% if meta and meta.album_key and album_tracks %}data-album-first="/watch/{{ album_tracks[0].secure_hash }}{{ album_tracks[0].message_id }}"{% endif %}
                preload="metadata">
         </audio>
       </div>
@@ -288,6 +289,36 @@
                  style="accent-color:#f97316">
         </div>
 
+        {# Speed + Repeat row #}
+        <div class="flex items-center justify-between mt-3 px-1">
+          <div class="flex items-center gap-1.5">
+            {% for spd in [('0.75','¾×'),('1','1×'),('1.5','1.5×'),('2','2×')] %}
+            <button data-speed="{{ spd[0] }}"
+                    class="tdSpeedBtn px-2 py-1 rounded-full text-xs font-medium
+                           transition-colors border border-transparent
+                           text-slate-400 hover:text-slate-200">
+              {{ spd[1] }}
+            </button>
+            {% endfor %}
+          </div>
+          <button id="tdRepeat" aria-label="Repeat off"
+                  title="Repeat off"
+                  class="relative flex items-center justify-center w-8 h-8 rounded-full
+                         text-slate-400 hover:text-white transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17 2l4 4-4 4"/>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 11V9a4 4 0 0 1 4-4h14"/>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7 22l-4-4 4-4"/>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 13v2a4 4 0 0 1-4 4H3"/>
+            </svg>
+            <span id="tdRepeatBadge" style="display:none"
+                  class="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full
+                         bg-brand-500 text-[8px] font-bold text-white
+                         flex items-center justify-center leading-none">1</span>
+          </button>
+        </div>
+
       </div>
 
       </div>{# end right-column wrapper #}
@@ -305,6 +336,17 @@
           </svg>
           Download
         </a>
+        <button id="tdShare"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
+                       text-sm font-medium text-slate-300 bg-ink-800/70
+                       hover:bg-ink-800 border border-white/5 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" class="w-4 h-4 flex-shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/>
+          </svg>
+          <span class="tdShareLabel">Share</span>
+        </button>
         {% if meta and meta.album_key %}
           <a href="/album/{{ meta.album_key }}"
              class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
@@ -570,6 +612,17 @@
         </svg>
         Load subtitles
       </label>
+      <button id="tdShare"
+              class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
+                     text-sm font-medium text-slate-300 bg-ink-800/70
+                     hover:bg-ink-800 border border-white/5 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" class="w-4 h-4 flex-shrink-0">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/>
+        </svg>
+        <span class="tdShareLabel">Share</span>
+      </button>
     </div>
     <p id="subStatus" class="mt-2 text-center text-xs text-slate-500"></p>
 
@@ -1409,6 +1462,53 @@
         wrap.style.display = "";
         thumb.style.opacity = "1";
       }
+
+      // ── Speed ──────────────────────────────────────────────────────────────
+      var _speedBtns = wrap.querySelectorAll('.tdSpeedBtn');
+      var SPEED_KEY = 'td:speed';
+      var _speed = parseFloat(localStorage.getItem(SPEED_KEY) || '1') || 1;
+      function _applySpeed(s) {
+        _speed = s;
+        inst.media.playbackRate = s;
+        try { localStorage.setItem(SPEED_KEY, String(s)); } catch(_) {}
+        _speedBtns.forEach(function(b) {
+          var on = parseFloat(b.dataset.speed) === s;
+          b.classList.toggle('bg-brand-500/20', on);
+          b.classList.toggle('text-brand-300', on);
+          b.classList.toggle('border-brand-500/40', on);
+          b.classList.toggle('text-slate-400', !on);
+          b.classList.toggle('border-transparent', !on);
+        });
+      }
+      _speedBtns.forEach(function(b) {
+        b.addEventListener('click', function() { _applySpeed(parseFloat(b.dataset.speed)); });
+      });
+      inst.on('loadedmetadata', function() { _applySpeed(_speed); });
+
+      // ── Repeat ─────────────────────────────────────────────────────────────
+      var _repeatBtn   = document.getElementById('tdRepeat');
+      var _repeatBadge = document.getElementById('tdRepeatBadge');
+      var REPEAT_KEY   = 'td:repeat';
+      var _RMODES      = ['off', 'all', 'one'];
+      var _rmode       = localStorage.getItem(REPEAT_KEY) || 'off';
+      function _applyRepeat(mode) {
+        _rmode = mode;
+        inst.media.loop = (mode === 'one');
+        try { localStorage.setItem(REPEAT_KEY, mode); } catch(_) {}
+        if (_repeatBtn) {
+          _repeatBtn.setAttribute('aria-label', 'Repeat ' + mode);
+          _repeatBtn.title = 'Repeat ' + mode;
+          _repeatBtn.classList.toggle('text-brand-400', mode !== 'off');
+          _repeatBtn.classList.toggle('text-slate-400', mode === 'off');
+        }
+        if (_repeatBadge) _repeatBadge.style.display = (mode === 'one') ? 'flex' : 'none';
+      }
+      if (_repeatBtn) {
+        _repeatBtn.addEventListener('click', function() {
+          _applyRepeat(_RMODES[(_RMODES.indexOf(_rmode) + 1) % _RMODES.length]);
+        });
+      }
+      _applyRepeat(_rmode);
     }
 
     document.addEventListener("DOMContentLoaded", () => {
@@ -1542,6 +1642,42 @@
       {% if next_track %}
       attachNextTrack(video);
       {% endif %}
+
+      {% if is_audio and not next_track and meta and meta.album_key and album_tracks %}
+      // Repeat-all: when last track ends, loop back to first
+      (function() {
+        var _la = document.getElementById('player');
+        if (!_la) return;
+        _la.addEventListener('ended', function() {
+          if ((localStorage.getItem('td:repeat') || 'off') !== 'all') return;
+          {% if meta and meta.album_key %}
+          var _sq; try { _sq = JSON.parse(sessionStorage.getItem('td:shuffle:{{ meta.album_key }}') || 'null'); } catch(_) { _sq = null; }
+          var _first = (_sq && _sq.length) ? '/watch/' + _sq[0] : (_la.dataset.albumFirst || null);
+          {% else %}
+          var _first = _la.dataset.albumFirst || null;
+          {% endif %}
+          if (_first) window.location.href = _first;
+        });
+      })();
+      {% endif %}
+
+      // ── Share button ──────────────────────────────────────────────────────
+      (function() {
+        var shareBtn = document.getElementById('tdShare');
+        if (!shareBtn) return;
+        var lbl = shareBtn.querySelector('.tdShareLabel');
+        shareBtn.addEventListener('click', async function() {
+          var data = { title: document.title, url: location.href };
+          if (navigator.share) {
+            try { await navigator.share(data); } catch(_) {}
+          } else if (navigator.clipboard) {
+            try {
+              await navigator.clipboard.writeText(location.href);
+              if (lbl) { lbl.textContent = 'Copied!'; setTimeout(function() { lbl.textContent = 'Share'; }, 2000); }
+            } catch(_) {}
+          }
+        });
+      })();
 
       // Synced lyrics via LRCLIB — loaded into the flip card back face
       {% if is_audio and meta and meta.title %}
