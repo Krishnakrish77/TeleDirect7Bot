@@ -115,6 +115,7 @@ class AlbumGroup:
     latest_message_id: int  # for newest-first ordering
     poster_item: "HubItem"  # representative track for thumbnail/year
     has_thumb: bool = False
+    max_file_size: int = 0  # largest track size — for "largest" sort key
 
 
 # Imports kept at the bottom to avoid a circular import with media_index,

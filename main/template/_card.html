@@ -2,7 +2,11 @@
    `item` is — AlbumGroup, MovieGroup, SeriesGroup, or a plain HubItem.
    Callers wrap this in their own list element ({{ <li> }} in the grid,
    {{ <li> }} in a shelf row) so the same partial works in both layouts. #}
-{% if item.album_key is defined and item.album_key %}
+{# Use track_count (unique to AlbumGroup) as discriminator.
+   album_key alone is unsafe: HubItem also has album_key (Phase 1 field),
+   so an audio HubItem with album_key set would falsely hit this branch
+   and crash on poster_item which HubItem doesn't have. #}
+{% if item.track_count is defined %}
   {# AlbumGroup: all tracks of one album. Click → /album/{key} #}
   {% set poster = item.poster_item %}
   <a href="/album/{{ item.album_key }}"

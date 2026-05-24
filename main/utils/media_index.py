@@ -1231,12 +1231,23 @@ def query_grouped(
         # Only movies and standalone non-series items.
         grouped_series = []
     elif view == "music":
-        # For music view: album groups + standalone audio tracks
-        _alb = all_albums()
-        _sng = standalone_audio_tracks()
+        # For music view: album groups (from filtered items only) + standalone audio.
+        # Build album buckets from items_all (already filtered by q/year/quality/tag)
+        # so filters apply to music just like they do to series/movies.
+        audio_buckets: dict = {}
+        audio_singles: List[HubItem] = []
+        for it in items_all:
+            if getattr(it, "media_kind", "") != "audio":
+                continue
+            ak = getattr(it, "album_key", "")
+            if ak:
+                audio_buckets.setdefault(ak, []).append(it)
+            else:
+                audio_singles.append(it)
+        music_albums = [_build_album_group(tracks) for tracks in audio_buckets.values()]
         combined = sorted(
-            _alb + _sng,
-            key=lambda c: -(c.latest_message_id if hasattr(c, 'latest_message_id') else c.message_id),
+            music_albums + audio_singles,
+            key=lambda c: -(c.latest_message_id if hasattr(c, "latest_message_id") else c.message_id),
         )
         total = len(combined)
         page_items = combined[offset:offset + limit]
@@ -1285,7 +1296,7 @@ def _card_file_size(card) -> int:
         # sum, since otherwise long-running shows always dominate.
         return max((e.file_size for e in episodes_for_series(card.series_key)), default=0)
     if isinstance(card, AlbumGroup):
-        return max((t.file_size for t in tracks_for_album(card.album_key)), default=0)
+        return card.max_file_size  # pre-computed at build time, avoids O(N) scan
     return card.file_size
 
 
@@ -1326,6 +1337,7 @@ def _build_album_group(tracks: List[HubItem]) -> AlbumGroup:
         latest_message_id=max(t.message_id for t in tracks),
         poster_item=poster,
         has_thumb=any(t.has_thumb for t in tracks),
+        max_file_size=max((t.file_size or 0) for t in tracks),
     )
 
 
