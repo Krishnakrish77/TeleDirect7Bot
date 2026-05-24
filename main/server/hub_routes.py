@@ -602,7 +602,13 @@ async def hub_album(request: web.Request) -> web.Response:
     except Exception:
         pass
 
-    rep = next((t for t in tracks if t.artist), tracks[0])
+    # Prefer a track that has both artist metadata AND a thumbnail for the album art.
+    # Fall back to first-with-artist, then any track.
+    rep = (
+        next((t for t in tracks if t.artist and t.has_thumb), None)
+        or next((t for t in tracks if t.artist), None)
+        or tracks[0]
+    )
     # Compute display artist the same way _build_album_group does — show
     # "Various Artists" for multi-artist albums (soundtracks, compilations).
     unique_artists = {t.artist for t in tracks if t.artist}
