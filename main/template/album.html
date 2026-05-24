@@ -32,6 +32,29 @@
           <p class="mt-1 text-sm text-slate-500">
             {{ track_count }} track{{ '' if track_count == 1 else 's' }}
           </p>
+          {% if tracks %}
+            <div class="mt-4 flex gap-2">
+              <a href="/watch/{{ tracks[0].secure_hash }}{{ tracks[0].message_id }}"
+                 class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm
+                        font-semibold text-white bg-brand-500 hover:bg-brand-600
+                        transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                     fill="currentColor" class="w-4 h-4"><path d="M8 5v14l11-7z"/></svg>
+                Play
+              </a>
+              <button onclick="shuffleAlbum('{{ album_key }}')"
+                      class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm
+                             font-medium text-slate-300 bg-ink-800/70
+                             hover:bg-ink-800 border border-white/5 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/>
+                </svg>
+                Shuffle
+              </button>
+            </div>
+          {% endif %}
         </div>
       </div>
     </header>
@@ -85,4 +108,29 @@
       {% endfor %}
     </ul>
   </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Build the track list from the server-rendered order for shuffle.
+const _albumTracks = [
+  {% for track in tracks %}
+  "{{ track.secure_hash }}{{ track.message_id }}"{% if not loop.last %},{% endif %}
+  {% endfor %}
+];
+
+function shuffleAlbum(albumKey) {
+  // Fisher-Yates shuffle
+  const arr = [..._albumTracks];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  try {
+    sessionStorage.setItem("td:shuffle:" + albumKey, JSON.stringify(arr));
+  } catch (_) {}
+  // Navigate to first shuffled track
+  window.location.href = "/watch/" + arr[0];
+}
+</script>
 {% endblock %}

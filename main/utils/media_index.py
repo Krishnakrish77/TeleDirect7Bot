@@ -1434,6 +1434,26 @@ def next_episode(item: HubItem) -> Optional[dict]:
     return None
 
 
+def next_track(item: HubItem) -> Optional[dict]:
+    """Return watch URL + label for the next track in the album, or None."""
+    ak = getattr(item, "album_key", "") or ""
+    if not ak or getattr(item, "media_kind", "") != "audio":
+        return None
+    tracks = tracks_for_album(ak)
+    for i, t in enumerate(tracks):
+        if t.message_id == item.message_id and i + 1 < len(tracks):
+            nxt = tracks[i + 1]
+            return {
+                "url": f"/watch/{nxt.secure_hash}{nxt.message_id}",
+                "title": nxt.title or nxt.file_name or f"Track {nxt.track_number or i + 2}",
+                "track_number": nxt.track_number,
+                "secure_hash": nxt.secure_hash,
+                "message_id": nxt.message_id,
+                "duration": nxt.duration,
+            }
+    return None
+
+
 def suggest(q: str, limit: int = 8) -> List[dict]:
     """Lightweight search for the nav dropdown.
 

@@ -80,6 +80,14 @@ async def render_page(message_id, secure_hash):
         # template guards on `meta and meta.tmdb_id`.
         meta = media_index.get_item(int(message_id))
         next_ep = media_index.next_episode(meta) if meta else None
+        # Music-specific: next track in album + other tracks for "More from album"
+        next_track = media_index.next_track(meta) if meta else None
+        album_tracks: list = []
+        if meta and mime_type == "audio" and getattr(meta, "album_key", ""):
+            album_tracks = [
+                t for t in media_index.tracks_for_album(meta.album_key)
+                if t.message_id != meta.message_id
+            ]
         file_name = _best_file_name(file_data.file_name, meta)
         from main.utils import codec_probe
         known_unplayable = (
@@ -118,6 +126,8 @@ async def render_page(message_id, secure_hash):
             video_codec=(meta.video_codec if meta else "") or "",
             pix_fmt=(meta.pix_fmt if meta else "") or "",
             next_ep=next_ep,
+            next_track=next_track,
+            album_tracks=album_tracks,
             quality_variants=quality_variants,
         )
     file_name = _best_file_name(file_data.file_name, None)

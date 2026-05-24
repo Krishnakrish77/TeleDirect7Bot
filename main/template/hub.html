@@ -371,12 +371,12 @@
           </a>
         {% endif %}
 
-        {% if params.view in ('series', 'movies') %}
+        {% if params.view in ('series', 'movies', 'music') %}
           <a href="{{ '/?q=' ~ params.q if params.q else '/' }}"
              class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded
-                    bg-sky-500/15 text-sky-300 border border-sky-400/30
-                    hover:bg-sky-500/25 transition-colors">
-            {{ 'Series' if params.view == 'series' else 'Movies' }}
+                    {% if params.view == 'music' %}bg-brand-500/15 text-brand-300 border border-brand-400/30 hover:bg-brand-500/25{% else %}bg-sky-500/15 text-sky-300 border border-sky-400/30 hover:bg-sky-500/25{% endif %}
+                    transition-colors">
+            {% if params.view == 'series' %}Series{% elif params.view == 'movies' %}Movies{% else %}🎵 Music{% endif %}
             <span class="opacity-60">×</span>
           </a>
         {% endif %}
