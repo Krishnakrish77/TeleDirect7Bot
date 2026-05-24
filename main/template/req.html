@@ -129,7 +129,7 @@
             <div id="lyricsFlipContent"
                  class="flex-1 overflow-y-auto px-2 pb-2 text-center text-xs
                         [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              <span class="text-slate-600">Loading…</span>
+              {% if is_audio and meta and meta.title %}<span class="text-slate-600">Loading…</span>{% else %}<span class="text-slate-500 text-xs">No lyrics available</span>{% endif %}
             </div>
           </div>
         </div>
@@ -1237,8 +1237,6 @@
       (async () => {
         const el = document.getElementById("lyricsFlipContent");
         if (!el) return;
-        const section = null;  // no separate section; lyrics live in flip card
-
         const title = {{ (meta.title | clean_music_tag) | tojson }};
         const artist = {{ ((meta.artist or '') | clean_music_tag) | tojson }};
 
@@ -1254,12 +1252,19 @@
         }
 
         function renderSynced(lines) {
-          el.innerHTML = lines.map((l, i) =>
-            `<p data-i="${i}"
-                style="transition:all 0.3s ease;color:rgba(100,116,139,0.5);font-size:0.875rem;line-height:1.75rem;cursor:pointer;padding:0.125rem 0"
-                onclick="document.getElementById('player').currentTime=${l.t}"
-            >${l.text || "&nbsp;"}</p>`
-          ).join("");
+          el.innerHTML = "";
+          lines.forEach(function(l, i) {
+            const p = document.createElement("p");
+            p.dataset.i = i;
+            p.style.cssText = "transition:all 0.3s ease;color:rgba(100,116,139,0.5);font-size:0.875rem;line-height:1.75rem;cursor:pointer;padding:0.125rem 0";
+            // textContent prevents XSS from untrusted lyrics data
+            p.textContent = l.text || " ";
+            p.addEventListener("click", function() {
+              const audio = document.getElementById("player");
+              if (audio) audio.currentTime = l.t;
+            });
+            el.appendChild(p);
+          });
         }
 
         function highlightLine(currentTime) {
@@ -1324,10 +1329,10 @@
             el.classList.add("text-slate-300", "whitespace-pre-line");
             el.textContent = data.plainLyrics;
           } else {
-            section?.remove();
+            el.innerHTML = '<span class="text-slate-500 text-xs">No lyrics available</span>';
           }
         } catch (_) {
-          section?.remove();
+          el.innerHTML = '<span class="text-slate-500 text-xs">No lyrics available</span>';
         }
       })();
       {% endif %}
