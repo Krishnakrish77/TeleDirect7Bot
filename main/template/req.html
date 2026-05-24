@@ -29,6 +29,20 @@
        visible without needing a higher-specificity override. */
     .aspect-video > video.player { visibility: hidden; }
 
+    /* Flip card for lyrics */
+    .flip-card { perspective: 1000px; }
+    .flip-card-inner {
+      transform-style: preserve-3d;
+      transition: transform 0.55s cubic-bezier(.4,0,.2,1);
+      position: relative;
+    }
+    .flip-card-inner.flipped { transform: rotateY(180deg); }
+    .flip-card-front, .flip-card-back {
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+    .flip-card-back { transform: rotateY(180deg); position: absolute; inset: 0; }
+
     /* Music player — Plyr audio bar styling */
     .plyr--audio { border-radius: 0.75rem; background: rgba(255,255,255,0.05); }
     .plyr--audio .plyr__controls { background: transparent; padding: 0.75rem 1rem; }
@@ -81,23 +95,43 @@
        subtitle button) makes sense for audio. #}
     <div class="flex flex-col items-center mt-4 sm:mt-8">
 
-      {# Album art — thumbnail (embedded cover art) or default music icon #}
-      <div class="relative w-56 h-56 sm:w-72 sm:h-72 [@media(max-height:480px)]:w-32 [@media(max-height:480px)]:h-32 rounded-2xl overflow-hidden
-                  shadow-2xl bg-ink-800 flex-shrink-0 ring-1 ring-white/10">
-        {% if meta and meta.secure_hash %}
-          <img src="/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"
-               alt="Album art" loading="eager"
-               onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-               class="absolute inset-0 w-full h-full object-cover" />
-        {% endif %}
-        {# Fallback music note icon shown when no thumbnail is available #}
-        <div class="absolute inset-0 hidden items-center justify-center bg-ink-800">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="1"
-               class="w-24 h-24 text-slate-600">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
-          </svg>
+      {# Flip card: front = album art, back = lyrics. Tap to flip. #}
+      <div class="flip-card w-56 h-56 sm:w-72 sm:h-72 [@media(max-height:480px)]:w-32 [@media(max-height:480px)]:h-32
+                  flex-shrink-0 cursor-pointer" onclick="this.querySelector('.flip-card-inner').classList.toggle('flipped')">
+        <div class="flip-card-inner w-full h-full">
+          {# Front: album art #}
+          <div class="flip-card-front w-full h-full rounded-2xl overflow-hidden shadow-2xl bg-ink-800 ring-1 ring-white/10">
+            {% if meta and meta.secure_hash %}
+              <img src="/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"
+                   alt="Album art" loading="eager"
+                   onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                   class="absolute inset-0 w-full h-full object-cover" />
+            {% endif %}
+            <div class="absolute inset-0 hidden items-center justify-center bg-ink-800">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="1" class="w-16 h-16 text-slate-600">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+              </svg>
+            </div>
+            {# Tap hint overlay #}
+            <div class="absolute inset-0 flex items-end justify-center pb-2 opacity-0 hover:opacity-100 transition-opacity">
+              <span class="text-[10px] text-white/50 bg-black/40 px-2 py-0.5 rounded-full">tap for lyrics</span>
+            </div>
+          </div>
+          {# Back: lyrics (shown when flipped) #}
+          <div class="flip-card-back w-full h-full rounded-2xl bg-ink-800/95 ring-1 ring-white/10
+                      flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between px-3 pt-2 pb-1 flex-shrink-0">
+              <span class="text-[10px] uppercase tracking-wider text-slate-500">Lyrics</span>
+              <span class="text-[10px] text-slate-500">tap to close</span>
+            </div>
+            <div id="lyricsFlipContent"
+                 class="flex-1 overflow-y-auto px-2 pb-2 text-center text-xs
+                        [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              <span class="text-slate-600">Loading…</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -216,21 +250,7 @@
         </div>
       {% endif %}
 
-      {# Lyrics — fetched from LRCLIB (free, no API key) by title + artist.
-         Guard must match the JS block (is_audio) so video files never
-         see a stale "Loading…" that the JS won't clear. #}
-      {% if is_audio and meta and meta.title %}
-        <div class="mt-6 w-full max-w-md" id="lyricsSection">
-          <h3 class="text-xs uppercase tracking-widest text-slate-500 mb-3 px-1">Lyrics</h3>
-          {# Synced: each line is a <p> with data-t. Plain: whitespace-pre-line block. #}
-          {# No max-height — page scrolls, like Spotify. The sticky back button
-             keeps navigation accessible while reading through lyrics. #}
-          <div id="lyricsContent"
-               class="text-sm leading-relaxed px-2 text-center">
-            <span class="text-slate-600 text-xs">Loading…</span>
-          </div>
-        </div>
-      {% endif %}
+{# Lyrics now live in the flip card back face — no separate section below #}
     </div>
 
     {% else %}
@@ -1178,19 +1198,25 @@
       }
 
       {% if is_audio and meta %}
-      // Write now-playing to localStorage so the mini-player bar shows
-      // on other pages (album list, music view, home) while music plays.
+      // Write now-playing to localStorage (includes prev/next for mini-player controls).
+      // Pause on navigate so music doesn't ghost-play silently.
       (function() {
         var npData = {
           url: location.href,
           title: {{ (meta.title | clean_music_tag) | tojson }},
           artist: {{ ((meta.artist or '') | clean_music_tag) | tojson }},
           art: {% if meta.secure_hash %}"/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"{% else %}""{% endif %},
+          nextUrl: {{ next_track.url | tojson if next_track else 'null' }},
+          prevUrl: {{ prev_track.url | tojson if prev_track else 'null' }},
         };
         if (video) {
           video.addEventListener('play', function() {
             try { localStorage.setItem('td:nowplaying', JSON.stringify(npData)); } catch(_) {}
           }, { once: false });
+          // Pause when navigating away — no silent ghost playback
+          window.addEventListener('pagehide', function() {
+            video.pause();
+          });
         }
       })();
       {% endif %}
@@ -1206,12 +1232,12 @@
       attachNextTrack(video);
       {% endif %}
 
-      // Synced lyrics via LRCLIB (audio only)
+      // Synced lyrics via LRCLIB — loaded into the flip card back face
       {% if is_audio and meta and meta.title %}
       (async () => {
-        const el = document.getElementById("lyricsContent");
-        const section = document.getElementById("lyricsSection");
+        const el = document.getElementById("lyricsFlipContent");
         if (!el) return;
+        const section = null;  // no separate section; lyrics live in flip card
 
         const title = {{ (meta.title | clean_music_tag) | tojson }};
         const artist = {{ ((meta.artist or '') | clean_music_tag) | tojson }};
@@ -1264,9 +1290,14 @@
               p.style.lineHeight = "1.75rem";
             }
           });
-          // Auto-scroll active line into view — centered like Spotify
+          // Auto-scroll within the flip card container
           const activePara = el.querySelector(`p[data-i="${active}"]`);
-          if (activePara) activePara.scrollIntoView({ block: "center", behavior: "smooth" });
+          if (activePara) {
+            const container = el;
+            const paraTop = activePara.offsetTop;
+            const paraH = activePara.offsetHeight;
+            container.scrollTo({ top: paraTop - container.clientHeight/2 + paraH/2, behavior: "smooth" });
+          }
         }
 
         try {

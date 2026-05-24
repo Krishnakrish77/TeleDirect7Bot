@@ -1434,6 +1434,25 @@ def next_episode(item: HubItem) -> Optional[dict]:
     return None
 
 
+def prev_track(item: HubItem) -> Optional[dict]:
+    """Return watch URL + label for the previous track in the album, or None."""
+    ak = getattr(item, "album_key", "") or ""
+    if not ak or getattr(item, "media_kind", "") != "audio":
+        return None
+    tracks = tracks_for_album(ak)
+    for i, t in enumerate(tracks):
+        if t.message_id == item.message_id and i > 0:
+            prv = tracks[i - 1]
+            return {
+                "url": f"/watch/{prv.secure_hash}{prv.message_id}",
+                "title": prv.title or prv.file_name or f"Track {prv.track_number or i}",
+                "track_number": prv.track_number,
+                "secure_hash": prv.secure_hash,
+                "message_id": prv.message_id,
+            }
+    return None
+
+
 def next_track(item: HubItem) -> Optional[dict]:
     """Return watch URL + label for the next track in the album, or None."""
     ak = getattr(item, "album_key", "") or ""

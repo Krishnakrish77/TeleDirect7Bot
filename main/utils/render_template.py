@@ -98,22 +98,30 @@ async def render_page(message_id, secure_hash):
         # Music-specific: next track + "More from album" — compute album track
         # list once (O(N) scan) and derive both from it to avoid double scan.
         next_track = None
+        prev_track = None
         album_tracks: list = []
         if meta and mime_type == "audio" and getattr(meta, "album_key", ""):
             _all_tracks = media_index.tracks_for_album(meta.album_key)
             album_tracks = [t for t in _all_tracks if t.message_id != meta.message_id]
-            # Find the sequential next track from the full sorted list
             for _i, _t in enumerate(_all_tracks):
-                if _t.message_id == meta.message_id and _i + 1 < len(_all_tracks):
-                    _nxt = _all_tracks[_i + 1]
-                    next_track = {
-                        "url": f"/watch/{_nxt.secure_hash}{_nxt.message_id}",
-                        "title": _nxt.title or _nxt.file_name or f"Track {_nxt.track_number or _i + 2}",
-                        "track_number": _nxt.track_number,
-                        "secure_hash": _nxt.secure_hash,
-                        "message_id": _nxt.message_id,
-                        "duration": _nxt.duration,
-                    }
+                if _t.message_id == meta.message_id:
+                    if _i + 1 < len(_all_tracks):
+                        _nxt = _all_tracks[_i + 1]
+                        next_track = {
+                            "url": f"/watch/{_nxt.secure_hash}{_nxt.message_id}",
+                            "title": _nxt.title or _nxt.file_name or f"Track {_nxt.track_number or _i + 2}",
+                            "track_number": _nxt.track_number,
+                            "secure_hash": _nxt.secure_hash,
+                            "message_id": _nxt.message_id,
+                            "duration": _nxt.duration,
+                        }
+                    if _i > 0:
+                        _prv = _all_tracks[_i - 1]
+                        prev_track = {
+                            "url": f"/watch/{_prv.secure_hash}{_prv.message_id}",
+                            "title": _prv.title or _prv.file_name or f"Track {_prv.track_number or _i}",
+                            "track_number": _prv.track_number,
+                        }
                     break
         file_name = _best_file_name(file_data.file_name, meta)
         from main.utils import codec_probe
@@ -154,6 +162,7 @@ async def render_page(message_id, secure_hash):
             pix_fmt=(meta.pix_fmt if meta else "") or "",
             next_ep=next_ep,
             next_track=next_track,
+            prev_track=prev_track,
             album_tracks=album_tracks,
             quality_variants=quality_variants,
         )
