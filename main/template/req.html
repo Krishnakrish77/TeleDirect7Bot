@@ -78,7 +78,7 @@
     <div class="flex flex-col items-center mt-4 sm:mt-8">
 
       {# Album art — thumbnail (embedded cover art) or default music icon #}
-      <div class="relative w-56 h-56 sm:w-72 sm:h-72 rounded-2xl overflow-hidden
+      <div class="relative w-56 h-56 sm:w-72 sm:h-72 [@media(max-height:480px)]:w-32 [@media(max-height:480px)]:h-32 rounded-2xl overflow-hidden
                   shadow-2xl bg-ink-800 flex-shrink-0 ring-1 ring-white/10">
         {% if meta and meta.secure_hash %}
           <img src="/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"
@@ -97,9 +97,9 @@
         </div>
       </div>
 
-      {# Track info #}
-      <div class="mt-6 text-center w-full max-w-sm px-6">
-        <h2 class="text-xl sm:text-2xl font-bold text-white leading-snug line-clamp-2">
+      {# Track info — reduced top margin and font on landscape phones #}
+      <div class="mt-4 [@media(max-height:480px)]:mt-2 text-center w-full max-w-sm px-6">
+        <h2 class="text-xl sm:text-2xl [@media(max-height:480px)]:text-base font-bold text-white leading-snug line-clamp-2">
           {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.MP3','') | replace('.flac','') | replace('.FLAC','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') | replace('.wav','') | replace('.opus','') | clean_music_tag }}
         </h2>
         {% if meta and meta.artist %}
