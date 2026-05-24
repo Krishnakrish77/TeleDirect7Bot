@@ -84,8 +84,13 @@
        correctly. #}
     {% set back_href = '/' %}
     {% if is_audio %}
-      {# Audio: always back to library — albums/artist pages come in Phase 2 #}
-      {% set back_label = 'Back to library' %}
+      {# Audio: go back to album if known, else library #}
+      {% if meta and meta.album_key %}
+        {% set back_href = '/album/' ~ meta.album_key %}
+        {% set back_label = 'Back to album' %}
+      {% else %}
+        {% set back_label = 'Back to library' %}
+      {% endif %}
     {% elif meta and meta.series_key %}
       {% set back_href = '/series/' ~ meta.series_key %}
       {% set back_label = 'Back to series' %}
@@ -95,9 +100,11 @@
     {% else %}
       {% set back_label = 'Back to library' %}
     {% endif %}
-    {# Sticky back nav on audio pages so it stays visible while scrolling lyrics #}
+    {# Sticky back nav on audio pages so it stays visible while scrolling lyrics.
+       Audio: no onclick — let htmx handle the click so bgAudio persists (AJAX swap).
+       Video: use history.back() so the user returns to the correct depth. #}
     <a href="{{ back_href }}"
-       onclick="if (history.length > 1) { event.preventDefault(); history.back(); }"
+       {% if not is_audio %}onclick="if (history.length > 1) { event.preventDefault(); history.back(); }"{% endif %}
        class="inline-flex items-center gap-1 text-sm text-slate-400
               hover:text-brand-300 transition-colors mb-4
               {% if is_audio %}sticky top-2 z-30 self-start
