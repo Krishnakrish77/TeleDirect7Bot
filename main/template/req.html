@@ -294,7 +294,7 @@
 
       {# Download + Shuffle buttons #}
       <div class="mt-4 flex flex-wrap items-center justify-center gap-3">
-        <a href="{{ src }}"
+        <a href="{{ src }}" hx-boost="false"
            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
                   text-sm font-medium text-slate-300 bg-ink-800/70
                   hover:bg-ink-800 border border-white/5 transition-colors">
@@ -492,7 +492,7 @@
               </svg>
               Open in VLC
             </a>
-            <a href="{{ src }}"
+            <a href="{{ src }}" hx-boost="false"
                class="inline-flex items-center gap-2 rounded-lg px-4 py-2 sm:px-5 sm:py-2.5
                       font-semibold text-slate-100 bg-ink-800/70 hover:bg-ink-800
                       border border-white/5 transition-colors text-sm sm:text-base">

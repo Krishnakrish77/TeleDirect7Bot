@@ -345,10 +345,15 @@
   // ── htmx boost config: exclude /watch/ and /admin from AJAX navigation ──
   // Those pages have complex JS (Plyr, HLS) that must do a full page load.
   document.body.addEventListener('htmx:configRequest', function(e) {
-    var path = (e.detail.path || '');
-    if (path.startsWith('/watch/') || path.startsWith('/admin')) {
+    var rawPath = (e.detail.path || '');
+    var pathname;
+    try { pathname = new URL(rawPath, location.origin).pathname; } catch(_) { pathname = rawPath; }
+    // Watch + admin pages need full page loads (complex JS that relies on DOMContentLoaded).
+    // Stream URLs (/{hash}{id}) must not be AJAX-fetched — they return binary audio/video.
+    if (pathname.startsWith('/watch/') || pathname.startsWith('/admin') ||
+        /^\/[A-Za-z0-9_-]{6}\d+$/.test(pathname)) {
       e.preventDefault();
-      window.location.href = path;
+      window.location.href = rawPath;
     }
   });
 
