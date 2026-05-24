@@ -57,7 +57,7 @@
                  if (!r.ok) return;
                  this.items = await r.json();
                  this.active = -1;
-                 this.open = this.items.length > 0;
+                 this.open = this.query.trim().length > 0;
                } catch (e) { /* swallow */ }
              },
              move(delta) {
@@ -96,7 +96,7 @@
             placeholder="Search…"
             autocomplete="off"
             @input="schedule($event.target.value)"
-            @focus="if (items.length) open = true"
+            @focus="if (query.trim()) open = true"
             @keydown.arrow-down.prevent="move(1); open = true"
             @keydown.arrow-up.prevent="move(-1)"
             @keydown.enter="if (active >= 0) { $event.preventDefault(); go(active); }"
@@ -108,7 +108,7 @@
           />
         </label>
 
-        <div x-show="open &amp;&amp; items.length"
+        <div x-show="open"
              x-transition.opacity.duration.150ms
              x-cloak
              class="absolute right-0 left-0 top-full mt-2 z-40
@@ -150,6 +150,12 @@
               </li>
             </template>
           </ul>
+          <template x-if="!items.length">
+            <p class="px-4 py-5 text-center text-sm text-slate-500">
+              Nothing found for
+              "<span class="text-slate-300" x-text="query"></span>"
+            </p>
+          </template>
           <div class="px-3 py-2 border-t border-white/5 text-right">
             <a :href="'/?q=' + encodeURIComponent(query)"
                class="text-xs text-slate-400 hover:text-brand-300 transition-colors">
