@@ -80,14 +80,26 @@ async def render_page(message_id, secure_hash):
         # template guards on `meta and meta.tmdb_id`.
         meta = media_index.get_item(int(message_id))
         next_ep = media_index.next_episode(meta) if meta else None
-        # Music-specific: next track in album + other tracks for "More from album"
-        next_track = media_index.next_track(meta) if meta else None
+        # Music-specific: next track + "More from album" — compute album track
+        # list once (O(N) scan) and derive both from it to avoid double scan.
+        next_track = None
         album_tracks: list = []
         if meta and mime_type == "audio" and getattr(meta, "album_key", ""):
-            album_tracks = [
-                t for t in media_index.tracks_for_album(meta.album_key)
-                if t.message_id != meta.message_id
-            ]
+            _all_tracks = media_index.tracks_for_album(meta.album_key)
+            album_tracks = [t for t in _all_tracks if t.message_id != meta.message_id]
+            # Find the sequential next track from the full sorted list
+            for _i, _t in enumerate(_all_tracks):
+                if _t.message_id == meta.message_id and _i + 1 < len(_all_tracks):
+                    _nxt = _all_tracks[_i + 1]
+                    next_track = {
+                        "url": f"/watch/{_nxt.secure_hash}{_nxt.message_id}",
+                        "title": _nxt.title or _nxt.file_name or f"Track {_nxt.track_number or _i + 2}",
+                        "track_number": _nxt.track_number,
+                        "secure_hash": _nxt.secure_hash,
+                        "message_id": _nxt.message_id,
+                        "duration": _nxt.duration,
+                    }
+                    break
         file_name = _best_file_name(file_data.file_name, meta)
         from main.utils import codec_probe
         known_unplayable = (
