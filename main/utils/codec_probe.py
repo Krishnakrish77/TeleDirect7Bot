@@ -71,15 +71,23 @@ def is_browser_playable(video_codec: str, pix_fmt: str) -> bool:
 def needs_probe(item) -> bool:
     """True if the HubItem needs a codec probe.
 
-    Probes items that have never been tried (probed_at==0) OR items that
-    were probed but have duration=0 — covers files that were uploaded as
-    documents (Telegram doesn't extract duration for those).
+    Probes items that:
+    - have never been tried (probed_at==0)
+    - were probed but have no duration (document uploads)
+    - are audio but missing artist/album (probed before music tag extraction
+      was added to the show_entries command)
     """
     if not getattr(item, "secure_hash", "") or not getattr(item, "message_id", 0):
         return False
     never_probed = float(getattr(item, "probed_at", 0) or 0) <= 0
     missing_duration = int(getattr(item, "duration", 0) or 0) <= 0
-    return never_probed or missing_duration
+    # Audio items probed before music tags were added need a re-probe to fill
+    # in artist/album/track so grouping and display work correctly.
+    is_audio = getattr(item, "media_kind", "") == "audio"
+    missing_music_meta = is_audio and not (
+        getattr(item, "artist", "") or getattr(item, "album_title", "")
+    )
+    return never_probed or missing_duration or missing_music_meta
 
 
 async def probe_item(item, *, timeout: float = 30.0) -> bool:
@@ -131,7 +139,9 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         "-probesize", "5M",
         "-analyzeduration", "5000000",
         "-select_streams", "v:0",
-        "-show_entries", "stream=codec_name,pix_fmt,profile,width,height:format=duration:format_tags=title",
+        # format_tags includes all available music metadata for audio files.
+        # title/date/genre also used for video (embedded title fallback, year, tags).
+        "-show_entries", "stream=codec_name,pix_fmt,profile,width,height:format=duration:format_tags=title,artist,album_artist,album,track,date,year,genre,composer",
         "-of", "json",
         stream_url,
     ]
@@ -195,27 +205,54 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     probe_album = _ftag("album")
     probe_title_tag = _ftag("title")
     probe_track_raw = _ftag("track")
+    # Year: try "date" first (e.g. "2023" or "2023-05-12"), then "year"
+    probe_date = _ftag("date") or _ftag("year")
+    probe_year: Optional[int] = None
+    if probe_date:
+        try:
+            probe_year = int(probe_date[:4])
+        except (ValueError, IndexError):
+            pass
+    # Genre: comma/slash-separated in ID3, take the first one
+    probe_genre_raw = _ftag("genre")
+    probe_genre = probe_genre_raw.split("/")[0].split(",")[0].strip() if probe_genre_raw else ""
+    probe_composer = _ftag("composer")
     probe_track: Optional[int] = None
     if probe_track_raw:
         try:
             probe_track = int(probe_track_raw.split("/")[0])
         except ValueError:
             pass
+
+    is_audio = getattr(item, "media_kind", "") == "audio"
+
     if probe_artist and not item.artist:
         item.artist = probe_artist
     from main.utils.series import slugify as _slugify
     if probe_album and not item.album_title:
         item.album_title = probe_album
-    # Always recompute album_key from album_title so items probed before the
-    # "key by title only" fix get corrected on the next probe run.
+    # Always recompute album_key from album_title.
     if item.album_title:
         correct_key = _slugify(item.album_title)
         if item.album_key != correct_key:
             item.album_key = correct_key
     if probe_track is not None and item.track_number is None:
         item.track_number = probe_track
-    if probe_title_tag and getattr(item, "media_kind", "") == "audio" and not item.title:
+    # For audio: use embedded title as track title when not yet set.
+    if probe_title_tag and is_audio and not item.title:
         item.title = probe_title_tag
+    # Year from tags: fills in audio year (Telegram doesn't extract it).
+    if probe_year and not item.year:
+        item.year = probe_year
+    # Genre from tags: add to item tags if not already there.
+    if probe_genre and is_audio:
+        existing_tags = list(item.tags or [])
+        genre_lower = probe_genre.lower()
+        if genre_lower not in [t.lower() for t in existing_tags]:
+            item.tags = existing_tags + [probe_genre]
+    # Composer: store in description for now if audio and description empty.
+    if probe_composer and is_audio and not item.description:
+        item.description = f"Composer: {probe_composer}"
 
     streams = payload.get("streams") or []
     if not streams:
