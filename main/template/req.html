@@ -1448,11 +1448,12 @@
       }
 
       {% if is_audio and meta %}
-      // Write now-playing to localStorage (includes prev/next for mini-player controls).
-      // Pause on navigate so music doesn't ghost-play silently.
+      // Write now-playing to localStorage; hand off to bgAudio on navigate.
       (function() {
+        var streamSrc = {{ src | tojson }};
         var npData = {
           url: location.href,
+          streamUrl: streamSrc,
           title: {{ (meta.title | clean_music_tag) | tojson }},
           artist: {{ ((meta.artist or '') | clean_music_tag) | tojson }},
           art: {% if meta.secure_hash %}"/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"{% else %}""{% endif %},
@@ -1463,10 +1464,29 @@
           video.addEventListener('play', function() {
             try { localStorage.setItem('td:nowplaying', JSON.stringify(npData)); } catch(_) {}
           }, { once: false });
-          // Pause when navigating away — no silent ghost playback
-          window.addEventListener('pagehide', function() {
-            video.pause();
-          });
+
+          // Hand off to bgAudio so music continues while browsing the library.
+          // Called both on pagehide (browser back/forward/tab close) and
+          // htmx:beforeSwap (AJAX navigation on non-/watch/ pages).
+          window._handoffAudioToBg = function() {
+            var bg = document.getElementById('bgAudio');
+            if (!bg || video.paused) return;
+            // Only hand off if we're actually playing
+            if (!bg.src || bg.src !== streamSrc) {
+              bg.src = streamSrc;
+            }
+            bg.currentTime = video.currentTime;
+            bg.play().catch(function() {});
+          };
+          window.addEventListener('pagehide', window._handoffAudioToBg);
+
+          // If bgAudio was already playing this track (user returned from library),
+          // sync Plyr to bgAudio's position and pause bgAudio to avoid double-play.
+          var bg = document.getElementById('bgAudio');
+          if (bg && bg.src && bg.src.endsWith(streamSrc.split('/').pop()) && !bg.paused) {
+            video.currentTime = bg.currentTime;
+            bg.pause();
+          }
         }
       })();
       {% endif %}

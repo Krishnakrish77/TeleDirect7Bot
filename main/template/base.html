@@ -30,7 +30,16 @@
     class="min-h-full font-sans antialiased text-slate-100 bg-ink-900
            selection:bg-brand-500/40 selection:text-white"
   >
-    <main class="min-h-screen flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-16">
+    {# hx-boost: intercept internal link clicks and swap only <main> via AJAX
+       so the persistent bgAudio element (outside main) keeps playing.
+       /watch/ and /admin are excluded via htmx:configRequest below. #}
+    <main id="main-content"
+          hx-boost="true"
+          hx-target="#main-content"
+          hx-select="#main-content"
+          hx-push-url="true"
+          hx-swap="innerHTML transition:true"
+          class="min-h-screen flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-16">
       {% block content %}{% endblock %}
     </main>
 
@@ -172,30 +181,33 @@
       </a>
       {# Controls: Prev · Play · Next #}
       <div class="flex items-center gap-1 flex-shrink-0">
-        <a id="_mp-prev" href="#"
-           class="w-8 h-8 flex items-center justify-center rounded-full
-                  text-slate-400 hover:text-white transition-colors"
-           aria-label="Previous">
+        <button id="_mp-prev"
+                class="w-8 h-8 flex items-center justify-center rounded-full
+                       text-slate-400 hover:text-white transition-colors"
+                aria-label="Previous" onclick="window._mpNav && window._mpNav('prev')">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
             <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
           </svg>
-        </a>
-        <a id="_mp-play" href="#"
-           class="w-9 h-9 flex items-center justify-center rounded-full
-                  bg-white text-ink-900 hover:bg-slate-200 transition-colors"
-           aria-label="Play">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+        </button>
+        <button id="_mp-play"
+                class="w-9 h-9 flex items-center justify-center rounded-full
+                       bg-white text-ink-900 hover:bg-slate-200 transition-colors"
+                aria-label="Play" onclick="window._mpTogglePlay && window._mpTogglePlay()">
+          <svg id="_mp-icon-play" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
             <path d="M8 5v14l11-7z"/>
           </svg>
-        </a>
-        <a id="_mp-next" href="#"
-           class="w-8 h-8 flex items-center justify-center rounded-full
-                  text-slate-400 hover:text-white transition-colors"
-           aria-label="Next">
+          <svg id="_mp-icon-pause" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 hidden">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+          </svg>
+        </button>
+        <button id="_mp-next"
+                class="w-8 h-8 flex items-center justify-center rounded-full
+                       text-slate-400 hover:text-white transition-colors"
+                aria-label="Next" onclick="window._mpNav && window._mpNav('next')">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
             <path d="M6 18l8.5-6L6 6v12zm2.5-6 8.5 6V6z"/>
           </svg>
-        </a>
+        </button>
       </div>
       {# Dismiss #}
       <button onclick="window._mpDismiss && window._mpDismiss()"
@@ -218,46 +230,107 @@
     }, { passive: true });
   }
 
-  // ── Mini-player ────────────────────────────────────────────────────────
+  // ── Persistent background audio + mini-player ──────────────────────────
   var NP_KEY = 'td:nowplaying';
+  var _bgAudio = document.getElementById('bgAudio');
+
+  // Sync play/pause icon in mini-player
+  function _mpSyncIcon() {
+    var iconPlay  = document.getElementById('_mp-icon-play');
+    var iconPause = document.getElementById('_mp-icon-pause');
+    if (!iconPlay || !iconPause) return;
+    var playing = _bgAudio && !_bgAudio.paused;
+    iconPlay.classList.toggle('hidden', playing);
+    iconPause.classList.toggle('hidden', !playing);
+  }
+
+  if (_bgAudio) {
+    _bgAudio.addEventListener('play',  _mpSyncIcon);
+    _bgAudio.addEventListener('pause', _mpSyncIcon);
+    _bgAudio.addEventListener('ended', function() {
+      // Auto-advance: load next track URL from localStorage
+      var np;
+      try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
+      if (np && np.nextUrl) window.location.href = np.nextUrl;
+    });
+  }
+
+  // Toggle play/pause on bgAudio
+  window._mpTogglePlay = function() {
+    if (!_bgAudio || !_bgAudio.src) {
+      // No src yet — navigate to the last track so it loads
+      var np;
+      try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
+      if (np && np.url) window.location.href = np.url;
+      return;
+    }
+    if (_bgAudio.paused) {
+      _bgAudio.play().catch(function() {});
+    } else {
+      _bgAudio.pause();
+    }
+  };
+
+  // Prev/next: navigate to adjacent track URL (full navigation to watch page)
+  window._mpNav = function(dir) {
+    var np;
+    try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
+    if (!np) return;
+    var url = dir === 'prev' ? np.prevUrl : np.nextUrl;
+    if (url) window.location.href = url;
+  };
+
   function _mpInit() {
-    // On the watch page: hide bar and reset padding (user is already there).
+    // On the watch page: hide bar + reset padding (player is on the page itself).
     if (location.pathname.startsWith('/watch/')) {
       document.body.style.paddingBottom = '';
+      var bar = document.getElementById('_mini-player');
+      if (bar) bar.style.display = 'none';
       return;
     }
     var np;
     try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
     if (!np) return;
-    var bar = document.getElementById('_mini-player');
-    var art = document.getElementById('_mp-art');
-    var title = document.getElementById('_mp-title');
-    var artist = document.getElementById('_mp-artist');
+    var bar  = document.getElementById('_mini-player');
+    var art  = document.getElementById('_mp-art');
+    var ttl  = document.getElementById('_mp-title');
+    var art2 = document.getElementById('_mp-artist');
     var link = document.getElementById('_mp-link');
-    var play = document.getElementById('_mp-play');
     var prev = document.getElementById('_mp-prev');
     var next = document.getElementById('_mp-next');
     if (np.art) art.src = np.art;
-    title.textContent = np.title || '';
-    artist.textContent = np.artist || '';
+    ttl.textContent  = np.title  || '';
+    art2.textContent = np.artist || '';
     link.href = np.url || '#';
-    if (play) play.href = np.url || '#';
-    if (prev) { prev.href = np.prevUrl || '#'; prev.style.opacity = np.prevUrl ? '1' : '0.3'; prev.style.pointerEvents = np.prevUrl ? '' : 'none'; }
-    if (next) { next.href = np.nextUrl || '#'; next.style.opacity = np.nextUrl ? '1' : '0.3'; next.style.pointerEvents = np.nextUrl ? '' : 'none'; }
+    if (prev) { prev.style.opacity = np.prevUrl ? '1' : '0.3'; prev.style.pointerEvents = np.prevUrl ? '' : 'none'; }
+    if (next) { next.style.opacity = np.nextUrl ? '1' : '0.3'; next.style.pointerEvents = np.nextUrl ? '' : 'none'; }
     bar.style.display = 'flex';
-    // Add bottom padding so content isn't hidden behind bar
     document.body.style.paddingBottom = '60px';
+    _mpSyncIcon();
   }
-  // Exposed on window so the inline onclick attribute can reach it
-  // (onclick resolves in global scope; functions inside an IIFE are not
-  // globally accessible without explicit export).
+
   window._mpDismiss = function() {
     try { localStorage.removeItem(NP_KEY); } catch(_) {}
+    if (_bgAudio) { _bgAudio.pause(); _bgAudio.src = ''; }
     var bar = document.getElementById('_mini-player');
     if (bar) bar.style.display = 'none';
     document.body.style.paddingBottom = '';
   };
+
   _mpInit();
+
+  // Re-init after every htmx content swap (URL/path may have changed)
+  document.body.addEventListener('htmx:afterSettle', _mpInit);
+
+  // ── htmx boost config: exclude /watch/ and /admin from AJAX navigation ──
+  // Those pages have complex JS (Plyr, HLS) that must do a full page load.
+  document.body.addEventListener('htmx:configRequest', function(e) {
+    var path = (e.detail.path || '');
+    if (path.startsWith('/watch/') || path.startsWith('/admin')) {
+      e.preventDefault();
+      window.location.href = path;
+    }
+  });
 
   // PWA install banner — only surfaces after 3+ visits, once per session,
   // and with a 10s delay so it doesn't interrupt on landing.
@@ -354,5 +427,16 @@ function globalSearch() {
   };
 }
 </script>
+
+  {# Persistent background audio — lives outside <main> so htmx content
+     swaps never destroy it. hx-preserve keeps the same DOM node across swaps.
+     The watch page (req.html) hands playback off to this element when the
+     user navigates away, so music continues while browsing the library. #}
+  <audio id="bgAudio"
+         hx-preserve="true"
+         preload="none"
+         playsinline
+         style="position:absolute;width:0;height:0;pointer-events:none">
+  </audio>
   </body>
 </html>
