@@ -58,10 +58,14 @@
     {% else %}
       {% set back_label = 'Back to library' %}
     {% endif %}
+    {# Sticky back nav on audio pages so it stays visible while scrolling lyrics #}
     <a href="{{ back_href }}"
        onclick="if (history.length > 1) { event.preventDefault(); history.back(); }"
        class="inline-flex items-center gap-1 text-sm text-slate-400
-              hover:text-brand-300 transition-colors mb-4">
+              hover:text-brand-300 transition-colors mb-4
+              {% if is_audio %}sticky top-2 z-30 self-start
+                bg-ink-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full
+                border border-white/5 shadow-lg{% endif %}">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
            stroke="currentColor" stroke-width="2" class="w-4 h-4">
         <path stroke-linecap="round" stroke-linejoin="round"
