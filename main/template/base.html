@@ -159,7 +159,7 @@
       <a id="_mp-link" href="#"
          class="flex items-center gap-3 flex-1 min-w-0 group">
         <div class="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-ink-800">
-          <img id="_mp-art" src="" alt=""
+          <img id="_mp-art" alt=""
                onerror="this.style.display='none'"
                class="w-full h-full object-cover" />
         </div>
@@ -183,7 +183,7 @@
         Resume
       </a>
       {# Dismiss #}
-      <button onclick="_mpDismiss()"
+      <button onclick="window._mpDismiss && window._mpDismiss()"
               class="flex-shrink-0 text-slate-500 hover:text-white
                      transition-colors p-1" aria-label="Close">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -206,8 +206,11 @@
   // ── Mini-player ────────────────────────────────────────────────────────
   var NP_KEY = 'td:nowplaying';
   function _mpInit() {
-    // Don't show on the watch page itself
-    if (location.pathname.startsWith('/watch/')) return;
+    // On the watch page: hide bar and reset padding (user is already there).
+    if (location.pathname.startsWith('/watch/')) {
+      document.body.style.paddingBottom = '';
+      return;
+    }
     var np;
     try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
     if (!np) return;
@@ -226,12 +229,15 @@
     // Add bottom padding so content isn't hidden behind bar
     document.body.style.paddingBottom = '60px';
   }
-  function _mpDismiss() {
+  // Exposed on window so the inline onclick attribute can reach it
+  // (onclick resolves in global scope; functions inside an IIFE are not
+  // globally accessible without explicit export).
+  window._mpDismiss = function() {
     try { localStorage.removeItem(NP_KEY); } catch(_) {}
     var bar = document.getElementById('_mini-player');
     if (bar) bar.style.display = 'none';
     document.body.style.paddingBottom = '';
-  }
+  };
   _mpInit();
 
   // PWA install banner — only surfaces after 3+ visits, once per session,
