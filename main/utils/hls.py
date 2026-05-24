@@ -346,19 +346,16 @@ def _thumb_sem() -> asyncio.Semaphore:
     return _thumb_semaphore
 
 
-async def grab_thumbnail(source_url: str, duration: float = 0.0) -> Optional[bytes]:
-    """Grab a single JPEG frame from a video to use as a fallback thumbnail.
+async def grab_thumbnail(source_url: str, duration: float = 0.0, seek: float = 1.0) -> Optional[bytes]:
+    """Grab a single JPEG frame from a video / APIC art from audio.
 
-    Used by /thumb/* when Telegram's own thumbnail is missing — happens for
-    many forwarded videos. We input-seek (``-ss`` before ``-i``) so ffmpeg
-    only reads the part of the source needed to land on the keyframe, not
-    the full file. Returns None on failure.
+    Used by /thumb/* when Telegram's own thumbnail is missing. We input-seek
+    (``-ss`` before ``-i``) for video so ffmpeg only reads the part it needs.
+    For audio APIC extraction pass seek=0.0 — the APIC lives in the ID3 header
+    at byte 0; an input-seek sends a Range request that skips it entirely.
     """
-    # Seek to 1 second — close enough to show meaningful content without
-    # requiring ffmpeg to scan deep into the file. Seeking too far (e.g. 30s)
-    # on large document-type files makes ffmpeg download megabytes of data
-    # over the loopback before it can grab a frame, causing timeouts.
-    seek = 1.0
+    # Default: seek to 1 second for video (avoids black first frame, reads
+    # minimal data via MOOV index). Callers pass seek=0.0 for audio APIC.
 
     args = [
         "ffmpeg",

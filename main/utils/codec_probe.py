@@ -306,6 +306,10 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     s = streams[0]
     item.video_codec = (s.get("codec_name") or "").lower()
     item.pix_fmt = (s.get("pix_fmt") or "").lower()
+    # For audio files, a video stream means an APIC/cover-art attachment.
+    # Mark has_thumb so the album page picks this track for the cover art.
+    if getattr(item, "media_kind", "") == "audio" and item.video_codec:
+        item.has_thumb = True
     # Fill duration from ffprobe if Telegram didn't extract it (e.g. document uploads)
     if not item.duration:
         try:
@@ -500,7 +504,9 @@ async def _probe_quietly(item) -> None:
             from main.utils import hls, thumb_cache
             source_url = hls.internal_stream_url(item.secure_hash, item.message_id)
             async def _fetch_thumb():
-                return await hls.grab_thumbnail(source_url, duration=0)
+                # seek=0.0: APIC lives in ID3 header at byte 0; seeking past
+                # it via a Range request causes ffmpeg to miss it entirely.
+                return await hls.grab_thumbnail(source_url, duration=0, seek=0.0)
             await thumb_cache.cached_or_fetch(item.message_id, _fetch_thumb)
         except Exception:
             logging.debug("codec_probe: thumb pre-warm failed for bin:%d",

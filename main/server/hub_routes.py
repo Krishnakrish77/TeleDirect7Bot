@@ -718,7 +718,12 @@ async def hub_thumb(request: web.Request) -> web.Response:
                         await _r.read()
             except Exception:
                 pass
-        return await hls.grab_thumbnail(source_url, duration=float(item.duration or 0))
+        is_audio = getattr(item, "media_kind", "") == "audio"
+        return await hls.grab_thumbnail(
+            source_url,
+            duration=float(item.duration or 0),
+            seek=0.0 if is_audio else 1.0,  # APIC at byte 0; don't Range-seek past it
+        )
 
     data = await thumb_cache.cached_or_fetch(message_id, fetch)
     if data is None:
