@@ -1349,6 +1349,10 @@ def _build_album_group(tracks: List[HubItem]) -> AlbumGroup:
     canonical_key = series_parse.slugify(best_album_title) if best_album_title else (
         getattr(rep, "album_key", "") or ""
     )
+    if not canonical_key:
+        # No album identity at all — use artist slug as fallback so the
+        # /album/ route regex ([a-z0-9][a-z0-9-]*) is always satisfied.
+        canonical_key = series_parse.slugify(rep.artist or rep.title or str(rep.message_id))
     return AlbumGroup(
         album_key=canonical_key,
         album_title=best_album_title or rep.artist or rep.title or "",

@@ -82,12 +82,13 @@ def needs_probe(item) -> bool:
     never_probed = float(getattr(item, "probed_at", 0) or 0) <= 0
     missing_duration = int(getattr(item, "duration", 0) or 0) <= 0
     # Audio items probed before music tags were added need a re-probe to fill
-    # in artist/album/track so grouping and display work correctly.
+    # in artist/album/track. Trigger when artist is missing — once artist is
+    # set from the probe, this condition won't fire again (avoiding loops).
+    # We don't also require album_title to be missing: an item can have
+    # artist (from Telegram's Audio.performer) but still need probe for album.
     is_audio = getattr(item, "media_kind", "") == "audio"
-    missing_music_meta = is_audio and not (
-        getattr(item, "artist", "") or getattr(item, "album_title", "")
-    )
-    return never_probed or missing_duration or missing_music_meta
+    missing_artist = is_audio and not getattr(item, "artist", "")
+    return never_probed or missing_duration or missing_artist
 
 
 async def probe_item(item, *, timeout: float = 30.0) -> bool:
@@ -210,12 +211,21 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     probe_year: Optional[int] = None
     if probe_date:
         try:
-            probe_year = int(probe_date[:4])
+            y = int(probe_date[:4])
+            # Reject placeholder/garbage years (0000, 1900, etc.)
+            if 1920 <= y <= 2100:
+                probe_year = y
         except (ValueError, IndexError):
             pass
-    # Genre: comma/slash-separated in ID3, take the first one
+    # Genre: comma/slash-separated in ID3, take the first one.
+    # Reject ID3v1 numeric codes (0-191) — ffprobe sometimes returns "17"
+    # instead of the human-readable name (e.g. "Rock").
     probe_genre_raw = _ftag("genre")
-    probe_genre = probe_genre_raw.split("/")[0].split(",")[0].strip() if probe_genre_raw else ""
+    if probe_genre_raw:
+        raw = probe_genre_raw.split("/")[0].split(",")[0].strip()
+        probe_genre = "" if raw.isdigit() else raw
+    else:
+        probe_genre = ""
     probe_composer = _ftag("composer")
     probe_track: Optional[int] = None
     if probe_track_raw:
