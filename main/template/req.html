@@ -48,13 +48,14 @@
     .plyr--audio { background: transparent !important; min-height: 0 !important; }
 
     /* Custom seek slider */
+    /* Overlay play button: nudge icon right so triangle looks optically centred */
+    .plyr__control--overlaid svg { transform: translateX(2px); }
+
     /* Video: larger touch targets on mobile */
     @media (max-width: 640px) {
-      .plyr--video .plyr__controls { padding: 8px 14px 14px; gap: 4px; }
-      .plyr--video .plyr__control { padding: 10px; }
-      .plyr__control--overlaid { width: 72px !important; height: 72px !important; }
-      .plyr__control--overlaid svg { width: 28px !important; height: 28px !important; }
-      .plyr--video .plyr__progress__container { flex: 1 1 auto; }
+      .plyr--video .plyr__controls { padding: 8px 12px 12px; gap: 2px; }
+      .plyr--video .plyr__control { padding: 9px; min-width: 40px; }
+      .plyr--video .plyr__progress__container { flex: 1 1 auto; min-width: 0; }
       .plyr--video .plyr__volume { display: none; }
     }
   </style>
@@ -1395,7 +1396,7 @@
             // Audio: keep Plyr's internals running but bar is hidden via CSS.
             ? ["play", "progress", "current-time", "duration", "mute", "volume"]
             : (isMobile
-              ? ["play-large", "play", "rewind", "progress", "current-time", "mute", "fullscreen"]
+              ? ["play-large", "play", "rewind", "progress", "current-time", "fast-forward", "mute", "fullscreen"]
               : ["play-large", "rewind", "play", "fast-forward", "progress",
                  "current-time", "duration", "mute", "volume", "captions",
                  "settings", "speed", "pip", "airplay", "download", "fullscreen"]),
