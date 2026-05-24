@@ -81,6 +81,34 @@ def _html(body: str, push_url: Optional[str] = None) -> web.Response:
     )
 
 
+# ── Render cache ──────────────────────────────────────────────────────────
+# The catalogue is stored in memory and only changes when the bot forwards
+# a new file or an admin prunes stale entries. Re-rendering the same Jinja2
+# templates on every navigation request wastes ~300-500ms per hit.
+# Cache rendered HTML for 30 seconds: fast enough to reflect new uploads
+# without stale lag, while eliminating the render cost for repeated views.
+import time as _time
+
+_render_cache: dict = {}   # key → (html: str, expires: float)
+_CACHE_TTL = 30.0          # seconds
+
+
+def _cache_get(key: str):
+    entry = _render_cache.get(key)
+    if entry and entry[1] > _time.monotonic():
+        return entry[0]
+    return None
+
+
+def _cache_set(key: str, html: str):
+    _render_cache[key] = (html, _time.monotonic() + _CACHE_TTL)
+
+
+def invalidate_render_cache():
+    """Call this after any catalogue mutation (new upload, prune, probe)."""
+    _render_cache.clear()
+
+
 def _canonical_url(params: dict, include_offset: bool = False) -> str:
     """Build a clean URL with only the active (non-default) filters set, so
     htmx's hx-push-url doesn't leave empty ?q=&year=&... query strings in
@@ -156,8 +184,14 @@ async def _render_grid(items: List,
 
 
 async def _render_shelves(shelves: List[dict], params: dict) -> str:
+    cache_key = "shelves:" + repr(sorted(params.items()))
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached
     tpl = _env.get_template("_shelves.html")
-    return await tpl.render_async(shelves=shelves, params=params)
+    html = await tpl.render_async(shelves=shelves, params=params)
+    _cache_set(cache_key, html)
+    return html
 
 
 async def _render_page(items: List,
@@ -166,11 +200,15 @@ async def _render_page(items: List,
                        params: dict,
                        shelves: Optional[List[dict]] = None,
                        heroes: Optional[List] = None) -> str:
+    cache_key = "page:" + repr(sorted(params.items()))
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached
     tpl = _env.get_template("hub.html")
     next_url = None
     if next_offset is not None:
         next_url = _canonical_url({**params, "offset": next_offset}, include_offset=True)
-    return await tpl.render_async(
+    html = await tpl.render_async(
         items=items,
         shelves=shelves,
         heroes=heroes,
@@ -184,6 +222,8 @@ async def _render_page(items: List,
         sort_options=SORT_OPTIONS,
         catalogue_size=media_index.size(),
     )
+    _cache_set(cache_key, html)
+    return html
 
 
 def _empty_text(params: dict) -> str:

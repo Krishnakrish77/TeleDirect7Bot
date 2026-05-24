@@ -673,6 +673,12 @@ async def persist_now() -> None:
     """
     async with _lock:
         _persist_unlocked()
+    # Bust the hub render cache so the next page load reflects changes.
+    try:
+        from main.server.hub_routes import invalidate_render_cache
+        invalidate_render_cache()
+    except Exception:
+        pass
 
 
 def _persist_unlocked() -> None:
