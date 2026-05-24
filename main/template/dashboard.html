@@ -32,6 +32,12 @@
             <span>{{ stats.kinds.movies }}</span></div>
           <div class="flex justify-between"><span>Standalone</span>
             <span>{{ stats.kinds.standalone }}</span></div>
+          {% if stats.audio_count %}
+            <div class="flex justify-between mt-2 pt-2 border-t border-white/5 text-xs text-slate-500">
+              <span>Audio tracks</span>
+              <span>{{ stats.audio_count }}{% if stats.album_count %} · {{ stats.album_count }} album{{ '' if stats.album_count == 1 else 's' }}{% endif %}</span>
+            </div>
+          {% endif %}
           {% if stats.kinds.movie_variant_extras %}
             <div class="flex justify-between text-xs text-slate-500 mt-2 pt-2 border-t border-white/5">
               <span>{{ stats.kinds.movie_variant_extras }} extra variant{{ '' if stats.kinds.movie_variant_extras == 1 else 's' }} across {{ stats.kinds.movie_variant_groups }} movie{{ '' if stats.kinds.movie_variant_groups == 1 else 's' }}</span>

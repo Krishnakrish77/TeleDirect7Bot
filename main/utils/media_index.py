@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from main.utils.file_properties import get_hash
-from main.utils.hub_query import ExternalSubtitle, HubItem, MovieGroup, SeriesGroup
+from main.utils.hub_query import AlbumGroup, ExternalSubtitle, HubItem, MovieGroup, SeriesGroup
 from main.utils.index_entry import (
     IndexEntry,
     parse,
@@ -1230,6 +1230,17 @@ def query_grouped(
     elif view == "movies":
         # Only movies and standalone non-series items.
         grouped_series = []
+    elif view == "music":
+        # For music view: album groups + standalone audio tracks
+        _alb = all_albums()
+        _sng = standalone_audio_tracks()
+        combined = sorted(
+            _alb + _sng,
+            key=lambda c: -(c.latest_message_id if hasattr(c, 'latest_message_id') else c.message_id),
+        )
+        total = len(combined)
+        page_items = combined[offset:offset + limit]
+        return page_items, total
 
     if sort == "newest":
         sort_key = lambda x: -_card_message_id(x)
@@ -1251,7 +1262,7 @@ def query_grouped(
 
 
 def _card_message_id(card) -> int:
-    if isinstance(card, (SeriesGroup, MovieGroup)):
+    if isinstance(card, (SeriesGroup, MovieGroup, AlbumGroup)):
         return card.latest_message_id
     return card.message_id
 
@@ -1261,6 +1272,8 @@ def _card_title(card) -> str:
         return card.series_title
     if isinstance(card, MovieGroup):
         return card.title
+    if isinstance(card, AlbumGroup):
+        return card.album_title or card.artist
     return card.title
 
 
@@ -1271,6 +1284,8 @@ def _card_file_size(card) -> int:
         # Series rank by their largest single episode rather than the
         # sum, since otherwise long-running shows always dominate.
         return max((e.file_size for e in episodes_for_series(card.series_key)), default=0)
+    if isinstance(card, AlbumGroup):
+        return max((t.file_size for t in tracks_for_album(card.album_key)), default=0)
     return card.file_size
 
 
@@ -1285,6 +1300,53 @@ def episodes_for_series(series_key: str) -> List[HubItem]:
     eps = [it for it in _items.values() if it.series_key == series_key]
     eps.sort(key=lambda e: (e.season or 0, e.episode or 0, e.message_id))
     return eps
+
+
+def tracks_for_album(album_key: str) -> List[HubItem]:
+    """All audio tracks for an album, sorted by track_number then message_id."""
+    tracks = [it for it in _items.values()
+              if getattr(it, "album_key", "") == album_key
+              and getattr(it, "media_kind", "") == "audio"]
+    return sorted(tracks, key=lambda t: (
+        t.track_number if t.track_number is not None else 9999,
+        t.message_id,
+    ))
+
+
+def _build_album_group(tracks: List[HubItem]) -> AlbumGroup:
+    """Construct an AlbumGroup from a list of tracks."""
+    poster = next((t for t in tracks if t.has_thumb),
+                  max(tracks, key=lambda t: t.message_id))
+    rep = tracks[0]
+    return AlbumGroup(
+        album_key=rep.album_key,
+        album_title=rep.album_title or rep.artist or rep.title or "",
+        artist=rep.artist or "",
+        track_count=len(tracks),
+        latest_message_id=max(t.message_id for t in tracks),
+        poster_item=poster,
+        has_thumb=any(t.has_thumb for t in tracks),
+    )
+
+
+def all_albums() -> List:
+    """All AlbumGroups, newest-first."""
+    buckets: dict = {}
+    for it in _items.values():
+        if getattr(it, "media_kind", "") == "audio" and getattr(it, "album_key", ""):
+            buckets.setdefault(it.album_key, []).append(it)
+    groups = [_build_album_group(tracks) for tracks in buckets.values()]
+    return sorted(groups, key=lambda g: -g.latest_message_id)
+
+
+def standalone_audio_tracks() -> List[HubItem]:
+    """Audio items with no album_key — ungrouped singles."""
+    return sorted(
+        [it for it in _items.values()
+         if getattr(it, "media_kind", "") == "audio"
+         and not getattr(it, "album_key", "")],
+        key=lambda t: -t.message_id,
+    )
 
 
 def next_episode(item: HubItem) -> Optional[dict]:
@@ -1559,6 +1621,22 @@ def shelves(per_shelf: int = 25) -> List[dict]:
             "items": movie_items,
             "link": "/?view=movies",
             "total": len(movie_items),
+        })
+
+    # Music shelf — albums + standalone tracks
+    _albums = all_albums()
+    _singles = standalone_audio_tracks()
+    _music_all = _albums + _singles
+    if _music_all:
+        _music_items = sorted(
+            _music_all,
+            key=lambda c: -(c.latest_message_id if hasattr(c, 'latest_message_id') else c.message_id),
+        )[:per_shelf]
+        out.append({
+            "name": "Music",
+            "items": _music_items,
+            "link": "/?view=music",
+            "total": len(_music_items),
         })
 
     # --- genre shelves from TMDB enrichment ---
@@ -2660,6 +2738,8 @@ def stats() -> dict:
     missing_poster = 0
     missing_thumb = 0
     by_hash: dict = {}
+    audio_count = 0
+    album_keys_seen: set = set()
     from main.utils.codec_probe import is_browser_playable
     for it in _items.values():
         total += 1
@@ -2670,6 +2750,11 @@ def stats() -> dict:
             movie_groups.setdefault(it.movie_key, []).append(it)
         else:
             standalone += 1
+        if getattr(it, "media_kind", "") == "audio":
+            audio_count += 1
+            ak = getattr(it, "album_key", "")
+            if ak:
+                album_keys_seen.add(ak)
         qb = it.quality or "unknown"
         quality_counts[qb] = quality_counts.get(qb, 0) + 1
         if it.tmdb_id:
@@ -2760,6 +2845,8 @@ def stats() -> dict:
         "missing_thumb": missing_thumb,
         "duplicate_groups": duplicate_groups,
         "duplicate_extras": duplicate_extras,
+        "audio_count": audio_count,
+        "album_count": len(album_keys_seen),
     }
 
 

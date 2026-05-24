@@ -105,6 +105,18 @@ class MovieGroup:
     total_size: int = 0      # sum of variant file sizes — used for "largest" sort
 
 
+@dataclass
+class AlbumGroup:
+    """A virtual hub entry collapsing all tracks of one album."""
+    album_key: str
+    album_title: str        # human-friendly album name
+    artist: str             # performer / artist
+    track_count: int
+    latest_message_id: int  # for newest-first ordering
+    poster_item: "HubItem"  # representative track for thumbnail/year
+    has_thumb: bool = False
+
+
 # Imports kept at the bottom to avoid a circular import with media_index,
 # which itself imports HubItem from this module.
 from main.utils import media_index  # noqa: E402

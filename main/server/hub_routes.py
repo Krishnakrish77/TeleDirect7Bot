@@ -131,7 +131,7 @@ def _parse_filters(request: web.Request) -> dict:
     view = (request.query.get("view") or "").strip().lower()
     # "list" bypasses the shelf view and shows a flat newest-first grid
     # without filtering by type — used by the "Recently added" See all link.
-    if view not in {"movies", "series", "list", ""}:
+    if view not in {"movies", "series", "list", "music", ""}:
         view = ""
     return dict(
         q=q, tag=tag, quality=quality, genre=genre, year=year, sort=sort,
@@ -586,6 +586,33 @@ async def hub_series(request: web.Request) -> web.Response:
     return _html(body)
 
 
+@routes.get(r"/album/{key:[a-z0-9][a-z0-9\-]*}")
+async def hub_album(request: web.Request) -> web.Response:
+    """One album: track listing."""
+    key = request.match_info["key"]
+    tracks = media_index.tracks_for_album(key)
+    if not tracks:
+        raise web.HTTPNotFound(text="Album not found in catalogue.")
+
+    # Prewarm thumbnails
+    try:
+        await thumb_cache.prewarm_from_store(t.message_id for t in tracks)
+    except Exception:
+        pass
+
+    rep = next((t for t in tracks if t.artist), tracks[0])
+    tpl = _env.get_template("album.html")
+    body = await tpl.render_async(
+        album_title=rep.album_title or rep.title or key,
+        artist=rep.artist or "",
+        album_key=key,
+        tracks=tracks,
+        track_count=len(tracks),
+        meta=rep,
+    )
+    return _html(body)
+
+
 @routes.get(r"/thumb/{hash:[a-zA-Z0-9_-]{6}}{id:\d+}.jpg")
 async def hub_thumb(request: web.Request) -> web.Response:
     secure_hash = request.match_info["hash"]
@@ -599,12 +626,17 @@ async def hub_thumb(request: web.Request) -> web.Response:
         except Exception:
             message = None
         if message is not None:
-            media = (
-                getattr(message, "video", None)
-                or getattr(message, "animation", None)
-                or getattr(message, "document", None)
-                or getattr(message, "audio", None)
-            )
+            # For audio: skip Telegram's low-res thumb; go to ffmpeg to extract
+            # full-resolution embedded album art (APIC tag) at full quality.
+            audio_msg = getattr(message, "audio", None)
+            if audio_msg:
+                media = None  # force ffmpeg path below
+            else:
+                media = (
+                    getattr(message, "video", None)
+                    or getattr(message, "animation", None)
+                    or getattr(message, "document", None)
+                )
             if media is not None:
                 # Video/Document: thumbs is a list. Audio: thumb is a single
                 # Thumbnail (album art from ID3 APIC tag). Handle both.

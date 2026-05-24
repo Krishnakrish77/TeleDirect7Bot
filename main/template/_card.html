@@ -1,8 +1,39 @@
-{# Single hub card. Renders one of three variants depending on what
-   `item` is — MovieGroup, SeriesGroup, or a plain HubItem. Callers wrap
-   this in their own list element ({{ <li> }} in the grid, {{ <li> }} in a
-   shelf row) so the same partial works in both layouts. #}
-{% if item.variant_count is defined %}
+{# Single hub card. Renders one of four variants depending on what
+   `item` is — AlbumGroup, MovieGroup, SeriesGroup, or a plain HubItem.
+   Callers wrap this in their own list element ({{ <li> }} in the grid,
+   {{ <li> }} in a shelf row) so the same partial works in both layouts. #}
+{% if item.album_key is defined and item.album_key %}
+  {# AlbumGroup: all tracks of one album. Click → /album/{key} #}
+  {% set poster = item.poster_item %}
+  <a href="/album/{{ item.album_key }}"
+     class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
+            hover:border-brand-400/40 hover:bg-ink-800 transition-colors">
+    <div class="aspect-square bg-ink-900 relative overflow-hidden">
+      <div class="absolute inset-0 grid place-items-center text-slate-700">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" class="w-10 h-10">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+        </svg>
+      </div>
+      <img
+        src="/thumb/{{ poster.secure_hash }}{{ poster.message_id }}.jpg"
+        alt="" loading="lazy" onerror="this.remove()"
+        class="absolute inset-0 w-full h-full object-cover
+               group-hover:scale-105 transition-transform duration-300"
+      />
+    </div>
+    <div class="p-3 h-20 flex flex-col overflow-hidden">
+      <h3 class="text-sm font-semibold text-white leading-snug line-clamp-2
+                 group-hover:text-brand-300 transition-colors flex-1 min-h-0">
+        {{ item.album_title or item.artist or 'Unknown Album' }}
+      </h3>
+      <p class="mt-1 text-xs text-slate-500 shrink-0 truncate">
+        {{ item.artist or '' }}{% if item.artist and item.track_count %} · {% endif %}{{ item.track_count }} track{{ '' if item.track_count == 1 else 's' }}
+      </p>
+    </div>
+  </a>
+{% elif item.variant_count is defined %}
   {# MovieGroup: 2+ uploads of the same film. Click → /movie/{key} #}
   {% set poster = item.poster_item %}
   <a href="/movie/{{ item.movie_key }}"
@@ -89,13 +120,21 @@
      class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
             hover:border-brand-400/40 hover:bg-ink-800
             transition-colors">
-    <div class="aspect-[2/3] bg-ink-900 relative overflow-hidden">
+    <div class="{% if item.media_kind == 'audio' %}aspect-square{% else %}aspect-[2/3]{% endif %} bg-ink-900 relative overflow-hidden">
       <div class="absolute inset-0 grid place-items-center text-slate-700">
+        {% if item.media_kind == 'audio' %}
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" class="w-10 h-10">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+        </svg>
+        {% else %}
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
              stroke="currentColor" stroke-width="1.5" class="w-10 h-10">
           <path stroke-linecap="round" stroke-linejoin="round"
                 d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
         </svg>
+        {% endif %}
       </div>
       <img
         src="{% if item.poster_path %}https://image.tmdb.org/t/p/w342{{ item.poster_path }}{% else %}/thumb/{{ item.secure_hash }}{{ item.message_id }}.jpg{% endif %}"
@@ -120,7 +159,7 @@
         {%- if item.year %} <span class="text-slate-400 font-normal">({{ item.year }})</span>{% endif -%}
       </h3>
       <p class="mt-1 text-xs text-slate-500 tabular-nums shrink-0">
-        {{ item.file_size | humansize if item.file_size else "" }}
+        {% if item.media_kind == 'audio' and item.artist %}{{ item.artist }}{% elif item.file_size %}{{ item.file_size | humansize }}{% endif %}
       </p>
     </div>
   </a>

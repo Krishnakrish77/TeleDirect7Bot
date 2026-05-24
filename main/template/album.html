@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}{{ album_title }}{% endblock %}
+
+{% block content %}
+  <div class="w-full max-w-screen-xl">
+    <header class="mb-8">
+      <a href="/" class="inline-flex items-center gap-1 text-sm text-slate-400
+                        hover:text-brand-300 transition-colors mb-3">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+        </svg>
+        Back to library
+      </a>
+      <div class="flex gap-5 items-end">
+        {# Album art #}
+        <div class="w-32 h-32 sm:w-40 sm:h-40 rounded-xl overflow-hidden flex-shrink-0
+                    bg-ink-800 shadow-xl ring-1 ring-white/10">
+          <img src="/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"
+               alt="" loading="lazy" onerror="this.style.display='none'"
+               class="w-full h-full object-cover" />
+        </div>
+        <div class="min-w-0">
+          <p class="text-xs uppercase tracking-widest text-slate-500 mb-1">Album</p>
+          <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+            {{ album_title }}
+          </h1>
+          {% if artist %}
+            <p class="mt-1 text-slate-300 font-medium">{{ artist }}</p>
+          {% endif %}
+          <p class="mt-1 text-sm text-slate-500">
+            {{ track_count }} track{{ '' if track_count == 1 else 's' }}
+          </p>
+        </div>
+      </div>
+    </header>
+
+    <ul class="space-y-1">
+      {% for track in tracks %}
+        <li>
+          <a href="/watch/{{ track.secure_hash }}{{ track.message_id }}"
+             class="group flex items-center gap-4 px-3 py-3 rounded-lg
+                    hover:bg-ink-800/60 transition-colors">
+            {# Track number #}
+            <span class="w-6 text-right text-sm text-slate-500 tabular-nums flex-shrink-0">
+              {{ track.track_number or loop.index }}
+            </span>
+            {# Thumb #}
+            <div class="w-10 h-10 rounded bg-ink-800 flex-shrink-0 overflow-hidden relative">
+              <img src="/thumb/{{ track.secure_hash }}{{ track.message_id }}.jpg"
+                   alt="" loading="lazy" onerror="this.style.display='none'"
+                   class="absolute inset-0 w-full h-full object-cover" />
+              <div class="absolute inset-0 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="1.5" class="w-4 h-4 text-slate-600">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+                </svg>
+              </div>
+            </div>
+            {# Title #}
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-white truncate group-hover:text-brand-300 transition-colors">
+                {{ track.title or track.file_name }}
+              </p>
+              {% if track.artist and track.artist != artist %}
+                <p class="text-xs text-slate-500 truncate">{{ track.artist }}</p>
+              {% endif %}
+            </div>
+            {# Duration #}
+            {% if track.duration %}
+              <span class="text-xs text-slate-500 tabular-nums flex-shrink-0">
+                {{ track.duration | duration }}
+              </span>
+            {% endif %}
+            {# File size #}
+            {% if track.file_size %}
+              <span class="text-xs text-slate-600 tabular-nums flex-shrink-0 hidden sm:block">
+                {{ track.file_size | humansize }}
+              </span>
+            {% endif %}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endblock %}
