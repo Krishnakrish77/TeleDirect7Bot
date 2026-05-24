@@ -218,9 +218,9 @@
       {% if is_audio and meta and meta.title %}
         <div class="mt-6 w-full max-w-md" id="lyricsSection">
           <h3 class="text-xs uppercase tracking-widest text-slate-500 mb-3 px-1">Lyrics</h3>
+          {# Synced: each line is a <p> with data-t. Plain: whitespace-pre-line block. #}
           <div id="lyricsContent"
-               class="text-sm text-slate-300 leading-relaxed whitespace-pre-line px-1
-                      text-center max-h-64 overflow-y-auto
+               class="text-sm leading-relaxed px-1 text-center max-h-64 overflow-y-auto
                       [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             <span class="text-slate-600 text-xs">Loading…</span>
           </div>
@@ -1183,27 +1183,82 @@
       attachNextTrack(video);
       {% endif %}
 
-      // Lyrics via LRCLIB (audio only)
+      // Synced lyrics via LRCLIB (audio only)
       {% if is_audio and meta and meta.title %}
       (async () => {
         const el = document.getElementById("lyricsContent");
+        const section = document.getElementById("lyricsSection");
         if (!el) return;
+
         const title = {{ (meta.title | clean_music_tag) | tojson }};
         const artist = {{ ((meta.artist or '') | clean_music_tag) | tojson }};
+
+        let lrcLines = null;  // [{t: seconds, text: string}] when synced
+
+        function parseLrc(raw) {
+          const lines = [];
+          for (const line of raw.split("\n")) {
+            const m = line.match(/^\[(\d+):(\d+\.\d+)\](.*)/);
+            if (m) lines.push({ t: parseInt(m[1]) * 60 + parseFloat(m[2]), text: m[3].trim() });
+          }
+          return lines.length ? lines.sort((a, b) => a.t - b.t) : null;
+        }
+
+        function renderSynced(lines) {
+          el.innerHTML = lines.map((l, i) =>
+            `<p data-i="${i}" class="py-1 transition-all duration-300 text-slate-600 text-sm cursor-pointer"
+                onclick="document.getElementById('player').currentTime=${l.t}">${l.text || "&nbsp;"}</p>`
+          ).join("");
+        }
+
+        function highlightLine(currentTime) {
+          if (!lrcLines) return;
+          let active = 0;
+          for (let i = 0; i < lrcLines.length; i++) {
+            if (lrcLines[i].t <= currentTime) active = i;
+          }
+          const pTags = el.querySelectorAll("p[data-i]");
+          pTags.forEach((p, i) => {
+            const isActive = i === active;
+            p.className = isActive
+              ? "py-1 transition-all duration-300 text-white text-base font-semibold"
+              : (i < active
+                  ? "py-1 transition-all duration-300 text-slate-500 text-sm"
+                  : "py-1 transition-all duration-300 text-slate-600 text-sm");
+          });
+          // Auto-scroll active line into view
+          const activePara = el.querySelector(`p[data-i="${active}"]`);
+          if (activePara) activePara.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+
         try {
           const params = new URLSearchParams({ track_name: title, artist_name: artist });
           const r = await fetch("https://lrclib.net/api/get?" + params);
           if (!r.ok) throw new Error("not found");
           const data = await r.json();
-          const text = data.plainLyrics || data.syncedLyrics?.replace(/\[\d+:\d+\.\d+\]/g, "").trim();
-          if (text) {
-            el.textContent = text;
+
+          if (data.syncedLyrics) {
+            lrcLines = parseLrc(data.syncedLyrics);
+          }
+
+          if (lrcLines) {
+            // Synced — render line-by-line, highlight on timeupdate
+            renderSynced(lrcLines);
+            const audio = document.getElementById("player");
+            if (audio) {
+              audio.addEventListener("timeupdate", () => highlightLine(audio.currentTime));
+              // Highlight from current position if already playing
+              if (audio.currentTime > 0) highlightLine(audio.currentTime);
+            }
+          } else if (data.plainLyrics) {
+            // Plain — simple block text, no sync
+            el.classList.add("text-slate-300", "whitespace-pre-line");
+            el.textContent = data.plainLyrics;
           } else {
-            el.textContent = "";
-            document.getElementById("lyricsSection")?.remove();
+            section?.remove();
           }
         } catch (_) {
-          document.getElementById("lyricsSection")?.remove();
+          section?.remove();
         }
       })();
       {% endif %}
