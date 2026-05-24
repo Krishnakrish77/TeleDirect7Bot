@@ -194,27 +194,28 @@
                          text-slate-400 hover:text-white active:scale-90 transition-all
                          {% if not prev_track %}opacity-30 pointer-events-none{% endif %}">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
-              <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
+              <path d="M6 6h2v12H6zM18 6v12l-8.5-6z"/>
             </svg>
           </button>
 
-          {# Skip back 10s #}
+          {# Skip back 10s — HTML text for reliable centering #}
           <button id="tdBack10" aria-label="Rewind 10s"
-                  class="w-10 h-10 flex items-center justify-center rounded-full
+                  class="flex flex-col items-center justify-center gap-0.5 w-10 h-10
                          text-slate-300 hover:text-white active:scale-90 transition-all">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" fill="currentColor" class="w-7 h-7">
-              <path d="M15 3A12 12 0 0 0 5.4 7.4L3 5v7h7l-2.6-2.6A9 9 0 1 1 6 15H3A12 12 0 1 0 15 3z"/>
-              <text x="9.5" y="21" font-size="8" font-weight="700"
-                    font-family="system-ui,sans-serif" fill="currentColor">10</text>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" class="w-5 h-5">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"/>
             </svg>
+            <span class="text-[9px] font-bold leading-none tabular-nums">10</span>
           </button>
 
-          {# Large Play/Pause #}
+          {# Large Play/Pause — play icon shifted right by 1px to look optically centred #}
           <button id="tdPlayPause" aria-label="Play"
                   class="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center
                          shadow-lg hover:bg-slate-100 active:scale-95 transition-all
                          focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
-            <svg id="tdIconPlay" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-7 h-7 translate-x-0.5">
+            <svg id="tdIconPlay" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-7 h-7 translate-x-[2px]">
               <path d="M8 5v14l11-7z"/>
             </svg>
             <svg id="tdIconPause" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-7 h-7 hidden">
@@ -224,22 +225,23 @@
 
           {# Skip forward 10s #}
           <button id="tdFwd10" aria-label="Skip 10s"
-                  class="w-10 h-10 flex items-center justify-center rounded-full
+                  class="flex flex-col items-center justify-center gap-0.5 w-10 h-10
                          text-slate-300 hover:text-white active:scale-90 transition-all">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" fill="currentColor" class="w-7 h-7">
-              <path d="M15 3A12 12 0 0 1 24.6 7.4L27 5v7h-7l2.6-2.6A9 9 0 1 0 24 15h3A12 12 0 1 1 15 3z"/>
-              <text x="9.5" y="21" font-size="8" font-weight="700"
-                    font-family="system-ui,sans-serif" fill="currentColor">10</text>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" class="w-5 h-5">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="m15 15 6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3"/>
             </svg>
+            <span class="text-[9px] font-bold leading-none tabular-nums">10</span>
           </button>
 
-          {# Next track #}
+          {# Next track — triangle right + vertical bar right #}
           <button id="tdNext" aria-label="Next track"
                   class="w-10 h-10 flex items-center justify-center rounded-full
                          text-slate-400 hover:text-white active:scale-90 transition-all
                          {% if not next_track %}opacity-30 pointer-events-none{% endif %}">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
-              <path d="M6 18l8.5-6L6 6v12zm2.5-6 8.5 6V6z"/>
+              <path d="M6 6v12l8.5-6zM16 6h2v12h-2z"/>
             </svg>
           </button>
 
