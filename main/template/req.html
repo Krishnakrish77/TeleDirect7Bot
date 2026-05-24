@@ -53,10 +53,11 @@
 
     /* Video: larger touch targets on mobile */
     @media (max-width: 640px) {
-      .plyr--video .plyr__controls { padding: 8px 12px 12px; gap: 2px; }
-      .plyr--video .plyr__control { padding: 9px; min-width: 40px; }
+      .plyr--video .plyr__controls { padding: 8px 8px 12px; gap: 0; }
+      .plyr--video .plyr__control { padding: 8px 7px; min-width: 36px; }
       .plyr--video .plyr__progress__container { flex: 1 1 auto; min-width: 0; }
-      .plyr--video .plyr__volume { display: none; }
+      /* Hide volume slider — system volume handles it on mobile */
+      .plyr--video .plyr__volume input[type=range] { display: none; }
     }
   </style>
 {% endblock %}
@@ -1407,7 +1408,7 @@
             // Audio: keep Plyr's internals running but bar is hidden via CSS.
             ? ["play", "progress", "current-time", "duration", "mute", "volume"]
             : (isMobile
-              ? ["play-large", "play", "rewind", "progress", "current-time", "fast-forward", "mute", "fullscreen"]
+              ? ["play-large", "play", "rewind", "progress", "current-time", "fast-forward", "captions", "settings", "fullscreen"]
               : ["play-large", "rewind", "play", "fast-forward", "progress",
                  "current-time", "duration", "mute", "volume", "captions",
                  "settings", "speed", "pip", "airplay", "download", "fullscreen"]),
