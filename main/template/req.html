@@ -48,22 +48,6 @@
     .plyr--audio { background: transparent !important; min-height: 0 !important; }
 
     /* Custom seek slider */
-    #tdSeek {
-      -webkit-appearance: none; appearance: none;
-      display: block; width: 100%; height: 4px;
-      border-radius: 9999px; outline: none; cursor: pointer;
-      background: linear-gradient(to right, #f97316 0%, rgba(255,255,255,0.15) 0%);
-    }
-    #tdSeek::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 14px; height: 14px; border-radius: 50%; background: #fff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-    }
-    #tdSeek:active::-webkit-slider-thumb { width: 18px; height: 18px; }
-    #tdSeek::-moz-range-thumb {
-      width: 14px; height: 14px; border-radius: 50%; background: #fff; border: none;
-    }
-
     /* Video: larger touch targets on mobile */
     @media (max-width: 640px) {
       .plyr--video .plyr__controls { padding: 8px 14px 14px; gap: 4px; }
@@ -1324,6 +1308,7 @@
       inst.on("loadedmetadata", () => {
         durEl.textContent = fmt(inst.duration);
         syncProgress();
+        setPlaying(!inst.paused);
         wrap.style.display = "";
         thumb.style.opacity = "1";
       });
@@ -1335,7 +1320,7 @@
 
       playBtn.addEventListener("click", () => inst.togglePlay());
       back10.addEventListener("click", () => { inst.currentTime = Math.max(0, inst.currentTime - 10); });
-      fwd10.addEventListener("click",  () => { inst.currentTime = Math.min(inst.duration || 0, inst.currentTime + 10); });
+      fwd10.addEventListener("click",  () => { if (isFinite(inst.duration)) inst.currentTime = Math.min(inst.duration, inst.currentTime + 10); });
       if (muteBtn) muteBtn.addEventListener("click", () => { inst.muted = !inst.muted; });
       if (volSlider) volSlider.addEventListener("input", () => {
         inst.volume = parseFloat(volSlider.value);
@@ -1345,7 +1330,17 @@
       if (prevBtn) prevBtn.addEventListener("click", () => { location.href = {{ prev_track.url | tojson }}; });
       {% endif %}
       {% if next_track %}
-      if (nextBtn) nextBtn.addEventListener("click", () => { location.href = {{ next_track.url | tojson }}; });
+      if (nextBtn) nextBtn.addEventListener("click", () => {
+        {% if meta and meta.album_key %}
+        // Respect active shuffle queue (same logic as attachNextTrack auto-advance)
+        var _sq; try { _sq = JSON.parse(sessionStorage.getItem("td:shuffle:{{ meta.album_key }}") || "null"); } catch(_) { _sq = null; }
+        var _ci = _sq ? _sq.indexOf("{{ meta.secure_hash }}{{ meta.message_id }}") : -1;
+        var _nu = (_sq && _ci >= 0 && _ci + 1 < _sq.length) ? "/watch/" + _sq[_ci + 1] : {{ next_track.url | tojson }};
+        location.href = _nu;
+        {% else %}
+        location.href = {{ next_track.url | tojson }};
+        {% endif %}
+      });
       {% endif %}
 
       // Scrubber — mouse + touch
@@ -1366,7 +1361,7 @@
       window.addEventListener("mouseup",    (e) => { if (scrubbing) { scrubbing = false; inst.currentTime = scrubTo(e.clientX); } });
       track.addEventListener("touchstart",  (e) => { if (e.touches.length !== 1) return; scrubbing = true; scrubTo(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
       track.addEventListener("touchmove",   (e) => { if (!scrubbing || e.touches.length !== 1) return; scrubTo(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
-      track.addEventListener("touchend",    (e) => { if (!scrubbing) return; scrubbing = false; inst.currentTime = scrubTo(e.changedTouches[0].clientX); });
+      track.addEventListener("touchend",    (e) => { if (!scrubbing) return; scrubbing = false; e.preventDefault(); inst.currentTime = scrubTo(e.changedTouches[0].clientX); }, { passive: false });
 
       // Already loaded (e.g. hot reload with cached media)
       if (inst.duration > 0) {
