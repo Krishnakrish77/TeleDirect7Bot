@@ -492,6 +492,20 @@ async def _probe_quietly(item) -> None:
         logging.exception("codec_probe: background probe failed for bin:%d",
                           item.message_id)
 
+    # For audio files, also pre-warm the thumbnail cache after the probe
+    # so the first album/music page load shows art immediately without
+    # waiting for the /thumb/ route to run ffmpeg cold.
+    if getattr(item, "media_kind", "") == "audio":
+        try:
+            from main.utils import hls, thumb_cache
+            source_url = hls.internal_stream_url(item.secure_hash, item.message_id)
+            async def _fetch_thumb():
+                return await hls.grab_thumbnail(source_url, duration=0)
+            await thumb_cache.cached_or_fetch(item.message_id, _fetch_thumb)
+        except Exception:
+            logging.debug("codec_probe: thumb pre-warm failed for bin:%d",
+                          item.message_id, exc_info=True)
+
 
 _BLOCKING_VIDEO_CODECS: Optional[set] = None
 
