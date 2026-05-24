@@ -203,14 +203,15 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
             pass
     if probe_artist and not item.artist:
         item.artist = probe_artist
+    from main.utils.series import slugify as _slugify
     if probe_album and not item.album_title:
         item.album_title = probe_album
-        from main.utils.series import slugify as _slugify
-        # Key by album title only — not artist+album — so that soundtrack
-        # albums where each track has a different singer still group together.
-        # Two albums with the same title by different artists is rare; the
-        # benefit of correct grouping outweighs the edge-case collision risk.
-        item.album_key = _slugify(item.album_title)
+    # Always recompute album_key from album_title so items probed before the
+    # "key by title only" fix get corrected on the next probe run.
+    if item.album_title:
+        correct_key = _slugify(item.album_title)
+        if item.album_key != correct_key:
+            item.album_key = correct_key
     if probe_track is not None and item.track_number is None:
         item.track_number = probe_track
     if probe_title_tag and getattr(item, "media_kind", "") == "audio" and not item.title:
