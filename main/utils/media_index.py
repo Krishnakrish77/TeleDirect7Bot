@@ -477,7 +477,11 @@ def _item_from_message(message) -> Optional[HubItem]:
         season = None
         episode = None
         episode_end = None
-        movie_key = compute_movie_key(parsed.title or file_name, parsed.year, file_name)
+        # Audio items belong to the music world — no movie_key so they
+        # don't appear in the Movies shelf or grid.
+        movie_key = "" if is_audio else compute_movie_key(
+            parsed.title or file_name, parsed.year, file_name
+        )
 
     # When the caption carries a TMDB id, the description we just parsed
     # is the TMDB overview written back by an earlier enrichment. Promote
@@ -1207,6 +1211,9 @@ def query_grouped(
     movie_groups: dict = {}
     standalone: List[HubItem] = []
     for it in items_all:
+        # Audio items belong to the music view only; skip in series/movies/grid.
+        if getattr(it, "media_kind", "") == "audio":
+            continue
         if it.series_key:
             series_groups.setdefault(it.series_key, []).append(it)
         elif it.movie_key:
@@ -1623,6 +1630,9 @@ def shelves(per_shelf: int = 25) -> List[dict]:
     movie_buckets: dict = {}
     singles: List[HubItem] = []
     for it in _items.values():
+        # Audio items belong to the Music shelf, not Series/Movies.
+        if getattr(it, "media_kind", "") == "audio":
+            continue
         if it.series_key:
             series_buckets.setdefault(it.series_key, []).append(it)
         elif it.movie_key:
