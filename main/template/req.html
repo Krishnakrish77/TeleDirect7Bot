@@ -212,8 +212,10 @@
         </div>
       {% endif %}
 
-      {# Lyrics — fetched from LRCLIB (free, no API key) by title + artist #}
-      {% if meta and meta.title %}
+      {# Lyrics — fetched from LRCLIB (free, no API key) by title + artist.
+         Guard must match the JS block (is_audio) so video files never
+         see a stale "Loading…" that the JS won't clear. #}
+      {% if is_audio and meta and meta.title %}
         <div class="mt-6 w-full max-w-md" id="lyricsSection">
           <h3 class="text-xs uppercase tracking-widest text-slate-500 mb-3 px-1">Lyrics</h3>
           <div id="lyricsContent"
