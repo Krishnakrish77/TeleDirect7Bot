@@ -1490,14 +1490,14 @@ async def admin_edit(request: web.Request) -> web.Response:
         item.artist = new_artist
         if new_album_title != item.album_title:
             item.album_title = new_album_title
-            # Recompute album_key with the updated artist/album pair.
+            # Key by album title only so multi-artist soundtrack albums group
+            # correctly. Artist alone as a fallback groups all a performer's
+            # ungrouped singles together pending a proper album scan.
             from main.utils.series import slugify as _slugify
-            if item.artist and item.album_title:
-                item.album_key = _slugify(f"{item.artist}-{item.album_title}")
+            if item.album_title:
+                item.album_key = _slugify(item.album_title)
             elif item.artist:
                 item.album_key = _slugify(item.artist)
-            elif item.album_title:
-                item.album_key = _slugify(item.album_title)
             else:
                 item.album_key = ""
         item.track_number = new_track_number

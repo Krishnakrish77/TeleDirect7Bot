@@ -486,10 +486,12 @@ def _item_from_message(message) -> Optional[HubItem]:
     overview = parsed.description if parsed.tmdb_id else ""
 
     # Compute artist and album_key for audio items.
+    # album_key is intentionally left empty at index time — the background
+    # codec probe extracts the album title from ID3 tags and sets the key
+    # from album title alone (not artist+album) so multi-artist soundtrack
+    # albums group correctly. A per-artist key here would split them.
     artist = tg_performer
     album_key = ""
-    if artist:
-        album_key = series_parse.slugify(artist)
 
     return HubItem(
         message_id=message.id,
