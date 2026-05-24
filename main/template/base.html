@@ -33,12 +33,12 @@
     {# hx-boost: intercept internal link clicks and swap only <main> via AJAX
        so the persistent bgAudio element (outside main) keeps playing.
        /watch/ and /admin are excluded via htmx:configRequest below. #}
-    <main id="main-content"
+<main id="main-content"
           hx-boost="true"
           hx-target="#main-content"
           hx-select="#main-content"
           hx-push-url="true"
-          hx-swap="innerHTML"
+          hx-swap="outerHTML"
           class="min-h-screen flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-16">
       {% block content %}{% endblock %}
     </main>
