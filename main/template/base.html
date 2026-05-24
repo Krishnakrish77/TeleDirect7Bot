@@ -147,6 +147,52 @@
 
     {% block scripts %}{% endblock %}
 
+    {# ── Mini-player bar ─────────────────────────────────────────────────
+       Shown on every page EXCEPT the watch page itself when the user has
+       played an audio track. Reads from localStorage td:nowplaying so
+       the bar persists across navigation — like Spotify's bottom bar. #}
+    <div id="_mini-player" style="display:none"
+         class="fixed bottom-0 left-0 right-0 z-40
+                bg-ink-950/95 backdrop-blur-md border-t border-white/10
+                px-4 py-2.5 flex items-center gap-3 shadow-2xl">
+      {# Album art #}
+      <a id="_mp-link" href="#"
+         class="flex items-center gap-3 flex-1 min-w-0 group">
+        <div class="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-ink-800">
+          <img id="_mp-art" src="" alt=""
+               onerror="this.style.display='none'"
+               class="w-full h-full object-cover" />
+        </div>
+        {# Track info #}
+        <div class="min-w-0 flex-1">
+          <p id="_mp-title"
+             class="text-sm font-semibold text-white truncate
+                    group-hover:text-brand-300 transition-colors"></p>
+          <p id="_mp-artist" class="text-xs text-slate-400 truncate"></p>
+        </div>
+      </a>
+      {# Resume button #}
+      <a id="_mp-resume" href="#"
+         class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5
+                rounded-lg text-xs font-semibold text-white
+                bg-brand-500 hover:bg-brand-600 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+             fill="currentColor" class="w-3.5 h-3.5">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+        Resume
+      </a>
+      {# Dismiss #}
+      <button onclick="_mpDismiss()"
+              class="flex-shrink-0 text-slate-500 hover:text-white
+                     transition-colors p-1" aria-label="Close">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
     <script>
 (function () {
   // Scroll-to-top button
@@ -156,6 +202,37 @@
       _st.style.display = window.scrollY > 300 ? 'grid' : 'none';
     }, { passive: true });
   }
+
+  // ── Mini-player ────────────────────────────────────────────────────────
+  var NP_KEY = 'td:nowplaying';
+  function _mpInit() {
+    // Don't show on the watch page itself
+    if (location.pathname.startsWith('/watch/')) return;
+    var np;
+    try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
+    if (!np) return;
+    var bar = document.getElementById('_mini-player');
+    var art = document.getElementById('_mp-art');
+    var title = document.getElementById('_mp-title');
+    var artist = document.getElementById('_mp-artist');
+    var link = document.getElementById('_mp-link');
+    var resume = document.getElementById('_mp-resume');
+    if (np.art) art.src = np.art;
+    title.textContent = np.title || '';
+    artist.textContent = np.artist || '';
+    link.href = np.url || '#';
+    resume.href = np.url || '#';
+    bar.style.display = 'flex';
+    // Add bottom padding so content isn't hidden behind bar
+    document.body.style.paddingBottom = '60px';
+  }
+  function _mpDismiss() {
+    try { localStorage.removeItem(NP_KEY); } catch(_) {}
+    var bar = document.getElementById('_mini-player');
+    if (bar) bar.style.display = 'none';
+    document.body.style.paddingBottom = '';
+  }
+  _mpInit();
 
   // PWA install banner — only surfaces after 3+ visits, once per session,
   // and with a 10s delay so it doesn't interrupt on landing.
