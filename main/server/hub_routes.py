@@ -603,10 +603,19 @@ async def hub_album(request: web.Request) -> web.Response:
         pass
 
     rep = next((t for t in tracks if t.artist), tracks[0])
+    # Compute display artist the same way _build_album_group does — show
+    # "Various Artists" for multi-artist albums (soundtracks, compilations).
+    unique_artists = {t.artist for t in tracks if t.artist}
+    if len(unique_artists) == 1:
+        display_artist = unique_artists.pop()
+    elif len(unique_artists) > 1:
+        display_artist = "Various Artists"
+    else:
+        display_artist = ""
     tpl = _env.get_template("album.html")
     body = await tpl.render_async(
         album_title=rep.album_title or rep.title or key,
-        artist=rep.artist or "",
+        artist=display_artist,
         album_key=key,
         tracks=tracks,
         track_count=len(tracks),
