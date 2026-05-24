@@ -87,7 +87,11 @@
               <p class="text-sm font-medium text-white truncate group-hover:text-brand-300 transition-colors">
                 {{ (track.title or track.file_name) | clean_music_tag }}
               </p>
-              {% if track.artist and track.artist != artist %}
+              {# Always show track artist — in multi-artist albums every track
+                 has a different singer and the artist line is important.
+                 Only suppress it when the album has a single known artist
+                 and the track artist exactly matches (redundant). #}
+              {% if track.artist and (artist == 'Various Artists' or track.artist != artist) %}
                 <p class="text-xs text-slate-500 truncate">{{ track.artist | clean_music_tag }}</p>
               {% endif %}
             </div>
