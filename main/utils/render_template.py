@@ -20,6 +20,17 @@ _env = Environment(
     enable_async=False,
 )
 _env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
+
+
+def _fmt_duration(seconds: int) -> str:
+    if not seconds:
+        return ""
+    h, rem = divmod(int(seconds), 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+_env.filters["duration"] = _fmt_duration
 _REQ_TEMPLATE = _env.get_template("req.html")
 _DL_TEMPLATE = _env.get_template("dl.html")
 
