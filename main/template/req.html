@@ -1471,19 +1471,20 @@
           window._handoffAudioToBg = function() {
             var bg = document.getElementById('bgAudio');
             if (!bg || video.paused) return;
-            // Only hand off if we're actually playing
-            if (!bg.src || bg.src !== streamSrc) {
-              bg.src = streamSrc;
-            }
+            bg.src = streamSrc;
             bg.currentTime = video.currentTime;
+            video.pause(); // stop the Plyr player to prevent double audio
             bg.play().catch(function() {});
           };
           window.addEventListener('pagehide', window._handoffAudioToBg);
 
           // If bgAudio was already playing this track (user returned from library),
           // sync Plyr to bgAudio's position and pause bgAudio to avoid double-play.
+          // Compare by message_id embedded in the path to avoid query-string/URL
+          // normalisation issues (bg.src is browser-absolute, streamSrc may be relative).
           var bg = document.getElementById('bgAudio');
-          if (bg && bg.src && bg.src.endsWith(streamSrc.split('/').pop()) && !bg.paused) {
+          var thisMsgId = '{{ message_id }}';
+          if (bg && bg.src && bg.src.includes(thisMsgId) && !bg.paused) {
             video.currentTime = bg.currentTime;
             bg.pause();
           }

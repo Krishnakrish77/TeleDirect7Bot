@@ -38,7 +38,7 @@
           hx-target="#main-content"
           hx-select="#main-content"
           hx-push-url="true"
-          hx-swap="innerHTML transition:true"
+          hx-swap="innerHTML"
           class="min-h-screen flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-16">
       {% block content %}{% endblock %}
     </main>
@@ -155,6 +155,16 @@
     </div>
 
     {% block scripts %}{% endblock %}
+
+    {# Persistent background audio — must appear BEFORE the inline <script> below
+       so getElementById('bgAudio') finds it at script execution time.
+       hx-preserve keeps the same DOM node across htmx content swaps. #}
+    <audio id="bgAudio"
+           hx-preserve="true"
+           preload="none"
+           playsinline
+           style="position:absolute;width:0;height:0;pointer-events:none">
+    </audio>
 
     {# ── Mini-player bar ─────────────────────────────────────────────────
        Shown on every page EXCEPT the watch page itself when the user has
@@ -332,6 +342,20 @@
     }
   });
 
+  // Hand off audio to bgAudio before every htmx content swap so music
+  // continues while browsing (pagehide doesn't fire on AJAX navigation).
+  document.body.addEventListener('htmx:beforeSwap', function() {
+    if (typeof window._handoffAudioToBg === 'function') {
+      window._handoffAudioToBg();
+    }
+  });
+
+  // Scroll to top after each AJAX navigation (htmx preserves scroll position
+  // by default, which leaves users mid-page on the new content).
+  document.body.addEventListener('htmx:afterSettle', function() {
+    window.scrollTo(0, 0);
+  });
+
   // PWA install banner — only surfaces after 3+ visits, once per session,
   // and with a 10s delay so it doesn't interrupt on landing.
   var _prompt = null;
@@ -428,15 +452,5 @@ function globalSearch() {
 }
 </script>
 
-  {# Persistent background audio — lives outside <main> so htmx content
-     swaps never destroy it. hx-preserve keeps the same DOM node across swaps.
-     The watch page (req.html) hands playback off to this element when the
-     user navigates away, so music continues while browsing the library. #}
-  <audio id="bgAudio"
-         hx-preserve="true"
-         preload="none"
-         playsinline
-         style="position:absolute;width:0;height:0;pointer-events:none">
-  </audio>
   </body>
 </html>
