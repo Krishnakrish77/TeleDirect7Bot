@@ -12,6 +12,7 @@ without a full reload. Non-HTMX requests get the full templated page.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -436,14 +437,18 @@ async def hub_movie(request: web.Request) -> web.Response:
     # Prefer the enriched variant for the page's TMDB metadata — any one
     # variant works since they all point at the same film.
     enriched = next((v for v in variants if v.tmdb_id), variants[0])
-    tpl = _env.get_template("movie.html")
-    body = await tpl.render_async(
-        title=enriched.title,
-        year=enriched.year,
-        variant_count=len(variants),
-        variants=variants,
-        meta=enriched,
-    )
+    cache_key = f"movie:{key}"
+    body = _cache_get(cache_key)
+    if not body:
+        tpl = _env.get_template("movie.html")
+        body = await tpl.render_async(
+            title=enriched.title,
+            year=enriched.year,
+            variant_count=len(variants),
+            variants=variants,
+            meta=enriched,
+        )
+        _cache_set(cache_key, body)
     return _html(body)
 
 
@@ -583,14 +588,11 @@ async def hub_series(request: web.Request) -> web.Response:
         for entry in blk["entries"]
     ]
 
-    # Bulk-hydrate L1 thumbnail cache from L2 (Mongo) so the browser's
-    # parallel /thumb/ requests all hit warm L1 instead of doing one
-    # find_one each. Scoped to *visible* episodes only — that's the whole
-    # point of paginating server-side.
-    try:
-        await thumb_cache.prewarm_from_store(visible_episodes)
-    except Exception:
-        logging.debug("series: thumb prewarm failed", exc_info=True)
+    # Fire-and-forget: bulk-warm L1 thumb cache from Mongo in the background
+    # so the browser's parallel /thumb/ requests hit warm L1. Don't block
+    # the response — the prewarm is a best-effort optimisation, not required
+    # to render the page.
+    asyncio.create_task(thumb_cache.prewarm_from_store(visible_episodes))
 
     # First enriched episode (if any) carries the show-level TMDB data.
     enriched = next((e for e in episodes if e.tmdb_id), episodes[0])
@@ -611,20 +613,22 @@ async def hub_series(request: web.Request) -> web.Response:
     ]
     visible_episode_count = len(visible_entries) or len(visible_blocks)
 
-    body = await tpl.render_async(
-        meta=enriched,
-        series_title=episodes[0].series_title or key,
-        series_key=key,
-        season_blocks=visible_blocks,
-        season_options=season_options,
-        show_selector=show_selector,
-        selected_season=selected,
-        episode_count=visible_episode_count,
-        total_episode_count=total_episode_count,
-        # Don't count the unknown-season bucket as a season; if every
-        # episode is unbucketed (no SxxEyy anywhere) fall back to 1.
-        season_count=max(1, len(numbered_seasons)),
-    )
+    cache_key = f"series:{key}:{selected}"
+    body = _cache_get(cache_key)
+    if not body:
+        body = await tpl.render_async(
+            meta=enriched,
+            series_title=episodes[0].series_title or key,
+            series_key=key,
+            season_blocks=visible_blocks,
+            season_options=season_options,
+            show_selector=show_selector,
+            selected_season=selected,
+            episode_count=visible_episode_count,
+            total_episode_count=total_episode_count,
+            season_count=max(1, len(numbered_seasons)),
+        )
+        _cache_set(cache_key, body)
     return _html(body)
 
 
@@ -636,11 +640,10 @@ async def hub_album(request: web.Request) -> web.Response:
     if not tracks:
         raise web.HTTPNotFound(text="Album not found in catalogue.")
 
-    # Prewarm thumbnails
-    try:
-        await thumb_cache.prewarm_from_store(t.message_id for t in tracks)
-    except Exception:
-        pass
+    # Fire-and-forget thumb prewarm — don't block the response
+    asyncio.create_task(thumb_cache.prewarm_from_store(
+        t.message_id for t in tracks
+    ))
 
     # Prefer a track that has both artist metadata AND a thumbnail for the album art.
     # Fall back to first-with-artist, then any track.
@@ -658,15 +661,19 @@ async def hub_album(request: web.Request) -> web.Response:
         display_artist = "Various Artists"
     else:
         display_artist = ""
-    tpl = _env.get_template("album.html")
-    body = await tpl.render_async(
-        album_title=rep.album_title or rep.title or key,
-        artist=display_artist,
-        album_key=key,
-        tracks=tracks,
-        track_count=len(tracks),
-        meta=rep,
-    )
+    cache_key = f"album:{key}"
+    body = _cache_get(cache_key)
+    if not body:
+        tpl = _env.get_template("album.html")
+        body = await tpl.render_async(
+            album_title=rep.album_title or rep.title or key,
+            artist=display_artist,
+            album_key=key,
+            tracks=tracks,
+            track_count=len(tracks),
+            meta=rep,
+        )
+        _cache_set(cache_key, body)
     return _html(body)
 
 
