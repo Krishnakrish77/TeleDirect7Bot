@@ -29,11 +29,16 @@
     <button @click="menuOpen = !menuOpen"
             class="flex items-center gap-2 px-2 py-1 rounded-lg
                    hover:bg-ink-800 transition-colors group">
-      <img :src="user && user.photo || '/static/avatar.svg'"
-           :alt="user && user.name || ''"
-           onerror="this.src='/static/avatar.svg'"
-           class="w-8 h-8 rounded-full object-cover ring-1 ring-white/10
-                  group-hover:ring-brand-400/40 transition-all flex-shrink-0" />
+      <template x-if="user && user.photo">
+        <img :src="user.photo" :alt="user.name || ''"
+             class="w-8 h-8 rounded-full object-cover ring-1 ring-white/10
+                    group-hover:ring-brand-400/40 transition-all flex-shrink-0" />
+      </template>
+      <template x-if="!user || !user.photo">
+        <div class="w-8 h-8 rounded-full bg-ink-700 ring-1 ring-white/10
+                    grid place-items-center text-slate-400 text-xs font-semibold
+                    flex-shrink-0" x-text="user && user.name ? user.name[0].toUpperCase() : '?'"></div>
+      </template>
       <span class="hidden lg:block text-sm font-medium text-slate-200
                    max-w-[100px] truncate" x-text="user && user.name"></span>
       <svg class="hidden lg:block w-3 h-3 text-slate-500 flex-shrink-0"
