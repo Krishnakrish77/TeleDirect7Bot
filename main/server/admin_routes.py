@@ -729,7 +729,10 @@ async def admin_action(request: web.Request) -> web.Response:
 
     if action in ("hide", "unhide"):
         hidden = action == "hide"
-        n = sum(1 for mid in ids if await media_index.set_hidden(mid, hidden))
+        n = 0
+        for mid in ids:
+            if await media_index.set_hidden(mid, hidden):
+                n += 1
         verb = "Hidden" if hidden else "Unhidden"
         raise _redirect_with_flash(f"{verb} {n} entries", target=_target)
 
