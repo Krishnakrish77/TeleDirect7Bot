@@ -10,6 +10,7 @@
   {# AlbumGroup: all tracks of one album. Click → /album/{key} #}
   {% set poster = item.poster_item %}
   <a href="/album/{{ item.album_key }}"
+     hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
      class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
             hover:border-brand-400/40 hover:bg-ink-800 transition-colors">
     <div class="aspect-square bg-ink-900 relative overflow-hidden">
@@ -41,6 +42,7 @@
   {# MovieGroup: 2+ uploads of the same film. Click → /movie/{key} #}
   {% set poster = item.poster_item %}
   <a href="/movie/{{ item.movie_key }}"
+     hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
      class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
             hover:border-brand-400/40 hover:bg-ink-800
             transition-colors">
@@ -79,6 +81,7 @@
   {# SeriesGroup: collapsed card linking to /series/{key} #}
   {% set poster = item.poster_item %}
   <a href="/series/{{ item.series_key }}"
+     hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
      class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
             hover:border-brand-400/40 hover:bg-ink-800
             transition-colors">

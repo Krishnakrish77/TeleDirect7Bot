@@ -92,11 +92,10 @@ async def watch_handler(request: web.Request):
 async def stream_handler(request: web.Request):
     try:
         path = request.match_info["path"]
-        # Reject any path that belongs to a named route but arrived here via
-        # the catch-all (e.g. GET /admin/... accidentally triggered by a bad
-        # POST→GET conversion). These should never be stream URLs.
-        if path.startswith(("admin", "watch", "hub", "series", "movie",
-                             "album", "static", "thumb", "api", "hls", "sub")):
+        # Stream URLs are always a single path segment: {6chars}{digits}.
+        # Any path with a slash is a named route that reached the catch-all
+        # accidentally — return 404 rather than trying to parse it as a stream.
+        if '/' in path:
             raise web.HTTPNotFound()
         match = re.search(r"^([a-zA-Z0-9_-]{16}|[a-zA-Z0-9_-]{6})(\d+)$", path)
         if match:
