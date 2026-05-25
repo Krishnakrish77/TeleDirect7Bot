@@ -978,9 +978,12 @@ async def seed(bot, channel_id: int) -> None:
                         for attr in ("tags", "description", "overview", "file_name",
                                      "trailer_key", "episode_title", "episode_overview",
                                      "episode_still_path", "episode_air_date",
-                                     "artist", "album_title", "album_key", "media_kind"):
+                                     "artist", "album_title", "album_key", "media_kind",
+                                     "director"):
                             if getattr(existing, attr) and not getattr(new_item, attr):
                                 setattr(new_item, attr, getattr(existing, attr))
+                        if existing.cast and not new_item.cast:
+                            new_item.cast = existing.cast
                         if existing.track_number is not None and new_item.track_number is None:
                             new_item.track_number = existing.track_number
                         if existing.probed_at:

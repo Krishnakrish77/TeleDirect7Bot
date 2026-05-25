@@ -359,15 +359,15 @@
             try {
               const IDX = "td:sub:__index";
               let idx = [];
-              try { idx = JSON.parse(localStorage.getItem(IDX) || "[]"); } catch(_) {}
-              // Evict oldest if at cap
+              try { idx = Array.isArray(JSON.parse(localStorage.getItem(IDX) || "[]"))
+                ? JSON.parse(localStorage.getItem(IDX)) : []; } catch(_) {}
               const MAX = 3;
+              // Reposition first (remove existing entry if present), then evict
+              idx = idx.filter(x => x !== k);
               while (idx.length >= MAX) {
                 const old = idx.shift();
                 localStorage.removeItem(SUB_CACHE_KEY + old);
               }
-              // Move/add this key to end (most-recent)
-              idx = idx.filter(x => x !== k);
               idx.push(k);
               localStorage.setItem(IDX, JSON.stringify(idx));
               localStorage.setItem(SUB_CACHE_KEY + k, JSON.stringify({
