@@ -150,6 +150,13 @@
       return m + ':' + String(sec).padStart(2, '0');
     }
     _bgAudio.addEventListener('timeupdate', function() {
+      // Persist position so the watch page can resume from here
+      if (_bgAudio.currentTime > 0) {
+        try {
+          var np = JSON.parse(localStorage.getItem(NP_KEY) || 'null');
+          if (np) { np.position = Math.floor(_bgAudio.currentTime); localStorage.setItem(NP_KEY, JSON.stringify(np)); }
+        } catch(_) {}
+      }
       var bar = document.getElementById('_mp-progress');
       var timeEl = document.getElementById('_mp-time');
       var dur = _bgAudio.duration;

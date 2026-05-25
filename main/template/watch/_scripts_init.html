@@ -10,6 +10,18 @@
         attachSource(video);
         attachCustomAudioControls(video);
         history.replaceState(null, '', location.pathname);
+        // If the user tapped the mini-player to expand, bgAudio was playing
+        // this track. Resume from the saved position so playback is seamless.
+        var _np;
+        try { _np = JSON.parse(localStorage.getItem('td:nowplaying') || 'null'); } catch(_) { _np = null; }
+        var _savedPos = (_np && _np.position > 0 &&
+                         (_np.streamUrl === {{ src | tojson }} ||
+                          _np.url === location.href)) ? _np.position : 0;
+        video.addEventListener('loadedmetadata', function() {
+          if (_savedPos > 0 && _savedPos < video.duration) {
+            video.currentTime = _savedPos;
+          }
+        }, { once: true });
         video.play().catch(function() {});
       }
 
