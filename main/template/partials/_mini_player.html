@@ -308,7 +308,7 @@
 
   // Wrap _mpInit to call any page-specific callback registered as _onMpInit.
   // Pages that need to react to track changes (e.g. album page equalizer) set
-  // window._onMpInit = myFn. Avoids override-timing issues with {% block scripts %}.
+  // window._onMpInit = myFn. Avoids override-timing issues with the scripts block.
   var _mpInitBase = _mpInit;
   _mpInit = function() {
     _mpInitBase();
