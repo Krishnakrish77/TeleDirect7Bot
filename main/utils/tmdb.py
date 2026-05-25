@@ -22,7 +22,7 @@ import difflib
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 import aiohttp
@@ -51,6 +51,8 @@ class TMDBHit:
     backdrop_path: str
     genres: List[str]
     imdb_id: str
+    cast: List[str] = field(default_factory=list)
+    director: str = ""
 
 
 # Tuple keys: (kind, lowercased normalized title, year-or-0).
@@ -162,8 +164,19 @@ async def _enrich_details(session: aiohttp.ClientSession,
                           kind: str, tmdb_id: int) -> Optional[dict]:
     return await _get(
         session, f"/{kind}/{tmdb_id}",
-        append_to_response="external_ids",
+        append_to_response="external_ids,credits",
     )
+
+
+def _extract_credits(details: dict) -> tuple:
+    """Return (cast_names[:5], director_str) from a TMDB details payload."""
+    credits = details.get("credits") or {}
+    cast = [p["name"] for p in (credits.get("cast") or [])[:5] if p.get("name")]
+    directors = [
+        p["name"] for p in (credits.get("crew") or [])
+        if p.get("job") == "Director" and p.get("name")
+    ]
+    return cast, ", ".join(directors[:2])
 
 
 async def _lookup(kind: str, title: str, year: Optional[int]) -> Optional[TMDBHit]:
@@ -203,6 +216,7 @@ async def _lookup(kind: str, title: str, year: Optional[int]) -> Optional[TMDBHi
             if details is None:
                 details = match
 
+            _cast, _director = _extract_credits(details)
             hit = TMDBHit(
                 tmdb_id=int(match["id"]),
                 kind=kind,
@@ -213,6 +227,8 @@ async def _lookup(kind: str, title: str, year: Optional[int]) -> Optional[TMDBHi
                 backdrop_path=details.get("backdrop_path") or "",
                 genres=[g["name"] for g in (details.get("genres") or []) if g.get("name")],
                 imdb_id=(details.get("external_ids") or {}).get("imdb_id") or "",
+                cast=_cast,
+                director=_director,
             )
             _cache[cache_key] = (_now(), hit)
             return hit
@@ -274,6 +290,7 @@ async def fetch_by_id(tmdb_id: int, kind: str) -> Optional[TMDBHit]:
         details = await _enrich_details(session, kind, int(tmdb_id))
         if details is None:
             return None
+        _cast, _director = _extract_credits(details)
         return TMDBHit(
             tmdb_id=int(details.get("id") or tmdb_id),
             kind=kind,
@@ -284,6 +301,8 @@ async def fetch_by_id(tmdb_id: int, kind: str) -> Optional[TMDBHit]:
             backdrop_path=details.get("backdrop_path") or "",
             genres=[g["name"] for g in (details.get("genres") or []) if g.get("name")],
             imdb_id=(details.get("external_ids") or {}).get("imdb_id") or "",
+            cast=_cast,
+            director=_director,
         )
 
 

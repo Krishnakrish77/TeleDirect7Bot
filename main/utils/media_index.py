@@ -234,6 +234,8 @@ def _to_serializable(item: HubItem) -> dict:
         "backdrop_path": item.backdrop_path,
         "overview": item.overview,
         "tmdb_genres": item.tmdb_genres,
+        "cast": item.cast,
+        "director": item.director,
         "enriched_at": item.enriched_at,
         "video_codec": item.video_codec,
         "pix_fmt": item.pix_fmt,
@@ -287,6 +289,8 @@ def _from_serializable(d: dict) -> HubItem:
         backdrop_path=d.get("backdrop_path", "") or "",
         overview=d.get("overview", "") or "",
         tmdb_genres=d.get("tmdb_genres", []) or [],
+        cast=d.get("cast", []) or [],
+        director=d.get("director", "") or "",
         enriched_at=float(d.get("enriched_at", 0) or 0),
         video_codec=d.get("video_codec", "") or "",
         pix_fmt=d.get("pix_fmt", "") or "",
@@ -2072,6 +2076,8 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
     item.backdrop_path = hit.backdrop_path
     item.overview = hit.overview
     item.tmdb_genres = list(hit.genres)
+    item.cast = list(hit.cast)
+    item.director = hit.director
     item.enriched_at = time.time()
 
     # For TV episodes we deliberately preserve the per-episode title that

@@ -353,10 +353,23 @@
           addUserSubtitle(video, text, label);
           status.textContent = `Loaded "${file.name}" as subtitles.`;
           status.className = "mt-2 text-center text-xs text-emerald-300";
-          // Cache for refresh.
+          // Cache for refresh — LRU eviction, max 3 entries.
           const k = watchKey();
           if (k) {
             try {
+              const IDX = "td:sub:__index";
+              let idx = [];
+              try { idx = JSON.parse(localStorage.getItem(IDX) || "[]"); } catch(_) {}
+              // Evict oldest if at cap
+              const MAX = 3;
+              while (idx.length >= MAX) {
+                const old = idx.shift();
+                localStorage.removeItem(SUB_CACHE_KEY + old);
+              }
+              // Move/add this key to end (most-recent)
+              idx = idx.filter(x => x !== k);
+              idx.push(k);
+              localStorage.setItem(IDX, JSON.stringify(idx));
               localStorage.setItem(SUB_CACHE_KEY + k, JSON.stringify({
                 label, vtt: text, t: Date.now(),
               }));
