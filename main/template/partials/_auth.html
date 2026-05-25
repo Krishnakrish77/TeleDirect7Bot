@@ -174,53 +174,59 @@ window.tdRequireAuth = function(event, featureName) {
   return false;
 };
 
-document.addEventListener('alpine:init', () => {
-  Alpine.data('tdAuth', () => ({
-    user: null,
-    menuOpen: false,
-    init() {
-      try {
-        var token = sessionStorage.getItem('td:auth')
-                 || this._cookieToken();
-        if (token) {
-          var p = JSON.parse(atob(token.split('.')[1]));
-          if (p.exp > Date.now() / 1000) {
-            this.user = { name: p.name, username: p.username,
-                          photo: p.photo, is_admin: p.is_admin };
-          } else {
-            sessionStorage.removeItem('td:auth');
-          }
-        }
-      } catch(_) {}
-    },
-    _cookieToken() {
-      var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-      return m ? m[1] : null;
-    },
-    openModal() {
+// ── Global auth helpers — callable from any template without Alpine context ──
+window._tdAuth = (function() {
+  var _user = null;
+
+  function _cookieToken() {
+    var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
+    return m ? m[1] : null;
+  }
+  function _load() {
+    try {
+      var token = sessionStorage.getItem('td:auth') || _cookieToken();
+      if (!token) return null;
+      var p = JSON.parse(atob(token.split('.')[1]));
+      if (p.exp > Date.now() / 1000)
+        return { name: p.name, username: p.username, photo: p.photo, is_admin: p.is_admin };
+      sessionStorage.removeItem('td:auth');
+    } catch(_) {}
+    return null;
+  }
+  _user = _load();
+
+  return {
+    user: _user,
+    openModal: function() {
       var modal = document.getElementById('_auth-modal');
       if (!modal) return;
       modal.style.display = 'flex';
       var root = document.getElementById('_tg-widget-root');
       if (root && !root.hasChildNodes()) {
         var s = document.createElement('script');
-        s.async = true;
-        s.src = 'https://telegram.org/js/telegram-widget.js?22';
+        s.async = true; s.src = 'https://telegram.org/js/telegram-widget.js?22';
         s.setAttribute('data-telegram-login', '{{ bot_username }}');
-        s.setAttribute('data-size', 'large');
-        s.setAttribute('data-radius', '8');
+        s.setAttribute('data-size', 'large'); s.setAttribute('data-radius', '8');
         s.setAttribute('data-onauth', '_onTelegramAuth(user)');
         s.setAttribute('data-request-access', 'write');
         root.appendChild(s);
       }
     },
-    signOut() {
+    signOut: function() {
       try { sessionStorage.removeItem('td:auth'); } catch(_) {}
       document.cookie = 'td_session=;max-age=0;path=/';
-      fetch('/auth/logout', {method: 'POST'}).finally(() => {
-        window.location.href = '/';
-      });
+      fetch('/auth/logout', {method:'POST'}).finally(() => { window.location.href = '/'; });
     },
+  };
+})();
+
+document.addEventListener('alpine:init', () => {
+  Alpine.data('tdAuth', () => ({
+    user: window._tdAuth.user,
+    menuOpen: false,
+    init() { this.user = window._tdAuth.user; },
+    openModal() { window._tdAuth.openModal(); },
+    signOut() { window._tdAuth.signOut(); },
   }));
 });
 </script>
