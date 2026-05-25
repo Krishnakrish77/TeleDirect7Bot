@@ -14,7 +14,7 @@
     </a>
     <h1 class="text-xl font-bold text-white">My List</h1>
     {% if items %}
-      <span class="text-sm text-slate-500">{{ items | length }} saved</span>
+      <span id="wl-count" class="text-sm text-slate-500">{{ items | length }} saved</span>
     {% endif %}
   </div>
 
@@ -80,7 +80,7 @@
                           group-hover:scale-105 transition-transform duration-300" />
               {# Remove button — shown on hover #}
               <button type="button"
-                      onclick="event.preventDefault();event.stopPropagation();_wlToggle(this,'{{ it.item_id }}')"
+                      onclick="event.preventDefault();event.stopPropagation();_wlToggle(this,{{ it.item_id | tojson }})"
                       data-item-id="{{ it.item_id }}"
                       data-saved="true"
                       class="wl-btn absolute top-1.5 right-1.5
@@ -125,16 +125,16 @@ async function _wlToggle(btn, itemId) {
   li.style.opacity = '0.4';
   li.style.pointerEvents = 'none';
   try {
-    await fetch('/api/watchlist/' + encodeURIComponent(itemId), {
+    var resp = await fetch('/api/watchlist/' + encodeURIComponent(itemId), {
       method: 'DELETE',
       headers: token ? {'Authorization': 'Bearer ' + token} : {},
     });
+    if (!resp.ok) throw new Error('server error ' + resp.status);
     li.remove();
-    var counter = document.querySelector('h1 ~ span');
+    var counter = document.getElementById('wl-count');
     if (counter) {
       var n = parseInt(counter.textContent) - 1;
-      counter.textContent = n + ' saved';
-      if (n <= 0) counter.textContent = '';
+      counter.textContent = n > 0 ? n + ' saved' : '';
     }
   } catch(e) {
     li.style.opacity = '';

@@ -89,6 +89,7 @@ async def add(user_id: int, item_id: str) -> None:
 
 
 async def remove(user_id: int, item_id: str) -> None:
+    await _ensure_indexes()
     db = _get_db()
     if db is None:
         return

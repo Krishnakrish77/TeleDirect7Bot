@@ -84,7 +84,10 @@ window._tdAuth = (function() {
     try {
       var token = sessionStorage.getItem('td:auth') || _cookieToken();
       if (!token) return null;
-      var p = JSON.parse(atob(token.split('.')[1]));
+      // JWT uses base64url (no padding); atob needs standard base64 with padding.
+      var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      b64 += '=='.slice(0, (4 - b64.length % 4) % 4);
+      var p = JSON.parse(atob(b64));
       if (p.exp > Date.now() / 1000)
         return { name: p.name, username: p.username, photo: p.photo, is_admin: p.is_admin };
       sessionStorage.removeItem('td:auth');
@@ -106,7 +109,7 @@ window._tdAuth = (function() {
         s.setAttribute('data-telegram-login', '{{ bot_username }}');
         s.setAttribute('data-size', 'large'); s.setAttribute('data-radius', '8');
         s.setAttribute('data-onauth', '_onTelegramAuth(user)');
-        s.setAttribute('data-request-access', 'write');
+        s.setAttribute('data-request-access', 'read');
         root.appendChild(s);
       }
     },

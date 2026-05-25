@@ -32,7 +32,10 @@ def verify_telegram_payload(data: dict) -> bool:
     ).hexdigest()
 
     # Check signature and freshness (< 24 h)
-    fresh = (time.time() - int(data.get("auth_date", 0))) < 86_400
+    try:
+        fresh = (time.time() - int(data.get("auth_date", 0))) < 86_400
+    except (ValueError, TypeError):
+        return False
     return fresh and hmac.compare_digest(expected, check_hash)
 
 

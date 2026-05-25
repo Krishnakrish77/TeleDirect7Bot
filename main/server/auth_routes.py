@@ -6,8 +6,22 @@ import json
 from aiohttp import web
 
 from main.utils.user_auth import verify_telegram_payload, create_token
+from main.vars import Var
 
 routes = web.RouteTableDef()
+
+_SECURE = Var.HAS_SSL or Var.ON_KOYEB
+
+
+def _set_session_cookie(resp: web.Response, value: str, max_age: int) -> None:
+    resp.set_cookie(
+        "td_session", value,
+        httponly=False,     # JS needs to read it for Authorization header use
+        samesite="Lax",
+        secure=_SECURE,
+        path="/",
+        max_age=max_age,
+    )
 
 
 @routes.post("/auth/telegram")
@@ -26,24 +40,12 @@ async def auth_telegram(request: web.Request) -> web.Response:
         content_type="application/json",
         status=200,
     )
-    # Set a session cookie so server-rendered pages (e.g. /admin) receive
-    # the token automatically without JS needing to set headers.
-    # The JS side also stores it in sessionStorage for client-side use.
-    resp.set_cookie(
-        "td_session", token,
-        httponly=False,      # readable by JS for Authorization header use
-        samesite="Lax",
-        secure=False,        # set to True in production with HTTPS
-        path="/",
-        max_age=60 * 60 * 24 * 30,  # 30 days
-    )
+    _set_session_cookie(resp, token, max_age=60 * 60 * 24 * 30)
     return resp
 
 
 @routes.post("/auth/logout")
 async def auth_logout(request: web.Request) -> web.Response:
-    return web.Response(
-        text='{"ok":true}',
-        content_type="application/json",
-        status=200,
-    )
+    resp = web.Response(text='{"ok":true}', content_type="application/json")
+    _set_session_cookie(resp, "", max_age=0)
+    return resp

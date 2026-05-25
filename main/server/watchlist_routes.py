@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +20,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from main.utils.user_auth import decode_token
 from main.utils import watchlist_store
 from main.utils import media_index
+from main.vars import Var
 
 routes = web.RouteTableDef()
 
@@ -28,6 +30,10 @@ _env = Environment(
     autoescape=select_autoescape(["html"]),
     enable_async=True,
 )
+_env.globals["bot_username"] = Var.BOT_USERNAME
+
+# Allowlist: plain message_id (digits only) or prefixed group key (slug chars)
+_VALID_IID = re.compile(r'^(?:(?:movie|series|album):[a-z0-9_-]{1,120}|\d{1,15})$')
 
 
 def _get_user(request: web.Request) -> Optional[dict]:
@@ -161,6 +167,8 @@ async def api_add(request: web.Request) -> web.Response:
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
     iid = request.match_info["iid"]
+    if not _VALID_IID.match(iid):
+        return _json({"error": "invalid item_id"}, status=400)
     await watchlist_store.add(user["sub"], iid)
     return _json({"saved": True, "item_id": iid})
 
@@ -171,5 +179,7 @@ async def api_remove(request: web.Request) -> web.Response:
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
     iid = request.match_info["iid"]
+    if not _VALID_IID.match(iid):
+        return _json({"error": "invalid item_id"}, status=400)
     await watchlist_store.remove(user["sub"], iid)
     return _json({"saved": False, "item_id": iid})
