@@ -16,7 +16,7 @@
     },
     destroy() { if (this.timer) { clearInterval(this.timer); this.timer = null; } },
   }"
-  x-init="restart()"
+  x-init="restart(); $cleanup(() => destroy())"
   @mouseenter="if (timer) { clearInterval(timer); timer = null; }"
   @mouseleave="restart()"
   {# Aspect ratio: taller on mobile so Series chip + h2 + genres +

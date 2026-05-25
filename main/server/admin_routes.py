@@ -727,6 +727,12 @@ async def admin_action(request: web.Request) -> web.Response:
         n = await _bulk_delete(ids)
         raise _redirect_with_flash(f"Deleted {n} entries", target=_target)
 
+    if action in ("hide", "unhide"):
+        hidden = action == "hide"
+        n = sum(1 for mid in ids if await media_index.set_hidden(mid, hidden))
+        verb = "Hidden" if hidden else "Unhidden"
+        raise _redirect_with_flash(f"{verb} {n} entries", target=_target)
+
     if action == "retag":
         tags = _normalise_tags(form.get("tags", ""))
         n = await _bulk_retag(ids, tags)

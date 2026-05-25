@@ -163,12 +163,17 @@ function _playVia(arr, idx) {
   const t = arr[idx];
   const bg = document.getElementById('bgAudio');
   if (!bg) { window.location.href = t.watchUrl + '?play=1'; return; }
+  // Store full queue so the ended handler can advance without losing metadata
+  try {
+    sessionStorage.setItem('td:queue', JSON.stringify(arr));
+    sessionStorage.setItem('td:queueIndex', String(idx));
+  } catch(_) {}
   bg.src = t.streamUrl;
   bg.play().then(function() {
     try { localStorage.setItem('td:nowplaying', JSON.stringify(_buildNp(arr, idx))); } catch(_) {}
     if (typeof window._mpInit === 'function') window._mpInit();
+    _updateNowPlaying();
   }).catch(function() {
-    // Browser blocked autoplay — navigate to watch page with ?play=1
     window.location.href = t.watchUrl + '?play=1';
   });
 }
@@ -221,9 +226,9 @@ function _updateNowPlaying() {
   }
 }
 
-// Hook into _mpInit so indicator updates whenever the track changes
-var _origMpInit = window._mpInit;
-window._mpInit = function() { _origMpInit && _origMpInit(); _updateNowPlaying(); };
+// Register as a page-specific callback that _mpInit calls after each update.
+// (Can't override window._mpInit here — _mini_player.html loads after this script.)
+window._onMpInit = _updateNowPlaying;
 _updateNowPlaying();
 </script>
 {% endblock %}

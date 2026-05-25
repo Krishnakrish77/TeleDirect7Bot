@@ -265,6 +265,14 @@
     document.body.style.paddingBottom = '';
   };
 
+  // Wrap _mpInit to call any page-specific callback registered as _onMpInit.
+  // Pages that need to react to track changes (e.g. album page equalizer) set
+  // window._onMpInit = myFn. Avoids override-timing issues with {% block scripts %}.
+  var _mpInitBase = _mpInit;
+  _mpInit = function() {
+    _mpInitBase();
+    if (typeof window._onMpInit === 'function') window._onMpInit();
+  };
   window._mpInit = _mpInit;
   window._updateMediaSession = _updateMediaSession;
 
