@@ -66,9 +66,10 @@
              onclick="event.preventDefault(); _albumPlay({{ loop.index0 }})"
              class="group flex items-center gap-4 px-3 py-3 rounded-lg
                     hover:bg-ink-800/60 transition-colors cursor-pointer">
-            {# Track number #}
-            <span class="w-6 text-right text-sm text-slate-500 tabular-nums flex-shrink-0">
-              {{ track.track_number or loop.index }}
+            {# Track number / now-playing indicator #}
+            <span class="w-6 flex items-center justify-end flex-shrink-0 _tn" data-idx="{{ loop.index0 }}"
+                  data-num="{{ track.track_number or loop.index }}">
+              <span class="_tn-num text-sm text-slate-500 tabular-nums">{{ track.track_number or loop.index }}</span>
             </span>
             {# Thumb #}
             <div class="w-10 h-10 rounded bg-ink-800 flex-shrink-0 overflow-hidden relative">
@@ -113,6 +114,18 @@
       {% endfor %}
     </ul>
   </div>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  @keyframes _eq1{0%,100%{height:3px}50%{height:12px}}
+  @keyframes _eq2{0%,100%{height:8px}50%{height:3px}}
+  @keyframes _eq3{0%,100%{height:5px}50%{height:14px}}
+  .eq-bar{display:inline-block;width:3px;background:#f97316;border-radius:1px;margin:0 1px;vertical-align:bottom}
+  .eq-bar:nth-child(1){animation:_eq1 .7s ease-in-out infinite}
+  .eq-bar:nth-child(2){animation:_eq2 .55s ease-in-out infinite}
+  .eq-bar:nth-child(3){animation:_eq3 .85s ease-in-out infinite}
+</style>
 {% endblock %}
 
 {% block scripts %}
@@ -175,5 +188,42 @@ function _albumShuffle(albumKey) {
 }
 // Legacy alias for existing shuffle calls
 function shuffleAlbum(albumKey) { _albumShuffle(albumKey); }
+
+// ── Now-playing indicator ─────────────────────────────────────────────────
+function _updateNowPlaying() {
+  var np;
+  try { np = JSON.parse(localStorage.getItem('td:nowplaying') || 'null'); } catch(_) { np = null; }
+
+  document.querySelectorAll('._tn').forEach(function(el) {
+    var numEl = el.querySelector('._tn-num');
+    if (numEl) {
+      numEl.innerHTML = el.dataset.num;
+      numEl.className = '_tn-num text-sm text-slate-500 tabular-nums';
+    }
+    el.classList.remove('text-brand-400');
+  });
+
+  if (!np || !np.streamUrl) return;
+  var activeIdx = _albumTrackData.findIndex(function(t) {
+    return t.streamUrl === np.streamUrl || t.watchUrl === np.url;
+  });
+  if (activeIdx < 0) return;
+
+  var el = document.querySelector('._tn[data-idx="' + activeIdx + '"]');
+  if (!el) return;
+  el.classList.add('text-brand-400');
+  var numEl = el.querySelector('._tn-num');
+  if (numEl) {
+    numEl.className = '_tn-num inline-flex items-end gap-px';
+    numEl.innerHTML = '<span class="eq-bar" style="height:3px"></span>' +
+                      '<span class="eq-bar" style="height:8px"></span>' +
+                      '<span class="eq-bar" style="height:5px"></span>';
+  }
+}
+
+// Hook into _mpInit so indicator updates whenever the track changes
+var _origMpInit = window._mpInit;
+window._mpInit = function() { _origMpInit && _origMpInit(); _updateNowPlaying(); };
+_updateNowPlaying();
 </script>
 {% endblock %}

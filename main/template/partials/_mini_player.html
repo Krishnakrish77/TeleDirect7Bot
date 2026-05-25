@@ -65,6 +65,8 @@
           </svg>
         </button>
       </div>
+      {# Time display — current / total #}
+      <span id="_mp-time" class="text-[11px] tabular-nums text-slate-500 flex-shrink-0 hidden sm:block"></span>
       {# Dismiss #}
       <button onclick="window._mpDismiss && window._mpDismiss()"
               class="flex-shrink-0 text-slate-500 hover:text-white
@@ -137,29 +139,59 @@
   if (_bgAudio) {
     _bgAudio.addEventListener('play',  _mpSyncIcon);
     _bgAudio.addEventListener('pause', _mpSyncIcon);
+    function _mpFmt(s) {
+      if (!isFinite(s) || s < 0) return '0:00';
+      var m = Math.floor(s / 60), sec = Math.floor(s % 60);
+      return m + ':' + String(sec).padStart(2, '0');
+    }
     _bgAudio.addEventListener('timeupdate', function() {
       var bar = document.getElementById('_mp-progress');
-      if (!bar) return;
-      var pct = _bgAudio.duration > 0 ? (_bgAudio.currentTime / _bgAudio.duration * 100) : 0;
-      bar.style.width = pct.toFixed(1) + '%';
+      var timeEl = document.getElementById('_mp-time');
+      var dur = _bgAudio.duration;
+      var cur = _bgAudio.currentTime;
+      var pct = dur > 0 ? (cur / dur * 100) : 0;
+      if (bar) bar.style.width = pct.toFixed(1) + '%';
+      if (timeEl && dur > 0) timeEl.textContent = _mpFmt(cur) + ' / ' + _mpFmt(dur);
     });
     _bgAudio.addEventListener('ended', function() {
+      // Primary: use the sessionStorage queue for accurate next-next metadata
+      var queue = null, qIdx = -1;
+      try {
+        queue = JSON.parse(sessionStorage.getItem('td:queue') || 'null');
+        qIdx  = parseInt(sessionStorage.getItem('td:queueIndex') || '-1', 10);
+      } catch(_) {}
+
+      if (queue && qIdx >= 0 && qIdx + 1 < queue.length) {
+        var ni = qIdx + 1;
+        var cur = queue[qIdx], nxt = queue[ni], aft = queue[ni + 1];
+        var newNp = {
+          url: nxt.watchUrl, streamUrl: nxt.streamUrl,
+          title: nxt.title, artist: nxt.artist, art: nxt.art,
+          nextUrl:       aft ? aft.watchUrl  : null,
+          nextStreamUrl: aft ? aft.streamUrl : null,
+          nextTitle:     aft ? aft.title     : null,
+          nextArtist:    aft ? aft.artist    : null,
+          nextArt:       aft ? aft.art       : null,
+          prevUrl: cur.watchUrl, prevStreamUrl: cur.streamUrl,
+        };
+        try { localStorage.setItem(NP_KEY, JSON.stringify(newNp)); } catch(_) {}
+        try { sessionStorage.setItem('td:queueIndex', String(ni)); } catch(_) {}
+        _bgAudio.src = nxt.streamUrl;
+        _bgAudio.play().catch(function() {});
+        _mpInit();
+        return;
+      }
+
+      // Fallback: np.nextStreamUrl (set from watch page npData)
       var np;
       try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
       if (!np) return;
-
-      // If we have the next track's stream URL, advance directly via bgAudio
-      // without navigating — seamless gapless advance like Spotify.
       if (np.nextStreamUrl) {
         var nextNp = {
-          url: np.nextUrl,
-          streamUrl: np.nextStreamUrl,
-          title: np.nextTitle || '',
-          artist: np.nextArtist || '',
-          art: np.nextArt || '',
-          nextUrl: null, nextStreamUrl: null,  // refreshed when watch page loads
-          prevUrl: np.url,          // track N (the one that just ended)
-          prevStreamUrl: np.streamUrl,
+          url: np.nextUrl, streamUrl: np.nextStreamUrl,
+          title: np.nextTitle || '', artist: np.nextArtist || '', art: np.nextArt || '',
+          nextUrl: null, nextStreamUrl: null,
+          prevUrl: np.url, prevStreamUrl: np.streamUrl,
         };
         try { localStorage.setItem(NP_KEY, JSON.stringify(nextNp)); } catch(_) {}
         _bgAudio.src = np.nextStreamUrl;
