@@ -32,58 +32,12 @@
         TeleDirect
       </a>
 
-      {# Live suggestion dropdown around the nav search input. Hits
-         /search/suggest on every keystroke (debounced 150ms client-side)
-         and shows top matches with poster + title + year + type. The
-         dropdown owns its own Alpine state so it can run alongside the
-         page-level HTMX form. Keyboard: ArrowUp/Down navigates,
-         Enter jumps, Escape closes. #}
-      <div class="relative flex-1 max-w-md ml-auto"
-           x-data="{
-             items: [],
-             active: -1,
-             open: false,
-             query: '',
-             timer: null,
-             schedule(v) {
-               this.query = v;
-               clearTimeout(this.timer);
-               if (!v || v.trim().length < 1) { this.items = []; this.open = false; return; }
-               this.timer = setTimeout(() => this.fetch(v.trim()), 150);
-             },
-             async fetch(v) {
-               try {
-                 const r = await fetch('/search/suggest?q=' + encodeURIComponent(v) + '&limit=8');
-                 if (!r.ok) return;
-                 this.items = await r.json();
-                 this.active = -1;
-                 this.open = this.query.trim().length > 0;
-               } catch (e) { /* swallow */ }
-             },
-             move(delta) {
-               if (!this.items.length) return;
-               this.active = (this.active + delta + this.items.length) % this.items.length;
-             },
-             go(idx) {
-               if (idx >= 0 &amp;&amp; idx < this.items.length) {
-                 window.location = this.items[idx].url;
-               }
-             },
-             posterUrl(item) {
-               // Only use TMDB posters in the dropdown — the /thumb
-               // fallback often returns channel banners or auto-grabbed
-               // frames that look misleading next to the title. When
-               // there's no TMDB poster, show a neutral placeholder.
-               return item.poster_path
-                 ? 'https://image.tmdb.org/t/p/w92' + item.poster_path
-                 : null;
-             },
-           }"
-           @click.outside="open = false"
-           @keydown.escape.window="open = false">
+      {# Search input — filters the grid via the parent HTMX form.
+         For full search with suggestions use the global modal (Cmd+K / ⌘K). #}
+      <div class="relative flex-1 max-w-md ml-auto">
         <label class="relative block">
           <span class="sr-only">Search</span>
-          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none"
                xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round"
@@ -92,77 +46,22 @@
           <input
             type="search"
             name="q"
+            id="hub-search"
             value="{{ params.q }}"
             placeholder="Search…"
             autocomplete="off"
-            @input="schedule($event.target.value)"
-            @focus="if (query.trim()) open = true"
-            @keydown.arrow-down.prevent="move(1); open = true"
-            @keydown.arrow-up.prevent="move(-1)"
-            @keydown.enter="if (active >= 0) { $event.preventDefault(); go(active); }"
-            class="w-full pl-9 pr-3 py-2 rounded-lg
+            class="w-full pl-9 pr-14 py-2 rounded-lg
                    bg-ink-800/70 text-sm text-slate-100 placeholder-slate-500
                    border border-white/5
                    focus:outline-none focus:ring-2 focus:ring-brand-400/60 focus:border-brand-400/60
                    transition"
           />
+          <kbd class="absolute right-3 top-1/2 -translate-y-1/2
+                      hidden sm:flex items-center gap-0.5
+                      text-[10px] text-slate-600 font-mono pointer-events-none">
+            <span>⌘K</span>
+          </kbd>
         </label>
-
-        <div x-show="open"
-             x-transition.opacity.duration.150ms
-             x-cloak
-             class="absolute right-0 left-0 top-full mt-2 z-40
-                    bg-ink-950 border border-white/10
-                    rounded-lg shadow-2xl overflow-hidden">
-          <ul class="max-h-96 overflow-y-auto py-1">
-            <template x-for="(item, idx) in items" :key="item.url">
-              <li>
-                <a :href="item.url"
-                   @mouseenter="active = idx"
-                   :class="active === idx
-                           ? 'bg-brand-500/15 text-white'
-                           : 'text-slate-200 hover:bg-ink-800'"
-                   class="flex items-center gap-3 px-3 py-2 transition-colors">
-                  <template x-if="posterUrl(item)">
-                    <img :src="posterUrl(item)" alt="" loading="lazy"
-                         class="w-9 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
-                  </template>
-                  <template x-if="!posterUrl(item)">
-                    <div class="w-9 h-12 rounded bg-ink-800 flex-shrink-0
-                                grid place-items-center text-slate-600">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-                           fill="none" stroke="currentColor" stroke-width="1.5"
-                           class="w-4 h-4">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                              d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
-                      </svg>
-                    </div>
-                  </template>
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium truncate" x-text="item.title"></p>
-                    <p class="text-xs text-slate-500 tabular-nums">
-                      <span x-text="item.year || ''"></span>
-                      <span class="ml-2 uppercase tracking-wider text-[10px]"
-                            x-text="item.kind"></span>
-                    </p>
-                  </div>
-                </a>
-              </li>
-            </template>
-          </ul>
-          <template x-if="!items.length">
-            <p class="px-4 py-5 text-center text-sm text-slate-500">
-              Nothing found for
-              "<span class="text-slate-300" x-text="query"></span>"
-            </p>
-          </template>
-          <div class="px-3 py-2 border-t border-white/5 text-right">
-            <a :href="'/?q=' + encodeURIComponent(query)"
-               class="text-xs text-slate-400 hover:text-brand-300 transition-colors">
-              See all results →
-            </a>
-          </div>
-        </div>
       </div>
     </header>
 
