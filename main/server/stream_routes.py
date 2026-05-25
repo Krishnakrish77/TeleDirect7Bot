@@ -92,6 +92,12 @@ async def watch_handler(request: web.Request):
 async def stream_handler(request: web.Request):
     try:
         path = request.match_info["path"]
+        # Reject any path that belongs to a named route but arrived here via
+        # the catch-all (e.g. GET /admin/... accidentally triggered by a bad
+        # POST→GET conversion). These should never be stream URLs.
+        if path.startswith(("admin", "watch", "hub", "series", "movie",
+                             "album", "static", "thumb", "api", "hls", "sub")):
+            raise web.HTTPNotFound()
         match = re.search(r"^([a-zA-Z0-9_-]{16}|[a-zA-Z0-9_-]{6})(\d+)$", path)
         if match:
             secure_hash = match.group(1)
