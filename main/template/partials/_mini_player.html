@@ -16,9 +16,14 @@
          class="fixed bottom-0 left-0 right-0 z-40
                 bg-ink-950/95 backdrop-blur-md border-t border-white/10
                 px-4 py-2.5 flex items-center gap-3 shadow-2xl">
-      {# Progress bar — thin orange line at the very top of the bar #}
-      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:rgba(255,255,255,0.06);pointer-events:none">
-        <div id="_mp-progress" style="height:100%;width:0%;background:#f97316;transition:width 0.2s linear"></div>
+      {# Progress bar — seekable. Tall touch target, thin visual rail. #}
+      <div id="_mp-seek"
+           style="position:absolute;top:0;left:0;right:0;height:12px;cursor:pointer;padding-top:0;z-index:1"
+           title="Seek">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:rgba(255,255,255,0.06);transition:height 0.15s"
+             id="_mp-seek-track">
+          <div id="_mp-progress" style="height:100%;width:0%;background:#f97316;transition:width 0.2s linear;pointer-events:none"></div>
+        </div>
       </div>
       {# Album art + track info — tap to go to player #}
       <a id="_mp-link" href="#"
@@ -201,6 +206,42 @@
         window.location.href = np.nextUrl;
       }
     });
+  }
+
+  // ── Mini-player seek bar ───────────────────────────────────────────────
+  var _mpSeek = document.getElementById('_mp-seek');
+  var _mpSeekTrack = document.getElementById('_mp-seek-track');
+  if (_mpSeek) {
+    function _mpSeekTo(clientX) {
+      var r = _mpSeek.getBoundingClientRect();
+      var pct = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+      if (_bgAudio && isFinite(_bgAudio.duration) && _bgAudio.duration > 0) {
+        _bgAudio.currentTime = pct * _bgAudio.duration;
+      }
+    }
+    // Expand track height on hover/active for visual feedback
+    _mpSeek.addEventListener('mouseenter', function() {
+      if (_mpSeekTrack) _mpSeekTrack.style.height = '4px';
+    });
+    _mpSeek.addEventListener('mouseleave', function() {
+      if (_mpSeekTrack) _mpSeekTrack.style.height = '2px';
+    });
+    // Click to seek
+    _mpSeek.addEventListener('click', function(e) { _mpSeekTo(e.clientX); });
+    // Touch drag to seek
+    var _mpScrubbing = false;
+    _mpSeek.addEventListener('touchstart', function(e) {
+      if (e.touches.length !== 1) return;
+      _mpScrubbing = true;
+      _mpSeekTo(e.touches[0].clientX);
+      e.preventDefault();
+    }, { passive: false });
+    _mpSeek.addEventListener('touchmove', function(e) {
+      if (!_mpScrubbing || e.touches.length !== 1) return;
+      _mpSeekTo(e.touches[0].clientX);
+      e.preventDefault();
+    }, { passive: false });
+    _mpSeek.addEventListener('touchend', function() { _mpScrubbing = false; });
   }
 
   // Toggle play/pause on bgAudio
