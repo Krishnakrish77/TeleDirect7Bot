@@ -5,3 +5,4 @@ pytgcrypto
 jinja2
 uvloop
 motor>=3.6
+PyJWT==2.9.0

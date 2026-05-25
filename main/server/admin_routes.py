@@ -30,11 +30,12 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import admin_auth, media_index
+from main.utils import media_index
 from main.utils.human_readable import humanbytes
 from main.utils.index_entry import IndexEntry, render
 from main.utils import series as series_parse
 from main.utils.media_index import compute_movie_key
+from main.utils.user_auth import decode_token
 from main.vars import Var
 
 
@@ -49,16 +50,29 @@ _env = Environment(
 _env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
 
 
-def _current_user(request: web.Request) -> Optional[int]:
-    cookie = request.cookies.get(admin_auth.COOKIE_NAME)
-    return admin_auth.verify_session(cookie or "")
+def _get_admin_user(request: web.Request) -> Optional[dict]:
+    """Extract and verify JWT from Authorization header OR td_session cookie."""
+    # Header first (for htmx/fetch calls from the admin SPA)
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        user = decode_token(auth[7:])
+        if user and user.get("is_admin"):
+            return user
+    # Cookie fallback (for initial server-rendered page loads)
+    cookie = request.cookies.get("td_session", "")
+    if cookie:
+        user = decode_token(cookie)
+        if user and user.get("is_admin"):
+            return user
+    return None
 
 
 def _require_session(request: web.Request) -> int:
-    user_id = _current_user(request)
-    if user_id is None:
-        raise web.HTTPFound("/admin/login?error=expired")
-    return user_id
+    """Backward-compat alias — returns the Telegram user_id or redirects."""
+    user = _get_admin_user(request)
+    if user is None:
+        raise web.HTTPFound("/admin")
+    return user["sub"]
 
 
 def _html(body: str, *, status: int = 200) -> web.Response:
@@ -71,98 +85,10 @@ def _html(body: str, *, status: int = 200) -> web.Response:
     )
 
 
-def _login_error():
-    """Lazy-load render_error to avoid a circular import at module level."""
-    from main.server import render_error
-    return render_error
-
-
 @routes.get("/admin/login")
 async def admin_login_get(request: web.Request) -> web.Response:
-    """Render a POST bridge page for the one-time DM token.
-
-    The GET URL (with ?t=) is only an intermediate step — it renders a
-    self-submitting form so the token lands in the POST body, not the URL.
-    history.replaceState() runs before the form submits, so the browser
-    never stores the token-bearing URL in history. Referer headers on
-    subsequent requests point at /admin, not this page.
-
-    The GET is still server-logged (unavoidable), but the token is
-    one-time use with a short TTL, making the log entry harmless.
-    """
-    token = request.query.get("t", "")
-    if not token:
-        link_minutes = max(1, round(admin_auth.TOKEN_TTL / 60))
-        return await _login_error()(
-            403,
-            title="Admin link invalid or expired",
-            message=(
-                f"One-time admin links expire {link_minutes} minutes after "
-                "they're issued. DM <code>/admin</code> to the bot to get "
-                "a new one."
-            ),
-            action_href="https://t.me/" + (StreamBot.username or ""),
-            action_label="Open bot in Telegram",
-        )
-    safe_token = _html_lib.escape(token, quote=True)
-    return web.Response(
-        content_type="text/html",
-        charset="utf-8",
-        headers={"Cache-Control": "no-store"},
-        text=f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Signing in…</title>
-  <script>history.replaceState(null, '', '/admin/login');</script>
-</head>
-<body>
-  <form id="f" method="POST" action="/admin/login">
-    <input type="hidden" name="t" value="{safe_token}">
-  </form>
-  <script>document.getElementById('f').submit();</script>
-  <noscript><p>Enable JavaScript to sign in, or
-    <button form="f" type="submit">click here</button>.</p></noscript>
-</body>
-</html>""",
-    )
-
-
-@routes.post("/admin/login")
-async def admin_login_post(request: web.Request) -> web.Response:
-    """Exchange the one-time token (POST body) for a session cookie."""
-    data = await request.post()
-    token = data.get("t", "")
-    user_id = admin_auth.verify_one_time(token) if token else None
-    if user_id is None:
-        link_minutes = max(1, round(admin_auth.TOKEN_TTL / 60))
-        return await _login_error()(
-            403,
-            title="Admin link invalid or expired",
-            message=(
-                f"One-time admin links expire {link_minutes} minutes after "
-                "they're issued. DM <code>/admin</code> to the bot to get "
-                "a new one."
-            ),
-            action_href="https://t.me/" + (StreamBot.username or ""),
-            action_label="Open bot in Telegram",
-        )
-    session = admin_auth.issue_session_token(user_id)
-    resp = web.HTTPFound("/admin")
-    resp.set_cookie(
-        admin_auth.COOKIE_NAME, session,
-        max_age=admin_auth.SESSION_TTL,
-        httponly=True, samesite="Lax", path="/admin",
-    )
-    raise resp
-
-
-@routes.get("/admin/logout")
-async def admin_logout(request: web.Request) -> web.Response:
-    resp = web.HTTPFound("/")
-    resp.del_cookie(admin_auth.COOKIE_NAME, path="/admin")
-    raise resp
+    """Redirect legacy /admin/login URLs to /admin."""
+    raise web.HTTPFound("/admin")
 
 
 _FLASH_COOKIE = "admin_flash"
@@ -210,6 +136,60 @@ def _pop_flash(request: web.Request, resp: web.Response) -> str:
 
 @routes.get("/admin")
 async def admin_home(request: web.Request) -> web.Response:
+    user = _get_admin_user(request)
+    if user is None:
+        # Not authenticated or not admin — show Telegram login page
+        bot_username = Var.BOT_USERNAME or (StreamBot.username or "")
+        return web.Response(
+            content_type="text/html",
+            charset="utf-8",
+            headers={"Cache-Control": "no-store"},
+            text=f"""<!doctype html>
+<html lang="en" class="h-full dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin — Sign in</title>
+  <link rel="stylesheet" href="/static/tailwind.css?v=1">
+</head>
+<body class="min-h-full bg-ink-900 flex items-center justify-center px-4">
+  <div class="w-full max-w-sm bg-ink-800/60 border border-white/10
+              rounded-2xl shadow-2xl p-8 text-center">
+    <h1 class="text-2xl font-bold text-white mb-1">Admin</h1>
+    <p class="text-sm text-slate-400 mb-8">Sign in with your Telegram account to continue.</p>
+    <div id="_tg-root" class="flex justify-center"></div>
+    <p class="mt-6 text-xs text-slate-600">Only the bot owner can access this panel.</p>
+  </div>
+  <script>
+    function onTelegramAuth(user) {{
+      fetch('/auth/telegram', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify(user)
+      }}).then(r => r.json()).then(d => {{
+        if (d.token) {{
+          // Store in sessionStorage for client-side JS use
+          try {{ sessionStorage.setItem('td:auth', d.token); }} catch(_) {{}}
+          // Cookie is set by the server — reload to get the authenticated page
+          window.location.reload();
+        }}
+      }});
+    }}
+    (function() {{
+      var s = document.createElement('script');
+      s.async = true;
+      s.src = 'https://telegram.org/js/telegram-widget.js?22';
+      s.setAttribute('data-telegram-login', '{bot_username}');
+      s.setAttribute('data-size', 'large');
+      s.setAttribute('data-radius', '8');
+      s.setAttribute('data-onauth', 'onTelegramAuth(user)');
+      s.setAttribute('data-request-access', 'write');
+      document.getElementById('_tg-root').appendChild(s);
+    }})();
+  </script>
+</body>
+</html>""",
+        )
     _require_session(request)
 
     # ── Query params: filter, search, pagination, sort ───────────────

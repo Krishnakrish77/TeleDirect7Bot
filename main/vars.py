@@ -47,6 +47,15 @@ class Var(object):
     # Optional TMDB API key for catalogue enrichment (posters, overviews,
     # IMDb ids). Free at themoviedb.org → Settings → API. Without it the
     # enrichment pipeline no-ops silently.
+    # Auth — Telegram Login Widget + JWT sessions
+    BOT_USERNAME = environ.get("BOT_USERNAME", "").strip()
+    _jwt_raw = environ.get("JWT_SECRET", "").strip()
+    if not _jwt_raw:
+        import secrets as _secrets
+        _jwt_raw = _secrets.token_hex(32)
+        logging.warning("JWT_SECRET not set; all sessions will be lost on restart")
+    JWT_SECRET = _jwt_raw
+
     TMDB_API_KEY = environ.get("TMDB_API_KEY", "").strip()
     # Optional Gemini API key for thumbnail-based metadata suggestions in admin.
     # Free tier at aistudio.google.com — no credit card required.

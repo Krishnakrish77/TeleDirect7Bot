@@ -55,6 +55,7 @@ _env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
 _env.filters["duration"] = lambda s: _fmt_duration(int(s)) if s else ""
 from main.utils.codec_probe import _clean_music_tag as _cmt
 _env.filters["clean_music_tag"] = lambda s: _cmt(s) if s else s
+_env.globals["bot_username"] = Var.BOT_USERNAME
 
 
 SORT_OPTIONS = [
