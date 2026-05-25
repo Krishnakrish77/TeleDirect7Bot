@@ -1,32 +1,217 @@
-    document.addEventListener("DOMContentLoaded", () => {
-      const video = document.getElementById("player");
+{% if is_audio %}
+    // ── Audio watch page — runs on DOMContentLoaded AND htmx swaps ──────────
+    // Using a readyState-aware IIFE lets the mini-player expand via htmx.ajax
+    // without a full page reload: bgAudio keeps playing, controls wire up,
+    // and playback position is preserved seamlessly.
+    (function() {
+      function _initAudioPage() {
+        var video = document.getElementById("player");
+        if (!video) return;
 
-      {% if is_audio %}
-      // ── Audio: raw HTMLAudioElement — no Plyr wrapper needed ──────────────
-      // Plyr adds nothing for audio (its controls bar was hidden via CSS and
-      // we only used inst.on()/inst.play() which map 1-to-1 to native events).
-      // Using the element directly removes one abstraction layer and its quirks.
-      if (video) {
+        var streamSrc = {{ src | tojson }};
         attachSource(video);
         attachCustomAudioControls(video);
         history.replaceState(null, '', location.pathname);
-        // If the user tapped the mini-player to expand, bgAudio was playing
-        // this track. Resume from the saved position so playback is seamless.
-        var _np;
-        try { _np = JSON.parse(localStorage.getItem('td:nowplaying') || 'null'); } catch(_) { _np = null; }
-        var _savedPos = (_np && _np.position > 0 &&
-                         (_np.streamUrl === {{ src | tojson }} ||
-                          _np.url === location.href)) ? _np.position : 0;
-        video.addEventListener('loadedmetadata', function() {
-          if (_savedPos > 0 && _savedPos < video.duration) {
-            video.currentTime = _savedPos;
+
+        var bg = document.getElementById('bgAudio');
+        var thisMsgId = '{{ message_id }}';
+        var bgHasTrack = bg && bg.src && bg.src.includes(thisMsgId);
+
+        if (bgHasTrack && !bg.paused) {
+          // Mini-player expand path: bgAudio already playing this track.
+          // Sync the watch-page audio element to bgAudio's position, then
+          // hand off (bgAudio pauses, watch-page element takes over).
+          var handoffPos = bg.currentTime;
+          video.addEventListener('loadedmetadata', function() {
+            if (handoffPos > 0 && handoffPos < video.duration) {
+              video.currentTime = handoffPos;
+            }
+            video.play().then(function() { bg.pause(); }).catch(function() {});
+          }, { once: true });
+        } else {
+          // Normal path: autoplay, optionally seeking to saved position.
+          var _np;
+          try { _np = JSON.parse(localStorage.getItem('td:nowplaying') || 'null'); } catch(_) { _np = null; }
+          var savedPos = (_np && _np.position > 0 &&
+                          (_np.streamUrl === streamSrc || _np.url === location.href))
+                         ? _np.position : 0;
+          if (savedPos > 0) {
+            video.addEventListener('loadedmetadata', function() {
+              if (savedPos < video.duration) video.currentTime = savedPos;
+            }, { once: true });
           }
-        }, { once: true });
-        video.play().catch(function() {});
+          video.play().catch(function() {});
+        }
+
+        {% if meta %}
+        // Now-playing + bgAudio handoff
+        var npData = {
+          url: location.href,
+          streamUrl: streamSrc,
+          title: {{ (meta.title | clean_music_tag) | tojson }},
+          artist: {{ ((meta.artist or '') | clean_music_tag) | tojson }},
+          art: {% if meta.secure_hash %}"/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"{% else %}""{% endif %},
+          nextUrl: {{ next_track.url | tojson if next_track else 'null' }},
+          nextStreamUrl: {{ next_track.stream_url | tojson if next_track else 'null' }},
+          nextTitle: {{ next_track.title | tojson if next_track else 'null' }},
+          nextArtist: {{ next_track.artist | tojson if next_track else 'null' }},
+          nextArt: {{ next_track.art | tojson if next_track else 'null' }},
+          prevUrl: {{ prev_track.url | tojson if prev_track else 'null' }},
+          prevStreamUrl: {{ prev_track.stream_url | tojson if prev_track else 'null' }},
+        };
+        video.addEventListener('play', function() {
+          try { localStorage.setItem('td:nowplaying', JSON.stringify(npData)); } catch(_) {}
+          if (typeof window._updateMediaSession === 'function') window._updateMediaSession(npData);
+          if (bg && !bg._primed) { bg.src = streamSrc; bg.load(); bg._primed = true; }
+        }, { once: false });
+
+        window._handoffAudioToBg = function() {
+          if (!bg || video.paused) return;
+          var seekTo = video.currentTime;
+          video.pause();
+          if (bg.src && bg.src.includes(thisMsgId) && bg._primed) {
+            if (isFinite(bg.duration) && bg.duration > 0) {
+              bg.currentTime = seekTo; bg.play().catch(function() {});
+            } else {
+              bg.addEventListener('loadedmetadata', function onM() {
+                bg.removeEventListener('loadedmetadata', onM);
+                bg.currentTime = seekTo; bg.play().catch(function() {});
+              });
+            }
+          } else {
+            bg.src = streamSrc;
+            bg.addEventListener('loadedmetadata', function onM() {
+              bg.removeEventListener('loadedmetadata', onM);
+              bg.currentTime = seekTo; bg.play().catch(function() {});
+            });
+            bg.load();
+          }
+        };
+        window.addEventListener('pagehide', window._handoffAudioToBg);
+        {% endif %}
+
+        document.querySelectorAll("[data-stream-url]").forEach(function(el) {
+          if (el.dataset.streamUrl) el.href = buildVlcUrl(el.dataset.streamUrl);
+        });
+
+        {% if next_track %}
+        attachNextTrack(video);
+        {% endif %}
+
+        {% if is_audio and not next_track and meta and meta.album_key and album_tracks %}
+        (function() {
+          video.addEventListener('ended', function() {
+            if ((localStorage.getItem('td:repeat') || 'off') !== 'all') return;
+            {% if meta and meta.album_key %}
+            var _sq; try { _sq = JSON.parse(sessionStorage.getItem('td:shuffle:{{ meta.album_key }}') || 'null'); } catch(_) { _sq = null; }
+            var _first = (_sq && _sq.length) ? '/watch/' + _sq[0] : (video.dataset.albumFirst || null);
+            {% else %}
+            var _first = video.dataset.albumFirst || null;
+            {% endif %}
+            if (_first) window.location.href = _first;
+          });
+        })();
+        {% endif %}
+
+        (function() {
+          var shareBtn = document.getElementById('tdShare');
+          if (!shareBtn) return;
+          var lbl = shareBtn.querySelector('.tdShareLabel');
+          shareBtn.addEventListener('click', async function() {
+            var data = { title: document.title, url: location.href };
+            if (navigator.share) {
+              try { await navigator.share(data); } catch(_) {}
+            } else if (navigator.clipboard) {
+              try {
+                await navigator.clipboard.writeText(location.href);
+                if (lbl) { lbl.textContent = 'Copied!'; setTimeout(function() { lbl.textContent = 'Share'; }, 2000); }
+              } catch(_) {}
+            }
+          });
+        })();
+
+        {% if meta and meta.title %}
+        (async function() {
+          const el = document.getElementById("lyricsFlipContent");
+          if (!el) return;
+          const title = {{ (meta.title | clean_music_tag) | tojson }};
+          const artist = {{ ((meta.artist or '') | clean_music_tag) | tojson }};
+          let lrcLines = null;
+          function parseLrc(raw) {
+            const lines = [];
+            for (const line of raw.split("\n")) {
+              const m = line.match(/^\[(\d+):(\d+\.\d+)\](.*)/);
+              if (m) lines.push({ t: parseInt(m[1]) * 60 + parseFloat(m[2]), text: m[3].trim() });
+            }
+            return lines.length ? lines.sort((a, b) => a.t - b.t) : null;
+          }
+          function renderSynced(lines) {
+            el.innerHTML = "";
+            lines.forEach(function(l, i) {
+              const p = document.createElement("p");
+              p.dataset.i = i;
+              p.style.cssText = "transition:all 0.3s ease;color:rgba(100,116,139,0.5);font-size:0.875rem;line-height:1.75rem;cursor:pointer;padding:0.125rem 0";
+              p.textContent = l.text || " ";
+              p.addEventListener("click", function() {
+                const audio = document.getElementById("player");
+                if (audio) audio.currentTime = l.t;
+              });
+              el.appendChild(p);
+            });
+          }
+          function highlightLine(currentTime) {
+            if (!lrcLines) return;
+            let active = 0;
+            for (let i = 0; i < lrcLines.length; i++) { if (lrcLines[i].t <= currentTime) active = i; }
+            const pTags = el.querySelectorAll("p[data-i]");
+            pTags.forEach((p, i) => {
+              if (i === active) { p.style.color="rgba(255,255,255,1)"; p.style.fontSize="1.125rem"; p.style.fontWeight="700"; p.style.lineHeight="2rem"; }
+              else if (i < active) { p.style.color="rgba(100,116,139,0.35)"; p.style.fontSize="0.875rem"; p.style.fontWeight="400"; p.style.lineHeight="1.75rem"; }
+              else { p.style.color="rgba(148,163,184,0.55)"; p.style.fontSize="0.875rem"; p.style.fontWeight="400"; p.style.lineHeight="1.75rem"; }
+            });
+            const activePara = el.querySelector(`p[data-i="${active}"]`);
+            if (activePara) {
+              const paraTop = activePara.offsetTop, paraH = activePara.offsetHeight;
+              el.scrollTo({ top: paraTop - el.clientHeight/2 + paraH/2, behavior: "smooth" });
+            }
+          }
+          try {
+            const params = new URLSearchParams({ track_name: title, artist_name: artist });
+            const r = await fetch("https://lrclib.net/api/get?" + params);
+            if (!r.ok) throw new Error("not found");
+            const data = await r.json();
+            if (data.syncedLyrics) lrcLines = parseLrc(data.syncedLyrics);
+            if (lrcLines) {
+              renderSynced(lrcLines);
+              const audio = document.getElementById("player");
+              if (audio) {
+                audio.addEventListener("timeupdate", () => highlightLine(audio.currentTime));
+                if (audio.currentTime > 0) highlightLine(audio.currentTime);
+              }
+            } else if (data.plainLyrics) {
+              el.classList.add("text-slate-300", "whitespace-pre-line");
+              el.textContent = data.plainLyrics;
+            } else {
+              el.innerHTML = '<span class="text-slate-500 text-xs">No lyrics available</span>';
+            }
+          } catch(_) {
+            el.innerHTML = '<span class="text-slate-500 text-xs">No lyrics available</span>';
+          }
+        })();
+        {% endif %}
       }
 
-      {% else %}
-      // ── Video: Plyr handles subtitle UI, fullscreen, pip, keyboard nav ─────
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _initAudioPage);
+      } else {
+        _initAudioPage(); // htmx swap: DOM already ready
+      }
+    })();
+
+{% else %}
+    // ── Video watch page — always a full page load ───────────────────────────
+    document.addEventListener("DOMContentLoaded", () => {
+      const video = document.getElementById("player");
       if (video) {
         attachSource(video);
         watchForUndecodableCodec(video);
@@ -52,131 +237,21 @@
         attachAudioTracks(video);
         injectMobileVideoTools(video);
       }
-      {% endif %}
-
-      {% if is_audio and meta %}
-      // Write now-playing to localStorage; hand off to bgAudio on navigate.
-      (function() {
-        var streamSrc = {{ src | tojson }};
-        var npData = {
-          url: location.href,
-          streamUrl: streamSrc,
-          title: {{ (meta.title | clean_music_tag) | tojson }},
-          artist: {{ ((meta.artist or '') | clean_music_tag) | tojson }},
-          art: {% if meta.secure_hash %}"/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"{% else %}""{% endif %},
-          nextUrl: {{ next_track.url | tojson if next_track else 'null' }},
-          nextStreamUrl: {{ next_track.stream_url | tojson if next_track else 'null' }},
-          nextTitle: {{ next_track.title | tojson if next_track else 'null' }},
-          nextArtist: {{ next_track.artist | tojson if next_track else 'null' }},
-          nextArt: {{ next_track.art | tojson if next_track else 'null' }},
-          prevUrl: {{ prev_track.url | tojson if prev_track else 'null' }},
-          prevStreamUrl: {{ prev_track.stream_url | tojson if prev_track else 'null' }},
-        };
-        if (video) {
-          video.addEventListener('play', function() {
-            try { localStorage.setItem('td:nowplaying', JSON.stringify(npData)); } catch(_) {}
-            // Update Media Session so lock screen shows current track
-            if (typeof window._updateMediaSession === 'function') {
-              window._updateMediaSession(npData);
-            }
-            // iOS audio policy: prime bgAudio during this user gesture so future
-            // bgAudio.play() calls (in _handoffAudioToBg) are allowed without a
-            // new gesture. load() activates the audio element in the iOS context.
-            var bg = document.getElementById('bgAudio');
-            if (bg && !bg._primed) {
-              bg.src = streamSrc;
-              bg.load();
-              bg._primed = true;
-            }
-          }, { once: false });
-
-          // Hand off to bgAudio so music continues while browsing the library.
-          // Called both on pagehide (browser back/forward/tab close) and
-          // htmx:beforeSwap (AJAX navigation on non-/watch/ pages).
-          window._handoffAudioToBg = function() {
-            var bg = document.getElementById('bgAudio');
-            if (!bg || video.paused) return;
-            var seekTo = video.currentTime;
-            video.pause(); // stop Plyr before bgAudio starts to prevent double audio
-            // Reassigning src resets readyState to HAVE_NOTHING — seeking before
-            // loadedmetadata fires is silently dropped. Seek inside the event.
-            if (bg.src && bg.src.includes('{{ message_id }}') && bg._primed) {
-              // Same track already primed — no src reset needed, seek directly
-              if (isFinite(bg.duration) && bg.duration > 0) {
-                bg.currentTime = seekTo;
-                bg.play().catch(function() {});
-              } else {
-                bg.addEventListener('loadedmetadata', function onMeta() {
-                  bg.removeEventListener('loadedmetadata', onMeta);
-                  bg.currentTime = seekTo;
-                  bg.play().catch(function() {});
-                });
-              }
-            } else {
-              bg.src = streamSrc;
-              bg.addEventListener('loadedmetadata', function onMeta() {
-                bg.removeEventListener('loadedmetadata', onMeta);
-                bg.currentTime = seekTo;
-                bg.play().catch(function() {});
-              });
-              bg.load();
-            }
-          };
-          window.addEventListener('pagehide', window._handoffAudioToBg);
-
-          // If bgAudio was already playing this track (user returned from library),
-          // sync Plyr to bgAudio's position and pause bgAudio to avoid double-play.
-          // Compare by message_id embedded in the path to avoid query-string/URL
-          // normalisation issues (bg.src is browser-absolute, streamSrc may be relative).
-          var bg = document.getElementById('bgAudio');
-          var thisMsgId = '{{ message_id }}';
-          if (bg && bg.src && bg.src.includes(thisMsgId) && !bg.paused) {
-            video.currentTime = bg.currentTime;
-            bg.pause();
-          }
-        }
-      })();
-      {% endif %}
 
       document.querySelectorAll("[data-stream-url]").forEach((el) => {
         if (el.dataset.streamUrl) el.href = buildVlcUrl(el.dataset.streamUrl);
       });
 
-      {% if next_ep %}
-      attachNextEpisode(video);
-      {% endif %}
-      {% if next_track %}
-      attachNextTrack(video);
-      {% endif %}
+      {% if next_ep %}attachNextEpisode(video);{% endif %}
 
-      {% if is_audio and not next_track and meta and meta.album_key and album_tracks %}
-      // Repeat-all: when last track ends, loop back to first
-      (function() {
-        var _la = document.getElementById('player');
-        if (!_la) return;
-        _la.addEventListener('ended', function() {
-          if ((localStorage.getItem('td:repeat') || 'off') !== 'all') return;
-          {% if meta and meta.album_key %}
-          var _sq; try { _sq = JSON.parse(sessionStorage.getItem('td:shuffle:{{ meta.album_key }}') || 'null'); } catch(_) { _sq = null; }
-          var _first = (_sq && _sq.length) ? '/watch/' + _sq[0] : (_la.dataset.albumFirst || null);
-          {% else %}
-          var _first = _la.dataset.albumFirst || null;
-          {% endif %}
-          if (_first) window.location.href = _first;
-        });
-      })();
-      {% endif %}
-
-      // ── Share button ──────────────────────────────────────────────────────
       (function() {
         var shareBtn = document.getElementById('tdShare');
         if (!shareBtn) return;
         var lbl = shareBtn.querySelector('.tdShareLabel');
         shareBtn.addEventListener('click', async function() {
           var data = { title: document.title, url: location.href };
-          if (navigator.share) {
-            try { await navigator.share(data); } catch(_) {}
-          } else if (navigator.clipboard) {
+          if (navigator.share) { try { await navigator.share(data); } catch(_) {} }
+          else if (navigator.clipboard) {
             try {
               await navigator.clipboard.writeText(location.href);
               if (lbl) { lbl.textContent = 'Copied!'; setTimeout(function() { lbl.textContent = 'Share'; }, 2000); }
@@ -184,109 +259,5 @@
           }
         });
       })();
-
-      // Synced lyrics via LRCLIB — loaded into the flip card back face
-      {% if is_audio and meta and meta.title %}
-      (async () => {
-        const el = document.getElementById("lyricsFlipContent");
-        if (!el) return;
-        const title = {{ (meta.title | clean_music_tag) | tojson }};
-        const artist = {{ ((meta.artist or '') | clean_music_tag) | tojson }};
-
-        let lrcLines = null;  // [{t: seconds, text: string}] when synced
-
-        function parseLrc(raw) {
-          const lines = [];
-          for (const line of raw.split("\n")) {
-            const m = line.match(/^\[(\d+):(\d+\.\d+)\](.*)/);
-            if (m) lines.push({ t: parseInt(m[1]) * 60 + parseFloat(m[2]), text: m[3].trim() });
-          }
-          return lines.length ? lines.sort((a, b) => a.t - b.t) : null;
-        }
-
-        function renderSynced(lines) {
-          el.innerHTML = "";
-          lines.forEach(function(l, i) {
-            const p = document.createElement("p");
-            p.dataset.i = i;
-            p.style.cssText = "transition:all 0.3s ease;color:rgba(100,116,139,0.5);font-size:0.875rem;line-height:1.75rem;cursor:pointer;padding:0.125rem 0";
-            // textContent prevents XSS from untrusted lyrics data
-            p.textContent = l.text || " ";
-            p.addEventListener("click", function() {
-              const audio = document.getElementById("player");
-              if (audio) audio.currentTime = l.t;
-            });
-            el.appendChild(p);
-          });
-        }
-
-        function highlightLine(currentTime) {
-          if (!lrcLines) return;
-          let active = 0;
-          for (let i = 0; i < lrcLines.length; i++) {
-            if (lrcLines[i].t <= currentTime) active = i;
-          }
-          const pTags = el.querySelectorAll("p[data-i]");
-          pTags.forEach((p, i) => {
-            if (i === active) {
-              // Active: large, bright white, bold — Spotify style
-              p.style.color = "rgba(255,255,255,1)";
-              p.style.fontSize = "1.125rem";
-              p.style.fontWeight = "700";
-              p.style.lineHeight = "2rem";
-            } else if (i < active) {
-              // Past: dimmer than future (sung and gone)
-              p.style.color = "rgba(100,116,139,0.35)";
-              p.style.fontSize = "0.875rem";
-              p.style.fontWeight = "400";
-              p.style.lineHeight = "1.75rem";
-            } else {
-              // Future: slightly more visible than past
-              p.style.color = "rgba(148,163,184,0.55)";
-              p.style.fontSize = "0.875rem";
-              p.style.fontWeight = "400";
-              p.style.lineHeight = "1.75rem";
-            }
-          });
-          // Auto-scroll within the flip card container
-          const activePara = el.querySelector(`p[data-i="${active}"]`);
-          if (activePara) {
-            const container = el;
-            const paraTop = activePara.offsetTop;
-            const paraH = activePara.offsetHeight;
-            container.scrollTo({ top: paraTop - container.clientHeight/2 + paraH/2, behavior: "smooth" });
-          }
-        }
-
-        try {
-          const params = new URLSearchParams({ track_name: title, artist_name: artist });
-          const r = await fetch("https://lrclib.net/api/get?" + params);
-          if (!r.ok) throw new Error("not found");
-          const data = await r.json();
-
-          if (data.syncedLyrics) {
-            lrcLines = parseLrc(data.syncedLyrics);
-          }
-
-          if (lrcLines) {
-            // Synced — render line-by-line, highlight on timeupdate
-            renderSynced(lrcLines);
-            const audio = document.getElementById("player");
-            if (audio) {
-              audio.addEventListener("timeupdate", () => highlightLine(audio.currentTime));
-              // Highlight from current position if already playing
-              if (audio.currentTime > 0) highlightLine(audio.currentTime);
-            }
-          } else if (data.plainLyrics) {
-            // Plain — simple block text, no sync
-            el.classList.add("text-slate-300", "whitespace-pre-line");
-            el.textContent = data.plainLyrics;
-          } else {
-            el.innerHTML = '<span class="text-slate-500 text-xs">No lyrics available</span>';
-          }
-        } catch (_) {
-          el.innerHTML = '<span class="text-slate-500 text-xs">No lyrics available</span>';
-        }
-      })();
-      {% endif %}
     });
+{% endif %}
