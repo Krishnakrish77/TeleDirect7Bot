@@ -127,10 +127,31 @@
       bar.style.width = pct.toFixed(1) + '%';
     });
     _bgAudio.addEventListener('ended', function() {
-      // Auto-advance: load next track URL from localStorage
       var np;
       try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
-      if (np && np.nextUrl) window.location.href = np.nextUrl;
+      if (!np) return;
+
+      // If we have the next track's stream URL, advance directly via bgAudio
+      // without navigating — seamless gapless advance like Spotify.
+      if (np.nextStreamUrl) {
+        var nextNp = {
+          url: np.nextUrl,
+          streamUrl: np.nextStreamUrl,
+          title: np.nextTitle || '',
+          artist: np.nextArtist || '',
+          art: np.nextArt || '',
+          // Next/prev for the track after this one — not available here,
+          // will be refreshed when the watch page eventually loads.
+          nextUrl: null, nextStreamUrl: null,
+          prevUrl: np.nextUrl, prevStreamUrl: np.nextStreamUrl,
+        };
+        try { localStorage.setItem(NP_KEY, JSON.stringify(nextNp)); } catch(_) {}
+        _bgAudio.src = np.nextStreamUrl;
+        _bgAudio.play().catch(function() {});
+        _mpInit();
+      } else if (np.nextUrl) {
+        window.location.href = np.nextUrl;
+      }
     });
   }
 
@@ -196,6 +217,7 @@
     document.body.style.paddingBottom = '';
   };
 
+  window._mpInit = _mpInit;  // expose globally so album/library pages can trigger update
   _mpInit();
 
   // Re-init after every htmx content swap (URL/path may have changed)

@@ -29,6 +29,14 @@
         if (isAudio && players && players.length) {
           window._plyrInst = players[0];
           attachCustomAudioControls(players[0]);
+          // Autoplay if arriving from an album play/advance (bgAudio
+          // was already primed with this track by the previous page gesture).
+          if (new URLSearchParams(location.search).get('play') === '1') {
+            history.replaceState(null, '', location.pathname);
+            players[0].once('ready', function() {
+              players[0].play().catch(function() {});
+            });
+          }
         }
       }
 
@@ -55,7 +63,12 @@
           artist: {{ ((meta.artist or '') | clean_music_tag) | tojson }},
           art: {% if meta.secure_hash %}"/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"{% else %}""{% endif %},
           nextUrl: {{ next_track.url | tojson if next_track else 'null' }},
+          nextStreamUrl: {{ next_track.stream_url | tojson if next_track else 'null' }},
+          nextTitle: {{ next_track.title | tojson if next_track else 'null' }},
+          nextArtist: {{ next_track.artist | tojson if next_track else 'null' }},
+          nextArt: {{ next_track.art | tojson if next_track else 'null' }},
           prevUrl: {{ prev_track.url | tojson if prev_track else 'null' }},
+          prevStreamUrl: {{ prev_track.stream_url | tojson if prev_track else 'null' }},
         };
         if (video) {
           video.addEventListener('play', function() {

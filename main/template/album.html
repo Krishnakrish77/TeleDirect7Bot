@@ -34,15 +34,15 @@
           </p>
           {% if tracks %}
             <div class="mt-4 flex gap-2">
-              <a href="/watch/{{ tracks[0].secure_hash }}{{ tracks[0].message_id }}"
+              <button onclick="_albumPlay(0)"
                  class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm
                         font-semibold text-white bg-brand-500 hover:bg-brand-600
                         transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
                      fill="currentColor" class="w-4 h-4"><path d="M8 5v14l11-7z"/></svg>
                 Play
-              </a>
-              <button onclick="shuffleAlbum('{{ album_key }}')"
+              </button>
+              <button onclick="_albumShuffle('{{ album_key }}')"
                       class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm
                              font-medium text-slate-300 bg-ink-800/70
                              hover:bg-ink-800 border border-white/5 transition-colors">
@@ -63,8 +63,9 @@
       {% for track in tracks %}
         <li>
           <a href="/watch/{{ track.secure_hash }}{{ track.message_id }}"
+             onclick="event.preventDefault(); _albumPlay({{ loop.index0 }})"
              class="group flex items-center gap-4 px-3 py-3 rounded-lg
-                    hover:bg-ink-800/60 transition-colors">
+                    hover:bg-ink-800/60 transition-colors cursor-pointer">
             {# Track number #}
             <span class="w-6 text-right text-sm text-slate-500 tabular-nums flex-shrink-0">
               {{ track.track_number or loop.index }}
@@ -116,25 +117,63 @@
 
 {% block scripts %}
 <script>
-// Build the track list from the server-rendered order for shuffle.
-const _albumTracks = [
-  {% for track in tracks %}
-  "{{ track.secure_hash }}{{ track.message_id }}"{% if not loop.last %},{% endif %}
+// Full track metadata for direct bgAudio playback — no navigation required.
+const _albumTrackData = [
+  {% for t in tracks %}
+  {
+    hash: '{{ t.secure_hash }}{{ t.message_id }}',
+    watchUrl: '/watch/{{ t.secure_hash }}{{ t.message_id }}',
+    streamUrl: '/{{ t.secure_hash }}{{ t.message_id }}',
+    title: {{ (t.title or t.file_name) | clean_music_tag | tojson }},
+    artist: {{ (t.artist or artist or '') | clean_music_tag | tojson }},
+    art: '/thumb/{{ t.secure_hash }}{{ t.message_id }}.jpg',
+  }{% if not loop.last %},{% endif %}
   {% endfor %}
 ];
 
-function shuffleAlbum(albumKey) {
-  // Fisher-Yates shuffle
-  const arr = [..._albumTracks];
+function _buildNp(arr, idx) {
+  const t = arr[idx], nxt = arr[idx + 1], prv = arr[idx - 1];
+  return {
+    url: t.watchUrl, streamUrl: t.streamUrl,
+    title: t.title, artist: t.artist, art: t.art,
+    nextUrl:       nxt ? nxt.watchUrl  : null,
+    nextStreamUrl: nxt ? nxt.streamUrl : null,
+    nextTitle:     nxt ? nxt.title     : null,
+    nextArtist:    nxt ? nxt.artist    : null,
+    nextArt:       nxt ? nxt.art       : null,
+    prevUrl:       prv ? prv.watchUrl  : null,
+    prevStreamUrl: prv ? prv.streamUrl : null,
+  };
+}
+
+function _playVia(arr, idx) {
+  const t = arr[idx];
+  const bg = document.getElementById('bgAudio');
+  if (!bg) { window.location.href = t.watchUrl + '?play=1'; return; }
+  bg.src = t.streamUrl;
+  bg.play().then(function() {
+    try { localStorage.setItem('td:nowplaying', JSON.stringify(_buildNp(arr, idx))); } catch(_) {}
+    if (typeof window._mpInit === 'function') window._mpInit();
+  }).catch(function() {
+    // Browser blocked autoplay — navigate to watch page with ?play=1
+    window.location.href = t.watchUrl + '?play=1';
+  });
+}
+
+function _albumPlay(idx) { _playVia(_albumTrackData, idx); }
+
+function _albumShuffle(albumKey) {
+  const arr = [..._albumTrackData];
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   try {
-    sessionStorage.setItem("td:shuffle:" + albumKey, JSON.stringify(arr));
-  } catch (_) {}
-  // Navigate to first shuffled track
-  window.location.href = "/watch/" + arr[0];
+    sessionStorage.setItem('td:shuffle:' + albumKey, JSON.stringify(arr.map(t => t.hash)));
+  } catch(_) {}
+  _playVia(arr, 0);
 }
+// Legacy alias for existing shuffle calls
+function shuffleAlbum(albumKey) { _albumShuffle(albumKey); }
 </script>
 {% endblock %}

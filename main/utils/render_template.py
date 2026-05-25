@@ -109,7 +109,10 @@ async def render_page(message_id, secure_hash):
                         _nxt = _all_tracks[_i + 1]
                         next_track = {
                             "url": f"/watch/{_nxt.secure_hash}{_nxt.message_id}",
+                            "stream_url": urllib.parse.urljoin(Var.URL, f"{_nxt.secure_hash}{_nxt.message_id}"),
                             "title": _nxt.title or _nxt.file_name or f"Track {_nxt.track_number or _i + 2}",
+                            "artist": _nxt.artist or "",
+                            "art": f"/thumb/{_nxt.secure_hash}{_nxt.message_id}.jpg",
                             "track_number": _nxt.track_number,
                             "secure_hash": _nxt.secure_hash,
                             "message_id": _nxt.message_id,
@@ -119,7 +122,10 @@ async def render_page(message_id, secure_hash):
                         _prv = _all_tracks[_i - 1]
                         prev_track = {
                             "url": f"/watch/{_prv.secure_hash}{_prv.message_id}",
+                            "stream_url": urllib.parse.urljoin(Var.URL, f"{_prv.secure_hash}{_prv.message_id}"),
                             "title": _prv.title or _prv.file_name or f"Track {_prv.track_number or _i}",
+                            "artist": _prv.artist or "",
+                            "art": f"/thumb/{_prv.secure_hash}{_prv.message_id}.jpg",
                             "track_number": _prv.track_number,
                         }
                     break
