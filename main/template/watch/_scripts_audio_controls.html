@@ -41,10 +41,10 @@
       inst.on("ended",         () => setPlaying(false));
       inst.on("timeupdate",    syncProgress);
       inst.on("loadedmetadata", () => {
+        // Controls are already visible — just fill in the real duration
         durEl.textContent = fmt(inst.duration);
         syncProgress();
         setPlaying(!inst.paused);
-        wrap.style.display = "";
         thumb.style.opacity = "1";
       });
       inst.on("volumechange", () => {
@@ -103,7 +103,6 @@
         durEl.textContent = fmt(inst.duration);
         syncProgress();
         setPlaying(!inst.paused);
-        wrap.style.display = "";
         thumb.style.opacity = "1";
       }
 
