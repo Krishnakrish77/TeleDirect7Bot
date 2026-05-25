@@ -1,0 +1,19 @@
+    <div id="_pwa-banner" style="display:none"
+         class="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-80
+                bg-ink-800 border border-white/10 rounded-xl shadow-2xl
+                flex items-center gap-3 px-4 py-3 z-50 text-sm">
+      <div class="flex-1 min-w-0">
+        <p class="font-semibold text-white">Add TeleDirect to home screen</p>
+        <p class="text-xs text-slate-400 mt-0.5">Watch from your home screen — no browser bar</p>
+      </div>
+      <button onclick="_pwaBannerInstall()"
+              class="flex-shrink-0 px-3 py-1.5 rounded-lg font-medium
+                     bg-brand-500 hover:bg-brand-600 text-white transition-colors">Add</button>
+      <button onclick="_pwaBannerDismiss()" aria-label="Dismiss"
+              class="flex-shrink-0 text-slate-500 hover:text-white transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>

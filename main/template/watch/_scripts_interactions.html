@@ -1,0 +1,302 @@
+    // ---- Continue-watching support --------------------------------------
+    //
+    // Persist playback position to localStorage so the user can come back
+    // and resume where they left off, and so the hub can render a
+    // "Continue watching" shelf. Storage shape:
+    //
+    //   localStorage['td:cw'] = JSON.stringify({
+    //     "<hash><message_id>": {
+    //       pos: <seconds>, dur: <seconds>, t: <unix-ms>,
+    //       title: "<best-effort label>"
+    //     },
+    //     ...
+    //   })
+    //
+    // Keys removed when playback gets within FINISH_PCT of the end.
+    const CW_KEY = "td:cw";
+    const CW_MIN_PCT = 0.02;   // ignore initial seek-flicker before ~2%
+    const CW_FINISH_PCT = 0.95; // treat as watched, remove from shelf
+
+    function cwLoad() {
+      try { return JSON.parse(localStorage.getItem(CW_KEY) || "{}"); }
+      catch (e) { return {}; }
+    }
+    function cwSave(data) {
+      try { localStorage.setItem(CW_KEY, JSON.stringify(data)); }
+      catch (e) { /* quota — give up silently */ }
+    }
+    function cwKey() {
+      // Derive the lookup key from the current /watch/<hash><id> path so
+      // the hub can build it back from a HubItem without server help.
+      const m = location.pathname.match(/\/watch\/([a-zA-Z0-9_-]+)$/);
+      return m ? m[1] : null;
+    }
+
+    function attachWatchProgress(video) {
+      const key = cwKey();
+      if (!key) return;
+      const titleEl = document.querySelector("h1");
+      const fileNameEl = document.querySelector("p.break-all");
+      const label = (titleEl && titleEl.innerText.trim()) ||
+                    (fileNameEl && fileNameEl.innerText.trim()) || "";
+
+      // Restore prior position on first frame, once duration is known.
+      let restored = false;
+      const tryRestore = () => {
+        if (restored) return;
+        const data = cwLoad();
+        const entry = data[key];
+        if (!entry || !entry.pos || !video.duration) { restored = true; return; }
+        if (entry.pos > video.duration * CW_FINISH_PCT) { restored = true; return; }
+        try {
+          video.currentTime = entry.pos;
+        } catch (e) { /* invalid state on some browsers; skip */ }
+        restored = true;
+      };
+      video.addEventListener("loadedmetadata", tryRestore);
+      video.addEventListener("canplay", tryRestore);
+
+      // Throttle saves to ~once every 5s.
+      let lastSave = 0;
+      const persist = () => {
+        if (!video.duration || !isFinite(video.duration)) return;
+        const pos = video.currentTime || 0;
+        const dur = video.duration;
+        const pct = pos / dur;
+        const data = cwLoad();
+        if (pct >= CW_FINISH_PCT || pct < CW_MIN_PCT) {
+          // Either watched-to-end or barely started — drop the entry.
+          if (data[key]) { delete data[key]; cwSave(data); }
+          return;
+        }
+        data[key] = { pos, dur, t: Date.now(), title: label };
+        cwSave(data);
+      };
+      video.addEventListener("timeupdate", () => {
+        const now = Date.now();
+        if (now - lastSave < 5000) return;
+        lastSave = now;
+        persist();
+      });
+      video.addEventListener("pause", persist);
+      window.addEventListener("beforeunload", persist);
+    }
+
+    // ---- Mobile gestures -----------------------------------------------
+    //
+    // Touch-only (we feature-detect via ``ontouchstart``). Three gestures:
+    //
+    //   • Double-tap on the left/right half  → seek -10s / +10s
+    //   • Horizontal swipe (left/right half) → seek by delta (1s per ~6px)
+    //   • Vertical swipe on the right half   → volume up/down (0.0 - 1.0)
+    //   • Vertical swipe on the left half    → brightness via CSS filter
+    //
+    // A toast at the centre of the player surfaces the action so the
+    // user has feedback without watching the seek bar.
+    // ── Mobile video tools menu ───────────────────────────────────────────
+    // Injects a ⋮ button into Plyr's control bar that opens a small popup
+    // with Download, Open in VLC, and Load Subtitles — accessible without
+    // scrolling, useful in landscape where the page below the player is off-screen.
+    function injectMobileVideoTools(video) {
+      if (window.innerWidth >= 640) return; // desktop has all controls visible below
+      const plyrEl = video.closest(".plyr");
+      const bar = plyrEl && plyrEl.querySelector(".plyr__controls");
+      if (!bar) return;
+
+      // Popup menu (hidden by default)
+      const menu = document.createElement("div");
+      menu.style.cssText = "position:absolute;bottom:52px;right:8px;z-index:50;" +
+        "background:rgba(15,17,21,0.97);border:1px solid rgba(255,255,255,0.1);" +
+        "border-radius:10px;padding:4px;min-width:160px;display:none;box-shadow:0 8px 24px rgba(0,0,0,0.5)";
+
+      function menuItem(icon, label, onclick) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.style.cssText = "display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;" +
+          "color:#e2e8f0;font-size:0.8125rem;border-radius:6px;background:transparent;border:none;cursor:pointer;text-align:left";
+        btn.innerHTML = icon + '<span>' + label + '</span>';
+        btn.onmouseenter = btn.ontouchstart = () => { btn.style.background = "rgba(255,255,255,0.07)"; };
+        btn.onmouseleave = btn.ontouchend  = () => { btn.style.background = "transparent"; };
+        btn.addEventListener("click", (e) => { e.stopPropagation(); closeMenu(); onclick(); });
+        return btn;
+      }
+
+      const dlIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 12l4.5 4.5m0 0L16.5 12m-4.5 4.5V3"/></svg>';
+      const vlcIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>';
+      const subIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"/></svg>';
+
+      menu.appendChild(menuItem(dlIcon, "Download", () => { window.open("{{ src }}", "_blank"); }));
+      menu.appendChild(menuItem(vlcIcon, "Open in VLC", () => {
+        // Use the named VLC button (not the hidden codec-overlay link which also has data-stream-url)
+        const vlcBtn = document.getElementById("vlcButton") || document.querySelector("[data-stream-url]");
+        if (vlcBtn) window.location.href = buildVlcUrl(vlcBtn.dataset.streamUrl);
+      }));
+      menu.appendChild(menuItem(subIcon, "Load subtitles", () => {
+        // Trigger the hidden file input — its label has no ID; target the input directly
+        const subInput = document.getElementById("subUpload");
+        if (subInput) subInput.click();
+      }));
+
+      // ⋮ trigger button styled like Plyr controls
+      const trigger = document.createElement("div");
+      trigger.className = "plyr__controls__item";
+      trigger.style.position = "relative";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "plyr__control";
+      btn.setAttribute("aria-label", "More options");
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>';
+      btn.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(); });
+      trigger.appendChild(btn);
+      bar.appendChild(trigger);
+
+      // Attach menu to the player container so it isn't clipped by the bar's overflow
+      const playerWrap = plyrEl.closest(".aspect-video") || plyrEl;
+      playerWrap.style.position = "relative";
+      playerWrap.appendChild(menu);
+
+      let open = false;
+      function toggleMenu() { open ? closeMenu() : openMenu(); }
+      function openMenu()  { open = true;  menu.style.display = "block"; }
+      function closeMenu() { open = false; menu.style.display = "none";  }
+      // Named reference so it can only be registered once
+      function onDocClick(e) { if (open && !trigger.contains(e.target) && !menu.contains(e.target)) closeMenu(); }
+      document.removeEventListener("click", onDocClick);
+      document.addEventListener("click", onDocClick);
+    }
+
+    function attachMobileGestures(video) {
+      if (!('ontouchstart' in window)) return;
+      const wrap = video.closest(".aspect-video");
+      if (!wrap) return;
+
+      // Floating toast — created lazily, hidden via opacity.
+      let toast = document.createElement("div");
+      toast.className = "absolute inset-0 grid place-items-center pointer-events-none "
+        + "opacity-0 transition-opacity duration-200 z-20";
+      toast.innerHTML = `<div class="px-4 py-2 rounded-full bg-black/70 text-white
+                                     text-sm font-medium tabular-nums shadow-lg"></div>`;
+      wrap.appendChild(toast);
+      const toastBody = toast.firstElementChild;
+      let toastTimer = null;
+      const showToast = (text) => {
+        toastBody.textContent = text;
+        toast.style.opacity = "1";
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toast.style.opacity = "0"; }, 700);
+      };
+      const fmtSeek = (delta) => (delta >= 0 ? "+" : "") + Math.round(delta) + "s";
+
+      // Brightness is a CSS filter on the video element — actual device
+      // brightness can't be controlled from JS. Capped at [0.2, 1.5] so a
+      // swipe can't black-out the screen permanently.
+      let brightness = 1.0;
+      const applyBrightness = () => {
+        video.style.filter = `brightness(${brightness.toFixed(2)})`;
+      };
+
+      // Track touch state across move events.
+      let touch = null;       // active touch state or null when no gesture
+      let lastTapAt = 0;
+      let lastTapX = 0;
+      const DOUBLE_TAP_MS = 300;
+      const DOUBLE_TAP_DIST = 30;
+      const HORIZONTAL_SEEK_PX_PER_SEC = 6;
+      const VERTICAL_VOL_PX_PER_STEP = 4;     // px per 1% volume
+      const VERTICAL_BRIGHT_PX_PER_STEP = 4;  // px per 1% brightness
+      const MOVE_THRESHOLD = 15;              // px before we commit a direction
+
+      wrap.addEventListener("touchstart", (e) => {
+        if (e.touches.length !== 1) { touch = null; return; }
+        const t = e.touches[0];
+        const r = wrap.getBoundingClientRect();
+        touch = {
+          x0: t.clientX, y0: t.clientY,
+          x: t.clientX, y: t.clientY,
+          rect: r, startedAt: Date.now(),
+          axis: null,  // "h" / "v" / "tap"
+          startVolume: video.volume,
+          startBright: brightness,
+          startTime: video.currentTime,
+          rightHalf: (t.clientX - r.left) > r.width / 2,
+        };
+      }, { passive: true });
+
+      wrap.addEventListener("touchmove", (e) => {
+        if (!touch || e.touches.length !== 1) return;
+        const t = e.touches[0];
+        touch.x = t.clientX;
+        touch.y = t.clientY;
+        const dx = touch.x - touch.x0;
+        const dy = touch.y - touch.y0;
+        if (touch.axis === null) {
+          if (Math.abs(dx) > MOVE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+            touch.axis = "h";
+          } else if (Math.abs(dy) > MOVE_THRESHOLD && Math.abs(dy) > Math.abs(dx)) {
+            touch.axis = "v";
+          } else {
+            return;
+          }
+        }
+        if (touch.axis === "h") {
+          // Preview only — actual seek commits on touchend so a quick
+          // scrub doesn't fight the video element repeatedly.
+          const seekDelta = dx / HORIZONTAL_SEEK_PX_PER_SEC;
+          showToast(fmtSeek(seekDelta));
+        } else if (touch.axis === "v") {
+          const negDy = -dy;  // up = positive
+          if (touch.rightHalf) {
+            // Volume control.
+            const stepPct = negDy / VERTICAL_VOL_PX_PER_STEP;
+            const nextVol = Math.max(0, Math.min(1, touch.startVolume + stepPct / 100));
+            video.volume = nextVol;
+            video.muted = nextVol === 0;
+            showToast(`🔊 ${Math.round(nextVol * 100)}%`);
+          } else {
+            const stepPct = negDy / VERTICAL_BRIGHT_PX_PER_STEP;
+            const nextBright = Math.max(0.2, Math.min(1.5, touch.startBright + stepPct / 100));
+            brightness = nextBright;
+            applyBrightness();
+            showToast(`☀ ${Math.round(nextBright * 100)}%`);
+          }
+        }
+      }, { passive: true });
+
+      wrap.addEventListener("touchend", (e) => {
+        if (!touch) return;
+        const now = Date.now();
+        const dx = touch.x - touch.x0;
+        const dy = touch.y - touch.y0;
+        const moved = Math.hypot(dx, dy);
+
+        if (touch.axis === "h" && isFinite(video.duration)) {
+          // Commit the seek.
+          const seekDelta = dx / HORIZONTAL_SEEK_PX_PER_SEC;
+          const target = Math.max(0, Math.min(video.duration, touch.startTime + seekDelta));
+          video.currentTime = target;
+        } else if (moved < MOVE_THRESHOLD && (now - touch.startedAt) < 250) {
+          // Tap — check for double-tap. Plyr already handles single-tap
+          // play/pause, so we only act on the SECOND tap.
+          const dt = now - lastTapAt;
+          const distFromLast = Math.abs(touch.x - lastTapX);
+          if (dt < DOUBLE_TAP_MS && distFromLast < DOUBLE_TAP_DIST) {
+            const delta = touch.rightHalf ? 10 : -10;
+            const target = Math.max(0, Math.min(
+              video.duration || Infinity,
+              video.currentTime + delta,
+            ));
+            video.currentTime = target;
+            showToast(fmtSeek(delta));
+            lastTapAt = 0;  // consume the double-tap
+          } else {
+            lastTapAt = now;
+            lastTapX = touch.x;
+          }
+        }
+        touch = null;
+      });
+
+      // Cancel pending gestures if the touch is interrupted (e.g. the
+      // browser steals it for a scroll). Avoids "stuck preview" toasts.
+      wrap.addEventListener("touchcancel", () => { touch = null; });
+    }

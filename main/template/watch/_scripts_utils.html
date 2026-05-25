@@ -1,0 +1,434 @@
+    function buildVlcUrl(streamUrl) {
+      const ua = navigator.userAgent || "";
+      if (/Android/i.test(ua)) {
+        const scheme = streamUrl.startsWith("https://") ? "https" : "http";
+        const stripped = streamUrl.replace(/^https?:\/\//, "");
+        return `intent://${stripped}#Intent;scheme=${scheme};package=org.videolan.vlc;type=video/*;end`;
+      }
+      if (/iPad|iPhone|iPod/.test(ua)) {
+        return `vlc-x-callback://x-callback-url/stream?url=${encodeURIComponent(streamUrl)}`;
+      }
+      return `vlc://${streamUrl}`;
+    }
+
+    function attachSource(video) {
+      const hlsSrc = video.dataset.hlsSrc;
+      const directSrc = video.dataset.directSrc;
+
+      // Safari and iOS play HLS natively — set the source and let the browser
+      // handle it. No JS lib needed.
+      if (hlsSrc && video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = hlsSrc;
+        window._playerHls = null;
+        return;
+      }
+
+      // Chrome/Firefox/Edge: use hls.js if HLS source is offered.
+      if (hlsSrc && window.Hls && Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          // Each segment costs a couple of Telegram round-trips for ffmpeg
+          // to seek into the source MKV. Patient timeouts but moderate
+          // buffering — over-aggressive prefetch queues too many ffmpegs.
+          maxBufferLength: 30,
+          maxMaxBufferLength: 120,
+          maxBufferSize: 60 * 1024 * 1024,
+          manifestLoadingTimeOut: 30000,
+          manifestLoadingMaxRetry: 4,
+          levelLoadingTimeOut: 30000,
+          fragLoadingTimeOut: 60000,
+          fragLoadingMaxRetry: 4,
+        });
+        hls.on(Hls.Events.ERROR, (_evt, data) => {
+          if (data.fatal) {
+            console.warn("HLS fatal error, falling back to direct stream:", data);
+            try { hls.destroy(); } catch (_) {}
+            video.src = directSrc;
+          }
+        });
+        hls.loadSource(hlsSrc);
+        hls.attachMedia(video);
+        window._playerHls = hls;
+        return;
+      }
+
+      // Last resort: direct progressive byte stream.
+      // Guard: directSrc is absent for known_unplayable files; setting
+      // video.src = undefined coerces to the string "undefined" and
+      // triggers a GET /undefined request.
+      if (directSrc) video.src = directSrc;
+    }
+
+    // ---- Manual subtitle upload ----------------------------------------
+    //
+    // Adds a user-selected .srt or .vtt file as a <track> element on the
+    // video so it shows up in Plyr's captions menu. SRT gets converted to
+    // VTT in-browser because <track> only accepts WebVTT. The text is
+    // also cached in localStorage so a page refresh restores it without
+    // making the user re-pick the file.
+
+    const SUB_CACHE_KEY = "td:sub:";  // suffix is the watch key
+
+    function watchKey() {
+      const m = location.pathname.match(/\/watch\/([a-zA-Z0-9_-]+)$/);
+      return m ? m[1] : null;
+    }
+
+    function srtToVtt(srt) {
+      // Strip UTF-8 BOM if present.
+      if (srt.charCodeAt(0) === 0xfeff) srt = srt.slice(1);
+      // SRT uses commas for ms separators; VTT requires periods.
+      const body = srt.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
+      return "WEBVTT\n\n" + body;
+    }
+
+    function looksLikeVtt(text) {
+      return /^\s*WEBVTT\b/.test(text);
+    }
+
+    function addUserSubtitle(video, vttText, label) {
+      // Remove a previously-added user track if one exists — we only
+      // want one custom track at a time.
+      video.querySelectorAll("track[data-user-sub]").forEach(t => t.remove());
+
+      const blob = new Blob([vttText], { type: "text/vtt" });
+      const url = URL.createObjectURL(blob);
+      const track = document.createElement("track");
+      track.kind = "subtitles";
+      track.label = label || "Custom";
+      track.srclang = "und";  // unknown language; user can rename in UI later
+      track.src = url;
+      track.default = true;
+      track.dataset.userSub = "1";
+      video.appendChild(track);
+
+      // Activate immediately. Plyr's captions module reads the textTracks
+      // collection — flip the mode to "showing" on the newly-added track.
+      const tt = video.textTracks[video.textTracks.length - 1];
+      if (tt) {
+        // Disable other tracks so Plyr doesn't auto-pick one of the
+        // embedded ones over the user's choice.
+        for (let i = 0; i < video.textTracks.length - 1; i++) {
+          video.textTracks[i].mode = "disabled";
+        }
+        tt.mode = "showing";
+      }
+    }
+
+    async function attachAudioTracks(video) {
+      const hlsSrc = video.dataset.hlsSrc;
+      if (!hlsSrc) return;  // direct stream — no track switching without HLS
+
+      const audioListUrl = hlsSrc.replace("playlist.m3u8", "audio-list.json");
+      let tracks;
+      try {
+        const resp = await fetch(audioListUrl);
+        if (!resp.ok) return;
+        tracks = await resp.json();
+      } catch (_) {
+        return;
+      }
+      if (!tracks || tracks.length === 0) return;
+
+      // Find Plyr's controls bar (rendered synchronously before this async fn).
+      const plyrEl = video.closest(".plyr");
+      const controls = plyrEl && plyrEl.querySelector(".plyr__controls");
+      if (!controls) return;
+
+      let currentSrc = hlsSrc;
+      let activeIndex = 0;
+      let menuOpen = false;
+
+      function buildAudioUrl(idx) {
+        return `${currentSrc.split("?")[0]}?a=${idx}`;
+      }
+
+      function switchTo(idx) {
+        if (idx === activeIndex) return;
+        const savedTime = video.currentTime;
+        const newSrc = buildAudioUrl(idx);
+        currentSrc = newSrc;
+        activeIndex = idx;
+        updateButtonState();
+        updateMenuItems();
+
+        if (window._playerHls) {
+          if (window._pendingOnParsed) {
+            window._playerHls.off(Hls.Events.MANIFEST_PARSED, window._pendingOnParsed);
+            window._pendingOnParsed = null;
+          }
+          window._playerHls.loadSource(newSrc);
+          const onParsed = () => {
+            window._playerHls.off(Hls.Events.MANIFEST_PARSED, onParsed);
+            window._pendingOnParsed = null;
+            video.currentTime = savedTime;
+            video.play().catch(() => {});
+          };
+          window._pendingOnParsed = onParsed;
+          window._playerHls.on(Hls.Events.MANIFEST_PARSED, onParsed);
+        } else {
+          video.src = newSrc;
+          video.currentTime = savedTime;
+          video.play().catch(() => {});
+        }
+      }
+
+      // ── Build the Plyr control button ──────────────────────────────────
+      //
+      // Structure:
+      //   <div class="plyr__controls__item" style="position:relative">
+      //     <button class="plyr__control" aria-label="Audio language">
+      //       [speaker icon] [current track label]
+      //     </button>
+      //     <div role="menu" ...dropdown...>
+      //       <button role="menuitem">Tamil</button>
+      //       ...
+      //     </div>
+      //   </div>
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "plyr__controls__item";
+      wrapper.style.cssText = "position:relative;display:flex;align-items:center;flex-shrink:0;";
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "plyr__control";
+      btn.setAttribute("aria-label", "Audio language");
+      btn.setAttribute("aria-haspopup", "true");
+      // Speaker icon — same 18×18 stroke style as Plyr's built-in icons.
+      // No visible text label in the button: just the icon, matching how
+      // Plyr's CC button works. The active track gets a checkmark in the
+      // dropdown and the button gets the pressed highlight when non-default.
+      btn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" fill="none"
+             stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M3 6.5h2.75L9.5 3.5v11l-3.75-3H3v-4z"/>
+          <path stroke-linecap="round"
+                d="M12 6c.9.7 1.5 1.8 1.5 3s-.6 2.3-1.5 3
+                   M14 4c1.7 1.3 2.75 3.3 2.75 5s-1.05 3.7-2.75 5"/>
+        </svg>
+        <span class="plyr__sr-only">Audio language</span>
+      `;
+
+      // Highlight the button (like Plyr's CC active state) when a
+      // non-default track is selected so the user knows it's in effect.
+      function updateButtonState() {
+        if (activeIndex === 0) {
+          btn.removeAttribute("aria-pressed");
+          btn.style.color = "";
+        } else {
+          btn.setAttribute("aria-pressed", "true");
+          btn.style.color = "#f97316";  // brand orange — mirrors Plyr's pressed tint
+        }
+      }
+
+      // ── Dropdown menu ──────────────────────────────────────────────────
+      const menu = document.createElement("div");
+      menu.setAttribute("role", "menu");
+      menu.style.cssText = [
+        "position:absolute",
+        "bottom:calc(100% + 6px)",
+        "right:0",
+        "min-width:100px",
+        "max-width:180px",
+        "background:rgba(0,0,0,0.92)",
+        "backdrop-filter:blur(8px)",
+        "-webkit-backdrop-filter:blur(8px)",
+        "border:1px solid rgba(255,255,255,0.12)",
+        "border-radius:8px",
+        "padding:4px",
+        "z-index:9999",
+        "display:none",
+        "box-shadow:0 4px 24px rgba(0,0,0,0.5)",
+      ].join(";");
+
+      function updateMenuItems() {
+        menu.innerHTML = "";
+        tracks.forEach((t) => {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.setAttribute("role", "menuitem");
+          const isActive = t.index === activeIndex;
+          // Checkmark + label row, same layout as Plyr's settings sub-menus.
+          item.innerHTML = `
+            <span style="display:inline-block;width:14px;margin-right:6px;
+                         color:#f97316;font-size:11px;flex-shrink:0;">
+              ${isActive ? "✓" : ""}
+            </span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${t.label || `Track ${t.index + 1}`}
+            </span>
+          `;
+          item.style.cssText = [
+            "display:flex",
+            "align-items:center",
+            "width:100%",
+            "text-align:left",
+            "padding:6px 10px",
+            "border-radius:5px",
+            "font-size:12px",
+            "font-weight:" + (isActive ? "600" : "400"),
+            "color:" + (isActive ? "#f97316" : "rgba(255,255,255,0.85)"),
+            "background:" + (isActive ? "rgba(249,115,22,0.12)" : "transparent"),
+            "border:none",
+            "cursor:pointer",
+            "transition:background 0.1s",
+            "white-space:nowrap",
+            "overflow:hidden",
+          ].join(";");
+          item.addEventListener("mouseenter", () => {
+            if (!isActive) item.style.background = "rgba(255,255,255,0.08)";
+          });
+          item.addEventListener("mouseleave", () => {
+            item.style.background = isActive ? "rgba(249,115,22,0.12)" : "transparent";
+          });
+          item.addEventListener("click", (e) => {
+            e.stopPropagation();
+            closeMenu();
+            switchTo(t.index);
+          });
+          menu.appendChild(item);
+        });
+      }
+
+      function openMenu() {
+        menuOpen = true;
+        menu.style.display = "block";
+        btn.setAttribute("aria-expanded", "true");
+      }
+
+      function closeMenu() {
+        menuOpen = false;
+        menu.style.display = "none";
+        btn.setAttribute("aria-expanded", "false");
+      }
+
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menuOpen ? closeMenu() : openMenu();
+      });
+
+      // Close on outside click.
+      document.addEventListener("click", closeMenu);
+      // Plyr 3.x dispatches "enterfullscreen" / "exitfullscreen" on the
+      // <video> element, not the .plyr wrapper — listen on video.
+      video.addEventListener("enterfullscreen", closeMenu);
+      video.addEventListener("exitfullscreen", closeMenu);
+
+      wrapper.appendChild(btn);
+      wrapper.appendChild(menu);
+
+      // Insert before the fullscreen button (last control).
+      const fullscreenBtn = controls.querySelector('[data-plyr="fullscreen"]');
+      controls.insertBefore(wrapper, fullscreenBtn || null);
+
+      updateButtonState();
+      updateMenuItems();
+    }
+
+    function attachSubtitleUpload(video) {
+      const input = document.getElementById("subUpload");
+      const status = document.getElementById("subStatus");
+      if (!input || !video) return;
+
+      const handleFile = (file) => {
+        if (!file) return;
+        const name = (file.name || "").toLowerCase();
+        const isSrt = name.endsWith(".srt");
+        const isVtt = name.endsWith(".vtt");
+        if (!isSrt && !isVtt) {
+          status.textContent = "Only .srt and .vtt files are supported.";
+          status.className = "mt-2 text-center text-xs text-amber-300";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          let text = String(ev.target.result || "");
+          if (isSrt || !looksLikeVtt(text)) {
+            text = srtToVtt(text);
+          }
+          const label = file.name.replace(/\.[^.]+$/, "");
+          addUserSubtitle(video, text, label);
+          status.textContent = `Loaded "${file.name}" as subtitles.`;
+          status.className = "mt-2 text-center text-xs text-emerald-300";
+          // Cache for refresh.
+          const k = watchKey();
+          if (k) {
+            try {
+              localStorage.setItem(SUB_CACHE_KEY + k, JSON.stringify({
+                label, vtt: text, t: Date.now(),
+              }));
+            } catch (e) { /* quota — silently ignore */ }
+          }
+        };
+        reader.onerror = () => {
+          status.textContent = "Couldn't read that file.";
+          status.className = "mt-2 text-center text-xs text-red-400";
+        };
+        reader.readAsText(file, "utf-8");
+      };
+
+      input.addEventListener("change", () => handleFile(input.files && input.files[0]));
+
+      // Drag-and-drop onto the player container.
+      const playerWrap = video.closest(".aspect-video");
+      if (playerWrap) {
+        const setHover = (on) => {
+          playerWrap.classList.toggle("ring-2", on);
+          playerWrap.classList.toggle("ring-brand-400", on);
+        };
+        playerWrap.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          setHover(true);
+        });
+        playerWrap.addEventListener("dragleave", () => setHover(false));
+        playerWrap.addEventListener("drop", (e) => {
+          e.preventDefault();
+          setHover(false);
+          const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+          if (f) handleFile(f);
+        });
+      }
+
+      // Restore a previously-loaded subtitle from localStorage.
+      const k = watchKey();
+      if (k) {
+        try {
+          const raw = localStorage.getItem(SUB_CACHE_KEY + k);
+          if (raw) {
+            const cached = JSON.parse(raw);
+            if (cached && cached.vtt) {
+              addUserSubtitle(video, cached.vtt, cached.label || "Custom");
+              status.textContent = `Restored "${cached.label}" subtitles from earlier.`;
+              status.className = "mt-2 text-center text-xs text-slate-500";
+            }
+          }
+        } catch (e) { /* ignore */ }
+      }
+    }
+
+    async function injectSubtitleTracks(video) {
+      const subPath = video.dataset.subPath;
+      if (!subPath) return;
+      try {
+        const resp = await fetch(`${subPath}/list.json`);
+        if (!resp.ok) return;
+        const tracks = await resp.json();
+        tracks.forEach((t, i) => {
+          const track = document.createElement("track");
+          track.kind = "subtitles";
+          track.label = t.label || `Track ${i + 1}`;
+          if (t.language) track.srclang = t.language;
+          // External sidecars come with an absolute-path `url`; embedded
+          // tracks include one too. Fall back to the legacy {index}.vtt for
+          // older list.json responses still in CDN cache.
+          track.src = t.url || `${subPath}/${t.index}.vtt`;
+          if (i === 0) track.default = true;
+          video.appendChild(track);
+        });
+      } catch (_) {
+        // Subtitle endpoint unavailable / no tracks — silently skip.
+      }
+    }

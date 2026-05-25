@@ -1,0 +1,129 @@
+      <div class="overflow-x-auto rounded-lg border border-white/5">
+        <table class="w-full text-sm">
+          <thead class="text-xs uppercase tracking-wider text-slate-500
+                        bg-ink-800/60 border-b border-white/5">
+            {# Helper macro: sortable column header. Clicking toggles asc/desc
+               for the active column; clicking a new column defaults to desc. #}
+            {% macro sort_th(label, col, extra_class="text-left") %}
+              {% set is_active = sort_col == col %}
+              {% set next_dir = "asc" if (is_active and sort_dir == "desc") else "desc" %}
+              <th class="px-3 py-2 {{ extra_class }}">
+                <a href="?filter={{ filter_name }}&page=1{% if search_q %}&q={{ search_q|urlencode }}{% endif %}&sort={{ col }}&dir={{ next_dir }}"
+                   class="inline-flex items-center gap-1 hover:text-slate-300 transition-colors
+                          {{ 'text-slate-200' if is_active else '' }}">
+                  {{ label }}
+                  {% if is_active %}
+                    <span class="text-brand-400">{{ "↑" if sort_dir == "asc" else "↓" }}</span>
+                  {% endif %}
+                </a>
+              </th>
+            {% endmacro %}
+            <tr>
+              <th class="px-3 py-2 text-left">
+                <input type="checkbox" x-model="allChecked"
+                       @change="selected = allChecked ? Array.from(document.querySelectorAll('input[name=ids]')).map(c => c.value) : []" />
+              </th>
+              {{ sort_th("Title", "title") }}
+              <th class="px-3 py-2 text-left">Series</th>
+              {{ sort_th("Quality", "quality") }}
+              <th class="px-3 py-2 text-left">Tags</th>
+              {{ sort_th("Size", "size") }}
+              {{ sort_th("Bin ID", "date") }}
+              <th class="px-3 py-2 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+              {%- set is_dup = item.message_id in duplicate_message_ids -%}
+              <tr class="border-b border-white/5 hover:bg-ink-800/40 {% if is_dup %}border-l-2 border-l-amber-400/60{% endif %}"
+                  data-bin-id="{{ item.message_id }}">
+                <td class="px-3 py-2">
+                  <input type="checkbox" name="ids" value="{{ item.message_id }}"
+                         form="admin-bulk-form"
+                         x-model="selected" />
+                </td>
+                <td class="px-3 py-2 text-slate-200">
+                  <a href="/watch/{{ item.secure_hash }}{{ item.message_id }}"
+                     target="_blank"
+                     class="hover:text-brand-300">
+                    {{ item.title }}{% if item.year %} ({{ item.year }}){% endif %}
+                  </a>
+                  {% if not item.has_thumb and not item.duration %}
+                  <span class="ml-1.5 inline-flex text-amber-400/70"
+                        title="Missing thumbnail">
+                    {# broken-image icon #}
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                         class="w-3.5 h-3.5">
+                      <path fill-rule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909-.48-.480a.75.75 0 0 0-1.06 0L6.22 11.06l-3.72-3.72v3.72Zm10.25-7.06a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" clip-rule="evenodd"/>
+                    </svg>
+                  </span>
+                  {% endif %}
+                </td>
+                <td class="px-3 py-2 text-slate-400 text-xs">
+                  {% if item.media_kind == 'audio' %}
+                    {# Show artist/album for audio instead of series info #}
+                    {% if item.artist %}
+                      <span class="text-slate-300">{{ item.artist }}</span>
+                      {% if item.album_title %}
+                        <span class="text-slate-500"> · {{ item.album_title }}</span>
+                      {% endif %}
+                    {% elif item.album_title %}
+                      {{ item.album_title }}
+                    {% else %}—{% endif %}
+                  {% elif item.series_key %}
+                    {{ item.series_title }}
+                    {% if item.season and item.episode %}
+                      <span class="text-slate-500">S{{ '%02d' % item.season }}E{{ '%02d' % item.episode }}</span>
+                    {% endif %}
+                  {% else %}—{% endif %}
+                </td>
+                <td class="px-3 py-2 text-slate-400">{{ item.quality or '—' }}</td>
+                <td class="px-3 py-2 text-slate-400 text-xs">
+                  {% if item.tags %}{{ item.tags | join(' ') }}{% else %}—{% endif %}
+                </td>
+                <td class="px-3 py-2 text-slate-400 text-xs tabular-nums">
+                  {{ item.file_size | humansize }}
+                </td>
+                <td class="px-3 py-2 text-slate-500 text-xs tabular-nums">
+                  {{ item.message_id }}
+                </td>
+                <td class="px-3 py-2 text-right">
+                  {# Payload lives in data-* attributes so Jinja's
+                     autoescape handles all the awkward characters
+                     (quotes, ampersands, newlines, ...) — embedding
+                     them inside an inline JS expression breaks the
+                     attribute when the title has a stray quote. #}
+                  <button type="button"
+                          data-id="{{ item.message_id }}"
+                          data-title="{{ item.title }}"
+                          data-year="{{ item.year or '' }}"
+                          data-tags="{{ item.tags | join(' ') }}"
+                          data-description="{{ item.description }}"
+                          data-file-name="{{ item.file_name or '' }}"
+                          data-series-title="{{ item.series_title or '' }}"
+                          data-season="{{ item.season or '' }}"
+                          data-episode="{{ item.episode or '' }}"
+                          data-episode-end="{{ item.episode_end or '' }}"
+                          data-tmdb-id="{{ item.tmdb_id or '' }}"
+                          {# Default to 'tv' when the item already looks like
+                             a TV episode (has a series_key) so the manual
+                             TMDB ID override doesn't accidentally get
+                             applied as a movie record. #}
+                          data-tmdb-kind="{{ item.tmdb_kind or ('tv' if item.series_key else 'movie') }}"
+                          data-media-kind="{{ item.media_kind or '' }}"
+                          data-artist="{{ item.artist or '' }}"
+                          data-album-title="{{ item.album_title or '' }}"
+                          data-track-number="{{ item.track_number or '' }}"
+                          @click.stop="openEdit($event.currentTarget)"
+                          class="text-xs px-2 py-1 rounded
+                                 bg-brand-500/15 text-brand-300
+                                 border border-brand-400/30
+                                 hover:bg-brand-500/25 transition-colors">
+                    Edit
+                  </button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>

@@ -1,0 +1,188 @@
+    {# Autocomplete vocabulary for the bulk 'series_title_bulk' input. #}
+    <datalist id="known-series-list">
+      {% for s in known_series %}<option value="{{ s }}">{% endfor %}
+    </datalist>
+
+    <form method="post" action="/admin/action" id="admin-bulk-form"
+          @reset="selected = []; allChecked = false">
+      {# Preserve the current view state so bulk actions return us here. #}
+      <input type="hidden" name="_filter" value="{{ filter_name }}" />
+      <input type="hidden" name="_page" value="{{ page }}" />
+      <input type="hidden" name="_q" value="{{ search_q }}" />
+      <input type="hidden" name="_sort" value="{{ sort_col }}" />
+      <input type="hidden" name="_dir" value="{{ sort_dir }}" />
+      <div class="mb-4 flex flex-wrap items-center gap-2 sticky top-0 z-10
+                  bg-ink-900/95 backdrop-blur py-3 -mx-2 px-2 border-b border-white/5">
+        <span class="text-xs"
+              :class="selected.length === 0 ? 'text-slate-500' : 'text-brand-300 font-medium'"
+              x-text="selected.length === 0
+                       ? 'Select rows to enable bulk actions'
+                       : selected.length + ' selected'"></span>
+
+        {# Bulk actions block — only rendered when something is selected,
+           so the page isn't a wall of disabled controls at rest. #}
+        <div class="contents" x-show="selected.length > 0">
+
+        <button type="submit" name="action" value="delete"
+                @click="if (!confirm('Delete ' + selected.length + ' entries? This removes them from BIN_CHANNEL.')) $event.preventDefault()"
+                class="ml-auto px-3 py-1.5 rounded text-xs font-medium
+                       bg-red-500/15 text-red-300 border border-red-400/30
+                       hover:bg-red-500/25 transition-colors">
+          Delete
+        </button>
+
+        {# Edit ▼ popover — collapses the four 'set a field' compound
+           actions (tags, quality, series, TMDB) into one button so the
+           toolbar isn't a wall of inputs. Each row inside the popover
+           has its own submit button so admin can apply one field at a
+           time without affecting the others. #}
+        <div class="relative"
+             x-data="{ editOpen: false }"
+             @keydown.escape.window="editOpen = false"
+             @click.outside="editOpen = false">
+          <button type="button"
+                  @click="editOpen = !editOpen"
+                  :aria-expanded="editOpen.toString()"
+                  class="px-3 py-1.5 rounded text-xs font-medium
+                         bg-ink-800 text-slate-200 border border-white/5
+                         hover:bg-ink-700 transition-colors
+                         inline-flex items-center gap-1.5">
+            Edit fields
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2"
+                 class="w-3 h-3" :class="editOpen ? 'rotate-180' : ''">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="m19.5 8.25-7.5 7.5-7.5-7.5"/>
+            </svg>
+          </button>
+          <div x-show="editOpen" x-cloak x-transition.opacity.duration.150ms
+               class="absolute left-0 top-full mt-2 z-30 w-96
+                      max-w-[calc(100vw-1rem)]
+                      rounded-lg border border-white/10 bg-ink-900
+                      shadow-2xl p-3 space-y-2">
+
+            {# Tags #}
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">Tags</label>
+              <div class="flex items-center gap-1.5">
+                <input type="text" name="tags" placeholder="space-separated"
+                       class="flex-1 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                              border border-white/5 placeholder-slate-500
+                              focus:outline-none focus:ring-1 focus:ring-brand-400/60" />
+                <button type="submit" name="action" value="retag"
+                        class="px-3 py-1.5 rounded text-xs font-medium
+                               bg-ink-800 text-slate-200 border border-white/5
+                               hover:bg-ink-700 transition-colors">
+                  Set
+                </button>
+              </div>
+            </div>
+
+            {# Quality #}
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">Quality</label>
+              <div class="flex items-center gap-1.5">
+                <select name="quality"
+                        class="flex-1 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                               border border-white/5
+                               focus:outline-none focus:ring-1 focus:ring-brand-400/60">
+                  <option value="480p">480p</option>
+                  <option value="720p">720p</option>
+                  <option value="1080p" selected>1080p</option>
+                  <option value="4K">4K</option>
+                </select>
+                <button type="submit" name="action" value="quality"
+                        class="px-3 py-1.5 rounded text-xs font-medium
+                               bg-ink-800 text-slate-200 border border-white/5
+                               hover:bg-ink-700 transition-colors">
+                  Set
+                </button>
+              </div>
+            </div>
+
+            {# Series #}
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">Series</label>
+              <div class="flex items-center gap-1.5">
+                <input type="text" name="series_title_bulk" placeholder="series title"
+                       list="known-series-list"
+                       class="flex-1 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                              border border-white/5 placeholder-slate-500
+                              focus:outline-none focus:ring-1 focus:ring-brand-400/60" />
+                <input type="number" name="season_bulk" min="1" placeholder="S"
+                       class="w-12 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                              border border-white/5 placeholder-slate-500
+                              focus:outline-none focus:ring-1 focus:ring-brand-400/60
+                              tabular-nums" />
+                <button type="submit" name="action" value="series"
+                        @click="if (!confirm('Assign series to ' + selected.length + ' selected item(s)? Episode numbers will be auto-numbered by bin id.')) $event.preventDefault()"
+                        class="px-3 py-1.5 rounded text-xs font-medium
+                               bg-ink-800 text-slate-200 border border-white/5
+                               hover:bg-ink-700 transition-colors">
+                  Set
+                </button>
+              </div>
+            </div>
+
+            {# TMDB id override #}
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">TMDB id</label>
+              <div class="flex items-center gap-1.5">
+                <input type="number" name="tmdb_id_bulk" min="1" placeholder="numeric id"
+                       class="flex-1 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                              border border-white/5 placeholder-slate-500
+                              focus:outline-none focus:ring-1 focus:ring-brand-400/60
+                              tabular-nums" />
+                <select name="tmdb_kind_bulk"
+                        class="px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                               border border-white/5
+                               focus:outline-none focus:ring-1 focus:ring-brand-400/60">
+                  <option value="tv">TV</option>
+                  <option value="movie">Movie</option>
+                </select>
+                <button type="submit" name="action" value="tmdb-id"
+                        @click="if (!confirm('Apply TMDB id to ' + selected.length + ' selected item(s)?')) $event.preventDefault()"
+                        class="px-3 py-1.5 rounded text-xs font-medium
+                               bg-ink-800 text-slate-200 border border-white/5
+                               hover:bg-ink-700 transition-colors">
+                  Apply
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <button type="submit" name="action" value="enrich"
+                class="px-3 py-1.5 rounded text-xs font-medium
+                       bg-brand-500/15 text-brand-300 border border-brand-400/30
+                       hover:bg-brand-500/25 transition-colors">
+          Enrich
+        </button>
+
+        <button type="submit" name="action" value="probe"
+                class="px-3 py-1.5 rounded text-xs font-medium
+                       bg-sky-500/15 text-sky-300 border border-sky-400/30
+                       hover:bg-sky-500/25 transition-colors">
+          Probe
+        </button>
+
+        {% if var.GEMINI_API_KEY %}
+        <button type="button"
+                hx-post="/admin/ai-review"
+                hx-include="input[name='ids']:checked"
+                hx-target="#ai-review-panel"
+                hx-swap="innerHTML show:#ai-review-panel:top"
+                :hx-confirm="'Analyse ' + selected.length + ' selected filenames with Gemini?'"
+                class="px-3 py-1.5 rounded text-xs font-medium
+                       bg-violet-500/15 text-violet-300 border border-violet-400/30
+                       hover:bg-violet-500/25 transition-colors">
+          ✦ AI clean
+        </button>
+        {% endif %}
+
+        </div>{# /bulk-actions-visible-when-selected #}
+      </div>
+    </form>{# /admin-bulk-form — closed here so the search form below
+              isn't a nested-form (illegal HTML). Checkboxes in the
+              table bind back to this form via the HTML5 form=" " attr. #}

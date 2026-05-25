@@ -1,0 +1,387 @@
+    {# Inline-edit modal. Rendered outside the bulk form so it doesn't
+       nest. The modal body is wrapped in <template x-if="editing"> so
+       the x-model bindings only mount when editing has a payload —
+       otherwise Alpine tries to read editing.title on null and throws.
+       Form action is built from the editing.id payload Alpine populates. #}
+    <template x-if="editing">
+      <div x-cloak
+           @keydown.escape.window="editing = null"
+           class="fixed inset-0 z-30 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div @click.outside="editing = null"
+             class="w-full max-w-lg rounded-xl bg-ink-900 border border-white/10
+                    shadow-2xl max-h-[90vh] flex flex-col">
+          <form method="post" :action="'/admin/edit/' + editing.id"
+                class="flex flex-col min-h-0 flex-1 divide-y divide-white/5">
+            <header class="px-4 py-3 flex flex-col gap-2 flex-shrink-0">
+              {# Title row — always full width with close on the right #}
+              <div class="flex items-center gap-2">
+                <h2 class="text-base font-semibold text-white flex-1 min-w-0 truncate">
+                  Edit bin:<span x-text="editing.id"></span>
+                </h2>
+                <button type="button" @click="editing = null"
+                        class="text-slate-400 hover:text-white flex-shrink-0 p-1 -mr-1">✕</button>
+              </div>
+              {% if var.GEMINI_API_KEY %}
+              {# AI controls on their own row so they have room on narrow screens #}
+              <div class="flex items-center gap-2">
+                <select x-model="editing.aiModel"
+                        :disabled="aiModelsLoading"
+                        class="flex-1 min-w-0 px-2 py-2 rounded-lg text-xs bg-ink-800/70 text-slate-300
+                               border border-white/10 focus:outline-none focus:ring-1
+                               focus:ring-violet-400/60 truncate">
+                  <template x-if="aiModelsLoading">
+                    <option value="">Loading models…</option>
+                  </template>
+                  <template x-if="!aiModelsLoading && !aiModels.length">
+                    <option value="">No models found</option>
+                  </template>
+                  <template x-for="m in aiModels" :key="m.id">
+                    <option :value="m.id" :selected="m.id === editing.aiModel" x-text="m.name"></option>
+                  </template>
+                </select>
+                <button type="button" @click="askAI()"
+                        :disabled="editing.aiLoading"
+                        class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium
+                               bg-violet-500/20 hover:bg-violet-500/30 text-violet-300
+                               border border-violet-400/30 transition-colors
+                               disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                       class="w-3.5 h-3.5" x-show="!editing.aiLoading">
+                    <path d="M12 2a1 1 0 0 1 .967.744L14.146 7.2 17.5 9.134a1 1 0 0 1 0 1.732l-3.354 1.935-1.18 4.455a1 1 0 0 1-1.933 0L9.854 12.8 6.5 10.866a1 1 0 0 1 0-1.732L9.854 7.2l1.179-4.456A1 1 0 0 1 12 2Z"/>
+                  </svg>
+                  <svg x-show="editing.aiLoading" class="w-3.5 h-3.5 animate-spin"
+                       xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  <span x-text="editing.aiLoading ? 'Searching…' : 'Suggest'"></span>
+                </button>
+              </div>
+              {% endif %}
+            </header>
+
+            {# Scrollable body — the modal can grow taller than the
+               viewport once the TMDB preview card renders, so we
+               cap the container at 90vh and let the body region
+               scroll internally. Header + footer stay anchored so
+               the Save button is always reachable. #}
+            <div class="px-4 py-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
+              <p x-show="editing.aiError" x-cloak
+                 class="text-xs text-red-400 px-3 py-2 rounded bg-red-500/10 border border-red-400/20"
+                 x-text="editing.aiError"></p>
+              <div x-show="editing.aiReasoning" x-cloak
+                   class="text-xs text-violet-300/80 px-3 py-2 rounded bg-violet-500/10
+                          border border-violet-400/20 leading-relaxed">
+                <span class="font-semibold text-violet-300">AI: </span><span x-text="editing.aiReasoning"></span>
+              </div>
+              <label class="block">
+                <span class="text-xs uppercase tracking-wider text-slate-400">Title</span>
+                <input type="text" name="title" required
+                       x-model="editing.title"
+                       class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                              border border-white/5
+                              focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+              </label>
+
+              <label class="block">
+                <span class="text-xs uppercase tracking-wider text-slate-400">Year</span>
+                <input type="number" name="year" min="1900" max="2099"
+                       x-model="editing.year"
+                       class="mt-1 w-32 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                              border border-white/5
+                              focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                              tabular-nums" />
+              </label>
+
+              {%- set _ai_btn_cls = "flex-shrink-0 px-2 py-1 rounded text-[11px] font-medium bg-violet-500/15 text-violet-300 border border-violet-400/30 hover:bg-violet-500/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" -%}
+
+              <label class="block">
+                <span class="text-xs uppercase tracking-wider text-slate-400">Tags</span>
+                <div class="mt-1 flex items-center gap-2">
+                  <input type="text" name="tags"
+                         placeholder="space-separated, no # prefix"
+                         x-model="editing.tags"
+                         class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                border border-white/5
+                                focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  {% if var.GEMINI_API_KEY %}
+                  <button type="button" @click="askAIField('tags')"
+                          :disabled="editing.aiLoadingField === 'tags'"
+                          class="{{ _ai_btn_cls }}">
+                    <span x-show="editing.aiLoadingField !== 'tags'">✨ Tags</span>
+                    <span x-show="editing.aiLoadingField === 'tags'">…</span>
+                  </button>
+                  {% endif %}
+                </div>
+              </label>
+
+              <label class="block">
+                <span class="text-xs uppercase tracking-wider text-slate-400">Display name
+                  <span class="lowercase tracking-normal text-slate-500">(filename override)</span>
+                </span>
+                <div class="mt-1 flex items-center gap-2">
+                  <input type="text" name="file_name"
+                         placeholder="e.g. Three.js Journey - Lesson 24.mp4"
+                         x-model="editing.file_name"
+                         class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                border border-white/5
+                                focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  {% if var.GEMINI_API_KEY %}
+                  <button type="button" @click="askAIField('file_name')"
+                          :disabled="editing.aiLoadingField === 'file_name'"
+                          class="{{ _ai_btn_cls }}">
+                    <span x-show="editing.aiLoadingField !== 'file_name'">✨ Clean</span>
+                    <span x-show="editing.aiLoadingField === 'file_name'">…</span>
+                  </button>
+                  {% endif %}
+                </div>
+              </label>
+
+              <label class="block">
+                <span class="text-xs uppercase tracking-wider text-slate-400">Description</span>
+                <div class="mt-1 flex items-start gap-2">
+                  <textarea name="description" rows="3"
+                            x-model="editing.description"
+                            class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                   border border-white/5
+                                   focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                                   resize-y"></textarea>
+                  {% if var.GEMINI_API_KEY %}
+                  <button type="button" @click="askAIField('description')"
+                          :disabled="editing.aiLoadingField === 'description'"
+                          class="{{ _ai_btn_cls }}">
+                    <span x-show="editing.aiLoadingField !== 'description'">✨ Write</span>
+                    <span x-show="editing.aiLoadingField === 'description'">…</span>
+                  </button>
+                  {% endif %}
+                </div>
+              </label>
+
+              {# Series grouping — assign standalone videos to a series. #}
+              <div class="pt-3 border-t border-white/5">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">
+                  Series <span class="lowercase tracking-normal text-slate-500">(optional — groups into a /series/ page)</span>
+                </p>
+                <label class="block mb-2">
+                  <span class="text-[11px] uppercase tracking-wider text-slate-500">Series title</span>
+                  <input type="text" name="series_title"
+                         placeholder="e.g. Three.js Journey"
+                         x-model="editing.series_title"
+                         class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                border border-white/5 text-sm
+                                focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                </label>
+                <div class="flex gap-3">
+                  <label class="block flex-1">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Season</span>
+                    <input type="number" name="season" min="1"
+                           placeholder="1"
+                           x-model="editing.season"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm tabular-nums
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                  <label class="block flex-1">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Ep start</span>
+                    <input type="number" name="episode" min="1"
+                           placeholder="1"
+                           x-model="editing.episode"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm tabular-nums
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                  <label class="block flex-1">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Ep end</span>
+                    <input type="number" name="episode_end" min="2"
+                           placeholder="—"
+                           x-model="editing.episode_end"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm tabular-nums
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                </div>
+                <p class="mt-1.5 text-xs text-slate-500">
+                  Set Ep end only for files spanning multiple episodes (e.g. E01–E03).
+                  Clear the series title to restore as a standalone item.
+                </p>
+              </div>
+
+              {# Music metadata — only shown when editing audio items #}
+              <div class="pt-3 border-t border-white/5" x-show="editing.media_kind === 'audio'" x-cloak>
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Music</p>
+                <div class="space-y-2">
+                  <label class="block">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Artist</span>
+                    <input type="text" name="artist" placeholder="e.g. A.R. Rahman"
+                           x-model="editing.artist"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                  <label class="block">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Album</span>
+                    <input type="text" name="album_title" placeholder="e.g. Roja"
+                           x-model="editing.album_title"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                  <label class="block">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Track #</span>
+                    <input type="number" name="track_number" min="1" placeholder="1"
+                           x-model="editing.track_number"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm tabular-nums
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                </div>
+              </div>
+
+              {# Optional TMDB id override. When set, the backend skips
+                 search-by-title and applies the specified record
+                 directly — useful for titles that are too generic or
+                 too messy for TMDB's search to disambiguate. #}
+              <div class="pt-3 border-t border-white/5">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">
+                  TMDB override <span class="lowercase tracking-normal text-slate-500">(optional)</span>
+                </p>
+
+                {# IMDb id resolver. Paste a tt-id or the full IMDb URL;
+                   we'll resolve it to TMDB and populate the fields
+                   below. Saves a manual TMDB search step. #}
+                <label class="block mb-2">
+                  <span class="text-[11px] uppercase tracking-wider text-slate-500">
+                    IMDb id or URL
+                  </span>
+                  <div class="mt-1 flex items-center gap-2">
+                    <input type="text" inputmode="text"
+                           placeholder="tt1234567 or https://imdb.com/title/tt1234567/"
+                           x-model="editing.imdb_input"
+                           @keydown.enter.prevent="resolveImdb()"
+                           class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                    <button type="button"
+                            @click="resolveImdb()"
+                            :disabled="editing.imdbLoading"
+                            class="px-3 py-2 rounded bg-brand-500/80 hover:bg-brand-500
+                                   disabled:opacity-50 text-white text-sm font-medium
+                                   transition-colors whitespace-nowrap">
+                      <span x-show="!editing.imdbLoading">Resolve →</span>
+                      <span x-show="editing.imdbLoading">Resolving…</span>
+                    </button>
+                  </div>
+                </label>
+                <p x-show="editing.imdbError" x-cloak
+                   class="mb-2 text-xs text-red-400" x-text="editing.imdbError"></p>
+
+                <label class="block">
+                  <span class="text-[11px] uppercase tracking-wider text-slate-500">
+                    TMDB id (numeric)
+                  </span>
+                  <div class="mt-1 flex items-center gap-2">
+                    <input type="number" name="tmdb_id" min="1"
+                           placeholder="e.g. 27205"
+                           x-model="editing.tmdb_id"
+                           @input.debounce.500ms="previewTmdb()"
+                           class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60
+                                  tabular-nums" />
+                    <select name="tmdb_kind"
+                            x-model="editing.tmdb_kind"
+                            @change="previewTmdb()"
+                            class="px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                   border border-white/5
+                                   focus:outline-none focus:ring-2 focus:ring-brand-400/60">
+                      <option value="movie">Movie</option>
+                      <option value="tv">TV</option>
+                    </select>
+                  </div>
+                </label>
+                <p class="mt-1.5 text-xs text-slate-500 leading-relaxed">
+                  Set this and Save to attach a specific TMDB record
+                  by id — overrides the title-search fallback. Find
+                  the id at themoviedb.org (e.g.
+                  <code class="text-slate-400">/movie/1230</code> → 1230).
+                </p>
+
+                {# Live preview of the TMDB record so admin confirms
+                   the right one before saving. Updates 500ms after the
+                   id stops changing, or when the kind selector flips. #}
+                <div x-show="editing.previewLoading"
+                     class="mt-3 text-xs text-slate-500">
+                  Fetching from TMDB…
+                </div>
+                <div x-show="editing.previewError"
+                     class="mt-3 rounded-lg border border-red-400/30 bg-red-500/10
+                            text-red-300 text-xs px-3 py-2"
+                     x-text="editing.previewError"></div>
+                <template x-if="editing.preview &amp;&amp; !editing.previewLoading">
+                  <div class="mt-3 rounded-lg border border-brand-400/30
+                              bg-brand-400/5 p-3 flex gap-3">
+                    <template x-if="editing.preview.poster_path">
+                      <img :src="'https://image.tmdb.org/t/p/w92' + editing.preview.poster_path"
+                           alt="" class="w-14 h-20 rounded object-cover flex-shrink-0" />
+                    </template>
+                    <template x-if="!editing.preview.poster_path">
+                      <div class="w-14 h-20 rounded bg-ink-800 flex-shrink-0
+                                  grid place-items-center text-slate-600 text-xs">
+                        no poster
+                      </div>
+                    </template>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-semibold text-white truncate">
+                        <span x-text="editing.preview.title"></span>
+                        <span x-show="editing.preview.year"
+                              class="text-slate-400 font-normal"
+                              x-text="'(' + editing.preview.year + ')'"></span>
+                      </p>
+                      <p class="text-[10px] uppercase tracking-wider text-slate-500 mt-0.5">
+                        <span x-text="editing.preview.kind"></span>
+                        <template x-if="editing.preview.imdb_id">
+                          <span>
+                            · <a :href="'https://www.imdb.com/title/' + editing.preview.imdb_id + '/'"
+                                 target="_blank" rel="noopener"
+                                 class="text-yellow-300 hover:underline"
+                                 x-text="editing.preview.imdb_id"></a>
+                          </span>
+                        </template>
+                      </p>
+                      <p class="mt-1 text-xs text-slate-400 leading-snug line-clamp-3"
+                         x-text="editing.preview.overview || '(no overview)'"></p>
+                      <p class="mt-1.5 text-[10px] text-slate-500"
+                         x-text="(editing.preview.genres || []).join(' · ')"></p>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <footer class="px-4 py-3 flex items-center gap-2 flex-shrink-0 flex-wrap">
+              {# Clear TMDB: wipes enrichment fields so the item can be
+                 re-enriched fresh or left as a plain upload entry. #}
+              <button type="submit" name="action" value="clear-tmdb"
+                      @click.prevent="if (confirm('Clear all TMDB enrichment for this item (poster, genres, overview, TMDB id)?')) { $el.form.action = '/admin/clear-tmdb/' + editing.id; $el.form.submit(); }"
+                      class="mr-auto px-3 py-2 rounded text-xs
+                             text-red-400 border border-red-400/20
+                             hover:bg-red-500/10 transition-colors">
+                Clear TMDB
+              </button>
+              <button type="button" @click="editing = null"
+                      class="px-4 py-2 rounded text-sm
+                             bg-ink-800 text-slate-300 border border-white/5
+                             hover:bg-ink-700 transition-colors">
+                Cancel
+              </button>
+              <button type="submit"
+                      class="px-5 py-2 rounded text-sm font-medium
+                             bg-brand-500 text-white
+                             hover:bg-brand-600 transition-colors">
+                Save
+              </button>
+            </footer>
+          </form>
+        </div>
+      </div>
+    </template>

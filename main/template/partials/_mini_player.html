@@ -1,0 +1,339 @@
+    {# Persistent background audio — must appear BEFORE the inline <script> below
+       so getElementById('bgAudio') finds it at script execution time.
+       hx-preserve keeps the same DOM node across htmx content swaps. #}
+    <audio id="bgAudio"
+           hx-preserve="true"
+           preload="none"
+           playsinline
+           style="position:absolute;width:0;height:0;pointer-events:none">
+    </audio>
+
+    {# ── Mini-player bar ─────────────────────────────────────────────────
+       Shown on every page EXCEPT the watch page itself when the user has
+       played an audio track. Reads from localStorage td:nowplaying so
+       the bar persists across navigation — like Spotify's bottom bar. #}
+    <div id="_mini-player" style="display:none"
+         class="fixed bottom-0 left-0 right-0 z-40
+                bg-ink-950/95 backdrop-blur-md border-t border-white/10
+                px-4 py-2.5 flex items-center gap-3 shadow-2xl">
+      {# Progress bar — thin orange line at the very top of the bar #}
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:rgba(255,255,255,0.06);pointer-events:none">
+        <div id="_mp-progress" style="height:100%;width:0%;background:#f97316;transition:width 0.2s linear"></div>
+      </div>
+      {# Album art + track info — tap to go to player #}
+      <a id="_mp-link" href="#"
+         class="flex items-center gap-3 flex-1 min-w-0 group">
+        <div class="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-ink-800">
+          <img id="_mp-art" alt=""
+               onerror="this.style.display='none'"
+               class="w-full h-full object-cover" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <p id="_mp-title"
+             class="text-sm font-semibold text-white truncate
+                    group-hover:text-brand-300 transition-colors"></p>
+          <p id="_mp-artist" class="text-xs text-slate-400 truncate"></p>
+        </div>
+      </a>
+      {# Controls: Prev · Play · Next #}
+      <div class="flex items-center gap-1 flex-shrink-0">
+        <button id="_mp-prev"
+                class="w-8 h-8 flex items-center justify-center rounded-full
+                       text-slate-400 hover:text-white transition-colors"
+                aria-label="Previous" onclick="window._mpNav && window._mpNav('prev')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+            <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
+          </svg>
+        </button>
+        <button id="_mp-play"
+                class="w-9 h-9 flex items-center justify-center rounded-full
+                       bg-white text-ink-900 hover:bg-slate-200 transition-colors"
+                aria-label="Play" onclick="window._mpTogglePlay && window._mpTogglePlay()">
+          <svg id="_mp-icon-play" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          <svg id="_mp-icon-pause" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 hidden">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+          </svg>
+        </button>
+        <button id="_mp-next"
+                class="w-8 h-8 flex items-center justify-center rounded-full
+                       text-slate-400 hover:text-white transition-colors"
+                aria-label="Next" onclick="window._mpNav && window._mpNav('next')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+            <path d="M6 18l8.5-6L6 6v12zm2.5-6 8.5 6V6z"/>
+          </svg>
+        </button>
+      </div>
+      {# Dismiss #}
+      <button onclick="window._mpDismiss && window._mpDismiss()"
+              class="flex-shrink-0 text-slate-500 hover:text-white
+                     transition-colors p-1" aria-label="Close">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <script>
+(function () {
+  // ── htmx loading bar ─────────────────────────────────────────────────────
+  var _hbar = document.getElementById('_htmx-bar');
+  if (_hbar) {
+    function _hbarDone() {
+      _hbar.classList.remove('htmx-request');
+      _hbar.classList.add('htmx-complete');
+      setTimeout(function() { _hbar.classList.remove('htmx-complete'); }, 500);
+    }
+    document.body.addEventListener('htmx:beforeRequest', function() {
+      _hbar.classList.remove('htmx-complete');
+      _hbar.classList.add('htmx-request');
+    });
+    document.body.addEventListener('htmx:afterSettle', _hbarDone);
+    document.body.addEventListener('htmx:responseError', _hbarDone);
+    document.body.addEventListener('htmx:sendError', _hbarDone);
+  }
+
+  // Scroll-to-top button
+  var _st = document.getElementById('_scroll-top');
+  if (_st) {
+    window.addEventListener('scroll', function () {
+      _st.style.display = window.scrollY > 300 ? 'grid' : 'none';
+    }, { passive: true });
+  }
+
+  // ── Persistent background audio + mini-player ──────────────────────────
+  var NP_KEY = 'td:nowplaying';
+  var _bgAudio = document.getElementById('bgAudio');
+
+  // Sync play/pause icon in mini-player
+  function _mpSyncIcon() {
+    var iconPlay  = document.getElementById('_mp-icon-play');
+    var iconPause = document.getElementById('_mp-icon-pause');
+    if (!iconPlay || !iconPause) return;
+    var playing = _bgAudio && !_bgAudio.paused;
+    iconPlay.classList.toggle('hidden', playing);
+    iconPause.classList.toggle('hidden', !playing);
+  }
+
+  if (_bgAudio) {
+    _bgAudio.addEventListener('play',  _mpSyncIcon);
+    _bgAudio.addEventListener('pause', _mpSyncIcon);
+    _bgAudio.addEventListener('timeupdate', function() {
+      var bar = document.getElementById('_mp-progress');
+      if (!bar) return;
+      var pct = _bgAudio.duration > 0 ? (_bgAudio.currentTime / _bgAudio.duration * 100) : 0;
+      bar.style.width = pct.toFixed(1) + '%';
+    });
+    _bgAudio.addEventListener('ended', function() {
+      // Auto-advance: load next track URL from localStorage
+      var np;
+      try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
+      if (np && np.nextUrl) window.location.href = np.nextUrl;
+    });
+  }
+
+  // Toggle play/pause on bgAudio
+  window._mpTogglePlay = function() {
+    if (!_bgAudio || !_bgAudio.src) {
+      // No src yet — navigate to the last track so it loads
+      var np;
+      try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
+      if (np && np.url) window.location.href = np.url;
+      return;
+    }
+    if (_bgAudio.paused) {
+      _bgAudio.play().catch(function() {});
+    } else {
+      _bgAudio.pause();
+    }
+  };
+
+  // Prev/next: navigate to adjacent track URL (full navigation to watch page)
+  window._mpNav = function(dir) {
+    var np;
+    try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
+    if (!np) return;
+    var url = dir === 'prev' ? np.prevUrl : np.nextUrl;
+    if (url) window.location.href = url;
+  };
+
+  function _mpInit() {
+    // On the watch page: hide bar + reset padding (player is on the page itself).
+    if (location.pathname.startsWith('/watch/')) {
+      document.body.style.paddingBottom = '';
+      var bar = document.getElementById('_mini-player');
+      if (bar) bar.style.display = 'none';
+      return;
+    }
+    var np;
+    try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
+    if (!np) return;
+    var bar  = document.getElementById('_mini-player');
+    var art  = document.getElementById('_mp-art');
+    var ttl  = document.getElementById('_mp-title');
+    var art2 = document.getElementById('_mp-artist');
+    var link = document.getElementById('_mp-link');
+    var prev = document.getElementById('_mp-prev');
+    var next = document.getElementById('_mp-next');
+    if (np.art) art.src = np.art;
+    ttl.textContent  = np.title  || '';
+    art2.textContent = np.artist || '';
+    link.href = np.url || '#';
+    if (prev) { prev.style.opacity = np.prevUrl ? '1' : '0.3'; prev.style.pointerEvents = np.prevUrl ? '' : 'none'; }
+    if (next) { next.style.opacity = np.nextUrl ? '1' : '0.3'; next.style.pointerEvents = np.nextUrl ? '' : 'none'; }
+    bar.style.display = 'flex';
+    document.body.style.paddingBottom = '60px';
+    _mpSyncIcon();
+  }
+
+  window._mpDismiss = function() {
+    try { localStorage.removeItem(NP_KEY); } catch(_) {}
+    if (_bgAudio) { _bgAudio.pause(); _bgAudio.src = ''; }
+    var bar = document.getElementById('_mini-player');
+    if (bar) bar.style.display = 'none';
+    document.body.style.paddingBottom = '';
+  };
+
+  _mpInit();
+
+  // Re-init after every htmx content swap (URL/path may have changed)
+  document.body.addEventListener('htmx:afterSettle', _mpInit);
+
+  // ── htmx boost config: exclude /watch/ and /admin from AJAX navigation ──
+  // Those pages have complex JS (Plyr, HLS) that must do a full page load.
+  document.body.addEventListener('htmx:configRequest', function(e) {
+    var rawPath = (e.detail.path || '');
+    var pathname;
+    try { pathname = new URL(rawPath, location.origin).pathname; } catch(_) { pathname = rawPath; }
+    // Watch + admin pages need full page loads (complex JS that relies on DOMContentLoaded).
+    // Stream URLs (/{hash}{id}) must not be AJAX-fetched — they return binary audio/video.
+    if (pathname.startsWith('/watch/') || pathname.startsWith('/admin') ||
+        /^\/([A-Za-z0-9_-]{16}|[A-Za-z0-9_-]{6})\d+$/.test(pathname)) {
+      e.preventDefault();
+      window.location.href = rawPath;
+    }
+  });
+
+  // Hand off audio to bgAudio before every htmx content swap so music
+  // continues while browsing (pagehide doesn't fire on AJAX navigation).
+  document.body.addEventListener('htmx:beforeSwap', function() {
+    if (typeof window._handoffAudioToBg === 'function') {
+      window._handoffAudioToBg();
+    }
+  });
+
+  // Scroll to top after each AJAX navigation (htmx preserves scroll position
+  // by default, which leaves users mid-page on the new content).
+  document.body.addEventListener('htmx:afterSettle', function() {
+    window.scrollTo(0, 0);
+  });
+
+  // Hide hero section when URL has active filters (search/year/quality/tag).
+  // The hero is outside #grid so filter swaps don't remove it — hide via JS.
+  function _syncHeroVisibility() {
+    var hero = document.getElementById('hero-section');
+    if (!hero) return;
+    var sp = new URLSearchParams(location.search);
+    var hasFilter = sp.get('q') || sp.get('tag') || sp.get('year') || sp.get('quality');
+    hero.style.display = hasFilter ? 'none' : '';
+  }
+  document.body.addEventListener('htmx:afterSettle', _syncHeroVisibility);
+  _syncHeroVisibility(); // run on initial load too
+
+  // PWA install banner — only surfaces after 3+ visits, once per session,
+  // and with a 10s delay so it doesn't interrupt on landing.
+  var _prompt = null;
+  var DISMISS = 'td:pwa-dismiss';
+  var VISITS = 'td:visits';
+  var SESSION = 'td:pwa-shown';
+
+  // Track visits (increment once per page load).
+  var visits = parseInt(localStorage.getItem(VISITS) || '0', 10) + 1;
+  try { localStorage.setItem(VISITS, visits); } catch (_) {}
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    if (localStorage.getItem(DISMISS)) return;  // permanently dismissed
+    if (visits < 3) return;                      // not enough engagement
+    if (sessionStorage.getItem(SESSION)) return; // already shown this tab
+    _prompt = e;
+    // Delay 10s so the user can settle in before seeing the prompt.
+    setTimeout(function () {
+      if (!_prompt) return;
+      try { sessionStorage.setItem(SESSION, '1'); } catch (_) {}
+      var b = document.getElementById('_pwa-banner');
+      if (b) b.style.display = 'flex';
+    }, 10000);
+  });
+  window.addEventListener('appinstalled', function () {
+    var b = document.getElementById('_pwa-banner');
+    if (b) b.style.display = 'none';
+    _prompt = null;
+  });
+  window._pwaBannerInstall = function () {
+    if (!_prompt) return;
+    _prompt.prompt();
+    _prompt.userChoice.then(function () {
+      _prompt = null;
+      var b = document.getElementById('_pwa-banner');
+      if (b) b.style.display = 'none';
+    });
+  };
+  window._pwaBannerDismiss = function () {
+    localStorage.setItem(DISMISS, '1');
+    var b = document.getElementById('_pwa-banner');
+    if (b) b.style.display = 'none';
+  };
+})();
+
+function globalSearch() {
+  return {
+    open: false,
+    q: '',
+    items: [],
+    active: -1,
+    _t: null,
+    init() {
+      window.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+          e.preventDefault(); this.toggle(); return;
+        }
+        if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(
+            (document.activeElement || {}).tagName || '')) {
+          e.preventDefault(); this.toggle();
+        }
+      });
+    },
+    toggle() {
+      this.open = !this.open;
+      if (this.open) this.$nextTick(() => { if (this.$refs.inp) this.$refs.inp.focus(); });
+      else { this.q = ''; this.items = []; this.active = -1; }
+    },
+    close() { this.open = false; this.q = ''; this.items = []; this.active = -1; },
+    schedule() {
+      clearTimeout(this._t);
+      const v = this.q.trim();
+      if (!v) { this.items = []; this.active = -1; return; }
+      this._t = setTimeout(async () => {
+        try {
+          const r = await fetch('/search/suggest?q=' + encodeURIComponent(v) + '&limit=8');
+          if (r.ok) { this.items = await r.json(); this.active = -1; }
+        } catch (_) {}
+      }, 150);
+    },
+    move(d) {
+      if (!this.items.length) return;
+      this.active = (this.active + d + this.items.length) % this.items.length;
+    },
+    confirm() {
+      if (this.active >= 0 && this.active < this.items.length) {
+        window.location = this.items[this.active].url;
+      } else if (this.q.trim()) {
+        window.location = '/?q=' + encodeURIComponent(this.q.trim());
+      }
+    },
+  };
+}
+</script>

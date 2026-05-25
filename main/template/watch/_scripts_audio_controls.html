@@ -1,0 +1,157 @@
+    // ── Custom audio controls wiring ──────────────────────────────────────
+    function attachCustomAudioControls(inst) {
+      const wrap      = document.getElementById("tdAudioControls");
+      if (!wrap) return;
+      const playBtn   = document.getElementById("tdPlayPause");
+      const iconPlay  = document.getElementById("tdIconPlay");
+      const iconPause = document.getElementById("tdIconPause");
+      const back10    = document.getElementById("tdBack10");
+      const fwd10     = document.getElementById("tdFwd10");
+      const prevBtn   = document.getElementById("tdPrev");
+      const nextBtn   = document.getElementById("tdNext");
+      const track     = document.getElementById("tdTrack");
+      const fill      = document.getElementById("tdFill");
+      const thumb     = document.getElementById("tdThumb");
+      const curEl     = document.getElementById("tdCurTime");
+      const durEl     = document.getElementById("tdDuration");
+      const muteBtn   = document.getElementById("tdMute");
+      const volSlider = document.getElementById("tdVol");
+
+      function fmt(s) {
+        if (!isFinite(s) || s < 0) return "0:00";
+        const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+        return m + ":" + String(sec).padStart(2, "0");
+      }
+      function setPlaying(p) {
+        playBtn.setAttribute("aria-label", p ? "Pause" : "Play");
+        iconPlay.classList.toggle("hidden", p);
+        iconPause.classList.toggle("hidden", !p);
+      }
+      function syncProgress() {
+        const cur = inst.currentTime || 0;
+        const dur = inst.duration || 0;
+        const pct = dur > 0 ? (cur / dur) * 100 : 0;
+        fill.style.width = pct + "%";
+        thumb.style.left = pct + "%";
+        curEl.textContent = fmt(cur);
+      }
+
+      inst.on("play",          () => setPlaying(true));
+      inst.on("pause",         () => setPlaying(false));
+      inst.on("ended",         () => setPlaying(false));
+      inst.on("timeupdate",    syncProgress);
+      inst.on("loadedmetadata", () => {
+        durEl.textContent = fmt(inst.duration);
+        syncProgress();
+        setPlaying(!inst.paused);
+        wrap.style.display = "";
+        thumb.style.opacity = "1";
+      });
+      inst.on("volumechange", () => {
+        const muted = inst.muted || inst.volume === 0;
+        if (volSlider) volSlider.value = muted ? 0 : inst.volume;
+        if (muteBtn) muteBtn.style.opacity = muted ? "0.4" : "1";
+      });
+
+      playBtn.addEventListener("click", () => inst.togglePlay());
+      back10.addEventListener("click", () => { inst.currentTime = Math.max(0, inst.currentTime - 10); });
+      fwd10.addEventListener("click",  () => { if (isFinite(inst.duration)) inst.currentTime = Math.min(inst.duration, inst.currentTime + 10); });
+      if (muteBtn) muteBtn.addEventListener("click", () => { inst.muted = !inst.muted; });
+      if (volSlider) volSlider.addEventListener("input", () => {
+        inst.volume = parseFloat(volSlider.value);
+        inst.muted  = parseFloat(volSlider.value) === 0;
+      });
+      {% if prev_track %}
+      if (prevBtn) prevBtn.addEventListener("click", () => { location.href = {{ prev_track.url | tojson }}; });
+      {% endif %}
+      {% if next_track %}
+      if (nextBtn) nextBtn.addEventListener("click", () => {
+        {% if meta and meta.album_key %}
+        // Respect active shuffle queue (same logic as attachNextTrack auto-advance)
+        var _sq; try { _sq = JSON.parse(sessionStorage.getItem("td:shuffle:{{ meta.album_key }}") || "null"); } catch(_) { _sq = null; }
+        var _ci = _sq ? _sq.indexOf("{{ meta.secure_hash }}{{ meta.message_id }}") : -1;
+        var _nu = (_sq && _ci >= 0 && _ci + 1 < _sq.length) ? "/watch/" + _sq[_ci + 1] : {{ next_track.url | tojson }};
+        location.href = _nu;
+        {% else %}
+        location.href = {{ next_track.url | tojson }};
+        {% endif %}
+      });
+      {% endif %}
+
+      // Scrubber — mouse + touch
+      let scrubbing = false;
+      function scrubTo(cx) {
+        const r = track.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (cx - r.left) / r.width));
+        const t   = pct * (inst.duration || 0);
+        fill.style.width  = (pct * 100) + "%";
+        thumb.style.left  = (pct * 100) + "%";
+        curEl.textContent = fmt(t);
+        return t;
+      }
+      track.addEventListener("mousedown", (e) => {
+        scrubbing = true; inst.currentTime = scrubTo(e.clientX);
+      });
+      window.addEventListener("mousemove",  (e) => { if (scrubbing) scrubTo(e.clientX); });
+      window.addEventListener("mouseup",    (e) => { if (scrubbing) { scrubbing = false; inst.currentTime = scrubTo(e.clientX); } });
+      track.addEventListener("touchstart",  (e) => { if (e.touches.length !== 1) return; scrubbing = true; scrubTo(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
+      track.addEventListener("touchmove",   (e) => { if (!scrubbing || e.touches.length !== 1) return; scrubTo(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
+      track.addEventListener("touchend",    (e) => { if (!scrubbing) return; scrubbing = false; e.preventDefault(); inst.currentTime = scrubTo(e.changedTouches[0].clientX); }, { passive: false });
+
+      // Already loaded (e.g. hot reload with cached media)
+      if (inst.duration > 0) {
+        durEl.textContent = fmt(inst.duration);
+        syncProgress();
+        setPlaying(!inst.paused);
+        wrap.style.display = "";
+        thumb.style.opacity = "1";
+      }
+
+      // ── Speed ──────────────────────────────────────────────────────────────
+      var _speedBtns = wrap.querySelectorAll('.tdSpeedBtn');
+      var SPEED_KEY = 'td:speed';
+      var _speed = parseFloat(localStorage.getItem(SPEED_KEY) || '1') || 1;
+      function _applySpeed(s) {
+        _speed = s;
+        inst.media.playbackRate = s;
+        try { localStorage.setItem(SPEED_KEY, String(s)); } catch(_) {}
+        _speedBtns.forEach(function(b) {
+          var on = parseFloat(b.dataset.speed) === s;
+          b.classList.toggle('bg-brand-500/20', on);
+          b.classList.toggle('text-brand-300', on);
+          b.classList.toggle('border-brand-500/40', on);
+          b.classList.toggle('text-slate-400', !on);
+          b.classList.toggle('border-transparent', !on);
+        });
+      }
+      _speedBtns.forEach(function(b) {
+        b.addEventListener('click', function() { _applySpeed(parseFloat(b.dataset.speed)); });
+      });
+      inst.on('loadedmetadata', function() { _applySpeed(_speed); });
+
+      // ── Repeat ─────────────────────────────────────────────────────────────
+      var _repeatBtn   = document.getElementById('tdRepeat');
+      var _repeatBadge = document.getElementById('tdRepeatBadge');
+      var REPEAT_KEY   = 'td:repeat:{% if meta and meta.album_key %}{{ meta.album_key }}{% else %}_{% endif %}';
+      var _RMODES      = ['off', 'all', 'one'];
+      var _rmode       = localStorage.getItem(REPEAT_KEY) || 'off';
+      if (_RMODES.indexOf(_rmode) === -1) _rmode = 'off';
+      function _applyRepeat(mode) {
+        _rmode = mode;
+        inst.media.loop = (mode === 'one');
+        try { localStorage.setItem(REPEAT_KEY, mode); } catch(_) {}
+        if (_repeatBtn) {
+          _repeatBtn.setAttribute('aria-label', 'Repeat ' + mode);
+          _repeatBtn.title = 'Repeat ' + mode;
+          _repeatBtn.classList.toggle('text-brand-400', mode !== 'off');
+          _repeatBtn.classList.toggle('text-slate-400', mode === 'off');
+        }
+        if (_repeatBadge) _repeatBadge.style.display = (mode === 'one') ? 'flex' : 'none';
+      }
+      if (_repeatBtn) {
+        _repeatBtn.addEventListener('click', function() {
+          _applyRepeat(_RMODES[(_RMODES.indexOf(_rmode) + 1) % _RMODES.length]);
+        });
+      }
+      _applyRepeat(_rmode);
+    }

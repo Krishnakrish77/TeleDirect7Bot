@@ -1,0 +1,67 @@
+    function watchForUndecodableCodec(video) {
+      // Skip for known_unplayable files — no src, so no events ever fire
+      // and the listeners would just sit dead on the element indefinitely.
+      if (!video.dataset.directSrc && !video.dataset.hlsSrc) return;
+      // Two failure modes trigger the overlay:
+      //   1. hls.js delivers segments fine but MSE silently rejects them
+      //      because the codec isn't supported (10-bit HEVC / AV1 / DV).
+      //      Symptom: currentTime advances but videoWidth stays 0 for
+      //      an extended period without ever decoding a frame.
+      //   2. The browser raises a MediaError mid-decode and playback
+      //      halts permanently — usually a chunk-demuxer error on
+      //      B-frame-heavy sources.
+      //
+      // Critical guard: once any frame has decoded (videoWidth > 0),
+      // never show the overlay. Transient videoWidth=0 during seeks
+      // or hls.js fallback transitions otherwise produced false
+      // positives on perfectly-playable H.264 files.
+      const overlay = document.getElementById("codecOverlay");
+      if (!overlay) return;
+      let shown = false;
+      let everDecoded = false;
+      const show = (reason) => {
+        if (shown || everDecoded) return;
+        overlay.classList.remove("hidden");
+        const vlcNote = document.getElementById("vlcNote");
+        const vlcBtn  = document.getElementById("vlcButton");
+        if (vlcNote) vlcNote.style.display = '';
+        if (vlcBtn)  vlcBtn.style.display  = '';
+        shown = true;
+        if (reason) console.warn("Codec overlay shown:", reason);
+      };
+      // Track first successful decode — once set we trust the source.
+      const markDecoded = () => {
+        if (video.videoWidth > 0) everDecoded = true;
+      };
+      ["loadedmetadata", "loadeddata", "playing", "timeupdate"]
+        .forEach(ev => video.addEventListener(ev, markDecoded));
+
+      // Mode 2: explicit MediaError. Always shows if frames never
+      // decoded; suppressed if we already had successful playback.
+      video.addEventListener("error", () => {
+        if (video.error && !everDecoded) {
+          show(video.error.message || `code ${video.error.code}`);
+        }
+      });
+
+      // Mode 1: playing but no frames. Need a sustained stall — 4
+      // consecutive 1-second polls with videoWidth=0 before we call
+      // it permanent. Brief 0-width windows during fallback / seek
+      // shouldn't fire the overlay.
+      video.addEventListener("playing", () => {
+        let stallTicks = 0;
+        let ticks = 0;
+        const id = setInterval(() => {
+          if (shown || everDecoded) { clearInterval(id); return; }
+          if (!video.paused && video.currentTime > 1 && video.videoWidth === 0) {
+            stallTicks++;
+            if (stallTicks >= 4) {
+              show("videoWidth=0 sustained " + stallTicks + "s");
+            }
+          } else {
+            stallTicks = 0;
+          }
+          if (++ticks > 15) clearInterval(id);
+        }, 1000);
+      }, { once: true });
+    }

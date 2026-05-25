@@ -1,0 +1,63 @@
+    {% if meta and meta.tmdb_id %}
+      <section class="mt-10 rounded-lg border border-white/5 bg-ink-800/40 p-5">
+        <div class="flex flex-col sm:flex-row gap-5">
+          {% if meta.poster_path %}
+            <img src="https://image.tmdb.org/t/p/w342{{ meta.poster_path }}"
+                 alt="" loading="lazy"
+                 class="w-28 sm:w-32 rounded-lg shadow flex-shrink-0" />
+          {% endif %}
+          <div class="min-w-0 flex-1">
+            {# Series header for TV episodes — show the show name and
+               the SxxEyy badge as the primary title, episode-specific
+               name as the subtitle. Movies keep the original behaviour. #}
+            {% if meta.series_title and meta.episode_title %}
+              <p class="text-xs uppercase tracking-wider text-brand-300">
+                {{ meta.series_title }}
+                {%- if meta.season and meta.episode %}
+                  · S{{ '%02d' % meta.season }}E{{ '%02d' % meta.episode }}
+                {%- endif %}
+              </p>
+              <h2 class="text-lg font-semibold text-white">
+                {{ meta.episode_title }}
+              </h2>
+              {% if meta.episode_air_date %}
+                <p class="mt-0.5 text-xs text-slate-500 tabular-nums">
+                  First aired {{ meta.episode_air_date }}
+                </p>
+              {% endif %}
+            {% else %}
+              <h2 class="text-lg font-semibold text-white">
+                {{ meta.title }}
+                {%- if meta.year %} <span class="text-slate-400 font-normal">({{ meta.year }})</span>{% endif -%}
+                {% if meta.season and meta.episode %}
+                  <span class="ml-2 text-sm text-slate-400 tabular-nums">
+                    S{{ '%02d' % meta.season }}E{{ '%02d' % meta.episode }}
+                  </span>
+                {% endif %}
+              </h2>
+            {% endif %}
+            {# Prefer episode-specific overview when present; fall back
+               to the show-level overview then to description. #}
+            {% set body = meta.episode_overview or meta.overview or meta.description %}
+            {% if body %}
+              <p class="mt-2 text-sm text-slate-300 leading-relaxed">{{ body }}</p>
+            {% endif %}
+            <div class="mt-3 flex flex-wrap gap-2 text-xs">
+              {% for g in meta.tmdb_genres %}
+                <span class="px-2 py-0.5 rounded bg-brand-500/15 text-brand-300
+                             border border-brand-400/30">{{ g }}</span>
+              {% endfor %}
+              {% if meta.imdb_id %}
+                <a href="https://www.imdb.com/title/{{ meta.imdb_id }}/"
+                   target="_blank" rel="noopener"
+                   class="px-2 py-0.5 rounded bg-yellow-500/15 text-yellow-300
+                          border border-yellow-400/30 hover:bg-yellow-500/25
+                          transition-colors">
+                  IMDb ↗
+                </a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
+    {% endif %}

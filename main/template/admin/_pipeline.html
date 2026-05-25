@@ -1,0 +1,144 @@
+    {# Live progress widget. Polls /admin/status while either pipeline
+       is running; hides itself once both finish. The bar's width is
+       driven by the pipeline that's still active so users get
+       immediate feedback after clicking Enrich. #}
+    <div x-data="{
+           seed: null,
+           enrich: null,
+           reindex: null,
+           probe: null,
+           episode_fill: null,
+           migrate: null,
+           pollHandle: null,
+           start() {
+             this.tick();
+             if (!this.pollHandle) {
+               this.pollHandle = setInterval(() => this.tick(), 2000);
+             }
+           },
+           async tick() {
+             try {
+               const r = await fetch('/admin/status', { headers: { 'Accept': 'application/json' } });
+               if (!r.ok) return;
+               const data = await r.json();
+               this.seed = data.seed;
+               this.enrich = data.enrich;
+               this.reindex = data.reindex;
+               this.probe = data.probe;
+               this.episode_fill = data.episode_fill;
+               this.migrate = data.migrate;
+               const any = (data.seed.running || data.enrich.running || data.reindex.running
+                 || (data.probe &amp;&amp; data.probe.running)
+                 || (data.episode_fill &amp;&amp; data.episode_fill.running)
+                 || (data.migrate &amp;&amp; data.migrate.running));
+               if (!any) {
+                 if (this.pollHandle) {
+                   clearInterval(this.pollHandle);
+                   this.pollHandle = null;
+                 }
+               }
+             } catch (e) { /* swallow; we'll retry on the next tick */ }
+           },
+           pct(s) { return s &amp;&amp; s.total > 0 ? Math.min(100, Math.round((s.done ?? s.scanned) / s.total * 100)) : 0; },
+         }"
+         x-init="start()"
+         @admin-progress-tick.window="tick(); start()"
+         class="mb-4 space-y-3">
+
+      <template x-if="seed &amp;&amp; seed.running">
+        <div class="rounded-lg border border-brand-400/30 bg-brand-400/5 p-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-brand-200">Seeding catalogue from BIN</span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${seed.scanned}/${seed.total} ids scanned · ${seed.indexed} indexed`"></span>
+          </div>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full bg-brand-400 transition-all duration-500"
+                 :style="`width:${pct(seed)}%`"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="enrich &amp;&amp; enrich.running">
+        <div class="rounded-lg border border-brand-400/30 bg-brand-400/5 p-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-brand-200">Enriching with TMDB</span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${enrich.done}/${enrich.total} · ${enrich.enriched} matched · ${enrich.failed} no match`"></span>
+          </div>
+          <p class="mt-1 text-xs text-slate-500 truncate" x-text="enrich.last_title || ''"></p>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full bg-brand-400 transition-all duration-500"
+                 :style="`width:${pct(enrich)}%`"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="reindex &amp;&amp; reindex.running">
+        <div class="rounded-lg border border-brand-400/30 bg-brand-400/5 p-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-brand-200">Re-indexing catalogue</span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${reindex.done}/${reindex.total} processed`"></span>
+          </div>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full bg-brand-400 transition-all duration-500"
+                 :style="`width:${pct(reindex)}%`"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="probe &amp;&amp; probe.running">
+        <div class="rounded-lg border border-brand-400/30 bg-brand-400/5 p-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-brand-200">Probing codecs (ffprobe)</span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${probe.done}/${probe.total} · ${probe.found_incompatible} flagged as not browser-playable`"></span>
+          </div>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full bg-brand-400 transition-all duration-500"
+                 :style="`width:${pct(probe)}%`"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="episode_fill &amp;&amp; episode_fill.running">
+        <div class="rounded-lg border border-brand-400/30 bg-brand-400/5 p-4">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-brand-200">Fetching episode details (TMDB)</span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${episode_fill.done}/${episode_fill.total} · ${episode_fill.filled} populated`"></span>
+          </div>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full bg-brand-400 transition-all duration-500"
+                 :style="`width:${pct(episode_fill)}%`"></div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="migrate &amp;&amp; (migrate.running || migrate.phase === 'failed')">
+        <div class="rounded-lg p-4"
+             :class="migrate.phase === 'failed'
+               ? 'border border-red-400/40 bg-red-500/10'
+               : 'border border-amber-400/30 bg-amber-400/5'">
+          <div class="flex items-center justify-between text-sm">
+            <span :class="migrate.phase === 'failed' ? 'text-red-300' : 'text-amber-200'">
+              <span x-show="migrate.phase === 'connecting'">Connecting to MongoDB…</span>
+              <span x-show="migrate.phase === 'indexing'">Snapshotting catalogue…</span>
+              <span x-show="migrate.phase === 'writing'">Writing to MongoDB</span>
+              <span x-show="migrate.phase === 'done'">Migration done</span>
+              <span x-show="migrate.phase === 'failed'">Migration failed</span>
+            </span>
+            <span class="text-slate-400 tabular-nums"
+                  x-text="`${migrate.done}/${migrate.total} written`"></span>
+          </div>
+          <p x-show="migrate.phase === 'failed' &amp;&amp; migrate.error"
+             class="mt-1 text-xs text-red-300/80" x-text="migrate.error"></p>
+          <div class="mt-2 h-1.5 rounded-full bg-ink-800 overflow-hidden">
+            <div class="h-full transition-all duration-500"
+                 :class="migrate.phase === 'failed' ? 'bg-red-400' : 'bg-amber-400'"
+                 :style="`width:${pct(migrate)}%`"></div>
+          </div>
+        </div>
+      </template>
+    </div>
