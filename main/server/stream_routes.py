@@ -65,7 +65,10 @@ async def status_route_handler(_):
 async def watch_handler(request: web.Request):
     try:
         path = request.match_info["path"]
-        match = re.search(r"^([a-zA-Z0-9_-]{16}|[a-zA-Z0-9_-]{6})(\d+)$", path)
+        # Hash is everything before the trailing digit run (message_id).
+        # File unique_ids can be 6, 15, 16+ chars — accept any hash
+        # ending with a non-digit char followed by the numeric message_id.
+        match = re.search(r"^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$", path)
         if match:
             secure_hash = match.group(1)
             message_id = int(match.group(2))
@@ -97,7 +100,10 @@ async def stream_handler(request: web.Request):
         # accidentally — return 404 rather than trying to parse it as a stream.
         if '/' in path:
             raise web.HTTPNotFound()
-        match = re.search(r"^([a-zA-Z0-9_-]{16}|[a-zA-Z0-9_-]{6})(\d+)$", path)
+        # Hash is everything before the trailing digit run (message_id).
+        # File unique_ids can be 6, 15, 16+ chars — accept any hash
+        # ending with a non-digit char followed by the numeric message_id.
+        match = re.search(r"^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$", path)
         if match:
             secure_hash = match.group(1)
             message_id = int(match.group(2))
