@@ -1,99 +1,5 @@
-{# ── Auth widget ──────────────────────────────────────────────────────────
-   Logged out: small ghost "Sign in" button (Telegram icon + text on sm+).
-   Logged in:  avatar circle + name dropdown (via Alpine, hydrated from
-               sessionStorage after page load so server renders generic).
-   Admin:      dropdown includes "Admin" link when is_admin=true in JWT. #}
-
-<div id="_auth-area" x-data="tdAuth()" x-init="init()"
-     style="display:none">
-
-  {# Logged-out state — shown until Alpine hydrates #}
-  <button id="_auth-signin"
-          x-show="!user"
-          @click="openModal()"
-          class="flex items-center gap-1.5 text-slate-400 hover:text-white
-                 transition-colors p-1.5 rounded-full hover:bg-ink-800
-                 sm:px-3 sm:py-1.5 sm:rounded-lg sm:border sm:border-white/10
-                 sm:hover:border-white/25 sm:text-slate-300 sm:text-sm sm:font-medium"
-          title="Sign in with Telegram">
-    {# Telegram plane icon #}
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
-         class="w-4 h-4 text-[#2AABEE] flex-shrink-0">
-      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/>
-    </svg>
-    <span class="hidden sm:inline">Sign in</span>
-  </button>
-
-  {# Logged-in state — avatar + dropdown #}
-  <div x-show="user" class="relative" @click.outside="menuOpen = false">
-    <button @click="menuOpen = !menuOpen"
-            class="flex items-center gap-2 px-2 py-1 rounded-lg
-                   hover:bg-ink-800 transition-colors group">
-      <template x-if="user && user.photo">
-        <img :src="user.photo" :alt="user.name || ''"
-             class="w-8 h-8 rounded-full object-cover ring-1 ring-white/10
-                    group-hover:ring-brand-400/40 transition-all flex-shrink-0" />
-      </template>
-      <template x-if="!user || !user.photo">
-        <div class="w-8 h-8 rounded-full bg-ink-700 ring-1 ring-white/10
-                    grid place-items-center text-slate-400 text-xs font-semibold
-                    flex-shrink-0" x-text="user && user.name ? user.name[0].toUpperCase() : '?'"></div>
-      </template>
-      <span class="hidden lg:block text-sm font-medium text-slate-200
-                   max-w-[100px] truncate" x-text="user && user.name"></span>
-      <svg class="hidden lg:block w-3 h-3 text-slate-500 flex-shrink-0"
-           xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/>
-      </svg>
-    </button>
-
-    <div x-show="menuOpen" x-transition
-         class="absolute right-0 top-full mt-1 w-52
-                bg-ink-800 border border-white/10 rounded-xl
-                shadow-2xl py-1 z-50">
-      <div class="px-3 py-2.5 border-b border-white/5">
-        <p class="text-sm font-semibold text-white" x-text="user && user.name"></p>
-        <p class="text-xs text-slate-500 mt-0.5"
-           x-text="user && user.username ? '@' + user.username : ''"></p>
-      </div>
-      <a href="/watchlist"
-         class="flex items-center gap-2 px-3 py-2 text-sm text-slate-300
-                hover:text-white hover:bg-ink-700/60 transition-colors">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round"
-                d="M5 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-7-3.5L5 21V5Z"/>
-        </svg>
-        My List
-      </a>
-      <a x-show="user && user.is_admin" href="/admin"
-         class="flex items-center gap-2 px-3 py-2 text-sm text-slate-300
-                hover:text-white hover:bg-ink-700/60 transition-colors">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065Z"/>
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/>
-        </svg>
-        Admin Panel
-      </a>
-      <div class="border-t border-white/5 mt-1">
-        <button @click="signOut()"
-                class="w-full flex items-center gap-2 px-3 py-2 text-sm
-                       text-slate-400 hover:text-red-400 hover:bg-ink-700/60
-                       transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2" class="w-4 h-4">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9"/>
-          </svg>
-          Sign out
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
+{# ── Auth widget is rendered inline in hub.html header.
+   This file provides: modal, tooltip, global JS helpers, and Alpine component registration. #}
 
 {# ── Auth modal — bottom sheet on mobile, centered on desktop ──────────── #}
 <div id="_auth-modal" style="display:none"
@@ -123,20 +29,13 @@
     <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/>
   </svg>
   <span id="_auth-tip-msg"></span>
-  <button onclick="window.tdAuth && tdAuth().openModal(); document.getElementById('_auth-tip').style.display='none'"
+  <button type="button" onclick="window._tdAuth && window._tdAuth.openModal(); document.getElementById('_auth-tip').style.display='none'"
           class="ml-1 text-brand-400 hover:text-brand-300 font-medium text-xs whitespace-nowrap">
     Sign in →
   </button>
 </div>
 
 <script>
-function tdAuth() {
-  // Singleton — return the Alpine component if already mounted
-  var el = document.getElementById('_auth-area');
-  if (el && el.__x) return el.__x.$data;
-  return null;
-}
-
 function _onTelegramAuth(user) {
   fetch('/auth/telegram', {
     method: 'POST',
@@ -153,8 +52,7 @@ function _onTelegramAuth(user) {
 
 // Gate a feature behind auth. Call from onclick of guarded buttons.
 window.tdRequireAuth = function(event, featureName) {
-  var authEl = document.getElementById('_auth-area');
-  var user = authEl && authEl.__x && authEl.__x.$data && authEl.__x.$data.user;
+  var user = window._tdAuth && window._tdAuth.user;
   if (user) return true; // logged in — let default action proceed
   if (event) { event.preventDefault(); event.stopPropagation(); }
   if (window.innerWidth >= 640) {

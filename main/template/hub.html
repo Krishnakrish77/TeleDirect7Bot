@@ -64,9 +64,9 @@
       </div>
 
       {# Auth widget — uses window._tdAuth (defined in _auth.html, loaded in base.html) #}
-      <div class="flex-shrink-0" x-data="tdAuth()" x-init="init()">
+      <div class="flex-shrink-0" x-data="tdAuth">
         {# Logged out: icon on mobile, icon + text on sm+ #}
-        <button x-show="!user" @click="openModal()" title="Sign in with Telegram"
+        <button type="button" x-show="!user" @click="openModal()" title="Sign in with Telegram"
                 class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
                        text-sm font-medium text-slate-400 hover:text-white
                        border border-white/0 hover:border-white/10 hover:bg-ink-800
@@ -79,7 +79,7 @@
         </button>
         {# Logged in: avatar + name + dropdown #}
         <div x-show="user" class="relative" @click.outside="menuOpen=false">
-          <button @click="menuOpen=!menuOpen"
+          <button type="button" @click="menuOpen=!menuOpen"
                   class="flex items-center gap-2 px-2 py-1 rounded-lg
                          hover:bg-ink-800 transition-colors">
             <template x-if="user && user.photo">
@@ -116,7 +116,7 @@
               Admin Panel
             </a>
             <div class="border-t border-white/5 mt-1">
-              <button @click="signOut()"
+              <button type="button" @click="signOut()"
                       class="w-full text-left px-3 py-2 text-sm
                              text-slate-400 hover:text-red-400 hover:bg-ink-700/60 transition-colors">
                 Sign out
