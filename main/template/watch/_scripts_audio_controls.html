@@ -111,7 +111,7 @@
       var _speed = parseFloat(localStorage.getItem(SPEED_KEY) || '1') || 1;
       function _applySpeed(s) {
         _speed = s;
-        inst.media.playbackRate = s;
+        inst.playbackRate = s;
         try { localStorage.setItem(SPEED_KEY, String(s)); } catch(_) {}
         _speedBtns.forEach(function(b) {
           var on = parseFloat(b.dataset.speed) === s;
@@ -125,7 +125,7 @@
       _speedBtns.forEach(function(b) {
         b.addEventListener('click', function() { _applySpeed(parseFloat(b.dataset.speed)); });
       });
-      inst.on('loadedmetadata', function() { _applySpeed(_speed); });
+      inst.addEventListener('loadedmetadata', function() { _applySpeed(_speed); }, { once: true });
 
       // ── Repeat ─────────────────────────────────────────────────────────────
       var _repeatBtn   = document.getElementById('tdRepeat');
@@ -136,7 +136,7 @@
       if (_RMODES.indexOf(_rmode) === -1) _rmode = 'off';
       function _applyRepeat(mode) {
         _rmode = mode;
-        inst.media.loop = (mode === 'one');
+        inst.loop = (mode === 'one');
         try { localStorage.setItem(REPEAT_KEY, mode); } catch(_) {}
         if (_repeatBtn) {
           _repeatBtn.setAttribute('aria-label', 'Repeat ' + mode);
