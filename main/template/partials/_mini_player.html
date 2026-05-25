@@ -117,6 +117,23 @@
     iconPause.classList.toggle('hidden', !playing);
   }
 
+  // ── Media Session API — wires bgAudio to lock screen / headphone controls ──
+  function _updateMediaSession(np) {
+    if (!('mediaSession' in navigator) || !np) return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title:  np.title  || '',
+      artist: np.artist || '',
+      artwork: np.art ? [{ src: np.art, sizes: '512x512', type: 'image/jpeg' }] : [],
+    });
+    navigator.mediaSession.setActionHandler('play',         () => { _bgAudio.play(); });
+    navigator.mediaSession.setActionHandler('pause',        () => { _bgAudio.pause(); });
+    navigator.mediaSession.setActionHandler('nexttrack',    () => { window._mpNav && window._mpNav('next'); });
+    navigator.mediaSession.setActionHandler('previoustrack',() => { window._mpNav && window._mpNav('prev'); });
+    navigator.mediaSession.setActionHandler('seekto', (d) => {
+      if (_bgAudio && isFinite(d.seekTime)) _bgAudio.currentTime = d.seekTime;
+    });
+  }
+
   if (_bgAudio) {
     _bgAudio.addEventListener('play',  _mpSyncIcon);
     _bgAudio.addEventListener('pause', _mpSyncIcon);
@@ -217,6 +234,15 @@
   };
 
   window._mpInit = _mpInit;
+
+  // Update Media Session whenever now-playing changes
+  var _lastNpUrl = null;
+  var _mpInitOrig = _mpInit;
+  _mpInit = window._mpInit = function() {
+    _mpInitOrig();
+    var np; try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
+    if (np && np.url !== _lastNpUrl) { _lastNpUrl = np.url; _updateMediaSession(np); }
+  };
 
   // Play a standalone audio track directly via bgAudio from any page card.
   // Used by _card.html for audio HubItem cards in the library grid/shelves.
