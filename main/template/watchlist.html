@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}My List · TeleDirect{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-7xl mx-auto">
+  {# Header #}
+  <div class="flex items-center gap-3 mb-6">
+    <a href="/" class="text-slate-500 hover:text-slate-300 transition-colors">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/>
+      </svg>
+    </a>
+    <h1 class="text-xl font-bold text-white">My List</h1>
+    {% if items %}
+      <span class="text-sm text-slate-500">{{ items | length }} saved</span>
+    {% endif %}
+  </div>
+
+  {% if not mongo_available %}
+    {# MongoDB not configured — feature not available #}
+    <div class="flex flex-col items-center justify-center py-24 text-center">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5" class="w-12 h-12 text-slate-700 mb-4">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M5 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-7-3.5L5 21V5Z"/>
+      </svg>
+      <p class="text-slate-400 text-sm">Watchlist requires MongoDB storage.</p>
+      <p class="text-slate-600 text-xs mt-1">Set STORE_BACKEND=mongo in environment variables.</p>
+    </div>
+
+  {% elif not items %}
+    {# Empty state #}
+    <div class="flex flex-col items-center justify-center py-24 text-center">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5" class="w-12 h-12 text-slate-700 mb-4">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M5 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-7-3.5L5 21V5Z"/>
+      </svg>
+      <p class="text-slate-400 font-medium">Nothing saved yet</p>
+      <p class="text-slate-600 text-sm mt-1">Tap the bookmark icon on any title to save it here.</p>
+      <a href="/" class="mt-6 px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-400
+                         text-white text-sm font-medium transition-colors">
+        Browse catalogue
+      </a>
+    </div>
+
+  {% else %}
+    {# Grid #}
+    <ul class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7
+               gap-3 sm:gap-4">
+      {% for it in items %}
+        <li class="relative group">
+          <a href="{{ it.url }}"
+             hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
+             class="flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60
+                    border border-white/5 hover:border-brand-400/40 hover:bg-ink-800
+                    transition-colors">
+            <div class="{% if it.kind == 'album' %}aspect-square{% else %}aspect-[2/3]{% endif %}
+                        bg-ink-900 relative overflow-hidden">
+              {# Fallback icon #}
+              <div class="absolute inset-0 grid place-items-center text-slate-700">
+                {% if it.kind == 'album' %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="1.5" class="w-8 h-8">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+                </svg>
+                {% else %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="1.5" class="w-8 h-8">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                        d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                </svg>
+                {% endif %}
+              </div>
+              <img src="{{ it.poster }}" alt="" loading="lazy" onerror="this.remove()"
+                   class="absolute inset-0 w-full h-full object-cover
+                          group-hover:scale-105 transition-transform duration-300" />
+              {# Remove button — shown on hover #}
+              <button type="button"
+                      onclick="event.preventDefault();event.stopPropagation();_wlToggle(this,'{{ it.item_id }}')"
+                      data-item-id="{{ it.item_id }}"
+                      data-saved="true"
+                      class="wl-btn absolute top-1.5 right-1.5
+                             w-7 h-7 rounded-full
+                             bg-black/70 hover:bg-red-600/90
+                             grid place-items-center
+                             opacity-0 group-hover:opacity-100 transition-all z-10"
+                      title="Remove from My List">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                     class="w-3.5 h-3.5 text-white">
+                  <path d="M3.53 2.47a.75.75 0 0 0-1.06 1.06l18 18a.75.75 0 1 0 1.06-1.06l-18-18Z"/>
+                  <path fill-rule="evenodd" d="M20.25 5.507v11.561L5.853 2.671c.15-.043.306-.071.467-.071h9.36a3 3 0 0 1 2.71 1.717l.17.34a3 3 0 0 0 2.71 1.717h.23a2.25 2.25 0 0 1 2.25 2.25v10.5a2.25 2.25 0 0 1-2.25 2.25H4.5a2.25 2.25 0 0 1-2.25-2.25v-3.571L16.348 21H4.5a.75.75 0 0 1-.75-.75V8.857L1.5 6.607V20.25A3.75 3.75 0 0 0 5.25 24h13.5A3.75 3.75 0 0 0 22.5 20.25V8.857a3.75 3.75 0 0 0-3.75-3.75h-.5Z" clip-rule="evenodd"/>
+                </svg>
+              </button>
+            </div>
+            <div class="p-2.5 flex flex-col overflow-hidden">
+              <p class="text-xs font-semibold text-white leading-snug line-clamp-2
+                        group-hover:text-brand-300 transition-colors">
+                {{ it.title }}{% if it.year %} <span class="text-slate-400 font-normal">({{ it.year }})</span>{% endif %}
+              </p>
+              {% if it.subtitle %}
+                <p class="mt-0.5 text-[10px] text-slate-500 truncate">{{ it.subtitle }}</p>
+              {% endif %}
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+
+{% block scripts %}
+<script>
+// Remove items from this page without full reload
+async function _wlToggle(btn, itemId) {
+  var token = (function(){
+    try { return sessionStorage.getItem('td:auth'); } catch(_) {}
+    var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
+    return m ? m[1] : null;
+  })();
+  var li = btn.closest('li');
+  li.style.opacity = '0.4';
+  li.style.pointerEvents = 'none';
+  try {
+    await fetch('/api/watchlist/' + encodeURIComponent(itemId), {
+      method: 'DELETE',
+      headers: token ? {'Authorization': 'Bearer ' + token} : {},
+    });
+    li.remove();
+    var counter = document.querySelector('h1 ~ span');
+    if (counter) {
+      var n = parseInt(counter.textContent) - 1;
+      counter.textContent = n + ' saved';
+      if (n <= 0) counter.textContent = '';
+    }
+  } catch(e) {
+    li.style.opacity = '';
+    li.style.pointerEvents = '';
+  }
+}
+</script>
+{% endblock %}
+{% endblock %}

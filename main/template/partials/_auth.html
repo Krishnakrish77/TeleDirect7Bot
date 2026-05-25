@@ -127,4 +127,72 @@ document.addEventListener('alpine:init', () => {
     signOut() { window._tdAuth.signOut(); },
   }));
 });
+
+// ── Watchlist client state ────────────────────────────────────────────────
+window._wl = (function() {
+  var _ids = new Set();
+  var _loaded = false;
+
+  function _token() {
+    try { var t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
+    var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
+    return m ? m[1] : null;
+  }
+
+  async function load() {
+    if (_loaded || !(window._tdAuth && window._tdAuth.user)) return;
+    _loaded = true;
+    try {
+      var tok = _token();
+      var r = await fetch('/api/watchlist', {
+        headers: tok ? {'Authorization': 'Bearer ' + tok} : {},
+      });
+      if (!r.ok) return;
+      var d = await r.json();
+      _ids = new Set(d.ids || []);
+      _render();
+    } catch(_) {}
+  }
+
+  function _render() {
+    document.querySelectorAll('.wl-btn').forEach(function(btn) {
+      if (_ids.has(btn.dataset.itemId)) btn.classList.add('wl-saved');
+      else btn.classList.remove('wl-saved');
+    });
+  }
+
+  async function toggle(btn, itemId) {
+    var user = window._tdAuth && window._tdAuth.user;
+    if (!user) {
+      window.tdRequireAuth && window.tdRequireAuth(
+        {currentTarget: btn, preventDefault: function(){}, stopPropagation: function(){}},
+        'save to My List'
+      );
+      return;
+    }
+    var saved = _ids.has(itemId);
+    var method = saved ? 'DELETE' : 'POST';
+    // Optimistic update
+    if (saved) { _ids.delete(itemId); btn.classList.remove('wl-saved'); }
+    else        { _ids.add(itemId);    btn.classList.add('wl-saved'); }
+    try {
+      var tok = _token();
+      var r = await fetch('/api/watchlist/' + encodeURIComponent(itemId), {
+        method: method,
+        headers: tok ? {'Authorization': 'Bearer ' + tok} : {},
+      });
+      if (!r.ok) throw new Error('failed');
+    } catch(_) {
+      // Rollback
+      if (saved) { _ids.add(itemId);    btn.classList.add('wl-saved'); }
+      else        { _ids.delete(itemId); btn.classList.remove('wl-saved'); }
+    }
+  }
+
+  // Load after DOM is ready; also re-load after htmx content swaps.
+  document.addEventListener('DOMContentLoaded', load);
+  document.addEventListener('htmx:afterSettle', function() { _loaded = false; load(); });
+
+  return { load: load, toggle: toggle };
+})();
 </script>
