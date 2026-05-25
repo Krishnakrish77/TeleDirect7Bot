@@ -170,12 +170,12 @@
                  style="accent-color:#f97316">
         </div>
 
-        {# Speed + Repeat row #}
-        <div class="flex items-center justify-between mt-3 px-1">
-          <div class="flex items-center gap-1.5">
+        {# Speed + Repeat row — centered together like Spotify/Apple Music #}
+        <div class="flex items-center justify-center gap-4 mt-3 px-1">
+          <div class="flex items-center gap-1">
             {% for spd in [('0.75','¾×'),('1','1×'),('1.5','1.5×'),('2','2×')] %}
             <button data-speed="{{ spd[0] }}"
-                    class="tdSpeedBtn px-2 py-1 rounded-full text-xs font-medium
+                    class="tdSpeedBtn px-2.5 py-1 rounded-full text-xs font-medium
                            transition-colors border border-transparent
                            text-slate-400 hover:text-slate-200">
               {{ spd[1] }}
