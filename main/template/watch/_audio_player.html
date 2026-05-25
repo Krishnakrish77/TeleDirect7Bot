@@ -1,17 +1,20 @@
 {# Audio player layout #}
     {# ── Music player layout ─────────────────────────────────────────────
-       Spotify-style: large centered album art, track info, audio controls.
-       None of the video-specific chrome (aspect-video black box, VLC note,
-       subtitle button) makes sense for audio. #}
-    {# Landscape: flex-row — art on left, controls on right.
-       Portrait: flex-col centered (default). #}
-    <div class="flex flex-col items-center mt-4 sm:mt-8
+       Mobile/portrait: stacked (album art → controls).
+       Landscape phone: side-by-side (art left, controls right).
+       Tablet/Desktop (md+): two-column like YT Music — large sticky art
+       on the left, full track info + controls + inline lyrics on the right. #}
+    <div class="w-full flex flex-col items-center mt-4 sm:mt-6 md:mt-10
+                md:flex-row md:items-start md:gap-10 lg:gap-16
                 [@media(max-height:480px)]:flex-row [@media(max-height:480px)]:items-start
                 [@media(max-height:480px)]:mt-2 [@media(max-height:480px)]:gap-5 [@media(max-height:480px)]:px-3">
 
-      {# Flip card: front = album art, back = lyrics. Tap to flip. #}
-      <div class="flip-card w-56 h-56 sm:w-72 sm:h-72 [@media(max-height:480px)]:w-32 [@media(max-height:480px)]:h-32
-                  flex-shrink-0 cursor-pointer" onclick="this.querySelector('.flip-card-inner').classList.toggle('flipped')">
+      {# ── Album art (flip card: front=art, back=lyrics) ───────────────── #}
+      <div class="flip-card
+                  w-56 h-56 sm:w-64 sm:h-64 md:w-80 md:h-80 lg:w-96 lg:h-96
+                  [@media(max-height:480px)]:w-32 [@media(max-height:480px)]:h-32
+                  flex-shrink-0 cursor-pointer md:sticky md:top-8"
+           onclick="this.querySelector('.flip-card-inner').classList.toggle('flipped')">
         <div class="flip-card-inner w-full h-full">
           {# Front: album art #}
           <div class="flip-card-front w-full h-full rounded-2xl overflow-hidden shadow-2xl bg-ink-800 ring-1 ring-white/10">
@@ -28,12 +31,12 @@
                       d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
               </svg>
             </div>
-            {# Tap hint overlay #}
-            <div class="absolute inset-0 flex items-end justify-center pb-2 opacity-0 hover:opacity-100 transition-opacity">
+            {# Mobile only: tap-for-lyrics hint #}
+            <div class="md:hidden absolute inset-0 flex items-end justify-center pb-2 opacity-0 hover:opacity-100 transition-opacity">
               <span class="text-[10px] text-white/50 bg-black/40 px-2 py-0.5 rounded-full">tap for lyrics</span>
             </div>
           </div>
-          {# Back: lyrics (shown when flipped) #}
+          {# Back: lyrics — shown on mobile when flipped (desktop has inline lyrics) #}
           <div class="flip-card-back w-full h-full rounded-2xl bg-ink-800/95 ring-1 ring-white/10
                       flex flex-col overflow-hidden">
             <div class="flex items-center justify-between px-3 pt-2 pb-1 flex-shrink-0">
@@ -49,265 +52,270 @@
         </div>
       </div>
 
-      {# Right column in landscape: track info + player controls #}
-      <div class="flex flex-col items-center w-full
+      {# ── Right column: track info + controls + desktop lyrics ─────────── #}
+      <div class="flex flex-col items-center w-full mt-4 md:mt-0
+                  md:flex-1 md:items-start md:min-w-0
                   [@media(max-height:480px)]:flex-1 [@media(max-height:480px)]:items-start [@media(max-height:480px)]:min-w-0">
 
-      {# Track info — reduced top margin and font on landscape phones #}
-      <div class="mt-4 [@media(max-height:480px)]:mt-0 text-center [@media(max-height:480px)]:text-left w-full max-w-sm px-6 [@media(max-height:480px)]:px-0">
-        <h2 class="text-xl sm:text-2xl [@media(max-height:480px)]:text-sm font-bold text-white leading-snug line-clamp-2">
-          {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.MP3','') | replace('.flac','') | replace('.FLAC','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') | replace('.wav','') | replace('.opus','') | clean_music_tag }}
-        </h2>
-        {% if meta and meta.artist %}
-          <p class="mt-1 text-slate-300 text-sm [@media(max-height:480px)]:text-xs font-medium line-clamp-1">{{ meta.artist | clean_music_tag }}</p>
-        {% endif %}
-        {% if meta and meta.album_title %}
-          <p class="mt-0.5 text-slate-500 text-xs line-clamp-1">{{ meta.album_title }}</p>
-        {% endif %}
-      </div>
+        {# Track info #}
+        <div class="text-center md:text-left w-full max-w-sm md:max-w-none px-6 md:px-0
+                    [@media(max-height:480px)]:mt-0 [@media(max-height:480px)]:text-left [@media(max-height:480px)]:px-0">
+          <h2 class="text-xl sm:text-2xl md:text-3xl lg:text-4xl
+                     [@media(max-height:480px)]:text-sm
+                     font-bold text-white leading-snug line-clamp-2">
+            {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.MP3','') | replace('.flac','') | replace('.FLAC','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') | replace('.wav','') | replace('.opus','') | clean_music_tag }}
+          </h2>
+          {% if meta and meta.artist %}
+            <p class="mt-1 md:mt-2 text-slate-300 text-sm md:text-base [@media(max-height:480px)]:text-xs font-medium line-clamp-1">
+              {{ meta.artist | clean_music_tag }}
+            </p>
+          {% endif %}
+          {% if meta and meta.album_title %}
+            <p class="mt-0.5 text-slate-500 text-xs md:text-sm line-clamp-1">{{ meta.album_title }}</p>
+          {% endif %}
+        </div>
 
-      {# Audio element — Plyr wraps this (its controls bar is hidden; custom UI below) #}
-      <div class="mt-6 [@media(max-height:480px)]:mt-2 w-full max-w-md px-4 [@media(max-height:480px)]:px-0">
+        {# Hidden audio element #}
         <audio id="player"
                {% if not known_unplayable %}data-direct-src="{{ src }}"{% endif %}
                {% if meta and meta.album_key and album_tracks %}data-album-first="/watch/{{ album_tracks[0].secure_hash }}{{ album_tracks[0].message_id }}"{% endif %}
-               preload="metadata">
+               preload="metadata" class="hidden">
         </audio>
-      </div>
 
-      {# ── Custom Spotify-style audio controls ─────────────────────────────
-         Hidden until loadedmetadata fires (JS sets display:'') #}
-      <div id="tdAudioControls" class="w-full max-w-sm px-6 [@media(max-height:480px)]:px-0 mt-2">
+        {# Custom controls #}
+        <div id="tdAudioControls" class="w-full max-w-sm md:max-w-lg px-6 md:px-0
+                                         [@media(max-height:480px)]:px-0 mt-4 md:mt-6">
 
-        {# Progress bar row #}
-        <div class="flex items-center gap-3">
-          <span id="tdCurTime" class="text-xs tabular-nums text-slate-500 w-8 text-right flex-shrink-0">0:00</span>
-          {# Track — touch target padded vertically, visual rail via inner divs #}
-          <div id="tdTrack" class="relative flex-1 cursor-pointer select-none"
-               style="padding:10px 0;margin:-10px 0">
-            <div class="absolute inset-x-0 h-1 rounded-full top-1/2 -translate-y-1/2"
-                 style="background:rgba(255,255,255,0.12)"></div>
-            <div id="tdFill" class="absolute left-0 h-1 rounded-full top-1/2 -translate-y-1/2"
-                 style="width:0%;background:#f97316;pointer-events:none"></div>
-            <div id="tdThumb" class="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow pointer-events-none"
-                 style="left:0%;opacity:0;transition:opacity 0.15s"></div>
+          {# Progress bar row #}
+          <div class="flex items-center gap-3">
+            <span id="tdCurTime" class="text-xs tabular-nums text-slate-500 w-8 text-right flex-shrink-0">0:00</span>
+            <div id="tdTrack" class="relative flex-1 cursor-pointer select-none"
+                 style="padding:10px 0;margin:-10px 0">
+              <div class="absolute inset-x-0 h-1 rounded-full top-1/2 -translate-y-1/2"
+                   style="background:rgba(255,255,255,0.12)"></div>
+              <div id="tdFill" class="absolute left-0 h-1 rounded-full top-1/2 -translate-y-1/2"
+                   style="width:0%;background:#f97316;pointer-events:none"></div>
+              <div id="tdThumb" class="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow pointer-events-none"
+                   style="left:0%;opacity:0;transition:opacity 0.15s"></div>
+            </div>
+            <span id="tdDuration" class="text-xs tabular-nums text-slate-500 w-8 flex-shrink-0">0:00</span>
           </div>
-          <span id="tdDuration" class="text-xs tabular-nums text-slate-500 w-8 flex-shrink-0">0:00</span>
-        </div>
 
-        {# Main control row #}
-        <div class="flex items-center justify-between mt-5">
+          {# Main control row #}
+          <div class="flex items-center justify-between mt-5 md:mt-6">
 
-          {# Prev track #}
-          <button id="tdPrev" aria-label="Previous track"
-                  class="w-10 h-10 flex items-center justify-center rounded-full
-                         text-slate-400 hover:text-white active:scale-90 transition-all
-                         {% if not prev_track %}opacity-30 pointer-events-none{% endif %}">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
-              <path d="M6 6h2v12H6zM18 6v12l-8.5-6z"/>
-            </svg>
-          </button>
-
-          {# Skip back 10s — HTML text for reliable centering #}
-          <button id="tdBack10" aria-label="Rewind 10s"
-                  class="flex flex-col items-center justify-center gap-0.5 w-10 h-10
-                         text-slate-300 hover:text-white active:scale-90 transition-all">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" class="w-5 h-5">
-              <path stroke-linecap="round" stroke-linejoin="round"
-                    d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"/>
-            </svg>
-            <span class="text-[9px] font-bold leading-none tabular-nums">10</span>
-          </button>
-
-          {# Large Play/Pause — play icon shifted right by 1px to look optically centred #}
-          <button id="tdPlayPause" aria-label="Play"
-                  class="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center
-                         shadow-lg hover:bg-slate-100 active:scale-95 transition-all
-                         focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
-            <svg id="tdIconPlay" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-7 h-7 translate-x-[2px]">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-            <svg id="tdIconPause" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-7 h-7 hidden">
-              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-            </svg>
-          </button>
-
-          {# Skip forward 10s #}
-          <button id="tdFwd10" aria-label="Skip 10s"
-                  class="flex flex-col items-center justify-center gap-0.5 w-10 h-10
-                         text-slate-300 hover:text-white active:scale-90 transition-all">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" class="w-5 h-5">
-              <path stroke-linecap="round" stroke-linejoin="round"
-                    d="m15 15 6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3"/>
-            </svg>
-            <span class="text-[9px] font-bold leading-none tabular-nums">10</span>
-          </button>
-
-          {# Next track — triangle right + vertical bar right #}
-          <button id="tdNext" aria-label="Next track"
-                  class="w-10 h-10 flex items-center justify-center rounded-full
-                         text-slate-400 hover:text-white active:scale-90 transition-all
-                         {% if not next_track %}opacity-30 pointer-events-none{% endif %}">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
-              <path d="M6 6v12l8.5-6zM16 6h2v12h-2z"/>
-            </svg>
-          </button>
-
-        </div>
-
-        {# Volume row — mute + slider #}
-        <div class="flex items-center gap-3 mt-5 px-1">
-          <button id="tdMute" aria-label="Mute"
-                  class="flex-shrink-0 text-slate-500 hover:text-white transition-colors p-1">
-            <svg id="tdVolIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
-              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
-            </svg>
-          </button>
-          <input id="tdVol" type="range" min="0" max="1" step="0.02" value="1"
-                 class="flex-1 h-1 rounded-full cursor-pointer"
-                 style="accent-color:#f97316">
-        </div>
-
-        {# Speed + Repeat row — centered together like Spotify/Apple Music #}
-        <div class="flex items-center justify-center gap-4 mt-3 px-1">
-          <div class="flex items-center gap-1">
-            {% for spd in [('0.75','¾×'),('1','1×'),('1.5','1.5×'),('2','2×')] %}
-            <button data-speed="{{ spd[0] }}"
-                    class="tdSpeedBtn px-2.5 py-1 rounded-full text-xs font-medium
-                           transition-colors border border-transparent
-                           text-slate-400 hover:text-slate-200">
-              {{ spd[1] }}
+            <button id="tdPrev" aria-label="Previous track"
+                    class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full
+                           text-slate-400 hover:text-white active:scale-90 transition-all
+                           {% if not prev_track %}opacity-30 pointer-events-none{% endif %}">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 md:w-7 md:h-7">
+                <path d="M6 6h2v12H6zM18 6v12l-8.5-6z"/>
+              </svg>
             </button>
-            {% endfor %}
+
+            <button id="tdBack10" aria-label="Rewind 10s"
+                    class="flex flex-col items-center justify-center gap-0.5 w-10 h-10 md:w-12 md:h-12
+                           text-slate-300 hover:text-white active:scale-90 transition-all">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2" class="w-5 h-5 md:w-6 md:h-6">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"/>
+              </svg>
+              <span class="text-[9px] font-bold leading-none tabular-nums">10</span>
+            </button>
+
+            <button id="tdPlayPause" aria-label="Play"
+                    class="w-16 h-16 md:w-20 md:h-20 rounded-full bg-white text-black flex items-center justify-center
+                           shadow-lg hover:bg-slate-100 active:scale-95 transition-all
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+              <svg id="tdIconPlay" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-7 h-7 md:w-9 md:h-9 translate-x-[2px]">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+              <svg id="tdIconPause" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-7 h-7 md:w-9 md:h-9 hidden">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+              </svg>
+            </button>
+
+            <button id="tdFwd10" aria-label="Skip 10s"
+                    class="flex flex-col items-center justify-center gap-0.5 w-10 h-10 md:w-12 md:h-12
+                           text-slate-300 hover:text-white active:scale-90 transition-all">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2" class="w-5 h-5 md:w-6 md:h-6">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="m15 15 6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3"/>
+              </svg>
+              <span class="text-[9px] font-bold leading-none tabular-nums">10</span>
+            </button>
+
+            <button id="tdNext" aria-label="Next track"
+                    class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full
+                           text-slate-400 hover:text-white active:scale-90 transition-all
+                           {% if not next_track %}opacity-30 pointer-events-none{% endif %}">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 md:w-7 md:h-7">
+                <path d="M6 6v12l8.5-6zM16 6h2v12h-2z"/>
+              </svg>
+            </button>
+
           </div>
-          <button id="tdRepeat" aria-label="Repeat off"
-                  title="Repeat off"
-                  class="relative flex items-center justify-center w-8 h-8 rounded-full
-                         text-slate-400 hover:text-white transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" class="w-4 h-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M17 2l4 4-4 4"/>
-              <path stroke-linecap="round" stroke-linejoin="round" d="M3 11V9a4 4 0 0 1 4-4h14"/>
-              <path stroke-linecap="round" stroke-linejoin="round" d="M7 22l-4-4 4-4"/>
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21 13v2a4 4 0 0 1-4 4H3"/>
-            </svg>
-            <span id="tdRepeatBadge" style="display:none"
-                  class="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full
-                         bg-brand-500 text-[8px] font-bold text-white
-                         flex items-center justify-center leading-none">1</span>
-          </button>
+
+          {# Volume row #}
+          <div class="flex items-center gap-3 mt-5 px-1">
+            <button id="tdMute" aria-label="Mute"
+                    class="flex-shrink-0 text-slate-500 hover:text-white transition-colors p-1">
+              <svg id="tdVolIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+              </svg>
+            </button>
+            <input id="tdVol" type="range" min="0" max="1" step="0.02" value="1"
+                   class="flex-1 h-1 rounded-full cursor-pointer"
+                   style="accent-color:#f97316">
+          </div>
+
+          {# Speed + Repeat row #}
+          <div class="flex items-center justify-center gap-4 mt-3 px-1">
+            <div class="flex items-center gap-1">
+              {% for spd in [('0.75','¾×'),('1','1×'),('1.5','1.5×'),('2','2×')] %}
+              <button data-speed="{{ spd[0] }}"
+                      class="tdSpeedBtn px-2.5 py-1 rounded-full text-xs font-medium
+                             transition-colors border border-transparent
+                             text-slate-400 hover:text-slate-200">
+                {{ spd[1] }}
+              </button>
+              {% endfor %}
+            </div>
+            <button id="tdRepeat" aria-label="Repeat off" title="Repeat off"
+                    class="relative flex items-center justify-center w-8 h-8 rounded-full
+                           text-slate-400 hover:text-white transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 2l4 4-4 4"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7 22l-4-4 4-4"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 13v2a4 4 0 0 1-4 4H3"/>
+              </svg>
+              <span id="tdRepeatBadge" style="display:none"
+                    class="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full
+                           bg-brand-500 text-[8px] font-bold text-white
+                           flex items-center justify-center leading-none">1</span>
+            </button>
+          </div>
+
         </div>
 
-      </div>
-
-      </div>{# end right-column wrapper #}
-
-      {# Download + Shuffle buttons #}
-      <div class="mt-4 flex flex-wrap items-center justify-center gap-3">
-        <a href="{{ src }}" hx-boost="false"
-           class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
-                  text-sm font-medium text-slate-300 bg-ink-800/70
-                  hover:bg-ink-800 border border-white/5 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2" class="w-4 h-4">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 12l4.5 4.5m0 0L16.5 12m-4.5 4.5V3"/>
-          </svg>
-          Download
-        </a>
-        <button id="tdShare"
-                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
-                       text-sm font-medium text-slate-300 bg-ink-800/70
-                       hover:bg-ink-800 border border-white/5 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2" class="w-4 h-4 flex-shrink-0">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/>
-          </svg>
-          <span class="tdShareLabel">Share</span>
-        </button>
-        {% if meta and meta.album_key %}
-          <a href="/album/{{ meta.album_key }}"
-             class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
-                    text-sm font-medium text-slate-300 bg-ink-800/70
-                    hover:bg-ink-800 border border-white/5 transition-colors">
+        {# Action buttons #}
+        <div class="mt-4 md:mt-5 flex flex-wrap items-center justify-center md:justify-start gap-2 md:gap-3">
+          <a href="{{ src }}" hx-boost="false"
+             class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                    text-slate-300 bg-ink-800/70 hover:bg-ink-800 border border-white/5 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2" class="w-4 h-4">
               <path stroke-linecap="round" stroke-linejoin="round"
-                    d="M3.75 12h16.5M3.75 7.5h16.5M3.75 16.5h16.5"/>
+                    d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 12l4.5 4.5m0 0L16.5 12m-4.5 4.5V3"/>
             </svg>
-            Album
+            Download
           </a>
-        {% endif %}
-      </div>
-
-      {# Next track auto-advance (audio equivalent of next episode) #}
-      {% if next_track %}
-        <div id="nextTrackCard" style="display:none"
-             class="mt-5 mx-auto max-w-sm rounded-xl border border-white/10
-                    bg-ink-800/80 backdrop-blur-sm p-4">
-          <p class="text-[11px] text-slate-400 mb-1">
-            Up next · <span id="nextTrackCountdown">5</span>s
-          </p>
-          <p class="text-sm font-semibold text-white line-clamp-1">{{ next_track.title }}</p>
-          {% if next_track.track_number %}
-            <p class="text-[11px] text-slate-500 mt-0.5">Track {{ next_track.track_number }}</p>
-          {% endif %}
-          <div class="mt-3 flex gap-2">
-            <a href="{{ next_track.url }}"
-               class="flex-1 text-center py-1.5 rounded-lg text-xs font-semibold
-                      bg-brand-500 hover:bg-brand-600 text-white transition-colors">
-              Play now
+          <button id="tdShare"
+                  class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                         text-slate-300 bg-ink-800/70 hover:bg-ink-800 border border-white/5 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" class="w-4 h-4 flex-shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/>
+            </svg>
+            <span class="tdShareLabel">Share</span>
+          </button>
+          {% if meta and meta.album_key %}
+            <a href="/album/{{ meta.album_key }}"
+               class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                      text-slate-300 bg-ink-800/70 hover:bg-ink-800 border border-white/5 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M3.75 12h16.5M3.75 7.5h16.5M3.75 16.5h16.5"/>
+              </svg>
+              Album
             </a>
-            <button id="nextTrackCancel"
-                    class="px-3 py-1.5 rounded-lg border border-white/10
-                           text-xs text-slate-300 hover:text-white transition-colors">
-              Cancel
-            </button>
-          </div>
-          <div class="mt-2.5 h-0.5 bg-white/10 rounded-full overflow-hidden">
-            <div id="nextTrackBar" class="h-full bg-brand-400 rounded-full" style="width:100%"></div>
+          {% endif %}
+        </div>
+
+        {# Inline lyrics — desktop only (mobile uses flip card) #}
+        {% if is_audio and meta and meta.title %}
+        <div class="hidden md:block w-full mt-8 max-w-lg">
+          <h3 class="text-xs uppercase tracking-widest text-slate-500 mb-4">Lyrics</h3>
+          <div id="lyricsDesktop"
+               class="text-sm leading-loose text-center md:text-left max-h-80 overflow-y-auto
+                      [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <span class="text-slate-600">Loading…</span>
           </div>
         </div>
-      {% endif %}
+        {% endif %}
 
-      {# More from this album #}
-      {% if album_tracks %}
-        <div class="mt-6 w-full max-w-md">
-          <h3 class="text-xs uppercase tracking-widest text-slate-500 mb-3 px-1">
-            More from this album
-          </h3>
-          <ul class="space-y-1">
-            {% for t in album_tracks %}
-              <li>
-                <a href="/watch/{{ t.secure_hash }}{{ t.message_id }}"
-                   class="group flex items-center gap-3 px-3 py-2 rounded-lg
-                          hover:bg-ink-800/60 transition-colors">
-                  <span class="w-5 text-right text-xs text-slate-600 tabular-nums flex-shrink-0">
-                    {{ t.track_number or '' }}
-                  </span>
-                  <div class="w-8 h-8 rounded bg-ink-800 flex-shrink-0 overflow-hidden relative">
-                    <img src="/thumb/{{ t.secure_hash }}{{ t.message_id }}.jpg"
-                         alt="" loading="lazy" onerror="this.style.display='none'"
-                         class="absolute inset-0 w-full h-full object-cover" />
-                  </div>
-                  <p class="text-sm text-slate-300 truncate flex-1
-                             group-hover:text-brand-300 transition-colors">
-                    {{ (t.title or t.file_name) | clean_music_tag }}
-                  </p>
-                  {% if t.duration %}
-                    <span class="text-xs text-slate-600 tabular-nums flex-shrink-0">
-                      {{ t.duration | duration }}
+        {# Next track card #}
+        {% if next_track %}
+          <div id="nextTrackCard" style="display:none"
+               class="mt-5 w-full max-w-sm md:max-w-lg rounded-xl border border-white/10
+                      bg-ink-800/80 backdrop-blur-sm p-4">
+            <p class="text-[11px] text-slate-400 mb-1">
+              Up next · <span id="nextTrackCountdown">5</span>s
+            </p>
+            <p class="text-sm font-semibold text-white line-clamp-1">{{ next_track.title }}</p>
+            {% if next_track.track_number %}
+              <p class="text-[11px] text-slate-500 mt-0.5">Track {{ next_track.track_number }}</p>
+            {% endif %}
+            <div class="mt-3 flex gap-2">
+              <a href="{{ next_track.url }}"
+                 class="flex-1 text-center py-1.5 rounded-lg text-xs font-semibold
+                        bg-brand-500 hover:bg-brand-600 text-white transition-colors">
+                Play now
+              </a>
+              <button id="nextTrackCancel"
+                      class="px-3 py-1.5 rounded-lg border border-white/10
+                             text-xs text-slate-300 hover:text-white transition-colors">
+                Cancel
+              </button>
+            </div>
+            <div class="mt-2.5 h-0.5 bg-white/10 rounded-full overflow-hidden">
+              <div id="nextTrackBar" class="h-full bg-brand-400 rounded-full" style="width:100%"></div>
+            </div>
+          </div>
+        {% endif %}
+
+        {# More from this album — full width on desktop, scrollable list #}
+        {% if album_tracks %}
+          <div class="mt-6 md:mt-8 w-full max-w-md md:max-w-none">
+            <h3 class="text-xs uppercase tracking-widest text-slate-500 mb-3 px-1">
+              More from this album
+            </h3>
+            <ul class="space-y-1">
+              {% for t in album_tracks %}
+                <li>
+                  <a href="/watch/{{ t.secure_hash }}{{ t.message_id }}"
+                     class="group flex items-center gap-3 px-3 py-2 rounded-lg
+                            hover:bg-ink-800/60 transition-colors">
+                    <span class="w-5 text-right text-xs text-slate-600 tabular-nums flex-shrink-0">
+                      {{ t.track_number or '' }}
                     </span>
-                  {% endif %}
-                </a>
-              </li>
-            {% endfor %}
-          </ul>
-        </div>
-      {% endif %}
+                    <div class="w-8 h-8 rounded bg-ink-800 flex-shrink-0 overflow-hidden relative">
+                      <img src="/thumb/{{ t.secure_hash }}{{ t.message_id }}.jpg"
+                           alt="" loading="lazy" onerror="this.style.display='none'"
+                           class="absolute inset-0 w-full h-full object-cover" />
+                    </div>
+                    <p class="text-sm text-slate-300 truncate flex-1
+                               group-hover:text-brand-300 transition-colors">
+                      {{ (t.title or t.file_name) | clean_music_tag }}
+                    </p>
+                    {% if t.duration %}
+                      <span class="text-xs text-slate-600 tabular-nums flex-shrink-0">
+                        {{ t.duration | duration }}
+                      </span>
+                    {% endif %}
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
 
-{# Lyrics now live in the flip card back face — no separate section below #}
+      </div>{# end right column #}
     </div>
+{# Lyrics now live in flip card (mobile) and inline section (desktop) #}

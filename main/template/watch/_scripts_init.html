@@ -132,8 +132,13 @@
 
         {% if meta and meta.title %}
         (async function() {
-          const el = document.getElementById("lyricsFlipContent");
+          // Primary display: desktop inline section; fallback: mobile flip card.
+          // Both are updated so switching between orientations always shows lyrics.
+          const el = document.getElementById("lyricsDesktop") || document.getElementById("lyricsFlipContent");
+          const elFlip = document.getElementById("lyricsFlipContent");
+          const els = [el, (elFlip && elFlip !== el) ? elFlip : null].filter(Boolean);
           if (!el) return;
+          function _setAll(html) { els.forEach(function(e) { e.innerHTML = html; }); }
           const title = {{ (meta.title | clean_music_tag) | tojson }};
           const artist = {{ ((meta.artist or '') | clean_music_tag) | tojson }};
           let lrcLines = null;
@@ -189,13 +194,12 @@
                 if (audio.currentTime > 0) highlightLine(audio.currentTime);
               }
             } else if (data.plainLyrics) {
-              el.classList.add("text-slate-300", "whitespace-pre-line");
-              el.textContent = data.plainLyrics;
+              els.forEach(function(e) { e.classList.add("text-slate-300", "whitespace-pre-line"); e.textContent = data.plainLyrics; });
             } else {
-              el.innerHTML = '<span class="text-slate-500 text-xs">No lyrics available</span>';
+              _setAll('<span class="text-slate-500 text-xs">No lyrics available</span>');
             }
           } catch(_) {
-            el.innerHTML = '<span class="text-slate-500 text-xs">No lyrics available</span>';
+            _setAll('<span class="text-slate-500 text-xs">No lyrics available</span>');
           }
         })();
         {% endif %}
