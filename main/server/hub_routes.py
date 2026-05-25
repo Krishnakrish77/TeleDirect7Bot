@@ -687,7 +687,7 @@ async def hub_album(request: web.Request) -> web.Response:
     return _html(body)
 
 
-@routes.get(r"/thumb/{hash:[A-Za-z0-9_-]+}{id:\d+}.jpg")
+@routes.get(r"/thumb/{hash:[A-Za-z0-9_-]*[A-Za-z_-]}{id:\d+}.jpg")
 async def hub_thumb(request: web.Request) -> web.Response:
     secure_hash = request.match_info["hash"]
     message_id = int(request.match_info["id"])

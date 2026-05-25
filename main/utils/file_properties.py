@@ -25,8 +25,12 @@ async def get_file_ids(client: Client, chat_id: int, message_id: int) -> Optiona
     if message.empty:
         raise FIleNotFound
     media = get_media_from_message(message)
+    if not media:
+        raise FIleNotFound
     file_unique_id = await parse_file_unique_id(message)
     file_id = await parse_file_id(message)
+    if not file_id:
+        raise FIleNotFound
     setattr(file_id, "file_size", getattr(media, "file_size", 0))
     setattr(file_id, "mime_type", getattr(media, "mime_type", ""))
     setattr(file_id, "file_name", getattr(media, "file_name", ""))
@@ -52,7 +56,13 @@ def get_media_from_message(message: "Message") -> Any:
 
 def get_hash(media_msg: Message) -> str:
     media = get_media_from_message(media_msg)
-    return getattr(media, "file_unique_id", "")[:16]
+    uid = getattr(media, "file_unique_id", "")[:16]
+    # Trim trailing digits so the URL hash never ends in a digit.
+    # The path parser splits hash from message_id at the digit boundary;
+    # a hash ending in a digit would cause it to over-consume the message_id.
+    while uid and uid[-1].isdigit():
+        uid = uid[:-1]
+    return uid
 
 def get_media_file_size(m):
     media = get_media_from_message(m)
