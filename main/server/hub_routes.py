@@ -398,7 +398,7 @@ async def api_items(request: web.Request) -> web.Response:
     keys = [k for k in raw.split(",") if k][:50]
     out = []
     for k in keys:
-        m = re.match(r"^([a-zA-Z0-9_-]{16}|[a-zA-Z0-9_-]{6})(\d+)$", k)
+        m = re.match(r"^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$", k)
         if not m:
             continue
         try:
@@ -687,7 +687,7 @@ async def hub_album(request: web.Request) -> web.Response:
     return _html(body)
 
 
-@routes.get(r"/thumb/{hash:[a-zA-Z0-9_-]{16}|[a-zA-Z0-9_-]{6}}{id:\d+}.jpg")
+@routes.get(r"/thumb/{hash:[A-Za-z0-9_-]+}{id:\d+}.jpg")
 async def hub_thumb(request: web.Request) -> web.Response:
     secure_hash = request.match_info["hash"]
     message_id = int(request.match_info["id"])

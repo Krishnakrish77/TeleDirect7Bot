@@ -25,7 +25,7 @@ from main.vars import Var
 
 
 routes = web.RouteTableDef()
-_PATH_RE = re.compile(r"^([a-zA-Z0-9_-]{16}|[a-zA-Z0-9_-]{6})(\d+)$")
+_PATH_RE = re.compile(r"^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$")
 
 _class_cache: dict = {}
 
