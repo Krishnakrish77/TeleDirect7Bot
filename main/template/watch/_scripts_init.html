@@ -33,9 +33,15 @@
           // was already primed with this track by the previous page gesture).
           if (new URLSearchParams(location.search).get('play') === '1') {
             history.replaceState(null, '', location.pathname);
-            players[0].once('ready', function() {
+            // 'ready' may have already fired synchronously during Plyr.setup().
+            // Check the flag before registering a listener that would never fire.
+            if (players[0].ready) {
               players[0].play().catch(function() {});
-            });
+            } else {
+              players[0].once('ready', function() {
+                players[0].play().catch(function() {});
+              });
+            }
           }
         }
       }

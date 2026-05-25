@@ -140,10 +140,9 @@
           title: np.nextTitle || '',
           artist: np.nextArtist || '',
           art: np.nextArt || '',
-          // Next/prev for the track after this one — not available here,
-          // will be refreshed when the watch page eventually loads.
-          nextUrl: null, nextStreamUrl: null,
-          prevUrl: np.nextUrl, prevStreamUrl: np.nextStreamUrl,
+          nextUrl: null, nextStreamUrl: null,  // refreshed when watch page loads
+          prevUrl: np.url,          // track N (the one that just ended)
+          prevStreamUrl: np.streamUrl,
         };
         try { localStorage.setItem(NP_KEY, JSON.stringify(nextNp)); } catch(_) {}
         _bgAudio.src = np.nextStreamUrl;
