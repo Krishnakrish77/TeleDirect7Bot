@@ -82,8 +82,8 @@
                preload="metadata" class="hidden">
         </audio>
 
-        {# Custom controls #}
-        <div id="tdAudioControls" class="w-full max-w-sm md:max-w-lg px-6 md:px-0
+        {# Custom controls — full width on desktop to match track info #}
+        <div id="tdAudioControls" class="w-full max-w-sm md:max-w-none px-6 md:px-0
                                          [@media(max-height:480px)]:px-0 mt-4 md:mt-6">
 
           {# Progress bar row #}
@@ -171,8 +171,8 @@
                    style="accent-color:#f97316">
           </div>
 
-          {# Speed + Repeat row #}
-          <div class="flex items-center justify-center gap-4 mt-3 px-1">
+          {# Speed + Repeat row — centered on mobile, left on desktop #}
+          <div class="flex items-center justify-center md:justify-start gap-4 mt-3 px-1">
             <div class="flex items-center gap-1">
               {% for spd in [('0.75','¾×'),('1','1×'),('1.5','1.5×'),('2','2×')] %}
               <button data-speed="{{ spd[0] }}"

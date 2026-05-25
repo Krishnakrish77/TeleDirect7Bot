@@ -150,35 +150,40 @@
             }
             return lines.length ? lines.sort((a, b) => a.t - b.t) : null;
           }
+          function _buildLyricNode(l, i) {
+            const p = document.createElement("p");
+            p.dataset.i = i;
+            p.style.cssText = "transition:all 0.3s ease;color:rgba(100,116,139,0.5);font-size:0.875rem;line-height:1.75rem;cursor:pointer;padding:0.125rem 0";
+            p.textContent = l.text || " ";
+            p.addEventListener("click", function() {
+              const audio = document.getElementById("player");
+              if (audio) audio.currentTime = l.t;
+            });
+            return p;
+          }
           function renderSynced(lines) {
-            el.innerHTML = "";
-            lines.forEach(function(l, i) {
-              const p = document.createElement("p");
-              p.dataset.i = i;
-              p.style.cssText = "transition:all 0.3s ease;color:rgba(100,116,139,0.5);font-size:0.875rem;line-height:1.75rem;cursor:pointer;padding:0.125rem 0";
-              p.textContent = l.text || " ";
-              p.addEventListener("click", function() {
-                const audio = document.getElementById("player");
-                if (audio) audio.currentTime = l.t;
-              });
-              el.appendChild(p);
+            // Populate all containers (desktop inline + mobile flip card)
+            els.forEach(function(container) {
+              container.innerHTML = "";
+              lines.forEach(function(l, i) { container.appendChild(_buildLyricNode(l, i)); });
             });
           }
           function highlightLine(currentTime) {
             if (!lrcLines) return;
             let active = 0;
             for (let i = 0; i < lrcLines.length; i++) { if (lrcLines[i].t <= currentTime) active = i; }
-            const pTags = el.querySelectorAll("p[data-i]");
-            pTags.forEach((p, i) => {
-              if (i === active) { p.style.color="rgba(255,255,255,1)"; p.style.fontSize="1.125rem"; p.style.fontWeight="700"; p.style.lineHeight="2rem"; }
-              else if (i < active) { p.style.color="rgba(100,116,139,0.35)"; p.style.fontSize="0.875rem"; p.style.fontWeight="400"; p.style.lineHeight="1.75rem"; }
-              else { p.style.color="rgba(148,163,184,0.55)"; p.style.fontSize="0.875rem"; p.style.fontWeight="400"; p.style.lineHeight="1.75rem"; }
+            els.forEach(function(container) {
+              container.querySelectorAll("p[data-i]").forEach(function(p, i) {
+                if (i === active) { p.style.color="rgba(255,255,255,1)"; p.style.fontSize="1.125rem"; p.style.fontWeight="700"; p.style.lineHeight="2rem"; }
+                else if (i < active) { p.style.color="rgba(100,116,139,0.35)"; p.style.fontSize="0.875rem"; p.style.fontWeight="400"; p.style.lineHeight="1.75rem"; }
+                else { p.style.color="rgba(148,163,184,0.55)"; p.style.fontSize="0.875rem"; p.style.fontWeight="400"; p.style.lineHeight="1.75rem"; }
+              });
+              // Auto-scroll active line into view (only for visible container)
+              const activePara = container.querySelector(`p[data-i="${active}"]`);
+              if (activePara && container.clientHeight > 0) {
+                container.scrollTo({ top: activePara.offsetTop - container.clientHeight/2 + activePara.offsetHeight/2, behavior: "smooth" });
+              }
             });
-            const activePara = el.querySelector(`p[data-i="${active}"]`);
-            if (activePara) {
-              const paraTop = activePara.offsetTop, paraH = activePara.offsetHeight;
-              el.scrollTo({ top: paraTop - el.clientHeight/2 + paraH/2, behavior: "smooth" });
-            }
           }
           try {
             const params = new URLSearchParams({ track_name: title, artist_name: artist });
