@@ -279,6 +279,11 @@ async def admin_home(request: web.Request) -> web.Response:
             return False
         if filter_name == "music" and getattr(it, "media_kind", "") != "audio":
             return False
+        if filter_name == "hidden" and not it.hidden:
+            return False
+        # By default, hide hidden items from all other views
+        if filter_name != "hidden" and it.hidden:
+            return False
         return True
 
     filtered = [it for it in items_all if _passes_filter(it)]
@@ -1835,3 +1840,19 @@ async def _bulk_quality(ids: List[int], quality: str) -> int:
         if status in ("written", "local-only"):
             n += 1
     return n
+
+
+@routes.post(r"/admin/hide/{id:\d+}")
+async def admin_hide(request: web.Request) -> web.Response:
+    """Toggle hidden flag on one item. Body: action=hide|show."""
+    _require_session(request)
+    message_id = int(request.match_info["id"])
+    form = await request.post()
+    hidden = (form.get("action") or "hide") == "hide"
+    found = await media_index.set_hidden(message_id, hidden)
+    if not found:
+        raise web.HTTPNotFound(text="Item not found")
+    return web.Response(
+        status=204,
+        headers={"HX-Trigger": "catalogue-updated"},
+    )

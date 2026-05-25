@@ -248,6 +248,7 @@ def _to_serializable(item: HubItem) -> dict:
         "album_title": item.album_title,
         "album_key": item.album_key,
         "track_number": item.track_number,
+        "hidden": item.hidden,
         "subtitles": [
             {
                 "bin_message_id": s.bin_message_id,
@@ -300,6 +301,7 @@ def _from_serializable(d: dict) -> HubItem:
         album_title=d.get("album_title", "") or "",
         album_key=d.get("album_key", "") or "",
         track_number=d.get("track_number"),
+        hidden=bool(d.get("hidden", False)),
         subtitles=[
             ExternalSubtitle(
                 bin_message_id=s["bin_message_id"],
@@ -1128,6 +1130,8 @@ def query(
     key_fn, reverse = _SORT_KEYS.get(sort, _SORT_KEYS["newest"])
     items_all = sorted(_items.values(), key=key_fn, reverse=reverse)
 
+    # Exclude hidden items from all public library views
+    items_all = [it for it in items_all if not it.hidden]
     items_all = [it for it in items_all if _matches(it, q, year, quality, tag, genre)]
 
     # Pagination cursor is only meaningful for message_id-ordered sorts.
@@ -1210,7 +1214,8 @@ def query_grouped(
     """
     items_all = [
         it for it in _items.values()
-        if _matches(it, q, year, quality, tag, genre) or _series_matches_query(it, q)
+        if not it.hidden
+        and (_matches(it, q, year, quality, tag, genre) or _series_matches_query(it, q))
     ]
 
     series_groups: dict = {}
@@ -1558,6 +1563,22 @@ def variants_for_movie(movie_key: str) -> List[HubItem]:
     return vs
 
 
+async def set_hidden(message_id: int, hidden: bool) -> bool:
+    """Toggle the hidden flag on an item. Returns True if item found."""
+    item = _items.get(message_id)
+    if item is None:
+        return False
+    item.hidden = hidden
+    await persist_now()
+    await _store_upsert(item)
+    from main.server.hub_routes import invalidate_render_cache
+    try:
+        invalidate_render_cache()
+    except Exception:
+        pass
+    return True
+
+
 def _dedup_by_group(items: List[HubItem]) -> List[HubItem]:
     """Keep at most one item per tmdb_id / series_key / movie_key,
     preserving input order (which callers expect to be newest-first).
@@ -1679,6 +1700,8 @@ def shelves(per_shelf: int = 25) -> List[dict]:
     movie_buckets: dict = {}
     singles: List[HubItem] = []
     for it in _items.values():
+        if it.hidden:
+            continue
         # Audio items belong to the Music shelf, not Series/Movies.
         if getattr(it, "media_kind", "") == "audio":
             continue

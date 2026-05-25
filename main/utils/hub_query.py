@@ -78,6 +78,7 @@ class HubItem:
     album_title: str = ""          # album name (from ffprobe tags or admin)
     album_key: str = ""            # URL slug: slugify(artist-album) or slugify(artist)
     track_number: Optional[int] = None  # position in album
+    hidden: bool = False               # hidden from library (still streamable via direct URL)
 
 
 @dataclass

@@ -11,6 +11,7 @@
             ('no-poster',   'No poster'),
             ('no-thumb',    'No thumb'),
             ('duplicates',  'Duplicates'),
+            ('hidden',      '🚫 Hidden'),
           ] -%}
       {%- set qs_base = 'filter=' ~ filter_name -%}
       {%- if search_q -%}{%- set qs_base = qs_base ~ '&q=' ~ (search_q|urlencode) -%}{%- endif -%}
