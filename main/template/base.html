@@ -396,6 +396,18 @@
     window.scrollTo(0, 0);
   });
 
+  // Hide hero section when URL has active filters (search/year/quality/tag).
+  // The hero is outside #grid so filter swaps don't remove it — hide via JS.
+  function _syncHeroVisibility() {
+    var hero = document.getElementById('hero-section');
+    if (!hero) return;
+    var sp = new URLSearchParams(location.search);
+    var hasFilter = sp.get('q') || sp.get('tag') || sp.get('year') || sp.get('quality');
+    hero.style.display = hasFilter ? 'none' : '';
+  }
+  document.body.addEventListener('htmx:afterSettle', _syncHeroVisibility);
+  _syncHeroVisibility(); // run on initial load too
+
   // PWA install banner — only surfaces after 3+ visits, once per session,
   // and with a 10s delay so it doesn't interrupt on landing.
   var _prompt = null;

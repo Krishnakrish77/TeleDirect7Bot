@@ -166,9 +166,11 @@
       </div>
     </header>
 
-    {% if heroes and not (params.q or params.tag or params.year or params.quality) %}
-      {% include "_hero.html" %}
-    {% endif %}
+    <div id="hero-section">
+      {% if heroes and not (params.q or params.tag or params.year or params.quality) %}
+        {% include "_hero.html" %}
+      {% endif %}
+    </div>
 
     {# Continue-watching shelf. Entirely client-rendered from
        localStorage so the server stays stateless and the shelf

@@ -14,6 +14,7 @@
       if (this.timer) clearInterval(this.timer);
       if (this.count > 1) this.timer = setInterval(() => this.next(), 7000);
     },
+    destroy() { if (this.timer) { clearInterval(this.timer); this.timer = null; } },
   }"
   x-init="restart()"
   @mouseenter="if (timer) { clearInterval(timer); timer = null; }"
