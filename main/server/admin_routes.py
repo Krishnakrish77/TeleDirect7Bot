@@ -243,7 +243,9 @@ async def admin_home(request: web.Request) -> web.Response:
         key=_sort_key,
         reverse=(sort_dir == "desc"),
     )
-    catalogue_size = len(items_all)
+    # Exclude hidden items from the count shown in the UI (they're not
+    # visible in the default view, so the count should match what's shown).
+    catalogue_size = sum(1 for it in items_all if not it.hidden)
 
     # ── Duplicate detection — must run over the full catalogue, not the
     # paged slice, so the "duplicates" filter still finds groups whose

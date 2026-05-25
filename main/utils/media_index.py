@@ -1330,7 +1330,7 @@ def _series_matches_query(it: HubItem, q: str) -> bool:
 
 def episodes_for_series(series_key: str) -> List[HubItem]:
     """All episodes for a series, sorted by season then episode."""
-    eps = [it for it in _items.values() if it.series_key == series_key]
+    eps = [it for it in _items.values() if it.series_key == series_key and not it.hidden]
     eps.sort(key=lambda e: (e.season or 0, e.episode or 0, e.message_id))
     return eps
 
@@ -1349,7 +1349,7 @@ def tracks_for_album(album_key: str) -> List[HubItem]:
             return True
         at = getattr(it, "album_title", "") or ""
         return bool(at) and series_parse.slugify(at) == album_key
-    tracks = [it for it in _items.values() if _matches(it)]
+    tracks = [it for it in _items.values() if _matches(it) and not it.hidden]
     return sorted(tracks, key=lambda t: (
         t.track_number if t.track_number is not None else 9999,
         t.message_id,
@@ -1565,11 +1565,12 @@ def variants_for_movie(movie_key: str) -> List[HubItem]:
 
 async def set_hidden(message_id: int, hidden: bool) -> bool:
     """Toggle the hidden flag on an item. Returns True if item found."""
-    item = _items.get(message_id)
-    if item is None:
-        return False
-    item.hidden = hidden
-    await persist_now()
+    async with _lock:
+        item = _items.get(message_id)
+        if item is None:
+            return False
+        item.hidden = hidden
+        _persist_unlocked()
     await _store_upsert(item)
     from main.server.hub_routes import invalidate_render_cache
     try:

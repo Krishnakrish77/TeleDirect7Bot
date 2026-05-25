@@ -202,8 +202,11 @@
   document.body.addEventListener('htmx:afterSettle', _mpInit);
 
   // ── htmx boost config: exclude /watch/ and /admin from AJAX navigation ──
-  // Those pages have complex JS (Plyr, HLS) that must do a full page load.
+  // Only applies to GET requests (link boosts). POST form submissions within
+  // admin pages (e.g. hide/show, bulk actions) must go through htmx normally —
+  // intercepting them converts the POST to a GET navigation and breaks them.
   document.body.addEventListener('htmx:configRequest', function(e) {
+    if ((e.detail.verb || 'get').toLowerCase() !== 'get') return;
     var rawPath = (e.detail.path || '');
     var pathname;
     try { pathname = new URL(rawPath, location.origin).pathname; } catch(_) { pathname = rawPath; }
