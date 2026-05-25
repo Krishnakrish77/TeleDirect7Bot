@@ -5,7 +5,7 @@
    Admin:      dropdown includes "Admin" link when is_admin=true in JWT. #}
 
 <div id="_auth-area" x-data="tdAuth()" x-init="init()"
-     class="fixed top-0 right-0 z-30 h-14 flex items-center pr-3 sm:pr-4">
+     style="display:none">
 
   {# Logged-out state — shown until Alpine hydrates #}
   <button id="_auth-signin"

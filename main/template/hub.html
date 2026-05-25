@@ -32,9 +32,8 @@
         TeleDirect
       </a>
 
-      {# Search input — filters the grid via the parent HTMX form.
-         For full search with suggestions use the global modal (Cmd+K / ⌘K). #}
-      <div class="relative flex-1 max-w-md">
+      {# Search input — filters the grid via the parent HTMX form. #}
+      <div class="relative flex-1 min-w-0 max-w-md">
         <label class="relative block">
           <span class="sr-only">Search</span>
           <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none"
@@ -62,6 +61,71 @@
             <span>⌘K</span>
           </kbd>
         </label>
+      </div>
+
+      {# Auth: sign-in button or avatar — inline flex item, no fixed overlay #}
+      <div class="flex-shrink-0"
+           x-data="{ get _a() { var el=document.getElementById('_auth-area'); return el&&el.__x?el.__x.$data:null; } }">
+        {# Logged out #}
+        <button x-show="!_a || !_a.user"
+                @click="_a && _a.openModal()"
+                title="Sign in with Telegram"
+                class="flex items-center gap-1.5 text-slate-400 hover:text-white
+                       transition-colors p-1.5 rounded-full hover:bg-ink-800
+                       sm:px-3 sm:py-1.5 sm:rounded-lg sm:border sm:border-white/10
+                       sm:text-slate-300 sm:text-sm sm:font-medium">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+               class="w-5 h-5 sm:w-4 sm:h-4 text-[#2AABEE] flex-shrink-0">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/>
+          </svg>
+          <span class="hidden sm:inline">Sign in</span>
+        </button>
+        {# Logged in — avatar + dropdown #}
+        <div x-show="_a && _a.user" class="relative" @click.outside="_a && (_a.menuOpen=false)">
+          <button @click="_a && (_a.menuOpen=!_a.menuOpen)"
+                  class="flex items-center gap-1.5 hover:bg-ink-800 rounded-lg
+                         px-1.5 py-1 transition-colors group">
+            <template x-if="_a && _a.user && _a.user.photo">
+              <img :src="_a.user.photo" :alt="_a.user.name"
+                   class="w-7 h-7 rounded-full object-cover ring-1 ring-white/10" />
+            </template>
+            <template x-if="!(_a && _a.user && _a.user.photo)">
+              <div class="w-7 h-7 rounded-full bg-ink-700 ring-1 ring-white/10
+                          grid place-items-center text-xs font-semibold text-slate-300"
+                   x-text="_a&&_a.user?_a.user.name[0].toUpperCase():'?'"></div>
+            </template>
+            <span class="hidden lg:block text-sm text-slate-200 max-w-[80px] truncate"
+                  x-text="_a&&_a.user?_a.user.name:''"></span>
+          </button>
+          {# Dropdown — delegate to the hidden #_auth-area Alpine component #}
+          <div x-show="_a && _a.menuOpen" x-transition
+               class="absolute right-0 top-full mt-1 w-48
+                      bg-ink-800 border border-white/10 rounded-xl
+                      shadow-2xl py-1 z-50">
+            <div class="px-3 py-2 border-b border-white/5">
+              <p class="text-sm font-semibold text-white"
+                 x-text="_a&&_a.user?_a.user.name:''"></p>
+              <p class="text-xs text-slate-500"
+                 x-text="_a&&_a.user&&_a.user.username?'@'+_a.user.username:''"></p>
+            </div>
+            <a href="/watchlist" class="flex items-center gap-2 px-3 py-2 text-sm
+                                        text-slate-300 hover:text-white hover:bg-ink-700/60">
+              My List
+            </a>
+            <a x-show="_a&&_a.user&&_a.user.is_admin" href="/admin"
+               class="flex items-center gap-2 px-3 py-2 text-sm
+                      text-slate-300 hover:text-white hover:bg-ink-700/60">
+              Admin Panel
+            </a>
+            <div class="border-t border-white/5 mt-1">
+              <button @click="_a && _a.signOut()"
+                      class="w-full px-3 py-2 text-sm text-left
+                             text-slate-400 hover:text-red-400 hover:bg-ink-700/60">
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </header>
 
