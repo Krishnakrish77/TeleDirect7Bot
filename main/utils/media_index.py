@@ -1422,6 +1422,7 @@ def standalone_audio_tracks() -> List[HubItem]:
     return sorted(
         [it for it in _items.values()
          if getattr(it, "media_kind", "") == "audio"
+         and not it.hidden
          and not (getattr(it, "album_key", "") or getattr(it, "album_title", ""))],
         key=lambda t: -t.message_id,
     )
@@ -1499,6 +1500,8 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
 
     scored: List = []
     for it in _items.values():
+        if it.hidden:
+            continue
         hay = _haystack(it)
         score = 0.0
         if ql in it.title.lower() or ql in it.series_title.lower():
@@ -1558,7 +1561,7 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
 
 def variants_for_movie(movie_key: str) -> List[HubItem]:
     """All uploads of a given movie, sorted newest first."""
-    vs = [it for it in _items.values() if it.movie_key == movie_key]
+    vs = [it for it in _items.values() if it.movie_key == movie_key and not it.hidden]
     vs.sort(key=lambda v: v.message_id, reverse=True)
     return vs
 
