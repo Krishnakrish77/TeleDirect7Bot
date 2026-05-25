@@ -68,7 +68,7 @@
 
       {# Audio element — Plyr wraps this (its controls bar is hidden; custom UI below) #}
       <div class="mt-6 [@media(max-height:480px)]:mt-2 w-full max-w-md px-4 [@media(max-height:480px)]:px-0">
-        <audio id="player" class="player"
+        <audio id="player"
                {% if not known_unplayable %}data-direct-src="{{ src }}"{% endif %}
                {% if meta and meta.album_key and album_tracks %}data-album-first="/watch/{{ album_tracks[0].secure_hash }}{{ album_tracks[0].message_id }}"{% endif %}
                preload="metadata">

@@ -36,24 +36,23 @@
         curEl.textContent = fmt(cur);
       }
 
-      inst.on("play",          () => setPlaying(true));
-      inst.on("pause",         () => setPlaying(false));
-      inst.on("ended",         () => setPlaying(false));
-      inst.on("timeupdate",    syncProgress);
-      inst.on("loadedmetadata", () => {
-        // Controls are already visible — just fill in the real duration
+      inst.addEventListener("play",          () => setPlaying(true));
+      inst.addEventListener("pause",         () => setPlaying(false));
+      inst.addEventListener("ended",         () => setPlaying(false));
+      inst.addEventListener("timeupdate",    syncProgress);
+      inst.addEventListener("loadedmetadata", () => {
         durEl.textContent = fmt(inst.duration);
         syncProgress();
         setPlaying(!inst.paused);
         thumb.style.opacity = "1";
       });
-      inst.on("volumechange", () => {
+      inst.addEventListener("volumechange", () => {
         const muted = inst.muted || inst.volume === 0;
         if (volSlider) volSlider.value = muted ? 0 : inst.volume;
         if (muteBtn) muteBtn.style.opacity = muted ? "0.4" : "1";
       });
 
-      playBtn.addEventListener("click", () => inst.togglePlay());
+      playBtn.addEventListener("click", () => inst.paused ? inst.play() : inst.pause());
       back10.addEventListener("click", () => { inst.currentTime = Math.max(0, inst.currentTime - 10); });
       fwd10.addEventListener("click",  () => { if (isFinite(inst.duration)) inst.currentTime = Math.min(inst.duration, inst.currentTime + 10); });
       if (muteBtn) muteBtn.addEventListener("click", () => { inst.muted = !inst.muted; });

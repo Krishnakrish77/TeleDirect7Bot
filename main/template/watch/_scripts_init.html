@@ -1,61 +1,46 @@
     document.addEventListener("DOMContentLoaded", () => {
       const video = document.getElementById("player");
+
+      {% if is_audio %}
+      // ── Audio: raw HTMLAudioElement — no Plyr wrapper needed ──────────────
+      // Plyr adds nothing for audio (its controls bar was hidden via CSS and
+      // we only used inst.on()/inst.play() which map 1-to-1 to native events).
+      // Using the element directly removes one abstraction layer and its quirks.
+      if (video) {
+        attachSource(video);
+        attachCustomAudioControls(video);
+        history.replaceState(null, '', location.pathname);
+        video.play().catch(function() {});
+      }
+
+      {% else %}
+      // ── Video: Plyr handles subtitle UI, fullscreen, pip, keyboard nav ─────
       if (video) {
         attachSource(video);
         watchForUndecodableCodec(video);
       }
-
-      // Wrap with Plyr only when there's an actual source to play.
-      // For known_unplayable files the video has no src; Plyr would
-      // initialise on an empty element and bind dead listeners.
       if (video && (video.dataset.directSrc || video.dataset.hlsSrc)) {
-        const isAudio = video.tagName.toLowerCase() === "audio";
-        // Mobile video: strip controls down to essentials so the progress
-        // bar isn't squeezed out at 375px. Desktop keeps all controls.
         const isMobile = window.innerWidth < 640;
         const players = Plyr.setup(".player", {
-          controls: isAudio
-            // Audio: keep Plyr's internals running but bar is hidden via CSS.
-            ? ["play", "progress", "current-time", "duration", "mute", "volume"]
-            : (isMobile
-              ? ["play-large", "play", "rewind", "progress", "current-time", "fast-forward", "captions", "settings", "fullscreen"]
-              : ["play-large", "rewind", "play", "fast-forward", "progress",
-                 "current-time", "duration", "mute", "volume", "captions",
-                 "settings", "speed", "pip", "airplay", "download", "fullscreen"]),
-          captions: isAudio ? { active: false } : { active: true, language: "auto", update: true },
+          controls: isMobile
+            ? ["play-large", "play", "rewind", "progress", "current-time", "fast-forward", "captions", "settings", "fullscreen"]
+            : ["play-large", "rewind", "play", "fast-forward", "progress",
+               "current-time", "duration", "mute", "volume", "captions",
+               "settings", "speed", "pip", "airplay", "download", "fullscreen"],
+          captions: { active: true, language: "auto", update: true },
           keyboard: { focused: true, global: true },
           resetOnEnd: false,
         });
-        if (isAudio && players && players.length) {
-          window._plyrInst = players[0];
-          attachCustomAudioControls(players[0]);
-          // Always attempt autoplay for audio — the user navigated to this
-          // page to listen, so they expect playback to start immediately
-          // (same as Spotify/Apple Music). Browsers allow autoplay when the
-          // page was opened via a user click, which covers the normal path.
-          // ?play=1 is the explicit fallback; clean it from the URL either way.
-          history.replaceState(null, '', location.pathname);
-          if (players[0].ready) {
-            players[0].play().catch(function() {});
-          } else {
-            players[0].once('ready', function() {
-              players[0].play().catch(function() {});
-            });
-          }
-        }
       }
-
-      // Subtitle list requires an ffprobe pass on the source which can take
-      // seconds over Telegram. Injecting tracks after Plyr is set up keeps
-      // the player visible immediately.
       if (video) {
         injectSubtitleTracks(video);
-        {% if not is_audio %}attachWatchProgress(video);{% endif %}
+        attachWatchProgress(video);
         attachSubtitleUpload(video);
         attachMobileGestures(video);
         attachAudioTracks(video);
-        {% if not is_audio %}injectMobileVideoTools(video);{% endif %}
+        injectMobileVideoTools(video);
       }
+      {% endif %}
 
       {% if is_audio and meta %}
       // Write now-playing to localStorage; hand off to bgAudio on navigate.
