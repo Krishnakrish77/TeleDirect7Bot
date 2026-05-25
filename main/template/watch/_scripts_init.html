@@ -29,19 +29,18 @@
         if (isAudio && players && players.length) {
           window._plyrInst = players[0];
           attachCustomAudioControls(players[0]);
-          // Autoplay if arriving from an album play/advance (bgAudio
-          // was already primed with this track by the previous page gesture).
-          if (new URLSearchParams(location.search).get('play') === '1') {
-            history.replaceState(null, '', location.pathname);
-            // 'ready' may have already fired synchronously during Plyr.setup().
-            // Check the flag before registering a listener that would never fire.
-            if (players[0].ready) {
+          // Always attempt autoplay for audio — the user navigated to this
+          // page to listen, so they expect playback to start immediately
+          // (same as Spotify/Apple Music). Browsers allow autoplay when the
+          // page was opened via a user click, which covers the normal path.
+          // ?play=1 is the explicit fallback; clean it from the URL either way.
+          history.replaceState(null, '', location.pathname);
+          if (players[0].ready) {
+            players[0].play().catch(function() {});
+          } else {
+            players[0].once('ready', function() {
               players[0].play().catch(function() {});
-            } else {
-              players[0].once('ready', function() {
-                players[0].play().catch(function() {});
-              });
-            }
+            });
           }
         }
       }

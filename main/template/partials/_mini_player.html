@@ -216,7 +216,23 @@
     document.body.style.paddingBottom = '';
   };
 
-  window._mpInit = _mpInit;  // expose globally so album/library pages can trigger update
+  window._mpInit = _mpInit;
+
+  // Play a standalone audio track directly via bgAudio from any page card.
+  // Used by _card.html for audio HubItem cards in the library grid/shelves.
+  window._cardPlayAudio = function(streamUrl, watchUrl, title, artist, art) {
+    if (!_bgAudio) { window.location.href = watchUrl; return; }
+    _bgAudio.src = streamUrl;
+    _bgAudio.play().then(function() {
+      var np = { url: watchUrl, streamUrl: streamUrl, title: title,
+                 artist: artist, art: art, nextUrl: null, nextStreamUrl: null,
+                 prevUrl: null, prevStreamUrl: null };
+      try { localStorage.setItem('td:nowplaying', JSON.stringify(np)); } catch(_) {}
+      _mpInit();
+    }).catch(function() {
+      window.location.href = watchUrl;
+    });
+  };
   _mpInit();
 
   // Re-init after every htmx content swap (URL/path may have changed)

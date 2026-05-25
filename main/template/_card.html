@@ -121,6 +121,9 @@
   </a>
 {% else %}
   <a href="/watch/{{ item.secure_hash }}{{ item.message_id }}"
+     {% if item.media_kind == 'audio' %}
+     onclick="event.preventDefault(); _cardPlayAudio('/{{ item.secure_hash }}{{ item.message_id }}', '/watch/{{ item.secure_hash }}{{ item.message_id }}', {{ (item.title or item.file_name) | tojson }}, {{ (item.artist or '') | tojson }}, '/thumb/{{ item.secure_hash }}{{ item.message_id }}.jpg')"
+     {% endif %}
      class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
             hover:border-brand-400/40 hover:bg-ink-800
             transition-colors">
