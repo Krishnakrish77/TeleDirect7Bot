@@ -320,7 +320,8 @@
     if (prev) { prev.style.opacity = np.prevUrl ? '1' : '0.3'; prev.style.pointerEvents = np.prevUrl ? '' : 'none'; }
     if (next) { next.style.opacity = np.nextUrl ? '1' : '0.3'; next.style.pointerEvents = np.nextUrl ? '' : 'none'; }
     bar.style.display = 'flex';
-    document.body.style.paddingBottom = '60px';
+    var _mp = document.getElementById('_mini-player');
+    document.body.style.paddingBottom = (_mp ? _mp.offsetHeight : 60) + 'px';
     _mpSyncIcon();
   }
 

@@ -185,13 +185,11 @@
                 flex items-center gap-2">
       {% for hero in heroes %}
         <button type="button" @click="go({{ loop.index0 }})"
-                class="flex items-center justify-center min-w-[44px] min-h-[44px]"
-                aria-label="Go to slide {{ loop.index }}">
-          <span :class="active === {{ loop.index0 }}
+                :class="active === {{ loop.index0 }}
                         ? 'w-6 bg-white'
                         : 'w-2 bg-white/40 hover:bg-white/70'"
-                class="h-2 rounded-full transition-all block"></span>
-        </button>
+                class="h-2 rounded-full transition-all"
+                aria-label="Go to slide {{ loop.index }}"></button>
       {% endfor %}
     </div>
   {% endif %}
