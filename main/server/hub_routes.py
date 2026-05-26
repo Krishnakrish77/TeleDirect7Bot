@@ -352,7 +352,7 @@ async def hub_tag(request: web.Request) -> web.Response:
 _FAVICON_SVG = (
     b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
     b'<rect width="64" height="64" rx="14" fill="#f97316"/>'
-    b'<path d="M22 20l24 12-24 12z" fill="#fff"/>'
+    b'<path d="M20 20L44 32L20 44Z" fill="#fff"/>'
     b'</svg>'
 )
 
@@ -362,12 +362,13 @@ def _make_icon_png(size: int) -> bytes:
     bg = (249, 115, 22)   # #f97316
     fg = (255, 255, 255)
 
-    # Play triangle vertices — centred, within the 80 % maskable safe zone
+    # Play triangle vertices — geometrically centred, bounding box at (cx±s, cy±s).
+    # Equal left/right offsets ensure the triangle is symmetric around cx.
     s = size * 0.28
     cx, cy = size / 2.0, size / 2.0
-    tx0, ty0 = cx - s * 0.55, cy - s        # top-left
-    tx1, ty1 = cx - s * 0.55, cy + s        # bottom-left
-    tx2, ty2 = cx + s * 0.90, cy            # right apex
+    tx0, ty0 = cx - s, cy - s   # top-left
+    tx1, ty1 = cx - s, cy + s   # bottom-left
+    tx2, ty2 = cx + s, cy       # right apex
 
     def _in_tri(px: float, py: float) -> bool:
         def _s(ax, ay, bx, by):
