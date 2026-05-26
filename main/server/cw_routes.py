@@ -13,7 +13,7 @@ import re
 
 from aiohttp import web
 
-from main.utils.user_auth import decode_token
+from main.utils.user_auth import get_user
 from main.utils import cw_store
 
 routes = web.RouteTableDef()
@@ -22,16 +22,7 @@ routes = web.RouteTableDef()
 _VALID_KEY = re.compile(r'^[A-Za-z0-9_-]{3,50}$')
 
 
-def _get_user(request: web.Request):
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        user = decode_token(auth[7:])
-        if user:
-            return user
-    cookie = request.cookies.get("td_session", "")
-    if cookie:
-        return decode_token(cookie)
-    return None
+_get_user = get_user  # shared auth helper
 
 
 def _json(data: dict, *, status: int = 200) -> web.Response:

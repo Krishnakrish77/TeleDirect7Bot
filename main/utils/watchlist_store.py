@@ -72,6 +72,9 @@ async def get_ids(user_id: int) -> List[str]:
         return []
 
 
+_WL_CAP = 1000  # max bookmarks per user
+
+
 async def add(user_id: int, item_id: str) -> None:
     await _ensure_indexes()
     db = _get_db()
@@ -84,6 +87,18 @@ async def add(user_id: int, item_id: str) -> None:
             {"$setOnInsert": {"user_id": user_id, "item_id": item_id, "added_at": now}},
             upsert=True,
         )
+        # Evict oldest beyond cap using _id-only approach (no timestamp collisions)
+        keep_cursor = db["watchlist"].find(
+            {"user_id": user_id},
+            projection={"_id": 1},
+            sort=[("added_at", -1)],
+        ).limit(_WL_CAP)
+        keep_docs = await keep_cursor.to_list(length=_WL_CAP)
+        if len(keep_docs) == _WL_CAP:
+            keep_ids = [d["_id"] for d in keep_docs]
+            await db["watchlist"].delete_many(
+                {"user_id": user_id, "_id": {"$nin": keep_ids}}
+            )
     except Exception:
         logging.exception("watchlist: add failed uid=%d iid=%s", user_id, item_id)
 

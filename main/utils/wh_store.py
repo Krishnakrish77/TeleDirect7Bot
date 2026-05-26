@@ -52,25 +52,25 @@ async def record(user_id: int, cw_key: str, title: str) -> None:
     if db is None:
         return
     try:
+        title = title[:200]
         now = datetime.now(timezone.utc)
         await db["watch_history"].update_one(
             {"user_id": user_id, "cw_key": cw_key},
             {"$set": {"title": title, "watched_at": now}},
             upsert=True,
         )
-        # Evict oldest beyond cap — same skip-based approach as cw_store
-        cursor = db["watch_history"].find(
+        # Evict oldest beyond cap: fetch the IDs to keep, delete everything else.
+        # _id-only approach avoids timestamp-collision false deletions.
+        keep_cursor = db["watch_history"].find(
             {"user_id": user_id},
-            projection={"_id": 1, "watched_at": 1},
+            projection={"_id": 1},
             sort=[("watched_at", -1)],
-        ).skip(_WH_CAP)
-        cutoffs = await cursor.to_list(length=1)
-        if cutoffs:
-            cutoff_dt = cutoffs[0]["watched_at"]
+        ).limit(_WH_CAP)
+        keep_docs = await keep_cursor.to_list(length=_WH_CAP)
+        if len(keep_docs) == _WH_CAP:
+            keep_ids = [d["_id"] for d in keep_docs]
             await db["watch_history"].delete_many(
-                {"user_id": user_id,
-                 "watched_at": {"$lte": cutoff_dt},
-                 "_id": {"$ne": cutoffs[0]["_id"]}}
+                {"user_id": user_id, "_id": {"$nin": keep_ids}}
             )
     except Exception:
         logging.exception("wh_store: record failed uid=%d key=%s", user_id, cw_key)

@@ -17,7 +17,7 @@ from typing import Optional
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from main.utils.user_auth import decode_token
+from main.utils.user_auth import get_user
 from main.utils import watchlist_store
 from main.utils import media_index
 from main.vars import Var
@@ -36,17 +36,7 @@ _env.globals["bot_username"] = Var.BOT_USERNAME
 _VALID_IID = re.compile(r'^(?:(?:movie|series|album):[a-z0-9_-]{1,120}|\d{1,15})$')
 
 
-def _get_user(request: web.Request) -> Optional[dict]:
-    """Extract and verify JWT from Authorization header OR td_session cookie."""
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        user = decode_token(auth[7:])
-        if user:
-            return user
-    cookie = request.cookies.get("td_session", "")
-    if cookie:
-        return decode_token(cookie)
-    return None
+_get_user = get_user  # shared auth helper
 
 
 def _resolve_item(item_id: str) -> Optional[dict]:
@@ -130,7 +120,7 @@ async def watchlist_page(request: web.Request) -> web.Response:
     if not user:
         raise web.HTTPFound("/")
 
-    ids = await watchlist_store.get_ids(user["sub"])
+    ids = await watchlist_store.get_ids(int(user["sub"]))
     items = [r for iid in ids if (r := _resolve_item(iid)) is not None]
 
     tpl = _env.get_template("watchlist.html")
@@ -157,7 +147,7 @@ async def api_get(request: web.Request) -> web.Response:
     user = _get_user(request)
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
-    ids = await watchlist_store.get_ids(user["sub"])
+    ids = await watchlist_store.get_ids(int(user["sub"]))
     return _json({"ids": ids})
 
 
@@ -169,7 +159,7 @@ async def api_add(request: web.Request) -> web.Response:
     iid = request.match_info["iid"]
     if not _VALID_IID.match(iid):
         return _json({"error": "invalid item_id"}, status=400)
-    await watchlist_store.add(user["sub"], iid)
+    await watchlist_store.add(int(user["sub"]), iid)
     return _json({"saved": True, "item_id": iid})
 
 
@@ -181,5 +171,5 @@ async def api_remove(request: web.Request) -> web.Response:
     iid = request.match_info["iid"]
     if not _VALID_IID.match(iid):
         return _json({"error": "invalid item_id"}, status=400)
-    await watchlist_store.remove(user["sub"], iid)
+    await watchlist_store.remove(int(user["sub"]), iid)
     return _json({"saved": False, "item_id": iid})

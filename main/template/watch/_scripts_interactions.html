@@ -108,12 +108,11 @@
         const pct = pos / dur;
         const data = cwLoad();
         if (pct >= CW_FINISH_PCT || pct < CW_MIN_PCT) {
-          if (data[key]) {
-            delete data[key];
-            cwSave(data);
-            _cwServerDelete(key);
-            if (pct >= CW_FINISH_PCT) _whServerRecord(key, label);
-          }
+          // Always sync server state regardless of whether a local entry exists.
+          _cwServerDelete(key);
+          if (pct >= CW_FINISH_PCT) _whServerRecord(key, label);
+          // Clean up local entry if present.
+          if (data[key]) { delete data[key]; cwSave(data); }
           return;
         }
         const entry = { pos, dur, t: Date.now(), title: label };

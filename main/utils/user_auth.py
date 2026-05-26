@@ -57,3 +57,17 @@ def decode_token(token: str) -> Optional[dict]:
         return jwt.decode(token, Var.JWT_SECRET, algorithms=[_ALGORITHM])
     except jwt.PyJWTError:
         return None
+
+
+def get_user(request) -> Optional[dict]:
+    """Extract and verify JWT from Authorization header or td_session cookie."""
+    from aiohttp import web as _web
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        user = decode_token(auth[7:])
+        if user:
+            return user
+    cookie = request.cookies.get("td_session", "")
+    if cookie:
+        return decode_token(cookie)
+    return None
