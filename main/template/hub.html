@@ -207,11 +207,35 @@
           return {
             entries: [],
             async init() {
-              const raw = localStorage.getItem('td:cw');
-              if (!raw) return;
               let stored;
-              try { stored = JSON.parse(raw) || {}; }
-              catch (e) { return; }
+              try { stored = JSON.parse(localStorage.getItem('td:cw') || '{}') || {}; }
+              catch (e) { stored = {}; }
+
+              // Merge server data when signed in — server wins on higher t value.
+              if (window._tdAuth && window._tdAuth.user) {
+                try {
+                  const tok = (function() {
+                    try { const t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
+                    const m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
+                    return m ? m[1] : null;
+                  })();
+                  const r = await fetch('/api/cw', {
+                    headers: tok ? {'Authorization': 'Bearer ' + tok} : {},
+                  });
+                  if (r.ok) {
+                    const serverData = await r.json();
+                    for (const [k, sv] of Object.entries(serverData)) {
+                      if (!stored[k] || (sv.t || 0) > (stored[k].t || 0)) {
+                        stored[k] = sv;
+                      }
+                    }
+                    // Write merged result back to localStorage so the watch
+                    // page's tryRestore() picks up cross-device positions.
+                    try { localStorage.setItem('td:cw', JSON.stringify(stored)); } catch(_) {}
+                  }
+                } catch (_) { /* network — use local data */ }
+              }
+
               const keys = Object.keys(stored);
               if (!keys.length) return;
               // Sort by recency (t) before fetching so we keep at most
@@ -261,18 +285,39 @@
             },
             forget(key, ev) {
               if (ev) ev.preventDefault();
-              const raw = localStorage.getItem('td:cw');
               try {
-                const data = JSON.parse(raw || '{}');
+                const data = JSON.parse(localStorage.getItem('td:cw') || '{}');
                 delete data[key];
                 localStorage.setItem('td:cw', JSON.stringify(data));
               } catch (e) { /* ignore */ }
               this.entries = this.entries.filter(e => e.key !== key);
+              if (window._tdAuth && window._tdAuth.user) {
+                const tok = (function() {
+                  try { const t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
+                  const m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
+                  return m ? m[1] : null;
+                })();
+                if (tok) fetch('/api/cw/' + encodeURIComponent(key), {
+                  method: 'DELETE',
+                  headers: {'Authorization': 'Bearer ' + tok},
+                }).catch(() => {});
+              }
             },
             clearAll() {
               if (!confirm('Clear all Continue-watching entries?')) return;
               localStorage.removeItem('td:cw');
               this.entries = [];
+              if (window._tdAuth && window._tdAuth.user) {
+                const tok = (function() {
+                  try { const t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
+                  const m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
+                  return m ? m[1] : null;
+                })();
+                if (tok) fetch('/api/cw', {
+                  method: 'DELETE',
+                  headers: {'Authorization': 'Bearer ' + tok},
+                }).catch(() => {});
+              }
             },
             formatRemaining(e) {
               const remaining = Math.max(0, (e.dur || 0) - (e.pos || 0));

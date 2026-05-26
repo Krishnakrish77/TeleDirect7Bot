@@ -32,6 +32,38 @@
       return m ? m[1] : null;
     }
 
+    // ---- Server sync helpers (no-ops when not signed in or no MongoDB) ----
+    function _cwToken() {
+      try { const t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
+      const m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
+      return m ? m[1] : null;
+    }
+    let _cwLastServerSync = 0;
+    function _cwServerSave(key, entry, force) {
+      if (!key || !(window._tdAuth && window._tdAuth.user)) return;
+      const now = Date.now();
+      if (!force && now - _cwLastServerSync < 30000) return;
+      _cwLastServerSync = now;
+      const tok = _cwToken();
+      if (!tok) return;
+      fetch('/api/cw/' + encodeURIComponent(key), {
+        method: 'POST',
+        headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'},
+        body: JSON.stringify(entry),
+        keepalive: true,
+      }).catch(() => {});
+    }
+    function _cwServerDelete(key) {
+      if (!key || !(window._tdAuth && window._tdAuth.user)) return;
+      const tok = _cwToken();
+      if (!tok) return;
+      fetch('/api/cw/' + encodeURIComponent(key), {
+        method: 'DELETE',
+        headers: {'Authorization': 'Bearer ' + tok},
+        keepalive: true,
+      }).catch(() => {});
+    }
+
     function attachWatchProgress(video) {
       const key = cwKey();
       if (!key) return;
@@ -58,7 +90,7 @@
 
       // Throttle saves to ~once every 5s.
       let lastSave = 0;
-      const persist = () => {
+      const persist = (force) => {
         if (!video.duration || !isFinite(video.duration)) return;
         const pos = video.currentTime || 0;
         const dur = video.duration;
@@ -66,11 +98,13 @@
         const data = cwLoad();
         if (pct >= CW_FINISH_PCT || pct < CW_MIN_PCT) {
           // Either watched-to-end or barely started — drop the entry.
-          if (data[key]) { delete data[key]; cwSave(data); }
+          if (data[key]) { delete data[key]; cwSave(data); _cwServerDelete(key); }
           return;
         }
-        data[key] = { pos, dur, t: Date.now(), title: label };
+        const entry = { pos, dur, t: Date.now(), title: label };
+        data[key] = entry;
         cwSave(data);
+        _cwServerSave(key, entry, force === true);
       };
       video.addEventListener("timeupdate", () => {
         const now = Date.now();
@@ -78,8 +112,8 @@
         lastSave = now;
         persist();
       });
-      video.addEventListener("pause", persist);
-      window.addEventListener("beforeunload", persist);
+      video.addEventListener("pause", () => persist(true));
+      window.addEventListener("beforeunload", () => persist(true));
     }
 
     // ---- Mobile gestures -----------------------------------------------

@@ -15,6 +15,7 @@ from .hub_routes import routes as hub_routes
 from .admin_routes import routes as admin_routes
 from .auth_routes import routes as auth_routes
 from .watchlist_routes import routes as watchlist_routes
+from .cw_routes import routes as cw_routes
 
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
@@ -171,6 +172,7 @@ def web_server():
     # swallowed by the catch-all /{path:\S+} byte-stream route at the end.
     web_app.add_routes(auth_routes)
     web_app.add_routes(watchlist_routes)
+    web_app.add_routes(cw_routes)
     web_app.add_routes(admin_routes)
     web_app.add_routes(hub_routes)
     web_app.add_routes(hls_routes)
