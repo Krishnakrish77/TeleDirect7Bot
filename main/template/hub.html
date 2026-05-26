@@ -63,8 +63,13 @@
         </label>
       </div>
 
-      {# Auth widget — ml-auto pushes it to the far right on wide screens #}
-      <div class="flex-shrink-0 ml-auto" x-data="tdAuth">
+      {# Spacer: consumes all free space after the search hits max-w-md,
+         pushing the auth widget to the far right on wide screens.
+         ml-auto alone doesn't work here because flex-1 on the search
+         prevents Chrome from redistributing its unclaimed free space. #}
+      <div class="flex-1 hidden sm:block" aria-hidden="true"></div>
+
+      <div class="flex-shrink-0" x-data="tdAuth">
         {# Logged out: icon on mobile, icon + text on sm+ #}
         <button type="button" x-show="!user" @click="openModal()" title="Sign in with Telegram"
                 class="flex items-center gap-1.5 px-3 py-2.5 rounded-lg
