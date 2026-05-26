@@ -16,6 +16,8 @@ import asyncio
 import json
 import logging
 import re
+import struct
+import zlib
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlencode
@@ -355,17 +357,67 @@ _FAVICON_SVG = (
 )
 
 
+def _make_icon_png(size: int) -> bytes:
+    """Generate a maskable PNG icon: orange bg (#f97316) + centred white play triangle."""
+    bg = (249, 115, 22)   # #f97316
+    fg = (255, 255, 255)
+
+    # Play triangle vertices — centred, within the 80 % maskable safe zone
+    s = size * 0.28
+    cx, cy = size / 2.0, size / 2.0
+    tx0, ty0 = cx - s * 0.55, cy - s        # top-left
+    tx1, ty1 = cx - s * 0.55, cy + s        # bottom-left
+    tx2, ty2 = cx + s * 0.90, cy            # right apex
+
+    def _in_tri(px: float, py: float) -> bool:
+        def _s(ax, ay, bx, by):
+            return (px - bx) * (ay - by) - (ax - bx) * (py - by)
+        d1, d2, d3 = _s(tx0, ty0, tx1, ty1), _s(tx1, ty1, tx2, ty2), _s(tx2, ty2, tx0, ty0)
+        return not ((d1 < 0 or d2 < 0 or d3 < 0) and (d1 > 0 or d2 > 0 or d3 > 0))
+
+    rows = bytearray()
+    for y in range(size):
+        rows.append(0)  # PNG filter byte per row
+        for x in range(size):
+            rows.extend(fg if _in_tri(x + 0.5, y + 0.5) else bg)
+
+    def _chunk(tag: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+        + _chunk(b"IDAT", zlib.compress(bytes(rows), 6))
+        + _chunk(b"IEND", b"")
+    )
+
+
+# Pre-generate once at startup — cheap (< 50 ms) and never changes.
+_ICON_192  = _make_icon_png(192)
+_ICON_512  = _make_icon_png(512)
+_ICON_180  = _make_icon_png(180)   # apple-touch-icon
+
 _MANIFEST_JSON = json.dumps({
     "name": "TeleDirect",
     "short_name": "TeleDirect",
     "description": "Your personal media streaming library",
+    "id": "/",
     "start_url": "/",
+    "scope": "/",
     "display": "standalone",
+    "orientation": "portrait-primary",
     "background_color": "#0f1115",
     "theme_color": "#f97316",
-    "icons": [{"src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}],
+    "lang": "en",
+    "icons": [
+        {"src": "/favicon.svg",    "sizes": "any",     "type": "image/svg+xml", "purpose": "any"},
+        {"src": "/icon-192.png",   "sizes": "192x192", "type": "image/png",     "purpose": "maskable"},
+        {"src": "/icon-512.png",   "sizes": "512x512", "type": "image/png",     "purpose": "maskable"},
+    ],
     "categories": ["entertainment"],
 }, separators=(",", ":"))
+
 
 @routes.get("/manifest.json")
 async def pwa_manifest(_request: web.Request) -> web.Response:
@@ -376,6 +428,24 @@ async def pwa_manifest(_request: web.Request) -> web.Response:
     )
 
 
+@routes.get("/icon-192.png")
+async def icon_192(_request: web.Request) -> web.Response:
+    return web.Response(body=_ICON_192, content_type="image/png",
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@routes.get("/icon-512.png")
+async def icon_512(_request: web.Request) -> web.Response:
+    return web.Response(body=_ICON_512, content_type="image/png",
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@routes.get("/apple-touch-icon.png")
+async def apple_touch_icon(_request: web.Request) -> web.Response:
+    return web.Response(body=_ICON_180, content_type="image/png",
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
 @routes.get("/favicon.ico")
 @routes.get("/favicon.svg")
 async def favicon(_request: web.Request) -> web.Response:
@@ -383,6 +453,73 @@ async def favicon(_request: web.Request) -> web.Response:
         body=_FAVICON_SVG,
         content_type="image/svg+xml",
         headers={"Cache-Control": "public, max-age=86400, immutable"},
+    )
+
+
+_SW_JS = """\
+/* TeleDirect service worker — network-first for navigation,
+   cache-first for static assets, network-only for streams/API. */
+const CACHE = 'td-v1';
+const SHELL = ['/', '/static/tailwind.css', '/favicon.svg', '/manifest.json'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => c.addAll(SHELL.map(u => new Request(u, {cache: 'reload'}))))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+
+  // Never cache: stream URLs, API, auth, admin, watch pages
+  if (
+    /^\\/[A-Za-z0-9_-]*[A-Za-z_-]\\d+$/.test(url.pathname) ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/auth/') ||
+    url.pathname.startsWith('/admin') ||
+    url.pathname.startsWith('/watch/') ||
+    url.pathname.startsWith('/hls/')
+  ) return;
+
+  // Static assets — cache-first
+  if (url.pathname.startsWith('/static/') ||
+      url.pathname.match(/\\.(png|svg|ico|webmanifest|json)$/)) {
+    e.respondWith(
+      caches.match(e.request).then(r => r || fetch(e.request).then(res => {
+        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+        return res;
+      }))
+    );
+    return;
+  }
+
+  // Navigation — network-first, cached shell fallback
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).catch(() => caches.match('/').then(r => r || fetch(e.request)))
+    );
+  }
+});
+"""
+
+
+@routes.get("/sw.js")
+async def service_worker(_request: web.Request) -> web.Response:
+    return web.Response(
+        text=_SW_JS,
+        content_type="application/javascript",
+        # no-cache so updates are picked up within one browser check cycle
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
     )
 
 

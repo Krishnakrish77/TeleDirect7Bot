@@ -23,7 +23,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="TeleDirect" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <style>
       #_htmx-bar{position:fixed;top:0;left:0;right:0;height:2px;z-index:9999;pointer-events:none;background:#f97316;opacity:0;transform:scaleX(0);transform-origin:left}
       #_htmx-bar.htmx-request{opacity:1;animation:_hb 1.5s ease-out forwards}
@@ -31,6 +31,10 @@
       #_htmx-bar.htmx-complete{transform:scaleX(1);transition:transform .1s ease-out,opacity .3s .1s;opacity:0}
       [x-cloak]{display:none!important}
       .wl-btn{color:rgba(255,255,255,.55)}.wl-btn.wl-saved{color:#f97316;opacity:1!important}
+      /* iOS PWA: content starts below the status bar when black-translucent */
+      @supports(padding-top:env(safe-area-inset-top)){
+        body{padding-top:env(safe-area-inset-top)}
+      }
     </style>
   </head>
 
@@ -151,5 +155,12 @@
     {% include "partials/_auth.html" %}
     {% include "partials/_mini_player.html" %}
 
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(function(e) {
+          console.warn('SW registration failed:', e);
+        });
+      }
+    </script>
   </body>
 </html>
