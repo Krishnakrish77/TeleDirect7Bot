@@ -180,6 +180,16 @@
           Enrich
         </button>
 
+        <button type="button"
+                hx-post="/admin/clear-audio-tmdb"
+                hx-confirm="Strip TMDB data from mis-enriched audio/music items?"
+                hx-on::after-request="alert(event.detail.xhr.responseText)"
+                class="px-3 py-1.5 rounded text-xs font-medium
+                       bg-amber-500/15 text-amber-300 border border-amber-400/30
+                       hover:bg-amber-500/25 transition-colors">
+          Fix audio enrichment
+        </button>
+
         <button type="submit" name="action" value="probe"
                 class="px-3 py-1.5 rounded text-xs font-medium
                        bg-sky-500/15 text-sky-300 border border-sky-400/30

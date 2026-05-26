@@ -2244,6 +2244,10 @@ async def enrich_one(message_id: int, bot=None) -> bool:
     if item is None:
         return False
 
+    # TMDB only covers films and TV — never enrich audio/music items.
+    if item.media_kind == "audio":
+        return False
+
     # Don't burn a TMDB search on items with no meaningful title.
     # Device-generated names ("Untitled", "Video", bare timestamps) are
     # already stripped by _clean_file_name, so an empty or very short
@@ -2609,6 +2613,33 @@ async def fill_episode_details(bot=None) -> dict:
     }
 
 
+async def clear_audio_tmdb_mismatches() -> int:
+    """Strip TMDB fields from any audio item that was previously mis-enriched.
+
+    Returns the number of items fixed. Safe to call multiple times.
+    """
+    fixed = 0
+    async with _lock:
+        for item in _items.values():
+            if item.media_kind == "audio" and item.tmdb_id:
+                item.tmdb_id = None
+                item.tmdb_kind = ""
+                item.poster_path = None
+                item.backdrop_path = None
+                item.overview = ""
+                item.tmdb_genres = []
+                item.enriched_at = 0.0
+                fixed += 1
+        if fixed:
+            _persist_unlocked()
+    if fixed:
+        import asyncio
+        for item in list(_items.values()):
+            if item.media_kind == "audio":
+                await _store_upsert(item)
+    return fixed
+
+
 async def enrich_all(bot=None, force: bool = False) -> dict:
     """Background-enrich every entry that hasn't been enriched yet.
 
@@ -2626,7 +2657,7 @@ async def enrich_all(bot=None, force: bool = False) -> dict:
 
     targets = [
         mid for mid, it in _items.items()
-        if force or not it.tmdb_id
+        if it.media_kind != "audio" and (force or not it.tmdb_id)
     ]
 
     _enrich_state.update(

@@ -365,6 +365,17 @@ def _is_htmx(request: web.Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
 
+@routes.post("/admin/clear-audio-tmdb")
+async def admin_clear_audio_tmdb(request: web.Request) -> web.Response:
+    """Strip TMDB fields from audio items that were mis-enriched as movies/series."""
+    _require_session(request)
+    fixed = await media_index.clear_audio_tmdb_mismatches()
+    msg = f"Cleared TMDB data from {fixed} audio item(s)" if fixed else "No mis-enriched audio items found"
+    if _is_htmx(request):
+        return web.Response(text=msg, status=200)
+    raise _redirect_with_flash(msg)
+
+
 @routes.post("/admin/enrich")
 async def admin_enrich(request: web.Request) -> web.Response:
     """Fire-and-forget bulk TMDB enrichment.
