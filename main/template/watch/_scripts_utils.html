@@ -220,7 +220,7 @@
           btn.style.color = "";
         } else {
           btn.setAttribute("aria-pressed", "true");
-          btn.style.color = "#f97316";  // brand orange — mirrors Plyr's pressed tint
+          btn.style.color = "#7c5cfc";  // brand orange — mirrors Plyr's pressed tint
         }
       }
 
@@ -254,7 +254,7 @@
           // Checkmark + label row, same layout as Plyr's settings sub-menus.
           item.innerHTML = `
             <span style="display:inline-block;width:14px;margin-right:6px;
-                         color:#f97316;font-size:11px;flex-shrink:0;">
+                         color:#7c5cfc;font-size:11px;flex-shrink:0;">
               ${isActive ? "✓" : ""}
             </span>
             <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
@@ -270,8 +270,8 @@
             "border-radius:5px",
             "font-size:12px",
             "font-weight:" + (isActive ? "600" : "400"),
-            "color:" + (isActive ? "#f97316" : "rgba(255,255,255,0.85)"),
-            "background:" + (isActive ? "rgba(249,115,22,0.12)" : "transparent"),
+            "color:" + (isActive ? "#7c5cfc" : "rgba(255,255,255,0.85)"),
+            "background:" + (isActive ? "rgba(124,92,252,0.12)" : "transparent"),
             "border:none",
             "cursor:pointer",
             "transition:background 0.1s",
@@ -282,7 +282,7 @@
             if (!isActive) item.style.background = "rgba(255,255,255,0.08)";
           });
           item.addEventListener("mouseleave", () => {
-            item.style.background = isActive ? "rgba(249,115,22,0.12)" : "transparent";
+            item.style.background = isActive ? "rgba(124,92,252,0.12)" : "transparent";
           });
           item.addEventListener("click", (e) => {
             e.stopPropagation();
