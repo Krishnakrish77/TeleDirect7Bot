@@ -407,11 +407,12 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0, seek: float = 1
             logging.exception("thumbnail grab failed for %s", source_url)
             return None
     if proc.returncode != 0 or not stdout:
-        logging.warning(
-            "ffmpeg thumb grab failed exit=%s url=%s stderr=%s",
-            proc.returncode, source_url,
-            (stderr or b"")[:300].decode("utf-8", "replace"),
-        )
+        stderr_text = (stderr or b"")[:300].decode("utf-8", "replace")
+        # "no stream" means the file has no video/image data (e.g. audio without
+        # embedded art). This is expected and not worth a WARNING.
+        level = logging.DEBUG if "does not contain any stream" in stderr_text else logging.WARNING
+        logging.log(level, "ffmpeg thumb grab failed exit=%s url=%s stderr=%s",
+                    proc.returncode, source_url, stderr_text)
         return None
     return stdout
 
