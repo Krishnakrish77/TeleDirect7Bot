@@ -63,8 +63,8 @@
         </label>
       </div>
 
-      {# Auth widget — uses window._tdAuth (defined in _auth.html, loaded in base.html) #}
-      <div class="flex-shrink-0" x-data="tdAuth">
+      {# Auth widget — ml-auto pushes it to the far right on wide screens #}
+      <div class="flex-shrink-0 ml-auto" x-data="tdAuth">
         {# Logged out: icon on mobile, icon + text on sm+ #}
         <button type="button" x-show="!user" @click="openModal()" title="Sign in with Telegram"
                 class="flex items-center gap-1.5 px-3 py-2.5 rounded-lg
