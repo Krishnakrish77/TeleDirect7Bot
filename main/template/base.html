@@ -15,6 +15,33 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
 
+    {# Synchronous auth-state pre-render — runs before body paints so the
+       correct sign-in / avatar element is shown on the very first frame.
+       Both elements default to display:none in HTML; this script reveals
+       the right one immediately from the JWT in sessionStorage or cookie,
+       eliminating the Alpine init flash. #}
+    <script>
+    (function(){
+      try {
+        var tok=sessionStorage.getItem('td:auth');
+        if(!tok){var m=document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);tok=m&&m[1];}
+        var li=false;
+        if(tok){
+          var b64=tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+          b64+='=='.slice(0,(4-b64.length%4)%4);
+          var p=JSON.parse(atob(b64));
+          li=p.exp>Date.now()/1000;
+        }
+        var s=document.createElement('style');
+        s.textContent=li?'#_auth-user{display:block}':'#_auth-signin{display:flex}';
+        document.head.appendChild(s);
+      }catch(_){
+        var s=document.createElement('style');
+        s.textContent='#_auth-signin{display:flex}';
+        document.head.appendChild(s);
+      }
+    })();
+    </script>
     <script defer src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
 

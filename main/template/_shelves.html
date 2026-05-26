@@ -22,7 +22,7 @@
       {# Left arrow: hidden on touch / when already at start. Visible on
          hover over the row on desktop. #}
       <button type="button"
-              x-show="!atStart"
+              x-show="!atStart" x-cloak
               x-transition.opacity
               @click="$refs.row.scrollBy({ left: -$refs.row.clientWidth * 0.8, behavior: 'smooth' })"
               class="hidden md:flex absolute left-0 top-0 bottom-2 z-10
@@ -58,7 +58,7 @@
       </ul>
 
       <button type="button"
-              x-show="!atEnd"
+              x-show="!atEnd" x-cloak
               x-transition.opacity
               @click="$refs.row.scrollBy({ left: $refs.row.clientWidth * 0.8, behavior: 'smooth' })"
               class="hidden md:flex absolute right-0 top-0 bottom-2 z-10
