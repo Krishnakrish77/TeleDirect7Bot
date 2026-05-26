@@ -64,7 +64,7 @@
         <li>
           <a href="/watch/{{ track.secure_hash }}{{ track.message_id }}"
              onclick="event.preventDefault(); _albumPlay({{ loop.index0 }})"
-             class="group flex items-center gap-4 px-3 py-3 rounded-lg
+             class="group flex items-center gap-4 pl-0 pr-3 py-3 rounded-lg
                     hover:bg-ink-800/60 transition-colors cursor-pointer">
             {# Track number / now-playing indicator #}
             <span class="w-6 flex items-center justify-end flex-shrink-0 _tn" data-idx="{{ loop.index0 }}"
