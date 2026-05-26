@@ -50,7 +50,7 @@
     <div
       x-show="active === {{ loop.index0 }}"
       x-transition.opacity.duration.700ms
-      {% if not loop.first %}style="display:none"{% endif %}
+      {% if not loop.first %}style="display:none;opacity:0"{% endif %}
       class="absolute inset-0">
       {% if hero.backdrop_path %}
         <img src="https://image.tmdb.org/t/p/w1280{{ hero.backdrop_path }}"

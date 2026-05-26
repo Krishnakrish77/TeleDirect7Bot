@@ -97,7 +97,9 @@ window._tdAuth = (function() {
   _user = _load();
 
   return {
-    user: _user,
+    // Getter re-calls _load() on every access so an expired token is detected
+    // on the next Alpine reactive read rather than requiring a full page reload.
+    get user() { return (_user = _load()); },
     openModal: function() {
       var modal = document.getElementById('_auth-modal');
       if (!modal) return;

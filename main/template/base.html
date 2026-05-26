@@ -33,11 +33,11 @@
           li=p.exp>Date.now()/1000;
         }
         var s=document.createElement('style');
-        s.textContent=li?'#_auth-user{display:block}':'#_auth-signin{display:flex}';
+        s.textContent=li?'#_auth-user{display:block!important}':'#_auth-signin{display:flex!important}';
         document.head.appendChild(s);
       }catch(_){
         var s=document.createElement('style');
-        s.textContent='#_auth-signin{display:flex}';
+        s.textContent='#_auth-signin{display:flex!important}';
         document.head.appendChild(s);
       }
     })();
@@ -69,6 +69,7 @@
       @media(min-width:640px){
         @supports(padding:env(safe-area-inset-top)){
           #main-content{padding-bottom:max(4rem,min(env(safe-area-max-inset-bottom,env(safe-area-inset-bottom,0px)),2.125rem))}
+          #_auth-sheet{padding-bottom:1.5rem}
         }
       }
     </style>
