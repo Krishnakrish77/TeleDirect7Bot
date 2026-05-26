@@ -24,20 +24,37 @@ routes = web.RouteTableDef()
 # Only actual Telegram GetFile calls are counted; skeleton cache hits
 # (served from memory) are free and not subject to these limits.
 _MAX_STREAMS_TOTAL = int(os.environ.get("MAX_STREAMS_TOTAL", "25"))
-_MAX_STREAMS_PER_IP = int(os.environ.get("MAX_STREAMS_PER_IP", "4"))
+_MAX_STREAMS_PER_IP = int(os.environ.get("MAX_STREAMS_PER_IP", "8"))
 _total_active: int = 0
 _ip_active: dict = {}   # ip → concurrent stream count
 
 
+_LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+
+
+def _real_ip(request: web.Request) -> str:
+    """Return the real client IP, reading X-Forwarded-For when behind a proxy.
+
+    Koyeb (and most LBs) set X-Forwarded-For to the original client IP.
+    Without this, request.remote is always the LB node IP, making the
+    per-IP limit a global cap shared by all users.
+
+    Loopback addresses (127.0.0.1, ::1) are returned as-is so HLS ffmpeg
+    loopback fetches can be handled separately at the call site.
+    """
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip() or request.remote or "unknown"
+    return request.remote or "unknown"
+
+
 async def _rate_limited_body(gen, ip: str):
-    """Wrap a yield_file generator with rate-limit accounting."""
-    global _total_active
-    _total_active += 1
-    _ip_active[ip] = _ip_active.get(ip, 0) + 1
+    """Wrap a yield_file generator — ONLY decrements; caller already incremented."""
     try:
         async for chunk in gen:
             yield chunk
     finally:
+        global _total_active
         _total_active = max(0, _total_active - 1)
         _ip_active[ip] = max(0, _ip_active.get(ip, 1) - 1)
         if not _ip_active.get(ip):
@@ -268,17 +285,26 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
 
     # Rate limit: only actual Telegram GetFile calls count.
     # Skeleton cache hits (served above) are memory-only and exempt.
-    client_ip = request.remote or "unknown"
+    # Increment immediately after check — no await between check and increment
+    # to close the asyncio race window (Finding 1).
+    client_ip = _real_ip(request)
+    is_loopback = client_ip in _LOOPBACK   # HLS ffmpeg self-fetches: skip per-IP limit
     if _total_active >= _MAX_STREAMS_TOTAL:
         raise web.HTTPServiceUnavailable(
             text="Server is at stream capacity. Try again shortly.",
             headers={"Retry-After": "10"},
         )
-    if _ip_active.get(client_ip, 0) >= _MAX_STREAMS_PER_IP:
+    if not is_loopback and _ip_active.get(client_ip, 0) >= _MAX_STREAMS_PER_IP:
         raise web.HTTPTooManyRequests(
             text="Too many concurrent streams from this IP.",
             headers={"Retry-After": "5", "X-RateLimit-Limit": str(_MAX_STREAMS_PER_IP)},
         )
+    # Increment BEFORE any further await so no other coroutine can slip through
+    # the same check window.
+    global _total_active
+    _total_active += 1
+    if not is_loopback:
+        _ip_active[client_ip] = _ip_active.get(client_ip, 0) + 1
 
     req_length = until_bytes - from_bytes
     new_chunk_size = utils.chunk_size(req_length)
