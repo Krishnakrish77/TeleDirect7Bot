@@ -170,6 +170,7 @@ async def stream_handler(request: web.Request):
 class_cache = weakref.WeakKeyDictionary()
 
 async def media_streamer(request: web.Request, message_id: int, secure_hash: str):
+    global _total_active   # declared here so it's valid for the increment below
     index = min(work_loads, key=work_loads.get)
     faster_client = multi_clients[index]
 
@@ -301,7 +302,6 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         )
     # Increment BEFORE any further await so no other coroutine can slip through
     # the same check window.
-    global _total_active
     _total_active += 1
     if not is_loopback:
         _ip_active[client_ip] = _ip_active.get(client_ip, 0) + 1
