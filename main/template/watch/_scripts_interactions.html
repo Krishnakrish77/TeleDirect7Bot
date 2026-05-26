@@ -63,6 +63,17 @@
         keepalive: true,
       }).catch(() => {});
     }
+    function _whServerRecord(key, title) {
+      if (!key || !(window._tdAuth && window._tdAuth.user)) return;
+      const tok = _cwToken();
+      if (!tok) return;
+      fetch('/api/wh/' + encodeURIComponent(key), {
+        method: 'POST',
+        headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'},
+        body: JSON.stringify({title: title || ''}),
+        keepalive: true,
+      }).catch(() => {});
+    }
 
     function attachWatchProgress(video) {
       const key = cwKey();
@@ -97,8 +108,12 @@
         const pct = pos / dur;
         const data = cwLoad();
         if (pct >= CW_FINISH_PCT || pct < CW_MIN_PCT) {
-          // Either watched-to-end or barely started — drop the entry.
-          if (data[key]) { delete data[key]; cwSave(data); _cwServerDelete(key); }
+          if (data[key]) {
+            delete data[key];
+            cwSave(data);
+            _cwServerDelete(key);
+            if (pct >= CW_FINISH_PCT) _whServerRecord(key, label);
+          }
           return;
         }
         const entry = { pos, dur, t: Date.now(), title: label };
