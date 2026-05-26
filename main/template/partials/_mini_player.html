@@ -384,7 +384,7 @@
     // Watch + admin pages need full page loads (complex JS that relies on DOMContentLoaded).
     // Stream URLs (/{hash}{id}) must not be AJAX-fetched — they return binary audio/video.
     if (pathname.startsWith('/watch/') || pathname.startsWith('/admin') ||
-        /^\/([A-Za-z0-9_-]{16}|[A-Za-z0-9_-]{6})\d+$/.test(pathname)) {
+        /^\/[A-Za-z0-9_-]*[A-Za-z_-]\d+$/.test(pathname)) {
       e.preventDefault();
       window.location.href = rawPath;
     }

@@ -125,6 +125,7 @@
             </a>
             {% if deep_link != watch_path %}
               <a href="{{ deep_link }}"
+                 hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
                  class="inline-flex items-center gap-2 rounded-lg
                         px-5 py-2.5 font-medium text-white
                         bg-white/10 hover:bg-white/20 backdrop-blur transition-colors">
