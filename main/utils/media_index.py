@@ -1566,6 +1566,28 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
     return suggestions
 
 
+def card_for_tmdb_id(tmdb_id: int, kind: str = "") -> object:
+    """Return the catalogue card for a TMDB ID, or None if not present.
+
+    Returns a SeriesGroup/MovieGroup when multiple items share the same
+    key, otherwise the raw HubItem.
+    """
+    matches = [it for it in _items.values()
+               if it.tmdb_id == tmdb_id and not it.hidden]
+    if not matches:
+        return None
+    first = matches[0]
+    if first.series_key:
+        eps = episodes_for_series(first.series_key)
+        if eps:
+            return _build_series_group(eps)
+    if first.movie_key:
+        variants = variants_for_movie(first.movie_key)
+        if len(variants) >= 2:
+            return _build_movie_group(variants)
+    return first
+
+
 def variants_for_movie(movie_key: str) -> List[HubItem]:
     """All uploads of a given movie, sorted newest first."""
     vs = [it for it in _items.values() if it.movie_key == movie_key and not it.hidden]

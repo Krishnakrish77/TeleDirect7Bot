@@ -24,7 +24,8 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import hls, hub_query, media_index, thumb_cache
+from main.utils import hls, hub_query, media_index, thumb_cache, rec_engine
+from main.utils.user_auth import get_user
 from main.utils.hub_query import HubItem
 from main.utils.human_readable import humanbytes
 from main.vars import Var
@@ -281,6 +282,20 @@ async def hub_home(request: web.Request) -> web.Response:
     if use_shelves:
         shelves = media_index.shelves()
         heroes = media_index.pick_heroes()
+
+        # Inject personalised recommendations for signed-in users.
+        user = get_user(request)
+        if user:
+            try:
+                rec_items = await rec_engine.get_recommendations(int(user["sub"]))
+                if rec_items:
+                    shelves = [
+                        {"name": "Recommended for you", "items": rec_items,
+                         "link": None, "total": len(rec_items)},
+                    ] + list(shelves)
+            except Exception:
+                logging.exception("hub: rec_engine failed, skipping shelf")
+
         if _is_htmx(request) and not _is_boosted(request):
             # Filter/search swap: return the shelves fragment only (small, fast).
             # Boost navigation needs the full page so hx-select="#main-content"

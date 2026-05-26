@@ -306,6 +306,23 @@ async def fetch_by_id(tmdb_id: int, kind: str) -> Optional[TMDBHit]:
         )
 
 
+async def fetch_recommendations(tmdb_id: int, kind: str) -> List[Tuple[int, str]]:
+    """Return up to 20 (tmdb_id, kind) pairs recommended by TMDB for this item."""
+    if not is_configured() or kind not in ("movie", "tv"):
+        return []
+    path = f"/{kind}/{tmdb_id}/recommendations"
+    async with aiohttp.ClientSession() as session:
+        data = await _get(session, path)
+    if not data:
+        return []
+    out_kind = kind
+    return [
+        (int(r["id"]), out_kind)
+        for r in data.get("results", [])[:20]
+        if r.get("id")
+    ]
+
+
 async def fetch_season(tv_id: int, season: int) -> Optional[dict]:
     """Return the raw TMDB season payload, with all episodes inlined.
 
