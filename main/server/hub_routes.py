@@ -407,8 +407,8 @@ _MANIFEST_JSON = json.dumps({
     "scope": "/",
     "display": "standalone",
     "orientation": "portrait-primary",
-    "background_color": "#0f1115",
-    "theme_color": "#f97316",
+    "background_color": "#0b0c0e",
+    "theme_color": "#0b0c0e",
     "lang": "en",
     "icons": [
         {"src": "/favicon.svg",    "sizes": "any",     "type": "image/svg+xml", "purpose": "any"},
