@@ -106,11 +106,14 @@
               <p class="text-sm font-semibold text-white truncate" x-text="user ? user.name : ''"></p>
               <p class="text-xs text-slate-500" x-text="user && user.username ? '@'+user.username : ''"></p>
             </div>
-            <a href="/watchlist" class="flex items-center gap-2 px-3 py-2 text-sm
-                                        text-slate-300 hover:text-white hover:bg-ink-700/60 transition-colors">
+            <a href="/watchlist"
+               hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
+               class="flex items-center gap-2 px-3 py-2 text-sm
+                      text-slate-300 hover:text-white hover:bg-ink-700/60 transition-colors">
               My List
             </a>
             <a x-show="user && user.is_admin" href="/admin"
+               hx-boost="false"
                class="flex items-center gap-2 px-3 py-2 text-sm
                       text-slate-300 hover:text-white hover:bg-ink-700/60 transition-colors">
               Admin Panel
