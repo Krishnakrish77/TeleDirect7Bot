@@ -48,10 +48,9 @@
     {% endif %}
 
     <div
-      x-show="active === {{ loop.index0 }}"
-      x-transition.opacity.duration.700ms
-      {% if not loop.first %}style="display:none;opacity:0"{% endif %}
-      class="absolute inset-0">
+      :style="active === {{ loop.index0 }} ? 'opacity:1;z-index:1' : 'opacity:0;z-index:0'"
+      {% if not loop.first %}style="opacity:0"{% endif %}
+      class="absolute inset-0 transition-opacity duration-700 ease-in-out">
       {% if hero.backdrop_path %}
         <img src="https://image.tmdb.org/t/p/w1280{{ hero.backdrop_path }}"
              alt="" loading="{{ 'eager' if loop.first else 'lazy' }}"
