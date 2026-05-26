@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     {% block head_extra %}{% endblock %}
@@ -53,7 +53,7 @@
           hx-select="#main-content"
           hx-push-url="true"
           hx-swap="outerHTML"
-          class="min-h-screen flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-16">
+          class="min-h-screen flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:pt-6 sm:pb-[max(4rem,env(safe-area-inset-bottom))]">
       {% block content %}{% endblock %}
     </main>
 
