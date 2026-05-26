@@ -159,7 +159,7 @@
       <section x-data="continueWatching()" x-init="init()" x-show="entries.length"
                x-cloak class="mb-10">
         <div class="flex items-end justify-between mb-3">
-          <h2 class="text-xl font-bold text-white tracking-tight">Continue watching</h2>
+          <h2 class="text-xl font-bold text-white tracking-tight">Continue playing</h2>
           <button type="button" @click="clearAll()"
                   class="text-xs text-slate-500 hover:text-brand-300 transition-colors">
             Clear all
@@ -185,7 +185,7 @@
                 </div>
                 <button type="button"
                         @click.prevent="forget(e.key, $event)"
-                        title="Remove from Continue watching"
+                        title="Remove from Continue playing"
                         class="absolute top-1 right-1 w-8 h-8 grid place-items-center
                                rounded-full bg-black/70 text-white/80
                                sm:opacity-0 sm:group-hover:opacity-100 transition-opacity
