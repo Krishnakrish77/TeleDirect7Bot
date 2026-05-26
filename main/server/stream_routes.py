@@ -1,6 +1,7 @@
 # Taken from megadlbot_oss <https://github.com/eyaadh/megadlbot_oss/blob/master/mega/webserver/routes.py>
 # Thanks to Eyaadh <https://github.com/eyaadh>
 
+import os
 import re
 import time
 import math
@@ -18,6 +19,29 @@ from main.utils.render_template import render_page
 
 
 routes = web.RouteTableDef()
+
+# ── Stream rate limiting ──────────────────────────────────────────────────
+# Only actual Telegram GetFile calls are counted; skeleton cache hits
+# (served from memory) are free and not subject to these limits.
+_MAX_STREAMS_TOTAL = int(os.environ.get("MAX_STREAMS_TOTAL", "25"))
+_MAX_STREAMS_PER_IP = int(os.environ.get("MAX_STREAMS_PER_IP", "4"))
+_total_active: int = 0
+_ip_active: dict = {}   # ip → concurrent stream count
+
+
+async def _rate_limited_body(gen, ip: str):
+    """Wrap a yield_file generator with rate-limit accounting."""
+    global _total_active
+    _total_active += 1
+    _ip_active[ip] = _ip_active.get(ip, 0) + 1
+    try:
+        async for chunk in gen:
+            yield chunk
+    finally:
+        _total_active = max(0, _total_active - 1)
+        _ip_active[ip] = max(0, _ip_active.get(ip, 1) - 1)
+        if not _ip_active.get(ip):
+            _ip_active.pop(ip, None)
 
 @routes.get("/healthz", allow_head=True)
 async def healthz(_):
@@ -242,6 +266,20 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
             },
         )
 
+    # Rate limit: only actual Telegram GetFile calls count.
+    # Skeleton cache hits (served above) are memory-only and exempt.
+    client_ip = request.remote or "unknown"
+    if _total_active >= _MAX_STREAMS_TOTAL:
+        raise web.HTTPServiceUnavailable(
+            text="Server is at stream capacity. Try again shortly.",
+            headers={"Retry-After": "10"},
+        )
+    if _ip_active.get(client_ip, 0) >= _MAX_STREAMS_PER_IP:
+        raise web.HTTPTooManyRequests(
+            text="Too many concurrent streams from this IP.",
+            headers={"Retry-After": "5", "X-RateLimit-Limit": str(_MAX_STREAMS_PER_IP)},
+        )
+
     req_length = until_bytes - from_bytes
     new_chunk_size = utils.chunk_size(req_length)
     offset = utils.offset_fix(from_bytes, new_chunk_size)
@@ -255,8 +293,11 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     # and ffmpeg hits AVERROR_EOF mid-moov-parse. Counting chunks by index
     # always covers [from_bytes, until_bytes] exactly.
     part_count = (until_bytes // new_chunk_size) - (from_bytes // new_chunk_size) + 1
-    body = tg_connect.yield_file(
-        file_id, index, offset, first_part_cut, last_part_cut, part_count, new_chunk_size
+    body = _rate_limited_body(
+        tg_connect.yield_file(
+            file_id, index, offset, first_part_cut, last_part_cut, part_count, new_chunk_size
+        ),
+        client_ip,
     )
 
     return_resp = web.Response(
