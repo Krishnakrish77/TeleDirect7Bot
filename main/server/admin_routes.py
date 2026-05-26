@@ -801,8 +801,12 @@ async def admin_action(request: web.Request) -> web.Response:
         async def _run(id_list: list) -> None:
             # Mirror state into _enrich_state so the progress bar picks it
             # up automatically via /admin/status polling.
+            video_count = sum(
+                1 for mid in id_list
+                if getattr(media_index.get_item(mid), "media_kind", "") != "audio"
+            )
             media_index._enrich_state.update(
-                running=True, done=0, total=len(id_list),
+                running=True, done=0, total=video_count,
                 enriched=0, failed=0, last_title="",
                 started_at=_time.time(), finished_at=0.0,
             )
@@ -810,6 +814,8 @@ async def admin_action(request: web.Request) -> web.Response:
             for mid in id_list:
                 item = media_index.get_item(mid)
                 if item:
+                    if getattr(item, "media_kind", "") == "audio":
+                        continue  # TMDB doesn't cover music; skip silently
                     media_index._enrich_state["last_title"] = item.title or ""
                 ok = await media_index.enrich_one(mid, bot=StreamBot)
                 if ok:

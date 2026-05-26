@@ -2619,24 +2619,23 @@ async def clear_audio_tmdb_mismatches() -> int:
     Returns the number of items fixed. Safe to call multiple times.
     """
     fixed = 0
+    to_upsert = []
     async with _lock:
         for item in _items.values():
             if item.media_kind == "audio" and item.tmdb_id:
                 item.tmdb_id = None
                 item.tmdb_kind = ""
-                item.poster_path = None
-                item.backdrop_path = None
+                item.poster_path = ""
+                item.backdrop_path = ""
                 item.overview = ""
                 item.tmdb_genres = []
                 item.enriched_at = 0.0
+                to_upsert.append(item)
                 fixed += 1
         if fixed:
             _persist_unlocked()
-    if fixed:
-        import asyncio
-        for item in list(_items.values()):
-            if item.media_kind == "audio":
-                await _store_upsert(item)
+    for item in to_upsert:
+        await _store_upsert(item)
     return fixed
 
 

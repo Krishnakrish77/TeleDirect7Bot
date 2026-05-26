@@ -133,7 +133,8 @@ async function _wlToggle(btn, itemId) {
     li.remove();
     var counter = document.getElementById('wl-count');
     if (counter) {
-      var n = parseInt(counter.textContent) - 1;
+      var cur = parseInt(counter.textContent) || 0;
+      var n = Math.max(0, cur - 1);
       counter.textContent = n > 0 ? n + ' saved' : '';
     }
   } catch(e) {

@@ -150,11 +150,11 @@ window._wl = (function() {
       var r = await fetch('/api/watchlist', {
         headers: tok ? {'Authorization': 'Bearer ' + tok} : {},
       });
-      if (!r.ok) return;
+      if (!r.ok) { _loaded = false; return; }
       var d = await r.json();
       _ids = new Set(d.ids || []);
       _render();
-    } catch(_) {}
+    } catch(_) { _loaded = false; }
   }
 
   function _render() {
