@@ -31,12 +31,13 @@
       #_htmx-bar.htmx-complete{transform:scaleX(1);transition:transform .1s ease-out,opacity .3s .1s;opacity:0}
       [x-cloak]{display:none!important}
       .wl-btn{color:rgba(255,255,255,.55)}.wl-btn.wl-saved{color:#f97316;opacity:1!important}
-      /* Safe-area insets — bypass Tailwind (scanner can't handle nested env() commas) */
+      /* Safe-area insets — bypass Tailwind (scanner can't handle nested env() commas).
+         All safe-area CSS lives here to ensure it compiles correctly. */
       @supports(padding:env(safe-area-inset-top)){
         body{padding-top:env(safe-area-inset-top)}
-        #main-content{
-          padding-bottom:max(2.5rem,min(env(safe-area-max-inset-bottom,env(safe-area-inset-bottom,0px)),2.125rem))
-        }
+        #main-content{padding-bottom:max(2.5rem,min(env(safe-area-max-inset-bottom,env(safe-area-inset-bottom,0px)),2.125rem))}
+        #_mini-player{padding-bottom:max(0.625rem,min(env(safe-area-max-inset-bottom,env(safe-area-inset-bottom,0px)),2.125rem))}
+        #_auth-sheet{padding-bottom:max(2rem,min(env(safe-area-max-inset-bottom,env(safe-area-inset-bottom,0px)),2.125rem))}
       }
       @media(min-width:640px){
         @supports(padding:env(safe-area-inset-top)){
