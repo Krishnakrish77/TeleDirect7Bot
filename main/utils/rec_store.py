@@ -56,6 +56,17 @@ async def get_cached(user_id: int) -> Optional[List[Tuple[int, str]]]:
         return None
 
 
+async def clear_cached(user_id: int) -> None:
+    """Delete the cache entry so the next request regenerates recommendations."""
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        await db["recommendations"].delete_one({"user_id": user_id})
+    except Exception:
+        logging.exception("rec_store: clear_cached failed for user %d", user_id)
+
+
 async def set_cached(user_id: int, items: List[Tuple[int, str]]) -> None:
     """Upsert the recommendation cache for the user."""
     await _ensure_indexes()

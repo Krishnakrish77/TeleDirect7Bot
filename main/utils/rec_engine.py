@@ -89,13 +89,17 @@ async def _fetch_recs_for_seeds(
     exclude: set,
 ) -> List[Tuple[int, str]]:
     """Call TMDB recommendations for each seed, return scored candidates."""
-    calls = [tmdb.fetch_recommendations(tid, kind) for tid, kind in seeds[:_MAX_CALLS]]
-    results = await asyncio.gather(*calls, return_exceptions=True)
+    import aiohttp as _aiohttp
+    async with _aiohttp.ClientSession() as session:
+        calls = [tmdb.fetch_recommendations(tid, kind, session=session)
+                 for tid, kind in seeds[:_MAX_CALLS]]
+        results = await asyncio.gather(*calls, return_exceptions=True)
 
     counter: Counter = Counter()
     kind_map: dict = {}
     for rec_list in results:
         if isinstance(rec_list, Exception):
+            logging.warning("rec_engine: TMDB recommendation call failed: %s", rec_list)
             continue
         for rec_id, rec_kind in rec_list:
             if rec_id not in exclude:
@@ -117,6 +121,9 @@ async def get_recommendations(user_id: int) -> Optional[List]:
         cards = [c for c in cards if c is not None]
         if cards:
             return cards
+        # All cached items were pruned from the catalogue — invalidate so the
+        # next path regenerates rather than paying this dead-cache miss every load.
+        await rec_store.clear_cached(user_id)
 
     seeds = await _collect_seeds(user_id)
     if not seeds:
@@ -125,9 +132,18 @@ async def get_recommendations(user_id: int) -> Optional[List]:
     exclude = {tid for tid, _ in seeds}
     candidates = await _fetch_recs_for_seeds(seeds, exclude)
 
+    # One O(N) pass to build a tmdb_id set present in catalogue, then
+    # card_for_tmdb_id is called only for the ≤12 items we actually use —
+    # not for all 50 candidates.
+    catalogue_tmdb_ids = {
+        it.tmdb_id for it in media_index._items.values()
+        if it.tmdb_id and not it.hidden
+    }
     cards = []
     to_cache = []
     for tid, kind in candidates:
+        if tid not in catalogue_tmdb_ids:
+            continue
         card = media_index.card_for_tmdb_id(tid, kind)
         if card is not None:
             cards.append(card)

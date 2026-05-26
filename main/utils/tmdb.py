@@ -306,18 +306,28 @@ async def fetch_by_id(tmdb_id: int, kind: str) -> Optional[TMDBHit]:
         )
 
 
-async def fetch_recommendations(tmdb_id: int, kind: str) -> List[Tuple[int, str]]:
-    """Return up to 20 (tmdb_id, kind) pairs recommended by TMDB for this item."""
+async def fetch_recommendations(
+    tmdb_id: int,
+    kind: str,
+    session: Optional[aiohttp.ClientSession] = None,
+) -> List[Tuple[int, str]]:
+    """Return up to 20 (tmdb_id, kind) pairs recommended by TMDB for this item.
+
+    Pass a shared ``session`` when making multiple concurrent calls to reuse
+    the same connection pool instead of opening one TCP connection per call.
+    """
     if not is_configured() or kind not in ("movie", "tv"):
         return []
     path = f"/{kind}/{tmdb_id}/recommendations"
-    async with aiohttp.ClientSession() as session:
+    if session is not None:
         data = await _get(session, path)
+    else:
+        async with aiohttp.ClientSession() as _s:
+            data = await _get(_s, path)
     if not data:
         return []
-    out_kind = kind
     return [
-        (int(r["id"]), out_kind)
+        (int(r["id"]), kind)
         for r in data.get("results", [])[:20]
         if r.get("id")
     ]

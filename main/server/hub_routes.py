@@ -287,12 +287,17 @@ async def hub_home(request: web.Request) -> web.Response:
         user = get_user(request)
         if user:
             try:
-                rec_items = await rec_engine.get_recommendations(int(user["sub"]))
+                rec_items = await asyncio.wait_for(
+                    rec_engine.get_recommendations(int(user["sub"])),
+                    timeout=12.0,
+                )
                 if rec_items:
                     shelves = [
                         {"name": "Recommended for you", "items": rec_items,
                          "link": None, "total": len(rec_items)},
                     ] + list(shelves)
+            except asyncio.TimeoutError:
+                logging.warning("hub: rec_engine timed out, skipping shelf")
             except Exception:
                 logging.exception("hub: rec_engine failed, skipping shelf")
 
