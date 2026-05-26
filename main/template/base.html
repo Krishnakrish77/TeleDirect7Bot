@@ -89,7 +89,7 @@
                  @keydown.arrow-down.prevent="move(1)"
                  @keydown.arrow-up.prevent="move(-1)"
                  @keydown.enter.prevent="confirm()"
-                 class="w-full bg-transparent text-sm text-slate-100
+                 class="w-full bg-transparent text-base sm:text-sm text-slate-100
                         placeholder-slate-500 focus:outline-none" />
           <kbd class="hidden sm:block flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded
                       border border-white/10 text-slate-500 font-mono">Esc</kbd>
@@ -101,7 +101,7 @@
               <a :href="it.url"
                  @mouseenter="active = idx"
                  :class="active === idx ? 'bg-brand-500/15 text-white' : 'text-slate-200 hover:bg-ink-800'"
-                 class="flex items-center gap-3 px-4 py-2.5 transition-colors">
+                 class="flex items-center gap-3 px-4 py-3 transition-colors">
                 <template x-if="it.poster_path">
                   <img :src="'https://image.tmdb.org/t/p/w92' + it.poster_path" alt=""
                        loading="lazy"

@@ -126,7 +126,7 @@ details[data-season][open]>summary .season-chevron{transform:rotate(180deg)}
           <label class="sr-only" for="season-select">Season</label>
           <select id="season-select" name="season"
                   onchange="this.form.submit()"
-                  class="px-3 py-2 rounded-lg bg-ink-800/70 text-sm text-slate-100
+                  class="px-3 py-2 rounded-lg bg-ink-800/70 text-base sm:text-sm text-slate-100
                          border border-white/5 focus:outline-none
                          focus:ring-2 focus:ring-brand-400/60 transition
                          min-w-[10rem]">
@@ -178,7 +178,7 @@ details[data-season][open]>summary .season-chevron{transform:rotate(180deg)}
                  placeholder="Filter episodes…"
                  @input="filter($event.target.value)"
                  class="w-full pl-9 pr-3 py-2 rounded-lg
-                        bg-ink-800/70 text-sm text-slate-100 placeholder-slate-500
+                        bg-ink-800/70 text-base sm:text-sm text-slate-100 placeholder-slate-500
                         border border-white/5
                         focus:outline-none focus:ring-2 focus:ring-brand-400/60
                         transition" />
@@ -275,7 +275,7 @@ details[data-season][open]>summary .season-chevron{transform:rotate(180deg)}
                     <div class="mt-2 flex flex-wrap gap-1.5">
                       {% for v in entry.variants %}
                         <a href="/watch/{{ v.secure_hash }}{{ v.message_id }}"
-                           class="px-2 py-0.5 text-[11px] rounded
+                           class="px-2 py-1.5 text-[11px] rounded
                                   bg-ink-900/70 text-slate-300 border border-white/5
                                   hover:border-brand-400/40 hover:text-brand-300
                                   transition-colors tabular-nums">

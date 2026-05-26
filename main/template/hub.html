@@ -50,7 +50,7 @@
             placeholder="Search…"
             autocomplete="off"
             class="w-full pl-9 pr-14 py-2 rounded-lg
-                   bg-ink-800/70 text-sm text-slate-100 placeholder-slate-500
+                   bg-ink-800/70 text-base sm:text-sm text-slate-100 placeholder-slate-500
                    border border-white/5
                    focus:outline-none focus:ring-2 focus:ring-brand-400/60 focus:border-brand-400/60
                    transition"
@@ -67,7 +67,7 @@
       <div class="flex-shrink-0" x-data="tdAuth">
         {# Logged out: icon on mobile, icon + text on sm+ #}
         <button type="button" x-show="!user" @click="openModal()" title="Sign in with Telegram"
-                class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
+                class="flex items-center gap-1.5 px-3 py-2.5 rounded-lg
                        text-sm font-medium text-slate-400 hover:text-white
                        border border-white/0 hover:border-white/10 hover:bg-ink-800
                        transition-all">
@@ -108,19 +108,19 @@
             </div>
             <a href="/watchlist"
                hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
-               class="flex items-center gap-2 px-3 py-2 text-sm
+               class="flex items-center gap-2 px-3 py-3 text-sm
                       text-slate-300 hover:text-white hover:bg-ink-700/60 transition-colors">
               My List
             </a>
             <a x-show="user && user.is_admin" href="/admin"
                hx-boost="false"
-               class="flex items-center gap-2 px-3 py-2 text-sm
+               class="flex items-center gap-2 px-3 py-3 text-sm
                       text-slate-300 hover:text-white hover:bg-ink-700/60 transition-colors">
               Admin Panel
             </a>
             <div class="border-t border-white/5 mt-1">
               <button type="button" @click="signOut()"
-                      class="w-full text-left px-3 py-2 text-sm
+                      class="w-full text-left px-3 py-3 text-sm
                              text-slate-400 hover:text-red-400 hover:bg-ink-700/60 transition-colors">
                 Sign out
               </button>
@@ -180,9 +180,9 @@
                 <button type="button"
                         @click.prevent="forget(e.key, $event)"
                         title="Remove from Continue watching"
-                        class="absolute top-1 right-1 w-6 h-6 grid place-items-center
+                        class="absolute top-1 right-1 w-8 h-8 grid place-items-center
                                rounded-full bg-black/70 text-white/80
-                               opacity-0 group-hover:opacity-100 transition-opacity
+                               sm:opacity-0 sm:group-hover:opacity-100 transition-opacity
                                hover:text-white">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
                        fill="none" stroke="currentColor" stroke-width="2"
@@ -340,7 +340,7 @@
     {% if filtering or not shelves %}
       <div class="mb-5 flex flex-wrap items-center gap-2">
         <select name="year" aria-label="Year"
-                class="px-3 py-1.5 text-sm rounded-lg bg-ink-800/70 text-slate-100
+                class="px-3 py-2.5 text-base sm:text-sm rounded-lg bg-ink-800/70 text-slate-100
                        border border-white/5
                        focus:outline-none focus:ring-2 focus:ring-brand-400/60">
           <option value="">Any year</option>
@@ -350,7 +350,7 @@
         </select>
 
         <select name="quality" aria-label="Quality"
-                class="px-3 py-1.5 text-sm rounded-lg bg-ink-800/70 text-slate-100
+                class="px-3 py-2.5 text-base sm:text-sm rounded-lg bg-ink-800/70 text-slate-100
                        border border-white/5
                        focus:outline-none focus:ring-2 focus:ring-brand-400/60">
           <option value="">Any quality</option>
@@ -361,7 +361,7 @@
 
         {% if genres %}
           <select name="genre" aria-label="Genre"
-                  class="px-3 py-1.5 text-sm rounded-lg bg-ink-800/70 text-slate-100
+                  class="px-3 py-2.5 text-base sm:text-sm rounded-lg bg-ink-800/70 text-slate-100
                          border border-white/5
                          focus:outline-none focus:ring-2 focus:ring-brand-400/60">
             <option value="">Any genre</option>
@@ -372,7 +372,7 @@
         {% endif %}
 
         <select name="sort" aria-label="Sort"
-                class="px-3 py-1.5 text-sm rounded-lg bg-ink-800/70 text-slate-100
+                class="px-3 py-2.5 text-base sm:text-sm rounded-lg bg-ink-800/70 text-slate-100
                        border border-white/5
                        focus:outline-none focus:ring-2 focus:ring-brand-400/60">
           {% for value, label in sort_options %}

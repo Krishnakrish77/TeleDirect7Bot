@@ -167,7 +167,7 @@
               </svg>
             </button>
             <input id="tdVol" type="range" min="0" max="1" step="0.02" value="1"
-                   class="flex-1 h-1 rounded-full cursor-pointer"
+                   class="flex-1 h-1 py-3 box-content rounded-full cursor-pointer"
                    style="accent-color:#f97316">
           </div>
 
@@ -176,7 +176,7 @@
             <div class="flex items-center gap-1">
               {% for spd in [('0.75','¾×'),('1','1×'),('1.5','1.5×'),('2','2×')] %}
               <button data-speed="{{ spd[0] }}"
-                      class="tdSpeedBtn px-2.5 py-1 rounded-full text-xs font-medium
+                      class="tdSpeedBtn px-2.5 py-2.5 min-w-[44px] rounded-full text-xs font-medium
                              transition-colors border border-transparent
                              text-slate-400 hover:text-slate-200">
                 {{ spd[1] }}

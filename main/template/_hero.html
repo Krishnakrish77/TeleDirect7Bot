@@ -15,10 +15,15 @@
       if (this.count > 1) this.timer = setInterval(() => this.next(), 7000);
     },
     destroy() { if (this.timer) { clearInterval(this.timer); this.timer = null; } },
+    swipeX: 0,
+    onTouchStart(e) { this.swipeX = e.touches[0].clientX; },
+    onTouchEnd(e) { const dx = e.changedTouches[0].clientX - this.swipeX; if (dx > 50) this.prev(); else if (dx < -50) this.next(); this.restart(); },
   }"
   x-init="restart(); $cleanup(() => destroy())"
   @mouseenter="if (timer) { clearInterval(timer); timer = null; }"
   @mouseleave="restart()"
+  @touchstart.passive="onTouchStart($event)"
+  @touchend.passive="onTouchEnd($event)"
   {# Aspect ratio: taller on mobile so Series chip + h2 + genres +
      buttons all fit without the title overflowing above the
      ``overflow-hidden`` clip. 4:3 gives roughly 33% more vertical
@@ -87,7 +92,7 @@
             <span class="inline-block text-[10px] uppercase tracking-[0.2em] font-semibold
                          text-brand-300 mb-2">Series</span>
           {% endif %}
-          <h2 class="text-3xl sm:text-5xl font-bold tracking-tight drop-shadow-md
+          <h2 class="text-2xl sm:text-5xl font-bold tracking-tight drop-shadow-md
                      line-clamp-2">
             {{ hero.series_title or hero.title }}
             {%- if hero.year %}
@@ -180,11 +185,13 @@
                 flex items-center gap-2">
       {% for hero in heroes %}
         <button type="button" @click="go({{ loop.index0 }})"
-                :class="active === {{ loop.index0 }}
+                class="flex items-center justify-center min-w-[44px] min-h-[44px]"
+                aria-label="Go to slide {{ loop.index }}">
+          <span :class="active === {{ loop.index0 }}
                         ? 'w-6 bg-white'
                         : 'w-2 bg-white/40 hover:bg-white/70'"
-                class="h-2 rounded-full transition-all"
-                aria-label="Go to slide {{ loop.index }}"></button>
+                class="h-2 rounded-full transition-all block"></span>
+        </button>
       {% endfor %}
     </div>
   {% endif %}
