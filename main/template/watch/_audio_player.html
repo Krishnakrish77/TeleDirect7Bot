@@ -11,7 +11,7 @@
 
       {# ── Album art (flip card: front=art, back=lyrics) ───────────────── #}
       <div class="flip-card
-                  w-56 h-56 sm:w-64 sm:h-64 md:w-80 md:h-80 lg:w-96 lg:h-96
+                  w-[min(75vw,18rem)] h-[min(75vw,18rem)] sm:w-64 sm:h-64 md:w-80 md:h-80 lg:w-96 lg:h-96
                   [@media(max-height:480px)]:w-32 [@media(max-height:480px)]:h-32
                   flex-shrink-0 cursor-pointer md:sticky md:top-8"
            onclick="this.querySelector('.flip-card-inner').classList.toggle('flipped')">
