@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}My List · TeleDirect{% endblock %}
+{% block title %}Watchlist · TeleDirect{% endblock %}
 
 {% block content %}
 <div class="w-full max-w-7xl mx-auto">
@@ -12,7 +12,7 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/>
       </svg>
     </a>
-    <h1 class="text-xl font-bold text-white">My List</h1>
+    <h1 class="text-xl font-bold text-white">Watchlist</h1>
     {% if items %}
       <span id="wl-count" class="text-sm text-slate-500">{{ items | length }} saved</span>
     {% endif %}
@@ -78,6 +78,12 @@
               <img src="{{ it.poster }}" alt="" loading="lazy" onerror="this.remove()"
                    class="absolute inset-0 w-full h-full object-cover
                           group-hover:scale-105 transition-transform duration-300" />
+              {# Watch progress bar #}
+              {% if it.cw_pct %}
+                <div class="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                  <div class="h-full bg-brand-400" style="width: {{ (it.cw_pct * 100) | int }}%"></div>
+                </div>
+              {% endif %}
               {# Remove button — shown on hover #}
               <button type="button"
                       onclick="event.preventDefault();event.stopPropagation();_wlToggle(this,{{ it.item_id | tojson }})"
@@ -88,7 +94,7 @@
                              bg-black/70 hover:bg-red-600/90
                              grid place-items-center
                              sm:opacity-0 sm:group-hover:opacity-100 transition-all z-10"
-                      title="Remove from My List">
+                      title="Remove from Watchlist">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
                      class="w-3.5 h-3.5 text-white">
                   <path d="M3.53 2.47a.75.75 0 0 0-1.06 1.06l18 18a.75.75 0 1 0 1.06-1.06l-18-18Z"/>

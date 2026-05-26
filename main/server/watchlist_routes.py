@@ -18,7 +18,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main.utils.user_auth import get_user
-from main.utils import watchlist_store
+from main.utils import watchlist_store, cw_store
 from main.utils import media_index
 from main.vars import Var
 
@@ -120,8 +120,25 @@ async def watchlist_page(request: web.Request) -> web.Response:
     if not user:
         raise web.HTTPFound("/")
 
-    ids = await watchlist_store.get_ids(int(user["sub"]))
+    user_id = int(user["sub"])
+    ids = await watchlist_store.get_ids(user_id)
     items = [r for iid in ids if (r := _resolve_item(iid)) is not None]
+
+    # Attach watch progress for individual items (cw_key = secure_hash + message_id).
+    # Build a message_id → progress-fraction dict from CW data.
+    cw_data = await cw_store.get_all(user_id)
+    _cw_by_mid: dict = {}
+    import re as _re
+    _ck_re = _re.compile(r'^[A-Za-z0-9_-]*[A-Za-z_-](\d+)$')
+    for ck, entry in cw_data.items():
+        m = _ck_re.match(ck)
+        if m and entry.get("dur", 0) > 0:
+            pct = min(1.0, entry["pos"] / entry["dur"])
+            if 0.02 < pct < 0.95:   # only show meaningful progress
+                _cw_by_mid[m.group(1)] = pct
+
+    for it in items:
+        it["cw_pct"] = _cw_by_mid.get(it["item_id"]) if it["item_id"].isdigit() else None
 
     tpl = _env.get_template("watchlist.html")
     body = await tpl.render_async(
