@@ -351,15 +351,15 @@ async def hub_tag(request: web.Request) -> web.Response:
 # nicer than the 204 we'd otherwise need to swallow the request.
 _FAVICON_SVG = (
     b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
-    b'<rect width="64" height="64" rx="14" fill="#7c5cfc"/>'
+    b'<rect width="64" height="64" rx="14" fill="#f97316"/>'
     b'<path d="M22 20l24 12-24 12z" fill="#fff"/>'
     b'</svg>'
 )
 
 
 def _make_icon_png(size: int) -> bytes:
-    """Generate a maskable PNG icon: violet bg (#7c5cfc) + centred white play triangle."""
-    bg = (124, 92, 252)   # #7c5cfc
+    """Generate a maskable PNG icon: orange bg (#f97316) + centred white play triangle."""
+    bg = (249, 115, 22)   # #f97316
     fg = (255, 255, 255)
 
     # Play triangle vertices — centred, within the 80 % maskable safe zone
@@ -408,7 +408,7 @@ _MANIFEST_JSON = json.dumps({
     "display": "standalone",
     "orientation": "portrait-primary",
     "background_color": "#0f1115",
-    "theme_color": "#7c5cfc",
+    "theme_color": "#f97316",
     "lang": "en",
     "icons": [
         {"src": "/favicon.svg",    "sizes": "any",     "type": "image/svg+xml", "purpose": "any"},
