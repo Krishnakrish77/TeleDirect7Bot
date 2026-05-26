@@ -47,7 +47,7 @@ async def api_get_all(request: web.Request) -> web.Response:
     user = _get_user(request)
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
-    data = await cw_store.get_all(user["sub"])
+    data = await cw_store.get_all(int(user["sub"]))
     return _json(data)
 
 
@@ -69,7 +69,7 @@ async def api_upsert(request: web.Request) -> web.Response:
         return _json({"error": "invalid body"}, status=400)
     if dur <= 0:
         return _json({"ok": True})
-    await cw_store.upsert(user["sub"], key, pos, dur, t, title)
+    await cw_store.upsert(int(user["sub"]), key, pos, dur, t, title)
     return _json({"ok": True})
 
 
@@ -81,7 +81,7 @@ async def api_delete_one(request: web.Request) -> web.Response:
     key = request.match_info["key"]
     if not _VALID_KEY.match(key):
         return _json({"error": "invalid key"}, status=400)
-    await cw_store.delete_one(user["sub"], key)
+    await cw_store.delete_one(int(user["sub"]), key)
     return _json({"ok": True})
 
 
@@ -90,5 +90,5 @@ async def api_delete_all(request: web.Request) -> web.Response:
     user = _get_user(request)
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
-    await cw_store.delete_all(user["sub"])
+    await cw_store.delete_all(int(user["sub"]))
     return _json({"ok": True})

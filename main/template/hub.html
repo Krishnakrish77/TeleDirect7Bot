@@ -224,6 +224,7 @@
                   });
                   if (r.ok) {
                     const serverData = await r.json();
+                    if (!serverData || typeof serverData !== 'object' || Array.isArray(serverData)) throw new Error('bad shape');
                     for (const [k, sv] of Object.entries(serverData)) {
                       if (!stored[k] || (sv.t || 0) > (stored[k].t || 0)) {
                         stored[k] = sv;

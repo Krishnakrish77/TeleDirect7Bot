@@ -85,22 +85,26 @@ async def upsert(user_id: int, cw_key: str, pos: float, dur: float,
                       "title": title, "updated_at": now}},
             upsert=True,
         )
-        # Evict oldest entries beyond the cap
-        count = await db["continue_watching"].count_documents({"user_id": user_id})
-        if count > _CW_CAP:
-            overflow = await db["continue_watching"].find(
-                {"user_id": user_id},
-                projection={"_id": 1},
-                sort=[("t", 1)],
-            ).to_list(length=count - _CW_CAP)
+        # Evict entries beyond the cap: fetch the (_CW_CAP+1)th oldest id and
+        # delete everything older. Single-pass, no separate count round-trip.
+        cursor = db["continue_watching"].find(
+            {"user_id": user_id},
+            projection={"_id": 1, "t": 1},
+            sort=[("t", -1)],
+        ).skip(_CW_CAP)
+        cutoffs = await cursor.to_list(length=1)
+        if cutoffs:
+            cutoff_t = cutoffs[0]["t"]
             await db["continue_watching"].delete_many(
-                {"_id": {"$in": [d["_id"] for d in overflow]}}
+                {"user_id": user_id, "t": {"$lte": cutoff_t},
+                 "_id": {"$ne": cutoffs[0]["_id"]}}
             )
     except Exception:
         logging.exception("cw_store: upsert failed uid=%d key=%s", user_id, cw_key)
 
 
 async def delete_one(user_id: int, cw_key: str) -> None:
+    await _ensure_indexes()
     db = _get_db()
     if db is None:
         return
@@ -111,6 +115,7 @@ async def delete_one(user_id: int, cw_key: str) -> None:
 
 
 async def delete_all(user_id: int) -> None:
+    await _ensure_indexes()
     db = _get_db()
     if db is None:
         return
