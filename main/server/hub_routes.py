@@ -463,10 +463,15 @@ const CACHE = 'td-v1';
 const SHELL = ['/', '/static/tailwind.css', '/favicon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
+  // allSettled instead of addAll: a single unavailable resource (e.g.
+  // the server restarting on Koyeb cold start) no longer aborts the
+  // entire SW install, preventing the unstyled-page flash.
   e.waitUntil(
-    caches.open(CACHE)
-      .then(c => c.addAll(SHELL.map(u => new Request(u, {cache: 'reload'}))))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE).then(c =>
+      Promise.allSettled(SHELL.map(u =>
+        c.add(new Request(u, {cache: 'reload'}))
+      ))
+    ).then(() => self.skipWaiting())
   );
 });
 
