@@ -16,7 +16,7 @@
     method="get"
     class="w-full -mt-4 sm:-mt-6"
     hx-get="/"
-    hx-trigger="input changed delay:300ms, change"
+    hx-trigger="input changed delay:300ms, change, submit"
     hx-target="#grid"
     hx-swap="innerHTML"
     hx-include="#filters"
@@ -32,8 +32,10 @@
         TeleDirect
       </a>
 
-      {# Search input — filters the grid via the parent HTMX form. #}
-      <div class="relative flex-1 min-w-0 max-w-md">
+      {# Search input — filters the grid via HTMX; shows inline suggestions via Alpine. #}
+      <div class="relative flex-1 min-w-0 max-w-md"
+           x-data="hubSearch()"
+           @click.outside="closeSuggest()">
         <label class="relative block">
           <span class="sr-only">Search</span>
           <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none"
@@ -49,6 +51,11 @@
             value="{{ params.q }}"
             placeholder="Search…"
             autocomplete="off"
+            @input="fetchSuggestions($el.value)"
+            @keydown.arrow-down.prevent="moveSuggest(1)"
+            @keydown.arrow-up.prevent="moveSuggest(-1)"
+            @keydown.enter="pickSuggest($event)"
+            @keydown.escape="closeSuggest()"
             class="w-full pl-9 pr-14 py-2 rounded-lg
                    bg-ink-800/70 text-base sm:text-sm text-slate-100 placeholder-slate-500
                    border border-white/5
@@ -61,6 +68,27 @@
             <span>⌘K</span>
           </kbd>
         </label>
+
+        {# Inline suggestion dropdown — appears as the user types. #}
+        <ul x-show="suggestions.length" x-cloak
+            class="absolute top-full left-0 right-0 mt-1 z-50
+                   bg-ink-900 border border-white/10 rounded-xl shadow-2xl
+                   max-h-64 overflow-y-auto py-1">
+          <template x-for="(it, idx) in suggestions" :key="it.url">
+            <li>
+              <a :href="it.url" @click="closeSuggest()"
+                 @mouseenter="suggestActive = idx"
+                 :class="suggestActive === idx
+                   ? 'bg-brand-500/15 text-white'
+                   : 'text-slate-200 hover:bg-ink-800'"
+                 class="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors">
+                <span class="font-medium truncate flex-1" x-text="it.title"></span>
+                <span class="text-xs text-slate-500 flex-shrink-0"
+                      x-text="[it.year, it.kind].filter(Boolean).join(' · ')"></span>
+              </a>
+            </li>
+          </template>
+        </ul>
       </div>
 
       {# Spacer: consumes all free space after the search hits max-w-md,
@@ -433,4 +461,39 @@
       {% endif %}
     </div>
   </form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function hubSearch() {
+  return {
+    suggestions: [],
+    suggestActive: -1,
+    _suggestTimer: null,
+    fetchSuggestions(val) {
+      clearTimeout(this._suggestTimer);
+      const v = (val || '').trim();
+      if (!v) { this.suggestions = []; this.suggestActive = -1; return; }
+      this._suggestTimer = setTimeout(async () => {
+        try {
+          const r = await fetch('/search/suggest?q=' + encodeURIComponent(v) + '&limit=6');
+          if (r.ok) { this.suggestions = await r.json(); this.suggestActive = -1; }
+        } catch (_) {}
+      }, 150);
+    },
+    moveSuggest(dir) {
+      if (!this.suggestions.length) return;
+      this.suggestActive = (this.suggestActive + dir + this.suggestions.length) % this.suggestions.length;
+    },
+    pickSuggest(event) {
+      if (this.suggestActive >= 0 && this.suggestActive < this.suggestions.length) {
+        event.preventDefault();
+        window.location = this.suggestions[this.suggestActive].url;
+      }
+      this.closeSuggest();
+    },
+    closeSuggest() { this.suggestions = []; this.suggestActive = -1; },
+  };
+}
+</script>
 {% endblock %}

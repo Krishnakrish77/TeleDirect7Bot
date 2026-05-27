@@ -64,11 +64,17 @@ def _vlc_should_track(user_id: int, message_id: int,
     Called in the request-handling coroutine to avoid spawning tasks
     that would immediately exit via the debounce guard inside _vlc_track.
     """
-    if pct >= 0.90:
-        return "complete"
     if pct < 0.02:
         return None
     key = (user_id, message_id)
+    if pct >= 0.90:
+        # Require prior progress evidence before marking complete.
+        # VLC always issues a tail Range request (pct ≈ 0.95-0.99) on
+        # first open to read the MOOV atom / MKV Cues index — before the
+        # user has played anything. Without this guard, that one seek
+        # falsely records watch-history completion and inflates stats with
+        # the item's full duration.
+        return "complete" if key in _vlc_cw_debounce else None
     if now - _vlc_cw_debounce.get(key, 0) < 30:
         return None
     return "progress"

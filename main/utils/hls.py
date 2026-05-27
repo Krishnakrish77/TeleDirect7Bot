@@ -386,8 +386,8 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0, seek: float = 1
         "-ss", f"{seek:.2f}",
         "-i", source_url,
         "-frames:v", "1",
-        "-q:v", "2",           # higher quality JPEG (2 ≈ 95%, 5 ≈ 85%)
-        "-vf", "scale=640:-2", # 2× for retina; album art shown up to 300px CSS px
+        "-q:v", "1",             # maximum JPEG quality
+        "-vf", "scale=1280:-2",  # 4× retina; sharp on any display
         "-f", "image2pipe",
         "-vcodec", "mjpeg",
         "-",
