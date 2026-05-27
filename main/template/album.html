@@ -109,6 +109,31 @@
                 {{ track.file_size | humansize }}
               </span>
             {% endif %}
+            {# Queue action buttons — appear on hover #}
+            <div class="flex items-center gap-1 flex-shrink-0
+                        sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                 onclick="event.stopPropagation()">
+              <button type="button"
+                      onclick="_albumQueueNext({{ loop.index0 }})"
+                      title="Play next"
+                      class="w-8 h-8 flex items-center justify-center rounded
+                             text-slate-500 hover:text-white hover:bg-ink-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 8h13M3 12h9m9-4-3-3m3 3-3 3M3 16h6"/>
+                </svg>
+              </button>
+              <button type="button"
+                      onclick="_albumQueueAdd({{ loop.index0 }})"
+                      title="Add to queue"
+                      class="w-8 h-8 flex items-center justify-center rounded
+                             text-slate-500 hover:text-white hover:bg-ink-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 8h13M3 12h9m6 0v6m-3-3h6"/>
+                </svg>
+              </button>
+            </div>
           </a>
         </li>
       {% endfor %}
@@ -181,7 +206,9 @@ function _playVia(arr, idx) {
   });
 }
 
-function _albumPlay(idx) { _playVia(_albumTrackData, idx); }
+function _albumPlay(idx)      { _playVia(_albumTrackData, idx); }
+function _albumQueueNext(idx) { if (window._queuePlayNext) window._queuePlayNext(_albumTrackData[idx]); }
+function _albumQueueAdd(idx)  { if (window._queueAddToEnd) window._queueAddToEnd(_albumTrackData[idx]); }
 
 function _albumShuffle(albumKey) {
   const arr = [..._albumTrackData];

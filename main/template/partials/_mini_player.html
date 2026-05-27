@@ -15,6 +15,15 @@
            style="position:absolute;width:0;height:0;pointer-events:none">
     </audio>
 
+    {# Queue action toast — briefly confirms Play next / Add to queue #}
+    <div id="_queue-toast"
+         style="position:fixed;bottom:5rem;left:50%;transform:translateX(-50%) translateY(6px);
+                background:#1f2227;border:1px solid rgba(255,255,255,0.1);border-radius:8px;
+                padding:7px 14px;font-size:13px;color:#fff;opacity:0;z-index:9001;
+                transition:opacity 0.2s,transform 0.2s;pointer-events:none;
+                white-space:nowrap;max-width:80vw;overflow:hidden;text-overflow:ellipsis">
+    </div>
+
     {# ── Mini-player bar ─────────────────────────────────────────────────
        Shown on every page EXCEPT the watch page itself when the user has
        played an audio track. Reads from localStorage td:nowplaying so
@@ -458,6 +467,48 @@
     });
   };
   _mpInit();
+
+  // ── Manual queue helpers ───────────────────────────────────────────────
+  function _queueToast(msg) {
+    var el = document.getElementById('_queue-toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.opacity = '1'; el.style.transform = 'translateX(-50%) translateY(0)';
+    clearTimeout(el._t);
+    el._t = setTimeout(function() {
+      el.style.opacity = '0'; el.style.transform = 'translateX(-50%) translateY(6px)';
+    }, 2000);
+  }
+
+  // Insert track right after the current playing position
+  window._queuePlayNext = function(track) {
+    var q = null, qi = -1;
+    try {
+      q  = JSON.parse(sessionStorage.getItem('td:queue') || 'null');
+      qi = parseInt(sessionStorage.getItem('td:queueIndex') || '-1', 10);
+    } catch(_) {}
+    if (!q || qi < 0 || !_bgAudio || !_bgAudio.src) {
+      // Nothing playing — start immediately
+      if (window._cardPlayAudio) window._cardPlayAudio(track.streamUrl, track.watchUrl, track.title, track.artist || '', track.art || '');
+      return;
+    }
+    q.splice(qi + 1, 0, track);
+    try { sessionStorage.setItem('td:queue', JSON.stringify(q)); } catch(_) {}
+    _queueToast('Playing next: ' + (track.title || ''));
+  };
+
+  // Append track to the end of the queue
+  window._queueAddToEnd = function(track) {
+    var q = null;
+    try { q = JSON.parse(sessionStorage.getItem('td:queue') || 'null'); } catch(_) {}
+    if (!q || !_bgAudio || !_bgAudio.src) {
+      if (window._cardPlayAudio) window._cardPlayAudio(track.streamUrl, track.watchUrl, track.title, track.artist || '', track.art || '');
+      return;
+    }
+    q.push(track);
+    try { sessionStorage.setItem('td:queue', JSON.stringify(q)); } catch(_) {}
+    _queueToast('Added to queue: ' + (track.title || ''));
+  };
 
   // Re-init after every htmx content swap (URL/path may have changed)
   document.body.addEventListener('htmx:afterSettle', _mpInit);

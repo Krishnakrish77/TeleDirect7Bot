@@ -68,6 +68,26 @@
                 {{ track.duration | duration }}
               </span>
             {% endif %}
+            <div class="flex items-center gap-1 flex-shrink-0
+                        sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                 onclick="event.stopPropagation()">
+              <button type="button" onclick="_artistQueueNext({{ loop.index0 }})" title="Play next"
+                      class="w-8 h-8 flex items-center justify-center rounded
+                             text-slate-500 hover:text-white hover:bg-ink-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 8h13M3 12h9m9-4-3-3m3 3-3 3M3 16h6"/>
+                </svg>
+              </button>
+              <button type="button" onclick="_artistQueueAdd({{ loop.index0 }})" title="Add to queue"
+                      class="w-8 h-8 flex items-center justify-center rounded
+                             text-slate-500 hover:text-white hover:bg-ink-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 8h13M3 12h9m6 0v6m-3-3h6"/>
+                </svg>
+              </button>
+            </div>
           </a>
         </li>
       {% endfor %}
@@ -89,6 +109,8 @@ var _artistTracks = [
   }{% if not loop.last %},{% endif %}
   {% endfor %}
 ];
+function _artistQueueNext(idx) { if (window._queuePlayNext) window._queuePlayNext(_artistTracks[idx]); }
+function _artistQueueAdd(idx)  { if (window._queueAddToEnd) window._queueAddToEnd(_artistTracks[idx]); }
 function _albumPlayArtist(idx) {
   if (typeof _cardPlayAudio === 'function') {
     var t = _artistTracks[idx];
