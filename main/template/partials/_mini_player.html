@@ -7,6 +7,13 @@
            playsinline
            style="position:absolute;width:0;height:0;pointer-events:none">
     </audio>
+    {# Second audio element — pre-buffers the next track for gapless playback #}
+    <audio id="bgAudio2"
+           hx-preserve="true"
+           preload="none"
+           playsinline
+           style="position:absolute;width:0;height:0;pointer-events:none">
+    </audio>
 
     {# ── Mini-player bar ─────────────────────────────────────────────────
        Shown on every page EXCEPT the watch page itself when the user has
@@ -113,6 +120,63 @@
   // ── Persistent background audio + mini-player ──────────────────────────
   var NP_KEY = 'td:nowplaying';
   var _bgAudio = document.getElementById('bgAudio');
+  // Second element for gapless: pre-buffers next track; _bgAudio and _bgBuf
+  // are swapped after crossfade so all closures always use the active element.
+  var _bgBuf = document.getElementById('bgAudio2');
+
+  // ── Gapless + crossfade state ──────────────────────────────────────────
+  var _PRELOAD_AT = 30;   // seconds before end: start buffering next track
+  var _XFADE_SECS = 3;    // crossfade duration in seconds
+  var _xfading    = false;
+  var _preloaded  = false;
+
+  function _nextSrc() {
+    // Returns the stream URL of the next track from queue or NP metadata
+    try {
+      var q  = JSON.parse(sessionStorage.getItem('td:queue') || 'null');
+      var qi = parseInt(sessionStorage.getItem('td:queueIndex') || '-1', 10);
+      if (q && qi >= 0 && qi + 1 < q.length) return q[qi + 1].streamUrl;
+      var np = JSON.parse(localStorage.getItem(NP_KEY) || 'null');
+      return (np && np.nextStreamUrl) || null;
+    } catch(_) { return null; }
+  }
+
+  function _gapPreload() {
+    if (_preloaded || !_bgBuf) return;
+    var src = _nextSrc();
+    if (!src) return;
+    _bgBuf.src     = src;
+    _bgBuf.preload = 'auto';
+    _bgBuf.volume  = 0;
+    _bgBuf.load();
+    _preloaded = true;
+  }
+
+  function _gapCrossfade() {
+    if (_xfading || !_bgBuf || !_bgBuf.src) return;
+    _xfading = true;
+    _bgBuf.currentTime = 0;
+    _bgBuf.volume      = 0;
+    _bgBuf.play().catch(function() { _xfading = false; });
+    var t0 = performance.now(), origVol = _bgAudio.volume;
+    (function _ramp() {
+      var pct = Math.min(1, (performance.now() - t0) / (_XFADE_SECS * 1000));
+      try { _bgAudio.volume = origVol * (1 - pct); } catch(_){}
+      try { _bgBuf.volume   = pct; }                 catch(_){}
+      if (pct < 1) requestAnimationFrame(_ramp);
+    })();
+  }
+
+  // Swap active/buffer references after crossfade or normal track end
+  function _gapSwap() {
+    try { _bgAudio.pause(); _bgAudio.src = ''; _bgAudio.volume = 1; } catch(_){}
+    var _old = _bgAudio;
+    _bgAudio   = _bgBuf;
+    _bgBuf     = _old;
+    try { _bgAudio.volume = 1; } catch(_){}
+    _xfading   = false;
+    _preloaded = false;
+  }
 
   // Sync play/pause icon in mini-player
   function _mpSyncIcon() {
@@ -164,8 +228,21 @@
       var pct = dur > 0 ? (cur / dur * 100) : 0;
       if (bar) bar.style.width = pct.toFixed(1) + '%';
       if (timeEl && dur > 0) timeEl.textContent = _mpFmt(cur) + ' / ' + _mpFmt(dur);
+      // Gapless: preload → crossfade
+      if (isFinite(dur) && dur > 0) {
+        var rem = dur - cur;
+        if (!_preloaded && rem <= _PRELOAD_AT) _gapPreload();
+        if (_preloaded && !_xfading && rem > 0 && rem <= _XFADE_SECS) _gapCrossfade();
+      }
     });
     _bgAudio.addEventListener('ended', function() {
+      // Gapless: if crossfade was in progress, _bgBuf is already playing at vol=1
+      if (_xfading || (_preloaded && _bgBuf && !_bgBuf.paused && _bgBuf.currentTime > 0)) {
+        _gapSwap();
+        _mpInit();
+        return;
+      }
+      _preloaded = false;
       // Primary: use the sessionStorage queue for accurate next-next metadata
       var queue = null, qIdx = -1;
       try {
@@ -213,6 +290,12 @@
         window.location.href = np.nextUrl;
       }
     });
+  }
+
+  // ── Mirror play/pause events from buffer element so icon stays in sync ──
+  if (_bgBuf) {
+    _bgBuf.addEventListener('play',  _mpSyncIcon);
+    _bgBuf.addEventListener('pause', _mpSyncIcon);
   }
 
   // ── Mini-player seek bar ───────────────────────────────────────────────
@@ -288,6 +371,9 @@
 
   // Prev/next: navigate to adjacent track URL (full navigation to watch page)
   window._mpNav = function(dir) {
+    // Reset gapless state on manual skip
+    _xfading = false; _preloaded = false;
+    if (_bgBuf) { try { _bgBuf.pause(); _bgBuf.src = ''; _bgBuf.volume = 1; } catch(_){} }
     var np;
     try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
     if (!np) return;
@@ -357,6 +443,9 @@
   // Used by _card.html for audio HubItem cards in the library grid/shelves.
   window._cardPlayAudio = function(streamUrl, watchUrl, title, artist, art) {
     if (!_bgAudio) { window.location.href = watchUrl; return; }
+    // Reset gapless state when starting a new track manually
+    _xfading = false; _preloaded = false;
+    if (_bgBuf) { try { _bgBuf.pause(); _bgBuf.src = ''; _bgBuf.volume = 1; } catch(_){} }
     _bgAudio.src = streamUrl;
     _bgAudio.play().then(function() {
       var np = { url: watchUrl, streamUrl: streamUrl, title: title,
