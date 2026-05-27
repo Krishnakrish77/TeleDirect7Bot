@@ -134,6 +134,21 @@
 
     {# Audio track button injected into Plyr's controls bar by JS. #}
 
+    {# Skip Intro button — shown only when admin has set timestamps #}
+    {% if meta and meta.intro_start and meta.intro_end and meta.intro_end > meta.intro_start %}
+    <button id="skip-intro-btn"
+            style="display:none;position:fixed;bottom:5.5rem;right:1.5rem;z-index:9000"
+            class="flex items-center gap-2 px-5 py-2.5 rounded-lg
+                   bg-ink-800/95 border border-white/20 shadow-xl
+                   text-sm font-semibold text-white
+                   hover:bg-ink-700 transition-colors">
+      Skip Intro
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+        <path d="M5.055 7.06C3.805 6.347 2.25 7.25 2.25 8.69v8.122c0 1.44 1.555 2.343 2.805 1.628L12 14.471v2.34c0 1.44 1.555 2.343 2.805 1.628l7.108-4.061c1.26-.72 1.26-2.536 0-3.256L14.805 7.06C13.555 6.347 12 7.25 12 8.69v2.34L5.055 7.06Z"/>
+      </svg>
+    </button>
+    {% endif %}
+
     {# Below-player controls only for files that can actually play. #}
     {% if not known_unplayable %}
     <div id="vlcNote" style="display:none"

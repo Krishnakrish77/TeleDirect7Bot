@@ -206,6 +206,34 @@
                 </p>
               </div>
 
+              {# Skip Intro timestamps — shown for video items only #}
+              <div class="pt-3 border-t border-white/5" x-show="editing.media_kind !== 'audio'" x-cloak>
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Skip Intro</p>
+                <div class="flex gap-3">
+                  <label class="block flex-1">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Intro start (s)</span>
+                    <input type="number" name="intro_start" min="0" step="0.5"
+                           placeholder="—"
+                           x-model="editing.intro_start"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm tabular-nums
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                  <label class="block flex-1">
+                    <span class="text-[11px] uppercase tracking-wider text-slate-500">Intro end (s)</span>
+                    <input type="number" name="intro_end" min="0" step="0.5"
+                           placeholder="—"
+                           x-model="editing.intro_end"
+                           class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                  border border-white/5 text-sm tabular-nums
+                                  focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  </label>
+                </div>
+                <p class="mt-1.5 text-xs text-slate-500">
+                  Player shows a Skip Intro button while playback is between these timestamps.
+                </p>
+              </div>
+
               {# Music metadata — only shown when editing audio items #}
               <div class="pt-3 border-t border-white/5" x-show="editing.media_kind === 'audio'" x-cloak>
                 <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Music</p>

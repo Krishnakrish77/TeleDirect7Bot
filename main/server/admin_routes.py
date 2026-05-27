@@ -1493,6 +1493,18 @@ async def admin_edit(request: web.Request) -> web.Response:
     if new_episode_end is not None and new_episode is not None and new_episode_end <= new_episode:
         new_episode_end = None
 
+    # Skip Intro timestamps (seconds, float or None)
+    def _parse_sec(val: str) -> Optional[float]:
+        try:
+            v = float(val.strip())
+            return v if v >= 0 else None
+        except (ValueError, AttributeError):
+            return None
+    new_intro_start = _parse_sec(form.get("intro_start") or "")
+    new_intro_end   = _parse_sec(form.get("intro_end") or "")
+    if new_intro_start is not None and new_intro_end is not None and new_intro_end <= new_intro_start:
+        new_intro_end = None  # discard nonsensical range
+
     # Music metadata fields
     new_artist = (form.get("artist") or "").strip()
     new_album_title = (form.get("album_title") or "").strip()
@@ -1540,6 +1552,9 @@ async def admin_edit(request: web.Request) -> web.Response:
             item.episode = new_episode
             item.episode_end = new_episode_end
             item.movie_key = ""
+        # Apply intro timestamps regardless of series/movie status
+        item.intro_start = new_intro_start
+        item.intro_end   = new_intro_end
         else:
             # Clearing series_title converts back to a standalone item.
             item.series_title = ""

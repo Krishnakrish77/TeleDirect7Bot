@@ -130,6 +130,29 @@
       window.addEventListener("beforeunload", () => persist(true));
     }
 
+    // ---- Skip Intro -------------------------------------------------------
+    (function() {
+      var skipBtn = document.getElementById('skip-intro-btn');
+      if (!skipBtn) return;
+      var introStart = {{ (meta.intro_start or 0) | float }};
+      var introEnd   = {{ (meta.intro_end   or 0) | float }};
+      if (!introStart || !introEnd || introEnd <= introStart) return;
+
+      skipBtn.addEventListener('click', function() {
+        video.currentTime = introEnd;
+        skipBtn.style.display = 'none';
+      });
+
+      video.addEventListener('timeupdate', function() {
+        var t = video.currentTime;
+        if (t >= introStart && t < introEnd) {
+          skipBtn.style.display = '';
+        } else {
+          skipBtn.style.display = 'none';
+        }
+      });
+    })();
+
     // ---- Mobile gestures -----------------------------------------------
     //
     // Touch-only (we feature-detect via ``ontouchstart``). Three gestures:

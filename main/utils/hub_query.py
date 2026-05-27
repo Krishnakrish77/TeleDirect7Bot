@@ -43,6 +43,8 @@ class HubItem:
     season: Optional[int] = None
     episode: Optional[int] = None
     episode_end: Optional[int] = None  # set for multi-ep files (e.g. S01E01-E03)
+    intro_start: Optional[float] = None  # seconds — start of opening credits / intro
+    intro_end:   Optional[float] = None  # seconds — end of intro (skip-to target)
     # Slug shared by every upload of the same film (different filenames /
     # release groups). "" for series episodes and uniquely-titled uploads.
     movie_key: str = ""
