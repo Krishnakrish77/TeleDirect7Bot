@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Your Year in Review · TeleDirect{% endblock %}
+{% block title %}Year in Review · TeleDirect{% endblock %}
 
 {% block content %}
 <div class="w-full max-w-lg mx-auto space-y-4">
@@ -12,7 +12,7 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/>
       </svg>
     </a>
-    <span class="text-sm text-slate-500">Your Stats</span>
+    <span class="text-sm text-slate-500">Stats</span>
   </div>
 
   {% if total_plays == 0 %}
@@ -29,7 +29,7 @@
 
   {# ── HERO ─────────────────────────────────────────────────────────────── #}
   <div class="rounded-2xl bg-gradient-to-br from-brand-600 to-brand-900 p-8 text-center">
-    <p class="text-sm font-medium text-brand-200 uppercase tracking-widest mb-2">Your Year in Review</p>
+    <p class="text-sm font-medium text-brand-200 uppercase tracking-widest mb-2">Year in Review</p>
     <p class="text-6xl sm:text-7xl font-black text-white leading-none">
       {{ total_hours }}<span class="text-3xl font-semibold text-brand-200">h</span>
       {% if total_mins %}<span class="text-3xl font-semibold text-brand-200"> {{ total_mins }}m</span>{% endif %}
@@ -99,7 +99,7 @@
   {# ── TOP GENRE ─────────────────────────────────────────────────────────── #}
   {% if top_genres %}
   <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6">
-    <p class="text-xs text-slate-500 uppercase tracking-widest mb-4">Your Taste</p>
+    <p class="text-xs text-slate-500 uppercase tracking-widest mb-4">Taste</p>
     <div class="space-y-3">
       {% set max_g = top_genres[0][1] %}
       {% for genre, count in top_genres %}
@@ -119,7 +119,7 @@
 
   {# ── SCHEDULE ─────────────────────────────────────────────────────────── #}
   <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6">
-    <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Your Schedule</p>
+    <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Schedule</p>
     <p class="text-2xl font-bold text-white mb-4">
       {{ tod_emoji }} {{ tod_label }}s on {{ best_day }}s
     </p>
