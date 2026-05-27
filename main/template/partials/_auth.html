@@ -136,7 +136,6 @@ document.addEventListener('alpine:init', () => {
 // ── Watchlist client state ────────────────────────────────────────────────
 window._wl = (function() {
   var _ids = new Set();
-  var _loaded = false;
 
   function _token() {
     try { var t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
@@ -144,19 +143,26 @@ window._wl = (function() {
     return m ? m[1] : null;
   }
 
+  var _ctl = null; // AbortController for in-flight watchlist fetch
+
   async function load() {
-    if (_loaded || !(window._tdAuth && window._tdAuth.user)) return;
-    _loaded = true;
+    if (!(window._tdAuth && window._tdAuth.user)) return;
+    if (_ctl) _ctl.abort();
+    _ctl = new AbortController();
     try {
       var tok = _token();
       var r = await fetch('/api/watchlist', {
         headers: tok ? {'Authorization': 'Bearer ' + tok} : {},
+        signal: _ctl.signal,
       });
-      if (!r.ok) { _loaded = false; return; }
+      _ctl = null;
+      if (!r.ok) return;
       var d = await r.json();
       _ids = new Set(d.ids || []);
       _render();
-    } catch(_) { _loaded = false; }
+    } catch(e) {
+      if (e.name !== 'AbortError') _ctl = null;
+    }
   }
 
   function _render() {
@@ -194,9 +200,10 @@ window._wl = (function() {
     }
   }
 
-  // Load after DOM is ready; also re-load after htmx content swaps.
+  // Load after DOM ready and after every htmx swap — AbortController ensures
+  // only the latest request applies; no _loaded flag needed.
   document.addEventListener('DOMContentLoaded', load);
-  document.addEventListener('htmx:afterSettle', function() { _loaded = false; load(); });
+  document.addEventListener('htmx:afterSettle', load);
 
   return { load: load, toggle: toggle };
 })();
