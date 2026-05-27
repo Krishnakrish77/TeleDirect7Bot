@@ -66,12 +66,13 @@
             {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.MP3','') | replace('.flac','') | replace('.FLAC','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') | replace('.wav','') | replace('.opus','') | clean_music_tag }}
           </h2>
           {% if meta and meta.artist %}
-            <p class="mt-1 md:mt-2 text-sm md:text-base [@media(max-height:480px)]:text-xs font-medium line-clamp-1">
-              <a href="/artist/{{ meta.artist | primary_artist_slug }}"
-                 hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
-                 class="text-slate-300 hover:text-brand-300 transition-colors">
-                {{ meta.artist | clean_music_tag }}
-              </a>
+            <p class="mt-1 md:mt-2 text-sm md:text-base [@media(max-height:480px)]:text-xs font-medium line-clamp-1 text-slate-300">
+              {%- for slug, name in meta.artist | artist_credits -%}
+                {%- if not loop.first %}<span class="text-slate-500">, </span>{% endif -%}
+                <a href="/artist/{{ slug }}"
+                   hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
+                   class="hover:text-brand-300 transition-colors">{{ name | clean_music_tag }}</a>
+              {%- endfor -%}
             </p>
           {% endif %}
           {% if meta and meta.album_title %}

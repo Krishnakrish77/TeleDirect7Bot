@@ -26,8 +26,9 @@ from main.utils.codec_probe import _clean_music_tag as _cmt
 _env.filters["clean_music_tag"] = lambda s: _cmt(s) if s else s
 import re as _re
 _env.filters["artist_slug"] = lambda s: _re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
-from main.utils.media_index import _artist_slug as _mslug, _primary_artist as _mprimary
+from main.utils.media_index import _artist_slug as _mslug, _primary_artist as _mprimary, _artist_credits as _mcredits
 _env.filters["primary_artist_slug"] = lambda s: _mslug(_mprimary(s or ""))
+_env.filters["artist_credits"] = lambda s: [(_mslug(a), a) for a in _mcredits(s or "")]
 from main.vars import Var as _Var
 _env.globals["bot_username"] = _Var.BOT_USERNAME
 _env.globals["Var"] = _Var
