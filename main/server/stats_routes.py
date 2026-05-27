@@ -75,9 +75,17 @@ async def stats_page(request: web.Request) -> web.Response:
     )
 
     # ── Avoid double-counting CW items that also appear in history ─────────
+    # history_mids: int message IDs (for catalogue lookups)
+    # history_cw_keys: raw cw_key strings (for comparing against cw_data keys,
+    #   which are also strings — comparing set[int] against str always misses)
     history_mids: set = set()
+    history_cw_keys: set = set()
     for h in history:
-        m = _CW_KEY_RE.match(h.get("cw_key", ""))
+        ck = h.get("cw_key", "")
+        if not ck:
+            continue
+        history_cw_keys.add(ck)
+        m = _CW_KEY_RE.match(ck)
         if m:
             history_mids.add(int(m.group(1)))
 
@@ -118,7 +126,10 @@ async def stats_page(request: web.Request) -> web.Response:
             genre_counts[g] += 1
         kind_counts[item.media_kind or "video"] += 1
         if item.director:
-            director_counts[item.director] += 1
+            for d in item.director.split(","):
+                d = d.strip()
+                if d:
+                    director_counts[d] += 1
         if item.artist:
             for a in item.artist.split(","):
                 a = a.strip()
@@ -206,8 +217,17 @@ async def stats_page(request: web.Request) -> web.Response:
     night_pct       = int(night_plays / total_plays * 100) if total_plays else 0
 
     # ── Completion rate ───────────────────────────────────────────────────
-    started  = len(history_mids) + len([k for k in cw_data if k not in history_mids])
-    finished = len(history_mids)
+    # Only count in-progress items that have a valid cw_key (valid regex +
+    # minimum 5% progress) and are not already in watch history.
+    in_progress = [
+        k for k, v in cw_data.items()
+        if k not in history_cw_keys
+        and _CW_KEY_RE.match(k)
+        and v.get("dur", 0) > 0
+        and v.get("pos", 0) / v["dur"] >= 0.05
+    ]
+    started    = len(history_mids) + len(in_progress)
+    finished   = len(history_mids)
     completion = int(finished / started * 100) if started else 0
 
     # ── Activity heatmap (12 weeks) ───────────────────────────────────────
