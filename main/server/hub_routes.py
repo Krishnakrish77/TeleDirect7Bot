@@ -299,19 +299,26 @@ async def hub_home(request: web.Request) -> web.Response:
                     timeout=12.0,
                 )
                 if rec_items:
-                    # Build {message_id: tmdb_id} map so the shelf can render
-                    # per-card dismiss buttons without extra lookups.
-                    rec_tmdb = {}
+                    # Parallel list so _shelves.html uses loop.index0 to get
+                    # dismiss data per card. Uses poster_item for group cards
+                    # (SeriesGroup/MovieGroup have no direct tmdb_id attribute).
+                    rec_meta = []
                     for card in rec_items:
-                        mid = getattr(card, "message_id", None)
-                        tid = getattr(card, "tmdb_id", None)
-                        kind = "tv" if getattr(card, "series_key", "") else "movie"
-                        if mid and tid:
-                            rec_tmdb[mid] = {"tmdb_id": tid, "kind": kind}
+                        tid  = getattr(card, "tmdb_id", None)
+                        skey = getattr(card, "series_key", "")
+                        if tid is None:
+                            poster = getattr(card, "poster_item", None)
+                            if poster:
+                                tid  = getattr(poster, "tmdb_id", None)
+                                skey = getattr(poster, "series_key", "")
+                        rec_meta.append(
+                            {"tmdb_id": tid, "kind": "tv" if skey else "movie"}
+                            if tid else None
+                        )
                     shelves = [
                         {"name": "Recommended for you", "items": rec_items,
                          "link": None, "total": len(rec_items),
-                         "dismissable": True, "rec_tmdb": rec_tmdb},
+                         "dismissable": True, "rec_meta": rec_meta},
                     ] + list(shelves)
             except asyncio.TimeoutError:
                 logging.warning("hub: rec_engine timed out, skipping shelf")

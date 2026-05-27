@@ -125,12 +125,14 @@ async def get_recommendations(user_id: int) -> Optional[List]:
         # next path regenerates rather than paying this dead-cache miss every load.
         await rec_store.clear_cached(user_id)
 
-    seeds = await _collect_seeds(user_id)
+    # Fetch seeds and dismissed IDs concurrently — both are independent DB reads
+    seeds, dismissed = await asyncio.gather(
+        _collect_seeds(user_id),
+        dismissed_store.get_dismissed_ids(user_id),
+    )
     if not seeds:
         return None
 
-    # Exclude seeds (already seen) + explicitly dismissed titles
-    dismissed = await dismissed_store.get_dismissed_ids(user_id)
     exclude = {tid for tid, _ in seeds} | dismissed
     candidates = await _fetch_recs_for_seeds(seeds, exclude)
 

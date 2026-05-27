@@ -54,9 +54,8 @@
                      w-32 sm:w-40 md:w-48 lg:w-52">
             {% include "_card.html" %}
             {# Dismiss button — only on the rec shelf, only for signed-in users #}
-            {% if shelf.get('dismissable') and shelf.get('rec_tmdb') %}
-              {% set _mid = item.message_id if item.message_id is defined else None %}
-              {% set _rec = shelf['rec_tmdb'].get(_mid) %}
+            {% if shelf.get('dismissable') and shelf.get('rec_meta') %}
+              {% set _rec = shelf['rec_meta'][loop.index0] if loop.index0 < shelf['rec_meta']|length else None %}
               {% if _rec %}
               <button type="button"
                       onclick="event.stopPropagation();_dismissRec(this,{{ _rec.tmdb_id }},{{ _rec.kind | tojson }})"
