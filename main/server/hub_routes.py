@@ -60,6 +60,7 @@ from main.utils.codec_probe import _clean_music_tag as _cmt
 _env.filters["clean_music_tag"] = lambda s: _cmt(s) if s else s
 import re as _re
 _env.filters["artist_slug"] = lambda s: _re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
+_env.filters["primary_artist_slug"] = lambda s: media_index._artist_slug(media_index._primary_artist(s or ""))
 _env.globals["bot_username"] = Var.BOT_USERNAME
 _env.globals["Var"] = Var
 
@@ -861,7 +862,7 @@ async def hub_artist(request: web.Request) -> web.Response:
     tracks = media_index.tracks_by_artist_slug(slug)
     if not tracks:
         raise web.HTTPNotFound(text="Artist not found in catalogue.")
-    artist_name = tracks[0].artist
+    artist_name = media_index.artist_display_name(slug)
     cache_key = f"artist:{slug}"
     body = _cache_get(cache_key)
     if not body:

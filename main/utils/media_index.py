@@ -1346,21 +1346,52 @@ def episodes_for_series(series_key: str) -> List[HubItem]:
     return eps
 
 
+import re as _re
+_ARTIST_SPLIT_RE = _re.compile(r"[,;/&×]|\bfeat\.?\b|\bft\.?\b|\bx\b|\band\b", _re.IGNORECASE)
+
+
 def _artist_slug(name: str) -> str:
-    """URL-safe slug from an artist name."""
-    import re as _re
+    """URL-safe slug from a single artist name."""
     return _re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
 
 
+def _artist_credits(artist_str: str) -> List[str]:
+    """Split a multi-artist credit string into individual artist names."""
+    parts = _ARTIST_SPLIT_RE.split(artist_str)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _primary_artist(artist_str: str) -> str:
+    """Return the first/primary artist from a potentially multi-artist string."""
+    parts = _artist_credits(artist_str)
+    return parts[0] if parts else artist_str
+
+
 def tracks_by_artist_slug(slug: str) -> List[HubItem]:
-    """Return all non-hidden audio tracks whose artist slug matches."""
+    """Return all non-hidden audio tracks where ANY credited artist matches slug.
+
+    Handles multi-artist fields like 'Artist A, Artist B feat. Artist C'.
+    """
+    def _matches(artist_str: str) -> bool:
+        return any(_artist_slug(a) == slug for a in _artist_credits(artist_str))
+
     matches = [
         it for it in _items.values()
         if it.media_kind == "audio" and it.artist and not it.hidden
-        and _artist_slug(it.artist) == slug
+        and _matches(it.artist)
     ]
     matches.sort(key=lambda t: (t.album_title or "", t.track_number or 999, t.title or ""))
     return matches
+
+
+def artist_display_name(slug: str) -> str:
+    """Find the display name for an artist slug by scanning the catalogue."""
+    for it in _items.values():
+        if it.media_kind == "audio" and it.artist:
+            for credit in _artist_credits(it.artist):
+                if _artist_slug(credit) == slug:
+                    return credit
+    return slug
 
 
 def tracks_for_album(album_key: str) -> List[HubItem]:
