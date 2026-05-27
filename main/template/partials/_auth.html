@@ -207,4 +207,49 @@ window._wl = (function() {
 
   return { load: load, toggle: toggle };
 })();
+
+// ── "Not for me" rec dismissal ───────────────────────────────────────────
+window._dismissRec = function(btn, tmdbId, kind) {
+  var user = window._tdAuth && window._tdAuth.user;
+  if (!user) {
+    window.tdRequireAuth && window.tdRequireAuth(
+      {currentTarget: btn, preventDefault: function(){}, stopPropagation: function(){}},
+      'dismiss recommendations'
+    );
+    return;
+  }
+  var li = btn.closest('li');
+  if (!li) return;
+  li.style.opacity = '0.4';
+  li.style.pointerEvents = 'none';
+  var tok = (function(){
+    try { var t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
+    var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
+    return m ? m[1] : null;
+  })();
+  fetch('/api/dismiss', {
+    method: 'POST',
+    headers: Object.assign({'Content-Type': 'application/json'}, tok ? {'Authorization': 'Bearer ' + tok} : {}),
+    body: JSON.stringify({tmdb_id: tmdbId, kind: kind}),
+  }).then(function(r) {
+    if (r.ok) {
+      // Slide the card out
+      li.style.transition = 'opacity 0.2s, max-width 0.3s 0.2s';
+      li.style.maxWidth = li.offsetWidth + 'px';
+      requestAnimationFrame(function() {
+        li.style.opacity = '0';
+        li.style.maxWidth = '0';
+        li.style.overflow = 'hidden';
+        li.style.padding = '0';
+        setTimeout(function() { li.remove(); }, 500);
+      });
+    } else {
+      li.style.opacity = '';
+      li.style.pointerEvents = '';
+    }
+  }).catch(function() {
+    li.style.opacity = '';
+    li.style.pointerEvents = '';
+  });
+};
 </script>

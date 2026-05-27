@@ -50,9 +50,28 @@
                  [scrollbar-width:none] [-ms-overflow-style:none]
                  [&amp;::-webkit-scrollbar]:hidden">
         {% for item in shelf['items'] %}
-          <li class="snap-start flex-shrink-0 h-full
+          <li class="snap-start flex-shrink-0 h-full relative group/li
                      w-32 sm:w-40 md:w-48 lg:w-52">
             {% include "_card.html" %}
+            {# Dismiss button — only on the rec shelf, only for signed-in users #}
+            {% if shelf.get('dismissable') and shelf.get('rec_tmdb') %}
+              {% set _mid = item.message_id if item.message_id is defined else None %}
+              {% set _rec = shelf['rec_tmdb'].get(_mid) %}
+              {% if _rec %}
+              <button type="button"
+                      onclick="event.stopPropagation();_dismissRec(this,{{ _rec.tmdb_id }},{{ _rec.kind | tojson }})"
+                      data-tmdb="{{ _rec.tmdb_id }}"
+                      title="Not for me"
+                      class="absolute top-1.5 left-1.5 z-20 w-7 h-7 rounded-full
+                             bg-black/70 hover:bg-black/90 grid place-items-center
+                             sm:opacity-0 sm:group-hover/li:opacity-100 transition-all text-slate-300 hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2.5" class="w-3 h-3 pointer-events-none">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                </svg>
+              </button>
+              {% endif %}
+            {% endif %}
           </li>
         {% endfor %}
       </ul>

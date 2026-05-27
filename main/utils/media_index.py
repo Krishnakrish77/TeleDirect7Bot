@@ -1074,6 +1074,9 @@ def _haystack(item: HubItem) -> str:
         item.imdb_id.lower(),
         " ".join(item.tags),
         " ".join(g.lower() for g in item.tmdb_genres),
+        # Cast + director — lets users find titles by actor or director name
+        " ".join(a.lower() for a in item.cast),
+        item.director.lower(),
     ])
 
 

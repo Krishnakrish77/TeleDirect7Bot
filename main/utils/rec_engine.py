@@ -23,7 +23,7 @@ import re
 from collections import Counter
 from typing import List, Optional, Tuple
 
-from main.utils import tmdb, media_index, wh_store, watchlist_store, rec_store
+from main.utils import tmdb, media_index, wh_store, watchlist_store, rec_store, dismissed_store
 
 _CW_KEY_RE = re.compile(r'^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$')
 _MAX_SEEDS = 8   # max seed items to collect
@@ -129,7 +129,9 @@ async def get_recommendations(user_id: int) -> Optional[List]:
     if not seeds:
         return None
 
-    exclude = {tid for tid, _ in seeds}
+    # Exclude seeds (already seen) + explicitly dismissed titles
+    dismissed = await dismissed_store.get_dismissed_ids(user_id)
+    exclude = {tid for tid, _ in seeds} | dismissed
     candidates = await _fetch_recs_for_seeds(seeds, exclude)
 
     # One O(N) pass to build a tmdb_id set present in catalogue, then
