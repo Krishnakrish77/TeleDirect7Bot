@@ -128,7 +128,9 @@
 {% block scripts %}
   {% if known_unplayable %}
   <script>
+    var _VLC_VT = '{% if vlc_user_id and vlc_token %}{{ vlc_user_id }}:{{ vlc_token }}{% endif %}';
     function buildVlcUrl(s) {
+      if (_VLC_VT) s = s + (s.includes('?') ? '&' : '?') + 'vt=' + _VLC_VT;
       var ua = navigator.userAgent || "";
       if (/Android/i.test(ua)) { var sc = s.startsWith("https://") ? "https" : "http"; var st = s.replace(/^https?:\/\//, ""); return "intent://" + st + "#Intent;scheme=" + sc + ";package=org.videolan.vlc;type=video/*;end"; }
       if (/iPad|iPhone|iPod/.test(ua)) { return "vlc-x-callback://x-callback-url/stream?url=" + encodeURIComponent(s); }

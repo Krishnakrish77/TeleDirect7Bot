@@ -1,6 +1,8 @@
 # Taken from megadlbot_oss <https://github.com/eyaadh/megadlbot_oss/blob/master/mega/webserver/routes.py>
 # Thanks to Eyaadh <https://github.com/eyaadh>
 
+import hashlib
+import hmac as _hmac
 import os
 import re
 import time
@@ -30,6 +32,67 @@ _ip_active: dict = {}   # ip → concurrent stream count
 
 
 _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+
+# ── VLC playback tracking ─────────────────────────────────────────────────
+# Debounce CW updates: at most one MongoDB write per 30s per (user, message)
+_vlc_cw_debounce: dict = {}   # (user_id, message_id) → last_update_ts
+
+def _vlc_verify(param: str, message_id: int) -> int | None:
+    """Return user_id if param is a valid VLC tracking token, else None."""
+    from main.vars import Var as _Var
+    try:
+        uid_str, tok = param.split(":", 1)
+        uid = int(uid_str)
+        expected = _hmac.new(
+            _Var.JWT_SECRET.encode(),
+            f"{uid}:{message_id}".encode(),
+            hashlib.sha256,
+        ).hexdigest()[:16]
+        if _hmac.compare_digest(expected, tok):
+            return uid
+    except Exception:
+        pass
+    return None
+
+
+async def _vlc_track(user_id: int, message_id: int,
+                     from_bytes: int, file_size: int) -> None:
+    """Update CW progress and WH completion for VLC viewers."""
+    if file_size <= 0:
+        return
+    pct = from_bytes / file_size
+    now = time.time()
+    key = (user_id, message_id)
+
+    from main.utils import media_index, cw_store, wh_store
+    item = media_index.get_item(message_id)
+    if not item:
+        return
+    cw_key = f"{item.secure_hash}{item.message_id}"
+    title  = item.title or item.file_name or ""
+    dur    = float(item.duration or 0)
+
+    # Completion — fire once when VLC reaches the last 10% of the file
+    if pct >= 0.90:
+        import asyncio as _asyncio
+        _asyncio.create_task(wh_store.record(user_id, cw_key, title))
+        # Clean up the debounce entry
+        _vlc_cw_debounce.pop(key, None)
+        return
+
+    # Progress — update CW at most every 30s, only for meaningful progress (>2%)
+    if pct < 0.02:
+        return
+    if now - _vlc_cw_debounce.get(key, 0) < 30:
+        return
+    _vlc_cw_debounce[key] = now
+    if dur > 0:
+        pos = pct * dur
+        import asyncio as _asyncio
+        _asyncio.create_task(
+            cw_store.upsert(user_id, cw_key, pos, dur,
+                            int(now * 1000), title)
+        )
 
 
 def _real_ip(request: web.Request) -> str:
@@ -116,7 +179,29 @@ async def watch_handler(request: web.Request):
         else:
             message_id = int(re.search(r"(\d+)(?:\/\S+)?", path).group(1))
             secure_hash = request.rel_url.query.get("hash")
-        return web.Response(text=await render_page(message_id, secure_hash), content_type='text/html')
+        # Generate a per-user-per-video VLC tracking token if the user is signed in.
+        # The token is included in the rendered page and appended to the VLC URL so
+        # that server-side CW/WH tracking works even when VLC bypasses JS.
+        from main.utils.user_auth import decode_token
+        from main.vars import Var as _Var
+        vlc_user_id = None
+        vlc_token   = None
+        _jwt = request.cookies.get("td_session", "")
+        if _jwt:
+            _u = decode_token(_jwt)
+            if _u:
+                vlc_user_id = int(_u["sub"])
+                vlc_token = _hmac.new(
+                    _Var.JWT_SECRET.encode(),
+                    f"{vlc_user_id}:{message_id}".encode(),
+                    hashlib.sha256,
+                ).hexdigest()[:16]
+        return web.Response(
+            text=await render_page(message_id, secure_hash,
+                                   vlc_user_id=vlc_user_id,
+                                   vlc_token=vlc_token),
+            content_type='text/html'
+        )
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
@@ -195,6 +280,16 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     from_bytes = request.http_range.start or 0
     until_bytes = (request.http_range.stop or file_size) - 1
     range_header = "Range" in request.headers
+
+    # VLC tracking — verify token from ?vt= and fire async CW/WH updates
+    _vt = request.rel_url.query.get("vt", "")
+    if _vt and file_size > 0:
+        _uid = _vlc_verify(_vt, message_id)
+        if _uid:
+            import asyncio as _asyncio
+            _asyncio.create_task(
+                _vlc_track(_uid, message_id, from_bytes, file_size)
+            )
 
     mime_type = file_id.mime_type
     file_name = file_id.file_name

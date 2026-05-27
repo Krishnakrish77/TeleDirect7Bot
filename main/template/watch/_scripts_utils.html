@@ -1,14 +1,24 @@
+    // VLC tracking token — appended to stream URLs so the server can record
+    // CW progress and watch history even when VLC bypasses our JS player.
+    var _VLC_VT = '{% if vlc_user_id and vlc_token %}{{ vlc_user_id }}:{{ vlc_token }}{% endif %}';
+
+    function _addVt(url) {
+      if (!_VLC_VT) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'vt=' + _VLC_VT;
+    }
+
     function buildVlcUrl(streamUrl) {
+      const s = _addVt(streamUrl);
       const ua = navigator.userAgent || "";
       if (/Android/i.test(ua)) {
-        const scheme = streamUrl.startsWith("https://") ? "https" : "http";
-        const stripped = streamUrl.replace(/^https?:\/\//, "");
+        const scheme = s.startsWith("https://") ? "https" : "http";
+        const stripped = s.replace(/^https?:\/\//, "");
         return `intent://${stripped}#Intent;scheme=${scheme};package=org.videolan.vlc;type=video/*;end`;
       }
       if (/iPad|iPhone|iPod/.test(ua)) {
-        return `vlc-x-callback://x-callback-url/stream?url=${encodeURIComponent(streamUrl)}`;
+        return `vlc-x-callback://x-callback-url/stream?url=${encodeURIComponent(s)}`;
       }
-      return `vlc://${streamUrl}`;
+      return `vlc://${s}`;
     }
 
     function attachSource(video) {

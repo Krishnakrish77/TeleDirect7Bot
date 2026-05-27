@@ -71,7 +71,8 @@ _BROWSER_NATIVE_CONTAINERS = {
 }
 
 
-async def render_page(message_id, secure_hash):
+async def render_page(message_id, secure_hash,
+                      vlc_user_id=None, vlc_token=None):
     file_data = await get_file_ids(StreamBot, int(Var.BIN_CHANNEL), int(message_id))
     if not secure_hash or file_data.unique_id[:len(secure_hash)] != secure_hash:
         logging.debug(f'link hash: {secure_hash} - {file_data.unique_id[:len(secure_hash) if secure_hash else 6]}')
@@ -179,6 +180,9 @@ async def render_page(message_id, secure_hash):
             prev_track=prev_track,
             album_tracks=album_tracks,
             quality_variants=quality_variants,
+            vlc_user_id=vlc_user_id,
+            vlc_token=vlc_token,
+            message_id=message_id,
         )
     file_name = _best_file_name(file_data.file_name, None)
     heading = f"Download {file_name}"
