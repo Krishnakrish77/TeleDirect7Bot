@@ -82,9 +82,21 @@
                    ? 'bg-brand-500/15 text-white'
                    : 'text-slate-200 hover:bg-ink-800'"
                  class="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors">
-                <span class="font-medium truncate flex-1" x-text="it.title"></span>
-                <span class="text-xs text-slate-500 flex-shrink-0"
-                      x-text="[it.year, it.kind].filter(Boolean).join(' · ')"></span>
+                <template x-if="it.poster_path">
+                  <img :src="'https://image.tmdb.org/t/p/w92' + it.poster_path" alt=""
+                       loading="lazy"
+                       class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
+                </template>
+                <template x-if="!it.poster_path">
+                  <img :src="'/thumb/' + it.secure_hash + it.message_id + '.jpg'" alt=""
+                       loading="lazy" onerror="this.style.display='none'"
+                       class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
+                </template>
+                <div class="min-w-0 flex-1">
+                  <p class="font-medium truncate" x-text="it.title"></p>
+                  <p class="text-xs text-slate-500"
+                     x-text="[it.year, it.kind].filter(Boolean).join(' · ')"></p>
+                </div>
               </a>
             </li>
           </template>
