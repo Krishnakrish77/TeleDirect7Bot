@@ -60,12 +60,21 @@ async def stats_page(request: web.Request) -> web.Response:
     )
 
     # ── Total watch time ──────────────────────────────────────────────────
+    # Build a set of message_ids that appear in watch history (completed)
+    # to avoid double-counting CW entries for items also in history.
+    history_mids: set = set()
+    for h in history:
+        m = _CW_KEY_RE.match(h.get("cw_key", ""))
+        if m:
+            history_mids.add(int(m.group(1)))
+
     total_seconds = 0.0
-    # From CW: sum of current positions (partially watched)
-    for entry in cw_data.values():
-        total_seconds += entry.get("pos", 0)
-    # From watch history: each completed watch contributes its duration from
-    # the catalogue item; fall back to 0 if item not found
+    # CW: only sum in-progress items NOT yet in watch history
+    for ck, entry in cw_data.items():
+        m = _CW_KEY_RE.match(ck)
+        if m and int(m.group(1)) not in history_mids:
+            total_seconds += entry.get("pos", 0)
+    # Watch history: completed plays add their full catalogue duration
     for h in history:
         m = _CW_KEY_RE.match(h.get("cw_key", ""))
         if m:
@@ -89,40 +98,49 @@ async def stats_page(request: web.Request) -> web.Response:
 
     top_genres = genre_counts.most_common(6)
 
-    # ── Most replayed (watch history, deduplicated by title) ───────────────
-    title_counts: Counter = Counter()
-    title_meta: dict = {}
+    # ── Most replayed — keyed by cw_key (not title) to avoid merging
+    # distinct items that share a name (e.g. two uploads both titled "Forever")
+    ck_counts: Counter = Counter()
+    ck_meta: dict = {}
     for h in history:
-        title = h.get("title", "")
-        if title:
-            title_counts[title] += 1
-            if title not in title_meta:
-                m = _CW_KEY_RE.match(h.get("cw_key", ""))
-                if m:
-                    item = media_index.get_item(int(m.group(1)))
-                    if item:
-                        title_meta[title] = {
-                            "poster": (f"https://image.tmdb.org/t/p/w92{item.poster_path}"
-                                       if item.poster_path
-                                       else f"/thumb/{item.secure_hash}{item.message_id}.jpg"),
-                            "url": f"/watch/{item.secure_hash}{item.message_id}",
-                            "media_kind": item.media_kind or "video",
-                        }
+        ck = h.get("cw_key", "")
+        if not ck:
+            continue
+        ck_counts[ck] += 1
+        if ck not in ck_meta:
+            m = _CW_KEY_RE.match(ck)
+            if m:
+                item = media_index.get_item(int(m.group(1)))
+                if item:
+                    ck_meta[ck] = {
+                        "title": item.title or h.get("title", ""),
+                        "poster": (f"https://image.tmdb.org/t/p/w92{item.poster_path}"
+                                   if item.poster_path
+                                   else f"/thumb/{item.secure_hash}{item.message_id}.jpg"),
+                        "url": f"/watch/{item.secure_hash}{item.message_id}",
+                        "media_kind": item.media_kind or "video",
+                    }
     most_replayed = [
-        {"title": t, "count": c, **title_meta.get(t, {})}
-        for t, c in title_counts.most_common(10)
-        if c > 1
+        {"count": c, **ck_meta[ck]}
+        for ck, c in ck_counts.most_common(10)
+        if c > 1 and ck in ck_meta
     ]
 
     # ── Weekly heatmap (last 12 weeks, Mon-Sun) ───────────────────────────
     now = datetime.now(timezone.utc)
-    week_start = now - timedelta(weeks=12)
+    # Motor returns naive datetimes by default (no tz_aware=True on client).
+    # Use naive week_start so comparison doesn't raise TypeError.
+    week_start = datetime.utcnow() - timedelta(weeks=12)
     daily_counts: defaultdict = defaultdict(int)
     for h in history:
         watched_at = h.get("watched_at")
-        if watched_at and watched_at >= week_start:
-            day_key = watched_at.strftime("%Y-%m-%d")
-            daily_counts[day_key] += 1
+        # Strip tzinfo if present (defensive against future tz_aware=True)
+        if watched_at:
+            if hasattr(watched_at, 'tzinfo') and watched_at.tzinfo:
+                watched_at = watched_at.replace(tzinfo=None)
+            if watched_at >= week_start:
+                day_key = watched_at.strftime("%Y-%m-%d")
+                daily_counts[day_key] += 1
     # Build 12×7 grid (12 weeks, Mon=0 … Sun=6)
     heatmap = []
     # Find the Monday 12 weeks ago
