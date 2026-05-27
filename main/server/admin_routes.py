@@ -1552,9 +1552,6 @@ async def admin_edit(request: web.Request) -> web.Response:
             item.episode = new_episode
             item.episode_end = new_episode_end
             item.movie_key = ""
-        # Apply intro timestamps regardless of series/movie status
-        item.intro_start = new_intro_start
-        item.intro_end   = new_intro_end
         else:
             # Clearing series_title converts back to a standalone item.
             item.series_title = ""
@@ -1566,6 +1563,9 @@ async def admin_edit(request: web.Request) -> web.Response:
                 item.movie_key = compute_movie_key(
                     new_title, new_year, new_file_name or item.file_name
                 )
+        # Intro timestamps — always apply regardless of series/movie/standalone status
+        item.intro_start = new_intro_start
+        item.intro_end   = new_intro_end
         # Music metadata — always apply (new_artist / new_album_title may be blank
         # to intentionally clear the field; track_number None means "not entered").
         item.artist = new_artist

@@ -134,9 +134,9 @@
     (function() {
       var skipBtn = document.getElementById('skip-intro-btn');
       if (!skipBtn) return;
-      var introStart = {{ (meta.intro_start or 0) | float }};
-      var introEnd   = {{ (meta.intro_end   or 0) | float }};
-      if (!introStart || !introEnd || introEnd <= introStart) return;
+      var introStart = {{ ((meta.intro_start if meta else None) or 0) | float }};
+      var introEnd   = {{ ((meta.intro_end   if meta else None) or 0) | float }};
+      if (introEnd <= introStart) return;  // also handles both-zero (no timestamps set)
 
       skipBtn.addEventListener('click', function() {
         video.currentTime = introEnd;
