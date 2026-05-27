@@ -25,16 +25,8 @@
       <p class="text-xs text-slate-500 mt-1">Titles finished</p>
     </div>
     <div class="bg-ink-800/60 border border-white/5 rounded-xl p-4 text-center">
-      {% set total_k = kind_video + kind_audio %}
-      {% if total_k > 0 %}
-        <p class="text-2xl sm:text-3xl font-bold text-white">
-          {{ ((kind_video / total_k) * 100) | int }}%
-        </p>
-        <p class="text-xs text-slate-500 mt-1">Video vs audio</p>
-      {% else %}
-        <p class="text-2xl sm:text-3xl font-bold text-slate-600">—</p>
-        <p class="text-xs text-slate-500 mt-1">Video vs audio</p>
-      {% endif %}
+      <p class="text-2xl sm:text-3xl font-bold text-white">{{ active_days }}</p>
+      <p class="text-xs text-slate-500 mt-1">Active days</p>
     </div>
   </div>
 

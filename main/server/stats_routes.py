@@ -152,14 +152,15 @@ async def stats_page(request: web.Request) -> web.Response:
                          "dow": monday.weekday()})
         monday += timedelta(days=1)
 
+    active_days = sum(1 for v in daily_counts.values() if v > 0)
+
     tpl = _env.get_template("stats.html")
     body = await tpl.render_async(
         user=user,
         total_time=_fmt_hours(total_seconds),
         total_plays=len(history),
         top_genres=top_genres,
-        kind_video=kind_counts.get("video", 0),
-        kind_audio=kind_counts.get("audio", 0),
+        active_days=active_days,
         most_replayed=most_replayed,
         heatmap=heatmap,
     )
