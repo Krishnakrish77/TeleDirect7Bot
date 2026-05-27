@@ -399,9 +399,10 @@ def _make_icon_png(size: int) -> bytes:
     bg = (249, 115, 22)   # #f97316
     fg = (255, 255, 255)
 
-    # Play triangle vertices — geometrically centred, bounding box at (cx±s, cy±s).
-    # Equal left/right offsets ensure the triangle is symmetric around cx.
-    s = size * 0.28
+    # Play triangle — compact, leaving ~65% of icon as solid orange background.
+    # s=0.28 made the triangle span 56% of height (looked like half-white split).
+    # s=0.18 gives a clean play button with clear orange margins.
+    s = size * 0.18
     cx, cy = size / 2.0, size / 2.0
     tx0, ty0 = cx - s, cy - s   # top-left
     tx1, ty1 = cx - s, cy + s   # bottom-left
