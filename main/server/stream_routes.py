@@ -1,6 +1,7 @@
 # Taken from megadlbot_oss <https://github.com/eyaadh/megadlbot_oss/blob/master/mega/webserver/routes.py>
 # Thanks to Eyaadh <https://github.com/eyaadh>
 
+import asyncio
 import hashlib
 import hmac as _hmac
 import os
@@ -50,49 +51,53 @@ def _vlc_verify(param: str, message_id: int) -> int | None:
         ).hexdigest()[:16]
         if _hmac.compare_digest(expected, tok):
             return uid
-    except Exception:
-        pass
+    except Exception as e:
+        logging.debug("vlc_verify: malformed token %r — %s", param, e)
     return None
 
 
-async def _vlc_track(user_id: int, message_id: int,
-                     from_bytes: int, file_size: int) -> None:
-    """Update CW progress and WH completion for VLC viewers."""
-    if file_size <= 0:
-        return
-    pct = from_bytes / file_size
-    now = time.time()
-    key = (user_id, message_id)
+def _vlc_should_track(user_id: int, message_id: int,
+                       pct: float, now: float) -> str | None:
+    """Pre-flight debounce check before creating a tracking task.
 
-    from main.utils import media_index, cw_store, wh_store
-    item = media_index.get_item(message_id)
+    Returns 'complete', 'progress', or None (skip).
+    Called in the request-handling coroutine to avoid spawning tasks
+    that would immediately exit via the debounce guard inside _vlc_track.
+    """
+    if pct >= 0.90:
+        return "complete"
+    if pct < 0.02:
+        return None
+    key = (user_id, message_id)
+    if now - _vlc_cw_debounce.get(key, 0) < 30:
+        return None
+    return "progress"
+
+
+async def _vlc_track(user_id: int, message_id: int,
+                     from_bytes: int, file_size: int,
+                     action: str) -> None:
+    """Update CW progress and WH completion for VLC viewers."""
+    from main.utils import cw_store, wh_store
+    from main.utils import media_index as _mi
+    item = _mi.get_item(message_id)
     if not item:
         return
     cw_key = f"{item.secure_hash}{item.message_id}"
     title  = item.title or item.file_name or ""
-    dur    = float(item.duration or 0)
 
-    # Completion — fire once when VLC reaches the last 10% of the file
-    if pct >= 0.90:
-        import asyncio as _asyncio
-        _asyncio.create_task(wh_store.record(user_id, cw_key, title))
-        # Clean up the debounce entry
-        _vlc_cw_debounce.pop(key, None)
-        return
-
-    # Progress — update CW at most every 30s, only for meaningful progress (>2%)
-    if pct < 0.02:
-        return
-    if now - _vlc_cw_debounce.get(key, 0) < 30:
-        return
-    _vlc_cw_debounce[key] = now
-    if dur > 0:
-        pos = pct * dur
-        import asyncio as _asyncio
-        _asyncio.create_task(
-            cw_store.upsert(user_id, cw_key, pos, dur,
-                            int(now * 1000), title)
-        )
+    if action == "complete":
+        await wh_store.record(user_id, cw_key, title)
+        _vlc_cw_debounce.pop((user_id, message_id), None)
+    elif action == "progress":
+        dur = float(item.duration or 0)
+        if dur > 0:
+            now = time.time()
+            pct = from_bytes / file_size
+            pos = pct * dur
+            _vlc_cw_debounce[(user_id, message_id)] = now
+            await cw_store.upsert(user_id, cw_key, pos, dur,
+                                   int(now * 1000), title)
 
 
 def _real_ip(request: web.Request) -> str:
@@ -186,7 +191,12 @@ async def watch_handler(request: web.Request):
         from main.vars import Var as _Var
         vlc_user_id = None
         vlc_token   = None
+        # Check cookie first, then Authorization header (for Bearer-only sessions)
         _jwt = request.cookies.get("td_session", "")
+        if not _jwt:
+            _auth = request.headers.get("Authorization", "")
+            if _auth.startswith("Bearer "):
+                _jwt = _auth[7:]
         if _jwt:
             _u = decode_token(_jwt)
             if _u:
@@ -281,15 +291,19 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     until_bytes = (request.http_range.stop or file_size) - 1
     range_header = "Range" in request.headers
 
-    # VLC tracking — verify token from ?vt= and fire async CW/WH updates
+    # VLC tracking — verify token from ?vt= and fire async CW/WH updates.
+    # Debounce check runs BEFORE create_task to avoid spawning tasks that
+    # would immediately exit (VLC sends one Range request per ~6s buffer).
     _vt = request.rel_url.query.get("vt", "")
     if _vt and file_size > 0:
         _uid = _vlc_verify(_vt, message_id)
         if _uid:
-            import asyncio as _asyncio
-            _asyncio.create_task(
-                _vlc_track(_uid, message_id, from_bytes, file_size)
-            )
+            _pct = from_bytes / file_size
+            _action = _vlc_should_track(_uid, message_id, _pct, time.time())
+            if _action:
+                asyncio.create_task(
+                    _vlc_track(_uid, message_id, from_bytes, file_size, _action)
+                )
 
     mime_type = file_id.mime_type
     file_name = file_id.file_name
