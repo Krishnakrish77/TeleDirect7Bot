@@ -176,7 +176,7 @@
           </div>
 
           {# Speed + Repeat row #}
-          <div class="flex items-center justify-center gap-4 mt-3 px-1">
+          <div class="w-full flex items-center justify-center gap-4 mt-3 px-1">
             <div class="flex items-center gap-1">
               {% for spd in [('0.75','¾×'),('1','1×'),('1.5','1.5×'),('2','2×')] %}
               <button data-speed="{{ spd[0] }}"
@@ -207,7 +207,7 @@
         </div>
 
         {# Action buttons #}
-        <div class="mt-4 md:mt-5 flex flex-wrap items-center justify-center gap-2 md:gap-3">
+        <div class="mt-4 md:mt-5 w-full flex flex-wrap items-center justify-center gap-2 md:gap-3">
           <a href="{{ src }}" hx-boost="false"
              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
                     text-slate-300 bg-ink-800/70 hover:bg-ink-800 border border-white/5 transition-colors">
