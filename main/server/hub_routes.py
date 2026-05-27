@@ -26,7 +26,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import hls, hub_query, media_index, thumb_cache, rec_engine
+from main.utils import hls, hub_query, media_index, thumb_cache, rec_engine, trending
 from main.utils.user_auth import get_user
 from main.utils.hub_query import HubItem
 from main.utils.human_readable import humanbytes
@@ -324,6 +324,21 @@ async def hub_home(request: web.Request) -> web.Response:
                 logging.warning("hub: rec_engine timed out, skipping shelf")
             except Exception:
                 logging.exception("hub: rec_engine failed, skipping shelf")
+
+        # Trending shelf — catalogue matches from TMDB trending + popular.
+        # Runs for all users (no auth required). Skipped if < MIN_SHELF_ITEMS match.
+        try:
+            tr = await asyncio.wait_for(trending.get_trending(), timeout=10.0)
+            tr_items = tr.get("in_library", [])
+            if len(tr_items) >= trending._MIN_SHELF_ITEMS:
+                shelves = list(shelves) + [
+                    {"name": "Trending", "items": tr_items,
+                     "link": None, "total": len(tr_items)},
+                ]
+        except asyncio.TimeoutError:
+            logging.warning("hub: trending timed out, skipping shelf")
+        except Exception:
+            logging.exception("hub: trending failed, skipping shelf")
 
         if _is_htmx(request) and not _is_boosted(request):
             # Filter/search swap: return the shelves fragment only (small, fast).

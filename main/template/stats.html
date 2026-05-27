@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Your Stats · TeleDirect{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-3xl mx-auto">
+
+  <div class="flex items-center gap-3 mb-8">
+    <a href="/" class="text-slate-500 hover:text-slate-300 transition-colors">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/>
+      </svg>
+    </a>
+    <h1 class="text-xl font-bold text-white">Your Stats</h1>
+  </div>
+
+  {# ── Summary cards ──────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-3 gap-3 mb-8">
+    <div class="bg-ink-800/60 border border-white/5 rounded-xl p-4 text-center">
+      <p class="text-2xl sm:text-3xl font-bold text-white">{{ total_time }}</p>
+      <p class="text-xs text-slate-500 mt-1">Watch time</p>
+    </div>
+    <div class="bg-ink-800/60 border border-white/5 rounded-xl p-4 text-center">
+      <p class="text-2xl sm:text-3xl font-bold text-white">{{ total_plays }}</p>
+      <p class="text-xs text-slate-500 mt-1">Titles finished</p>
+    </div>
+    <div class="bg-ink-800/60 border border-white/5 rounded-xl p-4 text-center">
+      {% set total_k = kind_video + kind_audio %}
+      {% if total_k > 0 %}
+        <p class="text-2xl sm:text-3xl font-bold text-white">
+          {{ ((kind_video / total_k) * 100) | int }}%
+        </p>
+        <p class="text-xs text-slate-500 mt-1">Video vs audio</p>
+      {% else %}
+        <p class="text-2xl sm:text-3xl font-bold text-slate-600">—</p>
+        <p class="text-xs text-slate-500 mt-1">Video vs audio</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Activity heatmap ─────────────────────────────────────────────────── #}
+  <section class="mb-8">
+    <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Activity — last 12 weeks</h2>
+    <div class="flex gap-1 flex-wrap">
+      {%- for cell in heatmap -%}
+        {%- if cell.dow == 0 and not loop.first -%}<div class="w-full h-0"></div>{%- endif -%}
+        <div title="{{ cell.date }}: {{ cell.count }} play{{ '' if cell.count == 1 else 's' }}"
+             class="w-3.5 h-3.5 rounded-sm flex-shrink-0
+             {%- if cell.count == 0 %} bg-ink-800
+             {%- elif cell.count == 1 %} bg-brand-900
+             {%- elif cell.count <= 3 %} bg-brand-700
+             {%- else %} bg-brand-500
+             {%- endif %}"></div>
+      {%- endfor -%}
+    </div>
+    <div class="flex items-center gap-2 mt-2 text-[10px] text-slate-600">
+      <span>Less</span>
+      <div class="w-3 h-3 rounded-sm bg-ink-800"></div>
+      <div class="w-3 h-3 rounded-sm bg-brand-900"></div>
+      <div class="w-3 h-3 rounded-sm bg-brand-700"></div>
+      <div class="w-3 h-3 rounded-sm bg-brand-500"></div>
+      <span>More</span>
+    </div>
+  </section>
+
+  {# ── Top genres ─────────────────────────────────────────────────────── #}
+  {% if top_genres %}
+  <section class="mb-8">
+    <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Favourite genres</h2>
+    <div class="space-y-2">
+      {% set max_count = top_genres[0][1] %}
+      {% for genre, count in top_genres %}
+        <div class="flex items-center gap-3">
+          <span class="text-sm text-slate-300 w-28 flex-shrink-0 truncate">{{ genre }}</span>
+          <div class="flex-1 bg-ink-800 rounded-full h-2">
+            <div class="h-full bg-brand-500 rounded-full transition-all"
+                 style="width: {{ ((count / max_count) * 100) | int }}%"></div>
+          </div>
+          <span class="text-xs text-slate-500 tabular-nums w-6 text-right">{{ count }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── Most replayed ───────────────────────────────────────────────────── #}
+  {% if most_replayed %}
+  <section class="mb-8">
+    <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Most replayed</h2>
+    <ul class="space-y-2">
+      {% for item in most_replayed %}
+        <li class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded bg-ink-800 flex-shrink-0 overflow-hidden">
+            {% if item.get('poster') %}
+              <img src="{{ item.poster }}" alt="" loading="lazy" onerror="this.remove()"
+                   class="w-full h-full object-cover" />
+            {% endif %}
+          </div>
+          <a href="{{ item.get('url', '#') }}"
+             hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
+             class="flex-1 min-w-0 text-sm text-slate-300 truncate hover:text-brand-300 transition-colors">
+            {{ item.title }}
+          </a>
+          <span class="text-xs text-slate-500 flex-shrink-0 tabular-nums">×{{ item.count }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if not top_genres and not most_replayed and total_plays == 0 %}
+    <div class="text-center py-16 text-slate-500">
+      <p class="font-medium text-slate-400">No activity yet</p>
+      <p class="text-sm mt-1">Start watching to see your stats here.</p>
+      <a href="/" class="mt-4 inline-block px-4 py-2 rounded-lg bg-brand-500
+                         hover:bg-brand-400 text-white text-sm font-medium transition-colors">
+        Browse catalogue
+      </a>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

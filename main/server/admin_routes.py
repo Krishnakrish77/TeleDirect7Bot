@@ -30,7 +30,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import media_index
+from main.utils import media_index, trending as _trending
 from main.utils.human_readable import humanbytes
 from main.utils.index_entry import IndexEntry, render
 from main.utils import series as series_parse
@@ -401,6 +401,33 @@ async def admin_enrich(request: web.Request) -> web.Response:
     if _is_htmx(request):
         return web.Response(status=204)
     raise _redirect_with_flash(flash_msg)
+
+
+@routes.get("/admin/trending-gaps")
+async def admin_trending_gaps(request: web.Request) -> web.Response:
+    """TMDB trending/popular titles not yet in the catalogue.
+
+    Shows posters, ratings, and TMDB links so the admin can decide what
+    to source next. Refreshes from the same 24h cache as the user shelf.
+    """
+    _require_session(request)
+    try:
+        tr = await asyncio.wait_for(_trending.get_trending(), timeout=15.0)
+        gaps = tr.get("missing", [])
+    except Exception:
+        logging.exception("admin: trending_gaps fetch failed")
+        gaps = []
+    tpl = _env.get_template("admin/trending_gaps.html")
+    body = await tpl.render_async(gaps=gaps)
+    return web.Response(text=body, content_type="text/html")
+
+
+@routes.post("/admin/trending-gaps/refresh")
+async def admin_trending_gaps_refresh(request: web.Request) -> web.Response:
+    """Force-invalidate the trending cache so the next load fetches fresh data."""
+    _require_session(request)
+    _trending.invalidate()
+    raise _redirect_with_flash("Trending cache cleared — next load will re-fetch from TMDB.")
 
 
 @routes.get("/admin/tmdb-preview")
