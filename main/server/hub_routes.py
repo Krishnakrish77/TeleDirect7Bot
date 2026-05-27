@@ -58,7 +58,10 @@ _env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
 _env.filters["duration"] = lambda s: _fmt_duration(int(s)) if s else ""
 from main.utils.codec_probe import _clean_music_tag as _cmt
 _env.filters["clean_music_tag"] = lambda s: _cmt(s) if s else s
+import re as _re
+_env.filters["artist_slug"] = lambda s: _re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
 _env.globals["bot_username"] = Var.BOT_USERNAME
+_env.globals["Var"] = Var
 
 
 SORT_OPTIONS = [
@@ -847,6 +850,23 @@ async def hub_album(request: web.Request) -> web.Response:
             track_count=len(tracks),
             meta=rep,
         )
+        _cache_set(cache_key, body)
+    return _html(body)
+
+
+@routes.get(r"/artist/{slug:[a-z0-9][a-z0-9\-]*}")
+async def hub_artist(request: web.Request) -> web.Response:
+    """All tracks by a single artist."""
+    slug = request.match_info["slug"]
+    tracks = media_index.tracks_by_artist_slug(slug)
+    if not tracks:
+        raise web.HTTPNotFound(text="Artist not found in catalogue.")
+    artist_name = tracks[0].artist
+    cache_key = f"artist:{slug}"
+    body = _cache_get(cache_key)
+    if not body:
+        tpl = _env.get_template("artist.html")
+        body = await tpl.render_async(artist=artist_name, slug=slug, tracks=tracks)
         _cache_set(cache_key, body)
     return _html(body)
 

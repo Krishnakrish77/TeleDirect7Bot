@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}{{ artist }} · TeleDirect{% endblock %}
+
+{% block content %}
+  <div class="w-full max-w-screen-xl">
+    <header class="mb-8">
+      <a href="/" class="inline-flex items-center gap-1 text-sm text-slate-400
+                        hover:text-brand-300 transition-colors mb-3">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+        </svg>
+        Back to library
+      </a>
+      <p class="text-xs uppercase tracking-wider text-slate-500 mb-1">Artist</p>
+      <h1 class="text-3xl sm:text-4xl font-bold text-white">{{ artist | clean_music_tag }}</h1>
+      <p class="mt-1 text-slate-400 text-sm">{{ tracks | length }} track{{ '' if tracks | length == 1 else 's' }}</p>
+    </header>
+
+    {# Group tracks by album #}
+    {% set ns = namespace(current_album='__NONE__') %}
+    <div class="space-y-6">
+      {% for track in tracks %}
+        {% if track.album_title != ns.current_album %}
+          {% if not loop.first %}</ul>{% endif %}
+          {% set ns.current_album = track.album_title %}
+          {% if track.album_title %}
+            <div class="flex items-center gap-3 mt-4 mb-2">
+              <div class="w-8 h-8 rounded bg-ink-800 flex-shrink-0 overflow-hidden">
+                <img src="/thumb/{{ track.secure_hash }}{{ track.message_id }}.jpg"
+                     alt="" loading="lazy" onerror="this.style.display='none'"
+                     class="w-full h-full object-cover" />
+              </div>
+              <a href="/album/{{ track.album_key }}"
+                 class="text-sm font-semibold text-slate-300 hover:text-brand-300 transition-colors">
+                {{ track.album_title | clean_music_tag }}
+              </a>
+            </div>
+          {% else %}
+            <p class="text-xs uppercase tracking-wider text-slate-500 mt-4 mb-2">Singles</p>
+          {% endif %}
+          <ul class="space-y-1">
+        {% endif %}
+        <li>
+          <a href="/watch/{{ track.secure_hash }}{{ track.message_id }}"
+             onclick="event.preventDefault(); _albumPlayArtist({{ loop.index0 }})"
+             class="group flex items-center gap-4 pl-0 pr-3 py-3 rounded-lg
+                    hover:bg-ink-800/60 transition-colors cursor-pointer">
+            <span class="w-6 flex items-center justify-end flex-shrink-0 text-sm text-slate-500 tabular-nums">
+              {{ track.track_number or loop.index }}
+            </span>
+            <div class="w-10 h-10 rounded bg-ink-800 flex-shrink-0 overflow-hidden relative">
+              <img src="/thumb/{{ track.secure_hash }}{{ track.message_id }}.jpg"
+                   alt="" loading="lazy" onerror="this.style.display='none'"
+                   class="absolute inset-0 w-full h-full object-cover" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-white truncate group-hover:text-brand-300 transition-colors">
+                {{ (track.title or track.file_name) | clean_music_tag }}
+              </p>
+              {% if track.album_title %}
+                <p class="text-xs text-slate-500 truncate">{{ track.album_title | clean_music_tag }}</p>
+              {% endif %}
+            </div>
+            {% if track.duration %}
+              <span class="text-xs text-slate-600 tabular-nums flex-shrink-0">
+                {{ track.duration | duration }}
+              </span>
+            {% endif %}
+          </a>
+        </li>
+      {% endfor %}
+      {% if tracks %}</ul>{% endif %}
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var _artistTracks = [
+  {% for t in tracks %}
+  {
+    url: '/watch/{{ t.secure_hash }}{{ t.message_id }}',
+    stream: '{{ Var.URL }}{{ t.secure_hash }}{{ t.message_id }}',
+    title: {{ (t.title or t.file_name) | clean_music_tag | tojson }},
+    artist: {{ (t.artist or '') | clean_music_tag | tojson }},
+    art: '/thumb/{{ t.secure_hash }}{{ t.message_id }}.jpg',
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+];
+function _albumPlayArtist(idx) {
+  if (typeof _cardPlayAudio === 'function') {
+    var t = _artistTracks[idx];
+    if (t) _cardPlayAudio(t.stream, t.url, t.title, t.artist, t.art);
+  } else {
+    window.location.href = _artistTracks[idx]?.url || '#';
+  }
+}
+</script>
+{% endblock %}

@@ -1346,6 +1346,23 @@ def episodes_for_series(series_key: str) -> List[HubItem]:
     return eps
 
 
+def _artist_slug(name: str) -> str:
+    """URL-safe slug from an artist name."""
+    import re as _re
+    return _re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+
+
+def tracks_by_artist_slug(slug: str) -> List[HubItem]:
+    """Return all non-hidden audio tracks whose artist slug matches."""
+    matches = [
+        it for it in _items.values()
+        if it.media_kind == "audio" and it.artist and not it.hidden
+        and _artist_slug(it.artist) == slug
+    ]
+    matches.sort(key=lambda t: (t.album_title or "", t.track_number or 999, t.title or ""))
+    return matches
+
+
 def tracks_for_album(album_key: str) -> List[HubItem]:
     """All audio tracks for an album, sorted by track_number then message_id.
 

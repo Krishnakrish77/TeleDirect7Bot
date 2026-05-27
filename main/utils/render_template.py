@@ -24,8 +24,11 @@ _env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
 # Strip distribution-site watermarks from music display fields
 from main.utils.codec_probe import _clean_music_tag as _cmt
 _env.filters["clean_music_tag"] = lambda s: _cmt(s) if s else s
+import re as _re
+_env.filters["artist_slug"] = lambda s: _re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
 from main.vars import Var as _Var
 _env.globals["bot_username"] = _Var.BOT_USERNAME
+_env.globals["Var"] = _Var
 
 
 def _fmt_duration(seconds: int) -> str:

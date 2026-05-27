@@ -17,6 +17,7 @@ from .auth_routes import routes as auth_routes
 from .watchlist_routes import routes as watchlist_routes
 from .cw_routes import routes as cw_routes
 from .wh_routes import routes as wh_routes
+from .ratings_routes import routes as ratings_routes
 
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
@@ -175,6 +176,7 @@ def web_server():
     web_app.add_routes(watchlist_routes)
     web_app.add_routes(cw_routes)
     web_app.add_routes(wh_routes)
+    web_app.add_routes(ratings_routes)
     web_app.add_routes(admin_routes)
     web_app.add_routes(hub_routes)
     web_app.add_routes(hls_routes)
