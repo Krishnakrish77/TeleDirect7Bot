@@ -1,6 +1,6 @@
-    <header class="mb-6 flex items-end justify-between gap-3">
+    <header class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 class="text-3xl font-bold text-white tracking-tight">Admin</h1>
+        <h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">Admin</h1>
         <p class="mt-1 text-sm text-slate-400">
           {{ catalogue_size }} indexed entr{{ 'y' if catalogue_size == 1 else 'ies' }}.
           Select rows for bulk actions or click Edit on any row for inline editing.
@@ -11,7 +11,7 @@
          Migrate → Mongo) into one menu so the header stops being a
          wall of buttons. Each item is its own HTMX form so the
          existing fire-and-forget + progress-tick pattern still works. #}
-      <div class="flex items-center gap-3"
+      <div class="flex items-center gap-3 flex-wrap"
            x-data="{ menuOpen: false }"
            @keydown.escape.window="menuOpen = false"
            @click.outside="menuOpen = false">
