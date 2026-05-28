@@ -55,7 +55,9 @@
   {% if top_title %}
   <div class="rounded-2xl bg-ink-800/80 border border-white/5 overflow-hidden">
     <div class="px-6 pt-5 pb-3">
-      <p class="text-xs text-slate-500 uppercase tracking-widest">#1 Most Watched</p>
+      <p class="text-xs text-slate-500 uppercase tracking-widest">
+        {%- if top_title.media_kind == 'audio' %}#1 Most Played{%- else %}#1 Most Watched{%- endif %}
+      </p>
     </div>
     <div class="flex items-center gap-4 px-6 pb-6">
       {% if top_title.poster %}
