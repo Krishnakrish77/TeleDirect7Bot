@@ -103,6 +103,11 @@
             bg.load();
           }
         };
+        // Remove any previous handler before re-registering. _initAudioPage runs
+        // on every htmx.ajax navigation between audio tracks, so without this
+        // each navigation would add another handler and all copies would fire
+        // on page unload.
+        window.removeEventListener('pagehide', window._handoffAudioToBg);
         window.addEventListener('pagehide', window._handoffAudioToBg);
         {% endif %}
 
