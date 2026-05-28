@@ -146,35 +146,60 @@ async def stats_page(request: web.Request) -> web.Response:
     total_k = n_video + n_audio
     audio_pct = int(n_audio / total_k * 100) if total_k else 0
 
-    # ── Most replayed (keyed by cw_key to avoid title collisions) ─────────
-    ck_counts: Counter = Counter()
-    ck_meta:   dict    = {}
+    # ── Most watched — grouped by series/movie so episodes aggregate ──────
+    # watch_history has a unique (user_id, cw_key) index, so each episode
+    # appears at most once per row. Without grouping every item has count=1
+    # and "most watched" is just the most recently completed item. Grouping
+    # by series_key/movie_key makes the count genuinely meaningful: a user
+    # who watched 10 Breaking Bad episodes gets one entry with count=10.
+    title_counts: Counter = Counter()
+    title_meta:   dict    = {}
     for h in history:
         ck = h.get("cw_key", "")
         if not ck:
             continue
-        ck_counts[ck] += 1
-        if ck not in ck_meta:
-            m = _CW_KEY_RE.match(ck)
-            if m:
-                item = media_index.get_item(int(m.group(1)))
-                if item:
-                    ck_meta[ck] = {
-                        "title":      item.title or h.get("title", ""),
-                        "poster":     (f"https://image.tmdb.org/t/p/w342{item.poster_path}"
-                                       if item.poster_path
-                                       else f"/thumb/{item.secure_hash}{item.message_id}.jpg"),
-                        "url":        f"/watch/{item.secure_hash}{item.message_id}",
-                        "media_kind": item.media_kind or "video",
-                        "year":       item.year or "",
-                    }
+        m = _CW_KEY_RE.match(ck)
+        if not m:
+            continue
+        item = media_index.get_item(int(m.group(1)))
+        if not item:
+            # Item pruned from catalogue — keep a stub so it still appears
+            title_counts[ck] += 1
+            if ck not in title_meta:
+                title_meta[ck] = {
+                    "title":      h.get("title", ""),
+                    "poster":     "",
+                    "url":        "#",
+                    "media_kind": "video",
+                    "year":       "",
+                }
+            continue
+        group = item.series_key or item.movie_key or ck
+        title_counts[group] += 1
+        if group not in title_meta:
+            title  = (item.series_title or item.title) if item.series_key else item.title
+            url    = (f"/series/{item.series_key}" if item.series_key else
+                      f"/movie/{item.movie_key}"   if item.movie_key  else
+                      f"/watch/{item.secure_hash}{item.message_id}")
+            poster = (f"https://image.tmdb.org/t/p/w342{item.poster_path}"
+                      if item.poster_path
+                      else f"/thumb/{item.secure_hash}{item.message_id}.jpg")
+            title_meta[group] = {
+                "title":      title or h.get("title", ""),
+                "poster":     poster,
+                "url":        url,
+                "media_kind": item.media_kind or "video",
+                "year":       item.year or "",
+                "is_series":  bool(item.series_key),
+            }
 
     most_replayed = [
-        {"count": c, **ck_meta[ck]}
-        for ck, c in ck_counts.most_common(5)
-        if ck in ck_meta
+        {"count": c, **title_meta[g]}
+        for g, c in title_counts.most_common(5)
+        if g in title_meta
     ]
-    top_title = most_replayed[0] if most_replayed else None
+    top_title    = most_replayed[0] if most_replayed else None
+    total_titles = len(title_counts)  # distinct series/movies/albums completed
 
     # ── Temporal patterns ─────────────────────────────────────────────────
     dow_counts:  Counter = Counter()   # 0=Mon … 6=Sun
@@ -206,15 +231,19 @@ async def stats_page(request: web.Request) -> web.Response:
     best_day_name = _DAYS[best_dow_idx] if best_dow_idx >= 0 else "—"
 
     # Weekend vs weekday split
+    # Use timed_plays (entries with a watched_at date) as the denominator —
+    # total_plays counts all history rows, some of which may lack a timestamp,
+    # which would make the percentages slightly low.
     weekend_plays = dow_counts[5] + dow_counts[6]
     total_plays   = len(history)
-    weekend_pct   = int(weekend_plays / total_plays * 100) if total_plays else 0
+    timed_plays   = sum(dow_counts.values())
+    weekend_pct   = int(weekend_plays / timed_plays * 100) if timed_plays else 0
 
     # Best time of day
     best_hour       = hour_counts.most_common(1)[0][0] if hour_counts else 12
     tod_label, tod_emoji = _time_label(best_hour)
     night_plays     = sum(hour_counts[h] for h in list(range(22,24)) + list(range(0,5)))
-    night_pct       = int(night_plays / total_plays * 100) if total_plays else 0
+    night_pct       = int(night_plays / timed_plays * 100) if timed_plays else 0
 
     # ── Completion rate ───────────────────────────────────────────────────
     # Only count in-progress items that have a valid cw_key (valid regex +
@@ -252,6 +281,7 @@ async def stats_page(request: web.Request) -> web.Response:
         total_hours  = total_hours,
         total_mins   = total_mins,
         total_plays  = total_plays,
+        total_titles = total_titles,
         active_days  = active_days,
         equiv_movies = equiv_movies,
         equiv_flights= equiv_flights,
