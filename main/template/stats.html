@@ -81,7 +81,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-3.5 h-3.5">
             <path d="M8 5v14l11-7z"/>
           </svg>
-          Watch again
+          {% if top_title.media_kind == 'audio' %}Play again{% else %}Watch again{% endif %}
         </a>
       </div>
     </div>
@@ -172,7 +172,7 @@
   {# ── VIDEO VS AUDIO ───────────────────────────────────────────────────── #}
   {% if n_video > 0 and n_audio > 0 %}
   <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6">
-    <p class="text-xs text-slate-500 uppercase tracking-widest mb-3">What You Watch</p>
+    <p class="text-xs text-slate-500 uppercase tracking-widest mb-3">What You Watch &amp; Listen To</p>
     <div class="flex gap-3 text-center">
       <div class="flex-1 bg-ink-700 rounded-xl p-4">
         <p class="text-3xl font-black text-white">{{ n_video }}</p>
