@@ -1019,7 +1019,7 @@ async def hub_thumb(request: web.Request) -> web.Response:
         body=data,
         content_type="image/jpeg",
         headers={
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": "public, max-age=86400, immutable",
             "Content-Length": str(len(data)),
         },
     )
