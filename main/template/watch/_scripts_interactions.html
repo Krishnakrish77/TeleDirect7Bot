@@ -208,11 +208,6 @@
           }
         }));
       }
-      // VLC — most common reason to open the ⋮ menu
-      menu.appendChild(menuItem(vlcIcon, "Open in VLC", () => {
-        const vlcBtn = document.getElementById("vlcButton") || document.querySelector("[data-stream-url]");
-        if (vlcBtn) window.location.href = buildVlcUrl(vlcBtn.dataset.streamUrl);
-      }));
       menu.appendChild(menuItem(subIcon, "Load subtitles", () => {
         const subInput = document.getElementById("subUpload");
         if (subInput) subInput.click();
