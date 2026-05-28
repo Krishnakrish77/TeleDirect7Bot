@@ -82,15 +82,36 @@
                    ? 'bg-brand-500/15 text-white'
                    : 'text-slate-200 hover:bg-ink-800'"
                  class="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors">
+                {# Poster: TMDB → /thumb/ fallback → placeholder icon #}
                 <template x-if="it.poster_path">
                   <img :src="'https://image.tmdb.org/t/p/w92' + it.poster_path" alt=""
                        loading="lazy"
                        class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
                 </template>
                 <template x-if="!it.poster_path">
-                  <img :src="'/thumb/' + it.secure_hash + it.message_id + '.jpg'" alt=""
-                       loading="lazy" onerror="this.style.display='none'"
-                       class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
+                  <div class="w-8 h-12 rounded bg-ink-800 flex-shrink-0 relative overflow-hidden">
+                    <img :src="'/thumb/' + it.secure_hash + it.message_id + '.jpg'" alt=""
+                         loading="lazy"
+                         @error="$el.style.opacity='0'"
+                         class="w-full h-full object-cover" />
+                    {# Placeholder shown when thumb also fails #}
+                    <div class="absolute inset-0 flex items-center justify-center text-slate-600">
+                      <template x-if="it.kind === 'audio'">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
+                          <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+                        </svg>
+                      </template>
+                      <template x-if="it.kind !== 'audio'">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
+                          <path stroke-linecap="round" stroke-linejoin="round"
+                                d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                        </svg>
+                      </template>
+                    </div>
+                  </div>
                 </template>
                 <div class="min-w-0 flex-1">
                   <p class="font-medium truncate" x-text="it.title"></p>

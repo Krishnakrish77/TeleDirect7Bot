@@ -174,13 +174,22 @@ async def stats_page(request: web.Request) -> web.Response:
                     "year":       "",
                 }
             continue
-        group = item.series_key or item.movie_key or ck
+        # album_key groups music tracks by album (movie_key is "" for audio)
+        group = item.series_key or item.album_key or item.movie_key or ck
         title_counts[group] += 1
         if group not in title_meta:
-            title  = (item.series_title or item.title) if item.series_key else item.title
-            url    = (f"/series/{item.series_key}" if item.series_key else
-                      f"/movie/{item.movie_key}"   if item.movie_key  else
-                      f"/watch/{item.secure_hash}{item.message_id}")
+            if item.series_key:
+                title = item.series_title or item.title
+                url   = f"/series/{item.series_key}"
+            elif item.album_key:
+                title = item.album_title or item.title
+                url   = f"/album/{item.album_key}"
+            elif item.movie_key:
+                title = item.title
+                url   = f"/movie/{item.movie_key}"
+            else:
+                title = item.title
+                url   = f"/watch/{item.secure_hash}{item.message_id}"
             poster = (f"https://image.tmdb.org/t/p/w342{item.poster_path}"
                       if item.poster_path
                       else f"/thumb/{item.secure_hash}{item.message_id}.jpg")
