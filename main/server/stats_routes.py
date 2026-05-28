@@ -99,10 +99,11 @@ async def stats_page(request: web.Request) -> web.Response:
             pos = entry.get("pos", 0)
             total_seconds += pos
             _it = media_index.get_item(int(m.group(1)))
-            if _it and _it.media_kind == "audio":
-                audio_seconds += pos
-            else:
-                video_seconds += pos
+            if _it:  # skip split for pruned items — kind is unknown
+                if _it.media_kind == "audio":
+                    audio_seconds += pos
+                else:
+                    video_seconds += pos
     for h in history:
         m = _CW_KEY_RE.match(h.get("cw_key", ""))
         if m:
@@ -224,14 +225,34 @@ async def stats_page(request: web.Request) -> web.Response:
             daily_counts[wa.strftime("%Y-%m-%d")] += 1
 
     # Also count days with in-progress CW activity (t = epoch-ms of last save).
-    # Without this, daily_counts only reflects completed watches, so users who
-    # mostly watch partially (very common) show 0-day streaks despite being active.
+    # Skip entries already in history_cw_keys to avoid double-counting the same
+    # day (completion date from history + CW t date for the same item).
     for ck, entry in cw_data.items():
+        if ck in history_cw_keys:
+            continue  # already counted via history loop above
         t_ms = entry.get("t", 0)
         if t_ms > 0:
             cw_day = datetime.utcfromtimestamp(t_ms / 1000)
             if cw_day >= week_start:
                 daily_counts[cw_day.strftime("%Y-%m-%d")] += 1
+
+    # ── All-time active days set for streak computation ───────────────────
+    # daily_counts is windowed to 12 weeks; using it for streaks would cap
+    # them at 84. Build an unwindowed set from the full history (365-day TTL)
+    # and cw_data (90-day TTL) so long streaks are reported correctly.
+    _all_active_days: set = set()
+    for h in history:
+        _wa = h.get("watched_at")
+        if _wa:
+            if hasattr(_wa, 'tzinfo') and _wa.tzinfo:
+                _wa = _wa.replace(tzinfo=None)
+            _all_active_days.add(_wa.strftime("%Y-%m-%d"))
+    for _ck, _entry in cw_data.items():
+        _t = _entry.get("t", 0)
+        if _t > 0:
+            _all_active_days.add(
+                datetime.utcfromtimestamp(_t / 1000).strftime("%Y-%m-%d")
+            )
 
     # Day-of-week bar: max=100 so bars are relative
     max_dow = max(dow_counts.values(), default=1)
@@ -293,9 +314,9 @@ async def stats_page(request: web.Request) -> web.Response:
     # the next day shouldn't reset a long streak to 0.
     current_streak = 0
     _d = _today_utc
-    if daily_counts.get(_d.strftime("%Y-%m-%d"), 0) == 0:
+    if _d.strftime("%Y-%m-%d") not in _all_active_days:
         _d -= timedelta(days=1)  # allow streak to end yesterday
-    while daily_counts.get(_d.strftime("%Y-%m-%d"), 0) > 0:
+    while _d.strftime("%Y-%m-%d") in _all_active_days:
         current_streak += 1
         _d -= timedelta(days=1)
     # longest_streak: longest run within the 12-week heatmap window
