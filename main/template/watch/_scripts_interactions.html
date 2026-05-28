@@ -217,6 +217,21 @@
         const subInput = document.getElementById("subUpload");
         if (subInput) subInput.click();
       }));
+      // Captions toggle — removed from mobile Plyr bar to prevent wrapping
+      const ccIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><rect x="2" y="5" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M7 12h2m2 0h6M7 15h4m2 0h2"/></svg>';
+      menu.appendChild(menuItem(ccIcon, "Toggle captions", () => {
+        // Find the Plyr instance and toggle captions if captions exist
+        var plyrEl = video.closest(".plyr");
+        var ccBtn = plyrEl && plyrEl.querySelector("[data-plyr='captions']");
+        if (ccBtn) { ccBtn.click(); } else {
+          // Fallback: cycle through text tracks
+          var tracks = Array.from(video.textTracks || []);
+          if (!tracks.length) return;
+          var active = tracks.find(function(t) { return t.mode === "showing"; });
+          tracks.forEach(function(t) { t.mode = "hidden"; });
+          if (!active) tracks[0].mode = "showing";
+        }
+      }));
       menu.appendChild(menuItem(dlIcon, "Download", () => { window.open("{{ src }}", "_blank"); }));
       menu.appendChild(menuItem(shrIcon, "Share", () => {
         var data = { title: document.title, url: location.href };
