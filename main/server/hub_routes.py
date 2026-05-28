@@ -990,7 +990,8 @@ async def hub_thumb(request: web.Request) -> web.Response:
         result = await hls.grab_thumbnail(
             source_url,
             duration=float(item.duration or 0),
-            seek=0.0 if is_audio else 1.0,  # APIC at byte 0; don't Range-seek past it
+            seek=1.0,
+            is_audio=is_audio,
         )
         if result is not None:
             return result

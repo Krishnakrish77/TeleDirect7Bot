@@ -346,52 +346,56 @@ def _thumb_sem() -> asyncio.Semaphore:
     return _thumb_semaphore
 
 
-async def grab_thumbnail(source_url: str, duration: float = 0.0, seek: float = 1.0) -> Optional[bytes]:
-    """Grab a single JPEG frame from a video / APIC art from audio.
+async def grab_thumbnail(source_url: str, duration: float = 0.0, seek: float = 1.0,
+                         is_audio: bool = False) -> Optional[bytes]:
+    """Grab a single JPEG frame from a video, or APIC art from audio.
 
-    Used by /thumb/* when Telegram's own thumbnail is missing. We input-seek
-    (``-ss`` before ``-i``) for video so ffmpeg only reads the part it needs.
-    For audio APIC extraction pass seek=0.0 — the APIC lives in the ID3 header
-    at byte 0; an input-seek sends a Range request that skips it entirely.
+    Used by /thumb/* when Telegram's own thumbnail is missing.
+
+    Video: input-seek (``-ss`` before ``-i``) jumps to the seek position via the
+    MOOV index, reading ~100 KB total. Output-side seek would read megabytes.
+
+    Audio: do NOT use ``-ss``. Even ``-ss 0.0`` is an input-seek that maps
+    timestamp 0.0 s to the first audio frame (after the ID3 header), sending
+    a Range request that skips past the APIC entirely. Instead, open the URL
+    from byte 0 (no ``-ss``) and use ``-map 0:v:0`` to explicitly select the
+    embedded cover-art stream. The skeleton head (2 MB) covers any realistic
+    APIC size; ffmpeg exits after extracting the single image.
     """
-    # Default: seek to 1 second for video (avoids black first frame, reads
-    # minimal data via MOOV index). Callers pass seek=0.0 for audio APIC.
-
-    args = [
+    _common = [
         "ffmpeg",
         "-hide_banner", "-loglevel", "error",
-        # HTTP-level read timeout (microseconds). Cold-cache tail warmup
-        # fetches 512 KB from Telegram which takes ~3-10s; give enough room.
-        "-timeout", "45000000",         # 45s per HTTP request
-        # Our stream route returns a 206 with only the 2 MB skeleton head in
-        # response to ffmpeg's initial no-Range GET (see stream_routes.py).
-        # If the MP4 demuxer reads sequentially past that 2 MB — large moov
-        # at start, or many small boxes before mdat — libavformat would
-        # otherwise treat the end of the response body as terminal EOF and
-        # abort with AVERROR_EOF / "error reading header" (exit 187). These
-        # flags make ffmpeg reissue a Range request from the current offset
-        # instead, which our route serves from cache (head/tail) or from
-        # Telegram. reconnect_at_eof is the load-bearing one.
+        "-timeout", "45000000",
         "-reconnect", "1",
         "-reconnect_at_eof", "1",
         "-reconnect_streamed", "1",
         "-reconnect_delay_max", "5",
-        # Tolerate broken MP4 indices (STCO/STSC mismatches).
         "-fflags", "+ignidx+igndts+discardcorrupt",
         "-err_detect", "ignore_err",
-        # Input-side seek (-ss before -i): ffmpeg uses the MOOV index to jump
-        # directly to the seek position via a Range request — reads ~100 KB
-        # total. Output-side seek reads all data from 0 to seek point which
-        # can be many MB for long videos, causing loopback timeouts.
-        "-ss", f"{seek:.2f}",
-        "-i", source_url,
-        "-frames:v", "1",
-        "-q:v", "1",             # maximum JPEG quality
-        "-vf", "scale=1280:-2",  # 4× retina; sharp on any display
-        "-f", "image2pipe",
-        "-vcodec", "mjpeg",
-        "-",
     ]
+    if is_audio:
+        args = [
+            *_common,
+            "-i", source_url,
+            "-map", "0:v:0",     # explicitly select APIC stream
+            "-frames:v", "1",
+            "-q:v", "1",
+            "-f", "image2pipe",
+            "-vcodec", "mjpeg",
+            "-",
+        ]
+    else:
+        args = [
+            *_common,
+            "-ss", f"{seek:.2f}",
+            "-i", source_url,
+            "-frames:v", "1",
+            "-q:v", "2",
+            "-vf", "scale=640:-2",
+            "-f", "image2pipe",
+            "-vcodec", "mjpeg",
+            "-",
+        ]
     async with _thumb_sem():
         try:
             proc = await asyncio.create_subprocess_exec(
