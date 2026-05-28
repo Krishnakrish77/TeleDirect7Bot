@@ -89,21 +89,35 @@ async def stats_page(request: web.Request) -> web.Response:
         if m:
             history_mids.add(int(m.group(1)))
 
-    # ── Total watch/listen time ───────────────────────────────────────────
+    # ── Total watch/listen time (with audio/video split) ─────────────────
     total_seconds = 0.0
+    video_seconds = 0.0
+    audio_seconds = 0.0
     for ck, entry in cw_data.items():
         m = _CW_KEY_RE.match(ck)
         if m and int(m.group(1)) not in history_mids:
-            total_seconds += entry.get("pos", 0)
+            pos = entry.get("pos", 0)
+            total_seconds += pos
+            _it = media_index.get_item(int(m.group(1)))
+            if _it and _it.media_kind == "audio":
+                audio_seconds += pos
+            else:
+                video_seconds += pos
     for h in history:
         m = _CW_KEY_RE.match(h.get("cw_key", ""))
         if m:
             item = media_index.get_item(int(m.group(1)))
             if item and item.duration:
                 total_seconds += item.duration
+                if item.media_kind == "audio":
+                    audio_seconds += item.duration
+                else:
+                    video_seconds += item.duration
 
     total_hours = int(total_seconds // 3600)
     total_mins  = int((total_seconds % 3600) // 60)
+    video_hours = int(video_seconds // 3600)
+    audio_hours = int(audio_seconds // 3600)
 
     # Fun equivalents
     equiv_movies  = round(total_seconds / 6600)   # avg movie ~110 min
@@ -250,11 +264,12 @@ async def stats_page(request: web.Request) -> web.Response:
     finished   = len(history_mids)
     completion = int(finished / started * 100) if started else 0
 
-    # ── Activity heatmap (12 weeks) ───────────────────────────────────────
+    # ── Activity heatmap (12 weeks) — use UTC dates to match daily_counts ──
     active_days = sum(1 for v in daily_counts.values() if v > 0)
     heatmap = []
     from datetime import date as _date
-    monday = (_date.today() - timedelta(weeks=12))
+    _today_utc = datetime.utcnow().date()
+    monday = (_today_utc - timedelta(weeks=12))
     monday -= timedelta(days=monday.weekday())
     for _ in range(12 * 7):
         dk = monday.strftime("%Y-%m-%d")
@@ -262,9 +277,29 @@ async def stats_page(request: web.Request) -> web.Response:
                          "dow": monday.weekday()})
         monday += timedelta(days=1)
 
-    # ── Personality ───────────────────────────────────────────────────────
-    personality = _personality(top_genre, night_pct, weekend_pct,
-                                completion, audio_pct)
+    # ── Streak stats ──────────────────────────────────────────────────────
+    # current_streak: consecutive days ending today (UTC) with >= 1 play
+    current_streak = 0
+    _d = _today_utc
+    while daily_counts.get(_d.strftime("%Y-%m-%d"), 0) > 0:
+        current_streak += 1
+        _d -= timedelta(days=1)
+    # longest_streak: longest run within the 12-week heatmap window
+    longest_streak, _run = 0, 0
+    for cell in heatmap:
+        if cell["count"] > 0:
+            _run += 1
+            longest_streak = max(longest_streak, _run)
+        else:
+            _run = 0
+
+    # ── Personality — require meaningful activity before labelling ────────
+    # A user who watched 1 episode shouldn't get "Devoted Finisher"; the
+    # label only means something once there's a reasonable sample size.
+    personality = (
+        _personality(top_genre, night_pct, weekend_pct, completion, audio_pct)
+        if total_plays >= 10 else ""
+    )
 
     tpl  = _env.get_template("stats.html")
     body = await tpl.render_async(
@@ -288,8 +323,12 @@ async def stats_page(request: web.Request) -> web.Response:
         best_day     = best_day_name,
         tod_label    = tod_label,
         tod_emoji    = tod_emoji,
-        completion   = completion,
-        personality  = personality,
-        heatmap      = heatmap,
+        completion      = completion,
+        personality     = personality,
+        heatmap         = heatmap,
+        current_streak  = current_streak,
+        longest_streak  = longest_streak,
+        video_hours     = video_hours,
+        audio_hours     = audio_hours,
     )
     return web.Response(text=body, content_type="text/html")
