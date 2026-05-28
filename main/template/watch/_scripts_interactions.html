@@ -219,17 +219,16 @@
         else if (navigator.clipboard) { navigator.clipboard.writeText(location.href).catch(function() {}); }
       }));
 
-      // ⋮ trigger button styled like Plyr controls
-      const trigger = document.createElement("div");
-      trigger.className = "plyr__controls__item";
-      trigger.style.position = "relative";
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "plyr__control";
-      btn.setAttribute("aria-label", "More options");
-      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>';
-      btn.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(); });
-      trigger.appendChild(btn);
+      // ⋮ trigger — single element matching Plyr's own button structure.
+      // Other Plyr controls are bare <button class="plyr__control plyr__controls__item">;
+      // the previous extra wrapper <div> broke Plyr's flex alignment, making
+      // the button visually off-centre compared to surrounding controls.
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.className = "plyr__control plyr__controls__item";
+      trigger.setAttribute("aria-label", "More options");
+      trigger.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px;display:block"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>';
+      trigger.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(); });
       bar.appendChild(trigger);
 
       // Attach menu to plyrEl (.plyr div), NOT the parent .aspect-video.
