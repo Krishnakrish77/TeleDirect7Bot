@@ -118,7 +118,9 @@ async def stats_page(request: web.Request) -> web.Response:
     total_hours = int(total_seconds // 3600)
     total_mins  = int((total_seconds % 3600) // 60)
     video_hours = int(video_seconds // 3600)
+    video_mins  = int((video_seconds % 3600) // 60)
     audio_hours = int(audio_seconds // 3600)
+    audio_mins  = int((audio_seconds % 3600) // 60)
 
     # Fun equivalents
     equiv_movies  = round(total_seconds / 6600)   # avg movie ~110 min
@@ -364,6 +366,8 @@ async def stats_page(request: web.Request) -> web.Response:
         current_streak  = current_streak,
         longest_streak  = longest_streak,
         video_hours     = video_hours,
+        video_mins      = video_mins,
         audio_hours     = audio_hours,
+        audio_mins      = audio_mins,
     )
     return web.Response(text=body, content_type="text/html")

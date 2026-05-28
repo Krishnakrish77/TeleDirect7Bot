@@ -172,24 +172,32 @@
   {% endif %}
 
   {# ── VIDEO VS AUDIO ───────────────────────────────────────────────────── #}
-  {% if n_video > 0 and n_audio > 0 %}
+  {% if n_video > 0 or n_audio > 0 %}
   <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6">
     <p class="text-xs text-slate-500 uppercase tracking-widest mb-3">What You Watch &amp; Listen To</p>
     <div class="flex gap-3 text-center">
+      {% if n_video > 0 %}
       <div class="flex-1 bg-ink-700 rounded-xl p-4">
         <p class="text-3xl font-black text-white">{{ n_video }}</p>
         <p class="text-xs text-slate-400 mt-1">🎬 Videos</p>
         {% if video_hours > 0 %}
         <p class="text-[10px] text-slate-600 mt-0.5">{{ video_hours }}h watched</p>
+        {% elif video_mins > 0 %}
+        <p class="text-[10px] text-slate-600 mt-0.5">{{ video_mins }}m watched</p>
         {% endif %}
       </div>
+      {% endif %}
+      {% if n_audio > 0 %}
       <div class="flex-1 bg-ink-700 rounded-xl p-4">
         <p class="text-3xl font-black text-white">{{ n_audio }}</p>
         <p class="text-xs text-slate-400 mt-1">🎵 Tracks</p>
         {% if audio_hours > 0 %}
         <p class="text-[10px] text-slate-600 mt-0.5">{{ audio_hours }}h listened</p>
+        {% elif audio_mins > 0 %}
+        <p class="text-[10px] text-slate-600 mt-0.5">{{ audio_mins }}m listened</p>
         {% endif %}
       </div>
+      {% endif %}
     </div>
   </div>
   {% endif %}
