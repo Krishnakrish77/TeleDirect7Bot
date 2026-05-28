@@ -445,7 +445,7 @@ _MANIFEST_JSON = json.dumps({
     "start_url": "/",
     "scope": "/",
     "display": "standalone",
-    "orientation": "portrait-primary",
+    "orientation": "any",
     "background_color": "#0b0c0e",
     "theme_color": "#0b0c0e",
     "lang": "en",
