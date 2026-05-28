@@ -560,20 +560,34 @@
   //
   // HTMX history restore replaces the DOM from a sessionStorage snapshot.
   // Alpine's MutationObserver misses this specific replacement, so x-data
-  // components are left un-initialized:
+  // components inside #main-content are left un-initialized:
   //   • Profile dropdown retains display:block from the snapshot (was open
-  //     when the page was cached) and never gets reset to menuOpen=false.
+  //     when the page was cached) and never resets menuOpen to false.
   //   • Continue Playing shelf never re-runs x-init → entries stays [] →
-  //     shelf is hidden until a full page refresh.
+  //     shelf stays hidden until a full refresh.
   //
-  // Alpine.initTree() walks the restored subtree and initializes any element
-  // that lacks the internal _x_dataStack marker (i.e. newly injected nodes).
-  // Already-initialized elements are skipped, so forward-navigation swaps
-  // handled correctly by MutationObserver are not double-initialized.
+  // Alpine.initTree(document.body) was the original fix but it caused a
+  // race: both initTree and Alpine's own MutationObserver could initialize
+  // the same x-data element before _x_dataStack was marked, running x-if /
+  // x-for twice and inserting duplicate nodes (ghost CW cards, multiple
+  // profile avatars). HTMX then snapshots the corrupted page, propagating
+  // duplicates on every subsequent back navigation.
+  //
+  // Safer approach: after the next macrotask (by which time MutationObserver
+  // microtasks have run and marked all _x_dataStack), scan only #main-content
+  // for any x-data elements that were NOT initialized by MutationObserver and
+  // initialize those individually. Skips all base.html elements (globalSearch,
+  // mini-player, auth modal) which live outside #main-content and are never
+  // replaced by history restore.
   document.body.addEventListener('htmx:historyRestore', function() {
     if (typeof Alpine === 'undefined' || !Alpine.initTree) return;
-    // Defer one tick so HTMX finishes all DOM mutations before Alpine runs.
-    setTimeout(function() { Alpine.initTree(document.body); }, 0);
+    setTimeout(function() {
+      var main = document.getElementById('main-content');
+      if (!main) return;
+      main.querySelectorAll('[x-data]').forEach(function(el) {
+        if (!el._x_dataStack) Alpine.initTree(el);
+      });
+    }, 0);
   });
 
   // Hide hero section when URL has active filters (search/year/quality/tag).
