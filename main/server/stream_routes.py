@@ -94,6 +94,7 @@ async def _vlc_track(user_id: int, message_id: int,
 
     if action == "complete":
         await wh_store.record(user_id, cw_key, title)
+        await cw_store.delete_one(user_id, cw_key)
         _vlc_cw_debounce.pop((user_id, message_id), None)
     elif action == "progress":
         dur = float(item.duration or 0)
