@@ -277,6 +277,21 @@
         injectMobileVideoTools(video);
       }
 
+      // Auto-rotate to landscape when entering video fullscreen on Android.
+      // screen.orientation.lock() is unimplemented on iOS (throws NotSupportedError)
+      // so we catch and ignore. iOS hands off to the native AVKit player via
+      // webkitEnterFullscreen which manages its own rotation independently.
+      // The PWA manifest omits 'orientation' so the system portrait lock is
+      // respected during normal browsing; this JS overrides it only for fullscreen.
+      document.addEventListener('fullscreenchange', function() {
+        if (!screen.orientation || !screen.orientation.lock) return;
+        if (document.fullscreenElement) {
+          screen.orientation.lock('landscape').catch(function() {});
+        } else {
+          try { screen.orientation.unlock(); } catch(_) {}
+        }
+      });
+
       document.querySelectorAll("[data-stream-url]").forEach((el) => {
         if (el.dataset.streamUrl) el.href = buildVlcUrl(el.dataset.streamUrl);
       });

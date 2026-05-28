@@ -503,7 +503,10 @@ _MANIFEST_JSON = json.dumps({
     "start_url": "/",
     "scope": "/",
     "display": "standalone",
-    "orientation": "portrait",
+    # orientation intentionally omitted: "any" ignores system portrait lock
+    # (Chromium bug 40880635); "portrait" blocks landscape even in fullscreen.
+    # Omitting lets the OS manage orientation during browsing while the
+    # fullscreenchange JS handler below locks landscape on Android when needed.
     "background_color": "#0b0c0e",
     "theme_color": "#0b0c0e",
     "lang": "en",
