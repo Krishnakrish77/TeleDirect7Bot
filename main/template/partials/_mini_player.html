@@ -556,6 +556,26 @@
     window.scrollTo(0, 0);
   });
 
+  // Re-initialize Alpine after browser back navigation.
+  //
+  // HTMX history restore replaces the DOM from a sessionStorage snapshot.
+  // Alpine's MutationObserver misses this specific replacement, so x-data
+  // components are left un-initialized:
+  //   • Profile dropdown retains display:block from the snapshot (was open
+  //     when the page was cached) and never gets reset to menuOpen=false.
+  //   • Continue Playing shelf never re-runs x-init → entries stays [] →
+  //     shelf is hidden until a full page refresh.
+  //
+  // Alpine.initTree() walks the restored subtree and initializes any element
+  // that lacks the internal _x_dataStack marker (i.e. newly injected nodes).
+  // Already-initialized elements are skipped, so forward-navigation swaps
+  // handled correctly by MutationObserver are not double-initialized.
+  document.body.addEventListener('htmx:historyRestore', function() {
+    if (typeof Alpine === 'undefined' || !Alpine.initTree) return;
+    // Defer one tick so HTMX finishes all DOM mutations before Alpine runs.
+    setTimeout(function() { Alpine.initTree(document.body); }, 0);
+  });
+
   // Hide hero section when URL has active filters (search/year/quality/tag).
   // The hero is outside #grid so filter swaps don't remove it — hide via JS.
   function _syncHeroVisibility() {
