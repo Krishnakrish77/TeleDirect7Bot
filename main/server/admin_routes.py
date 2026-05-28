@@ -1694,6 +1694,36 @@ async def admin_edit(request: web.Request) -> web.Response:
             )
 
     # Custom thumbnail: download and store in thumb cache, or clear to re-detect.
+    _THUMB_MAX_BYTES = 5 * 1024 * 1024  # 5 MB hard cap — prevents OOM on large responses
+
+    def _thumb_url_safe(url: str) -> Optional[str]:
+        """Return an error string if the URL is unsafe, None if it is OK.
+
+        Rejects non-http/https schemes and private/loopback/link-local
+        address literals to block SSRF against cloud metadata endpoints
+        (169.254.169.254) and internal services.  DNS rebinding is
+        not mitigated here since this is an admin-only action.
+        """
+        import ipaddress as _ipa
+        from urllib.parse import urlparse as _up
+        try:
+            p = _up(url)
+            if p.scheme not in ("http", "https"):
+                return "only http/https URLs are allowed"
+            host = (p.hostname or "").lower()
+            _PRIV = ("localhost", "127.", "0.0.0.0", "10.", "192.168.", "169.254.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.", "::1")
+            if any(host == s or host.startswith(s) for s in _PRIV):
+                return "private/loopback addresses are not allowed"
+            try:
+                _ip = _ipa.ip_address(host)
+                if _ip.is_private or _ip.is_loopback or _ip.is_link_local:
+                    return "private/loopback addresses are not allowed"
+            except ValueError:
+                pass  # hostname, not a literal IP — the prefix check above is sufficient
+            return None
+        except Exception:
+            return "invalid URL"
+
     thumb_msg = ""
     if thumb_url and status in ("written", "local-only"):
         from main.utils import thumb_cache
@@ -1701,32 +1731,43 @@ async def admin_edit(request: web.Request) -> web.Response:
             await thumb_cache.clear(message_id)
             thumb_msg = " — thumbnail cleared"
         else:
-            import aiohttp as _aio
-            try:
-                async with _aio.ClientSession() as _s:
-                    async with _s.get(
-                        thumb_url,
-                        timeout=_aio.ClientTimeout(total=15),
-                        headers={"User-Agent": "TeleDirect/1.0"},
-                    ) as _r:
-                        if _r.ok:
-                            _content_type = (_r.content_type or "").lower()
-                            if "image" in _content_type or thumb_url.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".webp")):
-                                _img = await _r.read()
-                                thumb_cache.set_(message_id, _img)
-                                store = thumb_cache._store()
-                                if store:
-                                    try:
-                                        await store.set_thumb(message_id, _img)
-                                    except Exception:
-                                        pass
-                                thumb_msg = " — thumbnail updated"
+            _ssrf_err = _thumb_url_safe(thumb_url)
+            if _ssrf_err:
+                thumb_msg = f" — thumbnail rejected: {_ssrf_err}"
+            else:
+                import aiohttp as _aio
+                try:
+                    async with _aio.ClientSession() as _s:
+                        async with _s.get(
+                            thumb_url,
+                            timeout=_aio.ClientTimeout(total=15),
+                            headers={"User-Agent": "TeleDirect/1.0"},
+                        ) as _r:
+                            if _r.ok:
+                                _content_type = (_r.content_type or "").lower()
+                                if "image" not in _content_type:
+                                    thumb_msg = f" — thumbnail URL did not return an image (got {_content_type!r})"
+                                else:
+                                    _cl = _r.headers.get("Content-Length")
+                                    if _cl and int(_cl) > _THUMB_MAX_BYTES:
+                                        thumb_msg = f" — thumbnail too large ({int(_cl)//1024} KB > 5 MB limit)"
+                                    else:
+                                        _img = await _r.content.read(_THUMB_MAX_BYTES + 1)
+                                        if len(_img) > _THUMB_MAX_BYTES:
+                                            thumb_msg = " — thumbnail too large (> 5 MB)"
+                                        else:
+                                            thumb_cache.set_(message_id, _img)
+                                            _tc_store = thumb_cache._store()
+                                            if _tc_store:
+                                                try:
+                                                    await _tc_store.set_thumb(message_id, _img)
+                                                except Exception:
+                                                    pass
+                                            thumb_msg = " — thumbnail updated"
                             else:
-                                thumb_msg = " — thumbnail URL did not return an image"
-                        else:
-                            thumb_msg = f" — thumbnail fetch failed ({_r.status})"
-            except Exception as _e:
-                thumb_msg = f" — thumbnail error: {_e}"
+                                thumb_msg = f" — thumbnail fetch failed ({_r.status})"
+                except Exception as _e:
+                    thumb_msg = f" — thumbnail error: {_e}"
 
     from urllib.parse import quote
     if status == "written":
@@ -1769,6 +1810,7 @@ async def admin_edit(request: web.Request) -> web.Response:
         msg = f"Updated bin:{message_id} in the catalogue. {cause}"
         if title_changed or year_changed:
             msg += " Re-enrich queued."
+        msg += thumb_msg
     elif status == "removed":
         msg = (
             f"bin:{message_id} doesn't exist on BIN_CHANNEL anymore — "
