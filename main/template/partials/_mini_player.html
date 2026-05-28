@@ -582,7 +582,7 @@
     var hero = document.getElementById('hero-section');
     if (!hero) return;
     var sp = new URLSearchParams(location.search);
-    var hasFilter = sp.get('q') || sp.get('tag') || sp.get('year') || sp.get('quality');
+    var hasFilter = sp.get('q') || sp.get('tag') || sp.get('year') || sp.get('quality') || sp.get('view');
     hero.style.display = hasFilter ? 'none' : '';
   }
   document.body.addEventListener('htmx:afterSettle', _syncHeroVisibility);
