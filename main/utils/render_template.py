@@ -139,6 +139,25 @@ async def render_page(message_id, secure_hash,
                         }
                     break
         file_name = _best_file_name(file_data.file_name, meta)
+        # Build a human-readable page heading from catalogue metadata.
+        # Falls back to the cleaned filename when metadata is unavailable.
+        def _build_heading(meta, mime_type, file_name):
+            if not meta:
+                return file_name
+            if mime_type == "audio":
+                parts = []
+                if meta.album_title:
+                    parts.append(meta.album_title)
+                if meta.title:
+                    parts.append(meta.title)
+                return " · ".join(parts) if parts else file_name
+            # Video
+            if meta.series_title and meta.season is not None and meta.episode is not None:
+                ep = f"S{meta.season:02d}E{meta.episode:02d}"
+                title = meta.title or ""
+                base = f"{meta.series_title} {ep}"
+                return f"{base} · {title}" if title else base
+            return meta.title or file_name
         from main.utils import codec_probe
         known_unplayable = (
             mime_type == "video"
@@ -166,7 +185,7 @@ async def render_page(message_id, secure_hash,
         return _REQ_TEMPLATE.render(
             tag=mime_type,
             is_audio=(mime_type == "audio"),
-            heading=("Watch " if mime_type == "video" else "Listen ") + file_name,
+            heading=_build_heading(meta, mime_type, file_name),
             src=src,
             hls_src=hls_src,
             sub_path=sub_path,

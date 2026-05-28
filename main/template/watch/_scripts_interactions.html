@@ -33,11 +33,7 @@
     }
 
     // ---- Server sync helpers (no-ops when not signed in or no MongoDB) ----
-    function _cwToken() {
-      try { const t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
-      const m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-      return m ? m[1] : null;
-    }
+    function _cwToken() { return window._tdToken ? window._tdToken() : null; }
     let _cwLastServerSync = 0;
     function _cwServerSave(key, entry, force) {
       if (!key || !(window._tdAuth && window._tdAuth.user)) return;

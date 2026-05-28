@@ -137,11 +137,7 @@ document.addEventListener('alpine:init', () => {
 window._wl = (function() {
   var _ids = new Set();
 
-  function _token() {
-    try { var t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
-    var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-    return m ? m[1] : null;
-  }
+  function _token() { return window._tdToken ? window._tdToken() : null; }
 
   var _ctl = null; // AbortController for in-flight watchlist fetch
 
@@ -222,11 +218,7 @@ window._dismissRec = function(btn, tmdbId, kind) {
   if (!li) return;
   li.style.opacity = '0.4';
   li.style.pointerEvents = 'none';
-  var tok = (function(){
-    try { var t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
-    var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-    return m ? m[1] : null;
-  })();
+  var tok = window._tdToken ? window._tdToken() : null;
   fetch('/api/dismiss', {
     method: 'POST',
     headers: Object.assign({'Content-Type': 'application/json'}, tok ? {'Authorization': 'Bearer ' + tok} : {}),

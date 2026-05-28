@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Year in Review · TeleDirect{% endblock %}
+{% block title %}Stats · TeleDirect{% endblock %}
 
 {% block content %}
 <div class="w-full max-w-lg mx-auto space-y-4">
@@ -29,7 +29,7 @@
 
   {# ── HERO ─────────────────────────────────────────────────────────────── #}
   <div class="rounded-2xl bg-gradient-to-br from-brand-600 to-brand-900 p-8 text-center">
-    <p class="text-sm font-medium text-brand-200 uppercase tracking-widest mb-2">Year in Review</p>
+    <p class="text-sm font-medium text-brand-200 uppercase tracking-widest mb-2">Past 12 months</p>
     <p class="text-6xl sm:text-7xl font-black text-white leading-none">
       {{ total_hours }}<span class="text-3xl font-semibold text-brand-200">h</span>
       {% if total_mins %}<span class="text-3xl font-semibold text-brand-200"> {{ total_mins }}m</span>{% endif %}

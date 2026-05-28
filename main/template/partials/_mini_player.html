@@ -650,14 +650,17 @@
   // ── Global WH + CW helpers — available on all pages ───────────────────
   // Defined here (base.html) so audio watch pages and bgAudio completion
   // can call them without depending on watch-page-only _scripts_interactions.
-  function _tdToken() {
+  // Single canonical token getter — shared via window so _auth.html,
+  // _scripts_interactions.html and any other partial can delegate to it
+  // instead of maintaining their own copy.
+  window._tdToken = function() {
     try { var t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
     var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
     return m ? m[1] : null;
-  }
+  };
   window._tdWHRecord = function(key, title) {
     if (!key || !(window._tdAuth && window._tdAuth.user)) return;
-    var tok = _tdToken();
+    var tok = window._tdToken();
     if (!tok) return;
     fetch('/api/wh/' + encodeURIComponent(key), {
       method: 'POST',
@@ -668,7 +671,7 @@
   };
   window._tdCWDelete = function(key) {
     if (!key || !(window._tdAuth && window._tdAuth.user)) return;
-    var tok = _tdToken();
+    var tok = window._tdToken();
     if (!tok) return;
     fetch('/api/cw/' + encodeURIComponent(key), {
       method: 'DELETE',
