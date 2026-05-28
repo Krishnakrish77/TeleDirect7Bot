@@ -50,25 +50,10 @@
       }).catch(() => {});
     }
     function _cwServerDelete(key) {
-      if (!key || !(window._tdAuth && window._tdAuth.user)) return;
-      const tok = _cwToken();
-      if (!tok) return;
-      fetch('/api/cw/' + encodeURIComponent(key), {
-        method: 'DELETE',
-        headers: {'Authorization': 'Bearer ' + tok},
-        keepalive: true,
-      }).catch(() => {});
+      if (window._tdCWDelete) { window._tdCWDelete(key); return; }
     }
     function _whServerRecord(key, title) {
-      if (!key || !(window._tdAuth && window._tdAuth.user)) return;
-      const tok = _cwToken();
-      if (!tok) return;
-      fetch('/api/wh/' + encodeURIComponent(key), {
-        method: 'POST',
-        headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'},
-        body: JSON.stringify({title: title || ''}),
-        keepalive: true,
-      }).catch(() => {});
+      if (window._tdWHRecord) { window._tdWHRecord(key, title); return; }
     }
 
     function attachWatchProgress(video) {

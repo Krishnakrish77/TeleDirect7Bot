@@ -163,16 +163,8 @@ async def stats_page(request: web.Request) -> web.Response:
             continue
         item = media_index.get_item(int(m.group(1)))
         if not item:
-            # Item pruned from catalogue — keep a stub so it still appears
-            title_counts[ck] += 1
-            if ck not in title_meta:
-                title_meta[ck] = {
-                    "title":      h.get("title", ""),
-                    "poster":     "",
-                    "url":        "#",
-                    "media_kind": "video",
-                    "year":       "",
-                }
+            # Item pruned — can't group without metadata, so skip rather
+            # than inflating most_replayed with ungrouped count-1 stubs.
             continue
         # album_key groups music tracks by album (movie_key is "" for audio)
         group = item.series_key or item.album_key or item.movie_key or ck

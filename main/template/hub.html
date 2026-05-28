@@ -92,10 +92,11 @@
                   <div class="w-8 h-12 rounded bg-ink-800 flex-shrink-0 relative overflow-hidden">
                     <img :src="'/thumb/' + it.secure_hash + it.message_id + '.jpg'" alt=""
                          loading="lazy"
-                         @error="$el.style.opacity='0'"
+                         @error="$el.style.opacity='0'; $el.nextElementSibling.style.display='flex'"
                          class="w-full h-full object-cover" />
-                    {# Placeholder shown when thumb also fails #}
-                    <div class="absolute inset-0 flex items-center justify-center text-slate-600">
+                    {# Placeholder — hidden until the img above fails to load #}
+                    <div style="display:none"
+                         class="absolute inset-0 items-center justify-center text-slate-600">
                       <template x-if="it.kind === 'audio'">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                              stroke="currentColor" stroke-width="1.5" class="w-4 h-4">

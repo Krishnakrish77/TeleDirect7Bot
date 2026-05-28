@@ -82,7 +82,6 @@ async def render_page(message_id, secure_hash,
     full_mime = (file_data.mime_type or "").lower().strip()
     mime_type = full_mime.split('/')[0]
     if mime_type in ("video", "audio"):
-        heading = ("Watch " if mime_type == "video" else "Listen ") + (file_data.file_name or "")
         # Route through HLS only when the container actually needs it.
         # MP4/MOV/M4V/WebM byte-stream directly to <video src=...>;
         # MKV/AVI/etc. need ffmpeg to transmux into MPEG-TS. Skipping the

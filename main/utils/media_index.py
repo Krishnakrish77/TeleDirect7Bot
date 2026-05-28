@@ -1077,6 +1077,9 @@ def _haystack(item: HubItem) -> str:
         # Cast + director — lets users find titles by actor or director name
         " ".join(a.lower() for a in item.cast),
         item.director.lower(),
+        # Music fields — artist and album so music is searchable by name
+        (item.artist or "").lower(),
+        (item.album_title or "").lower(),
     ])
 
 
@@ -1568,8 +1571,12 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
         score = 0.0
         if ql in it.title.lower() or ql in it.series_title.lower():
             score = 1.0  # title-substring is the strongest signal
+        elif it.media_kind == "audio" and (
+            ql in (it.artist or "").lower() or ql in (it.album_title or "").lower()
+        ):
+            score = 0.9  # artist/album match — almost as strong as title
         elif ql in hay:
-            score = 0.6  # substring elsewhere (description, genres, file)
+            score = 0.6  # substring elsewhere (description, genres, cast, file)
         elif len(ql) >= 3:
             fuzzy = _fuzzy_score(ql, it)
             if fuzzy > 0:
@@ -1583,29 +1590,37 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
     # Highest score first, ties broken by recency.
     scored.sort(key=lambda x: (-x[0], -x[1].message_id))
 
-    # Collapse by group so a multi-episode series shows once.
+    # Collapse by group so series/albums/movies surface one card each.
     seen_series: set = set()
-    seen_movie: set = set()
+    seen_album:  set = set()
+    seen_movie:  set = set()
     suggestions: List[dict] = []
     for score, it in scored:
         if it.series_key:
             if it.series_key in seen_series:
                 continue
             seen_series.add(it.series_key)
-            url = f"/series/{it.series_key}"
+            url   = f"/series/{it.series_key}"
             title = it.series_title or it.title
-            kind = "series"
+            kind  = "series"
+        elif it.album_key:
+            if it.album_key in seen_album:
+                continue
+            seen_album.add(it.album_key)
+            url   = f"/album/{it.album_key}"
+            title = it.album_title or it.title
+            kind  = "album"
         elif it.movie_key:
             if it.movie_key in seen_movie:
                 continue
             seen_movie.add(it.movie_key)
-            url = f"/movie/{it.movie_key}"
+            url   = f"/movie/{it.movie_key}"
             title = it.title
-            kind = "movie"
+            kind  = "movie"
         else:
-            url = f"/watch/{it.secure_hash}{it.message_id}"
+            url   = f"/watch/{it.secure_hash}{it.message_id}"
             title = it.title
-            kind = "movie"
+            kind  = "audio" if it.media_kind == "audio" else "movie"
         suggestions.append({
             "title": title,
             "year": it.year,
