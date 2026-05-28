@@ -304,11 +304,8 @@ details[data-season][open]>summary .season-chevron{transform:rotate(180deg)}
       </section>
       {% endif %}
     {% endfor %}
-  </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
+  {# Script inside #main-content so it loads on HTMX navigation #}
+  <script>
 // Overlay watch-progress bars on episode thumbnails using the same
 // localStorage CW data the hub uses. Runs after the DOM is ready so it
 // never blocks initial render.
@@ -343,5 +340,6 @@ details[data-season][open]>summary .season-chevron{transform:rotate(180deg)}
     });
   } catch (_) {}
 })();
-</script>
+  </script>
+  </div>
 {% endblock %}

@@ -93,11 +93,8 @@
       {% endfor %}
       {% if tracks %}</ul>{% endif %}
     </div>
-  </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
+  {# Script inside #main-content so it loads on HTMX navigation #}
+  <script>
 var _artistTracks = [
   {% for t in tracks %}
   {
@@ -119,5 +116,6 @@ function _albumPlayArtist(idx) {
     window.location.href = _artistTracks[idx]?.url || '#';
   }
 }
-</script>
+  </script>
+  </div>
 {% endblock %}
