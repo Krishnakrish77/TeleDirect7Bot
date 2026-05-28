@@ -570,13 +570,10 @@ async def favicon(_request: web.Request) -> web.Response:
 _SW_JS = """\
 /* TeleDirect service worker — network-first for navigation,
    cache-first for static assets, network-only for streams/API. */
-const CACHE = 'td-v1';
-const SHELL = ['/', '/static/tailwind.css', '/favicon.svg', '/manifest.json'];
+const CACHE = 'td-v2';
+const SHELL = ['/', '/static/tailwind.css', '/favicon.svg'];
 
 self.addEventListener('install', e => {
-  // allSettled instead of addAll: a single unavailable resource (e.g.
-  // the server restarting on Koyeb cold start) no longer aborts the
-  // entire SW install, preventing the unstyled-page flash.
   e.waitUntil(
     caches.open(CACHE).then(c =>
       Promise.allSettled(SHELL.map(u =>
@@ -607,7 +604,17 @@ self.addEventListener('fetch', e => {
     url.pathname.startsWith('/hls/')
   ) return;
 
-  // Static assets — cache-first
+  // manifest.json — always network-first so updated icon hash URLs are
+  // picked up immediately. Previously cached cache-first which meant the
+  // old manifest (with old icon URL) kept being served even after redeploy.
+  if (url.pathname === '/manifest.json') {
+    e.respondWith(
+      fetch(e.request).catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // Static assets — cache-first (versioned icon URLs are immutable by URL)
   if (url.pathname.startsWith('/static/') ||
       url.pathname.match(/\\.(png|svg|ico|webmanifest|json)$/)) {
     e.respondWith(
