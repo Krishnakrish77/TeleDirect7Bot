@@ -45,7 +45,8 @@
           // Normal path: autoplay, optionally seeking to saved position.
           // If bgAudio is playing a *different* track (e.g. user clicked Next
           // in the mini-player), pause it so we don't get two tracks at once.
-          if (bg && !bg.paused) { bg.pause(); }
+          // Reset _primed so _handoffAudioToBg re-primes for the new track.
+          if (bg && !bg.paused) { bg.pause(); bg._primed = false; }
           var _np;
           try { _np = JSON.parse(localStorage.getItem('td:nowplaying') || 'null'); } catch(_) { _np = null; }
           var savedPos = (_np && _np.position > 0 &&

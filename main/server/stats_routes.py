@@ -109,19 +109,29 @@ async def stats_page(request: web.Request) -> web.Response:
     equiv_movies  = round(total_seconds / 6600)   # avg movie ~110 min
     equiv_flights = round(total_seconds / (4 * 3600))  # ~4h avg flight
 
-    # ── Genre, kind, director, artist tallies ─────────────────────────────
+    # ── Single pass: genre/kind/director/artist tallies + title grouping ────
+    # Merged from two separate loops to halve the get_item() calls
+    # (~500 lookups instead of ~1000 for a 500-entry history).
     genre_counts:    Counter = Counter()
     director_counts: Counter = Counter()
     artist_counts:   Counter = Counter()
     kind_counts:     Counter = Counter()
+    title_counts:    Counter = Counter()
+    title_meta:      dict    = {}
 
     for h in history:
-        m = _CW_KEY_RE.match(h.get("cw_key", ""))
+        ck = h.get("cw_key", "")
+        if not ck:
+            continue
+        m = _CW_KEY_RE.match(ck)
         if not m:
             continue
         item = media_index.get_item(int(m.group(1)))
         if not item:
+            # Pruned — skip; can't group or tally without metadata.
             continue
+
+        # Tallies
         for g in (item.tmdb_genres or []):
             genre_counts[g] += 1
         kind_counts[item.media_kind or "video"] += 1
@@ -136,37 +146,7 @@ async def stats_page(request: web.Request) -> web.Response:
                 if a:
                     artist_counts[a] += 1
 
-    top_genres   = genre_counts.most_common(5)
-    top_genre    = top_genres[0][0] if top_genres else ""
-    top_director = director_counts.most_common(1)
-    top_artist   = artist_counts.most_common(1)
-
-    n_video = kind_counts.get("video", 0)
-    n_audio = kind_counts.get("audio", 0)
-    total_k = n_video + n_audio
-    audio_pct = int(n_audio / total_k * 100) if total_k else 0
-
-    # ── Most watched — grouped by series/movie so episodes aggregate ──────
-    # watch_history has a unique (user_id, cw_key) index, so each episode
-    # appears at most once per row. Without grouping every item has count=1
-    # and "most watched" is just the most recently completed item. Grouping
-    # by series_key/movie_key makes the count genuinely meaningful: a user
-    # who watched 10 Breaking Bad episodes gets one entry with count=10.
-    title_counts: Counter = Counter()
-    title_meta:   dict    = {}
-    for h in history:
-        ck = h.get("cw_key", "")
-        if not ck:
-            continue
-        m = _CW_KEY_RE.match(ck)
-        if not m:
-            continue
-        item = media_index.get_item(int(m.group(1)))
-        if not item:
-            # Item pruned — can't group without metadata, so skip rather
-            # than inflating most_replayed with ungrouped count-1 stubs.
-            continue
-        # album_key groups music tracks by album (movie_key is "" for audio)
+        # Title grouping — album_key groups music (movie_key is "" for audio)
         group = item.series_key or item.album_key or item.movie_key or ck
         title_counts[group] += 1
         if group not in title_meta:
@@ -193,6 +173,16 @@ async def stats_page(request: web.Request) -> web.Response:
                 "year":       item.year or "",
                 "is_series":  bool(item.series_key),
             }
+
+    top_genres   = genre_counts.most_common(5)
+    top_genre    = top_genres[0][0] if top_genres else ""
+    top_director = director_counts.most_common(1)
+    top_artist   = artist_counts.most_common(1)
+
+    n_video = kind_counts.get("video", 0)
+    n_audio = kind_counts.get("audio", 0)
+    total_k = n_video + n_audio
+    audio_pct = int(n_audio / total_k * 100) if total_k else 0
 
     most_replayed = [
         {"count": c, **title_meta[g]}
