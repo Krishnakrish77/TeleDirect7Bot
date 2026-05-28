@@ -192,20 +192,25 @@
         return btn;
       }
 
-      const dlIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 12l4.5 4.5m0 0L16.5 12m-4.5 4.5V3"/></svg>';
+      const dlIcon  = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 12l4.5 4.5m0 0L16.5 12m-4.5 4.5V3"/></svg>';
       const vlcIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>';
       const subIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"/></svg>';
+      const shrIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>';
 
-      menu.appendChild(menuItem(dlIcon, "Download", () => { window.open("{{ src }}", "_blank"); }));
+      // VLC first — most common reason to open the ⋮ menu
       menu.appendChild(menuItem(vlcIcon, "Open in VLC", () => {
-        // Use the named VLC button (not the hidden codec-overlay link which also has data-stream-url)
         const vlcBtn = document.getElementById("vlcButton") || document.querySelector("[data-stream-url]");
         if (vlcBtn) window.location.href = buildVlcUrl(vlcBtn.dataset.streamUrl);
       }));
       menu.appendChild(menuItem(subIcon, "Load subtitles", () => {
-        // Trigger the hidden file input — its label has no ID; target the input directly
         const subInput = document.getElementById("subUpload");
         if (subInput) subInput.click();
+      }));
+      menu.appendChild(menuItem(dlIcon, "Download", () => { window.open("{{ src }}", "_blank"); }));
+      menu.appendChild(menuItem(shrIcon, "Share", () => {
+        var data = { title: document.title, url: location.href };
+        if (navigator.share) { navigator.share(data).catch(function() {}); }
+        else if (navigator.clipboard) { navigator.clipboard.writeText(location.href).catch(function() {}); }
       }));
 
       // ⋮ trigger button styled like Plyr controls

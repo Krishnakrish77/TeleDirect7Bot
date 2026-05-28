@@ -158,11 +158,21 @@
       Player not loading? Open the stream in VLC for any container format.
     </div>
 
+    {# Subtitle file input — kept in DOM at all times (sr-only) so the
+       ⋮ mobile menu can trigger it even when the label below is hidden.
+       The label is the visible click target on desktop only. #}
+    <input id="subUpload" type="file"
+           accept=".srt,.vtt,.SRT,.VTT,text/vtt,application/x-subrip"
+           class="sr-only" />
+
     <div class="mt-6 flex flex-wrap justify-center items-center gap-3">
+      {# VLC + Subtitles are accessible via the ⋮ menu on mobile (works in
+         landscape too). Only show them in the below-player row on desktop
+         where the ⋮ menu doesn't exist. #}
       <a id="vlcButton"
          href="vlc://{{ src }}"
          data-stream-url="{{ src }}"
-         class="inline-flex items-center justify-center gap-2
+         class="hidden sm:inline-flex items-center justify-center gap-2
                 rounded-lg px-6 py-3 font-semibold text-white
                 bg-brand-500 hover:bg-brand-600 active:bg-brand-700
                 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300
@@ -174,17 +184,11 @@
         Open in VLC
       </a>
 
-      {# Manual subtitle upload. Hidden file input + visible button —
-         clicking the button opens the picker. The JS handler also
-         listens for drag-and-drop onto the player container, so
-         either path works. #}
-      <label class="inline-flex items-center justify-center gap-2
+      <label for="subUpload"
+             class="hidden sm:inline-flex items-center justify-center gap-2
                     rounded-lg px-5 py-3 font-medium text-slate-100
                     bg-ink-800/70 hover:bg-ink-800 border border-white/5
                     transition-colors cursor-pointer">
-        <input id="subUpload" type="file"
-               accept=".srt,.vtt,.SRT,.VTT,text/vtt,application/x-subrip"
-               class="sr-only" />
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
              fill="none" stroke="currentColor" stroke-width="2"
              class="w-4 h-4">
@@ -193,6 +197,7 @@
         </svg>
         Load subtitles
       </label>
+
       <button id="tdShare"
               class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
                      text-sm font-medium text-slate-300 bg-ink-800/70
