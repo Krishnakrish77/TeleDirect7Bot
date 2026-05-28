@@ -376,6 +376,31 @@ async def admin_clear_audio_tmdb(request: web.Request) -> web.Response:
     raise _redirect_with_flash(msg)
 
 
+@routes.post("/admin/clear-audio-thumbs")
+async def admin_clear_audio_thumbs(request: web.Request) -> web.Response:
+    """Bust the L1+L2 thumbnail cache for every audio item so the next
+    /thumb/ request re-runs ffmpeg APIC extraction instead of serving
+    the old low-res Telegram thumbnail."""
+    _require_session(request)
+    from main.utils import thumb_cache
+    audio_ids = [
+        it.message_id
+        for it in media_index._items.values()
+        if getattr(it, "media_kind", "") == "audio"
+    ]
+    cleared = 0
+    for mid in audio_ids:
+        try:
+            await thumb_cache.clear(mid)
+            cleared += 1
+        except Exception:
+            pass
+    msg = f"Cleared thumbnail cache for {cleared} audio item(s)"
+    if _is_htmx(request):
+        return web.Response(text=msg, status=200)
+    raise _redirect_with_flash(msg)
+
+
 @routes.post("/admin/enrich")
 async def admin_enrich(request: web.Request) -> web.Response:
     """Fire-and-forget bulk TMDB enrichment.

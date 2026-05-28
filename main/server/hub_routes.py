@@ -912,8 +912,9 @@ async def hub_thumb(request: web.Request) -> web.Response:
     message_id = int(request.match_info["id"])
 
     async def fetch() -> Optional[bytes]:
-        # Preferred path: use Telegram's own thumbnail. ~30 KB JPEG, no
-        # decoding needed, available for most uploads.
+        # Telegram fallback for audio — populated if the track has a stored
+        # thumbnail but ffmpeg APIC extraction fails (e.g. no image stream).
+        _tg_audio_thumbs: list = []
         try:
             message = await StreamBot.get_messages(Var.BIN_CHANNEL, message_id)
         except Exception:
@@ -921,27 +922,18 @@ async def hub_thumb(request: web.Request) -> web.Response:
         if message is not None:
             audio_msg = getattr(message, "audio", None)
             if audio_msg:
-                # Audio: try Telegram's stored thumbnail first (it's the APIC
-                # tag art that Telegram already extracted at upload time).
-                # Only fall through to ffmpeg if Telegram has nothing stored.
-                audio_thumb = getattr(audio_msg, "thumbs", None) or []
-                if not audio_thumb:
-                    single = getattr(audio_msg, "thumb", None)
-                    if single:
-                        audio_thumb = [single]
-                if audio_thumb:
-                    try:
-                        bytesio = await StreamBot.download_media(
-                            audio_thumb[-1].file_id, in_memory=True,
-                        )
-                        if bytesio is not None:
-                            return (
-                                bytesio.getvalue()
-                                if hasattr(bytesio, "getvalue") else bytes(bytesio)
-                            )
-                    except Exception:
-                        pass  # fall through to ffmpeg
-                media = None  # no Telegram thumb — force ffmpeg path below
+                # Audio: prefer ffmpeg APIC extraction over Telegram's stored
+                # thumbnail. Telegram compresses audio thumbs to ~320 px which
+                # looks blurry at the large album-art display on the watch page.
+                # The APIC embedded in the file is often 500-1000 px and is
+                # extracted at seek=0.0 below. Save Telegram's version as a
+                # fallback in case ffmpeg finds no image stream.
+                _tg_audio_thumbs = getattr(audio_msg, "thumbs", None) or []
+                if not _tg_audio_thumbs:
+                    _single = getattr(audio_msg, "thumb", None)
+                    if _single:
+                        _tg_audio_thumbs = [_single]
+                media = None  # proceed to ffmpeg APIC path
             else:
                 media = (
                     getattr(message, "video", None)
@@ -995,11 +987,28 @@ async def hub_thumb(request: web.Request) -> web.Response:
             except Exception:
                 pass
         is_audio = getattr(item, "media_kind", "") == "audio"
-        return await hls.grab_thumbnail(
+        result = await hls.grab_thumbnail(
             source_url,
             duration=float(item.duration or 0),
             seek=0.0 if is_audio else 1.0,  # APIC at byte 0; don't Range-seek past it
         )
+        if result is not None:
+            return result
+        # ffmpeg found no image stream — fall back to Telegram's compressed thumb.
+        # Only reachable for audio; videos always have a frame to grab.
+        if is_audio and _tg_audio_thumbs:
+            try:
+                bytesio = await StreamBot.download_media(
+                    _tg_audio_thumbs[-1].file_id, in_memory=True,
+                )
+                if bytesio is not None:
+                    return (
+                        bytesio.getvalue()
+                        if hasattr(bytesio, "getvalue") else bytes(bytesio)
+                    )
+            except Exception:
+                pass
+        return None
 
     data = await thumb_cache.cached_or_fetch(message_id, fetch)
     if data is None:

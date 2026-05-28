@@ -95,6 +95,21 @@ def set_(message_id: int, data: bytes) -> None:
         _locks.pop(evicted_key, None)
 
 
+async def clear(message_id: int) -> None:
+    """Evict a single entry from L1 and L2 so it is re-fetched on next request.
+    Used by the admin panel after changing thumbnail fetch logic (e.g. switching
+    from Telegram's compressed thumb to ffmpeg APIC for audio tracks)."""
+    _cache.pop(message_id, None)
+    _locks.pop(message_id, None)
+    _failures.pop(message_id, None)
+    store = _store()
+    if store is not None:
+        try:
+            await store.remove_thumb(message_id)
+        except Exception:
+            logging.exception("thumb_cache: clear failed for msg %d", message_id)
+
+
 def lock_for(message_id: int) -> asyncio.Lock:
     """Return a per-message lock so multiple concurrent /thumb requests for
     the same file collapse into a single Telegram download."""
