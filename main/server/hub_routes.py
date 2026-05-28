@@ -389,7 +389,7 @@ async def hub_tag(request: web.Request) -> web.Response:
 _FAVICON_SVG = (
     b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
     b'<rect width="64" height="64" rx="14" fill="#f97316"/>'
-    b'<path d="M20 20L44 32L20 44Z" fill="#fff"/>'
+    b'<path d="M16 16L48 32L16 48Z" fill="#fff"/>'
     b'</svg>'
 )
 
@@ -399,10 +399,12 @@ def _make_icon_png(size: int) -> bytes:
     bg = (249, 115, 22)   # #f97316
     fg = (255, 255, 255)
 
-    # Play triangle — compact, leaving ~65% of icon as solid orange background.
-    # s=0.28 made the triangle span 56% of height (looked like half-white split).
-    # s=0.18 gives a clean play button with clear orange margins.
-    s = size * 0.18
+    # Play triangle — s controls half-size relative to icon dimension.
+    # s=0.18 → triangle spans 36% (too much empty orange, looks small vs other icons).
+    # s=0.25 → triangle spans 50%, 25% margin each side — matches streaming app norms
+    #           (YouTube, Netflix icons have the main graphic at ~50-60% of area).
+    # Still well inside the maskable safe zone (40% radius from centre).
+    s = size * 0.25
     cx, cy = size / 2.0, size / 2.0
     tx0, ty0 = cx - s, cy - s   # top-left
     tx1, ty1 = cx - s, cy + s   # bottom-left
