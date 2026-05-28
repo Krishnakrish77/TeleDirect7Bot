@@ -11,6 +11,19 @@
         var streamSrc = {{ src | tojson }};
         attachSource(video);
         attachCustomAudioControls(video);
+
+        // Record completed listen in watch history when the track ends
+        // naturally on the watch page (before any bgAudio handoff).
+        // bgAudio 'ended' in _mini_player.html covers the mini-player path.
+        (function() {
+          var _wpKey = (location.pathname.match(/\/watch\/([A-Za-z0-9_-]+)$/) || [])[1];
+          if (!_wpKey) return;
+          video.addEventListener('ended', function() {
+            var _ttl = ((document.querySelector('h1') || {}).innerText || '').trim();
+            if (window._tdWHRecord) window._tdWHRecord(_wpKey, _ttl);
+            if (window._tdCWDelete) window._tdCWDelete(_wpKey);
+          });
+        })();
         history.replaceState(null, '', location.pathname);
 
         var bg = document.getElementById('bgAudio');

@@ -245,6 +245,17 @@
       }
     });
     _bgAudio.addEventListener('ended', function() {
+      // Record the just-completed track in watch history BEFORE any state
+      // changes (gapSwap / NP update) so we read the right track from NP.
+      var _np0;
+      try { _np0 = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) {}
+      if (_np0 && _np0.url) {
+        var _ck0 = (_np0.url.match(/\/watch\/([A-Za-z0-9_-]+)$/) || [])[1];
+        if (_ck0) {
+          if (window._tdWHRecord) window._tdWHRecord(_ck0, _np0.title || '');
+          if (window._tdCWDelete) window._tdCWDelete(_ck0);
+        }
+      }
       // Gapless: if crossfade was in progress, _bgBuf is already playing at vol=1
       if (_xfading || (_preloaded && _bgBuf && !_bgBuf.paused && _bgBuf.currentTime > 0)) {
         _gapSwap();
@@ -600,6 +611,36 @@
     localStorage.setItem(DISMISS, '1');
     var b = document.getElementById('_pwa-banner');
     if (b) b.style.display = 'none';
+  };
+
+  // ── Global WH + CW helpers — available on all pages ───────────────────
+  // Defined here (base.html) so audio watch pages and bgAudio completion
+  // can call them without depending on watch-page-only _scripts_interactions.
+  function _tdToken() {
+    try { var t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
+    var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
+    return m ? m[1] : null;
+  }
+  window._tdWHRecord = function(key, title) {
+    if (!key || !(window._tdAuth && window._tdAuth.user)) return;
+    var tok = _tdToken();
+    if (!tok) return;
+    fetch('/api/wh/' + encodeURIComponent(key), {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'},
+      body: JSON.stringify({title: title || ''}),
+      keepalive: true,
+    }).catch(function() {});
+  };
+  window._tdCWDelete = function(key) {
+    if (!key || !(window._tdAuth && window._tdAuth.user)) return;
+    var tok = _tdToken();
+    if (!tok) return;
+    fetch('/api/cw/' + encodeURIComponent(key), {
+      method: 'DELETE',
+      headers: {'Authorization': 'Bearer ' + tok},
+      keepalive: true,
+    }).catch(function() {});
   };
 })();
 
