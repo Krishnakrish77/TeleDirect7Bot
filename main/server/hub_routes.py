@@ -282,6 +282,7 @@ async def hub_home(request: web.Request) -> web.Response:
         and not params["tag"]
         and not params["year"]
         and not params["quality"]
+        and not params["genre"]
         and not params["view"]
         and params["sort"] == "newest"
         and params["offset"] == 0

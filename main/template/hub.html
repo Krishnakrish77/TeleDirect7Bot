@@ -205,7 +205,7 @@
     </header>
 
     <div id="hero-section">
-      {% if heroes and not (params.q or params.tag or params.year or params.quality or params.view) %}
+      {% if heroes and not (params.q or params.tag or params.year or params.quality or params.genre or params.view) %}
         {% include "_hero.html" %}
       {% endif %}
     </div>

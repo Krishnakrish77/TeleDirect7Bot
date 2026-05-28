@@ -586,12 +586,24 @@
   // mini-player, auth modal) which live outside #main-content and are never
   // replaced by history restore.
   document.body.addEventListener('htmx:historyRestore', function() {
-    if (typeof Alpine === 'undefined' || !Alpine.initTree) return;
     setTimeout(function() {
       var main = document.getElementById('main-content');
       if (!main) return;
-      main.querySelectorAll('[x-data]').forEach(function(el) {
-        if (!el._x_dataStack) Alpine.initTree(el);
+      // Re-initialize Alpine components that weren't marked by MutationObserver.
+      if (typeof Alpine !== 'undefined' && Alpine.initTree) {
+        main.querySelectorAll('[x-data]').forEach(function(el) {
+          if (!el._x_dataStack) Alpine.initTree(el);
+        });
+      }
+      // Re-execute inline scripts for non-Alpine page IIFEs (e.g. album.html
+      // sets window._albumPlay / window._albumShuffle). HTMX history restore
+      // replaces the DOM from the sessionStorage snapshot without re-running
+      // scripts, so these globals go stale — browser Forward to album would
+      // leave the Play button calling an undefined or wrong function.
+      main.querySelectorAll('script:not([src])').forEach(function(old) {
+        var s = document.createElement('script');
+        s.textContent = old.textContent;
+        old.parentNode.replaceChild(s, old);
       });
     }, 0);
   });
@@ -602,7 +614,7 @@
     var hero = document.getElementById('hero-section');
     if (!hero) return;
     var sp = new URLSearchParams(location.search);
-    var hasFilter = sp.get('q') || sp.get('tag') || sp.get('year') || sp.get('quality') || sp.get('view');
+    var hasFilter = sp.get('q') || sp.get('tag') || sp.get('year') || sp.get('quality') || sp.get('genre') || sp.get('view');
     hero.style.display = hasFilter ? 'none' : '';
   }
   document.body.addEventListener('htmx:afterSettle', _syncHeroVisibility);
