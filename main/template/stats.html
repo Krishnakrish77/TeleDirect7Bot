@@ -195,7 +195,7 @@
   {% endif %}
 
   {# ── STREAKS ──────────────────────────────────────────────────────────── #}
-  {% if current_streak > 0 or longest_streak > 1 %}
+  {% if current_streak > 0 or longest_streak > 0 %}
   <div class="grid grid-cols-2 gap-3">
     <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-5 text-center">
       <p class="text-3xl font-black text-white">{{ current_streak }}<span class="text-lg font-semibold text-slate-400">d</span></p>

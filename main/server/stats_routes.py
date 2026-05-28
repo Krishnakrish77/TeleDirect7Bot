@@ -223,6 +223,16 @@ async def stats_page(request: web.Request) -> web.Response:
         if wa >= week_start:
             daily_counts[wa.strftime("%Y-%m-%d")] += 1
 
+    # Also count days with in-progress CW activity (t = epoch-ms of last save).
+    # Without this, daily_counts only reflects completed watches, so users who
+    # mostly watch partially (very common) show 0-day streaks despite being active.
+    for ck, entry in cw_data.items():
+        t_ms = entry.get("t", 0)
+        if t_ms > 0:
+            cw_day = datetime.utcfromtimestamp(t_ms / 1000)
+            if cw_day >= week_start:
+                daily_counts[cw_day.strftime("%Y-%m-%d")] += 1
+
     # Day-of-week bar: max=100 so bars are relative
     max_dow = max(dow_counts.values(), default=1)
     dow_bars = [
@@ -278,9 +288,13 @@ async def stats_page(request: web.Request) -> web.Response:
         monday += timedelta(days=1)
 
     # ── Streak stats ──────────────────────────────────────────────────────
-    # current_streak: consecutive days ending today (UTC) with >= 1 play
+    # current_streak: consecutive days ending on the most recent active day
+    # (today or yesterday). Watching at 11pm then checking stats at midnight
+    # the next day shouldn't reset a long streak to 0.
     current_streak = 0
     _d = _today_utc
+    if daily_counts.get(_d.strftime("%Y-%m-%d"), 0) == 0:
+        _d -= timedelta(days=1)  # allow streak to end yesterday
     while daily_counts.get(_d.strftime("%Y-%m-%d"), 0) > 0:
         current_streak += 1
         _d -= timedelta(days=1)
