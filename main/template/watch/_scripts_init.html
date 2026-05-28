@@ -200,10 +200,18 @@
                 else if (i < active) { p.style.color="rgba(100,116,139,0.35)"; p.style.fontSize="0.875rem"; p.style.fontWeight="400"; p.style.lineHeight="1.75rem"; }
                 else { p.style.color="rgba(148,163,184,0.55)"; p.style.fontSize="0.875rem"; p.style.fontWeight="400"; p.style.lineHeight="1.75rem"; }
               });
-              // Auto-scroll active line into view (only for visible container)
+              // Auto-scroll active line into view (only for visible container).
+              // offsetTop is relative to offsetParent which may not be the scroll
+              // container — use getBoundingClientRect() for a viewport-relative
+              // delta so scrollBy lands correctly regardless of nesting depth.
               const activePara = container.querySelector(`p[data-i="${active}"]`);
               if (activePara && container.clientHeight > 0) {
-                container.scrollTo({ top: activePara.offsetTop - container.clientHeight/2 + activePara.offsetHeight/2, behavior: "smooth" });
+                const paraRect = activePara.getBoundingClientRect();
+                const contRect = container.getBoundingClientRect();
+                container.scrollBy({
+                  top: paraRect.top - contRect.top - container.clientHeight / 2 + activePara.clientHeight / 2,
+                  behavior: "smooth",
+                });
               }
             });
           }
