@@ -1574,6 +1574,9 @@ async def admin_edit(request: web.Request) -> web.Response:
     if new_intro_start is not None and new_intro_end is not None and new_intro_end <= new_intro_start:
         new_intro_end = None  # discard nonsensical range
 
+    # Custom thumbnail override
+    thumb_url = (form.get("thumb_url") or "").strip()
+
     # Music metadata fields
     new_artist = (form.get("artist") or "").strip()
     new_album_title = (form.get("album_title") or "").strip()
@@ -1690,11 +1693,47 @@ async def admin_edit(request: web.Request) -> web.Response:
                 media_index.enrich_one(message_id, bot=StreamBot)
             )
 
+    # Custom thumbnail: download and store in thumb cache, or clear to re-detect.
+    thumb_msg = ""
+    if thumb_url and status in ("written", "local-only"):
+        from main.utils import thumb_cache
+        if thumb_url == "__clear__":
+            await thumb_cache.clear(message_id)
+            thumb_msg = " — thumbnail cleared"
+        else:
+            import aiohttp as _aio
+            try:
+                async with _aio.ClientSession() as _s:
+                    async with _s.get(
+                        thumb_url,
+                        timeout=_aio.ClientTimeout(total=15),
+                        headers={"User-Agent": "TeleDirect/1.0"},
+                    ) as _r:
+                        if _r.ok:
+                            _content_type = (_r.content_type or "").lower()
+                            if "image" in _content_type or thumb_url.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".webp")):
+                                _img = await _r.read()
+                                thumb_cache.set_(message_id, _img)
+                                store = thumb_cache._store()
+                                if store:
+                                    try:
+                                        await store.set_thumb(message_id, _img)
+                                    except Exception:
+                                        pass
+                                thumb_msg = " — thumbnail updated"
+                            else:
+                                thumb_msg = " — thumbnail URL did not return an image"
+                        else:
+                            thumb_msg = f" — thumbnail fetch failed ({_r.status})"
+            except Exception as _e:
+                thumb_msg = f" — thumbnail error: {_e}"
+
     from urllib.parse import quote
     if status == "written":
         msg = f"Updated bin:{message_id}"
         if title_changed or year_changed:
             msg += " — re-enrich queued"
+        msg += thumb_msg
     elif status == "local-only":
         # Surface the specific Telegram error code so the operator
         # sees the real cause instead of a one-size diagnosis.

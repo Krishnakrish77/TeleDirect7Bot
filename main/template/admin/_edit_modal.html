@@ -6,7 +6,7 @@
     <template x-if="editing">
       <div x-cloak
            @keydown.escape.window="editing = null"
-           class="fixed inset-0 z-30 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+           class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
         <div @click.outside="editing = null"
              class="w-full max-w-lg rounded-xl bg-ink-900 border border-white/10
                     shadow-2xl max-h-[90vh] flex flex-col">
@@ -265,6 +265,32 @@
                 </div>
               </div>
 
+              {# Custom thumbnail — paste an image URL to override the
+                 auto-extracted cover art (APIC or Telegram thumb).
+                 Saved image is fetched server-side and stored in the
+                 thumb cache, immediately replacing what /thumb/ serves. #}
+              <div class="pt-3 border-t border-white/5">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">
+                  Thumbnail <span class="lowercase tracking-normal text-slate-500">(paste image URL to override)</span>
+                </p>
+                <div class="flex items-center gap-2">
+                  <input type="url" name="thumb_url"
+                         x-model="editing.thumb_url"
+                         placeholder="https://image.tmdb.org/t/p/w500/… or any .jpg URL"
+                         class="flex-1 px-3 py-2 rounded bg-ink-800/70 text-slate-100
+                                border border-white/5 text-sm
+                                focus:outline-none focus:ring-2 focus:ring-brand-400/60" />
+                  <button type="button"
+                          @click="editing.thumb_url = '__clear__'"
+                          title="Remove custom thumbnail and re-detect from file"
+                          class="flex-shrink-0 px-3 py-2 rounded text-xs font-medium
+                                 bg-slate-700/30 text-slate-400 border border-white/5
+                                 hover:text-white hover:bg-slate-700/60 transition-colors">
+                    Clear
+                  </button>
+                </div>
+              </div>
+
               {# Optional TMDB id override. When set, the backend skips
                  search-by-title and applies the specified record
                  directly — useful for titles that are too generic or
@@ -386,7 +412,9 @@
               </div>
             </div>
 
-            <footer class="px-4 py-3 flex items-center gap-2 flex-shrink-0 flex-wrap">
+            <footer class="px-4 py-3 flex items-center gap-2 flex-shrink-0 flex-wrap
+                            pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]
+                            mb-[max(0px,env(safe-area-inset-bottom,0px))]">
               {# Clear TMDB: wipes enrichment fields so the item can be
                  re-enriched fresh or left as a plain upload entry. #}
               <button type="submit" name="action" value="clear-tmdb"
