@@ -483,10 +483,17 @@ def _make_icon_png(size: int) -> bytes:
     )
 
 
-# Pre-generate once at startup — cheap (< 50 ms) and never changes.
+# Pre-generate once at startup.
 _ICON_192  = _make_icon_png(192)
 _ICON_512  = _make_icon_png(512)
 _ICON_180  = _make_icon_png(180)   # apple-touch-icon
+
+# Content-hash of the 192px icon used as a URL version suffix so that
+# every browser that has the old icon cached will automatically fetch the
+# new one when the manifest references the new URL.  Truncated to 8 hex
+# chars — enough to bust caches without ugly URLs.
+import hashlib as _hashlib
+_ICON_VER = _hashlib.md5(_ICON_192).hexdigest()[:8]
 
 _MANIFEST_JSON = json.dumps({
     "name": "TeleDirect",
@@ -501,9 +508,9 @@ _MANIFEST_JSON = json.dumps({
     "theme_color": "#0b0c0e",
     "lang": "en",
     "icons": [
-        {"src": "/favicon.svg",    "sizes": "any",     "type": "image/svg+xml", "purpose": "any"},
-        {"src": "/icon-192.png",   "sizes": "192x192", "type": "image/png",     "purpose": "maskable"},
-        {"src": "/icon-512.png",   "sizes": "512x512", "type": "image/png",     "purpose": "maskable"},
+        {"src": "/favicon.svg",                   "sizes": "any",     "type": "image/svg+xml", "purpose": "any"},
+        {"src": f"/icon-192.{_ICON_VER}.png",     "sizes": "192x192", "type": "image/png",     "purpose": "maskable"},
+        {"src": f"/icon-512.{_ICON_VER}.png",     "sizes": "512x512", "type": "image/png",     "purpose": "maskable"},
     ],
     "categories": ["entertainment"],
 }, separators=(",", ":"))
@@ -514,20 +521,34 @@ async def pwa_manifest(_request: web.Request) -> web.Response:
     return web.Response(
         text=_MANIFEST_JSON,
         content_type="application/manifest+json",
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers={"Cache-Control": "no-cache"},   # always fetch latest manifest
     )
 
 
-@routes.get("/icon-192.png")
+# Versioned icon routes — URL contains content hash so browsers bust cache
+# automatically when icons change.  Cache for 1 year (immutable by URL).
+@routes.get(r"/icon-192.{ver}.png")
 async def icon_192(_request: web.Request) -> web.Response:
     return web.Response(body=_ICON_192, content_type="image/png",
                         headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
-@routes.get("/icon-512.png")
+@routes.get(r"/icon-512.{ver}.png")
 async def icon_512(_request: web.Request) -> web.Response:
     return web.Response(body=_ICON_512, content_type="image/png",
                         headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+# Legacy unversioned routes — redirect to current versioned URL so old
+# bookmarks / cached manifests still resolve.
+@routes.get("/icon-192.png")
+async def icon_192_legacy(_request: web.Request) -> web.Response:
+    raise web.HTTPFound(f"/icon-192.{_ICON_VER}.png")
+
+
+@routes.get("/icon-512.png")
+async def icon_512_legacy(_request: web.Request) -> web.Response:
+    raise web.HTTPFound(f"/icon-512.{_ICON_VER}.png")
 
 
 @routes.get("/apple-touch-icon.png")
