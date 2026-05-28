@@ -232,10 +232,13 @@
       trigger.appendChild(btn);
       bar.appendChild(trigger);
 
-      // Attach menu to the player container so it isn't clipped by the bar's overflow
-      const playerWrap = plyrEl.closest(".aspect-video") || plyrEl;
-      playerWrap.style.position = "relative";
-      playerWrap.appendChild(menu);
+      // Attach menu to plyrEl (.plyr div), NOT the parent .aspect-video.
+      // Plyr calls requestFullscreen() on .plyr itself — in fullscreen mode
+      // only the fullscreened element and its descendants are rendered.
+      // Anything appended to the parent is outside the fullscreen layer
+      // and becomes invisible, making the menu unreachable in fullscreen.
+      plyrEl.style.position = "relative";
+      plyrEl.appendChild(menu);
 
       let open = false;
       function toggleMenu() { open ? closeMenu() : openMenu(); }
