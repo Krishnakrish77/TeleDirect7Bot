@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import struct
 import zlib
@@ -387,40 +388,87 @@ async def hub_tag(request: web.Request) -> web.Response:
 # as a BIN message id. Serving an actual icon — even a minimal one — is
 # nicer than the 204 we'd otherwise need to swallow the request.
 _FAVICON_SVG = (
+    # Proportions: 43% W, 48% H, +3.5% right optical shift, rounded stroke corners.
+    # Vertices on 64×64: sx=13.8, sy=15.4, cx=34.2, cy=31.4
     b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
     b'<rect width="64" height="64" rx="14" fill="#f97316"/>'
-    b'<path d="M16 16L48 32L16 48Z" fill="#fff"/>'
+    b'<polygon points="20,16 48,31 20,47"'
+    b' fill="white" stroke="white" stroke-width="4"'
+    b' stroke-linejoin="round" stroke-linecap="round"/>'
     b'</svg>'
 )
 
 
 def _make_icon_png(size: int) -> bytes:
-    """Generate a maskable PNG icon: orange bg (#f97316) + centred white play triangle."""
-    bg = (249, 115, 22)   # #f97316
-    fg = (255, 255, 255)
+    """Generate a maskable PNG icon: orange bg (#f97316) + white play triangle.
 
-    # Play triangle — s controls half-size relative to icon dimension.
-    # s=0.18 → triangle spans 36% (too much empty orange, looks small vs other icons).
-    # s=0.25 → triangle spans 50%, 25% margin each side — matches streaming app norms
-    #           (YouTube, Netflix icons have the main graphic at ~50-60% of area).
-    # Still well inside the maskable safe zone (40% radius from centre).
-    s = size * 0.25
-    cx, cy = size / 2.0, size / 2.0
-    tx0, ty0 = cx - s, cy - s   # top-left
-    tx1, ty1 = cx - s, cy + s   # bottom-left
-    tx2, ty2 = cx + s, cy       # right apex
+    Proportions based on design analysis of YouTube/Plex/Spotify icons:
+    - 43% width, 48% height coverage (slightly taller than wide — standard play button)
+    - +3.5% horizontal optical shift right: play triangles look left-heavy at
+      geometric centre; all major streaming icons nudge the triangle rightward
+    - +1% vertical optical lift
+    - Rounded corners via SDF contraction (corner_r = 2% of size ≈ 4 px)
+    - Anti-aliased edges via 1.5 px SDF blend band — no hard pixel steps
+    - Content sits well inside the 80% maskable safe zone
+    """
+    bg = (249, 115, 22)   # #f97316 orange
+    fg = (255, 255, 255)  # white
 
-    def _in_tri(px: float, py: float) -> bool:
-        def _s(ax, ay, bx, by):
-            return (px - bx) * (ay - by) - (ax - bx) * (py - by)
-        d1, d2, d3 = _s(tx0, ty0, tx1, ty1), _s(tx1, ty1, tx2, ty2), _s(tx2, ty2, tx0, ty0)
-        return not ((d1 < 0 or d2 < 0 or d3 < 0) and (d1 > 0 or d2 > 0 or d3 > 0))
+    sx = size * 0.215          # half of 43% width coverage
+    sy = size * 0.24           # half of 48% height coverage
+    cx = size * (0.50 + 0.035) # +3.5% optical right shift
+    cy = size * (0.50 - 0.010) # +1%  optical upward lift
+
+    tx0, ty0 = cx - sx, cy - sy   # top-left vertex
+    tx1, ty1 = cx - sx, cy + sy   # bottom-left vertex
+    tx2, ty2 = cx + sx, cy        # right apex
+
+    corner_r = size * 0.020   # rounded-corner radius ≈ 4 px on 192 px icon
+    smooth   = 1.5            # anti-alias blend width (pixels)
+
+    def _tri_sdf(px: float, py: float) -> float:
+        """Inigo Quilez triangle SDF — negative inside, positive outside."""
+        def dot2(ax: float, ay: float) -> float:
+            return ax * ax + ay * ay
+        def clamp01(v: float) -> float:
+            return 0.0 if v < 0.0 else (1.0 if v > 1.0 else v)
+
+        e0x, e0y = tx1 - tx0, ty1 - ty0
+        e1x, e1y = tx2 - tx1, ty2 - ty1
+        e2x, e2y = tx0 - tx2, ty0 - ty2
+        v0x, v0y = px - tx0, py - ty0
+        v1x, v1y = px - tx1, py - ty1
+        v2x, v2y = px - tx2, py - ty2
+
+        d2e0 = dot2(e0x, e0y); t0 = clamp01((v0x*e0x + v0y*e0y)/d2e0) if d2e0 else 0.0
+        d2e1 = dot2(e1x, e1y); t1 = clamp01((v1x*e1x + v1y*e1y)/d2e1) if d2e1 else 0.0
+        d2e2 = dot2(e2x, e2y); t2 = clamp01((v2x*e2x + v2y*e2y)/d2e2) if d2e2 else 0.0
+
+        pq0x, pq0y = v0x - e0x*t0, v0y - e0y*t0
+        pq1x, pq1y = v1x - e1x*t1, v1y - e1y*t1
+        pq2x, pq2y = v2x - e2x*t2, v2y - e2y*t2
+
+        s = 1.0 if (e0x*e2y - e0y*e2x) >= 0 else -1.0
+        inside = (
+            s*(v0x*e0y - v0y*e0x) >= 0 and
+            s*(v1x*e1y - v1y*e1x) >= 0 and
+            s*(v2x*e2y - v2y*e2x) >= 0
+        )
+        d = math.sqrt(min(dot2(pq0x,pq0y), dot2(pq1x,pq1y), dot2(pq2x,pq2y)))
+        return -d if inside else d
 
     rows = bytearray()
     for y in range(size):
         rows.append(0)  # PNG filter byte per row
         for x in range(size):
-            rows.extend(fg if _in_tri(x + 0.5, y + 0.5) else bg)
+            d = _tri_sdf(x + 0.5, y + 0.5) - corner_r   # round corners inward
+            if d < -smooth:
+                rows.extend(fg)
+            elif d < smooth:
+                t = (d + smooth) / (2.0 * smooth)        # 0 = white, 1 = orange
+                rows.extend(int(fg[i]*(1-t) + bg[i]*t) for i in range(3))
+            else:
+                rows.extend(bg)
 
     def _chunk(tag: bytes, data: bytes) -> bytes:
         crc = zlib.crc32(tag + data) & 0xFFFFFFFF
