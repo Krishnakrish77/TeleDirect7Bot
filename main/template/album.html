@@ -154,8 +154,12 @@
   </style>
 
   <script>
-// Full track metadata for direct bgAudio playback — no navigation required.
-const _albumTrackData = [
+// Wrapped in an IIFE so re-execution by HTMX (which re-injects <script>
+// tags on every navigation swap) doesn't throw
+// "SyntaxError: const _albumTrackData already declared" at global scope.
+// onclick handlers reference the window.* aliases set at the bottom.
+(function() {
+var _albumTrackData = [
   {% for t in tracks %}
   {
     hash: '{{ t.secure_hash }}{{ t.message_id }}',
@@ -169,7 +173,7 @@ const _albumTrackData = [
 ];
 
 function _buildNp(arr, idx) {
-  const t = arr[idx], nxt = arr[idx + 1], prv = arr[idx - 1];
+  var t = arr[idx], nxt = arr[idx + 1], prv = arr[idx - 1];
   return {
     url: t.watchUrl, streamUrl: t.streamUrl,
     title: t.title, artist: t.artist, art: t.art,
@@ -184,10 +188,9 @@ function _buildNp(arr, idx) {
 }
 
 function _playVia(arr, idx) {
-  const t = arr[idx];
-  const bg = document.getElementById('bgAudio');
-  if (!bg) { window.location.href = t.watchUrl + '?play=1'; return; }
-  // Store full queue so the ended handler can advance without losing metadata
+  var t = arr[idx];
+  var bg = document.getElementById('bgAudio');
+  if (!bg) { window.location.href = t.watchUrl; return; }
   try {
     sessionStorage.setItem('td:queue', JSON.stringify(arr));
     sessionStorage.setItem('td:queueIndex', String(idx));
@@ -198,10 +201,8 @@ function _playVia(arr, idx) {
     if (typeof window._mpInit === 'function') window._mpInit();
     _updateNowPlaying();
   }).catch(function() {
-    // Autoplay blocked — clear the stale queue so the watch page's own
-    // np.nextStreamUrl chain is used instead of the album queue.
     try { sessionStorage.removeItem('td:queue'); sessionStorage.removeItem('td:queueIndex'); } catch(_) {}
-    window.location.href = t.watchUrl + '?play=1';
+    window.location.href = t.watchUrl;
   });
 }
 
@@ -210,20 +211,17 @@ function _albumQueueNext(idx) { if (window._queuePlayNext) window._queuePlayNext
 function _albumQueueAdd(idx)  { if (window._queueAddToEnd) window._queueAddToEnd(_albumTrackData[idx]); }
 
 function _albumShuffle(albumKey) {
-  const arr = [..._albumTrackData];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+  var arr = _albumTrackData.slice();
+  for (var i = arr.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
   }
   try {
-    sessionStorage.setItem('td:shuffle:' + albumKey, JSON.stringify(arr.map(t => t.hash)));
+    sessionStorage.setItem('td:shuffle:' + albumKey, JSON.stringify(arr.map(function(t) { return t.hash; })));
   } catch(_) {}
   _playVia(arr, 0);
 }
-// Legacy alias for existing shuffle calls
-function shuffleAlbum(albumKey) { _albumShuffle(albumKey); }
 
-// ── Now-playing indicator ─────────────────────────────────────────────────
 function _updateNowPlaying() {
   var np;
   try { np = JSON.parse(localStorage.getItem('td:nowplaying') || 'null'); } catch(_) { np = null; }
@@ -255,10 +253,15 @@ function _updateNowPlaying() {
   }
 }
 
-// Register as a page-specific callback that _mpInit calls after each update.
-// (Can't override window._mpInit here — _mini_player.html loads after this script.)
-window._onMpInit = _updateNowPlaying;
+// Expose to global scope for onclick handlers and _mpInit callback.
+window._albumPlay      = _albumPlay;
+window._albumQueueNext = _albumQueueNext;
+window._albumQueueAdd  = _albumQueueAdd;
+window._albumShuffle   = _albumShuffle;
+window.shuffleAlbum    = function(k) { _albumShuffle(k); };
+window._onMpInit       = _updateNowPlaying;
 _updateNowPlaying();
+})();
 </script>
   </div>
 {% endblock %}

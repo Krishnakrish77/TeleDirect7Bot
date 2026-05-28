@@ -244,7 +244,11 @@
         if (_preloaded && !_xfading && rem > 0 && rem <= _XFADE_SECS) _gapCrossfade();
       }
     });
-    _bgAudio.addEventListener('ended', function() {
+    // Named so it can be attached to both bgAudio elements.
+    // After gapless _gapSwap(), _bgAudio becomes bgAudio2 (was _bgBuf).
+    // Without this, only bgAudio1 had an ended listener — once bgAudio2
+    // took over as the active player its track-end never fired auto-advance.
+    function _onBgEnded() {
       // Record the just-completed track in watch history BEFORE any state
       // changes (gapSwap / NP update) so we read the right track from NP.
       var _np0;
@@ -309,13 +313,15 @@
       } else if (np.nextUrl) {
         window.location.href = np.nextUrl;
       }
-    });
+    }
+    _bgAudio.addEventListener('ended', _onBgEnded);
   }
 
-  // ── Mirror play/pause events from buffer element so icon stays in sync ──
+  // ── Mirror play/pause/ended events from buffer element ───────────────────
   if (_bgBuf) {
     _bgBuf.addEventListener('play',  _mpSyncIcon);
     _bgBuf.addEventListener('pause', _mpSyncIcon);
+    _bgBuf.addEventListener('ended', _onBgEnded);
   }
 
   // ── Mini-player seek bar ───────────────────────────────────────────────
