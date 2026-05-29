@@ -610,8 +610,8 @@ async def favicon(_request: web.Request) -> web.Response:
 _SW_JS = """\
 /* TeleDirect service worker — network-first for navigation/CSS,
    cache-first for versioned assets, network-only for streams/API. */
-const CACHE = 'td-v3';
-const SHELL = ['/', '/static/tailwind.css?v=2', '/favicon.svg'];
+const CACHE = 'td-v4';
+const SHELL = ['/', '/static/tailwind.css?v=3', '/favicon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(

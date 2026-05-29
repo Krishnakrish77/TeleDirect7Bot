@@ -9,7 +9,7 @@
     {% block head_extra %}{% endblock %}
     <title>{% block title %}TeleDirect{% endblock %}</title>
 
-    <link rel="stylesheet" href="/static/tailwind.css?v=2" />
+    <link rel="stylesheet" href="/static/tailwind.css?v=3" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -88,6 +88,23 @@
       .flip-card-inner.flipped{transform:rotateY(180deg)}
       .flip-card-front,.flip-card-back{backface-visibility:hidden;-webkit-backface-visibility:hidden}
       .flip-card-back{transform:rotateY(180deg);position:absolute;inset:0}
+      /* Mobile audio pages hit compositor artifacts with 3D card layers after
+         HTMX mini-player expansion. Keep the tap-to-lyrics behavior, but use a
+         simple display toggle on phones instead of rotateY/preserve-3d. */
+      @media(max-width:767px),(max-height:480px){
+        .td-audio-art.flip-card{perspective:none}
+        .td-audio-art .flip-card-inner{transform:none!important;transition:none;display:block}
+        .td-audio-art .flip-card-inner.flipped{transform:none!important}
+        .td-audio-art .flip-card-front,
+        .td-audio-art .flip-card-back{
+          transform:none!important;
+          backface-visibility:visible;
+          -webkit-backface-visibility:visible;
+        }
+        .td-audio-art .flip-card-back{display:none;position:absolute;inset:0}
+        .td-audio-art .flip-card-inner.flipped .flip-card-front{display:none}
+        .td-audio-art .flip-card-inner.flipped .flip-card-back{display:flex}
+      }
       /* Safe-area insets — bypass Tailwind (scanner can't handle nested env() commas).
          All safe-area CSS lives here to ensure it compiles correctly. */
       @supports(padding:env(safe-area-inset-top)){

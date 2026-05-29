@@ -13,7 +13,7 @@
                 [@media(max-height:480px)]:mt-2 [@media(max-height:480px)]:gap-5 [@media(max-height:480px)]:px-3">
 
       {# ── Album art (flip card: front=art, back=lyrics) ───────────────── #}
-      <div class="flip-card
+      <div class="flip-card td-audio-art
                   w-[min(75vw,18rem)] h-[min(75vw,18rem)] sm:w-64 sm:h-64 md:w-80 md:h-80 lg:w-96 lg:h-96
                   [@media(max-height:480px)]:w-32 [@media(max-height:480px)]:h-32
                   flex-shrink-0 cursor-pointer md:sticky md:top-8"
@@ -284,7 +284,7 @@
               Playlist
             </button>
             {# Dropdown #}
-            <div x-show="open" x-cloak x-transition.opacity.duration.150ms
+            <div x-show="open" x-cloak x-transition.opacity.duration.150ms style="display:none"
                  class="absolute bottom-full mb-2 right-0 z-50 w-64
                         bg-ink-900 border border-white/10 rounded-xl shadow-2xl py-2
                         max-h-72 overflow-y-auto [scrollbar-width:none]">

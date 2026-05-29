@@ -150,7 +150,7 @@ async def admin_home(request: web.Request) -> web.Response:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Admin — Sign in</title>
-  <link rel="stylesheet" href="/static/tailwind.css?v=2">
+  <link rel="stylesheet" href="/static/tailwind.css?v=3">
 </head>
 <body class="min-h-full bg-ink-900 flex items-center justify-center px-4">
   <div class="w-full max-w-sm bg-ink-800/60 border border-white/10
