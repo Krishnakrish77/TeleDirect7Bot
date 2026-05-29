@@ -642,6 +642,38 @@
     setTimeout(function() {
       var main = document.getElementById('main-content');
       if (!main) return;
+
+      // ── Strip stale snapshot DOM before Alpine re-initialises ─────────────
+      // HTMX saves the rendered DOM to sessionStorage. Two kinds of stale
+      // nodes cause visible ghosts when Alpine re-initialises on restore:
+      //
+      // 1. x-for rendered children: Alpine rendered cards/items are baked
+      //    into the snapshot as static HTML after their <template x-for>.
+      //    When Alpine.initTree runs the x-for again it inserts NEW nodes
+      //    alongside the stale ones → doubled CW cards, doubled grid items.
+      //    Fix: remove every node that follows a <template x-for> so Alpine
+      //    starts with a clean slate.
+      //
+      // 2. Baked-in inline styles from :style / :class bindings: the hero
+      //    carousel snapshot captures opacity/z-index on each slide at the
+      //    time it was saved (e.g. slide 2 visible, rest opacity:0).  When
+      //    Alpine re-inits with active=0 it sets slide 0 visible — but slide
+      //    2 still has the old opacity:1 style from the snapshot, so BOTH
+      //    slides appear → the "second TeleDirect header + hero" phantom.
+      //    Fix: strip the baked-in inline style from elements that have a
+      //    :style or x-bind:style directive so Alpine applies it fresh.
+      main.querySelectorAll('template[x-for]').forEach(function(tpl) {
+        var node = tpl.nextSibling;
+        while (node) {
+          var nxt = node.nextSibling;
+          node.parentNode && node.parentNode.removeChild(node);
+          node = nxt;
+        }
+      });
+      main.querySelectorAll('[\\:style],[x-bind\\:style]').forEach(function(el) {
+        el.removeAttribute('style');
+      });
+
       // Re-initialize Alpine components that weren't marked by MutationObserver.
       if (typeof Alpine !== 'undefined' && Alpine.initTree) {
         main.querySelectorAll('[x-data]').forEach(function(el) {
