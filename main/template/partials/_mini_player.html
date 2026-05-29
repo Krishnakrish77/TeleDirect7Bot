@@ -402,14 +402,9 @@
     _mpSeek.addEventListener('touchend', function() { _mpScrubbing = false; });
   }
 
-  // Mini-player link: expand to watch page via htmx swap so bgAudio keeps
-  // playing across the swap (the on-page player then takes over at the same
-  // position — see _initAudioPage's handoff). The htmx:configRequest guard
-  // below force-converts ALL /watch/ requests to full reloads — including this
-  // programmatic htmx.ajax call, NOT just link boosts as once assumed. A full
-  // reload tears down bgAudio mid-track and restarts from the last *saved*
-  // position, which is exactly the "click mini-player → track stops, progress
-  // lost" bug. Set a one-shot flag the guard honours so this swap goes through.
+  // Mini-player link: expand to watch page via htmx swap (bgAudio persists).
+  // htmx.ajax bypasses the htmx:configRequest /watch/ exclusion — that
+  // exclusion is for boost-style link navigations, not programmatic calls.
   var _mpLinkEl = document.getElementById('_mp-link');
   if (_mpLinkEl) {
     _mpLinkEl.addEventListener('click', function(e) {
@@ -417,7 +412,6 @@
       try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
       if (!np || !np.url || !_bgAudio) return; // fallback to default nav
       e.preventDefault();
-      window.__mpExpandSwap = true; // tell htmx:configRequest to allow this swap
       htmx.ajax('GET', np.url, {
         target: '#main-content',
         swap: 'outerHTML',
@@ -587,11 +581,6 @@
     var rawPath = (e.detail.path || '');
     var pathname;
     try { pathname = new URL(rawPath, location.origin).pathname; } catch(_) { pathname = rawPath; }
-    // The mini-player's expand-to-watch swap sets this one-shot flag. That
-    // request is a deliberate htmx.ajax swap into #main-content (audio watch
-    // pages init on swap via _initAudioPage), so let it through instead of
-    // converting it to a full reload that would interrupt playback.
-    if (window.__mpExpandSwap) { window.__mpExpandSwap = false; return; }
     // Watch + admin pages need full page loads (complex JS that relies on DOMContentLoaded).
     // Stream URLs (/{hash}{id}) must not be AJAX-fetched — they return binary audio/video.
     if (pathname.startsWith('/watch/') || pathname.startsWith('/admin') ||
