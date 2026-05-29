@@ -412,12 +412,14 @@
       try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
       if (!np || !np.url || !_bgAudio) return; // fallback to default nav
       e.preventDefault();
+      window._mpAllowWatchAjax = true;
       htmx.ajax('GET', np.url, {
         target: '#main-content',
         swap: 'outerHTML',
         select: '#main-content',
         pushUrl: np.url,
       });
+      setTimeout(function() { window._mpAllowWatchAjax = false; }, 1500);
     });
   }
 
@@ -583,7 +585,8 @@
     try { pathname = new URL(rawPath, location.origin).pathname; } catch(_) { pathname = rawPath; }
     // Watch + admin pages need full page loads (complex JS that relies on DOMContentLoaded).
     // Stream URLs (/{hash}{id}) must not be AJAX-fetched — they return binary audio/video.
-    if (pathname.startsWith('/watch/') || pathname.startsWith('/admin') ||
+    if ((pathname.startsWith('/watch/') && !window._mpAllowWatchAjax) ||
+        pathname.startsWith('/admin') ||
         /^\/[A-Za-z0-9_-]*[A-Za-z_-]\d+$/.test(pathname)) {
       e.preventDefault();
       window.location.href = rawPath;
