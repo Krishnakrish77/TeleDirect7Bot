@@ -121,6 +121,7 @@
                              TMDB ID override doesn't accidentally get
                              applied as a movie record. #}
                           data-tmdb-kind="{{ item.tmdb_kind or ('tv' if item.series_key else 'movie') }}"
+                          data-admin-locked="{{ (item.admin_locked or []) | join(',') }}"
                           data-media-kind="{{ item.media_kind or '' }}"
                           data-artist="{{ item.artist or '' }}"
                           data-album-title="{{ item.album_title or '' }}"
