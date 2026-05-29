@@ -784,6 +784,42 @@
   };
 })();
 
+// ── Hub search suggestions ───────────────────────────────────────────────────
+// Defined here (global, every page) rather than in hub.html's {% block scripts %}
+// so it survives HTMX-boosted navigation: the boost swaps only #main-content and
+// discards scripts outside it, which would otherwise leave x-data="hubSearch()"
+// bound to an undefined function and the suggestion dropdown dead.
+function hubSearch() {
+  return {
+    suggestions: [],
+    suggestActive: -1,
+    _suggestTimer: null,
+    fetchSuggestions(val) {
+      clearTimeout(this._suggestTimer);
+      const v = (val || '').trim();
+      if (!v) { this.suggestions = []; this.suggestActive = -1; return; }
+      this._suggestTimer = setTimeout(async () => {
+        try {
+          const r = await fetch('/search/suggest?q=' + encodeURIComponent(v) + '&limit=6');
+          if (r.ok) { this.suggestions = await r.json(); this.suggestActive = -1; }
+        } catch (_) {}
+      }, 150);
+    },
+    moveSuggest(dir) {
+      if (!this.suggestions.length) return;
+      this.suggestActive = (this.suggestActive + dir + this.suggestions.length) % this.suggestions.length;
+    },
+    pickSuggest(event) {
+      if (this.suggestActive >= 0 && this.suggestActive < this.suggestions.length) {
+        event.preventDefault();
+        window.location = this.suggestions[this.suggestActive].url;
+      }
+      this.closeSuggest();
+    },
+    closeSuggest() { this.suggestions = []; this.suggestActive = -1; },
+  };
+}
+
 // ── Playlist picker ──────────────────────────────────────────────────────────
 // Used on the audio watch page to add the current track to a playlist.
 // mid / title / artist / hash are injected from the Jinja template.
