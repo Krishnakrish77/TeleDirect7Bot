@@ -662,16 +662,27 @@
       //    slides appear → the "second TeleDirect header + hero" phantom.
       //    Fix: strip the baked-in inline style from elements that have a
       //    :style or x-bind:style directive so Alpine applies it fresh.
+      // Strip pre-rendered x-for nodes that were baked into the snapshot.
+      // Stop at any <template> sibling so we don't eat a second x-for/x-if
+      // template that lives in the same parent (e.g. two shelves side by side).
       main.querySelectorAll('template[x-for]').forEach(function(tpl) {
         var node = tpl.nextSibling;
         while (node) {
+          if (node.nodeName === 'TEMPLATE') break; // stop before next template
           var nxt = node.nextSibling;
           node.parentNode && node.parentNode.removeChild(node);
           node = nxt;
         }
       });
-      main.querySelectorAll('[\\:style],[x-bind\\:style]').forEach(function(el) {
-        el.removeAttribute('style');
+      // Strip baked-in inline styles from :style-bound elements so Alpine
+      // re-applies them fresh (e.g. hero carousel slide opacities).
+      // querySelectorAll('[\\:style]') throws SyntaxError in all browsers
+      // because CSS attribute selectors cannot escape colons that way.
+      // Use hasAttribute() instead, which works for any attribute name.
+      main.querySelectorAll('*').forEach(function(el) {
+        if (el.hasAttribute(':style') || el.hasAttribute('x-bind:style')) {
+          el.removeAttribute('style');
+        }
       });
 
       // Re-initialize Alpine components that weren't marked by MutationObserver.
@@ -785,7 +796,7 @@
 })();
 
 // ── Hub search suggestions ───────────────────────────────────────────────────
-// Defined here (global, every page) rather than in hub.html's {% block scripts %}
+// Defined here (global, every page) rather than in hub.html's scripts block
 // so it survives HTMX-boosted navigation: the boost swaps only #main-content and
 // discards scripts outside it, which would otherwise leave x-data="hubSearch()"
 // bound to an undefined function and the suggestion dropdown dead.
