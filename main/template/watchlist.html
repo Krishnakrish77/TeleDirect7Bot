@@ -116,38 +116,35 @@
       {% endfor %}
     </ul>
   {% endif %}
-</div>
 
-{% block scripts %}
-<script>
-// Remove items from this page without full reload
-async function _wlToggle(btn, itemId) {
-  var token = (function(){
-    try { return sessionStorage.getItem('td:auth'); } catch(_) {}
-    var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-    return m ? m[1] : null;
-  })();
-  var li = btn.closest('li');
-  li.style.opacity = '0.4';
-  li.style.pointerEvents = 'none';
-  try {
-    var resp = await fetch('/api/watchlist/' + encodeURIComponent(itemId), {
-      method: 'DELETE',
-      headers: token ? {'Authorization': 'Bearer ' + token} : {},
-    });
-    if (!resp.ok) throw new Error('server error ' + resp.status);
-    li.remove();
-    var counter = document.getElementById('wl-count');
-    if (counter) {
-      var cur = parseInt(counter.textContent) || 0;
-      var n = Math.max(0, cur - 1);
-      counter.textContent = n > 0 ? n + ' saved' : '';
+  {# Script inside #main-content so it loads on HTMX navigation.
+     _wlToggle was in {% block scripts %} (outside main-content) which
+     is discarded by hx-select="#main-content" — clicking Remove
+     threw ReferenceError and silently did nothing. #}
+  <script>
+  async function _wlToggle(btn, itemId) {
+    var token = window._tdToken ? window._tdToken() : null;
+    var li = btn.closest('li');
+    li.style.opacity = '0.4';
+    li.style.pointerEvents = 'none';
+    try {
+      var resp = await fetch('/api/watchlist/' + encodeURIComponent(itemId), {
+        method: 'DELETE',
+        headers: token ? {'Authorization': 'Bearer ' + token} : {},
+      });
+      if (!resp.ok) throw new Error('server error ' + resp.status);
+      li.remove();
+      var counter = document.getElementById('wl-count');
+      if (counter) {
+        var cur = parseInt(counter.textContent) || 0;
+        var n = Math.max(0, cur - 1);
+        counter.textContent = n > 0 ? n + ' saved' : '';
+      }
+    } catch(e) {
+      li.style.opacity = '';
+      li.style.pointerEvents = '';
     }
-  } catch(e) {
-    li.style.opacity = '';
-    li.style.pointerEvents = '';
   }
-}
-</script>
-{% endblock %}
+  </script>
+</div>
 {% endblock %}
