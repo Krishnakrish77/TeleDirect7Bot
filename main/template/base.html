@@ -153,21 +153,20 @@
                  @mouseenter="active = idx"
                  :class="active === idx ? 'bg-brand-500/15 text-white' : 'text-slate-200 hover:bg-ink-800'"
                  class="flex items-center gap-3 px-4 py-3 transition-colors">
-                <template x-if="it.poster_path">
-                  <img :src="'https://image.tmdb.org/t/p/w92' + it.poster_path" alt=""
-                       loading="lazy"
-                       class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
-                </template>
-                <template x-if="!it.poster_path">
-                  <div class="w-8 h-12 rounded bg-ink-800 flex-shrink-0
-                              grid place-items-center text-slate-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-                         fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
-                      <path stroke-linecap="round" stroke-linejoin="round"
-                            d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
-                    </svg>
-                  </div>
-                </template>
+                {# x-show (not x-if) — same reason as hub.html search suggestions #}
+                <img x-show="it.poster_path"
+                     :src="it.poster_path ? 'https://image.tmdb.org/t/p/w92' + it.poster_path : ''"
+                     alt="" loading="lazy"
+                     class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
+                <div x-show="!it.poster_path"
+                     class="w-8 h-12 rounded bg-ink-800 flex-shrink-0
+                            grid place-items-center text-slate-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                       fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                  </svg>
+                </div>
                 <div class="min-w-0 flex-1">
                   <p class="text-sm font-medium truncate" x-text="it.title"></p>
                   <p class="text-xs text-slate-500">
@@ -180,11 +179,10 @@
           </template>
         </ul>
 
-        <template x-if="q && !items.length">
-          <p class="px-4 py-6 text-center text-sm text-slate-500">
-            No results for "<span class="text-slate-300" x-text="q"></span>"
-          </p>
-        </template>
+        <p x-show="q && !items.length"
+           class="px-4 py-6 text-center text-sm text-slate-500">
+          No results for "<span class="text-slate-300" x-text="q"></span>"
+        </p>
 
         <div class="px-4 py-2 border-t border-white/5 flex items-center justify-between
                     text-xs text-slate-600">
