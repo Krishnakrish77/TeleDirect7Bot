@@ -57,6 +57,16 @@
       @keyframes _hb{0%{transform:scaleX(0)}60%{transform:scaleX(.7)}100%{transform:scaleX(.85)}}
       #_htmx-bar.htmx-complete{transform:scaleX(1);transition:transform .1s ease-out,opacity .3s .1s;opacity:0}
       [x-cloak]{display:none!important}
+      /* Prevent horizontal scroll caused by w-screen hero (100vw > visible
+         width on Windows/Linux with persistent scrollbars). */
+      html{overflow-x:hidden}
+      /* Use dynamic viewport height so min-height matches the VISIBLE area.
+         100vh on iOS Safari equals the full browser height including the
+         address bar, making short pages scrollable when they shouldn't be.
+         100dvh adapts as the address bar shows/hides. Falls back to 100vh
+         in browsers that don't yet support dvh (iOS <15.4, Chrome <108). */
+      #main-content{min-height:100dvh}
+      @supports not (min-height:1dvh){#main-content{min-height:100vh}}
       .wl-btn{color:rgba(255,255,255,.55)}.wl-btn.wl-saved{color:#f97316;opacity:1!important}
       /* Safe-area insets — bypass Tailwind (scanner can't handle nested env() commas).
          All safe-area CSS lives here to ensure it compiles correctly. */
@@ -90,7 +100,7 @@
           hx-select="#main-content"
           hx-push-url="true"
           hx-swap="outerHTML"
-          class="min-h-screen flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-16">
+          class="flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6">
       {% block content %}{% endblock %}
     </main>
 
