@@ -81,27 +81,30 @@ async def create(user_id: int, name: str) -> Optional[str]:
 
 
 async def get_all(user_id: int) -> List[dict]:
-    """Return all playlists newest-first. Each entry has track_count."""
+    """Return all playlists newest-first with track_count and first_track only.
+
+    Uses aggregation so the full tracks array (up to 500 items) is never
+    transferred — only the count and the first element come back.
+    """
     await _ensure_indexes()
     db = _get_db()
     if db is None:
         return []
     try:
-        docs = await db["playlists"].find(
-            {"user_id": user_id},
-            projection={"playlist_id": 1, "name": 1, "tracks": 1, "updated_at": 1, "_id": 0},
-            sort=[("updated_at", -1)],
-        ).to_list(length=_MAX_PLAYLISTS)
-        return [
-            {
-                "playlist_id": d["playlist_id"],
-                "name": d["name"],
-                "track_count": len(d.get("tracks") or []),
-                "first_track": ((d.get("tracks") or [])[0]) if d.get("tracks") else None,
-                "updated_at": d.get("updated_at"),
-            }
-            for d in docs
+        pipeline = [
+            {"$match": {"user_id": user_id}},
+            {"$sort": {"updated_at": -1}},
+            {"$project": {
+                "_id": 0,
+                "playlist_id": 1,
+                "name": 1,
+                "updated_at": 1,
+                "track_count": {"$size": {"$ifNull": ["$tracks", []]}},
+                "first_track": {"$first": "$tracks"},
+            }},
+            {"$limit": _MAX_PLAYLISTS},
         ]
+        return await db["playlists"].aggregate(pipeline).to_list(length=_MAX_PLAYLISTS)
     except Exception:
         logging.exception("playlist_store: get_all failed uid=%d", user_id)
         return []

@@ -343,7 +343,7 @@
   var btnDel = document.getElementById('btn-delete-pl');
   if (btnDel) {
     btnDel.addEventListener('click', async function() {
-      if (!confirm('Delete "{{ playlist.name }}"? This cannot be undone.')) return;
+      if (!confirm('Delete ' + {{ playlist.name | tojson }} + '? This cannot be undone.')) return;
       var t = tok();
       try {
         var r = await fetch('/api/playlists/' + PL_ID, {

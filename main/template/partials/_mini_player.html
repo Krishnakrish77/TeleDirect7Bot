@@ -844,7 +844,17 @@ function tdPlaylistPicker(mid, title, artist, hash) {
         });
         if (r.ok) {
           var data = await r.json();
-          await this.load();
+          // Optimistically prepend to the list — avoids a full reload round-trip
+          // and eliminates the race window between load() and addTo().
+          if (this.playlists) {
+            this.playlists.unshift({
+              playlist_id: data.playlist_id, name: data.name, track_count: 0
+            });
+          } else {
+            this.playlists = [{
+              playlist_id: data.playlist_id, name: data.name, track_count: 0
+            }];
+          }
           await this.addTo(data.playlist_id);
         }
       } catch(_) {}

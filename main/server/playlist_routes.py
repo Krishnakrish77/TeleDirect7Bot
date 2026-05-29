@@ -87,6 +87,11 @@ async def playlist_detail(request: web.Request) -> web.Response:
         item = media_index.get_item(t["message_id"])
         if item is None:
             continue
+        # Verify the stored secure_hash still matches the catalogue entry so a
+        # DB compromise or migration error can't redirect a track to a different
+        # file (different unique_id = different stream URL).
+        if t.get("secure_hash") and t["secure_hash"] != item.secure_hash:
+            continue
         enriched.append({
             "message_id": item.message_id,
             "secure_hash": item.secure_hash,
@@ -176,12 +181,17 @@ async def api_add_track(request: web.Request) -> web.Response:
         artist = str(body.get("artist", ""))[:200]
     except (KeyError, ValueError, TypeError):
         return _json({"error": "invalid body"}, status=400)
+    pid = request.match_info["id"]
     ok = await playlist_store.add_track(
-        int(user["sub"]), request.match_info["id"],
+        int(user["sub"]), pid,
         message_id, secure_hash, title, artist,
     )
     if not ok:
-        return _json({"error": "playlist full or not found"}, status=422)
+        # Check whether the playlist exists to give a specific error message.
+        pl = await playlist_store.get_one(int(user["sub"]), pid)
+        if pl is None:
+            return _json({"error": "playlist not found"}, status=404)
+        return _json({"error": "playlist is full (500 track limit)"}, status=422)
     return _json({"ok": True})
 
 

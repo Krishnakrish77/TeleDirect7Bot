@@ -38,17 +38,23 @@ _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 # Debounce CW updates: at most one MongoDB write per 30s per (user, message)
 _vlc_cw_debounce: dict = {}   # (user_id, message_id) → last_update_ts
 
+_VLC_TOKEN_LEN = 32  # hex chars — must match generation below
+
 def _vlc_verify(param: str, message_id: int) -> int | None:
     """Return user_id if param is a valid VLC tracking token, else None."""
     from main.vars import Var as _Var
     try:
         uid_str, tok = param.split(":", 1)
         uid = int(uid_str)
+        # Reject wrong-length tokens before compare_digest to avoid
+        # length-extension or truncation games.
+        if len(tok) != _VLC_TOKEN_LEN:
+            return None
         expected = _hmac.new(
             _Var.JWT_SECRET.encode(),
             f"{uid}:{message_id}".encode(),
             hashlib.sha256,
-        ).hexdigest()[:32]
+        ).hexdigest()[:_VLC_TOKEN_LEN]
         if _hmac.compare_digest(expected, tok):
             return uid
     except Exception as e:
@@ -212,7 +218,7 @@ async def watch_handler(request: web.Request):
                     _Var.JWT_SECRET.encode(),
                     f"{vlc_user_id}:{message_id}".encode(),
                     hashlib.sha256,
-                ).hexdigest()[:32]
+                ).hexdigest()[:_VLC_TOKEN_LEN]
         return web.Response(
             text=await render_page(message_id, secure_hash,
                                    vlc_user_id=vlc_user_id,
