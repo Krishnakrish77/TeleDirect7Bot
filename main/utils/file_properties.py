@@ -1,4 +1,3 @@
-from urllib.parse import quote_plus
 from pyrogram import Client
 from typing import Any, Optional
 from pyrogram.types import Message
@@ -89,7 +88,7 @@ async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
     file_hash = get_hash(log_msg)
 
     page_link = f"{Var.URL}watch/{file_hash}{log_msg.id}"
-    stream_link = f"{Var.URL}{log_msg.id}/{quote_plus(get_name(m))}?hash={file_hash}"
+    stream_link = f"{Var.URL}{file_hash}{log_msg.id}"
     Stream_Text = lang.stream_msg_text.format(file_name, file_size, stream_link, page_link)
 
     buttons = [[InlineKeyboardButton("🖥STREAM", url=page_link),

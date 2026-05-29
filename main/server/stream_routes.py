@@ -145,15 +145,14 @@ async def _rate_limited_body(gen, ip: str):
 async def healthz(_):
     """Liveness + readiness check for orchestrators.
 
-    Returns 200 once the seed has finished AND the catalogue has
-    items; 503 while still seeding (so Koyeb's health probe holds
-    traffic out until we're ready). Always returns JSON so it's
-    inspectable in a browser.
+    Returns 200 once the seed has finished; 503 while still seeding
+    (so Koyeb's health probe holds traffic out until we're ready).
+    An empty catalogue is still a valid ready state.
     """
     from main.utils import media_index
     seed = media_index.seed_state()
     cat_size = media_index.size()
-    ready = (not seed.get("running")) and (seed.get("finished_at", 0) > 0) and cat_size > 0
+    ready = (not seed.get("running")) and (seed.get("finished_at", 0) > 0)
     body = {
         "status": "ok" if ready else "starting",
         "catalogue_size": cat_size,
@@ -345,6 +344,16 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         "Content-Disposition": f'{disposition}; filename="{file_name}"',
         "Accept-Ranges": "bytes",
     }
+
+    if request.method == "HEAD":
+        content_length = max(0, until_bytes - from_bytes + 1)
+        return web.Response(
+            status=206 if range_header else 200,
+            headers={
+                **common_headers,
+                "Content-Length": str(content_length),
+            },
+        )
 
     # Fast path: if the requested range fits entirely inside the cached file
     # header or tail, serve from memory and skip the Telegram round-trip.
