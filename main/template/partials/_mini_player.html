@@ -138,6 +138,7 @@
   var _XFADE_SECS = 3;    // crossfade duration in seconds
   var _xfading    = false;
   var _preloaded  = false;
+  var _mpCwSaveT  = 0;    // epoch-ms of last CW backend save
 
   function _nextSrc() {
     // Returns the stream URL of the next track from queue or NP metadata
@@ -259,6 +260,30 @@
         var rem = dur - cur;
         if (!_preloaded && rem <= _PRELOAD_AT) _gapPreload();
         if (_preloaded && !_xfading && rem > 0 && rem <= _XFADE_SECS) _gapCrossfade();
+      }
+      // Periodic CW backend save (every 30s after 5s of playback).
+      // Ensures partial listens appear in the activity heatmap even if the
+      // track is skipped before it ends. _tdWHRecord only fires on 'ended';
+      // without this, skipped tracks leave no footprint in daily_counts.
+      if (cur > 5 && isFinite(dur) && dur > 0) {
+        var _now = Date.now();
+        if (_now - _mpCwSaveT > 30000) {
+          _mpCwSaveT = _now;
+          var _cwNp;
+          try { _cwNp = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) {}
+          if (_cwNp && _cwNp.url && window._tdAuth && window._tdAuth.user) {
+            var _cwk = (_cwNp.url.match(/\/watch\/([A-Za-z0-9_-]+)$/) || [])[1];
+            var _tok = window._tdToken ? window._tdToken() : null;
+            if (_cwk && _tok) {
+              fetch('/api/cw/' + encodeURIComponent(_cwk), {
+                method: 'POST',
+                headers: {'Authorization': 'Bearer ' + _tok, 'Content-Type': 'application/json'},
+                body: JSON.stringify({pos: Math.floor(cur), dur: Math.floor(dur), t: _now, title: _cwNp.title || ''}),
+                keepalive: true,
+              }).catch(function() {});
+            }
+          }
+        }
       }
     });
     // Named so it can be attached to both bgAudio elements.

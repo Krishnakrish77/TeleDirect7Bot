@@ -26,9 +26,14 @@ from main.utils.codec_probe import _clean_music_tag as _cmt
 _env.filters["clean_music_tag"] = lambda s: _cmt(s) if s else s
 import re as _re
 _env.filters["artist_slug"] = lambda s: _re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
-from main.utils.media_index import _artist_slug as _mslug, _primary_artist as _mprimary, _artist_credits as _mcredits
+from main.utils.media_index import (
+    _artist_slug as _mslug, _primary_artist as _mprimary, _artist_credits as _mcredits,
+    _person_slug as _mpslug, _director_credits as _mdcredits,
+)
 _env.filters["primary_artist_slug"] = lambda s: _mslug(_mprimary(s or ""))
 _env.filters["artist_credits"] = lambda s: [(_mslug(a), a) for a in _mcredits(s or "")]
+_env.filters["person_slug"] = lambda s: _mpslug(s or "")
+_env.filters["director_credits"] = lambda s: [(_mpslug(d), d) for d in _mdcredits(s or "")]
 from main.vars import Var as _Var
 _env.globals["bot_username"] = _Var.BOT_USERNAME
 _env.globals["Var"] = _Var
@@ -103,6 +108,22 @@ async def render_page(message_id, secure_hash,
         # template guards on `meta and meta.tmdb_id`.
         meta = media_index.get_item(int(message_id))
         next_ep = media_index.next_episode(meta) if meta else None
+        # Derive human-readable format label from the MIME type so the badge
+        # works even before a codec probe runs on the file.
+        _audio_format_map = {
+            "flac": "FLAC", "x-flac": "FLAC",
+            "wav": "WAV", "x-wav": "WAV", "wave": "WAV",
+            "aiff": "AIFF", "x-aiff": "AIFF",
+            "mpeg": "MP3", "mp3": "MP3",
+            "aac": "AAC", "mp4": "AAC", "x-m4a": "AAC",
+            "opus": "Opus",
+            "ogg": "OGG", "vorbis": "OGG",
+            "webm": "WebM",
+        }
+        audio_format = ""
+        if mime_type == "audio":
+            _sub = full_mime.split("/")[-1].lower()
+            audio_format = _audio_format_map.get(_sub, _sub.upper()[:6])
         # Music-specific: next track + "More from album" — compute album track
         # list once (O(N) scan) and derive both from it to avoid double scan.
         next_track = None
@@ -184,6 +205,9 @@ async def render_page(message_id, secure_hash,
         return _REQ_TEMPLATE.render(
             tag=mime_type,
             is_audio=(mime_type == "audio"),
+            audio_format=audio_format,
+            audio_bit_depth=getattr(meta, "audio_bit_depth", 0) if meta else 0,
+            audio_sample_rate=getattr(meta, "audio_sample_rate", 0) if meta else 0,
             heading=_build_heading(meta, mime_type, file_name),
             src=src,
             hls_src=hls_src,

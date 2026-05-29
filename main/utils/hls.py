@@ -412,9 +412,13 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0, seek: float = 1
             return None
     if proc.returncode != 0 or not stdout:
         stderr_text = (stderr or b"")[:300].decode("utf-8", "replace")
-        # "no stream" means the file has no video/image data (e.g. audio without
-        # embedded art). This is expected and not worth a WARNING.
-        level = logging.DEBUG if "does not contain any stream" in stderr_text else logging.WARNING
+        # Audio with no embedded APIC art → ffmpeg says "Stream map '' matches
+        # no streams" or "does not contain any stream". Expected, not an error.
+        _no_art = (
+            "does not contain any stream" in stderr_text
+            or "matches no streams" in stderr_text
+        )
+        level = logging.DEBUG if _no_art else logging.WARNING
         logging.log(level, "ffmpeg thumb grab failed exit=%s url=%s stderr=%s",
                     proc.returncode, source_url, stderr_text)
         return None

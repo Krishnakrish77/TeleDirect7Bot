@@ -78,6 +78,23 @@
           {% if meta and meta.album_title %}
             <p class="mt-0.5 text-slate-500 text-xs md:text-sm line-clamp-1">{{ meta.album_title }}</p>
           {% endif %}
+          {# ── Audio quality badge ─────────────────────────────────────────
+             Shows format (from MIME type) and probe-derived quality details.
+             Lossless formats get a green tint; lossy get a neutral chip. #}
+          {% if audio_format %}
+          {% set _lossless = audio_format in ('FLAC', 'WAV', 'AIFF', 'ALAC') %}
+          <div class="mt-2 flex flex-wrap gap-1.5 justify-center md:justify-start">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md
+                         text-[10px] font-semibold uppercase tracking-wide
+                         {%- if _lossless %} bg-emerald-500/15 text-emerald-400
+                         {%- else %} bg-ink-700 text-slate-400{%- endif %}">
+              {%- if _lossless %}✦ {% endif %}{{ audio_format -}}
+              {%- if audio_bit_depth %} · {{ audio_bit_depth }}-bit{%- endif -%}
+              {%- if audio_sample_rate >= 48000 %} · {{ (audio_sample_rate / 1000) | round(1) }} kHz{%- endif -%}
+              {%- if _lossless %} · Lossless{%- endif %}
+            </span>
+          </div>
+          {% endif %}
         </div>
 
         {# Hidden audio element #}

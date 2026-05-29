@@ -138,6 +138,7 @@
   {# ── SCHEDULE ─────────────────────────────────────────────────────────── #}
   <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6">
     <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Schedule</p>
+    {% if timed_plays >= 5 %}
     <p class="text-2xl font-bold text-white mb-4">
       {{ tod_emoji }} {{ tod_label }}s on {{ best_day }}s
     </p>
@@ -153,6 +154,10 @@
         </div>
       {% endfor %}
     </div>
+    {% else %}
+    <p class="text-2xl font-bold text-white mb-1">Not enough data yet</p>
+    <p class="text-sm text-slate-500">Keep watching &amp; listening — your schedule pattern will appear here.</p>
+    {% endif %}
   </div>
 
   {# ── TOP CREATOR ──────────────────────────────────────────────────────── #}

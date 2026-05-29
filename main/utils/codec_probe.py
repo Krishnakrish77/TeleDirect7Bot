@@ -124,6 +124,13 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     import aiohttp as _aiohttp
     stream_url = internal_stream_url(item.secure_hash, item.message_id)
 
+    # Determine media kind early so the ffprobe command can be tailored.
+    # For audio files we need ALL streams (no -select_streams filter) so we
+    # can capture BOTH the audio stream (codec/sample-rate/bit-depth) AND any
+    # APIC video stream (embedded cover art). For video files we only need the
+    # first video stream — the audio tracks inside a video don't concern us.
+    is_audio = getattr(item, "media_kind", "") == "audio"
+
     # Warm the skeleton cache tail before ffprobe. A full-file GET bypasses
     # the skeleton cache and streams from Telegram — the connection drops
     # before ffprobe can find the MOOV atom. A tail Range request fetches
@@ -140,6 +147,17 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
                     await _r.read()
         except Exception:
             pass  # best-effort; ffprobe will still try
+
+    # Audio: no stream filter — include codec_type so we can separate the
+    # audio stream (quality info) from any APIC video stream (cover art).
+    # Video: only the first video stream; audio tracks inside a video are
+    # irrelevant and including them slows down the probe.
+    if is_audio:
+        _stream_filter = []
+        _stream_fields = "stream=codec_name,codec_type,pix_fmt,sample_rate,bits_per_sample,channels,width,height"
+    else:
+        _stream_filter = ["-select_streams", "v:0"]
+        _stream_fields = "stream=codec_name,pix_fmt,profile,width,height"
 
     cmd = [
         "ffprobe",
@@ -161,10 +179,10 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         "-err_detect", "ignore_err",
         "-probesize", "5M",
         "-analyzeduration", "5000000",
-        "-select_streams", "v:0",
+        *_stream_filter,
         # format_tags includes all available music metadata for audio files.
         # title/date/genre also used for video (embedded title fallback, year, tags).
-        "-show_entries", "stream=codec_name,pix_fmt,profile,width,height:format=duration:format_tags=title,artist,album_artist,album,track,date,year,genre,composer",
+        "-show_entries", f"{_stream_fields}:format=duration:format_tags=title,artist,album_artist,album,track,date,year,genre,composer",
         "-of", "json",
         stream_url,
     ]
@@ -256,8 +274,6 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         except ValueError:
             pass
 
-    is_audio = getattr(item, "media_kind", "") == "audio"
-
     if probe_artist:
         clean_artist = _clean_music_tag(probe_artist)
         if not item.artist:
@@ -297,8 +313,49 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         item.description = f"Composer: {probe_composer}"
 
     streams = payload.get("streams") or []
+
+    if is_audio:
+        # Audio probe returns all streams; split by codec_type.
+        # video streams = APIC/cover-art; audio streams = actual audio.
+        video_streams = [s for s in streams if s.get("codec_type") == "video"]
+        audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+
+        # Cover art detection
+        if video_streams:
+            item.video_codec = (video_streams[0].get("codec_name") or "").lower()
+            item.has_thumb = True
+
+        # Audio quality details (FLAC bit-depth, sample rate, etc.)
+        if audio_streams:
+            a = audio_streams[0]
+            item.audio_codec = (a.get("codec_name") or "").lower()
+            try:
+                sr = int(a.get("sample_rate") or 0)
+                if sr > 0:
+                    item.audio_sample_rate = sr
+            except (TypeError, ValueError):
+                pass
+            try:
+                bpd = int(a.get("bits_per_sample") or 0)
+                if bpd > 0:
+                    item.audio_bit_depth = bpd
+            except (TypeError, ValueError):
+                pass
+
+        item.probed_at = time.time()
+        await media_index.persist_now()
+        await media_index._store_upsert(item)
+        logging.info(
+            "codec_probe: bin:%d → audio_codec=%s sample_rate=%s bit_depth=%s has_thumb=%s",
+            item.message_id, item.audio_codec or "?",
+            item.audio_sample_rate or "?", item.audio_bit_depth or "?",
+            item.has_thumb,
+        )
+        return bool(item.video_codec)
+
+    # ── Video file path ─────────────────────────────────────────────────────
     if not streams:
-        # No video stream — audio-only file. Music tags already saved above.
+        # No video stream — unrecognised container. Tags already saved above.
         item.probed_at = time.time()
         await media_index.persist_now()
         await media_index._store_upsert(item)
@@ -306,10 +363,6 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     s = streams[0]
     item.video_codec = (s.get("codec_name") or "").lower()
     item.pix_fmt = (s.get("pix_fmt") or "").lower()
-    # For audio files, a video stream means an APIC/cover-art attachment.
-    # Mark has_thumb so the album page picks this track for the cover art.
-    if getattr(item, "media_kind", "") == "audio" and item.video_codec:
-        item.has_thumb = True
     # Fill duration from ffprobe if Telegram didn't extract it (e.g. document uploads)
     if not item.duration:
         try:

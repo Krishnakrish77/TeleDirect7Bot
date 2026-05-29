@@ -1312,19 +1312,29 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         ])
 
     # Catalogue context so the AI matches existing series/tag vocabulary
-    # instead of inventing near-duplicates (e.g. 'Mahabharat' when we already
-    # have 'Mahabharatham' — would split the series across two cards).
+    # instead of inventing near-duplicates.
+    # Tags are split by media_kind: audio tracks see music genre/mood tags;
+    # video items see video/genre tags. Without the split the top-N list is
+    # dominated by whichever kind has more items (usually video) and the AI
+    # suggests "action" / "drama" for a music track.
     series_counts: dict = {}
     tag_counts: dict = {}
+    audio_tag_counts: dict = {}
     for it in media_index._items.values():
         if it.series_title:
             series_counts[it.series_title] = series_counts.get(it.series_title, 0) + 1
+        _it_audio = getattr(it, "media_kind", "") == "audio"
         for t in (it.tags or []):
-            tag_counts[t] = tag_counts.get(t, 0) + 1
+            if _it_audio:
+                audio_tag_counts[t] = audio_tag_counts.get(t, 0) + 1
+            else:
+                tag_counts[t] = tag_counts.get(t, 0) + 1
     top_series = sorted(series_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:30]
     top_tags = sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:25]
+    top_audio_tags = sorted(audio_tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:25]
     series_list = ", ".join(f'"{s}" ({n})' for s, n in top_series) or "(none yet)"
     tag_list = ", ".join(t for t, _ in top_tags) or "(none yet)"
+    audio_tag_list = ", ".join(t for t, _ in top_audio_tags) or "(none yet)"
 
     if is_audio:
         # ── Music-specific prompts ────────────────────────────────────────
@@ -1353,7 +1363,7 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
                 "You are a music catalogue assistant. Generate ONLY the requested "
                 "fields based on the existing metadata below.\n\n"
                 f"Audio file metadata:\n{meta_text}\n\n"
-                f"Common tags already in catalogue: {tag_list}\n\n"
+                f"Common tags already in catalogue: {audio_tag_list}\n\n"
                 "Rules:\n"
                 + "\n".join(focus_lines) + "\n"
                 "• In 'reasoning' briefly explain your choices."
@@ -1379,7 +1389,7 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
                 f"Audio file metadata:\n{meta_text}\n\n"
                 "Existing catalogue context (use exact spellings to avoid duplicates):\n"
                 f"  Known albums/soundtracks: {album_list}\n"
-                f"  Common tags: {tag_list}\n\n"
+                f"  Common tags (music only): {audio_tag_list}\n\n"
                 "Rules:\n"
                 "• title: the TRACK NAME (song title), not the album or movie name.\n"
                 "• artist: the performing artist(s). Comma-separate if multiple.\n"

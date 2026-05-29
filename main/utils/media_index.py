@@ -252,6 +252,9 @@ def _to_serializable(item: HubItem) -> dict:
         "album_title": item.album_title,
         "album_key": item.album_key,
         "track_number": item.track_number,
+        "audio_codec": item.audio_codec,
+        "audio_sample_rate": item.audio_sample_rate,
+        "audio_bit_depth": item.audio_bit_depth,
         "hidden": item.hidden,
         "subtitles": [
             {
@@ -309,6 +312,9 @@ def _from_serializable(d: dict) -> HubItem:
         album_title=d.get("album_title", "") or "",
         album_key=d.get("album_key", "") or "",
         track_number=d.get("track_number"),
+        audio_codec=d.get("audio_codec", "") or "",
+        audio_sample_rate=int(d.get("audio_sample_rate") or 0),
+        audio_bit_depth=int(d.get("audio_bit_depth") or 0),
         hidden=bool(d.get("hidden", False)),
         subtitles=[
             ExternalSubtitle(
@@ -996,6 +1002,9 @@ async def seed(bot, channel_id: int) -> None:
                             new_item.pix_fmt     = existing.pix_fmt     or new_item.pix_fmt
                             if existing.quality:
                                 new_item.quality = existing.quality
+                            new_item.audio_codec       = existing.audio_codec       or new_item.audio_codec
+                            new_item.audio_sample_rate = existing.audio_sample_rate or new_item.audio_sample_rate
+                            new_item.audio_bit_depth   = existing.audio_bit_depth   or new_item.audio_bit_depth
                         _items[new_item.message_id] = new_item
                         _hash_map[new_item.secure_hash] = new_item.message_id
                     else:

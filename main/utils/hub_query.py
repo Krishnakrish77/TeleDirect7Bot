@@ -82,6 +82,10 @@ class HubItem:
     album_title: str = ""          # album name (from ffprobe tags or admin)
     album_key: str = ""            # URL slug: slugify(artist-album) or slugify(artist)
     track_number: Optional[int] = None  # position in album
+    # Audio-stream quality details — populated by codec_probe for audio files
+    audio_codec: str = ""          # "flac", "mp3", "aac", "opus", etc.
+    audio_sample_rate: int = 0     # Hz: 44100, 48000, 96000, …
+    audio_bit_depth: int = 0       # 16, 24, 32; 0 for lossy formats
     hidden: bool = False               # hidden from library (still streamable via direct URL)
 
 
