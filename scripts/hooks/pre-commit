@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+# Pre-commit hook: lint Jinja templates before allowing a commit.
+#
+# Catches CSS/JS sequences that collide with Jinja delimiters ({# {% {{),
+# which have twice shipped to production from this repo as silent breakage.
+#
+# Activated via `git config core.hooksPath scripts/hooks` (see
+# scripts/install-hooks.sh). Bypass a single commit with: git commit --no-verify
+#
+# Only runs when HTML templates are staged, so non-template commits are untouched.
+
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^main/template/.*\.html$')
+[ -z "$staged" ] && exit 0
+
+if [ -x "./venv/bin/python" ]; then
+  PY="./venv/bin/python"
+else
+  PY="python3"
+fi
+
+if ! "$PY" scripts/lint_templates.py; then
+  echo "" >&2
+  echo "pre-commit: template lint failed — fix the above before committing." >&2
+  echo "            (bypass for one commit with: git commit --no-verify)" >&2
+  exit 1
+fi

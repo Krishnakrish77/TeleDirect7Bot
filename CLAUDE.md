@@ -13,7 +13,23 @@ python3 -m main          # entry point is main/__main__.py
 
 Runtime is pinned to **Python 3.9.20** (`runtime.txt`). The Procfile launches the same command on Heroku/Koyeb (`web: python -m main`).
 
-There is no test suite, linter config, or build step — changes are validated by running the bot against real Telegram credentials configured via `.env` (see README for the full var list; `API_ID`, `API_HASH`, `BOT_TOKEN`, `BIN_CHANNEL`, `OWNER_ID` are mandatory).
+There is no test suite or build step — changes are validated by running the bot against real Telegram credentials configured via `.env` (see README for the full var list; `API_ID`, `API_HASH`, `BOT_TOKEN`, `BIN_CHANNEL`, `OWNER_ID` are mandatory).
+
+### Template linting
+
+`scripts/lint_templates.py` checks every Jinja template for syntax errors and for CSS/JS sequences that collide with Jinja delimiters (`{#`, `{%`, `{{`) — a bug class that has shipped to production twice (a `{% %}` in a JS comment causing a 500, and a `{#id` CSS selector eating `</head>`/`<body>`). Run it directly:
+
+```sh
+python scripts/lint_templates.py
+```
+
+A pre-commit hook runs it automatically when HTML templates are staged. Activate it once per clone:
+
+```sh
+sh scripts/install-hooks.sh    # sets core.hooksPath -> scripts/hooks
+```
+
+Bypass the hook for one commit with `git commit --no-verify`. **Never put raw `{#`, `{%`, or `{{` inside `<style>`/`<script>` blocks** unless it's intentional Jinja — add a space (CSS `{ #id`) or reword (JS comments) to avoid the collision.
 
 ## Architecture
 
