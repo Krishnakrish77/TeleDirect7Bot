@@ -255,6 +255,7 @@ def _to_serializable(item: HubItem) -> dict:
         "audio_codec": item.audio_codec,
         "audio_sample_rate": item.audio_sample_rate,
         "audio_bit_depth": item.audio_bit_depth,
+        "admin_locked": list(item.admin_locked or []),
         "hidden": item.hidden,
         "subtitles": [
             {
@@ -315,6 +316,7 @@ def _from_serializable(d: dict) -> HubItem:
         audio_codec=d.get("audio_codec", "") or "",
         audio_sample_rate=int(d.get("audio_sample_rate") or 0),
         audio_bit_depth=int(d.get("audio_bit_depth") or 0),
+        admin_locked=list(d.get("admin_locked") or []),
         hidden=bool(d.get("hidden", False)),
         subtitles=[
             ExternalSubtitle(
@@ -1005,6 +1007,8 @@ async def seed(bot, channel_id: int) -> None:
                             new_item.audio_codec       = existing.audio_codec       or new_item.audio_codec
                             new_item.audio_sample_rate = existing.audio_sample_rate or new_item.audio_sample_rate
                             new_item.audio_bit_depth   = existing.audio_bit_depth   or new_item.audio_bit_depth
+                        if existing.admin_locked and not new_item.admin_locked:
+                            new_item.admin_locked = existing.admin_locked
                         _items[new_item.message_id] = new_item
                         _hash_map[new_item.secure_hash] = new_item.message_id
                     else:
@@ -2223,9 +2227,17 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
     hit to be returned at all, then recomputes movie_key/series_key from
     the new title so deduplication kicks in.
 
+    Fields listed in item.admin_locked are skipped — they were manually
+    set by the admin and must survive bulk re-enrichment.  Lockable:
+    "title", "year", "series_title".
+
     Genres are merged into the tag set so the existing tag filter and
     tag-cloud surface them, without dropping any user-set tags.
     """
+    locked = set(item.admin_locked or [])
+
+    # TMDB-sourced metadata — always written (purely TMDB-owned fields that
+    # the admin would never manually set in the edit modal).
     item.tmdb_id = hit.tmdb_id
     item.tmdb_kind = hit.kind
     item.imdb_id = hit.imdb_id
@@ -2237,58 +2249,65 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
     item.director = hit.director
     item.enriched_at = time.time()
 
-    # For TV episodes we deliberately preserve the per-episode title that
-    # was parsed from the filename (e.g. "Tangerines.S01E03.WEBRip") —
-    # otherwise every episode card ends up showing the show name and
-    # they're indistinguishable. Movies and standalone uploads do
-    # take TMDB's canonical title.
-    if hit.kind != "tv" and hit.title:
-        item.title = hit.title
-    if hit.year and hit.kind != "tv":
-        item.year = hit.year
+    # Title and year: skip if the admin manually locked them.
+    # TV episode titles are always preserved (show name ≠ episode title).
+    if "title" not in locked:
+        if hit.kind != "tv" and hit.title:
+            item.title = hit.title
+    if "year" not in locked:
+        if hit.year and hit.kind != "tv":
+            item.year = hit.year
 
-    # Recompute grouping keys against the canonical title.
-    sm = series_parse.parse(item.file_name) or series_parse.parse(item.title)
-    if sm:
-        # Filename or title carries an SxxEyy / 1x03 / Season N pattern.
-        item.series_key = sm.key
-        item.series_title = hit.title if hit.kind == "tv" and hit.title else sm.title
-        # Preserve admin-set season/episode (when non-None). Only fall back
-        # to the filename parser's values when the item doesn't already
-        # have an explicit number — otherwise an admin edit gets silently
-        # reverted every time enrich_with_tmdb_id runs.
-        if item.season is None:
-            item.season = sm.season
-        if item.episode is None:
-            item.episode = sm.episode
-        item.movie_key = ""
-    elif hit.kind == "tv" and hit.title:
-        # TMDB says the title is a TV show, but the source filename lacks
-        # any SxxEyy pattern. Still a series — group by TMDB title so
-        # multiple uploads collapse into one card. Run the loose episode
-        # extractor on the filename + title to recover an episode number
-        # when explicit "Ep13" / "E13" / trailing-integer hints exist;
-        # default to S1 when one or more siblings are SxxEyy-labelled.
-        item.series_key = series_parse.slugify(hit.title)
-        item.series_title = hit.title
-        # Preserve admin-set season/episode (same rule as the SxxEyy branch).
-        if item.season is None or item.episode is None:
-            inferred_ep = (
-                series_parse.infer_episode_loose(item.file_name)
-                or series_parse.infer_episode_loose(item.title)
-            )
-            if inferred_ep is not None:
-                if item.season is None:
-                    item.season = 1
-                if item.episode is None:
-                    item.episode = inferred_ep
-        item.movie_key = ""
+    # Series/movie grouping.  If series_title is locked the admin chose
+    # a specific grouping — skip the recomputation entirely so the
+    # series_key/movie_key they set doesn't get reverted.
+    if "series_title" in locked:
+        # Keep existing grouping; only update movie_key if somehow missing.
+        if not item.series_key and not item.movie_key:
+            item.movie_key = compute_movie_key(item.title, item.year, item.file_name)
     else:
-        item.series_key = ""
-        item.series_title = ""
-        item.season = None
-        item.episode = None
-        item.movie_key = compute_movie_key(item.title, item.year, item.file_name)
+        # Recompute grouping keys against the canonical title.
+        sm = series_parse.parse(item.file_name) or series_parse.parse(item.title)
+        if sm:
+            # Filename or title carries an SxxEyy / 1x03 / Season N pattern.
+            item.series_key = sm.key
+            item.series_title = hit.title if hit.kind == "tv" and hit.title else sm.title
+            # Preserve admin-set season/episode (when non-None). Only fall back
+            # to the filename parser's values when the item doesn't already
+            # have an explicit number — otherwise an admin edit gets silently
+            # reverted every time enrich_with_tmdb_id runs.
+            if item.season is None:
+                item.season = sm.season
+            if item.episode is None:
+                item.episode = sm.episode
+            item.movie_key = ""
+        elif hit.kind == "tv" and hit.title:
+            # TMDB says the title is a TV show, but the source filename lacks
+            # any SxxEyy pattern. Still a series — group by TMDB title so
+            # multiple uploads collapse into one card. Run the loose episode
+            # extractor on the filename + title to recover an episode number
+            # when explicit "Ep13" / "E13" / trailing-integer hints exist;
+            # default to S1 when one or more siblings are SxxEyy-labelled.
+            item.series_key = series_parse.slugify(hit.title)
+            item.series_title = hit.title
+            # Preserve admin-set season/episode (same rule as the SxxEyy branch).
+            if item.season is None or item.episode is None:
+                inferred_ep = (
+                    series_parse.infer_episode_loose(item.file_name)
+                    or series_parse.infer_episode_loose(item.title)
+                )
+                if inferred_ep is not None:
+                    if item.season is None:
+                        item.season = 1
+                    if item.episode is None:
+                        item.episode = inferred_ep
+            item.movie_key = ""
+        else:
+            item.series_key = ""
+            item.series_title = ""
+            item.season = None
+            item.episode = None
+            item.movie_key = compute_movie_key(item.title, item.year, item.file_name)
 
     # Merge TMDB genres into tags without duplicating existing entries.
     existing = set(item.tags)
