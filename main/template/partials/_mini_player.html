@@ -187,7 +187,9 @@
     _preloaded = false;
   }
 
-  // Sync play/pause icon in mini-player
+  // Sync play/pause icon in mini-player + Media Session playback state.
+  // Called from bgAudio 'play' and 'pause' events so the OS notification
+  // controls (lock screen / headphone buttons) reflect the current state.
   function _mpSyncIcon() {
     var iconPlay  = document.getElementById('_mp-icon-play');
     var iconPause = document.getElementById('_mp-icon-pause');
@@ -195,6 +197,9 @@
     var playing = _bgAudio && !_bgAudio.paused;
     iconPlay.classList.toggle('hidden', playing);
     iconPause.classList.toggle('hidden', !playing);
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+    }
   }
 
   // ── Media Session API — wires bgAudio to lock screen / headphone controls ──
@@ -237,6 +242,18 @@
       var pct = dur > 0 ? (cur / dur * 100) : 0;
       if (bar) bar.style.width = pct.toFixed(1) + '%';
       if (timeEl && dur > 0) timeEl.textContent = _mpFmt(cur) + ' / ' + _mpFmt(dur);
+      // Update Media Session position so the lock-screen seek bar reflects
+      // the current playback position and the OS knows the track duration.
+      if ('mediaSession' in navigator && navigator.mediaSession.setPositionState &&
+          isFinite(dur) && dur > 0) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration:     dur,
+            playbackRate: _bgAudio.playbackRate || 1,
+            position:     Math.min(cur, dur),
+          });
+        } catch(_) {}
+      }
       // Gapless: preload → crossfade
       if (isFinite(dur) && dur > 0) {
         var rem = dur - cur;
@@ -586,6 +603,17 @@
   // mini-player, auth modal) which live outside #main-content and are never
   // replaced by history restore.
   document.body.addEventListener('htmx:historyRestore', function() {
+    // Synchronously hide stale snapshot sections before Alpine re-initialises.
+    // The CW shelf has x-for-rendered cards baked into the snapshot; without
+    // this they flash as ghost cards until Alpine hides them via x-show.
+    var _restoreMain = document.getElementById('main-content');
+    if (_restoreMain) {
+      _restoreMain.querySelectorAll('[x-data]').forEach(function(el) {
+        if ((el.getAttribute('x-data') || '').indexOf('continueWatching') !== -1) {
+          el.style.display = 'none';
+        }
+      });
+    }
     setTimeout(function() {
       var main = document.getElementById('main-content');
       if (!main) return;
