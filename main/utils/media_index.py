@@ -1374,9 +1374,13 @@ def _primary_artist(artist_str: str) -> str:
 
 
 def _person_slug(name: str) -> str:
-    """URL-safe slug from a person name (actor/director)."""
-    from main.utils.series import slugify as _slugify
-    return _slugify(name or "")
+    """URL-safe slug from a person name (actor/director).
+
+    Delegates to series_parse.slugify (already imported at module level)
+    which does NFKD decomposition so accented names like 'Clémence Poésy'
+    produce clean ASCII slugs.
+    """
+    return series_parse.slugify(name or "")
 
 
 def _director_credits(director_str: str) -> List[str]:

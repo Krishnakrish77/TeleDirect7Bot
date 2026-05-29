@@ -994,29 +994,51 @@ async def hub_artist(request: web.Request) -> web.Response:
 async def hub_person(request: web.Request) -> web.Response:
     """Filmography page: all titles featuring a cast member or director."""
     slug = request.match_info["slug"]
+    # Cache guard FIRST — avoid O(N×M) catalogue scans on every cache hit.
+    cache_key = f"person:{slug}"
+    body = _cache_get(cache_key)
+    if body:
+        return _html(body)
+
     cast_items = media_index.items_by_cast_slug(slug)
     directed_items = media_index.items_by_director_slug(slug)
     if not cast_items and not directed_items:
         raise web.HTTPNotFound(text="Person not found in catalogue.")
-    person_name = media_index.person_display_name(slug)
+
+    # Extract display name from already-computed lists — avoids two extra
+    # full catalogue scans that person_display_name() would otherwise do.
+    person_name = (
+        next((n for it in cast_items for n in (it.cast or [])
+              if media_index._person_slug(n) == slug), None)
+        or next((n for it in directed_items
+                 for n in media_index._director_credits(it.director or "")
+                 if media_index._person_slug(n) == slug), None)
+        or slug
+    )
+
     if cast_items and directed_items:
         role_label = "Actor & Director"
     elif directed_items:
         role_label = "Director"
     else:
         role_label = "Actor"
-    cache_key = f"person:{slug}"
-    body = _cache_get(cache_key)
-    if not body:
-        tpl = _env.get_template("person.html")
-        body = await tpl.render_async(
-            person=person_name,
-            slug=slug,
-            cast_items=cast_items,
-            directed_items=directed_items,
-            role_label=role_label,
-        )
-        _cache_set(cache_key, body)
+
+    # Unique title count — an actor-director on the same film appears in
+    # both lists; count distinct message IDs to avoid inflating the total.
+    total_unique = len(
+        {it.message_id for it in cast_items} | {it.message_id for it in directed_items}
+    )
+
+    tpl = _env.get_template("person.html")
+    body = await tpl.render_async(
+        person=person_name,
+        slug=slug,
+        cast_items=cast_items,
+        directed_items=directed_items,
+        role_label=role_label,
+        total_unique=total_unique,
+    )
+    _cache_set(cache_key, body)
     return _html(body)
 
 

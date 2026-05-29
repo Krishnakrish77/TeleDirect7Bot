@@ -15,8 +15,7 @@
       </a>
       <p class="text-xs uppercase tracking-wider text-slate-500 mb-1">{{ role_label }}</p>
       <h1 class="text-3xl sm:text-4xl font-bold text-white">{{ person }}</h1>
-      {% set total = (cast_items | length) + (directed_items | length) %}
-      <p class="mt-1 text-slate-400 text-sm">{{ total }} title{{ '' if total == 1 else 's' }}</p>
+      <p class="mt-1 text-slate-400 text-sm">{{ total_unique }} title{{ '' if total_unique == 1 else 's' }}</p>
     </header>
 
     {% macro item_grid(items) %}
@@ -27,7 +26,7 @@
             {%- elif item.series_key -%}/series/{{ item.series_key }}
             {%- else -%}/watch/{{ item.secure_hash }}{{ item.message_id }}
             {%- endif -%}
-          {% endset %}
+          {%- endset %}
           <li>
             <a href="{{ item_url }}"
                hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
