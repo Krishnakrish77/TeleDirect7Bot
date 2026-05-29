@@ -1,12 +1,7 @@
 {# Audio player layout #}
-    {# text-align:center on -webkit-box elements (line-clamp) is silently
-       ignored by iOS Safari — text-center Tailwind class has no effect.
-       Force it with !important via a targeted style block instead. #}
-    <style>
-      .td-audio-text { text-align: center !important; }
-      @media (min-width: 768px)    { .td-audio-text { text-align: left !important; } }
-      @media (max-height: 480px)   { .td-audio-text { text-align: left !important; } }
-    </style>
+    {# .td-audio-text centering CSS lives in base.html <head> style block —
+       a <style> in <body> disrupts iOS WebKit compositing when backdrop-blur
+       fixed elements (mini player) are present. #}
     {# ── Music player layout ─────────────────────────────────────────────
        Mobile/portrait: stacked (album art → controls).
        Landscape phone: side-by-side (art left, controls right).

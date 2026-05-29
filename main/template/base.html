@@ -68,6 +68,12 @@
       #main-content{min-height:100dvh}
       @supports not (min-height:1dvh){ #main-content{min-height:100vh} }
       .wl-btn{color:rgba(255,255,255,.55)}.wl-btn.wl-saved{color:#f97316;opacity:1!important}
+      /* Audio player text centering — text-align:center is silently ignored by
+         iOS Safari on elements using display:-webkit-box (line-clamp utilities).
+         !important forces it; media queries revert to left for desktop/landscape. */
+      .td-audio-text{text-align:center!important}
+      @media(min-width:768px){.td-audio-text{text-align:left!important}}
+      @media(max-height:480px){.td-audio-text{text-align:left!important}}
       /* Safe-area insets — bypass Tailwind (scanner can't handle nested env() commas).
          All safe-area CSS lives here to ensure it compiles correctly. */
       @supports(padding:env(safe-area-inset-top)){
