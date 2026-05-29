@@ -22,6 +22,11 @@ _env = Environment(
     enable_async=True,
 )
 
+import re as _re
+_env.filters["artist_slug"] = lambda s: _re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
+from main.utils.media_index import _person_slug as _mpslug
+_env.filters["person_slug"] = lambda s: _mpslug(s or "")
+
 _CW_KEY_RE = re.compile(r'^[A-Za-z0-9_-]*[A-Za-z_-](\d+)$')
 
 _DAYS   = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
