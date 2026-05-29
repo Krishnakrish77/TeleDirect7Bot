@@ -104,6 +104,8 @@
           if (bg && !bg._primed) { bg.src = streamSrc; bg.load(); bg._primed = true; }
         }, { once: false });
 
+        var _prevHandoff = window._handoffAudioToBg;
+        if (_prevHandoff) window.removeEventListener('pagehide', _prevHandoff);
         window._handoffAudioToBg = function() {
           if (!bg || video.paused) return;
           var seekTo = video.currentTime;
@@ -130,7 +132,6 @@
         // on every htmx.ajax navigation between audio tracks, so without this
         // each navigation would add another handler and all copies would fire
         // on page unload.
-        window.removeEventListener('pagehide', window._handoffAudioToBg);
         window.addEventListener('pagehide', window._handoffAudioToBg);
         {% endif %}
 

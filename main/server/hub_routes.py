@@ -203,15 +203,36 @@ async def _render_grid(items: List,
     )
 
 
-async def _render_shelves(shelves: List[dict], params: dict) -> str:
+async def _render_shelves(shelves: List[dict],
+                          params: dict,
+                          cacheable: bool = True) -> str:
     cache_key = "shelves:" + repr(sorted(params.items()))
-    cached = _cache_get(cache_key)
-    if cached:
-        return cached
+    if cacheable:
+        cached = _cache_get(cache_key)
+        if cached:
+            return cached
     tpl = _env.get_template("_shelves.html")
     html = await tpl.render_async(shelves=shelves, params=params)
-    _cache_set(cache_key, html)
+    if cacheable:
+        _cache_set(cache_key, html)
     return html
+
+
+async def _render_hero_oob(heroes: Optional[List] = None) -> str:
+    """Return an out-of-band hero replacement for HTMX grid swaps.
+
+    Filter/search requests swap only #grid, but the hero lives outside it.
+    Sending this OOB fragment keeps the landing hero in sync when filters
+    are applied, cleared, or the user lands directly on a filtered URL.
+    """
+    hero_html = ""
+    if heroes:
+        hero_html = await _env.get_template("_hero.html").render_async(heroes=heroes)
+    return f'<div id="hero-section" hx-swap-oob="innerHTML">{hero_html}</div>'
+
+
+async def _render_hub_swap(grid_html: str, heroes: Optional[List] = None) -> str:
+    return (await _render_hero_oob(heroes)) + grid_html
 
 
 async def _render_page(items: List,
@@ -219,11 +240,13 @@ async def _render_page(items: List,
                        empty_text: str,
                        params: dict,
                        shelves: Optional[List[dict]] = None,
-                       heroes: Optional[List] = None) -> str:
+                       heroes: Optional[List] = None,
+                       cacheable: bool = True) -> str:
     cache_key = "page:" + repr(sorted(params.items()))
-    cached = _cache_get(cache_key)
-    if cached:
-        return cached
+    if cacheable:
+        cached = _cache_get(cache_key)
+        if cached:
+            return cached
     tpl = _env.get_template("hub.html")
     next_url = None
     if next_offset is not None:
@@ -242,7 +265,8 @@ async def _render_page(items: List,
         sort_options=SORT_OPTIONS,
         catalogue_size=media_index.size(),
     )
-    _cache_set(cache_key, html)
+    if cacheable:
+        _cache_set(cache_key, html)
     return html
 
 
@@ -293,6 +317,7 @@ async def hub_home(request: web.Request) -> web.Response:
     if use_shelves:
         shelves = media_index.shelves()
         heroes = media_index.pick_heroes()
+        cacheable_shelves = True
 
         # Inject personalised recommendations for signed-in users.
         user = get_user(request)
@@ -324,6 +349,7 @@ async def hub_home(request: web.Request) -> web.Response:
                          "link": None, "total": len(rec_items),
                          "dismissable": True, "rec_meta": rec_meta},
                     ] + list(shelves)
+                    cacheable_shelves = False
             except asyncio.TimeoutError:
                 logging.warning("hub: rec_engine timed out, skipping shelf")
             except Exception:
@@ -349,13 +375,19 @@ async def hub_home(request: web.Request) -> web.Response:
             # Boost navigation needs the full page so hx-select="#main-content"
             # can find its target — fall through to _render_page below.
             return _html(
-                await _render_shelves(shelves, params),
+                await _render_hub_swap(
+                    await _render_shelves(
+                        shelves, params, cacheable=cacheable_shelves,
+                    ),
+                    heroes=heroes,
+                ),
                 push_url=_canonical_url(params, include_offset=True),
             )
         empty = _empty_text(params)
         return _html(
             await _render_page([], None, empty, params,
-                               shelves=shelves, heroes=heroes),
+                               shelves=shelves, heroes=heroes,
+                               cacheable=cacheable_shelves),
         )
 
     items, total = media_index.query_grouped(
@@ -371,7 +403,10 @@ async def hub_home(request: web.Request) -> web.Response:
 
     if _is_htmx(request) and not _is_boosted(request):
         return _html(
-            await _render_grid(items, next_offset, empty, params),
+            await _render_hub_swap(
+                await _render_grid(items, next_offset, empty, params),
+                heroes=None,
+            ),
             push_url=_canonical_url(params, include_offset=True),
         )
 

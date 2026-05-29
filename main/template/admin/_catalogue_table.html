@@ -115,6 +115,8 @@
                           data-season="{{ item.season or '' }}"
                           data-episode="{{ item.episode or '' }}"
                           data-episode-end="{{ item.episode_end or '' }}"
+                          data-intro-start="{{ item.intro_start if item.intro_start is not none else '' }}"
+                          data-intro-end="{{ item.intro_end if item.intro_end is not none else '' }}"
                           data-tmdb-id="{{ item.tmdb_id or '' }}"
                           {# Default to 'tv' when the item already looks like
                              a TV episode (has a series_key) so the manual

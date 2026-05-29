@@ -3,7 +3,17 @@
    row title is on its own line with subtle "more" arrow next to it. #}
 {% for shelf in shelves %}
   <section class="mb-8 sm:mb-10 group/shelf"
-           x-data="{ atStart: true, atEnd: false }">
+           x-data="{
+             atStart: true,
+             atEnd: false,
+             sync() {
+               const r = this.$refs.row;
+               if (!r) return;
+               this.atStart = r.scrollLeft <= 8;
+               this.atEnd = r.scrollLeft + r.clientWidth >= r.scrollWidth - 8;
+             },
+           }"
+           x-init="$nextTick(() => sync())">
     <h2 class="text-lg sm:text-xl font-semibold text-white mb-3 px-1
                flex items-baseline gap-2">
       <span>{{ shelf.name | safe }}</span>
@@ -41,14 +51,11 @@
       </button>
 
       <ul x-ref="row"
-          @scroll.debounce.50ms="
-            atStart = $refs.row.scrollLeft <= 8;
-            atEnd = $refs.row.scrollLeft + $refs.row.clientWidth >= $refs.row.scrollWidth - 8;
-          "
+          @scroll.debounce.50ms="sync()"
           class="flex gap-3 sm:gap-4 overflow-x-auto snap-x snap-mandatory
                  scroll-smooth pb-2 -mx-4 sm:-mx-2 px-4 sm:px-2
                  [scrollbar-width:none] [-ms-overflow-style:none]
-                 [&amp;::-webkit-scrollbar]:hidden">
+                 [&::-webkit-scrollbar]:hidden">
         {% for item in shelf['items'] %}
           <li class="snap-start flex-shrink-0 h-full relative group/li
                      w-32 sm:w-40 md:w-48 lg:w-52">

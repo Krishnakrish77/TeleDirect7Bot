@@ -114,7 +114,11 @@
           .then(function(d){ _render(d.rating, d.counts); })
           .catch(function(){});
       };
-      document.addEventListener('DOMContentLoaded', _load);
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _load, { once: true });
+      } else {
+        _load();
+      }
     })();
     </script>
     {% endif %}
@@ -122,10 +126,33 @@
     <p class="mt-10 text-center text-xs text-slate-600">
       Powered by Telegram · @TeleDirect7Bot
     </p>
+
+    {% if is_audio %}
+    <script>
+    (function() {
+      {% include "watch/_scripts_utils.html" %}
+      window.buildVlcUrl = buildVlcUrl;
+      window.attachSource = attachSource;
+      window.attachAudioTracks = attachAudioTracks;
+      window.attachSubtitleUpload = attachSubtitleUpload;
+      window.injectSubtitleTracks = injectSubtitleTracks;
+    })();
+    </script>
+    <script>
+    (function() {
+      var buildVlcUrl = window.buildVlcUrl;
+      var attachSource = window.attachSource;
+      {% include "watch/_scripts_audio_controls.html" %}
+      {% include "watch/_scripts_autoadvance.html" %}
+      {% include "watch/_scripts_init.html" %}
+    })();
+    </script>
+    {% endif %}
   </div>
 {% endblock %}
 
 {% block scripts %}
+  {% if not is_audio %}
   {% if known_unplayable %}
   <script>
     var _VLC_VT = '{% if vlc_user_id and vlc_token %}{{ vlc_user_id }}:{{ vlc_token }}{% endif %}';
@@ -147,9 +174,9 @@
   <script>
     {% include "watch/_scripts_codec.html" %}
     {% include "watch/_scripts_autoadvance.html" %}
-    {% if is_audio %}{% include "watch/_scripts_audio_controls.html" %}{% endif %}
     {% include "watch/_scripts_init.html" %}
     {% include "watch/_scripts_interactions.html" %}
   </script>
+  {% endif %}
   {% endif %}
 {% endblock %}

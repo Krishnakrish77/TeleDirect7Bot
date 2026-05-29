@@ -74,6 +74,17 @@
       .td-audio-text{text-align:center!important}
       @media(min-width:768px){.td-audio-text{text-align:left!important}}
       @media(max-height:480px){.td-audio-text{text-align:left!important}}
+      /* Shared components that can arrive via HTMX swaps. Keeping these
+         global avoids missing head-only styles on boosted navigation. */
+      details[data-season]>summary{list-style:none}
+      details[data-season]>summary::-webkit-details-marker{display:none}
+      details[data-season]>summary .season-chevron{transition:transform .2s}
+      details[data-season][open]>summary .season-chevron{transform:rotate(180deg)}
+      .flip-card{perspective:1000px}
+      .flip-card-inner{transform-style:preserve-3d;transition:transform .55s cubic-bezier(.4,0,.2,1);position:relative}
+      .flip-card-inner.flipped{transform:rotateY(180deg)}
+      .flip-card-front,.flip-card-back{backface-visibility:hidden;-webkit-backface-visibility:hidden}
+      .flip-card-back{transform:rotateY(180deg);position:absolute;inset:0}
       /* Safe-area insets — bypass Tailwind (scanner can't handle nested env() commas).
          All safe-area CSS lives here to ensure it compiles correctly. */
       @supports(padding:env(safe-area-inset-top)){
