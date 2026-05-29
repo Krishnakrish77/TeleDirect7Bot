@@ -1373,6 +1373,55 @@ def _primary_artist(artist_str: str) -> str:
     return parts[0] if parts else artist_str
 
 
+def _person_slug(name: str) -> str:
+    """URL-safe slug from a person name (actor/director)."""
+    from main.utils.series import slugify as _slugify
+    return _slugify(name or "")
+
+
+def _director_credits(director_str: str) -> List[str]:
+    """Split the comma-separated director field into individual names."""
+    if not director_str:
+        return []
+    return [p.strip() for p in director_str.split(",") if p.strip()]
+
+
+def items_by_cast_slug(slug: str) -> List[HubItem]:
+    """Return all non-hidden items where any cast member matches the slug."""
+    matches = [
+        it for it in _items.values()
+        if it.cast and not it.hidden
+        and any(_person_slug(name) == slug for name in it.cast)
+    ]
+    matches.sort(key=lambda it: (-(it.year or 0), it.title or ""))
+    return matches
+
+
+def items_by_director_slug(slug: str) -> List[HubItem]:
+    """Return all non-hidden items where any credited director matches the slug."""
+    matches = [
+        it for it in _items.values()
+        if it.director and not it.hidden
+        and any(_person_slug(name) == slug for name in _director_credits(it.director))
+    ]
+    matches.sort(key=lambda it: (-(it.year or 0), it.title or ""))
+    return matches
+
+
+def person_display_name(slug: str) -> str:
+    """Resolve the canonical display name for a person slug."""
+    for it in _items.values():
+        for name in (it.cast or []):
+            if _person_slug(name) == slug:
+                return name
+    for it in _items.values():
+        if it.director:
+            for name in _director_credits(it.director):
+                if _person_slug(name) == slug:
+                    return name
+    return slug
+
+
 def tracks_by_artist_slug(slug: str) -> List[HubItem]:
     """Return all non-hidden audio tracks where ANY credited artist matches slug.
 

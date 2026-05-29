@@ -63,6 +63,8 @@ import re as _re
 _env.filters["artist_slug"] = lambda s: _re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
 _env.filters["primary_artist_slug"] = lambda s: media_index._artist_slug(media_index._primary_artist(s or ""))
 _env.filters["artist_credits"] = lambda s: [(media_index._artist_slug(a), a) for a in media_index._artist_credits(s or "")]
+_env.filters["person_slug"] = lambda s: media_index._person_slug(s or "")
+_env.filters["director_credits"] = lambda s: [(media_index._person_slug(n), n) for n in media_index._director_credits(s or "")]
 _env.globals["bot_username"] = Var.BOT_USERNAME
 _env.globals["Var"] = Var
 
@@ -984,6 +986,36 @@ async def hub_artist(request: web.Request) -> web.Response:
     if not body:
         tpl = _env.get_template("artist.html")
         body = await tpl.render_async(artist=artist_name, slug=slug, tracks=tracks)
+        _cache_set(cache_key, body)
+    return _html(body)
+
+
+@routes.get(r"/person/{slug:[a-z0-9][a-z0-9\-]*}")
+async def hub_person(request: web.Request) -> web.Response:
+    """Filmography page: all titles featuring a cast member or director."""
+    slug = request.match_info["slug"]
+    cast_items = media_index.items_by_cast_slug(slug)
+    directed_items = media_index.items_by_director_slug(slug)
+    if not cast_items and not directed_items:
+        raise web.HTTPNotFound(text="Person not found in catalogue.")
+    person_name = media_index.person_display_name(slug)
+    if cast_items and directed_items:
+        role_label = "Actor & Director"
+    elif directed_items:
+        role_label = "Director"
+    else:
+        role_label = "Actor"
+    cache_key = f"person:{slug}"
+    body = _cache_get(cache_key)
+    if not body:
+        tpl = _env.get_template("person.html")
+        body = await tpl.render_async(
+            person=person_name,
+            slug=slug,
+            cast_items=cast_items,
+            directed_items=directed_items,
+            role_label=role_label,
+        )
         _cache_set(cache_key, body)
     return _html(body)
 
