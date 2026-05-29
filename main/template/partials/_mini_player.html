@@ -30,7 +30,7 @@
        the bar persists across navigation — like Spotify's bottom bar. #}
     <div id="_mini-player" style="display:none"
          class="fixed bottom-0 left-0 right-0 z-40
-                bg-ink-950/95 backdrop-blur-md border-t border-white/10
+                bg-ink-950/95 sm:backdrop-blur-md border-t border-white/10
                 px-4 py-2.5 flex items-center gap-3 shadow-2xl">
       {# Progress bar — seekable. Tall touch target, thin visual rail. #}
       <div id="_mp-seek"
@@ -402,9 +402,15 @@
     _mpSeek.addEventListener('touchend', function() { _mpScrubbing = false; });
   }
 
+  function _mpHideBar() {
+    document.body.style.paddingBottom = '';
+    var bar = document.getElementById('_mini-player');
+    if (bar) bar.style.display = 'none';
+  }
+
   // Mini-player link: expand to watch page via htmx swap (bgAudio persists).
-  // htmx.ajax bypasses the htmx:configRequest /watch/ exclusion — that
-  // exclusion is for boost-style link navigations, not programmatic calls.
+  // Hide the fixed mobile bar before the swap so mobile browsers don't repaint the
+  // audio page under a backdrop-filter layer and then immediately resize it.
   var _mpLinkEl = document.getElementById('_mp-link');
   if (_mpLinkEl) {
     _mpLinkEl.addEventListener('click', function(e) {
@@ -413,9 +419,10 @@
       if (!np || !np.url || !_bgAudio) return; // fallback to default nav
       e.preventDefault();
       window._mpAllowWatchAjax = true;
+      _mpHideBar();
       htmx.ajax('GET', np.url, {
         target: '#main-content',
-        swap: 'outerHTML',
+        swap: 'outerHTML settle:0ms',
         select: '#main-content',
         pushUrl: np.url,
       });
@@ -454,9 +461,7 @@
   function _mpInit() {
     // On the watch page: hide bar + reset padding (player is on the page itself).
     if (location.pathname.startsWith('/watch/')) {
-      document.body.style.paddingBottom = '';
-      var bar = document.getElementById('_mini-player');
-      if (bar) bar.style.display = 'none';
+      _mpHideBar();
       return;
     }
     var np;
@@ -585,7 +590,11 @@
     try { pathname = new URL(rawPath, location.origin).pathname; } catch(_) { pathname = rawPath; }
     // Watch + admin pages need full page loads (complex JS that relies on DOMContentLoaded).
     // Stream URLs (/{hash}{id}) must not be AJAX-fetched — they return binary audio/video.
-    if ((pathname.startsWith('/watch/') && !window._mpAllowWatchAjax) ||
+    if (pathname.startsWith('/watch/') && window._mpAllowWatchAjax) {
+      window._mpAllowWatchAjax = false;
+      return;
+    }
+    if (pathname.startsWith('/watch/') ||
         pathname.startsWith('/admin') ||
         /^\/[A-Za-z0-9_-]*[A-Za-z_-]\d+$/.test(pathname)) {
       e.preventDefault();

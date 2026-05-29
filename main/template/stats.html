@@ -166,13 +166,17 @@
   {% if top_artists or top_director %}
   <div class="grid grid-cols-2 gap-4">
     {% if top_artists %}
-    <a href="/artist/{{ top_artists[0][0] | artist_slug }}"
-       hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
-       class="rounded-2xl bg-ink-800/80 border border-white/5 p-5 block group
-              hover:border-brand-400/30 hover:bg-ink-800 transition-colors">
+    {# Plain div, NOT an anchor — the primary artist name and each runner-up
+       are their own links. Wrapping the card in <a> and nesting the runner-up
+       <a>s inside it is invalid HTML: the browser auto-closes the outer anchor
+       at the first nested one, splitting the card into two grid cells. #}
+    <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-5 group
+                hover:border-brand-400/30 hover:bg-ink-800 transition-colors">
       <p class="text-[10px] text-slate-500 uppercase tracking-wider">Top Artist{{ 's' if top_artists | length > 1 }}</p>
-      <p class="text-lg font-bold text-white mt-1 line-clamp-1 leading-snug
-                group-hover:text-brand-300 transition-colors">{{ top_artists[0][0] }}</p>
+      <a href="/artist/{{ top_artists[0][0] | artist_slug }}"
+         hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
+         class="block text-lg font-bold text-white mt-1 line-clamp-1 leading-snug
+                hover:text-brand-300 transition-colors">{{ top_artists[0][0] }}</a>
       <p class="text-xs text-slate-500 mt-1">{{ top_artists[0][1] }} track{{ '' if top_artists[0][1] == 1 else 's' }}</p>
       {% if top_artists | length > 1 %}
       <p class="text-[10px] text-slate-600 mt-1.5 line-clamp-1">
@@ -181,7 +185,7 @@
              class="hover:text-slate-400 transition-colors">{{ name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
       </p>
       {% endif %}
-    </a>
+    </div>
     {% endif %}
     {% if top_director %}
     <a href="/person/{{ top_director[0] | person_slug }}"

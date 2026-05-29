@@ -608,10 +608,10 @@ async def favicon(_request: web.Request) -> web.Response:
 
 
 _SW_JS = """\
-/* TeleDirect service worker — network-first for navigation,
-   cache-first for static assets, network-only for streams/API. */
-const CACHE = 'td-v2';
-const SHELL = ['/', '/static/tailwind.css', '/favicon.svg'];
+/* TeleDirect service worker — network-first for navigation/CSS,
+   cache-first for versioned assets, network-only for streams/API. */
+const CACHE = 'td-v3';
+const SHELL = ['/', '/static/tailwind.css?v=2', '/favicon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -650,6 +650,20 @@ self.addEventListener('fetch', e => {
   if (url.pathname === '/manifest.json') {
     e.respondWith(
       fetch(e.request).catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // CSS changes often carry UI fixes; prefer fresh CSS and fall back to cache
+  // offline. The link tag also includes a query version, but network-first
+  // keeps installed PWAs from retaining an old UI build if that version is
+  // missed in a future patch.
+  if (url.pathname === '/static/tailwind.css') {
+    e.respondWith(
+      fetch(new Request(e.request, {cache: 'reload'})).then(res => {
+        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+        return res;
+      }).catch(() => caches.match(e.request))
     );
     return;
   }
