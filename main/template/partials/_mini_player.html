@@ -784,6 +784,75 @@
   };
 })();
 
+// ── Playlist picker ──────────────────────────────────────────────────────────
+// Used on the audio watch page to add the current track to a playlist.
+// mid / title / artist / hash are injected from the Jinja template.
+function tdPlaylistPicker(mid, title, artist, hash) {
+  return {
+    open: false,
+    playlists: null,  // null = not yet loaded
+    loading: false,
+    adding: null,     // playlist_id being added (spinner state)
+    addedTo: null,    // recently-added playlist_id (success feedback)
+    _newName: '',     // new playlist name input
+
+    async toggle() {
+      this.open = !this.open;
+      if (this.open && this.playlists === null) await this.load();
+    },
+
+    async load() {
+      this.loading = true;
+      var t = window._tdToken ? window._tdToken() : null;
+      try {
+        var r = await fetch('/api/playlists',
+          t ? {headers: {'Authorization': 'Bearer ' + t}} : {});
+        if (r.ok) this.playlists = await r.json();
+        else this.playlists = [];
+      } catch(_) { this.playlists = []; }
+      this.loading = false;
+    },
+
+    async addTo(pid) {
+      var t = window._tdToken ? window._tdToken() : null;
+      if (!t) return;
+      this.adding = pid;
+      try {
+        var r = await fetch('/api/playlists/' + pid + '/tracks', {
+          method: 'POST',
+          headers: {'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json'},
+          body: JSON.stringify({message_id: mid, secure_hash: hash,
+                                title: title, artist: artist}),
+        });
+        if (r.ok) {
+          this.addedTo = pid;
+          setTimeout(() => { this.open = false; this.addedTo = null; }, 1400);
+        }
+      } catch(_) {}
+      this.adding = null;
+    },
+
+    async createAndAdd(name) {
+      var t = window._tdToken ? window._tdToken() : null;
+      if (!t || !name.trim()) return;
+      this.loading = true;
+      try {
+        var r = await fetch('/api/playlists', {
+          method: 'POST',
+          headers: {'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json'},
+          body: JSON.stringify({name: name.trim()}),
+        });
+        if (r.ok) {
+          var data = await r.json();
+          await this.load();
+          await this.addTo(data.playlist_id);
+        }
+      } catch(_) {}
+      this.loading = false;
+    },
+  };
+}
+
 function globalSearch() {
   return {
     open: false,

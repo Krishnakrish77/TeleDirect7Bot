@@ -15,6 +15,7 @@ from .hub_routes import routes as hub_routes
 from .admin_routes import routes as admin_routes
 from .auth_routes import routes as auth_routes
 from .watchlist_routes import routes as watchlist_routes
+from .playlist_routes import routes as playlist_routes
 from .cw_routes import routes as cw_routes
 from .wh_routes import routes as wh_routes
 from .ratings_routes import routes as ratings_routes
@@ -218,6 +219,7 @@ def web_server():
     # swallowed by the catch-all /{path:\S+} byte-stream route at the end.
     web_app.add_routes(auth_routes)
     web_app.add_routes(watchlist_routes)
+    web_app.add_routes(playlist_routes)
     web_app.add_routes(cw_routes)
     web_app.add_routes(wh_routes)
     web_app.add_routes(ratings_routes)

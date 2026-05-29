@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}Playlists · TeleDirect{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-5xl">
+
+  {# Back nav + header #}
+  <div class="flex items-center gap-3 mb-6">
+    <a href="/"
+       hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
+       class="text-slate-500 hover:text-slate-300 transition-colors flex-shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/>
+      </svg>
+    </a>
+    <h1 class="text-xl font-bold text-white">Playlists</h1>
+    {% if playlists %}
+      <span class="text-sm text-slate-500" id="pl-count">
+        {{ playlists | length }} playlist{{ '' if playlists | length == 1 else 's' }}
+      </span>
+    {% endif %}
+    <button type="button" id="btn-new-pl"
+            class="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-xl
+                   text-sm font-semibold text-white bg-brand-500 hover:bg-brand-400
+                   active:scale-95 transition-all">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.5" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+      </svg>
+      New playlist
+    </button>
+  </div>
+
+  {% if not available %}
+    {# MongoDB not configured #}
+    <div class="flex flex-col items-center justify-center py-24 text-center">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5" class="w-14 h-14 text-slate-700 mb-4">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+      </svg>
+      <p class="text-white font-semibold">MongoDB required</p>
+      <p class="text-slate-500 text-sm mt-1">Set <code class="text-brand-300">MONGO_URI</code> to enable playlists.</p>
+    </div>
+
+  {% elif not playlists %}
+    {# Empty state #}
+    <div class="flex flex-col items-center justify-center py-24 text-center">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5" class="w-14 h-14 text-slate-700 mb-4">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+      </svg>
+      <p class="text-white font-semibold">No playlists yet</p>
+      <p class="text-slate-500 text-sm mt-1">Tap "New playlist" to start collecting your favourite tracks.</p>
+    </div>
+
+  {% else %}
+    {# Playlist grid — two columns on mobile, up to 5 on desktop #}
+    <ul id="pl-grid"
+        class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5
+               gap-3 sm:gap-4">
+      {% for pl in playlists %}
+        <li id="pl-{{ pl.playlist_id }}" class="group">
+          <a href="/playlist/{{ pl.playlist_id }}"
+             hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
+             class="flex flex-col h-full rounded-xl overflow-hidden
+                    bg-ink-800/60 border border-white/5
+                    hover:border-brand-400/30 hover:bg-ink-800 transition-colors">
+            {# Cover — gradient with music note #}
+            <div class="relative aspect-square bg-gradient-to-br
+                        {% set colors = ['from-violet-700 to-indigo-900',
+                                         'from-brand-600 to-brand-900',
+                                         'from-emerald-700 to-teal-900',
+                                         'from-rose-700 to-pink-900',
+                                         'from-amber-600 to-orange-900'] %}
+                        {{ colors[loop.index0 % colors | length] }}
+                        flex items-center justify-center overflow-hidden">
+              {% if pl.first_track and pl.first_track.secure_hash %}
+                <img src="/thumb/{{ pl.first_track.secure_hash }}{{ pl.first_track.message_id }}.jpg"
+                     alt="" loading="lazy"
+                     onerror="this.style.display='none'"
+                     class="absolute inset-0 w-full h-full object-cover opacity-40" />
+              {% endif %}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="1.5"
+                   class="relative w-10 h-10 text-white/70">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+              </svg>
+              {# Delete button — visible on hover (mobile: always) #}
+              <button type="button"
+                      data-pl-id="{{ pl.playlist_id }}"
+                      class="pl-del-btn absolute top-1.5 right-1.5 w-8 h-8 rounded-full
+                             bg-black/60 hover:bg-red-600/90 grid place-items-center
+                             sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5 text-white">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+            <div class="p-2.5">
+              <p class="text-sm font-semibold text-white leading-snug line-clamp-2
+                        text-left group-hover:text-brand-300 transition-colors">
+                {{ pl.name }}
+              </p>
+              <p class="mt-0.5 text-[11px] text-slate-500">
+                {{ pl.track_count }} track{{ '' if pl.track_count == 1 else 's' }}
+              </p>
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+
+{# ── New-playlist dialog ─────────────────────────────────────────────────── #}
+<div id="pl-dialog" style="display:none"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4
+            bg-black/60 backdrop-blur-sm">
+  <div class="bg-ink-900 border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+    <h2 class="text-lg font-bold text-white mb-4">New playlist</h2>
+    <input id="pl-name-input" type="text" maxlength="100" placeholder="Playlist name"
+           class="w-full px-4 py-2.5 rounded-xl bg-ink-800 border border-white/10
+                  text-white placeholder-slate-500 focus:outline-none
+                  focus:ring-2 focus:ring-brand-400/60 text-sm mb-4" />
+    <div class="flex gap-3">
+      <button type="button" id="pl-dialog-cancel"
+              class="flex-1 py-2.5 rounded-xl border border-white/10
+                     text-slate-300 text-sm hover:bg-ink-800 transition-colors">
+        Cancel
+      </button>
+      <button type="button" id="pl-dialog-create"
+              class="flex-1 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400
+                     text-white font-semibold text-sm transition-colors">
+        Create
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var dialog   = document.getElementById('pl-dialog');
+  var nameInp  = document.getElementById('pl-name-input');
+  var btnNew   = document.getElementById('btn-new-pl');
+  var btnCancel= document.getElementById('pl-dialog-cancel');
+  var btnCreate= document.getElementById('pl-dialog-create');
+
+  function openDialog() {
+    nameInp.value = '';
+    dialog.style.display = 'flex';
+    setTimeout(function() { nameInp.focus(); }, 50);
+  }
+  function closeDialog() { dialog.style.display = 'none'; }
+
+  if (btnNew)    btnNew.addEventListener('click', openDialog);
+  if (btnCancel) btnCancel.addEventListener('click', closeDialog);
+
+  // Create on Enter
+  if (nameInp) {
+    nameInp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') btnCreate && btnCreate.click();
+      if (e.key === 'Escape') closeDialog();
+    });
+  }
+
+  if (btnCreate) {
+    btnCreate.addEventListener('click', async function() {
+      var name = (nameInp.value || '').trim();
+      if (!name) { nameInp.focus(); return; }
+      btnCreate.disabled = true;
+      btnCreate.textContent = '…';
+      var tok = window._tdToken ? window._tdToken() : null;
+      try {
+        var r = await fetch('/api/playlists', {
+          method: 'POST',
+          headers: Object.assign({'Content-Type': 'application/json'},
+                                 tok ? {'Authorization': 'Bearer ' + tok} : {}),
+          body: JSON.stringify({name: name}),
+        });
+        var data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'error');
+        // Navigate to the new playlist page
+        closeDialog();
+        htmx.ajax('GET', '/playlist/' + data.playlist_id, {
+          target: '#main-content', swap: 'outerHTML', select: '#main-content',
+          pushUrl: '/playlist/' + data.playlist_id,
+        });
+      } catch(e) {
+        btnCreate.disabled = false;
+        btnCreate.textContent = 'Create';
+        alert('Could not create: ' + e.message);
+      }
+    });
+  }
+
+  // Delete buttons
+  document.querySelectorAll('.pl-del-btn').forEach(function(btn) {
+    btn.addEventListener('click', async function(e) {
+      e.preventDefault(); e.stopPropagation();
+      var pid = btn.dataset.plId;
+      if (!confirm('Delete this playlist?')) return;
+      var li = document.getElementById('pl-' + pid);
+      if (li) { li.style.opacity = '0.4'; li.style.pointerEvents = 'none'; }
+      var tok = window._tdToken ? window._tdToken() : null;
+      try {
+        var r = await fetch('/api/playlists/' + pid, {
+          method: 'DELETE',
+          headers: tok ? {'Authorization': 'Bearer ' + tok} : {},
+        });
+        if (!r.ok) throw new Error('error');
+        if (li) li.remove();
+        var counter = document.getElementById('pl-count');
+        if (counter) {
+          var n = document.querySelectorAll('[id^="pl-"]').length;
+          counter.textContent = n + ' playlist' + (n === 1 ? '' : 's');
+        }
+      } catch(e) {
+        if (li) { li.style.opacity = ''; li.style.pointerEvents = ''; }
+        alert('Failed to delete playlist.');
+      }
+    });
+  });
+
+  // Dismiss dialog on backdrop click
+  if (dialog) {
+    dialog.addEventListener('click', function(e) {
+      if (e.target === dialog) closeDialog();
+    });
+  }
+})();
+</script>
+{% endblock %}
