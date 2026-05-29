@@ -93,7 +93,12 @@
          simple display toggle on phones instead of rotateY/preserve-3d. */
       @media(max-width:767px),(max-height:480px){
         .td-audio-art.flip-card{perspective:none}
-        .td-audio-art .flip-card-inner{transform:none!important;transition:none;display:block}
+        /* transform-style:preserve-3d (inherited from the base .flip-card-inner
+           rule) keeps a 3D rendering context / GPU compositing layer alive even
+           with perspective:none. Android Chrome corrupts the region around it
+           (rainbow noise + ghosted Album/Playlist buttons below the art). Force
+           flat to tear that 3D layer down entirely on phones. */
+        .td-audio-art .flip-card-inner{transform:none!important;transform-style:flat!important;transition:none;display:block}
         .td-audio-art .flip-card-inner.flipped{transform:none!important}
         .td-audio-art .flip-card-front,
         .td-audio-art .flip-card-back{
