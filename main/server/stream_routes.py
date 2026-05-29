@@ -237,10 +237,13 @@ async def watch_handler(request: web.Request):
 async def stream_handler(request: web.Request):
     try:
         path = request.match_info["path"]
-        # Stream URLs are always a single path segment: {6chars}{digits}.
-        # Any path with a slash is a named route that reached the catch-all
-        # accidentally — return 404 rather than trying to parse it as a stream.
-        if '/' in path:
+        # Current stream URLs are a single segment: {hash}{digits}.
+        # Legacy links (generated before the compact format) look like
+        # "{message_id}/{filename}?hash={hash}" — a slash IS expected there
+        # and the else-branch below parses them. Only reject slash-paths that
+        # do NOT start with the legacy "{digits}/" pattern, i.e. genuine named
+        # routes that fell through to this catch-all.
+        if '/' in path and not re.match(r'^\d+/', path):
             raise web.HTTPNotFound()
         # Hash is everything before the trailing digit run (message_id).
         # File unique_ids can be 6, 15, 16+ chars — accept any hash
