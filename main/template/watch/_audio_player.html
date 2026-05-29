@@ -62,11 +62,14 @@
                     [@media(max-height:480px)]:mt-0 [@media(max-height:480px)]:text-left [@media(max-height:480px)]:px-0">
           <h2 class="text-xl sm:text-2xl md:text-3xl lg:text-4xl
                      [@media(max-height:480px)]:text-sm
+                     text-center md:text-left [@media(max-height:480px)]:text-left
                      font-bold text-white leading-snug line-clamp-2">
             {{ (meta.title if meta and meta.title else file_name) | replace('.mp3','') | replace('.MP3','') | replace('.flac','') | replace('.FLAC','') | replace('.m4a','') | replace('.aac','') | replace('.ogg','') | replace('.wav','') | replace('.opus','') | clean_music_tag }}
           </h2>
           {% if meta and meta.artist %}
-            <p class="mt-1 md:mt-2 text-sm md:text-base [@media(max-height:480px)]:text-xs font-medium line-clamp-1 text-slate-300">
+            <p class="mt-1 md:mt-2 text-sm md:text-base [@media(max-height:480px)]:text-xs
+                      text-center md:text-left [@media(max-height:480px)]:text-left
+                      font-medium line-clamp-1 text-slate-300">
               {%- for slug, name in meta.artist | artist_credits -%}
                 {%- if not loop.first %}<span class="text-slate-500">, </span>{% endif -%}
                 <a href="/artist/{{ slug }}"
@@ -76,7 +79,8 @@
             </p>
           {% endif %}
           {% if meta and meta.album_title %}
-            <p class="mt-0.5 text-slate-500 text-xs md:text-sm line-clamp-1">{{ meta.album_title }}</p>
+            <p class="mt-0.5 text-slate-500 text-xs md:text-sm line-clamp-1
+                      text-center md:text-left [@media(max-height:480px)]:text-left">{{ meta.album_title }}</p>
           {% endif %}
           {# ── Audio quality badge ─────────────────────────────────────────
              Shows format (from MIME type) and probe-derived quality details.
