@@ -92,7 +92,9 @@
     {# "Also watched" — only render when there are other titles in the list #}
     {% if most_replayed %}
     <div class="border-t border-white/5 px-6 py-4">
-      <p class="text-[10px] text-slate-600 uppercase tracking-wider mb-2">Also watched</p>
+      <p class="text-[10px] text-slate-600 uppercase tracking-wider mb-2">
+        {%- if top_title.media_kind == 'audio' %}Also played{%- else %}Also watched{%- endif %}
+      </p>
       <div class="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
         {% for it in most_replayed %}
           <a href="{{ it.url }}"
