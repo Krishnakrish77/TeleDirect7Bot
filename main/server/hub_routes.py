@@ -1046,6 +1046,11 @@ async def hub_person(request: web.Request) -> web.Response:
 async def hub_thumb(request: web.Request) -> web.Response:
     secure_hash = request.match_info["hash"]
     message_id = int(request.match_info["id"])
+    item = media_index.get_item(message_id)
+    if item is None:
+        raise web.HTTPNotFound(text="thumb not found")
+    if item.secure_hash != secure_hash:
+        raise web.HTTPForbidden(text="Invalid hash")
 
     async def fetch() -> Optional[bytes]:
         # Telegram fallback for audio — populated if the track has a stored
@@ -1101,9 +1106,6 @@ async def hub_thumb(request: web.Request) -> web.Response:
         # Reuse the already-fetched `message` rather than a second loopback
         # HEAD request (the stream route only accepts GET, not HEAD).
         if message is None or getattr(message, "empty", True):
-            return None
-        item = media_index.get_item(message_id)
-        if item is None or item.secure_hash != secure_hash:
             return None
         source_url = hls.internal_stream_url(secure_hash, message_id)
         # Warm the skeleton cache tail before ffmpeg. A full-file GET bypasses

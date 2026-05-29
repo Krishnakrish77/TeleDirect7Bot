@@ -397,6 +397,7 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0, seek: float = 1
             "-",
         ]
     async with _thumb_sem():
+        proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *args,
@@ -405,9 +406,25 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0, seek: float = 1
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
         except asyncio.TimeoutError:
+            if proc is not None and proc.returncode is None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except ProcessLookupError:
+                    pass
+                except Exception:
+                    logging.debug("thumbnail ffmpeg kill failed", exc_info=True)
             logging.warning("thumbnail grab timed out for %s", source_url)
             return None
         except Exception:
+            if proc is not None and proc.returncode is None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except ProcessLookupError:
+                    pass
+                except Exception:
+                    logging.debug("thumbnail ffmpeg kill failed", exc_info=True)
             logging.exception("thumbnail grab failed for %s", source_url)
             return None
     if proc.returncode != 0 or not stdout:
