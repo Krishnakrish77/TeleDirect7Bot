@@ -154,13 +154,18 @@
   </div>
 
   {# ── TOP CREATOR ──────────────────────────────────────────────────────── #}
-  {% if top_artist or top_director %}
+  {% if top_artists or top_director %}
   <div class="grid grid-cols-2 gap-4">
-    {% if top_artist %}
+    {% if top_artists %}
     <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-5">
-      <p class="text-[10px] text-slate-500 uppercase tracking-wider">Top Artist</p>
-      <p class="text-lg font-bold text-white mt-1 line-clamp-2 leading-snug">{{ top_artist[0] }}</p>
-      <p class="text-xs text-slate-500 mt-1">{{ top_artist[1] }} track{{ '' if top_artist[1] == 1 else 's' }}</p>
+      <p class="text-[10px] text-slate-500 uppercase tracking-wider">Top Artist{{ 's' if top_artists | length > 1 }}</p>
+      <p class="text-lg font-bold text-white mt-1 line-clamp-1 leading-snug">{{ top_artists[0][0] }}</p>
+      <p class="text-xs text-slate-500 mt-1">{{ top_artists[0][1] }} track{{ '' if top_artists[0][1] == 1 else 's' }}</p>
+      {% if top_artists | length > 1 %}
+      <p class="text-[10px] text-slate-600 mt-1.5 line-clamp-1">
+        + {% for name, _ in top_artists[1:] %}{{ name }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </p>
+      {% endif %}
     </div>
     {% endif %}
     {% if top_director %}
@@ -204,6 +209,15 @@
   </div>
   {% endif %}
 
+  {# ── MOST ACTIVE MONTH ────────────────────────────────────────────────── #}
+  {% if best_month %}
+  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-5">
+    <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Most Active Month</p>
+    <p class="text-2xl font-black text-white">{{ best_month[0] }}</p>
+    <p class="text-xs text-slate-500 mt-1">{{ best_month[1] }} title{{ '' if best_month[1] == 1 else 's' }} completed</p>
+  </div>
+  {% endif %}
+
   {# ── STREAKS ──────────────────────────────────────────────────────────── #}
   {% if current_streak > 0 or longest_streak > 0 %}
   <div class="grid grid-cols-2 gap-3">
@@ -214,6 +228,7 @@
     <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-5 text-center">
       <p class="text-3xl font-black text-white">{{ longest_streak }}<span class="text-lg font-semibold text-slate-400">d</span></p>
       <p class="text-[10px] text-slate-500 mt-1">Longest streak</p>
+      <p class="text-[9px] text-slate-700 mt-0.5">within 1 year</p>
     </div>
   </div>
   {% endif %}
@@ -229,7 +244,8 @@
     </div>
     <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-4 text-center">
       <p class="text-3xl font-black text-white">{{ completion }}%</p>
-      <p class="text-[10px] text-slate-500 mt-1">Completion</p>
+      <p class="text-[10px] text-slate-500 mt-1">Finish Rate</p>
+      <p class="text-[9px] text-slate-700 mt-0.5">{{ finished }}/{{ started }} items</p>
     </div>
     <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-4 text-center">
       <p class="text-3xl font-black text-white">{{ active_days }}</p>

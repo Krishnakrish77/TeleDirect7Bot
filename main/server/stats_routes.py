@@ -149,7 +149,14 @@ async def stats_page(request: web.Request) -> web.Response:
             continue
 
         # Tallies
-        for g in (item.tmdb_genres or []):
+        # Genre: for audio items without TMDB genres, fall back to ID3 tags
+        # which often carry genre strings (e.g. "Rock", "Carnatic", "Jazz").
+        genres = item.tmdb_genres or []
+        if not genres and item.media_kind == "audio" and item.tags:
+            import re as _rx
+            genres = [_rx.sub(r"^#", "", t).strip().title()
+                      for t in item.tags if t and not t.startswith("@")]
+        for g in genres:
             genre_counts[g] += 1
         kind_counts[item.media_kind or "video"] += 1
         if item.director:
@@ -163,9 +170,11 @@ async def stats_page(request: web.Request) -> web.Response:
                 if a:
                     artist_counts[a] += 1
 
-        # Title grouping — album_key groups music (movie_key is "" for audio)
+        # Title grouping — album_key groups music (movie_key is "" for audio).
+        # Use play_count from wh_store when available so re-watches count
+        # properly; fall back to 1 for legacy entries without play_count.
         group = item.series_key or item.album_key or item.movie_key or ck
-        title_counts[group] += 1
+        title_counts[group] += h.get("play_count", 1)
         if group not in title_meta:
             if item.series_key:
                 title = item.series_title or item.title
@@ -194,7 +203,7 @@ async def stats_page(request: web.Request) -> web.Response:
     top_genres   = genre_counts.most_common(5)
     top_genre    = top_genres[0][0] if top_genres else ""
     top_director = director_counts.most_common(1)
-    top_artist   = artist_counts.most_common(1)
+    top_artists  = artist_counts.most_common(3)   # top-3 for display
 
     n_video = kind_counts.get("video", 0)
     n_audio = kind_counts.get("audio", 0)
@@ -321,21 +330,43 @@ async def stats_page(request: web.Request) -> web.Response:
     while _d.strftime("%Y-%m-%d") in _all_active_days:
         current_streak += 1
         _d -= timedelta(days=1)
-    # longest_streak: longest run within the 12-week heatmap window
-    longest_streak, _run = 0, 0
-    for cell in heatmap:
-        if cell["count"] > 0:
-            _run += 1
-            longest_streak = max(longest_streak, _run)
+
+    # longest_streak: computed from _all_active_days (same 365-day window as
+    # current_streak). Previously used the 84-day heatmap window, making the
+    # two cards incomparable — longest could never exceed 84 even if current
+    # was 200. Now both use the same dataset.
+    longest_streak = 0
+    _sorted_days = sorted(_all_active_days)
+    _lrun = 0
+    _lprev = None
+    from datetime import date as _date_cls
+    for _ds in _sorted_days:
+        _dd = _date_cls.fromisoformat(_ds)
+        if _lprev is not None and (_dd - _lprev).days == 1:
+            _lrun += 1
         else:
-            _run = 0
+            _lrun = 1
+        if _lrun > longest_streak:
+            longest_streak = _lrun
+        _lprev = _dd
+
+    # ── Most active month ─────────────────────────────────────────────────
+    month_counts: Counter = Counter()
+    for h in history:
+        _mwa = h.get("watched_at")
+        if _mwa:
+            if hasattr(_mwa, 'tzinfo') and _mwa.tzinfo:
+                _mwa = _mwa.replace(tzinfo=None)
+            month_counts[_mwa.strftime("%b %Y")] += 1
+    best_month = month_counts.most_common(1)[0] if month_counts else None
 
     # ── Personality — require meaningful activity before labelling ────────
-    # A user who watched 1 episode shouldn't get "Devoted Finisher"; the
-    # label only means something once there's a reasonable sample size.
+    # Threshold: 10+ plays OR 3+ hours (avoids both the "1 episode = label"
+    # problem for episodic content AND the "9 films = no label" problem for
+    # movie watchers).
     personality = (
         _personality(top_genre, night_pct, weekend_pct, completion, audio_pct)
-        if total_plays >= 10 else ""
+        if total_plays >= 10 or total_hours >= 3 else ""
     )
 
     tpl  = _env.get_template("stats.html")
@@ -353,7 +384,10 @@ async def stats_page(request: web.Request) -> web.Response:
         top_genres   = top_genres,
         top_genre    = top_genre,
         top_director = top_director[0] if top_director else None,
-        top_artist   = top_artist[0]   if top_artist   else None,
+        top_artists  = top_artists,
+        best_month   = best_month,
+        finished     = finished,
+        started      = started,
         n_video      = n_video,
         n_audio      = n_audio,
         dow_bars     = dow_bars,

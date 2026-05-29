@@ -56,7 +56,8 @@ async def record(user_id: int, cw_key: str, title: str) -> None:
         now = datetime.now(timezone.utc)
         await db["watch_history"].update_one(
             {"user_id": user_id, "cw_key": cw_key},
-            {"$set": {"title": title, "watched_at": now}},
+            {"$set": {"title": title, "watched_at": now},
+             "$inc": {"play_count": 1}},
             upsert=True,
         )
         # Evict oldest beyond cap: fetch the IDs to keep, delete everything else.
@@ -85,7 +86,7 @@ async def get_recent(user_id: int, limit: int = 20) -> list:
     try:
         docs = await db["watch_history"].find(
             {"user_id": user_id},
-            projection={"cw_key": 1, "title": 1, "watched_at": 1, "_id": 0},
+            projection={"cw_key": 1, "title": 1, "watched_at": 1, "play_count": 1, "_id": 0},
             sort=[("watched_at", -1)],
         ).to_list(length=limit)
         return docs
