@@ -1268,11 +1268,17 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     if item is None:
         return web.json_response({"error": "Item not found"}, status=404)
 
-    # Optional ?fields=tags,file_name limits the response (and prompt focus)
-    # to specific fields. Used by the inline ✨ buttons next to individual
-    # form inputs. Default — all fields — drives the main 'Suggest' button.
-    _ALL_FIELDS = {"title", "year", "file_name", "series_title",
-                   "season", "episode", "tags", "description"}
+    is_audio = getattr(item, "media_kind", "") == "audio"
+
+    # Field sets differ by media kind.
+    # Audio tracks have artist/album/track_number instead of series/season/episode.
+    if is_audio:
+        _ALL_FIELDS = {"title", "artist", "album_title", "track_number",
+                       "tags", "file_name"}
+    else:
+        _ALL_FIELDS = {"title", "year", "file_name", "series_title",
+                       "season", "episode", "tags", "description"}
+
     raw_fields = (request.rel_url.query.get("fields") or "").strip()
     if raw_fields:
         wanted = {f.strip() for f in raw_fields.split(",") if f.strip() in _ALL_FIELDS}
@@ -1287,13 +1293,23 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     # image makes the round-trip 10× faster and cheaper.
     thumb_bytes = None if targeted else await _fetch_thumb_bytes(item)
 
-    meta_text = "\n".join([
-        f"Filename: {item.file_name or '(none)'}",
-        f"Current title: {item.title or '(none)'}",
-        f"Current series: {item.series_title or '(none)'}",
-        f"Duration: {item.duration}s" if item.duration else "Duration: unknown",
-        f"File size: {humanbytes(item.file_size)}" if item.file_size else "",
-    ])
+    if is_audio:
+        meta_text = "\n".join([
+            f"Filename: {item.file_name or '(none)'}",
+            f"Current title: {item.title or '(none)'}",
+            f"Current artist: {item.artist or '(none)'}",
+            f"Current album: {item.album_title or '(none)'}",
+            f"Track number: {item.track_number or '(none)'}",
+            f"Duration: {item.duration}s" if item.duration else "Duration: unknown",
+        ])
+    else:
+        meta_text = "\n".join([
+            f"Filename: {item.file_name or '(none)'}",
+            f"Current title: {item.title or '(none)'}",
+            f"Current series: {item.series_title or '(none)'}",
+            f"Duration: {item.duration}s" if item.duration else "Duration: unknown",
+            f"File size: {humanbytes(item.file_size)}" if item.file_size else "",
+        ])
 
     # Catalogue context so the AI matches existing series/tag vocabulary
     # instead of inventing near-duplicates (e.g. 'Mahabharat' when we already
@@ -1310,8 +1326,75 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     series_list = ", ".join(f'"{s}" ({n})' for s, n in top_series) or "(none yet)"
     tag_list = ", ".join(t for t, _ in top_tags) or "(none yet)"
 
-    if targeted:
-        # Focused prompt for inline ✨ buttons: only the requested field(s).
+    if is_audio:
+        # ── Music-specific prompts ────────────────────────────────────────
+        if targeted:
+            focus_lines = []
+            if "tags" in wanted:
+                focus_lines.append(
+                    "• tags: at most 3 music genre/mood tags, space-separated, lowercase "
+                    "(e.g. 'folk classical devotional'). Prefer tags from the common-tags "
+                    "list; only invent new ones when no existing tag fits."
+                )
+            if "file_name" in wanted:
+                focus_lines.append(
+                    "• file_name: 'Artist Name - Track Title.mp3' format. "
+                    "Use the actual artist and track name, not the album."
+                )
+            if "title" in wanted:
+                focus_lines.append("• title: the track name (song title), not the album name.")
+            if "artist" in wanted:
+                focus_lines.append("• artist: the performing artist(s), comma-separated if multiple.")
+            if "album_title" in wanted:
+                focus_lines.append("• album_title: the album or soundtrack name this track belongs to.")
+            if "track_number" in wanted:
+                focus_lines.append("• track_number: integer track position on the album (1-based).")
+            prompt = (
+                "You are a music catalogue assistant. Generate ONLY the requested "
+                "fields based on the existing metadata below.\n\n"
+                f"Audio file metadata:\n{meta_text}\n\n"
+                f"Common tags already in catalogue: {tag_list}\n\n"
+                "Rules:\n"
+                + "\n".join(focus_lines) + "\n"
+                "• In 'reasoning' briefly explain your choices."
+            )
+        else:
+            # Collect existing album vocabulary for context
+            album_counts: dict = {}
+            for it in media_index._items.values():
+                if it.album_title:
+                    album_counts[it.album_title] = album_counts.get(it.album_title, 0) + 1
+            top_albums = sorted(album_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:20]
+            album_list = ", ".join(f'"{a}"' for a, _ in top_albums) or "(none yet)"
+
+            prompt = (
+                "You are a music catalogue assistant. Analyse this audio file and "
+                "suggest accurate music metadata.\n\n"
+                "The filename often encodes useful information — parse it carefully:\n"
+                "• Artist name (often before ' - ' or in parentheses)\n"
+                "• Track title (usually after ' - ')\n"
+                "• Album name (sometimes in brackets or as folder name)\n"
+                "• Track number (leading digits like '05' or 'Track 05')\n"
+                "• Download sites (MassTamilan, StarMusiQ etc.) add watermarks — strip those.\n\n"
+                f"Audio file metadata:\n{meta_text}\n\n"
+                "Existing catalogue context (use exact spellings to avoid duplicates):\n"
+                f"  Known albums/soundtracks: {album_list}\n"
+                f"  Common tags: {tag_list}\n\n"
+                "Rules:\n"
+                "• title: the TRACK NAME (song title), not the album or movie name.\n"
+                "• artist: the performing artist(s). Comma-separate if multiple.\n"
+                "• album_title: the album or film soundtrack this belongs to. "
+                "If the filename contains a film/show name that matches a known album above, "
+                "use that EXACT spelling.\n"
+                "• track_number: integer position on the album if determinable from filename.\n"
+                "• tags: at most 3 genre/mood tags, lowercase, space-separated "
+                "(e.g. 'folk classical devotional'). Prefer existing tags from the list above.\n"
+                "• file_name: 'Artist Name - Track Title.mp3' (clean, no watermarks/site names).\n"
+                "• Use empty string only for fields you truly cannot determine.\n"
+                "• In 'reasoning' briefly explain what you found in the filename/metadata."
+            )
+    elif targeted:
+        # ── Video targeted prompt ─────────────────────────────────────────
         focus_lines = []
         if "tags" in wanted:
             focus_lines.append(
@@ -1346,6 +1429,7 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
             "• In 'reasoning' briefly explain your choices."
         )
     else:
+        # ── Video full prompt ─────────────────────────────────────────────
         prompt = (
             "You are a media catalogue assistant. Analyse this video file and suggest "
             "accurate catalogue metadata.\n\n"
@@ -1387,14 +1471,20 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     parts.append({"text": prompt})
 
     _ALL_PROPS = {
+        # Shared
         "title":        {"type": "STRING"},
-        "year":         {"type": "INTEGER"},
         "file_name":    {"type": "STRING"},
+        "tags":         {"type": "STRING", "description": "Up to 3 space-separated tags, lowercase"},
+        # Video-only
+        "year":         {"type": "INTEGER"},
         "series_title": {"type": "STRING"},
         "season":       {"type": "INTEGER"},
         "episode":      {"type": "INTEGER"},
-        "tags":         {"type": "STRING", "description": "Up to 3 most relevant space-separated tags, lowercase"},
         "description":  {"type": "STRING"},
+        # Audio/music-only
+        "artist":       {"type": "STRING", "description": "Performing artist(s), comma-separated"},
+        "album_title":  {"type": "STRING", "description": "Album or soundtrack name"},
+        "track_number": {"type": "INTEGER", "description": "Track position on album"},
     }
     schema = {
         "type": "OBJECT",
