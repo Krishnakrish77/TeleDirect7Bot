@@ -1756,34 +1756,31 @@ async def admin_edit(request: web.Request) -> web.Response:
                 item.album_key = ""
         item.track_number = new_track_number
 
-    status, reason = await _rewrite_caption(message_id, apply)
+        # ── admin_locked — computed inside apply() so it's written atomically
+        # with every other field change via _rewrite_caption → _store_upsert.
+        # A separate _store_upsert after the caption write could fail silently
+        # and leave locks un-persisted after a Mongo hiccup.
+        # Start from the lock state the modal submitted (honours per-field ✕
+        # unlocks the admin clicked before saving), then auto-add locks for
+        # fields that were explicitly provided with a non-empty value.
+        submitted_locked = [
+            f.strip() for f in (form.get("admin_locked") or "").split(",")
+            if f.strip() in ("title", "year", "series_title")
+        ]
+        locked = set(submitted_locked)
+        if new_title:
+            locked.add("title")
+        if new_year is not None:
+            locked.add("year")
+        else:
+            locked.discard("year")       # cleared → let TMDB fill it in
+        if new_series_title:
+            locked.add("series_title")
+        else:
+            locked.discard("series_title")  # cleared → let TMDB regroup
+        item.admin_locked = sorted(locked)
 
-    # Update the admin_locked field.
-    # The modal submits the current lock state (with any per-field ✕
-    # unlocks already applied), so we start from that base and then
-    # auto-add locks for fields that were explicitly set.
-    if status in ("written", "local-only"):
-        item_after = media_index.get_item(message_id)
-        if item_after is not None:
-            # Start from whatever the modal submitted (handles explicit unlocks)
-            submitted_locked = [
-                f.strip() for f in (form.get("admin_locked") or "").split(",")
-                if f.strip() in ("title", "year", "series_title")
-            ]
-            locked = set(submitted_locked)
-            # Auto-lock non-empty fields that were explicitly provided
-            if new_title:
-                locked.add("title")
-            if new_year is not None:
-                locked.add("year")
-            else:
-                locked.discard("year")
-            if new_series_title:
-                locked.add("series_title")
-            else:
-                locked.discard("series_title")
-            item_after.admin_locked = sorted(locked)
-            await media_index._store_upsert(item_after)
+    status, reason = await _rewrite_caption(message_id, apply)
 
     # Manual TMDB-id override wins over everything. Fetch the record
     # immediately (this isn't fire-and-forget — admin is waiting for

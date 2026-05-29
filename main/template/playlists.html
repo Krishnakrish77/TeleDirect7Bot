@@ -216,7 +216,9 @@
         if (li) li.remove();
         var counter = document.getElementById('pl-count');
         if (counter) {
-          var n = document.querySelectorAll('[id^="pl-"]').length;
+          // Use the grid's direct li children — avoids false positives from
+          // other elements whose id happens to start with "pl-" (e.g. pl-count).
+          var n = document.querySelectorAll('#pl-grid > li').length;
           counter.textContent = n + ' playlist' + (n === 1 ? '' : 's');
         }
       } catch(e) {

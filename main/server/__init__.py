@@ -165,9 +165,11 @@ async def security_middleware(request: web.Request, handler):
         return response
     for k, v in _SECURITY_HEADERS.items():
         response.headers.setdefault(k, v)
-    # HSTS — only on HTTPS deployments.  Tell browsers to always use
-    # HTTPS for this origin for the next year.
-    if _Var.HAS_SSL or _Var.ON_HEROKU:
+    # HSTS — only when the operator has explicitly configured TLS.
+    # The previous check also fired for ON_HEROKU, which could set the
+    # header on local dev machines with Heroku env vars, causing browsers
+    # to upgrade all future requests to HTTPS and break local HTTP access.
+    if _Var.HAS_SSL:
         response.headers.setdefault(
             "Strict-Transport-Security",
             "max-age=31536000; includeSubDomains",

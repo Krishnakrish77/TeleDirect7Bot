@@ -129,35 +129,58 @@ async def get_one(user_id: int, playlist_id: str) -> Optional[dict]:
 async def add_track(user_id: int, playlist_id: str,
                     message_id: int, secure_hash: str,
                     title: str, artist: str) -> bool:
-    """Add a track. Re-adding an existing track moves it to the end. True on success."""
+    """Add a track. Re-adding an existing track moves it to the end. True on success.
+
+    Uses a single aggregation-pipeline update so the dedup-filter and
+    append are atomic — no race window between a $pull and a $push that
+    would allow the same track to appear twice under concurrent requests.
+    Requires MongoDB 4.2+ (Motor 2+).
+    """
     await _ensure_indexes()
     db = _get_db()
     if db is None:
         return False
     try:
-        # Remove any existing entry for the same message_id first (idempotent)
-        await db["playlists"].update_one(
-            {"user_id": user_id, "playlist_id": playlist_id},
-            {"$pull": {"tracks": {"message_id": message_id}}},
-        )
         now = datetime.now(timezone.utc)
+        new_track = {
+            "message_id": message_id,
+            "secure_hash": secure_hash,
+            "title": title[:200],
+            "artist": artist[:200],
+            "added_at": now,
+        }
+        # Aggregation-pipeline update (list syntax) is a single atomic op:
+        # 1. Filter out any existing entry for this message_id (idempotent).
+        # 2. If there's still room, append the new track; otherwise keep as-is.
         result = await db["playlists"].update_one(
-            {
-                "user_id": user_id,
-                "playlist_id": playlist_id,
-                # Enforce max tracks: only update if there's room
-                f"tracks.{_MAX_TRACKS - 1}": {"$exists": False},
-            },
-            {
-                "$push": {"tracks": {
-                    "message_id": message_id,
-                    "secure_hash": secure_hash,
-                    "title": title[:200],
-                    "artist": artist[:200],
-                    "added_at": now,
-                }},
-                "$set": {"updated_at": now},
-            },
+            {"user_id": user_id, "playlist_id": playlist_id},
+            [
+                {
+                    "$set": {
+                        "tracks": {
+                            "$let": {
+                                "vars": {
+                                    "without": {
+                                        "$filter": {
+                                            "input": {"$ifNull": ["$tracks", []]},
+                                            "as": "t",
+                                            "cond": {"$ne": ["$$t.message_id", message_id]},
+                                        }
+                                    }
+                                },
+                                "in": {
+                                    "$cond": [
+                                        {"$lt": [{"$size": "$$without"}, _MAX_TRACKS]},
+                                        {"$concatArrays": ["$$without", [new_track]]},
+                                        "$$without",  # at cap, skip
+                                    ]
+                                },
+                            }
+                        },
+                        "updated_at": now,
+                    }
+                }
+            ],
         )
         return result.modified_count > 0
     except Exception:
