@@ -53,7 +53,17 @@ class Var(object):
     if not _jwt_raw:
         import secrets as _secrets
         _jwt_raw = _secrets.token_hex(32)
-        logging.warning("JWT_SECRET not set; all sessions will be lost on restart")
+        logging.warning(
+            "JWT_SECRET not set — a random secret was generated. "
+            "All user sessions will be lost on every restart. "
+            "Set JWT_SECRET=<64-hex-char-random-string> in your environment "
+            "to persist sessions across deploys."
+        )
+    elif len(_jwt_raw) < 32:
+        logging.warning(
+            "JWT_SECRET is only %d chars — use at least 32 random hex characters "
+            "for adequate session security.", len(_jwt_raw)
+        )
     JWT_SECRET = _jwt_raw
 
     TMDB_API_KEY = environ.get("TMDB_API_KEY", "").strip()

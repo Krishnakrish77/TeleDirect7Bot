@@ -48,7 +48,7 @@ def _vlc_verify(param: str, message_id: int) -> int | None:
             _Var.JWT_SECRET.encode(),
             f"{uid}:{message_id}".encode(),
             hashlib.sha256,
-        ).hexdigest()[:16]
+        ).hexdigest()[:32]
         if _hmac.compare_digest(expected, tok):
             return uid
     except Exception as e:
@@ -212,7 +212,7 @@ async def watch_handler(request: web.Request):
                     _Var.JWT_SECRET.encode(),
                     f"{vlc_user_id}:{message_id}".encode(),
                     hashlib.sha256,
-                ).hexdigest()[:16]
+                ).hexdigest()[:32]
         return web.Response(
             text=await render_page(message_id, secure_hash,
                                    vlc_user_id=vlc_user_id,
@@ -288,7 +288,9 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         class_cache[faster_client] = tg_connect
     file_id = await tg_connect.get_file_properties(message_id)
 
-    if not secure_hash or file_id.unique_id[:len(secure_hash)] != secure_hash:
+    if not secure_hash or not _hmac.compare_digest(
+        file_id.unique_id[:len(secure_hash)], secure_hash
+    ):
         logging.debug(f"Invalid hash for message with ID {message_id}")
         raise InvalidHash
 

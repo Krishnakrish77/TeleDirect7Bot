@@ -234,11 +234,12 @@ async def admin_home(request: web.Request) -> web.Response:
     for it in items_all:
         if it.secure_hash and it.file_size:
             by_key.setdefault((it.secure_hash, it.file_size), []).append(it)
-    duplicate_message_ids: set = set()
-    for k, members in by_key.items():
-        if len(members) > 1:
-            for m in members:
-                duplicate_message_ids.add(m.message_id)
+    # Single-pass set comprehension — avoids a second O(n) loop over by_key
+    duplicate_message_ids: set = {
+        m.message_id
+        for members in by_key.values() if len(members) > 1
+        for m in members
+    }
 
     # ── Server-side filter — mirrors the (now-removed) JS rowVisible() ──
     def _passes_filter(it) -> bool:

@@ -132,6 +132,48 @@ _GZIPPABLE = (
 )
 
 
+_SECURITY_HEADERS = {
+    # Prevent MIME-type sniffing — browsers must respect Content-Type.
+    "X-Content-Type-Options": "nosniff",
+    # Block legacy browsers from rendering the page inside a frame
+    # (clickjacking protection for the admin panel).
+    "X-Frame-Options": "SAMEORIGIN",
+    # Don't send the full Referrer URL to third-party origins (leaks
+    # file IDs and user tokens embedded in paths).
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    # Basic XSS filter for old IE/Edge (belt-and-suspenders alongside CSP).
+    "X-XSS-Protection": "1; mode=block",
+}
+
+
+@web.middleware
+async def security_middleware(request: web.Request, handler):
+    """Attach security headers to every HTML/JSON response.
+
+    Stream responses (byte-range audio/video) are left untouched so
+    the browser media pipeline is not disrupted.  HLS variant and
+    segment responses skip HSTS to avoid issues with local/dev proxies.
+    """
+    from main.vars import Var as _Var
+    response = await handler(request)
+    # Don't modify streaming or binary responses.
+    if not isinstance(response, web.Response):
+        return response
+    ctype = (response.content_type or "").lower()
+    if not (ctype.startswith("text/") or ctype.startswith("application/")):
+        return response
+    for k, v in _SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    # HSTS — only on HTTPS deployments.  Tell browsers to always use
+    # HTTPS for this origin for the next year.
+    if _Var.HAS_SSL or _Var.ON_HEROKU:
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    return response
+
+
 @web.middleware
 async def gzip_middleware(request: web.Request, handler):
     response: web.StreamResponse = await handler(request)
@@ -170,7 +212,7 @@ def web_server():
     # benefits from compression on the way out.
     web_app = web.Application(
         client_max_size=30000000,
-        middlewares=[error_middleware, gzip_middleware],
+        middlewares=[error_middleware, security_middleware, gzip_middleware],
     )
     # Order matters: specific prefixes (hub, hls) first so they don't get
     # swallowed by the catch-all /{path:\S+} byte-stream route at the end.
