@@ -17,10 +17,10 @@
 
     {# Queue action toast — briefly confirms Play next / Add to queue #}
     <div id="_queue-toast"
-         style="position:fixed;bottom:5rem;left:50%;transform:translateX(-50%) translateY(6px);
+         style="display:none;position:fixed;bottom:5rem;left:1rem;right:1rem;
                 background:#1f2227;border:1px solid rgba(255,255,255,0.1);border-radius:8px;
-                padding:7px 14px;font-size:13px;color:#fff;opacity:0;z-index:9001;
-                transition:opacity 0.2s,transform 0.2s;pointer-events:none;
+                padding:7px 14px;font-size:13px;color:#fff;z-index:9001;
+                pointer-events:none;text-align:center;margin:0 auto;
                 white-space:nowrap;max-width:80vw;overflow:hidden;text-overflow:ellipsis">
     </div>
 
@@ -549,10 +549,10 @@
     var el = document.getElementById('_queue-toast');
     if (!el) return;
     el.textContent = msg;
-    el.style.opacity = '1'; el.style.transform = 'translateX(-50%) translateY(0)';
+    el.style.display = 'block';
     clearTimeout(el._t);
     el._t = setTimeout(function() {
-      el.style.opacity = '0'; el.style.transform = 'translateX(-50%) translateY(6px)';
+      el.style.display = 'none';
     }, 2000);
   }
 

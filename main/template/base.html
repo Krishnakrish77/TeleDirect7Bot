@@ -111,17 +111,6 @@
         .td-audio-art .flip-card-back{display:none;position:absolute;inset:0}
         .td-audio-art .flip-card-inner.flipped .flip-card-front{display:none}
         .td-audio-art .flip-card-inner.flipped .flip-card-back{display:flex}
-        /* Real mobile GPUs can keep the previous HTMX page in a stale
-           composited layer below the audio controls. Give the watch page a
-           solid, isolated paint surface so old album/hub pixels cannot show
-           through transparent regions while the browser is repainting. */
-        #main-content.td-audio-watch-main{
-          position:relative;
-          z-index:0;
-          isolation:isolate;
-          contain:paint;
-          background:#0b0c0e;
-        }
       }
       /* Safe-area insets — bypass Tailwind (scanner can't handle nested env() commas).
          All safe-area CSS lives here to ensure it compiles correctly. */
