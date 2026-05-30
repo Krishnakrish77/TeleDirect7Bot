@@ -421,21 +421,10 @@
     } catch(_) {}
   }
 
-  function _mpUseFullWatchLoad() {
-    var ua = navigator.userAgent || '';
-    var mobileViewport = false;
-    try {
-      mobileViewport = window.matchMedia &&
-        (window.matchMedia('(max-width: 767px)').matches ||
-         window.matchMedia('(max-height: 480px)').matches ||
-         window.matchMedia('(pointer: coarse)').matches);
-    } catch(_) {}
-    return /Android/i.test(ua) || mobileViewport;
-  }
-
-  // Mini-player link: expand to watch page via htmx swap on desktop. On real
-  // mobile browsers, a main-content HTMX swap can leave stale album/hub pixels
-  // in GPU layers below the audio controls, so use a normal navigation there.
+  // Mini-player link: use a normal /watch/ navigation. The previous HTMX
+  // expand path kept the album page alive underneath the swapped watch page,
+  // which triggered stale lower-region paints on some Android GPUs. Persist
+  // the exact position first so the watch page can resume without the swap.
   var _mpLinkEl = document.getElementById('_mp-link');
   if (_mpLinkEl) {
     _mpLinkEl.addEventListener('click', function(e) {
@@ -445,18 +434,7 @@
       e.preventDefault();
       _mpPersistPosition();
       _mpHideBar();
-      if (_mpUseFullWatchLoad() || typeof htmx === 'undefined') {
-        window.location.href = np.url;
-        return;
-      }
-      window._mpAllowWatchAjax = true;
-      htmx.ajax('GET', np.url, {
-        target: '#main-content',
-        swap: 'outerHTML settle:0ms',
-        select: '#main-content',
-        pushUrl: np.url,
-      });
-      setTimeout(function() { window._mpAllowWatchAjax = false; }, 1500);
+      window.location.href = np.url;
     });
   }
 
@@ -622,10 +600,6 @@
     try { pathname = new URL(rawPath, location.origin).pathname; } catch(_) { pathname = rawPath; }
     // Watch + admin pages need full page loads (complex JS that relies on DOMContentLoaded).
     // Stream URLs (/{hash}{id}) must not be AJAX-fetched — they return binary audio/video.
-    if (pathname.startsWith('/watch/') && window._mpAllowWatchAjax) {
-      window._mpAllowWatchAjax = false;
-      return;
-    }
     if (pathname.startsWith('/watch/') ||
         pathname.startsWith('/admin') ||
         /^\/[A-Za-z0-9_-]*[A-Za-z_-]\d+$/.test(pathname)) {
