@@ -23,6 +23,28 @@
             if (window._tdWHRecord) window._tdWHRecord(_wpKey, _ttl);
             if (window._tdCWDelete) window._tdCWDelete(_wpKey);
           });
+          // Periodic CW backend save (every 30s) — mirrors the mini-player fix.
+          // Without this a skipped track leaves no backend record and the
+          // activity heatmap shows dark even though the user was listening.
+          var _audioCwT = 0;
+          video.addEventListener('timeupdate', function() {
+            if (video.currentTime > 5 && isFinite(video.duration) && video.duration > 0) {
+              var _now = Date.now();
+              if (_now - _audioCwT > 30000) {
+                _audioCwT = _now;
+                var _ttl = ((document.querySelector('h1') || {}).innerText || '').trim();
+                var _tok = window._tdToken ? window._tdToken() : null;
+                if (_tok && window._tdAuth && window._tdAuth.user) {
+                  fetch('/api/cw/' + encodeURIComponent(_wpKey), {
+                    method: 'POST',
+                    headers: {'Authorization': 'Bearer ' + _tok, 'Content-Type': 'application/json'},
+                    body: JSON.stringify({pos: Math.floor(video.currentTime), dur: Math.floor(video.duration), t: _now, title: _ttl}),
+                    keepalive: true,
+                  }).catch(function() {});
+                }
+              }
+            }
+          });
         })();
         history.replaceState(null, '', location.pathname);
 

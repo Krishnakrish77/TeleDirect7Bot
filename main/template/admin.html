@@ -114,6 +114,10 @@
              if (data.episode)      e.episode      = String(data.episode);
              if (data.tags)         e.tags         = data.tags;
              if (data.description)  e.description  = data.description;
+             // Music-specific fields returned for audio items
+             if (data.artist)       e.artist       = data.artist;
+             if (data.album_title)  e.album_title  = data.album_title;
+             if (data.track_number) e.track_number = String(data.track_number);
              e.aiReasoning = data.reasoning || '';
            } catch (err) {
              e.aiError = err?.message || 'Request failed';
@@ -143,10 +147,13 @@
                return;
              }
              if (!r.ok) { e.aiError = data.error || `HTTP ${r.status}`; return; }
-             if (field === 'tags' && data.tags) e.tags = data.tags;
-             if (field === 'file_name' && data.file_name) e.file_name = data.file_name;
-             if (field === 'description' && data.description) e.description = data.description;
-             if (field === 'title' && data.title) e.title = data.title;
+             if (field === 'tags'         && data.tags)         e.tags         = data.tags;
+             if (field === 'file_name'    && data.file_name)    e.file_name    = data.file_name;
+             if (field === 'description'  && data.description)  e.description  = data.description;
+             if (field === 'title'        && data.title)        e.title        = data.title;
+             if (field === 'artist'       && data.artist)       e.artist       = data.artist;
+             if (field === 'album_title'  && data.album_title)  e.album_title  = data.album_title;
+             if (field === 'track_number' && data.track_number) e.track_number = String(data.track_number);
              if (data.reasoning) e.aiReasoning = data.reasoning;
            } catch (err) {
              e.aiError = err?.message || 'Request failed';
