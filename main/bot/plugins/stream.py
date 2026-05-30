@@ -2,7 +2,7 @@ import asyncio
 import logging
 from main.bot import StreamBot
 from main.utils import media_index
-from main.utils.file_properties import gen_link, get_hash
+from main.utils.file_properties import gen_link
 from main.utils.indexer import schedule_index, schedule_subtitle_pairing
 from main.utils.subtitles import is_subtitle_filename, is_subtitle_mime
 from main.vars import Var
@@ -117,8 +117,10 @@ async def channel_receive_handler(bot, broadcast: Message):
         # channel attribution, so we don't lose that context.
         log_msg = await broadcast.copy(chat_id=Var.BIN_CHANNEL)
         schedule_index(bot, log_msg)
-        file_hash = get_hash(log_msg)
-        stream_link = f"{Var.URL}{file_hash}{log_msg.id}"
+        stream_link = "https://{}/{}".format(Var.FQDN, log_msg.id) if Var.ON_KOYEB or Var.NO_PORT else \
+            "http://{}:{}/{}".format(Var.FQDN,
+                                    Var.PORT,
+                                    log_msg.id)
         await log_msg.reply_text(
             text=f"**Channel Name:** `{broadcast.chat.title}`\n**Channel ID:** `{broadcast.chat.id}`\n**Request URL:** https://t.me/{(await bot.get_me()).username}?start=msgid_{str(log_msg.id)}",
             quote=True,
@@ -191,3 +193,4 @@ async def group_receive_handler(c: Client, m: Message):
             e.x, m.chat.title, m.chat.id,
         )
         await asyncio.sleep(e.x)
+

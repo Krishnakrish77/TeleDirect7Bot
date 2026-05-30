@@ -9,7 +9,7 @@
     {% block head_extra %}{% endblock %}
     <title>{% block title %}TeleDirect{% endblock %}</title>
 
-    <link rel="stylesheet" href="/static/tailwind.css?v=3" />
+    <link rel="stylesheet" href="/static/tailwind.css?v=1" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -57,61 +57,7 @@
       @keyframes _hb{0%{transform:scaleX(0)}60%{transform:scaleX(.7)}100%{transform:scaleX(.85)}}
       #_htmx-bar.htmx-complete{transform:scaleX(1);transition:transform .1s ease-out,opacity .3s .1s;opacity:0}
       [x-cloak]{display:none!important}
-      /* Prevent horizontal scroll caused by w-screen hero (100vw > visible
-         width on Windows/Linux with persistent scrollbars). */
-      html{overflow-x:hidden}
-      /* Use SMALL viewport height (svh), not dynamic (dvh). 100vh on iOS
-         equals the full height incl. the address bar → phantom scroll on
-         short pages. dvh fixes that but RESIZES continuously as the toolbar
-         slides in/out during scroll, making content anchored at the bottom
-         flicker/jump on mobile. svh is the stable smallest viewport (toolbar
-         shown) — never changes during scroll, so no phantom scroll AND no
-         flicker. Falls back to 100vh on browsers without svh (iOS <15.4,
-         Chrome <108). */
-      #main-content{min-height:100svh}
-      @supports not (min-height:1svh){ #main-content{min-height:100vh} }
       .wl-btn{color:rgba(255,255,255,.55)}.wl-btn.wl-saved{color:#f97316;opacity:1!important}
-      body.td-watch-page{padding-bottom:0!important}
-      body.td-watch-page #_mini-player{display:none!important}
-      /* Audio player text centering — text-align:center is silently ignored by
-         iOS Safari on elements using display:-webkit-box (line-clamp utilities).
-         !important forces it; media queries revert to left for desktop/landscape. */
-      .td-audio-text{text-align:center!important}
-      @media(min-width:768px){.td-audio-text{text-align:left!important}}
-      @media(max-height:480px){.td-audio-text{text-align:left!important}}
-      /* Shared components that can arrive via HTMX swaps. Keeping these
-         global avoids missing head-only styles on boosted navigation. */
-      details[data-season]>summary{list-style:none}
-      details[data-season]>summary::-webkit-details-marker{display:none}
-      details[data-season]>summary .season-chevron{transition:transform .2s}
-      details[data-season][open]>summary .season-chevron{transform:rotate(180deg)}
-      .flip-card{perspective:1000px}
-      .flip-card-inner{transform-style:preserve-3d;transition:transform .55s cubic-bezier(.4,0,.2,1);position:relative}
-      .flip-card-inner.flipped{transform:rotateY(180deg)}
-      .flip-card-front,.flip-card-back{backface-visibility:hidden;-webkit-backface-visibility:hidden}
-      .flip-card-back{transform:rotateY(180deg);position:absolute;inset:0}
-      /* Mobile audio pages hit compositor artifacts with 3D card layers after
-         HTMX mini-player expansion. Keep the tap-to-lyrics behavior, but use a
-         simple display toggle on phones instead of rotateY/preserve-3d. */
-      @media(max-width:767px),(max-height:480px){
-        .td-audio-art.flip-card{perspective:none}
-        /* transform-style:preserve-3d (inherited from the base .flip-card-inner
-           rule) keeps a 3D rendering context / GPU compositing layer alive even
-           with perspective:none. Android Chrome corrupts the region around it
-           (rainbow noise + ghosted Album/Playlist buttons below the art). Force
-           flat to tear that 3D layer down entirely on phones. */
-        .td-audio-art .flip-card-inner{transform:none!important;transform-style:flat!important;transition:none;display:block}
-        .td-audio-art .flip-card-inner.flipped{transform:none!important}
-        .td-audio-art .flip-card-front,
-        .td-audio-art .flip-card-back{
-          transform:none!important;
-          backface-visibility:visible;
-          -webkit-backface-visibility:visible;
-        }
-        .td-audio-art .flip-card-back{display:none;position:absolute;inset:0}
-        .td-audio-art .flip-card-inner.flipped .flip-card-front{display:none}
-        .td-audio-art .flip-card-inner.flipped .flip-card-back{display:flex}
-      }
       /* Safe-area insets — bypass Tailwind (scanner can't handle nested env() commas).
          All safe-area CSS lives here to ensure it compiles correctly. */
       @supports(padding:env(safe-area-inset-top)){
@@ -144,7 +90,7 @@
           hx-select="#main-content"
           hx-push-url="true"
           hx-swap="outerHTML"
-          class="flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 {% block main_class %}{% endblock %}">
+          class="min-h-screen flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-16">
       {% block content %}{% endblock %}
     </main>
 
@@ -197,20 +143,21 @@
                  @mouseenter="active = idx"
                  :class="active === idx ? 'bg-brand-500/15 text-white' : 'text-slate-200 hover:bg-ink-800'"
                  class="flex items-center gap-3 px-4 py-3 transition-colors">
-                {# x-show (not x-if) — same reason as hub.html search suggestions #}
-                <img x-show="it.poster_path"
-                     :src="it.poster_path ? 'https://image.tmdb.org/t/p/w92' + it.poster_path : ''"
-                     alt="" loading="lazy"
-                     class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
-                <div x-show="!it.poster_path"
-                     class="w-8 h-12 rounded bg-ink-800 flex-shrink-0
-                            grid place-items-center text-slate-600">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-                       fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                          d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
-                  </svg>
-                </div>
+                <template x-if="it.poster_path">
+                  <img :src="'https://image.tmdb.org/t/p/w92' + it.poster_path" alt=""
+                       loading="lazy"
+                       class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
+                </template>
+                <template x-if="!it.poster_path">
+                  <div class="w-8 h-12 rounded bg-ink-800 flex-shrink-0
+                              grid place-items-center text-slate-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                            d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                    </svg>
+                  </div>
+                </template>
                 <div class="min-w-0 flex-1">
                   <p class="text-sm font-medium truncate" x-text="it.title"></p>
                   <p class="text-xs text-slate-500">
@@ -223,10 +170,11 @@
           </template>
         </ul>
 
-        <p x-show="q && !items.length"
-           class="px-4 py-6 text-center text-sm text-slate-500">
-          No results for "<span class="text-slate-300" x-text="q"></span>"
-        </p>
+        <template x-if="q && !items.length">
+          <p class="px-4 py-6 text-center text-sm text-slate-500">
+            No results for "<span class="text-slate-300" x-text="q"></span>"
+          </p>
+        </template>
 
         <div class="px-4 py-2 border-t border-white/5 flex items-center justify-between
                     text-xs text-slate-600">
@@ -246,9 +194,7 @@
 
     <script>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').then(function(reg) {
-          if (reg && typeof reg.update === 'function') reg.update();
-        }).catch(function(e) {
+        navigator.serviceWorker.register('/sw.js').catch(function(e) {
           console.warn('SW registration failed:', e);
         });
       }

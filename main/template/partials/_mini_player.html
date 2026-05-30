@@ -17,10 +17,10 @@
 
     {# Queue action toast — briefly confirms Play next / Add to queue #}
     <div id="_queue-toast"
-         style="display:none;position:fixed;bottom:5rem;left:1rem;right:1rem;
+         style="position:fixed;bottom:5rem;left:50%;transform:translateX(-50%) translateY(6px);
                 background:#1f2227;border:1px solid rgba(255,255,255,0.1);border-radius:8px;
-                padding:7px 14px;font-size:13px;color:#fff;z-index:9001;
-                pointer-events:none;text-align:center;margin:0 auto;
+                padding:7px 14px;font-size:13px;color:#fff;opacity:0;z-index:9001;
+                transition:opacity 0.2s,transform 0.2s;pointer-events:none;
                 white-space:nowrap;max-width:80vw;overflow:hidden;text-overflow:ellipsis">
     </div>
 
@@ -30,7 +30,7 @@
        the bar persists across navigation — like Spotify's bottom bar. #}
     <div id="_mini-player" style="display:none"
          class="fixed bottom-0 left-0 right-0 z-40
-                bg-ink-950/95 sm:backdrop-blur-md border-t border-white/10
+                bg-ink-950/95 backdrop-blur-md border-t border-white/10
                 px-4 py-2.5 flex items-center gap-3 shadow-2xl">
       {# Progress bar — seekable. Tall touch target, thin visual rail. #}
       <div id="_mp-seek"
@@ -138,7 +138,6 @@
   var _XFADE_SECS = 3;    // crossfade duration in seconds
   var _xfading    = false;
   var _preloaded  = false;
-  var _mpCwSaveT  = 0;    // epoch-ms of last CW backend save
 
   function _nextSrc() {
     // Returns the stream URL of the next track from queue or NP metadata
@@ -261,30 +260,6 @@
         if (!_preloaded && rem <= _PRELOAD_AT) _gapPreload();
         if (_preloaded && !_xfading && rem > 0 && rem <= _XFADE_SECS) _gapCrossfade();
       }
-      // Periodic CW backend save (every 30s after 5s of playback).
-      // Ensures partial listens appear in the activity heatmap even if the
-      // track is skipped before it ends. _tdWHRecord only fires on 'ended';
-      // without this, skipped tracks leave no footprint in daily_counts.
-      if (cur > 5 && isFinite(dur) && dur > 0) {
-        var _now = Date.now();
-        if (_now - _mpCwSaveT > 30000) {
-          _mpCwSaveT = _now;
-          var _cwNp;
-          try { _cwNp = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) {}
-          if (_cwNp && _cwNp.url && window._tdAuth && window._tdAuth.user) {
-            var _cwk = (_cwNp.url.match(/\/watch\/([A-Za-z0-9_-]+)$/) || [])[1];
-            var _tok = window._tdToken ? window._tdToken() : null;
-            if (_cwk && _tok) {
-              fetch('/api/cw/' + encodeURIComponent(_cwk), {
-                method: 'POST',
-                headers: {'Authorization': 'Bearer ' + _tok, 'Content-Type': 'application/json'},
-                body: JSON.stringify({pos: Math.floor(cur), dur: Math.floor(dur), t: _now, title: _cwNp.title || ''}),
-                keepalive: true,
-              }).catch(function() {});
-            }
-          }
-        }
-      }
     });
     // Named so it can be attached to both bgAudio elements.
     // After gapless _gapSwap(), _bgAudio becomes bgAudio2 (was _bgBuf).
@@ -402,29 +377,9 @@
     _mpSeek.addEventListener('touchend', function() { _mpScrubbing = false; });
   }
 
-  function _mpHideBar() {
-    document.body.style.paddingBottom = '';
-    var bar = document.getElementById('_mini-player');
-    if (bar) bar.style.display = 'none';
-  }
-
-  function _mpPersistPosition() {
-    if (!_bgAudio) return;
-    try {
-      var np = JSON.parse(localStorage.getItem(NP_KEY) || 'null');
-      if (np && _bgAudio.currentTime > 0) {
-        np.position = Math.floor(_bgAudio.currentTime);
-        if (_bgAudio.currentSrc || _bgAudio.src) np.streamUrl = _bgAudio.currentSrc || _bgAudio.src;
-        if (np.url) np.url = new URL(np.url, location.origin).href;
-        localStorage.setItem(NP_KEY, JSON.stringify(np));
-      }
-    } catch(_) {}
-  }
-
-  // Mini-player link: use a normal /watch/ navigation. The previous HTMX
-  // expand path kept the album page alive underneath the swapped watch page,
-  // which triggered stale lower-region paints on some Android GPUs. Persist
-  // the exact position first so the watch page can resume without the swap.
+  // Mini-player link: expand to watch page via htmx swap (bgAudio persists).
+  // htmx.ajax bypasses the htmx:configRequest /watch/ exclusion — that
+  // exclusion is for boost-style link navigations, not programmatic calls.
   var _mpLinkEl = document.getElementById('_mp-link');
   if (_mpLinkEl) {
     _mpLinkEl.addEventListener('click', function(e) {
@@ -432,9 +387,12 @@
       try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
       if (!np || !np.url || !_bgAudio) return; // fallback to default nav
       e.preventDefault();
-      _mpPersistPosition();
-      _mpHideBar();
-      window.location.href = np.url;
+      htmx.ajax('GET', np.url, {
+        target: '#main-content',
+        swap: 'outerHTML',
+        select: '#main-content',
+        pushUrl: np.url,
+      });
     });
   }
 
@@ -467,11 +425,11 @@
   };
 
   function _mpInit() {
-    var onWatchPage = location.pathname.startsWith('/watch/');
-    document.body.classList.toggle('td-watch-page', onWatchPage);
     // On the watch page: hide bar + reset padding (player is on the page itself).
-    if (onWatchPage) {
-      _mpHideBar();
+    if (location.pathname.startsWith('/watch/')) {
+      document.body.style.paddingBottom = '';
+      var bar = document.getElementById('_mini-player');
+      if (bar) bar.style.display = 'none';
       return;
     }
     var np;
@@ -549,10 +507,10 @@
     var el = document.getElementById('_queue-toast');
     if (!el) return;
     el.textContent = msg;
-    el.style.display = 'block';
+    el.style.opacity = '1'; el.style.transform = 'translateX(-50%) translateY(0)';
     clearTimeout(el._t);
     el._t = setTimeout(function() {
-      el.style.display = 'none';
+      el.style.opacity = '0'; el.style.transform = 'translateX(-50%) translateY(6px)';
     }, 2000);
   }
 
@@ -600,8 +558,7 @@
     try { pathname = new URL(rawPath, location.origin).pathname; } catch(_) { pathname = rawPath; }
     // Watch + admin pages need full page loads (complex JS that relies on DOMContentLoaded).
     // Stream URLs (/{hash}{id}) must not be AJAX-fetched — they return binary audio/video.
-    if (pathname.startsWith('/watch/') ||
-        pathname.startsWith('/admin') ||
+    if (pathname.startsWith('/watch/') || pathname.startsWith('/admin') ||
         /^\/[A-Za-z0-9_-]*[A-Za-z_-]\d+$/.test(pathname)) {
       e.preventDefault();
       window.location.href = rawPath;
@@ -660,49 +617,6 @@
     setTimeout(function() {
       var main = document.getElementById('main-content');
       if (!main) return;
-
-      // ── Strip stale snapshot DOM before Alpine re-initialises ─────────────
-      // HTMX saves the rendered DOM to sessionStorage. Two kinds of stale
-      // nodes cause visible ghosts when Alpine re-initialises on restore:
-      //
-      // 1. x-for rendered children: Alpine rendered cards/items are baked
-      //    into the snapshot as static HTML after their <template x-for>.
-      //    When Alpine.initTree runs the x-for again it inserts NEW nodes
-      //    alongside the stale ones → doubled CW cards, doubled grid items.
-      //    Fix: remove every node that follows a <template x-for> so Alpine
-      //    starts with a clean slate.
-      //
-      // 2. Baked-in inline styles from :style / :class bindings: the hero
-      //    carousel snapshot captures opacity/z-index on each slide at the
-      //    time it was saved (e.g. slide 2 visible, rest opacity:0).  When
-      //    Alpine re-inits with active=0 it sets slide 0 visible — but slide
-      //    2 still has the old opacity:1 style from the snapshot, so BOTH
-      //    slides appear → the "second TeleDirect header + hero" phantom.
-      //    Fix: strip the baked-in inline style from elements that have a
-      //    :style or x-bind:style directive so Alpine applies it fresh.
-      // Strip pre-rendered x-for nodes that were baked into the snapshot.
-      // Stop at any <template> sibling so we don't eat a second x-for/x-if
-      // template that lives in the same parent (e.g. two shelves side by side).
-      main.querySelectorAll('template[x-for]').forEach(function(tpl) {
-        var node = tpl.nextSibling;
-        while (node) {
-          if (node.nodeName === 'TEMPLATE') break; // stop before next template
-          var nxt = node.nextSibling;
-          node.parentNode && node.parentNode.removeChild(node);
-          node = nxt;
-        }
-      });
-      // Strip baked-in inline styles from :style-bound elements so Alpine
-      // re-applies them fresh (e.g. hero carousel slide opacities).
-      // querySelectorAll('[\\:style]') throws SyntaxError in all browsers
-      // because CSS attribute selectors cannot escape colons that way.
-      // Use hasAttribute() instead, which works for any attribute name.
-      main.querySelectorAll('*').forEach(function(el) {
-        if (el.hasAttribute(':style') || el.hasAttribute('x-bind:style')) {
-          el.removeAttribute('style');
-        }
-      });
-
       // Re-initialize Alpine components that weren't marked by MutationObserver.
       if (typeof Alpine !== 'undefined' && Alpine.initTree) {
         main.querySelectorAll('[x-data]').forEach(function(el) {
@@ -812,121 +726,6 @@
     }).catch(function() {});
   };
 })();
-
-// ── Hub search suggestions ───────────────────────────────────────────────────
-// Defined here (global, every page) rather than in hub.html's scripts block
-// so it survives HTMX-boosted navigation: the boost swaps only #main-content and
-// discards scripts outside it, which would otherwise leave x-data="hubSearch()"
-// bound to an undefined function and the suggestion dropdown dead.
-function hubSearch() {
-  return {
-    suggestions: [],
-    suggestActive: -1,
-    _suggestTimer: null,
-    fetchSuggestions(val) {
-      clearTimeout(this._suggestTimer);
-      const v = (val || '').trim();
-      if (!v) { this.suggestions = []; this.suggestActive = -1; return; }
-      this._suggestTimer = setTimeout(async () => {
-        try {
-          const r = await fetch('/search/suggest?q=' + encodeURIComponent(v) + '&limit=6');
-          if (r.ok) { this.suggestions = await r.json(); this.suggestActive = -1; }
-        } catch (_) {}
-      }, 150);
-    },
-    moveSuggest(dir) {
-      if (!this.suggestions.length) return;
-      this.suggestActive = (this.suggestActive + dir + this.suggestions.length) % this.suggestions.length;
-    },
-    pickSuggest(event) {
-      if (this.suggestActive >= 0 && this.suggestActive < this.suggestions.length) {
-        event.preventDefault();
-        window.location = this.suggestions[this.suggestActive].url;
-      }
-      this.closeSuggest();
-    },
-    closeSuggest() { this.suggestions = []; this.suggestActive = -1; },
-  };
-}
-
-// ── Playlist picker ──────────────────────────────────────────────────────────
-// Used on the audio watch page to add the current track to a playlist.
-// mid / title / artist / hash are injected from the Jinja template.
-function tdPlaylistPicker(mid, title, artist, hash) {
-  return {
-    open: false,
-    playlists: null,  // null = not yet loaded
-    loading: false,
-    adding: null,     // playlist_id being added (spinner state)
-    addedTo: null,    // recently-added playlist_id (success feedback)
-    _newName: '',     // new playlist name input
-
-    async toggle() {
-      this.open = !this.open;
-      if (this.open && this.playlists === null) await this.load();
-    },
-
-    async load() {
-      this.loading = true;
-      var t = window._tdToken ? window._tdToken() : null;
-      try {
-        var r = await fetch('/api/playlists',
-          t ? {headers: {'Authorization': 'Bearer ' + t}} : {});
-        if (r.ok) this.playlists = await r.json();
-        else this.playlists = [];
-      } catch(_) { this.playlists = []; }
-      this.loading = false;
-    },
-
-    async addTo(pid) {
-      var t = window._tdToken ? window._tdToken() : null;
-      if (!t) return;
-      this.adding = pid;
-      try {
-        var r = await fetch('/api/playlists/' + pid + '/tracks', {
-          method: 'POST',
-          headers: {'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json'},
-          body: JSON.stringify({message_id: mid, secure_hash: hash,
-                                title: title, artist: artist}),
-        });
-        if (r.ok) {
-          this.addedTo = pid;
-          setTimeout(() => { this.open = false; this.addedTo = null; }, 1400);
-        }
-      } catch(_) {}
-      this.adding = null;
-    },
-
-    async createAndAdd(name) {
-      var t = window._tdToken ? window._tdToken() : null;
-      if (!t || !name.trim()) return;
-      this.loading = true;
-      try {
-        var r = await fetch('/api/playlists', {
-          method: 'POST',
-          headers: {'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json'},
-          body: JSON.stringify({name: name.trim()}),
-        });
-        if (r.ok) {
-          var data = await r.json();
-          // Optimistically prepend to the list — avoids a full reload round-trip
-          // and eliminates the race window between load() and addTo().
-          if (this.playlists) {
-            this.playlists.unshift({
-              playlist_id: data.playlist_id, name: data.name, track_count: 0
-            });
-          } else {
-            this.playlists = [{
-              playlist_id: data.playlist_id, name: data.name, track_count: 0
-            }];
-          }
-          await this.addTo(data.playlist_id);
-        }
-      } catch(_) {}
-      this.loading = false;
-    },
-  };
-}
 
 function globalSearch() {
   return {

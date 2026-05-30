@@ -34,7 +34,7 @@
      The left-shift (margin-left=-px) aligns the left edge with the
      viewport; w-screen makes it span all the way to the right. #}
   class="relative w-screen -mx-4 sm:-mx-6 lg:-mx-8 mb-10
-         aspect-[4/3] sm:aspect-[21/9] max-h-[70dvh]
+         aspect-[4/3] sm:aspect-[21/9] max-h-[70vh]
          overflow-hidden rounded-xl group/hero">
 
   {% for hero in heroes %}
@@ -86,8 +86,8 @@
                   [@media(max-height:480px)]:items-end
                   px-6 sm:px-10 lg:px-14 pb-6 sm:pb-0">
         <div class="max-w-2xl text-white
-                    [&_h2]:[text-shadow:0_2px_8px_rgba(0,0,0,0.6)]
-                    [&_p]:[text-shadow:0_1px_4px_rgba(0,0,0,0.7)]">
+                    [&amp;_h2]:[text-shadow:0_2px_8px_rgba(0,0,0,0.6)]
+                    [&amp;_p]:[text-shadow:0_1px_4px_rgba(0,0,0,0.7)]">
           {% if hero.tmdb_kind == 'tv' %}
             <span class="inline-block text-[10px] uppercase tracking-[0.2em] font-semibold
                          text-brand-300 mb-2">Series</span>

@@ -150,7 +150,7 @@ async def admin_home(request: web.Request) -> web.Response:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Admin — Sign in</title>
-  <link rel="stylesheet" href="/static/tailwind.css?v=3">
+  <link rel="stylesheet" href="/static/tailwind.css?v=1">
 </head>
 <body class="min-h-full bg-ink-900 flex items-center justify-center px-4">
   <div class="w-full max-w-sm bg-ink-800/60 border border-white/10
@@ -234,12 +234,11 @@ async def admin_home(request: web.Request) -> web.Response:
     for it in items_all:
         if it.secure_hash and it.file_size:
             by_key.setdefault((it.secure_hash, it.file_size), []).append(it)
-    # Single-pass set comprehension — avoids a second O(n) loop over by_key
-    duplicate_message_ids: set = {
-        m.message_id
-        for members in by_key.values() if len(members) > 1
-        for m in members
-    }
+    duplicate_message_ids: set = set()
+    for k, members in by_key.items():
+        if len(members) > 1:
+            for m in members:
+                duplicate_message_ids.add(m.message_id)
 
     # ── Server-side filter — mirrors the (now-removed) JS rowVisible() ──
     def _passes_filter(it) -> bool:
@@ -1269,17 +1268,11 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     if item is None:
         return web.json_response({"error": "Item not found"}, status=404)
 
-    is_audio = getattr(item, "media_kind", "") == "audio"
-
-    # Field sets differ by media kind.
-    # Audio tracks have artist/album/track_number instead of series/season/episode.
-    if is_audio:
-        _ALL_FIELDS = {"title", "artist", "album_title", "track_number",
-                       "tags", "file_name"}
-    else:
-        _ALL_FIELDS = {"title", "year", "file_name", "series_title",
-                       "season", "episode", "tags", "description"}
-
+    # Optional ?fields=tags,file_name limits the response (and prompt focus)
+    # to specific fields. Used by the inline ✨ buttons next to individual
+    # form inputs. Default — all fields — drives the main 'Suggest' button.
+    _ALL_FIELDS = {"title", "year", "file_name", "series_title",
+                   "season", "episode", "tags", "description"}
     raw_fields = (request.rel_url.query.get("fields") or "").strip()
     if raw_fields:
         wanted = {f.strip() for f in raw_fields.split(",") if f.strip() in _ALL_FIELDS}
@@ -1294,118 +1287,31 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     # image makes the round-trip 10× faster and cheaper.
     thumb_bytes = None if targeted else await _fetch_thumb_bytes(item)
 
-    if is_audio:
-        meta_text = "\n".join([
-            f"Filename: {item.file_name or '(none)'}",
-            f"Current title: {item.title or '(none)'}",
-            f"Current artist: {item.artist or '(none)'}",
-            f"Current album: {item.album_title or '(none)'}",
-            f"Track number: {item.track_number or '(none)'}",
-            f"Duration: {item.duration}s" if item.duration else "Duration: unknown",
-        ])
-    else:
-        meta_text = "\n".join([
-            f"Filename: {item.file_name or '(none)'}",
-            f"Current title: {item.title or '(none)'}",
-            f"Current series: {item.series_title or '(none)'}",
-            f"Duration: {item.duration}s" if item.duration else "Duration: unknown",
-            f"File size: {humanbytes(item.file_size)}" if item.file_size else "",
-        ])
+    meta_text = "\n".join([
+        f"Filename: {item.file_name or '(none)'}",
+        f"Current title: {item.title or '(none)'}",
+        f"Current series: {item.series_title or '(none)'}",
+        f"Duration: {item.duration}s" if item.duration else "Duration: unknown",
+        f"File size: {humanbytes(item.file_size)}" if item.file_size else "",
+    ])
 
     # Catalogue context so the AI matches existing series/tag vocabulary
-    # instead of inventing near-duplicates.
-    # Tags are split by media_kind: audio tracks see music genre/mood tags;
-    # video items see video/genre tags. Without the split the top-N list is
-    # dominated by whichever kind has more items (usually video) and the AI
-    # suggests "action" / "drama" for a music track.
+    # instead of inventing near-duplicates (e.g. 'Mahabharat' when we already
+    # have 'Mahabharatham' — would split the series across two cards).
     series_counts: dict = {}
     tag_counts: dict = {}
-    audio_tag_counts: dict = {}
     for it in media_index._items.values():
         if it.series_title:
             series_counts[it.series_title] = series_counts.get(it.series_title, 0) + 1
-        _it_audio = getattr(it, "media_kind", "") == "audio"
         for t in (it.tags or []):
-            if _it_audio:
-                audio_tag_counts[t] = audio_tag_counts.get(t, 0) + 1
-            else:
-                tag_counts[t] = tag_counts.get(t, 0) + 1
+            tag_counts[t] = tag_counts.get(t, 0) + 1
     top_series = sorted(series_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:30]
     top_tags = sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:25]
-    top_audio_tags = sorted(audio_tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:25]
     series_list = ", ".join(f'"{s}" ({n})' for s, n in top_series) or "(none yet)"
     tag_list = ", ".join(t for t, _ in top_tags) or "(none yet)"
-    audio_tag_list = ", ".join(t for t, _ in top_audio_tags) or "(none yet)"
 
-    if is_audio:
-        # ── Music-specific prompts ────────────────────────────────────────
-        if targeted:
-            focus_lines = []
-            if "tags" in wanted:
-                focus_lines.append(
-                    "• tags: at most 3 music genre/mood tags, space-separated, lowercase "
-                    "(e.g. 'folk classical devotional'). Prefer tags from the common-tags "
-                    "list; only invent new ones when no existing tag fits."
-                )
-            if "file_name" in wanted:
-                focus_lines.append(
-                    "• file_name: 'Artist Name - Track Title.mp3' format. "
-                    "Use the actual artist and track name, not the album."
-                )
-            if "title" in wanted:
-                focus_lines.append("• title: the track name (song title), not the album name.")
-            if "artist" in wanted:
-                focus_lines.append("• artist: the performing artist(s), comma-separated if multiple.")
-            if "album_title" in wanted:
-                focus_lines.append("• album_title: the album or soundtrack name this track belongs to.")
-            if "track_number" in wanted:
-                focus_lines.append("• track_number: integer track position on the album (1-based).")
-            prompt = (
-                "You are a music catalogue assistant. Generate ONLY the requested "
-                "fields based on the existing metadata below.\n\n"
-                f"Audio file metadata:\n{meta_text}\n\n"
-                f"Common tags already in catalogue: {audio_tag_list}\n\n"
-                "Rules:\n"
-                + "\n".join(focus_lines) + "\n"
-                "• In 'reasoning' briefly explain your choices."
-            )
-        else:
-            # Collect existing album vocabulary for context
-            album_counts: dict = {}
-            for it in media_index._items.values():
-                if it.album_title:
-                    album_counts[it.album_title] = album_counts.get(it.album_title, 0) + 1
-            top_albums = sorted(album_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:20]
-            album_list = ", ".join(f'"{a}"' for a, _ in top_albums) or "(none yet)"
-
-            prompt = (
-                "You are a music catalogue assistant. Analyse this audio file and "
-                "suggest accurate music metadata.\n\n"
-                "The filename often encodes useful information — parse it carefully:\n"
-                "• Artist name (often before ' - ' or in parentheses)\n"
-                "• Track title (usually after ' - ')\n"
-                "• Album name (sometimes in brackets or as folder name)\n"
-                "• Track number (leading digits like '05' or 'Track 05')\n"
-                "• Download sites (MassTamilan, StarMusiQ etc.) add watermarks — strip those.\n\n"
-                f"Audio file metadata:\n{meta_text}\n\n"
-                "Existing catalogue context (use exact spellings to avoid duplicates):\n"
-                f"  Known albums/soundtracks: {album_list}\n"
-                f"  Common tags (music only): {audio_tag_list}\n\n"
-                "Rules:\n"
-                "• title: the TRACK NAME (song title), not the album or movie name.\n"
-                "• artist: the performing artist(s). Comma-separate if multiple.\n"
-                "• album_title: the album or film soundtrack this belongs to. "
-                "If the filename contains a film/show name that matches a known album above, "
-                "use that EXACT spelling.\n"
-                "• track_number: integer position on the album if determinable from filename.\n"
-                "• tags: at most 3 genre/mood tags, lowercase, space-separated "
-                "(e.g. 'folk classical devotional'). Prefer existing tags from the list above.\n"
-                "• file_name: 'Artist Name - Track Title.mp3' (clean, no watermarks/site names).\n"
-                "• Use empty string only for fields you truly cannot determine.\n"
-                "• In 'reasoning' briefly explain what you found in the filename/metadata."
-            )
-    elif targeted:
-        # ── Video targeted prompt ─────────────────────────────────────────
+    if targeted:
+        # Focused prompt for inline ✨ buttons: only the requested field(s).
         focus_lines = []
         if "tags" in wanted:
             focus_lines.append(
@@ -1440,7 +1346,6 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
             "• In 'reasoning' briefly explain your choices."
         )
     else:
-        # ── Video full prompt ─────────────────────────────────────────────
         prompt = (
             "You are a media catalogue assistant. Analyse this video file and suggest "
             "accurate catalogue metadata.\n\n"
@@ -1482,20 +1387,14 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     parts.append({"text": prompt})
 
     _ALL_PROPS = {
-        # Shared
         "title":        {"type": "STRING"},
-        "file_name":    {"type": "STRING"},
-        "tags":         {"type": "STRING", "description": "Up to 3 space-separated tags, lowercase"},
-        # Video-only
         "year":         {"type": "INTEGER"},
+        "file_name":    {"type": "STRING"},
         "series_title": {"type": "STRING"},
         "season":       {"type": "INTEGER"},
         "episode":      {"type": "INTEGER"},
+        "tags":         {"type": "STRING", "description": "Up to 3 most relevant space-separated tags, lowercase"},
         "description":  {"type": "STRING"},
-        # Audio/music-only
-        "artist":       {"type": "STRING", "description": "Performing artist(s), comma-separated"},
-        "album_title":  {"type": "STRING", "description": "Album or soundtrack name"},
-        "track_number": {"type": "INTEGER", "description": "Track position on album"},
     }
     schema = {
         "type": "OBJECT",
@@ -1755,30 +1654,6 @@ async def admin_edit(request: web.Request) -> web.Response:
             else:
                 item.album_key = ""
         item.track_number = new_track_number
-
-        # ── admin_locked — computed inside apply() so it's written atomically
-        # with every other field change via _rewrite_caption → _store_upsert.
-        # A separate _store_upsert after the caption write could fail silently
-        # and leave locks un-persisted after a Mongo hiccup.
-        # Start from the lock state the modal submitted (honours per-field ✕
-        # unlocks the admin clicked before saving), then auto-add locks for
-        # fields that were explicitly provided with a non-empty value.
-        submitted_locked = [
-            f.strip() for f in (form.get("admin_locked") or "").split(",")
-            if f.strip() in ("title", "year", "series_title")
-        ]
-        locked = set(submitted_locked)
-        if new_title:
-            locked.add("title")
-        if new_year is not None:
-            locked.add("year")
-        else:
-            locked.discard("year")       # cleared → let TMDB fill it in
-        if new_series_title:
-            locked.add("series_title")
-        else:
-            locked.discard("series_title")  # cleared → let TMDB regroup
-        item.admin_locked = sorted(locked)
 
     status, reason = await _rewrite_caption(message_id, apply)
 

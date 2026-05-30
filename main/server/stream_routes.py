@@ -38,23 +38,17 @@ _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 # Debounce CW updates: at most one MongoDB write per 30s per (user, message)
 _vlc_cw_debounce: dict = {}   # (user_id, message_id) → last_update_ts
 
-_VLC_TOKEN_LEN = 32  # hex chars — must match generation below
-
 def _vlc_verify(param: str, message_id: int) -> int | None:
     """Return user_id if param is a valid VLC tracking token, else None."""
     from main.vars import Var as _Var
     try:
         uid_str, tok = param.split(":", 1)
         uid = int(uid_str)
-        # Reject wrong-length tokens before compare_digest to avoid
-        # length-extension or truncation games.
-        if len(tok) != _VLC_TOKEN_LEN:
-            return None
         expected = _hmac.new(
             _Var.JWT_SECRET.encode(),
             f"{uid}:{message_id}".encode(),
             hashlib.sha256,
-        ).hexdigest()[:_VLC_TOKEN_LEN]
+        ).hexdigest()[:16]
         if _hmac.compare_digest(expected, tok):
             return uid
     except Exception as e:
@@ -145,14 +139,15 @@ async def _rate_limited_body(gen, ip: str):
 async def healthz(_):
     """Liveness + readiness check for orchestrators.
 
-    Returns 200 once the seed has finished; 503 while still seeding
-    (so Koyeb's health probe holds traffic out until we're ready).
-    An empty catalogue is still a valid ready state.
+    Returns 200 once the seed has finished AND the catalogue has
+    items; 503 while still seeding (so Koyeb's health probe holds
+    traffic out until we're ready). Always returns JSON so it's
+    inspectable in a browser.
     """
     from main.utils import media_index
     seed = media_index.seed_state()
     cat_size = media_index.size()
-    ready = (not seed.get("running")) and (seed.get("finished_at", 0) > 0)
+    ready = (not seed.get("running")) and (seed.get("finished_at", 0) > 0) and cat_size > 0
     body = {
         "status": "ok" if ready else "starting",
         "catalogue_size": cat_size,
@@ -217,7 +212,7 @@ async def watch_handler(request: web.Request):
                     _Var.JWT_SECRET.encode(),
                     f"{vlc_user_id}:{message_id}".encode(),
                     hashlib.sha256,
-                ).hexdigest()[:_VLC_TOKEN_LEN]
+                ).hexdigest()[:16]
         return web.Response(
             text=await render_page(message_id, secure_hash,
                                    vlc_user_id=vlc_user_id,
@@ -243,13 +238,10 @@ async def watch_handler(request: web.Request):
 async def stream_handler(request: web.Request):
     try:
         path = request.match_info["path"]
-        # Current stream URLs are a single segment: {hash}{digits}.
-        # Legacy links (generated before the compact format) look like
-        # "{message_id}/{filename}?hash={hash}" — a slash IS expected there
-        # and the else-branch below parses them. Only reject slash-paths that
-        # do NOT start with the legacy "{digits}/" pattern, i.e. genuine named
-        # routes that fell through to this catch-all.
-        if '/' in path and not re.match(r'^\d+/', path):
+        # Stream URLs are always a single path segment: {6chars}{digits}.
+        # Any path with a slash is a named route that reached the catch-all
+        # accidentally — return 404 rather than trying to parse it as a stream.
+        if '/' in path:
             raise web.HTTPNotFound()
         # Hash is everything before the trailing digit run (message_id).
         # File unique_ids can be 6, 15, 16+ chars — accept any hash
@@ -296,9 +288,7 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         class_cache[faster_client] = tg_connect
     file_id = await tg_connect.get_file_properties(message_id)
 
-    if not secure_hash or not _hmac.compare_digest(
-        file_id.unique_id[:len(secure_hash)], secure_hash
-    ):
+    if not secure_hash or file_id.unique_id[:len(secure_hash)] != secure_hash:
         logging.debug(f"Invalid hash for message with ID {message_id}")
         raise InvalidHash
 
@@ -347,16 +337,6 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         "Content-Disposition": f'{disposition}; filename="{file_name}"',
         "Accept-Ranges": "bytes",
     }
-
-    if request.method == "HEAD":
-        content_length = max(0, until_bytes - from_bytes + 1)
-        return web.Response(
-            status=206 if range_header else 200,
-            headers={
-                **common_headers,
-                "Content-Length": str(content_length),
-            },
-        )
 
     # Fast path: if the requested range fits entirely inside the cached file
     # header or tail, serve from memory and skip the Telegram round-trip.

@@ -12,10 +12,6 @@
                     shadow-2xl max-h-[90vh] flex flex-col">
           <form method="post" :action="'/admin/edit/' + editing.id"
                 class="flex flex-col min-h-0 flex-1 divide-y divide-white/5">
-            {# Hidden input carries the current lock state as a comma-separated
-               list so admin_edit() on the server knows which fields to preserve. #}
-            <input type="hidden" name="admin_locked"
-                   :value="editing.admin_locked.join(',')" />
             <header class="px-4 py-3 flex flex-col gap-2 flex-shrink-0">
               {# Title row — always full width with close on the right #}
               <div class="flex items-center gap-2">
@@ -79,19 +75,7 @@
                 <span class="font-semibold text-violet-300">AI: </span><span x-text="editing.aiReasoning"></span>
               </div>
               <label class="block">
-                <span class="text-xs uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                  Title
-                  <template x-if="editing.admin_locked.includes('title')">
-                    <span class="flex items-center gap-1 text-[10px] text-amber-400
-                                 bg-amber-400/10 px-1.5 py-0.5 rounded font-medium normal-case tracking-normal">
-                      🔒 locked
-                      <button type="button"
-                              @click.prevent="editing.admin_locked = editing.admin_locked.filter(f => f !== 'title')"
-                              class="text-amber-400/60 hover:text-amber-300 leading-none"
-                              title="Unlock — allow TMDB to overwrite">✕</button>
-                    </span>
-                  </template>
-                </span>
+                <span class="text-xs uppercase tracking-wider text-slate-400">Title</span>
                 <input type="text" name="title" required
                        x-model="editing.title"
                        class="mt-1 w-full px-3 py-2 rounded bg-ink-800/70 text-slate-100
@@ -100,19 +84,7 @@
               </label>
 
               <label class="block">
-                <span class="text-xs uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                  Year
-                  <template x-if="editing.admin_locked.includes('year')">
-                    <span class="flex items-center gap-1 text-[10px] text-amber-400
-                                 bg-amber-400/10 px-1.5 py-0.5 rounded font-medium normal-case tracking-normal">
-                      🔒 locked
-                      <button type="button"
-                              @click.prevent="editing.admin_locked = editing.admin_locked.filter(f => f !== 'year')"
-                              class="text-amber-400/60 hover:text-amber-300 leading-none"
-                              title="Unlock — allow TMDB to overwrite">✕</button>
-                    </span>
-                  </template>
-                </span>
+                <span class="text-xs uppercase tracking-wider text-slate-400">Year</span>
                 <input type="number" name="year" min="1900" max="2099"
                        x-model="editing.year"
                        class="mt-1 w-32 px-3 py-2 rounded bg-ink-800/70 text-slate-100
@@ -191,19 +163,7 @@
                   Series <span class="lowercase tracking-normal text-slate-500">(optional — groups into a /series/ page)</span>
                 </p>
                 <label class="block mb-2">
-                  <span class="text-[11px] uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                    Series title
-                    <template x-if="editing.admin_locked.includes('series_title')">
-                      <span class="flex items-center gap-1 text-[10px] text-amber-400
-                                   bg-amber-400/10 px-1.5 py-0.5 rounded font-medium normal-case tracking-normal">
-                        🔒 locked
-                        <button type="button"
-                                @click.prevent="editing.admin_locked = editing.admin_locked.filter(f => f !== 'series_title')"
-                                class="text-amber-400/60 hover:text-amber-300 leading-none"
-                                title="Unlock — allow TMDB to regroup">✕</button>
-                      </span>
-                    </template>
-                  </span>
+                  <span class="text-[11px] uppercase tracking-wider text-slate-500">Series title</span>
                   <input type="text" name="series_title"
                          placeholder="e.g. Three.js Journey"
                          x-model="editing.series_title"

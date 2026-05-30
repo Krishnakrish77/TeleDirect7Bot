@@ -15,13 +15,11 @@ from .hub_routes import routes as hub_routes
 from .admin_routes import routes as admin_routes
 from .auth_routes import routes as auth_routes
 from .watchlist_routes import routes as watchlist_routes
-from .playlist_routes import routes as playlist_routes
 from .cw_routes import routes as cw_routes
 from .wh_routes import routes as wh_routes
 from .ratings_routes import routes as ratings_routes
 from .dismiss_routes import routes as dismiss_routes
 from .stats_routes import routes as stats_routes
-from .spa_routes import routes as spa_routes
 
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
@@ -134,50 +132,6 @@ _GZIPPABLE = (
 )
 
 
-_SECURITY_HEADERS = {
-    # Prevent MIME-type sniffing — browsers must respect Content-Type.
-    "X-Content-Type-Options": "nosniff",
-    # Block legacy browsers from rendering the page inside a frame
-    # (clickjacking protection for the admin panel).
-    "X-Frame-Options": "SAMEORIGIN",
-    # Don't send the full Referrer URL to third-party origins (leaks
-    # file IDs and user tokens embedded in paths).
-    "Referrer-Policy": "strict-origin-when-cross-origin",
-    # Basic XSS filter for old IE/Edge (belt-and-suspenders alongside CSP).
-    "X-XSS-Protection": "1; mode=block",
-}
-
-
-@web.middleware
-async def security_middleware(request: web.Request, handler):
-    """Attach security headers to every HTML/JSON response.
-
-    Stream responses (byte-range audio/video) are left untouched so
-    the browser media pipeline is not disrupted.  HLS variant and
-    segment responses skip HSTS to avoid issues with local/dev proxies.
-    """
-    from main.vars import Var as _Var
-    response = await handler(request)
-    # Don't modify streaming or binary responses.
-    if not isinstance(response, web.Response):
-        return response
-    ctype = (response.content_type or "").lower()
-    if not (ctype.startswith("text/") or ctype.startswith("application/")):
-        return response
-    for k, v in _SECURITY_HEADERS.items():
-        response.headers.setdefault(k, v)
-    # HSTS — only when the operator has explicitly configured TLS.
-    # The previous check also fired for ON_HEROKU, which could set the
-    # header on local dev machines with Heroku env vars, causing browsers
-    # to upgrade all future requests to HTTPS and break local HTTP access.
-    if _Var.HAS_SSL:
-        response.headers.setdefault(
-            "Strict-Transport-Security",
-            "max-age=31536000; includeSubDomains",
-        )
-    return response
-
-
 @web.middleware
 async def gzip_middleware(request: web.Request, handler):
     response: web.StreamResponse = await handler(request)
@@ -216,19 +170,17 @@ def web_server():
     # benefits from compression on the way out.
     web_app = web.Application(
         client_max_size=30000000,
-        middlewares=[error_middleware, security_middleware, gzip_middleware],
+        middlewares=[error_middleware, gzip_middleware],
     )
     # Order matters: specific prefixes (hub, hls) first so they don't get
     # swallowed by the catch-all /{path:\S+} byte-stream route at the end.
     web_app.add_routes(auth_routes)
     web_app.add_routes(watchlist_routes)
-    web_app.add_routes(playlist_routes)
     web_app.add_routes(cw_routes)
     web_app.add_routes(wh_routes)
     web_app.add_routes(ratings_routes)
     web_app.add_routes(dismiss_routes)
     web_app.add_routes(stats_routes)
-    web_app.add_routes(spa_routes)
     web_app.add_routes(admin_routes)
     web_app.add_routes(hub_routes)
     web_app.add_routes(hls_routes)

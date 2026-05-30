@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
 import os
 import shutil
 import time
@@ -63,14 +62,10 @@ class HlsSession:
         self.audio_codec = audio_codec
         self.audio_index = audio_index
         self.work_dir = WORK_ROOT / str(message_id) / f"a{audio_index}"
-        # A fresh session must not inherit partial segments from a crashed
-        # previous process. Completed segments are an optimization, not state.
-        shutil.rmtree(self.work_dir, ignore_errors=True)
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.proc: Optional[asyncio.subprocess.Process] = None
         self.proc_lock = asyncio.Lock()
         self.last_request = time.monotonic()
-        self.segment_count = max(1, math.ceil(max(0.0, duration) / SEGMENT_SECONDS))
         # Segment number ffmpeg is currently producing FROM. Used to detect
         # backward-seek (need restart from the earlier point).
         self.start_segment = 0
@@ -97,49 +92,6 @@ class HlsSession:
             except ValueError:
                 continue
         return latest
-
-    def _discard_from(self, from_segment: int) -> None:
-        """Remove stale segments at/after a restart point.
-
-        ffmpeg writes segment files in-place. If a restart begins at segment N,
-        any old N+1 file would otherwise make N look complete before the new
-        writer has finished flushing it.
-        """
-        try:
-            files = list(self.work_dir.glob("*.ts"))
-        except OSError:
-            return
-        for f in files:
-            try:
-                if int(f.stem) >= from_segment:
-                    f.unlink(missing_ok=True)
-            except (OSError, ValueError):
-                continue
-
-    def _segment_ready(self, segment_n: int) -> bool:
-        """True only when segment_n is complete enough to serve."""
-        path = self.segment_path(segment_n)
-        try:
-            if not path.exists() or path.stat().st_size <= 0:
-                return False
-        except OSError:
-            return False
-
-        next_path = self.segment_path(segment_n + 1)
-        try:
-            if next_path.exists() and next_path.stat().st_size > 0:
-                return True
-        except OSError:
-            pass
-
-        # Last segment has no N+1 marker. Treat it as complete only after
-        # ffmpeg exits successfully, or when it is an existing on-disk segment
-        # from a completed run and no process is currently attached.
-        if segment_n >= self.segment_count - 1:
-            if self.proc is None:
-                return True
-            return self.proc.returncode == 0
-        return False
 
     # -- ffmpeg control ------------------------------------------------
 
@@ -216,7 +168,6 @@ class HlsSession:
 
     async def _start_unlocked(self, from_segment: int) -> None:
         await self._kill_proc_unlocked()
-        self._discard_from(from_segment)
         args = self._ffmpeg_args(from_segment)
         try:
             self.proc = await asyncio.create_subprocess_exec(
@@ -244,12 +195,12 @@ class HlsSession:
         ahead of the current production cursor."""
         self.last_request = time.monotonic()
         path = self.segment_path(segment_n)
-        if self._segment_ready(segment_n):
+        if path.exists() and path.stat().st_size > 0:
             return path
 
         async with self.proc_lock:
             # Re-check after acquiring the lock.
-            if self._segment_ready(segment_n):
+            if path.exists() and path.stat().st_size > 0:
                 return path
 
             need_restart = False
@@ -272,7 +223,9 @@ class HlsSession:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while loop.time() < deadline:
-            if self._segment_ready(segment_n):
+            if path.exists() and path.stat().st_size > 0:
+                # Tiny grace period for ffmpeg to finish flushing.
+                await asyncio.sleep(0.05)
                 return path
             await asyncio.sleep(0.25)
         return None

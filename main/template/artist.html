@@ -98,8 +98,8 @@
 var _artistTracks = [
   {% for t in tracks %}
   {
-    watchUrl: '/watch/{{ t.secure_hash }}{{ t.message_id }}',
-    streamUrl: '{{ Var.URL }}{{ t.secure_hash }}{{ t.message_id }}',
+    url: '/watch/{{ t.secure_hash }}{{ t.message_id }}',
+    stream: '{{ Var.URL }}{{ t.secure_hash }}{{ t.message_id }}',
     title: {{ (t.title or t.file_name) | clean_music_tag | tojson }},
     artist: {{ (t.artist or '') | clean_music_tag | tojson }},
     art: '/thumb/{{ t.secure_hash }}{{ t.message_id }}.jpg',
@@ -111,9 +111,9 @@ function _artistQueueAdd(idx)  { if (window._queueAddToEnd) window._queueAddToEn
 function _albumPlayArtist(idx) {
   if (typeof _cardPlayAudio === 'function') {
     var t = _artistTracks[idx];
-    if (t) _cardPlayAudio(t.streamUrl, t.watchUrl, t.title, t.artist, t.art);
+    if (t) _cardPlayAudio(t.stream, t.url, t.title, t.artist, t.art);
   } else {
-    window.location.href = _artistTracks[idx]?.watchUrl || '#';
+    window.location.href = _artistTracks[idx]?.url || '#';
   }
 }
   </script>

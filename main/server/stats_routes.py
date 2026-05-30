@@ -22,11 +22,6 @@ _env = Environment(
     enable_async=True,
 )
 
-import re as _re
-_env.filters["artist_slug"] = lambda s: _re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
-from main.utils.media_index import _person_slug as _mpslug
-_env.filters["person_slug"] = lambda s: _mpslug(s or "")
-
 _CW_KEY_RE = re.compile(r'^[A-Za-z0-9_-]*[A-Za-z_-](\d+)$')
 
 _DAYS   = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -226,14 +221,7 @@ async def stats_page(request: web.Request) -> web.Response:
     # ── Temporal patterns ─────────────────────────────────────────────────
     dow_counts:  Counter = Counter()   # 0=Mon … 6=Sun
     hour_counts: Counter = Counter()   # 0-23
-    from datetime import date as _date_cls
-    _today_utc     = datetime.utcnow().date()
-    _this_monday   = _today_utc - timedelta(days=_today_utc.weekday())
-    _heatmap_start = _this_monday - timedelta(weeks=12)
-    # Align week_start to the Monday that opens the heatmap grid so every
-    # cell in the grid can find its entry in daily_counts (no silent gap at
-    # the start and no cut-off at the end of the current week).
-    week_start     = datetime(_heatmap_start.year, _heatmap_start.month, _heatmap_start.day)
+    week_start  = datetime.utcnow() - timedelta(weeks=12)
     daily_counts: defaultdict = defaultdict(int)
 
     for h in history:
@@ -318,15 +306,18 @@ async def stats_page(request: web.Request) -> web.Response:
     finished   = len(history_mids)
     completion = int(finished / started * 100) if started else 0
 
-    # ── Activity heatmap — Mon 12 weeks ago → today (inclusive) ─────────
-    # Grid always ends on the current day so this week's activity is visible.
+    # ── Activity heatmap (12 weeks) — use UTC dates to match daily_counts ──
     active_days = sum(1 for v in daily_counts.values() if v > 0)
     heatmap = []
-    _hday = _heatmap_start
-    for _ in range((_today_utc - _heatmap_start).days + 1):
-        dk = _hday.strftime("%Y-%m-%d")
-        heatmap.append({"date": dk, "count": daily_counts.get(dk, 0), "dow": _hday.weekday()})
-        _hday += timedelta(days=1)
+    from datetime import date as _date
+    _today_utc = datetime.utcnow().date()
+    monday = (_today_utc - timedelta(weeks=12))
+    monday -= timedelta(days=monday.weekday())
+    for _ in range(12 * 7):
+        dk = monday.strftime("%Y-%m-%d")
+        heatmap.append({"date": dk, "count": daily_counts.get(dk, 0),
+                         "dow": monday.weekday()})
+        monday += timedelta(days=1)
 
     # ── Streak stats ──────────────────────────────────────────────────────
     # current_streak: consecutive days ending on the most recent active day
@@ -348,6 +339,7 @@ async def stats_page(request: web.Request) -> web.Response:
     _sorted_days = sorted(_all_active_days)
     _lrun = 0
     _lprev = None
+    from datetime import date as _date_cls
     for _ds in _sorted_days:
         _dd = _date_cls.fromisoformat(_ds)
         if _lprev is not None and (_dd - _lprev).days == 1:
@@ -402,7 +394,6 @@ async def stats_page(request: web.Request) -> web.Response:
         best_day     = best_day_name,
         tod_label    = tod_label,
         tod_emoji    = tod_emoji,
-        timed_plays  = timed_plays,
         completion      = completion,
         personality     = personality,
         heatmap         = heatmap,

@@ -86,37 +86,38 @@
                    ? 'bg-brand-500/15 text-white'
                    : 'text-slate-200 hover:bg-ink-800'"
                  class="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors">
-                {# Poster: TMDB → /thumb/ fallback → placeholder icon.
-                   x-show (not x-if) so DOM nodes are never inserted/removed;
-                   x-if bakes the active branch into HTMX sessionStorage
-                   snapshots and Alpine re-inserts it on history restore → duplicates. #}
-                <img x-show="it.poster_path"
-                     :src="it.poster_path ? 'https://image.tmdb.org/t/p/w92' + it.poster_path : ''"
-                     alt="" loading="lazy"
-                     class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
-                <div x-show="!it.poster_path"
-                     class="w-8 h-12 rounded bg-ink-800 flex-shrink-0 relative overflow-hidden">
-                  <img :src="'/thumb/' + it.secure_hash + it.message_id + '.jpg'" alt=""
+                {# Poster: TMDB → /thumb/ fallback → placeholder icon #}
+                <template x-if="it.poster_path">
+                  <img :src="'https://image.tmdb.org/t/p/w92' + it.poster_path" alt=""
                        loading="lazy"
-                       @error="$el.style.opacity='0'; $el.nextElementSibling.style.display='flex'"
-                       class="w-full h-full object-cover" />
-                  {# Placeholder — hidden until the img above fails to load #}
-                  <div style="display:none"
-                       class="absolute inset-0 items-center justify-center text-slate-600">
-                    <svg x-show="it.kind === 'audio'"
-                         xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
-                      <path stroke-linecap="round" stroke-linejoin="round"
-                            d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
-                    </svg>
-                    <svg x-show="it.kind !== 'audio'"
-                         xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
-                      <path stroke-linecap="round" stroke-linejoin="round"
-                            d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
-                    </svg>
+                       class="w-8 h-12 rounded object-cover bg-ink-800 flex-shrink-0" />
+                </template>
+                <template x-if="!it.poster_path">
+                  <div class="w-8 h-12 rounded bg-ink-800 flex-shrink-0 relative overflow-hidden">
+                    <img :src="'/thumb/' + it.secure_hash + it.message_id + '.jpg'" alt=""
+                         loading="lazy"
+                         @error="$el.style.opacity='0'; $el.nextElementSibling.style.display='flex'"
+                         class="w-full h-full object-cover" />
+                    {# Placeholder — hidden until the img above fails to load #}
+                    <div style="display:none"
+                         class="absolute inset-0 items-center justify-center text-slate-600">
+                      <template x-if="it.kind === 'audio'">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
+                          <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+                        </svg>
+                      </template>
+                      <template x-if="it.kind !== 'audio'">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5" class="w-4 h-4">
+                          <path stroke-linecap="round" stroke-linejoin="round"
+                                d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                        </svg>
+                      </template>
+                    </div>
                   </div>
-                </div>
+                </template>
                 <div class="min-w-0 flex-1">
                   <p class="font-medium truncate" x-text="it.title"></p>
                   <p class="text-xs text-slate-500"
@@ -178,12 +179,6 @@
                class="flex items-center gap-2 px-3 py-3 text-sm
                       text-slate-300 hover:text-white hover:bg-ink-700/60 transition-colors">
               Watchlist
-            </a>
-            <a href="/playlists"
-               hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
-               class="flex items-center gap-2 px-3 py-3 text-sm
-                      text-slate-300 hover:text-white hover:bg-ink-700/60 transition-colors">
-              Playlists
             </a>
             <a href="/stats"
                hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
@@ -502,6 +497,37 @@
   </form>
 {% endblock %}
 
-{# hubSearch() is defined globally in partials/_mini_player.html so the search
-   suggestion dropdown keeps working after HTMX-boosted navigation (which swaps
-   only #main-content and would discard a script defined here). #}
+{% block scripts %}
+<script>
+function hubSearch() {
+  return {
+    suggestions: [],
+    suggestActive: -1,
+    _suggestTimer: null,
+    fetchSuggestions(val) {
+      clearTimeout(this._suggestTimer);
+      const v = (val || '').trim();
+      if (!v) { this.suggestions = []; this.suggestActive = -1; return; }
+      this._suggestTimer = setTimeout(async () => {
+        try {
+          const r = await fetch('/search/suggest?q=' + encodeURIComponent(v) + '&limit=6');
+          if (r.ok) { this.suggestions = await r.json(); this.suggestActive = -1; }
+        } catch (_) {}
+      }, 150);
+    },
+    moveSuggest(dir) {
+      if (!this.suggestions.length) return;
+      this.suggestActive = (this.suggestActive + dir + this.suggestions.length) % this.suggestions.length;
+    },
+    pickSuggest(event) {
+      if (this.suggestActive >= 0 && this.suggestActive < this.suggestions.length) {
+        event.preventDefault();
+        window.location = this.suggestions[this.suggestActive].url;
+      }
+      this.closeSuggest();
+    },
+    closeSuggest() { this.suggestions = []; this.suggestActive = -1; },
+  };
+}
+</script>
+{% endblock %}

@@ -23,28 +23,6 @@
             if (window._tdWHRecord) window._tdWHRecord(_wpKey, _ttl);
             if (window._tdCWDelete) window._tdCWDelete(_wpKey);
           });
-          // Periodic CW backend save (every 30s) — mirrors the mini-player fix.
-          // Without this a skipped track leaves no backend record and the
-          // activity heatmap shows dark even though the user was listening.
-          var _audioCwT = 0;
-          video.addEventListener('timeupdate', function() {
-            if (video.currentTime > 5 && isFinite(video.duration) && video.duration > 0) {
-              var _now = Date.now();
-              if (_now - _audioCwT > 30000) {
-                _audioCwT = _now;
-                var _ttl = ((document.querySelector('h1') || {}).innerText || '').trim();
-                var _tok = window._tdToken ? window._tdToken() : null;
-                if (_tok && window._tdAuth && window._tdAuth.user) {
-                  fetch('/api/cw/' + encodeURIComponent(_wpKey), {
-                    method: 'POST',
-                    headers: {'Authorization': 'Bearer ' + _tok, 'Content-Type': 'application/json'},
-                    body: JSON.stringify({pos: Math.floor(video.currentTime), dur: Math.floor(video.duration), t: _now, title: _ttl}),
-                    keepalive: true,
-                  }).catch(function() {});
-                }
-              }
-            }
-          });
         })();
         history.replaceState(null, '', location.pathname);
 
@@ -71,12 +49,8 @@
           if (bg && !bg.paused) { bg.pause(); bg._primed = false; }
           var _np;
           try { _np = JSON.parse(localStorage.getItem('td:nowplaying') || 'null'); } catch(_) { _np = null; }
-          function _sameUrl(a, b) {
-            try { return new URL(a, location.origin).href === new URL(b, location.origin).href; }
-            catch(_) { return a === b; }
-          }
           var savedPos = (_np && _np.position > 0 &&
-                          (_sameUrl(_np.streamUrl, streamSrc) || _sameUrl(_np.url, location.href)))
+                          (_np.streamUrl === streamSrc || _np.url === location.href))
                          ? _np.position : 0;
           if (savedPos > 0) {
             video.addEventListener('loadedmetadata', function() {
@@ -108,8 +82,6 @@
           if (bg && !bg._primed) { bg.src = streamSrc; bg.load(); bg._primed = true; }
         }, { once: false });
 
-        var _prevHandoff = window._handoffAudioToBg;
-        if (_prevHandoff) window.removeEventListener('pagehide', _prevHandoff);
         window._handoffAudioToBg = function() {
           if (!bg || video.paused) return;
           var seekTo = video.currentTime;
@@ -136,6 +108,7 @@
         // on every htmx.ajax navigation between audio tracks, so without this
         // each navigation would add another handler and all copies would fire
         // on page unload.
+        window.removeEventListener('pagehide', window._handoffAudioToBg);
         window.addEventListener('pagehide', window._handoffAudioToBg);
         {% endif %}
 
