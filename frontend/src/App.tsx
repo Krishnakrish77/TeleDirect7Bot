@@ -271,7 +271,11 @@ function App() {
   }, [requireAuth, toggle, user]);
 
   const activeView = params.view || '';
-  const activeFilters = Boolean(params.q || params.tag || params.quality || params.genre || params.year || params.view);
+  const activeFilters = Boolean(
+    params.q || params.tag || params.quality || params.genre || params.year || params.view || params.sort !== 'newest',
+  );
+  const initialLoading = loading && !data;
+  const showContent = Boolean(data) && !error;
 
   return (
     <div className="app-shell">
@@ -292,7 +296,7 @@ function App() {
         }}
       />
 
-      <main className="hub-main">
+      <main className="hub-main" aria-busy={loading}>
         {data?.mode === 'shelves' && data.heroes.length > 0 && (
           <HeroStage heroes={data.heroes} />
         )}
@@ -333,10 +337,10 @@ function App() {
           <ContinueWatching />
         )}
 
-        {loading && <LoadingRows />}
+        {initialLoading && <LoadingRows />}
         {error && <ErrorPanel message={error} />}
 
-        {!loading && !error && data?.mode === 'shelves' && (
+        {showContent && data?.mode === 'shelves' && (
           <div className="shelf-stack">
             {data.shelves.map((shelf) => (
               <ShelfRow
@@ -349,7 +353,7 @@ function App() {
           </div>
         )}
 
-        {!loading && !error && data?.mode === 'grid' && (
+        {showContent && data?.mode === 'grid' && (
           <GridView
             data={data}
             saved={saved}
@@ -552,6 +556,7 @@ function FilterBar({
   setQuery: (next: string) => void;
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
 }) {
+  const hasFilters = Boolean(query || params.tag || params.quality || params.genre || params.year || params.view || params.sort !== 'newest');
   const clearAll = () => {
     setQuery('');
     update({
@@ -601,9 +606,16 @@ function FilterBar({
           ))}
         </select>
       </label>
-      {(query || params.tag || params.quality || params.genre || params.year || params.view || params.sort !== 'newest') && (
-        <button className="text-button" type="button" onClick={clearAll}>Reset</button>
-      )}
+      <button
+        className={hasFilters ? 'text-button' : 'text-button filter-reset-placeholder'}
+        type="button"
+        onClick={clearAll}
+        disabled={!hasFilters}
+        aria-hidden={!hasFilters}
+        tabIndex={hasFilters ? undefined : -1}
+      >
+        Reset
+      </button>
     </div>
   );
 }

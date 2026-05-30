@@ -328,6 +328,7 @@ img {
 
 .hub-main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: clamp(1.8rem, 3vw, 3rem);
   width: min(100%, 1600px);
   margin: 0 auto;
@@ -505,6 +506,7 @@ img {
 .hub-toolbar {
   display: grid;
   gap: 0.8rem;
+  min-width: 0;
   margin-top: 0.2rem;
 }
 
@@ -513,8 +515,19 @@ img {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
   padding-bottom: 0.1rem;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hub-tabs::-webkit-scrollbar,
+.filter-bar::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -576,6 +589,7 @@ img {
 .filter-bar select {
   height: 36px;
   min-width: 6.2rem;
+  max-width: 100%;
   border: 0;
   outline: 0;
   color: #fff;
@@ -591,6 +605,11 @@ img {
   border-color: rgba(251, 113, 133, 0.28);
   color: #fecdd3;
   font-weight: 800;
+}
+
+.filter-reset-placeholder {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .section-heading {
@@ -985,12 +1004,22 @@ img {
 }
 
 @media (max-width: 680px) {
+  .app-shell {
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-header {
+    min-height: 0;
+    padding: calc(0.55rem + env(safe-area-inset-top, 0px)) 0.85rem 0.65rem;
+  }
+
   .hub-main {
+    gap: 1.25rem;
     padding-inline: 0.85rem;
   }
 
   .hero-stage {
-    min-height: 560px;
+    min-height: min(430px, calc(100svh - 156px));
     margin-inline: -0.85rem;
   }
 
@@ -1002,22 +1031,42 @@ img {
 
   .hero-content {
     justify-content: flex-end;
-    min-height: 500px;
-    padding: 2rem 1rem 6.6rem;
+    min-height: min(390px, calc(100svh - 186px));
+    padding: 1.35rem 1rem 5.4rem;
   }
 
   .hero-content h1 {
-    max-width: 11ch;
+    max-width: 12ch;
+    font-size: clamp(2rem, 12vw, 3.4rem);
   }
 
   .hero-overview {
+    margin-top: 0.7rem;
+    font-size: 0.95rem;
+    line-height: 1.45;
     -webkit-line-clamp: 2;
+  }
+
+  .hero-meta {
+    margin-top: 0.8rem;
+  }
+
+  .hero-actions {
+    gap: 0.55rem;
+    margin-top: 1rem;
+  }
+
+  .primary-action,
+  .secondary-action {
+    min-height: 42px;
+    padding-inline: 0.85rem;
   }
 
   .hero-strip {
     left: 1rem;
     right: 1rem;
     grid-auto-columns: 48px;
+    bottom: 0.75rem;
   }
 
   .hero-strip button {
@@ -1025,21 +1074,92 @@ img {
     height: 66px;
   }
 
+  .hub-tabs,
+  .card-row,
+  .continue-row {
+    margin-inline: -0.85rem;
+    padding-inline: 0.85rem;
+  }
+
+  .hub-tabs {
+    min-height: 40px;
+    align-items: stretch;
+  }
+
+  .hub-toolbar {
+    gap: 0.7rem;
+  }
+
+  .filter-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .filter-heading,
+  .filter-bar .text-button {
+    grid-column: 1 / -1;
+    min-width: 0;
+    min-height: 54px;
+  }
+
+  .filter-heading {
+    justify-content: center;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(21, 23, 26, 0.66);
+  }
+
+  .filter-reset-placeholder {
+    display: none;
+  }
+
   .filter-bar label {
     grid-template-columns: 1fr;
     gap: 0;
-    min-width: 7.5rem;
+    width: auto;
+    min-width: 0;
+    min-height: 54px;
     padding: 0.35rem 0.55rem;
   }
 
   .filter-bar select {
     width: 100%;
+    min-width: 0;
     height: 28px;
     padding: 0;
+    font-size: 16px;
+    line-height: 1.2;
+  }
+
+  .section-heading {
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.65rem;
+  }
+
+  .section-heading h2 {
+    font-size: 1.18rem;
+  }
+
+  .card-row {
+    grid-auto-columns: clamp(136px, 42vw, 180px);
+    gap: 0.75rem;
+  }
+
+  .continue-row {
+    grid-auto-columns: clamp(220px, 72vw, 320px);
+  }
+
+  .card-copy {
+    min-height: 4.25rem;
   }
 
   .media-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem 0.65rem;
   }
 
   .save-button {
