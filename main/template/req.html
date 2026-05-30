@@ -3,6 +3,7 @@
 {% block title %}{{ heading }}{% endblock %}
 
 {% block head_extra %}{% include "watch/_styles.html" %}{% endblock %}
+{% block main_class %}{% if is_audio %}td-audio-watch-main{% else %}td-video-watch-main{% endif %}{% endblock %}
 
 {% block content %}
   <div class="w-full max-w-4xl lg:max-w-5xl">

@@ -408,9 +408,34 @@
     if (bar) bar.style.display = 'none';
   }
 
-  // Mini-player link: expand to watch page via htmx swap (bgAudio persists).
-  // Hide the fixed mobile bar before the swap so mobile browsers don't repaint the
-  // audio page under a backdrop-filter layer and then immediately resize it.
+  function _mpPersistPosition() {
+    if (!_bgAudio) return;
+    try {
+      var np = JSON.parse(localStorage.getItem(NP_KEY) || 'null');
+      if (np && _bgAudio.currentTime > 0) {
+        np.position = Math.floor(_bgAudio.currentTime);
+        if (_bgAudio.currentSrc || _bgAudio.src) np.streamUrl = _bgAudio.currentSrc || _bgAudio.src;
+        if (np.url) np.url = new URL(np.url, location.origin).href;
+        localStorage.setItem(NP_KEY, JSON.stringify(np));
+      }
+    } catch(_) {}
+  }
+
+  function _mpUseFullWatchLoad() {
+    var ua = navigator.userAgent || '';
+    var mobileViewport = false;
+    try {
+      mobileViewport = window.matchMedia &&
+        (window.matchMedia('(max-width: 767px)').matches ||
+         window.matchMedia('(max-height: 480px)').matches ||
+         window.matchMedia('(pointer: coarse)').matches);
+    } catch(_) {}
+    return /Android/i.test(ua) || mobileViewport;
+  }
+
+  // Mini-player link: expand to watch page via htmx swap on desktop. On real
+  // mobile browsers, a main-content HTMX swap can leave stale album/hub pixels
+  // in GPU layers below the audio controls, so use a normal navigation there.
   var _mpLinkEl = document.getElementById('_mp-link');
   if (_mpLinkEl) {
     _mpLinkEl.addEventListener('click', function(e) {
@@ -418,8 +443,13 @@
       try { np = JSON.parse(localStorage.getItem(NP_KEY) || 'null'); } catch(_) { np = null; }
       if (!np || !np.url || !_bgAudio) return; // fallback to default nav
       e.preventDefault();
-      window._mpAllowWatchAjax = true;
+      _mpPersistPosition();
       _mpHideBar();
+      if (_mpUseFullWatchLoad() || typeof htmx === 'undefined') {
+        window.location.href = np.url;
+        return;
+      }
+      window._mpAllowWatchAjax = true;
       htmx.ajax('GET', np.url, {
         target: '#main-content',
         swap: 'outerHTML settle:0ms',
@@ -459,8 +489,10 @@
   };
 
   function _mpInit() {
+    var onWatchPage = location.pathname.startsWith('/watch/');
+    document.body.classList.toggle('td-watch-page', onWatchPage);
     // On the watch page: hide bar + reset padding (player is on the page itself).
-    if (location.pathname.startsWith('/watch/')) {
+    if (onWatchPage) {
       _mpHideBar();
       return;
     }

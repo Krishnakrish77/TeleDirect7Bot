@@ -71,6 +71,8 @@
       #main-content{min-height:100svh}
       @supports not (min-height:1svh){ #main-content{min-height:100vh} }
       .wl-btn{color:rgba(255,255,255,.55)}.wl-btn.wl-saved{color:#f97316;opacity:1!important}
+      body.td-watch-page{padding-bottom:0!important}
+      body.td-watch-page #_mini-player{display:none!important}
       /* Audio player text centering — text-align:center is silently ignored by
          iOS Safari on elements using display:-webkit-box (line-clamp utilities).
          !important forces it; media queries revert to left for desktop/landscape. */
@@ -109,6 +111,17 @@
         .td-audio-art .flip-card-back{display:none;position:absolute;inset:0}
         .td-audio-art .flip-card-inner.flipped .flip-card-front{display:none}
         .td-audio-art .flip-card-inner.flipped .flip-card-back{display:flex}
+        /* Real mobile GPUs can keep the previous HTMX page in a stale
+           composited layer below the audio controls. Give the watch page a
+           solid, isolated paint surface so old album/hub pixels cannot show
+           through transparent regions while the browser is repainting. */
+        #main-content.td-audio-watch-main{
+          position:relative;
+          z-index:0;
+          isolation:isolate;
+          contain:paint;
+          background:#0b0c0e;
+        }
       }
       /* Safe-area insets — bypass Tailwind (scanner can't handle nested env() commas).
          All safe-area CSS lives here to ensure it compiles correctly. */
@@ -142,7 +155,7 @@
           hx-select="#main-content"
           hx-push-url="true"
           hx-swap="outerHTML"
-          class="flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6">
+          class="flex flex-col items-center px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 {% block main_class %}{% endblock %}">
       {% block content %}{% endblock %}
     </main>
 

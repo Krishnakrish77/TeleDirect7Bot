@@ -71,8 +71,12 @@
           if (bg && !bg.paused) { bg.pause(); bg._primed = false; }
           var _np;
           try { _np = JSON.parse(localStorage.getItem('td:nowplaying') || 'null'); } catch(_) { _np = null; }
+          function _sameUrl(a, b) {
+            try { return new URL(a, location.origin).href === new URL(b, location.origin).href; }
+            catch(_) { return a === b; }
+          }
           var savedPos = (_np && _np.position > 0 &&
-                          (_np.streamUrl === streamSrc || _np.url === location.href))
+                          (_sameUrl(_np.streamUrl, streamSrc) || _sameUrl(_np.url, location.href)))
                          ? _np.position : 0;
           if (savedPos > 0) {
             video.addEventListener('loadedmetadata', function() {
