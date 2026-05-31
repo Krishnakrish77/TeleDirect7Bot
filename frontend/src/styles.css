@@ -602,25 +602,24 @@ img {
   gap: 0.8rem;
   margin-top: 0.2rem;
   min-width: 0;
-  /* Reserve height for tabs + filter row so the grid below doesn't shift
-     down as hub data loads. Reduces CLS from ~0.09 to near zero. */
   min-height: 96px;
+  isolation: isolate;
 }
 
-.hub-tabs,
-.filter-bar {
+.hub-tabs {
   display: flex;
   align-items: center;
   gap: 0.45rem;
   overflow-x: auto;
   padding-bottom: 0.1rem;
+  scrollbar-gutter: stable;
 }
 
 .tab {
   min-height: 38px;
   padding: 0 0.85rem;
   border-radius: 8px;
-  background: rgba(21, 23, 26, 0.66);
+  background: var(--panel);
   border-color: var(--line);
   color: var(--muted);
   font-weight: 800;
@@ -636,7 +635,11 @@ img {
 }
 
 .filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.55rem;
+  overflow: visible;
 }
 
 .filter-heading {
@@ -644,6 +647,8 @@ img {
   align-items: center;
   gap: 0.45rem;
   flex: 0 0 auto;
+  min-height: 38px;
+  min-width: 8.5rem;
   color: var(--muted);
   font-size: 0.85rem;
   font-weight: 800;
@@ -665,7 +670,7 @@ img {
   padding-left: 0.7rem;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(21, 23, 26, 0.66);
+  background: var(--panel);
 }
 
 .filter-bar label span {
@@ -680,11 +685,14 @@ img {
   border: 0;
   outline: 0;
   color: #fff;
-  background: transparent;
+  background: var(--panel);
   padding-right: 0.55rem;
 }
 
 .text-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 38px;
   padding: 0 0.8rem;
   border-radius: 8px;
@@ -2055,24 +2063,60 @@ img {
     height: 66px;
   }
 
-  .filter-bar label {
-    grid-template-columns: 1fr;
-    gap: 0;
-    min-width: 7.5rem;
-    padding: 0.35rem 0.55rem;
+  .hub-toolbar {
+    gap: 0.65rem;
+    min-height: 0;
+  }
+
+  .hub-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.4rem;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .tab {
+    justify-content: center;
+    min-width: 0;
+    padding: 0 0.35rem;
+    font-size: 0.78rem;
   }
 
   .filter-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: stretch;
-    margin-inline: -0.85rem;
-    padding: 0 0.85rem 0.25rem;
-    overscroll-behavior-x: contain;
+    gap: 0.55rem;
+    margin-inline: 0;
+    padding: 0;
+    overflow: visible;
+    overscroll-behavior-x: auto;
+  }
+
+  .filter-heading {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .filter-bar label {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+    min-width: 0;
+    width: 100%;
+    padding: 0.45rem 0.55rem;
   }
 
   .filter-bar select {
+    min-width: 0;
     width: 100%;
-    height: 28px;
+    height: 32px;
     padding: 0;
+  }
+
+  .filter-bar .text-button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .media-grid {

@@ -9,7 +9,27 @@ import { DetailPage } from './components/detail';
 import { WatchPage } from './components/watch';
 import { MiniPlayer, NowPlayingSheet, QueueDrawer } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
-import type { HubCard, ViewValue } from './types';
+import type { HubCard, HubFilters, ViewValue } from './types';
+
+const DEFAULT_FILTERS: HubFilters = {
+  years: [],
+  qualities: [],
+  genres: [],
+  tags: [],
+  sortOptions: [
+    { value: 'newest', label: 'Newest' },
+    { value: 'oldest', label: 'Oldest' },
+    { value: 'title_az', label: 'Title A-Z' },
+    { value: 'title_za', label: 'Title Z-A' },
+    { value: 'largest', label: 'Largest' },
+  ],
+  views: [
+    { value: '', label: 'All' },
+    { value: 'movies', label: 'Movies' },
+    { value: 'series', label: 'Series' },
+    { value: 'music', label: 'Music' },
+  ],
+};
 
 function App() {
   const { location, navigate, onLinkClick } = useAppNavigation();
@@ -66,6 +86,7 @@ function App() {
   const canRenderHubData = data?.mode === expectedHubMode;
   const currentHubData = data;
   const hubLoading = loading && !canRenderHubData;
+  const filters = data?.filters ?? DEFAULT_FILTERS;
   const watchKey = route.kind === 'watch' ? route.key : '';
   const onBottomSearch = useCallback(() => {
     navigate('/app');
@@ -104,12 +125,7 @@ function App() {
 
           <div className="hub-toolbar">
             <div className="hub-tabs" role="tablist" aria-label="Library views">
-              {(data?.filters.views || [
-                { value: '', label: 'All' },
-                { value: 'movies', label: 'Movies' },
-                { value: 'series', label: 'Series' },
-                { value: 'music', label: 'Music' },
-              ]).map((view) => (
+              {filters.views.map((view) => (
                 <button
                   key={view.value || 'all'}
                   type="button"
@@ -123,15 +139,14 @@ function App() {
               ))}
             </div>
 
-            {data && (
-              <FilterBar
-                data={data}
-                params={params}
-                query={query}
-                setQuery={setQuery}
-                update={update}
-              />
-            )}
+            <FilterBar
+              filters={filters}
+              catalogueSize={data?.catalogueSize ?? 0}
+              params={params}
+              query={query}
+              setQuery={setQuery}
+              update={update}
+            />
           </div>
 
           {currentHubData?.mode === 'shelves' && !activeFilters && (

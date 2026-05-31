@@ -2,7 +2,7 @@ import { MouseEvent, useCallback, useEffect, useState } from 'react';
 import { fetchContinueItems } from '../api';
 import { localAppHref } from '../navigation';
 import { BookmarkIcon, CheckIcon, ChevronRightIcon, FilmIcon, FilterIcon, MusicIcon, PlayIcon, XIcon } from '../icons';
-import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, ViewValue } from '../types';
+import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubFilters, HubParams, HubResponse } from '../types';
 
 export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
   const [active, setActive] = useState(0);
@@ -62,13 +62,15 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
 }
 
 export function FilterBar({
-  data,
+  filters,
+  catalogueSize,
   params,
   query,
   setQuery,
   update,
 }: {
-  data: HubResponse;
+  filters: HubFilters;
+  catalogueSize: number;
   params: HubParams;
   query: string;
   setQuery: (next: string) => void;
@@ -92,33 +94,33 @@ export function FilterBar({
     <div className="filter-bar">
       <div className="filter-heading">
         <FilterIcon />
-        <span>{data.catalogueSize.toLocaleString()} titles</span>
+        <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
       </div>
       <label>
         <span>Year</span>
         <select value={params.year || ''} onChange={(event) => update({ year: event.currentTarget.value ? Number(event.currentTarget.value) : null })}>
           <option value="">Any</option>
-          {data.filters.years.map((year) => <option key={year} value={year}>{year}</option>)}
+          {filters.years.map((year) => <option key={year} value={year}>{year}</option>)}
         </select>
       </label>
       <label>
         <span>Quality</span>
         <select value={params.quality} onChange={(event) => update({ quality: event.currentTarget.value })}>
           <option value="">Any</option>
-          {data.filters.qualities.map((quality) => <option key={quality} value={quality}>{quality}</option>)}
+          {filters.qualities.map((quality) => <option key={quality} value={quality}>{quality}</option>)}
         </select>
       </label>
       <label>
         <span>Genre</span>
         <select value={params.genre} onChange={(event) => update({ genre: event.currentTarget.value })}>
           <option value="">Any</option>
-          {data.filters.genres.map((genre) => <option key={genre} value={genre}>{genre}</option>)}
+          {filters.genres.map((genre) => <option key={genre} value={genre}>{genre}</option>)}
         </select>
       </label>
       <label>
         <span>Sort</span>
         <select value={params.sort} onChange={(event) => update({ sort: event.currentTarget.value })}>
-          {data.filters.sortOptions.map((option) => (
+          {filters.sortOptions.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </select>
