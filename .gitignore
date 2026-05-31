@@ -125,5 +125,8 @@ gen_session.session
 # Frontend dependencies / caches
 frontend/node_modules/
 
+# Frontend production build output
+main/server/static/app/
+
 # Local automation artifacts
 outputs/
