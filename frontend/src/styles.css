@@ -763,7 +763,6 @@ img {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
 }
 
 .media-card.poster .poster-wrap {
@@ -804,17 +803,6 @@ img {
   border-radius: 8px;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .poster-wrap img {
-    transition: transform 0.28s ease;
-  }
-
-  .media-card:hover .poster-wrap img,
-  .media-card:focus-visible .poster-wrap img {
-    transform: scale(1.045);
-  }
-}
-
 .card-badge {
   position: absolute;
   right: 0.45rem;
@@ -840,8 +828,7 @@ img {
 .save-button {
   top: 0.45rem;
   right: 0.45rem;
-  opacity: 0;
-  transition: opacity 0.16s ease, background 0.16s ease, color 0.16s ease;
+  opacity: 1;
 }
 
 .save-button.saved {
@@ -853,11 +840,6 @@ img {
 .forget-button svg {
   width: 16px;
   height: 16px;
-}
-
-.media-card:hover .save-button,
-.media-card:focus-visible .save-button {
-  opacity: 1;
 }
 
 .card-copy {
