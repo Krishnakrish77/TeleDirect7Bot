@@ -71,25 +71,6 @@ export function WatchPage({
   }
 
   if (isWatchVideo(data.item)) {
-    if (!data.reactVideoBeta && !data.item.reactVideoBeta) {
-      const video = data.item;
-      return (
-        <main className="watch-main">
-          <section className="watch-fallback">
-            <img src={video.posterUrl} alt="" decoding="async" />
-            <div>
-              <p className="eyebrow">Classic player</p>
-              <h1 dir="auto">{video.title}</h1>
-              <p>{video.overview || video.subtitle || 'Video playback is currently routed through the classic player.'}</p>
-              <a className="primary-action" href={video.classicHref || data.classicHref || video.href}>
-                <PlayIcon />
-                <span>Open player</span>
-              </a>
-            </div>
-          </section>
-        </main>
-      );
-    }
     return <VideoWatchPage video={data.item} />;
   }
 

@@ -58,6 +58,9 @@
       #_htmx-bar.htmx-complete{transform:scaleX(1);transition:transform .1s ease-out,opacity .3s .1s;opacity:0}
       [x-cloak]{display:none!important}
       .wl-btn{color:rgba(255,255,255,.55)}.wl-btn.wl-saved{color:#f97316;opacity:1!important}
+      #_ui-mode-switch{position:fixed;left:1rem;bottom:calc(4.75rem + env(safe-area-inset-bottom,0px));z-index:45;display:inline-flex;align-items:center;gap:.45rem;min-height:2.5rem;padding:0 .85rem;border:1px solid rgba(249,115,22,.42);border-radius:.5rem;background:rgba(11,12,14,.94);color:#fdba74;font-size:.875rem;font-weight:800;box-shadow:0 12px 28px rgba(0,0,0,.28)}
+      #_ui-mode-switch:hover,#_ui-mode-switch:focus-visible{background:rgba(249,115,22,.16);color:#fff;outline:none}
+      #_ui-mode-switch svg{width:1rem;height:1rem}
       /* Safe-area insets — bypass Tailwind (scanner can't handle nested env() commas).
          All safe-area CSS lives here to ensure it compiles correctly. */
       @supports(padding:env(safe-area-inset-top)){
@@ -80,6 +83,30 @@
            selection:bg-brand-500/40 selection:text-white"
   >
     <div id="_htmx-bar"></div>
+
+    <a id="_ui-mode-switch" href="/ui/react?next=/app" hx-boost="false" aria-label="Try the new UI">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M4 6h16M4 12h10M4 18h16"/>
+      </svg>
+      <span>Try new UI</span>
+    </a>
+    <script>
+    (function(){
+      var link = document.getElementById('_ui-mode-switch');
+      if (!link) return;
+      function reactPath(path, search) {
+        if (path === '/' || path === '') return '/app' + (search || '');
+        if (path.indexOf('/watch/') === 0) return '/app' + path + (search || '');
+        if (/^\/(movie|series|album|artist|person)\//.test(path)) {
+          return '/app' + path + (search || '');
+        }
+        return '/app';
+      }
+      link.href = '/ui/react?next=' + encodeURIComponent(reactPath(location.pathname, location.search));
+    })();
+    </script>
 
     {# hx-boost: intercept internal link clicks and swap only <main> via AJAX
        so the persistent bgAudio element (outside main) keeps playing.

@@ -54,6 +54,7 @@ export function Header({
   searchRef,
   accountOpen,
   setAccountOpen,
+  classicUiHref,
   onSearchSubmit,
   onSignIn,
   onSignOut,
@@ -65,6 +66,7 @@ export function Header({
   searchRef: RefObject<HTMLInputElement | null>;
   accountOpen: boolean;
   setAccountOpen: Dispatch<SetStateAction<boolean>>;
+  classicUiHref: string;
   onSearchSubmit: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
@@ -135,6 +137,9 @@ export function Header({
       </form>
 
       <div className="header-actions">
+        <a className="ui-switch-button" href={classicUiHref}>
+          <span>Classic UI</span>
+        </a>
         {user ? (
           <div className="account-menu-wrap" ref={accountRef}>
             <button

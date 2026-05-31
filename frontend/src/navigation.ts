@@ -56,6 +56,21 @@ export function localAppHref(href: string | null): string | null {
   return href;
 }
 
+export function classicPathForApp(pathname: string, search: string): string {
+  if (pathname === '/app' || pathname === '/static/app/app') {
+    return `/${search}`;
+  }
+  const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);
+  if (watch) return `/watch/${watch[1]}${search}`;
+  const detail = pathname.match(/^\/app\/(movie|series|album|artist|person)\/([^/?#]+)/);
+  if (detail) return `/${detail[1]}/${detail[2]}${search}`;
+  return '/';
+}
+
+export function uiModeHref(mode: 'react' | 'classic', nextPath: string): string {
+  return `/ui/${mode}?next=${encodeURIComponent(nextPath)}`;
+}
+
 interface AppLocation {
   pathname: string;
   search: string;

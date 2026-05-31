@@ -290,6 +290,28 @@ img {
   opacity: 0.55;
 }
 
+.ui-switch-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 0.78rem;
+  border: 1px solid rgba(249, 115, 22, 0.42);
+  border-radius: 8px;
+  background: rgba(249, 115, 22, 0.14);
+  color: #fdba74;
+  font-size: 0.84rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ui-switch-button:hover,
+.ui-switch-button:focus-visible {
+  background: rgba(249, 115, 22, 0.22);
+  color: #fff;
+  outline: none;
+}
+
 .profile-chip {
   display: inline-flex;
   align-items: center;
@@ -2295,6 +2317,12 @@ img {
     grid-row: 1;
   }
 
+  .ui-switch-button {
+    min-height: 36px;
+    padding: 0 0.62rem;
+    font-size: 0.76rem;
+  }
+
   .profile-chip strong {
     display: none;
   }
@@ -2473,6 +2501,12 @@ img {
 
   .signin-button span {
     display: none;
+  }
+
+  .ui-switch-button span {
+    max-width: 4.4rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .watch-main {

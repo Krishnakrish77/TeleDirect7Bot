@@ -42,6 +42,7 @@ _SORT_OPTIONS = [
 
 _VALID_VIEWS = {"", "list", "movies", "series", "music"}
 _APP_ROUTE_RE = re.compile(r"^/app(?:/.*)?$")
+_UI_COOKIE = "td_ui"
 
 
 @routes.get("/robots.txt")
@@ -124,9 +125,43 @@ def _app_watch_url(item: HubItem) -> str:
 
 
 def _play_url(item: HubItem) -> str:
-    if (item.media_kind or "") == "audio":
-        return _app_watch_url(item)
-    return _app_watch_url(item) if Var.REACT_VIDEO_BETA else _watch_url(item)
+    return _app_watch_url(item)
+
+
+def _safe_next_url(raw: str | None, fallback: str) -> str:
+    if not raw or not raw.startswith("/") or raw.startswith("//"):
+        return fallback
+    if "\r" in raw or "\n" in raw:
+        return fallback
+    return raw
+
+
+def _ui_redirect(mode: str, next_url: str) -> web.HTTPFound:
+    response = web.HTTPFound(next_url)
+    response.set_cookie(
+        _UI_COOKIE,
+        mode,
+        max_age=60 * 60 * 24 * 365,
+        path="/",
+        samesite="Lax",
+    )
+    return response
+
+
+@routes.get("/ui/react")
+async def use_react_ui(request: web.Request) -> web.Response:
+    next_url = _safe_next_url(request.query.get("next"), "/app")
+    if not next_url.startswith("/app"):
+        next_url = "/app"
+    return _ui_redirect("react", next_url)
+
+
+@routes.get("/ui/classic")
+async def use_classic_ui(request: web.Request) -> web.Response:
+    next_url = _safe_next_url(request.query.get("next"), "/")
+    if next_url.startswith("/app"):
+        next_url = "/"
+    return _ui_redirect("classic", next_url)
 
 
 def _detail_url(item: HubItem) -> str:
@@ -403,7 +438,6 @@ async def api_me(request: web.Request) -> web.Response:
         "app": {
             "name": "TeleDirect",
             "spaPath": "/app",
-            "reactVideoBeta": Var.REACT_VIDEO_BETA,
         },
     })
 
@@ -1039,7 +1073,6 @@ def _video_watch_payload(item: HubItem) -> dict:
         "duration": item.duration or 0,
         "resumeKey": f"{item.secure_hash}{item.message_id}",
         "metadata": _meta_payload(item),
-        "reactVideoBeta": Var.REACT_VIDEO_BETA,
     }
 
 
@@ -1056,7 +1089,6 @@ async def api_watch(request: web.Request) -> web.Response:
     if (item.media_kind or "") != "audio":
         return _json({
             "mediaKind": item.media_kind or "video",
-            "reactVideoBeta": Var.REACT_VIDEO_BETA,
             "classicHref": _watch_url(item),
             "item": _video_watch_payload(item),
         })

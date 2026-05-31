@@ -260,8 +260,9 @@ export function ContinueWatching() {
         {entries.map((entry) => {
           const percent = Math.max(4, Math.min(94, Math.round((entry.pos / entry.dur) * 100)));
           const title = entry.series_title || entry.title;
+          const watchHref = entry.watch_url.replace(/^\/watch\//, '/app/watch/');
           return (
-            <a key={entry.key} href={entry.watch_url} className="continue-card">
+            <a key={entry.key} href={watchHref} className="continue-card">
               <img src={entry.poster_path ? `https://image.tmdb.org/t/p/w342${entry.poster_path}` : entry.thumb_url} alt="" loading="lazy" decoding="async" />
               <button
                 type="button"

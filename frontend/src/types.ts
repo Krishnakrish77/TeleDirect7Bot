@@ -230,12 +230,10 @@ export interface WatchVideo {
     imdbHref: string;
     trailerKey: string;
   };
-  reactVideoBeta: boolean;
 }
 
 export interface WatchResponse {
   mediaKind: string;
-  reactVideoBeta?: boolean;
   classicHref?: string;
   item: WatchTrack | HubCard | WatchVideo;
   prev?: WatchTrack | null;
@@ -258,7 +256,6 @@ export interface MeResponse {
   app: {
     name: string;
     spaPath: string;
-    reactVideoBeta?: boolean;
   };
 }
 

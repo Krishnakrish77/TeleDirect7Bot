@@ -35,6 +35,7 @@ from main.vars import Var
 
 
 routes = web.RouteTableDef()
+_UI_COOKIE = "td_ui"
 
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
@@ -99,6 +100,22 @@ def _html(body: str, push_url: Optional[str] = None) -> web.Response:
         charset="utf-8",
         headers=headers,
     )
+
+
+def _prefers_react_ui(request: web.Request) -> bool:
+    return (
+        request.cookies.get(_UI_COOKIE) == "react"
+        and not _is_htmx(request)
+    )
+
+
+def _react_redirect(request: web.Request, app_path: str) -> web.HTTPFound | None:
+    if not _prefers_react_ui(request):
+        return None
+    if request.query_string:
+        joiner = "&" if "?" in app_path else "?"
+        app_path = f"{app_path}{joiner}{request.query_string}"
+    return web.HTTPFound(app_path)
 
 
 # ── Render cache ──────────────────────────────────────────────────────────
@@ -265,6 +282,10 @@ def _empty_text(params: dict) -> str:
 
 @routes.get("/")
 async def hub_home(request: web.Request) -> web.Response:
+    react_redirect = _react_redirect(request, "/app")
+    if react_redirect is not None:
+        raise react_redirect
+
     params = _parse_filters(request)
 
     # Native form submissions (Enter key on the search box) bypass htmx and
@@ -727,6 +748,10 @@ async def api_items(request: web.Request) -> web.Response:
 async def hub_movie(request: web.Request) -> web.Response:
     """One movie: list every upload variant so the user picks which to play."""
     key = request.match_info["key"]
+    react_redirect = _react_redirect(request, f"/app/movie/{key}")
+    if react_redirect is not None:
+        raise react_redirect
+
     variants = media_index.variants_for_movie(key)
     if not variants:
         raise web.HTTPNotFound(
@@ -761,6 +786,10 @@ async def hub_series(request: web.Request) -> web.Response:
     100+ episode catalogues.
     """
     key = request.match_info["key"]
+    react_redirect = _react_redirect(request, f"/app/series/{key}")
+    if react_redirect is not None:
+        raise react_redirect
+
     episodes = media_index.episodes_for_series(key)
     if not episodes:
         raise web.HTTPNotFound(
@@ -935,6 +964,10 @@ async def hub_series(request: web.Request) -> web.Response:
 async def hub_album(request: web.Request) -> web.Response:
     """One album: track listing."""
     key = request.match_info["key"]
+    react_redirect = _react_redirect(request, f"/app/album/{key}")
+    if react_redirect is not None:
+        raise react_redirect
+
     tracks = media_index.tracks_for_album(key)
     if not tracks:
         raise web.HTTPNotFound(text="Album not found in catalogue.")
@@ -980,6 +1013,10 @@ async def hub_album(request: web.Request) -> web.Response:
 async def hub_artist(request: web.Request) -> web.Response:
     """All tracks by a single artist."""
     slug = request.match_info["slug"]
+    react_redirect = _react_redirect(request, f"/app/artist/{slug}")
+    if react_redirect is not None:
+        raise react_redirect
+
     tracks = media_index.tracks_by_artist_slug(slug)
     if not tracks:
         raise web.HTTPNotFound(text="Artist not found in catalogue.")
@@ -997,6 +1034,10 @@ async def hub_artist(request: web.Request) -> web.Response:
 async def hub_person(request: web.Request) -> web.Response:
     """Filmography page: all titles featuring a cast member or director."""
     slug = request.match_info["slug"]
+    react_redirect = _react_redirect(request, f"/app/person/{slug}")
+    if react_redirect is not None:
+        raise react_redirect
+
     # Cache guard FIRST — avoid O(N×M) catalogue scans on every cache hit.
     cache_key = f"person:{slug}"
     body = _cache_get(cache_key)

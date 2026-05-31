@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { signOut } from './api';
-import { useAppNavigation, parseRoute, useHubParams } from './navigation';
+import { classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useDetail, useHub, useMe, useWatchlist } from './hooks/data';
 import { Header, PrimaryNav, SignInModal } from './components/layout';
@@ -89,6 +89,7 @@ function App() {
   const hubLoading = loading && !canRenderHubData;
   const filters = data?.filters ?? DEFAULT_FILTERS;
   const watchKey = route.kind === 'watch' ? route.key : '';
+  const classicUiHref = uiModeHref('classic', classicPathForApp(location.pathname, location.search));
   const onSearchSubmit = useCallback(() => {
     update({ q: query.trim(), offset: 0 });
   }, [query, update]);
@@ -103,6 +104,7 @@ function App() {
         searchRef={searchRef}
         accountOpen={accountOpen}
         setAccountOpen={setAccountOpen}
+        classicUiHref={classicUiHref}
         onSearchSubmit={onSearchSubmit}
         onSignIn={() => setSignInOpen(true)}
         onSignOut={async () => {
