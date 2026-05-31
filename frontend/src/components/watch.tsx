@@ -1,6 +1,6 @@
 import { TouchEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { fetchAudioTracks, fetchSubtitles, fetchWatch } from '../api';
-import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, MaximizeIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
+import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -251,6 +251,14 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const [showNext, setShowNext] = useState(false);
   const [nextCountdown, setNextCountdown] = useState(5);
   const [toast, setToast] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [autoplayNext, setAutoplayNext] = useState(() => {
+    try {
+      return localStorage.getItem('td:videoAutoplay') !== '0';
+    } catch (_) {
+      return true;
+    }
+  });
   const gestureRef = useRef({ x: 0, y: 0, t: 0, moved: false, lastTap: 0 });
 
   const sourceSrc = sourceMode === 'hls'
@@ -273,10 +281,18 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   }, [video.audioTrackBase, video.subtitleBase]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem('td:videoAutoplay', autoplayNext ? '1' : '0');
+    } catch (_) {
+      // Local preference only.
+    }
+  }, [autoplayNext]);
+
+  useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
     el.volume = volume;
-  }, [volume]);
+  }, [sourceSrc, volume]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -285,7 +301,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       const id = subtitles[index]?.id;
       track.mode = id && id === activeSub ? 'showing' : 'disabled';
     });
-  }, [activeSub, subtitles]);
+  }, [activeSub, sourceSrc, subtitles]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -373,10 +389,10 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       window.removeEventListener('beforeunload', onBeforeUnload);
       saveResume(true);
     };
-  }, [sourceMode, video]);
+  }, [sourceMode, sourceSrc, video]);
 
   useEffect(() => {
-    if (!showNext || !video.nextEpisode) return;
+    if (!showNext || !video.nextEpisode || !autoplayNext) return;
     setNextCountdown(5);
     const interval = window.setInterval(() => {
       setNextCountdown((current) => {
@@ -389,7 +405,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [showNext, video.nextEpisode]);
+  }, [autoplayNext, showNext, video.nextEpisode]);
 
   const toggleVideo = () => {
     const el = videoRef.current;
@@ -427,9 +443,14 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
 
   const toggleFullscreen = () => {
     const target = shellRef.current;
+    const el = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+    const enterNativeFullscreen = () => {
+      try { el?.webkitEnterFullscreen?.(); } catch (_) { /* Best-effort Safari fallback. */ }
+    };
     if (!target) return;
     if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
-    else target.requestFullscreen?.().catch(() => undefined);
+    else if (target.requestFullscreen) target.requestFullscreen().catch(enterNativeFullscreen);
+    else enterNativeFullscreen();
   };
 
   const shareVideo = async () => {
@@ -551,7 +572,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
 
         {showNext && video.nextEpisode && (
           <div className="next-episode-card">
-            <p className="eyebrow">Up next · {nextCountdown}s</p>
+            <p className="eyebrow">{autoplayNext ? `Up next - ${nextCountdown}s` : 'Up next'}</p>
             <strong>{video.nextEpisode.title}</strong>
             <div>
               <a className="primary-action" href={video.nextEpisode.playHref}>
@@ -585,7 +606,71 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           <button type="button" className="icon-button" onClick={toggleFullscreen} aria-label="Fullscreen">
             <MaximizeIcon />
           </button>
+          <button type="button" className="icon-button" onClick={() => setMenuOpen((open) => !open)} aria-label="More video options" aria-expanded={menuOpen}>
+            <MoreVerticalIcon />
+          </button>
         </div>
+
+        {menuOpen && (
+          <div className="video-options-menu" role="menu" aria-label="Video options">
+            <button
+              type="button"
+              className="video-menu-row"
+              role="menuitemcheckbox"
+              aria-checked={autoplayNext}
+              onClick={() => setAutoplayNext((enabled) => !enabled)}
+            >
+              <span>Autoplay next</span>
+              <strong>{autoplayNext ? 'On' : 'Off'}</strong>
+            </button>
+            <label className="video-menu-row">
+              <span>Captions</span>
+              <select value={activeSub} onChange={(event) => setActiveSub(event.currentTarget.value)} disabled={!subtitles.length} aria-label="Captions">
+                <option value="">Off</option>
+                {subtitles.map((track) => (
+                  <option key={track.id} value={track.id}>{track.label || track.language || track.id}</option>
+                ))}
+              </select>
+            </label>
+            <label className="video-menu-row">
+              <span>Audio</span>
+              <select
+                value={audioIndex}
+                onChange={(event) => {
+                  setAudioIndex(Number(event.currentTarget.value));
+                  setSourceMode('hls');
+                }}
+                disabled={!audioTracks.length}
+                aria-label="Audio track"
+              >
+                <option value={0}>Default</option>
+                {audioTracks.map((track) => (
+                  <option key={track.index} value={track.index}>{track.label || track.language || `Track ${track.index + 1}`}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="video-menu-row" role="menuitem" onClick={() => setSourceMode(sourceMode === 'direct' ? 'hls' : 'direct')}>
+              <span>Source</span>
+              <strong>{sourceMode === 'direct' ? 'Direct' : 'HLS'}</strong>
+            </button>
+            <a className="video-menu-row" role="menuitem" href={video.classicHref}>
+              <span>Classic player</span>
+              <strong>Open</strong>
+            </a>
+            <a className="video-menu-row" role="menuitem" href={video.vlcHref}>
+              <span>VLC</span>
+              <strong>Open</strong>
+            </a>
+            <a className="video-menu-row" role="menuitem" href={video.downloadHref} download>
+              <span>Download</span>
+              <strong>File</strong>
+            </a>
+            <button type="button" className="video-menu-row" role="menuitem" onClick={shareVideo}>
+              <span>Share</span>
+              <strong>Link</strong>
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="video-actions">

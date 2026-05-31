@@ -1,3 +1,18 @@
+    var TD_VIDEO_AUTOPLAY_KEY = "td:videoAutoplay";
+
+    function tdVideoAutoplayNextEnabled() {
+      try { return localStorage.getItem(TD_VIDEO_AUTOPLAY_KEY) !== "0"; }
+      catch (_) { return true; }
+    }
+
+    function tdSetVideoAutoplayNextEnabled(enabled) {
+      try { localStorage.setItem(TD_VIDEO_AUTOPLAY_KEY, enabled ? "1" : "0"); }
+      catch (_) {}
+      window.dispatchEvent(new CustomEvent("td:video-autoplay-change", {
+        detail: { enabled: enabled },
+      }));
+    }
+
     {% if next_ep %}
     function attachNextEpisode(video) {
       const card = document.getElementById("nextEpCard");
@@ -10,35 +25,62 @@
       const DELAY = 5;
       let timer = null;
       let cancelled = false;
+      let ended = false;
 
       const hideCard = () => {
         cancelled = true;
+        ended = false;
         clearInterval(timer);
         card.style.display = "none";
       };
 
-      cancelBtn.addEventListener("click", hideCard);
+      const renderAutoplayOff = () => {
+        clearInterval(timer);
+        if (countEl) countEl.textContent = "autoplay off";
+        if (bar) {
+          bar.style.transition = "none";
+          bar.style.width = "100%";
+        }
+      };
 
-      video.addEventListener("ended", () => {
-        if (cancelled) return;
-        card.style.display = "block";
+      const startCountdown = () => {
+        clearInterval(timer);
+        if (!tdVideoAutoplayNextEnabled()) {
+          renderAutoplayOff();
+          return;
+        }
         let remaining = DELAY;
-        countEl.textContent = remaining;
-        bar.style.transition = "none";
-        bar.style.width = "100%";
-        // Kick off CSS transition on next frame
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          bar.style.transition = `width ${DELAY}s linear`;
-          bar.style.width = "0%";
-        }));
+        if (countEl) countEl.textContent = remaining + "s";
+        if (bar) {
+          bar.style.transition = "none";
+          bar.style.width = "100%";
+          // Kick off CSS transition on next frame.
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            bar.style.transition = `width ${DELAY}s linear`;
+            bar.style.width = "0%";
+          }));
+        }
         timer = setInterval(() => {
           remaining--;
-          countEl.textContent = remaining;
+          if (countEl) countEl.textContent = remaining + "s";
           if (remaining <= 0) {
             clearInterval(timer);
             window.location.href = NEXT_URL;
           }
         }, 1000);
+      };
+
+      cancelBtn.addEventListener("click", hideCard);
+      window.addEventListener("td:video-autoplay-change", () => {
+        if (!ended || cancelled || card.style.display === "none") return;
+        startCountdown();
+      });
+
+      video.addEventListener("ended", () => {
+        if (cancelled) return;
+        ended = true;
+        card.style.display = "block";
+        startCountdown();
       });
     }
     {% endif %}

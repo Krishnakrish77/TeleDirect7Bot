@@ -145,15 +145,15 @@
     //
     // A toast at the centre of the player surfaces the action so the
     // user has feedback without watching the seek bar.
-    // ── Mobile video tools menu ───────────────────────────────────────────
+    // ── Video tools menu ──────────────────────────────────────────────────
     // Injects a ⋮ button into Plyr's control bar that opens a small popup
-    // with Download, Open in VLC, and Load Subtitles — accessible without
-    // scrolling, useful in landscape where the page below the player is off-screen.
+    // with player actions that must remain available when only the Plyr
+    // element is fullscreened.
     function injectMobileVideoTools(video) {
-      if (window.innerWidth >= 640) return; // desktop has all controls visible below
       const plyrEl = video.closest(".plyr");
       const bar = plyrEl && plyrEl.querySelector(".plyr__controls");
       if (!bar) return;
+      if (plyrEl.querySelector("[data-td-video-tools-trigger]")) return;
 
       // Popup menu (hidden by default)
       const menu = document.createElement("div");
@@ -177,6 +177,7 @@
       const vlcIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>';
       const subIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"/></svg>';
       const shrIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>';
+      const autoIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M5 5v14l11-7-11-7Z"/><path stroke-linecap="round" d="M19 5v14"/></svg>';
 
       // PiP first — in-app feature, accessible even in fullscreen/landscape.
       // Safari/iOS exposes PiP through WebKit presentation APIs instead of
@@ -199,6 +200,27 @@
             video.webkitSetPresentationMode(mode);
           }
         }));
+      }
+      if (document.getElementById("nextEpCard")) {
+        const autoBtn = menuItem(autoIcon, "Autoplay next: On", () => {
+          const enabled = typeof tdVideoAutoplayNextEnabled === "function"
+            ? !tdVideoAutoplayNextEnabled()
+            : false;
+          if (typeof tdSetVideoAutoplayNextEnabled === "function") {
+            tdSetVideoAutoplayNextEnabled(enabled);
+          }
+          updateAutoplayLabel();
+        });
+        const autoLabel = autoBtn.querySelector("span");
+        autoBtn.setAttribute("role", "menuitemcheckbox");
+        function updateAutoplayLabel() {
+          const enabled = typeof tdVideoAutoplayNextEnabled !== "function" || tdVideoAutoplayNextEnabled();
+          if (autoLabel) autoLabel.textContent = "Autoplay next: " + (enabled ? "On" : "Off");
+          autoBtn.setAttribute("aria-checked", enabled ? "true" : "false");
+        }
+        updateAutoplayLabel();
+        window.addEventListener("td:video-autoplay-change", updateAutoplayLabel);
+        menu.appendChild(autoBtn);
       }
       menu.appendChild(menuItem(vlcIcon, "Open in VLC", () => {
         const vlcBtn = document.getElementById("vlcButton") || document.querySelector("[data-stream-url]");
@@ -237,6 +259,7 @@
       const trigger = document.createElement("button");
       trigger.type = "button";
       trigger.className = "plyr__control plyr__controls__item";
+      trigger.dataset.tdVideoToolsTrigger = "true";
       trigger.setAttribute("aria-label", "More options");
       trigger.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px;display:block"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>';
       trigger.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(); });

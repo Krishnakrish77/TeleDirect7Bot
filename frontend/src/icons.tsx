@@ -252,6 +252,16 @@ export function ShareIcon(props: Props) {
   );
 }
 
+export function MoreVerticalIcon(props: Props) {
+  return (
+    <IconBase {...props} fill="currentColor" stroke="none">
+      <circle cx="12" cy="5" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="12" cy="19" r="1.6" />
+    </IconBase>
+  );
+}
+
 export function XIcon(props: Props) {
   return (
     <IconBase {...props}>
