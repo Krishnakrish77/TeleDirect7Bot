@@ -575,7 +575,7 @@ async def favicon(_request: web.Request) -> web.Response:
 _SW_JS = """\
 /* TeleDirect service worker — network-first for navigation,
    cache-first for static assets, network-only for streams/API. */
-const CACHE = 'td-v2';
+const CACHE = 'td-v3';
 const SHELL = ['/', '/static/tailwind.css', '/favicon.svg'];
 
 self.addEventListener('install', e => {
@@ -602,6 +602,9 @@ self.addEventListener('fetch', e => {
   // Never cache: stream URLs, API, auth, admin, watch pages
   if (
     /^\\/[A-Za-z0-9_-]*[A-Za-z_-]\\d+$/.test(url.pathname) ||
+    url.pathname === '/app' ||
+    url.pathname.startsWith('/app/') ||
+    url.pathname.startsWith('/static/app/') ||
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/auth/') ||
     url.pathname.startsWith('/admin') ||

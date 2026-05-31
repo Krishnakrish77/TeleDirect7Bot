@@ -4,7 +4,7 @@ import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, SeriesDetailResponse, WatchTrack } from '../types';
 import type { AppRoute } from '../navigation';
 import { LoadingRows, ErrorPanel } from './common';
-import { MediaCard } from './hub';
+import { MediaCard } from './mediaCard';
 
 export function DetailPage({
   route,

@@ -1,8 +1,9 @@
-import { MouseEvent, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchContinueItems } from '../api';
 import { localAppHref } from '../navigation';
-import { BookmarkIcon, CheckIcon, ChevronRightIcon, FilmIcon, FilterIcon, MusicIcon, PlayIcon, XIcon } from '../icons';
+import { ChevronRightIcon, FilmIcon, FilterIcon, PlayIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubFilters, HubParams, HubResponse } from '../types';
+import { MediaCard } from './mediaCard';
 
 export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
   const [active, setActive] = useState(0);
@@ -394,6 +395,7 @@ export function GridView({
   const isMusicGrid =
     params.view === 'music' ||
     (data.items.length > 0 && data.items.every((card) => card.aspect === 'square'));
+  const priorityCount = isMusicGrid ? 8 : 4;
 
   return (
     <section className="grid-section">
@@ -411,7 +413,7 @@ export function GridView({
                 key={`${card.type}:${card.itemId}`}
                 card={card}
                 saved={saved.has(card.itemId)}
-                priority={index < 4}
+                priority={index < priorityCount}
                 onToggleSaved={onToggleSaved}
               />
             ))}
@@ -436,57 +438,5 @@ export function GridView({
         </div>
       )}
     </section>
-  );
-}
-
-export function MediaCard({
-  card,
-  saved,
-  priority = false,
-  onToggleSaved,
-}: {
-  card: HubCard;
-  saved: boolean;
-  priority?: boolean;
-  onToggleSaved: (card: HubCard) => void;
-}) {
-  const isMusic = card.type === 'track' || card.type === 'album';
-  return (
-    <a className={`media-card ${card.aspect === 'square' ? 'square' : 'poster'}`} href={card.href}>
-      <span className="poster-wrap">
-        <span className="poster-placeholder">
-          {isMusic ? <MusicIcon /> : <FilmIcon />}
-        </span>
-        <img
-          src={card.posterUrl}
-          alt=""
-          loading={priority ? 'eager' : 'lazy'}
-          decoding="async"
-          fetchPriority={priority ? 'high' : undefined}
-          draggable={false}
-          onError={(event) => {
-            event.currentTarget.style.display = 'none';
-          }}
-        />
-        {card.badge && <span className="card-badge">{card.badge}</span>}
-        <button
-          type="button"
-          className={saved ? 'save-button saved' : 'save-button'}
-          onClick={(event: MouseEvent<HTMLButtonElement>) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onToggleSaved(card);
-          }}
-          aria-label={saved ? 'Remove from watchlist' : 'Add to watchlist'}
-        >
-          {saved ? <CheckIcon /> : <BookmarkIcon />}
-        </button>
-      </span>
-      <span className="card-copy">
-        <span className="eyebrow">{card.eyebrow}</span>
-        <strong>{card.title}{card.year ? ` (${card.year})` : ''}</strong>
-        {card.subtitle && <span>{card.subtitle}</span>}
-      </span>
-    </a>
   );
 }

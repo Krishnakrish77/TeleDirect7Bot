@@ -34,10 +34,7 @@ body,
 
 body {
   margin: 0;
-  background:
-    linear-gradient(180deg, rgba(20, 184, 166, 0.08), transparent 36rem),
-    linear-gradient(135deg, rgba(249, 115, 22, 0.08), transparent 28rem),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   overflow-x: hidden;
 }
@@ -894,6 +891,13 @@ img {
 }
 
 .media-card {
+  position: relative;
+  display: block;
+  min-width: 0;
+  contain: layout style;
+}
+
+.media-card-link {
   display: grid;
   gap: 0.65rem;
   min-width: 0;
@@ -941,7 +945,7 @@ img {
   height: 38px;
 }
 
-.media-card:focus-visible {
+.media-card-link:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 4px;
   border-radius: 8px;
