@@ -176,10 +176,13 @@ async def stats_page(request: web.Request) -> web.Response:
                     artist_counts[a] += 1
 
         # Title grouping — album_key groups music (movie_key is "" for audio).
-        # Use play_count from wh_store when available so re-watches count
-        # properly; fall back to 1 for legacy entries without play_count.
+        # For audio tracks use play_count (how many times the song was played).
+        # For movies/series use 1 per history entry: VLC's repeated tail-seeks
+        # can inflate play_count to nonsensical values (e.g. 47 for one movie),
+        # so the raw wh_store play_count is only trustworthy for music.
         group = item.series_key or item.album_key or item.movie_key or ck
-        title_counts[group] += h.get("play_count", 1)
+        increment = h.get("play_count", 1) if item.media_kind == "audio" else 1
+        title_counts[group] += increment
         if group not in title_meta:
             if item.series_key:
                 title = item.series_title or item.title

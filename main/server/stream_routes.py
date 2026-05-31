@@ -35,8 +35,11 @@ _ip_active: dict = {}   # ip → concurrent stream count
 _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
 # ── VLC playback tracking ─────────────────────────────────────────────────
-# Debounce CW updates: at most one MongoDB write per 30s per (user, message)
-_vlc_cw_debounce: dict = {}   # (user_id, message_id) → last_update_ts
+# Debounce CW updates: at most one MongoDB write per 30s per (user, message).
+# Values are either:
+#   float ts   — last progress timestamp (normal debounce)
+#   ("done", float deadline) — completion cooldown: no new complete until deadline
+_vlc_cw_debounce: dict = {}   # (user_id, message_id) → value
 
 def _vlc_verify(param: str, message_id: int) -> int | None:
     """Return user_id if param is a valid VLC tracking token, else None."""
@@ -72,10 +75,19 @@ def _vlc_should_track(user_id: int, message_id: int,
         # VLC always issues a tail Range request (pct ≈ 0.95-0.99) on
         # first open to read the MOOV atom / MKV Cues index — before the
         # user has played anything. Without this guard, that one seek
-        # falsely records watch-history completion and inflates stats with
-        # the item's full duration.
-        return "complete" if key in _vlc_cw_debounce else None
-    if now - _vlc_cw_debounce.get(key, 0) < 30:
+        # falsely records watch-history completion and inflates stats.
+        val = _vlc_cw_debounce.get(key)
+        if val is None:
+            return None   # no prior progress — ignore
+        if isinstance(val, tuple) and val[0] == "done":
+            # Inside completion cooldown — block re-completion until deadline.
+            return None if now < val[1] else None  # never re-complete via VLC
+        return "complete"
+    # Progress gate: at most one CW write per 30 s.
+    val = _vlc_cw_debounce.get(key)
+    if isinstance(val, tuple):
+        return None  # in completion cooldown; ignore progress too
+    if now - (val or 0) < 30:
         return None
     return "progress"
 
@@ -95,7 +107,14 @@ async def _vlc_track(user_id: int, message_id: int,
     if action == "complete":
         await wh_store.record(user_id, cw_key, title)
         await cw_store.delete_one(user_id, cw_key)
-        _vlc_cw_debounce.pop((user_id, message_id), None)
+        # Replace the debounce entry with a completion cooldown instead of
+        # deleting it.  Deleting caused re-inflation: the next progress event
+        # (VLC rewind, re-buffer) would re-add the key, and the next 90%+ seek
+        # would fire "complete" again — accounting for the inflated play_count.
+        # Cooldown = file duration or 2 hours, whichever is larger.
+        dur = float(getattr(_mi.get_item(message_id), "duration", 0) or 0)
+        cooldown = max(dur, 7200.0)
+        _vlc_cw_debounce[(user_id, message_id)] = ("done", time.time() + cooldown)
     elif action == "progress":
         dur = float(item.duration or 0)
         if dur > 0:
