@@ -79,7 +79,7 @@ export function WatchPage({
             <img src={video.posterUrl} alt="" decoding="async" />
             <div>
               <p className="eyebrow">Classic player</p>
-              <h1>{video.title}</h1>
+              <h1 dir="auto">{video.title}</h1>
               <p>{video.overview || video.subtitle || 'Video playback is currently routed through the classic player.'}</p>
               <a className="primary-action" href={video.classicHref || data.classicHref || video.href}>
                 <PlayIcon />
@@ -101,7 +101,7 @@ export function WatchPage({
           <img src={card.posterUrl} alt="" decoding="async" />
           <div>
             <p className="eyebrow">{card.mediaKind || 'Media'}</p>
-            <h1>{card.title}</h1>
+            <h1 dir="auto">{card.title}</h1>
             <p>{card.overview || card.subtitle || 'Open this item in the classic player.'}</p>
             <a className="primary-action" href={data.classicHref || card.href}>
               <PlayIcon />
@@ -135,7 +135,7 @@ export function WatchPage({
         </div>
         <div className="audio-details">
           <p className="eyebrow">{track.qualityLabel || track.format || 'Music'}</p>
-          <h1>{track.title}</h1>
+          <h1 dir="auto">{track.title}</h1>
           <p className="audio-subtitle">
             {[track.artist, track.albumTitle].filter(Boolean).join(' - ')}
           </p>
@@ -513,7 +513,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         </a>
         <div>
           <p className="eyebrow">{video.quality || 'Video'}</p>
-          <h1>{video.title}</h1>
+          <h1 dir="auto">{video.title}</h1>
           {video.subtitle && <p>{video.subtitle}</p>}
         </div>
       </section>
@@ -555,7 +555,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
             <strong>This video needs another player</strong>
             <span>{error || 'Open it in VLC or the classic player.'}</span>
             <div>
-              <a className="primary-action" href={video.classicHref}>Classic</a>
+              <a className="primary-action" href={video.classicHref}>Classic player</a>
               <a className="secondary-action" href={video.vlcHref}>VLC</a>
             </div>
           </div>
@@ -674,7 +674,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           <div className="variant-list">
             <a className="variant-row active" href={video.appHref}>
               <span>{video.quality || 'Current'}</span>
-              <strong>{[video.fileSizeLabel, video.durationLabel].filter(Boolean).join(' - ')}</strong>
+              <strong>{video.durationLabel || 'Current version'}</strong>
             </a>
             {video.qualityVariants.map((variant) => (
               <a key={variant.key} className="variant-row" href={variant.playHref}>

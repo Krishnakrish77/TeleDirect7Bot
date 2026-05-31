@@ -110,7 +110,7 @@ function DetailHero({
       </div>
       <div className="detail-copy">
         <p className="eyebrow">{subtitle}</p>
-        <h1>{title}</h1>
+        <h1 dir="auto">{title}</h1>
         {overview && <p className="detail-overview">{overview}</p>}
         {genres.length > 0 && (
           <div className="hero-meta">
@@ -131,8 +131,8 @@ function DetailHero({
             </button>
           )}
           {classicHref && (
-            <a className="secondary-action" href={classicHref}>
-              <span>Classic</span>
+            <a className="secondary-action" href={classicHref} title="Open in the original player">
+              <span>Classic player</span>
             </a>
           )}
         </div>
@@ -256,7 +256,7 @@ function SeriesDetail({
                       {entry.variants.length > 1 && (
                         <div className="variant-chips">
                           {entry.variants.map((variant) => (
-                            <a key={variant.key} href={variant.playHref}>{variant.quality || variant.fileSizeLabel || 'Version'}</a>
+                            <a key={variant.key} href={variant.playHref}>{variant.quality || variant.durationLabel || 'Version'}</a>
                           ))}
                         </div>
                       )}

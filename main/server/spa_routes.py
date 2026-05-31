@@ -169,10 +169,19 @@ def _item_common(item: HubItem) -> dict:
     }
 
 
+def _video_subtitle(item: HubItem, common: dict) -> str:
+    parts = [
+        str(item.year) if item.year else "",
+        common["durationLabel"],
+        item.quality or "",
+    ]
+    return " - ".join(part for part in parts if part)
+
+
 def _card_from_item(item: HubItem) -> dict:
     common = _item_common(item)
     is_audio = (item.media_kind or "") == "audio"
-    subtitle = common["artist"] if is_audio else common["fileSizeLabel"]
+    subtitle = common["artist"] if is_audio else _video_subtitle(item, common)
     return {
         **common,
         "type": "track" if is_audio else "item",
@@ -273,18 +282,22 @@ def _hero(item: HubItem) -> dict:
     common = _item_common(item)
     details_href = _detail_url(item)
     kind = "Movie"
+    title = common["title"]
     if item.series_key:
         kind = "Series"
+        title = item.series_title or common["title"]
     elif item.movie_key:
         kind = "Movie"
     elif item.album_key:
         kind = "Album"
+        title = _clean_music_tag(item.album_title or common["title"])
     elif item.media_kind == "audio":
         kind = "Music"
     return {
         **common,
         "type": "hero",
         "itemId": str(item.message_id),
+        "title": title,
         "detailsHref": details_href,
         "playHref": _play_url(item),
         "eyebrow": kind,
@@ -521,7 +534,7 @@ def _episode_label(item: HubItem) -> str:
 
 def _video_choice_payload(item: HubItem) -> dict:
     common = _item_common(item)
-    label_bits = [item.quality or "", common["fileSizeLabel"], common["durationLabel"]]
+    label_bits = [item.quality or "", common["durationLabel"]]
     return {
         **common,
         "key": f"{item.secure_hash}{item.message_id}",
@@ -742,7 +755,8 @@ def _album_detail_payload(key: str) -> dict | None:
     if not tracks:
         return None
     rep = (
-        next((t for t in tracks if t.artist and t.has_thumb), None)
+        next((t for t in tracks if t.poster_path), None)
+        or next((t for t in tracks if t.artist and t.has_thumb), None)
         or next((t for t in tracks if t.artist), None)
         or tracks[0]
     )
@@ -762,7 +776,7 @@ def _album_detail_payload(key: str) -> dict | None:
         "artistHref": f"/app/artist/{media_index._artist_slug(display_artist)}" if display_artist and display_artist != "Various Artists" else "",
         "year": rep.year,
         "overview": rep.overview or rep.description or "",
-        "posterUrl": _thumb(rep),
+        "posterUrl": _tmdb_image(rep.poster_path) or _thumb(rep),
         "backdropUrl": _tmdb_image(rep.backdrop_path, "w1280") or _thumb(rep),
         "trackCount": len(tracks),
         "playHref": _app_watch_url(tracks[0]),
@@ -788,14 +802,15 @@ def _artist_detail_payload(slug: str) -> dict | None:
         album_cards.append(_card_from_album(group))
     album_cards.sort(key=lambda card: card.get("title") or "")
     name = _clean_music_tag(media_index.artist_display_name(slug))
+    rep = next((track for track in tracks if track.poster_path), None) or tracks[0]
     return {
         "kind": "artist",
         "key": slug,
         "title": name,
         "subtitle": f"{len(tracks)} track{'' if len(tracks) == 1 else 's'}",
         "artist": name,
-        "posterUrl": _thumb(tracks[0]),
-        "backdropUrl": _tmdb_image(tracks[0].backdrop_path, "w1280") or _thumb(tracks[0]),
+        "posterUrl": _tmdb_image(rep.poster_path) or _thumb(rep),
+        "backdropUrl": _tmdb_image(rep.backdrop_path, "w1280") or _thumb(rep),
         "tracks": [_track_payload(track) for track in tracks],
         "albums": album_cards,
         "singles": [_track_payload(track) for track in singles],
@@ -998,7 +1013,6 @@ def _video_watch_payload(item: HubItem) -> dict:
             item.series_title if item.series_key else "",
             _episode_label(item),
             item.quality or "",
-            common["fileSizeLabel"],
         ] if part),
         "episodeLabel": _episode_label(item),
         "classicHref": _watch_url(item),

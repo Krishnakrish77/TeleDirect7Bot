@@ -3,13 +3,13 @@ import { signOut } from './api';
 import { useAppNavigation, parseRoute, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useDetail, useHub, useMe, useWatchlist } from './hooks/data';
-import { Header, BottomNav, SignInModal } from './components/layout';
+import { Header, PrimaryNav, SignInModal } from './components/layout';
 import { HeroStage, FilterBar, ContinueWatching, ShelfRow, GridView } from './components/hub';
 import { DetailPage } from './components/detail';
 import { WatchPage } from './components/watch';
 import { MiniPlayer, NowPlayingSheet, QueueDrawer } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
-import type { HubCard, HubFilters, ViewValue } from './types';
+import type { HubCard, HubFilters } from './types';
 
 const DEFAULT_FILTERS: HubFilters = {
   years: [],
@@ -43,6 +43,7 @@ function App() {
   const { saved, toggle } = useWatchlist(user);
   const audio = useAudioPlayer();
   const [signInOpen, setSignInOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [query, setQuery] = useState(params.q);
@@ -88,10 +89,6 @@ function App() {
   const hubLoading = loading && !canRenderHubData;
   const filters = data?.filters ?? DEFAULT_FILTERS;
   const watchKey = route.kind === 'watch' ? route.key : '';
-  const onBottomSearch = useCallback(() => {
-    navigate('/app');
-    window.setTimeout(() => searchRef.current?.focus(), 30);
-  }, [navigate]);
   const onSearchSubmit = useCallback(() => {
     update({ q: query.trim(), offset: 0 });
   }, [query, update]);
@@ -104,7 +101,8 @@ function App() {
         query={query}
         setQuery={setQuery}
         searchRef={searchRef}
-        activeView={activeView}
+        accountOpen={accountOpen}
+        setAccountOpen={setAccountOpen}
         onSearchSubmit={onSearchSubmit}
         onSignIn={() => setSignInOpen(true)}
         onSignOut={async () => {
@@ -116,6 +114,10 @@ function App() {
           }
         }}
       />
+      <PrimaryNav
+        user={user}
+        activeView={activeView}
+      />
 
       {isHubRoute ? (
         <main className="hub-main">
@@ -124,29 +126,16 @@ function App() {
           )}
 
           <div className="hub-toolbar">
-            <div className="hub-tabs" role="tablist" aria-label="Library views">
-              {filters.views.map((view) => (
-                <button
-                  key={view.value || 'all'}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeView === view.value}
-                  className={activeView === view.value ? 'tab active' : 'tab'}
-                  onClick={() => update({ view: view.value as ViewValue })}
-                >
-                  {view.label}
-                </button>
-              ))}
-            </div>
-
-            <FilterBar
-              filters={filters}
-              catalogueSize={data?.catalogueSize ?? 0}
-              params={params}
-              query={query}
-              setQuery={setQuery}
-              update={update}
-            />
+            {currentHubData?.mode === 'grid' && (
+              <FilterBar
+                filters={filters}
+                catalogueSize={data?.catalogueSize ?? 0}
+                params={params}
+                query={query}
+                setQuery={setQuery}
+                update={update}
+              />
+            )}
           </div>
 
           {currentHubData?.mode === 'shelves' && !activeFilters && (
@@ -243,12 +232,6 @@ function App() {
         playQueueIndex={audio.playQueueIndex}
         togglePlayback={audio.togglePlayback}
         onClose={() => setQueueOpen(false)}
-      />
-      <BottomNav
-        user={user}
-        activeView={activeView}
-        onSearch={onBottomSearch}
-        onAccount={() => setSignInOpen(true)}
       />
     </div>
   );

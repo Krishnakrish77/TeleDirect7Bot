@@ -1,4 +1,4 @@
-import { FormEvent, KeyboardEvent, RefObject, useEffect, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, RefObject, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { signInTelegram } from '../api';
 import { useSuggestions } from '../hooks/data';
 import { localAppHref } from '../navigation';
@@ -11,45 +11,49 @@ declare global {
   }
 }
 
-export function BottomNav({
+export function PrimaryNav({
   user,
   activeView,
-  onSearch,
-  onAccount,
 }: {
   user: User | null;
   activeView: ViewValue | '';
-  onSearch: () => void;
-  onAccount: () => void;
 }) {
   return (
-    <nav className="bottom-nav" aria-label="Primary">
+    <nav className="primary-nav" aria-label="Primary">
       <a className={activeView === '' ? 'active' : ''} href="/app">
         <HomeIcon />
         <span>Home</span>
       </a>
-      <button type="button" onClick={onSearch}>
-        <SearchIcon />
-        <span>Search</span>
-      </button>
-      <a href="/watchlist">
-        <BookmarkIcon />
-        <span>Watchlist</span>
+      <a className={activeView === 'movies' ? 'active' : ''} href="/app?view=movies">
+        <FilmIcon />
+        <span>Movies</span>
+      </a>
+      <a className={activeView === 'series' ? 'active' : ''} href="/app?view=series">
+        <FilmIcon />
+        <span>Series</span>
       </a>
       <a className={activeView === 'music' ? 'active' : ''} href="/app?view=music">
         <MusicIcon />
         <span>Music</span>
       </a>
-      {user ? (
+      {user && (
         <a href="/watchlist">
-          <UserIcon />
-          <span>Account</span>
+          <BookmarkIcon />
+          <span>Watchlist</span>
         </a>
-      ) : (
-        <button type="button" onClick={onAccount}>
-          <UserIcon />
-          <span>Account</span>
-        </button>
+      )}
+      <span className="primary-nav-spacer" aria-hidden="true" />
+      {user && (
+        <a className="primary-nav-wide" href="/stats">
+          <ChartIcon />
+          <span>Stats</span>
+        </a>
+      )}
+      {user?.is_admin && (
+        <a className="primary-nav-wide" href="/admin">
+          <ShieldIcon />
+          <span>Admin</span>
+        </a>
       )}
     </nav>
   );
@@ -61,7 +65,8 @@ export function Header({
   query,
   setQuery,
   searchRef,
-  activeView,
+  accountOpen,
+  setAccountOpen,
   onSearchSubmit,
   onSignIn,
   onSignOut,
@@ -71,13 +76,13 @@ export function Header({
   query: string;
   setQuery: (next: string) => void;
   searchRef: RefObject<HTMLInputElement | null>;
-  activeView: ViewValue | '';
+  accountOpen: boolean;
+  setAccountOpen: Dispatch<SetStateAction<boolean>>;
   onSearchSubmit: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement | null>(null);
   const suggestions = useSuggestions(query);
 
@@ -97,7 +102,7 @@ export function Header({
       document.removeEventListener('pointerdown', closeOnPointer);
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [accountOpen]);
+  }, [accountOpen, setAccountOpen]);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -117,13 +122,6 @@ export function Header({
         </span>
         <span>TeleDirect</span>
       </a>
-
-      <nav className="desktop-shortcuts" aria-label="Browse">
-        <a className={activeView === '' ? 'active' : ''} href="/app">Home</a>
-        <a className={activeView === 'movies' ? 'active' : ''} href="/app?view=movies">Movies</a>
-        <a className={activeView === 'series' ? 'active' : ''} href="/app?view=series">Series</a>
-        <a className={activeView === 'music' ? 'active' : ''} href="/app?view=music">Music</a>
-      </nav>
 
       <form className="top-search" role="search" onSubmit={handleSubmit}>
         <SearchIcon className="search-leading" />
@@ -151,59 +149,54 @@ export function Header({
 
       <div className="header-actions">
         {user ? (
-          <>
-            <a className="icon-button" href="/watchlist" aria-label="Watchlist">
-              <BookmarkIcon />
-            </a>
-            <div className="account-menu-wrap" ref={accountRef}>
-              <button
-                className="profile-chip"
-                type="button"
-                onClick={() => setAccountOpen((current) => !current)}
-                aria-haspopup="menu"
-                aria-expanded={accountOpen}
-              >
-                <span className="profile-avatar">
-                  {user.photo ? (
-                    <img src={user.photo} alt="" />
-                  ) : (
-                    <span>{(user.name || 'U')[0].toUpperCase()}</span>
-                  )}
-                </span>
-                <strong>{user.name || user.username || 'User'}</strong>
-                <ChevronDownIcon className="profile-chevron" />
-              </button>
-              {accountOpen && (
-                <div className="account-menu" role="menu">
-                  <a href="/watchlist" role="menuitem" onClick={() => setAccountOpen(false)}>
-                    <BookmarkIcon />
-                    <span>Watchlist</span>
+          <div className="account-menu-wrap" ref={accountRef}>
+            <button
+              className="profile-chip"
+              type="button"
+              onClick={() => setAccountOpen((current) => !current)}
+              aria-haspopup="menu"
+              aria-expanded={accountOpen}
+            >
+              <span className="profile-avatar">
+                {user.photo ? (
+                  <img src={user.photo} alt="" />
+                ) : (
+                  <span>{(user.name || 'U')[0].toUpperCase()}</span>
+                )}
+              </span>
+              <strong>{user.name || user.username || 'User'}</strong>
+              <ChevronDownIcon className="profile-chevron" />
+            </button>
+            {accountOpen && (
+              <div className="account-menu" role="menu">
+                <a href="/watchlist" role="menuitem" onClick={() => setAccountOpen(false)}>
+                  <BookmarkIcon />
+                  <span>Watchlist</span>
+                </a>
+                <a href="/stats" role="menuitem" onClick={() => setAccountOpen(false)}>
+                  <ChartIcon />
+                  <span>Stats</span>
+                </a>
+                {user.is_admin && (
+                  <a href="/admin" role="menuitem" onClick={() => setAccountOpen(false)}>
+                    <ShieldIcon />
+                    <span>Admin panel</span>
                   </a>
-                  <a href="/stats" role="menuitem" onClick={() => setAccountOpen(false)}>
-                    <ChartIcon />
-                    <span>Stats</span>
-                  </a>
-                  {user.is_admin && (
-                    <a href="/admin" role="menuitem" onClick={() => setAccountOpen(false)}>
-                      <ShieldIcon />
-                      <span>Admin panel</span>
-                    </a>
-                  )}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setAccountOpen(false);
-                      onSignOut();
-                    }}
-                  >
-                    <LogOutIcon />
-                    <span>Sign out</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          </>
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAccountOpen(false);
+                    onSignOut();
+                  }}
+                >
+                  <LogOutIcon />
+                  <span>Sign out</span>
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <button className="signin-button" type="button" onClick={onSignIn} disabled={me === null}>
             <UserIcon />

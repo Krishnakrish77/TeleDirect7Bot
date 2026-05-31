@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchContinueItems } from '../api';
 import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, FilterIcon, PlayIcon, XIcon } from '../icons';
-import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubFilters, HubParams, HubResponse } from '../types';
+import type { ContinueEntry, ContinueItem, FilterOption, HeroItem, HubCard, HubFilters, HubParams, HubResponse, ViewValue } from '../types';
 import { MediaCard } from './mediaCard';
 
 export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
@@ -27,7 +27,7 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
       <div className="hero-vignette" />
       <div className="hero-content">
         <p className="eyebrow">{hero.eyebrow}</p>
-        <h1>{hero.title}</h1>
+        <h1 dir="auto">{hero.title}</h1>
         {hero.overview && <p className="hero-overview">{hero.overview}</p>}
         <div className="hero-meta">
           {hero.meta.map((part) => <span key={part}>{part}</span>)}
@@ -77,7 +77,6 @@ export function FilterBar({
   setQuery: (next: string) => void;
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
   const hasFilters = Boolean(
     query ||
     params.tag ||
@@ -86,7 +85,6 @@ export function FilterBar({
     params.year ||
     params.sort !== 'newest',
   );
-  const sortLabel = filters.sortOptions.find((option) => option.value === params.sort)?.label || 'Newest';
   const yearOptions = [
     { value: '', label: 'Any' },
     ...filters.years.map((year) => ({ value: String(year), label: String(year) })),
@@ -99,6 +97,60 @@ export function FilterBar({
     { value: '', label: 'Any' },
     ...filters.genres.map((genre) => ({ value: genre, label: genre })),
   ];
+  const viewOptions = filters.views.length ? filters.views : [
+    { value: '', label: 'All' },
+    { value: 'movies', label: 'Movies' },
+    { value: 'series', label: 'Series' },
+    { value: 'music', label: 'Music' },
+  ];
+  const controls: Array<{
+    id: string;
+    label: string;
+    value: string;
+    options: FilterOption[];
+    onChange: (value: string) => void;
+  }> = [];
+
+  if (!params.view || query) {
+    controls.push({
+      id: 'view',
+      label: 'Type',
+      value: params.view,
+      options: viewOptions,
+      onChange: (value) => update({ view: value as ViewValue }),
+    });
+  }
+
+  controls.push(
+    {
+      id: 'year',
+      label: 'Year',
+      value: params.year ? String(params.year) : '',
+      options: yearOptions,
+      onChange: (value) => update({ year: value ? Number(value) : null }),
+    },
+    {
+      id: 'quality',
+      label: 'Quality',
+      value: params.quality,
+      options: qualityOptions,
+      onChange: (value) => update({ quality: value }),
+    },
+    {
+      id: 'genre',
+      label: 'Genre',
+      value: params.genre,
+      options: genreOptions,
+      onChange: (value) => update({ genre: value }),
+    },
+    {
+      id: 'sort',
+      label: 'Sort',
+      value: params.sort,
+      options: filters.sortOptions,
+      onChange: (value) => update({ sort: value }),
+    },
+  );
 
   const clearAll = (replace = false) => {
     setQuery('');
@@ -109,141 +161,33 @@ export function FilterBar({
       genre: '',
       year: null,
       sort: 'newest',
+      view: '',
       offset: 0,
     }, replace);
   };
 
   return (
-    <>
-      <div className="filter-bar desktop-filter-bar">
-        <div className="filter-heading">
-          <FilterIcon />
-          <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
-        </div>
-        <label>
-          <span>Year</span>
-          <select value={params.year || ''} onChange={(event) => update({ year: event.currentTarget.value ? Number(event.currentTarget.value) : null })}>
-            <option value="">Any</option>
-            {filters.years.map((year) => <option key={year} value={year}>{year}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Quality</span>
-          <select value={params.quality} onChange={(event) => update({ quality: event.currentTarget.value })}>
-            <option value="">Any</option>
-            {filters.qualities.map((quality) => <option key={quality} value={quality}>{quality}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Genre</span>
-          <select value={params.genre} onChange={(event) => update({ genre: event.currentTarget.value })}>
-            <option value="">Any</option>
-            {filters.genres.map((genre) => <option key={genre} value={genre}>{genre}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Sort</span>
-          <select value={params.sort} onChange={(event) => update({ sort: event.currentTarget.value })}>
-            {filters.sortOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </label>
-        {hasFilters && (
-          <button className="text-button" type="button" onClick={() => clearAll()}>Reset</button>
-        )}
+    <div className="filter-bar" aria-label="Browse filters">
+      <div className="filter-heading">
+        <FilterIcon />
+        <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
       </div>
-
-      <div className="mobile-filter-bar">
-        <div className="filter-heading">
-          <FilterIcon />
-          <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
-        </div>
-        <button type="button" className="filter-summary-button" onClick={() => setMobileOpen(true)}>
-          <span>Filters</span>
-          <strong>{hasFilters ? 'Active' : 'Any'}</strong>
-        </button>
-        <button type="button" className="filter-summary-button" onClick={() => setMobileOpen(true)}>
-          <span>Sort</span>
-          <strong>{sortLabel}</strong>
-        </button>
-      </div>
-
-      {mobileOpen && (
-        <div className="filter-sheet-layer" role="dialog" aria-modal="true" aria-label="Filters">
-          <button className="filter-sheet-scrim" type="button" onClick={() => setMobileOpen(false)} aria-label="Close filters" />
-          <div className="filter-sheet">
-            <div className="filter-sheet-heading">
-              <div>
-                <p className="eyebrow">Browse</p>
-                <h2>Filters</h2>
-              </div>
-              <button className="icon-button" type="button" onClick={() => setMobileOpen(false)} aria-label="Close filters">
-                <XIcon />
-              </button>
-            </div>
-            <FilterOptionGroup
-              title="Year"
-              options={yearOptions}
-              value={params.year ? String(params.year) : ''}
-              onChange={(value) => update({ year: value ? Number(value) : null }, true)}
-            />
-            <FilterOptionGroup
-              title="Quality"
-              options={qualityOptions}
-              value={params.quality}
-              onChange={(value) => update({ quality: value }, true)}
-            />
-            <FilterOptionGroup
-              title="Genre"
-              options={genreOptions}
-              value={params.genre}
-              onChange={(value) => update({ genre: value }, true)}
-            />
-            <FilterOptionGroup
-              title="Sort"
-              options={filters.sortOptions}
-              value={params.sort}
-              onChange={(value) => update({ sort: value }, true)}
-            />
-            <div className="filter-sheet-actions">
-              <button className="text-button" type="button" onClick={() => clearAll(true)} disabled={!hasFilters}>Reset</button>
-              <button className="primary-action" type="button" onClick={() => setMobileOpen(false)}>Done</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function FilterOptionGroup({
-  title,
-  options,
-  value,
-  onChange,
-}: {
-  title: string;
-  options: Array<{ value: string; label: string }>;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <section className="filter-option-group">
-      <h3>{title}</h3>
-      <div className="filter-option-list">
-        {options.map((option) => (
-          <button
-            key={option.value || 'any'}
-            type="button"
-            className={value === option.value ? 'filter-option active' : 'filter-option'}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </button>
+      <div className="filter-controls">
+        {controls.map((control) => (
+          <label key={control.id} className="filter-control">
+            <span>{control.label}</span>
+            <select value={control.value} onChange={(event) => control.onChange(event.currentTarget.value)} aria-label={control.label}>
+              {control.options.map((option) => (
+                <option key={option.value || 'any'} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
         ))}
       </div>
-    </section>
+      {hasFilters && (
+        <button className="text-button" type="button" onClick={() => clearAll()}>Reset</button>
+      )}
+    </div>
   );
 }
 
@@ -350,22 +294,62 @@ export function ShelfRow({
   saved: Set<string>;
   onToggleSaved: (card: HubCard) => void;
 }) {
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollBack, setCanScrollBack] = useState(false);
+  const [canScrollForward, setCanScrollForward] = useState(false);
+
+  const updateScrollState = useCallback(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const maxScroll = row.scrollWidth - row.clientWidth;
+    setCanScrollBack(row.scrollLeft > 2);
+    setCanScrollForward(row.scrollLeft < maxScroll - 2);
+  }, []);
+
+  useEffect(() => {
+    updateScrollState();
+    const row = rowRef.current;
+    if (!row) return;
+    row.addEventListener('scroll', updateScrollState, { passive: true });
+    window.addEventListener('resize', updateScrollState);
+    return () => {
+      row.removeEventListener('scroll', updateScrollState);
+      window.removeEventListener('resize', updateScrollState);
+    };
+  }, [shelf.items.length, updateScrollState]);
+
+  const scrollByPage = (direction: -1 | 1) => {
+    const row = rowRef.current;
+    if (!row) return;
+    row.scrollBy({ left: direction * row.clientWidth * 0.82, behavior: 'smooth' });
+    window.setTimeout(updateScrollState, 260);
+  };
+
   if (!shelf.items.length) return null;
   return (
     <section className="shelf-section">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Library</p>
           <h2>{shelf.name}</h2>
         </div>
-        {shelf.href && (
-          <a className="section-link" href={localAppHref(shelf.href) || shelf.href}>
-            <span>See all</span>
-            <ChevronRightIcon />
-          </a>
-        )}
+        <div className="section-actions">
+          {shelf.href && (
+            <a className="section-link" href={localAppHref(shelf.href) || shelf.href}>
+              <span>See all</span>
+              <ChevronRightIcon />
+            </a>
+          )}
+          <div className="rail-controls" aria-label={`${shelf.name} carousel controls`}>
+            <button type="button" className="icon-button" onClick={() => scrollByPage(-1)} disabled={!canScrollBack} aria-label="Scroll back">
+              <ChevronRightIcon />
+            </button>
+            <button type="button" className="icon-button" onClick={() => scrollByPage(1)} disabled={!canScrollForward} aria-label="Scroll forward">
+              <ChevronRightIcon />
+            </button>
+          </div>
+        </div>
       </div>
-      <div className="card-row">
+      <div className="card-row" ref={rowRef}>
         {shelf.items.map((card) => (
           <MediaCard
             key={`${card.type}:${card.itemId}`}
@@ -429,6 +413,9 @@ export function GridView({
                 <ChevronRightIcon />
               </button>
             </div>
+          )}
+          {data.nextOffset === null && (
+            <p className="result-footer">Showing all {data.total.toLocaleString()} result{data.total === 1 ? '' : 's'}</p>
           )}
         </>
       ) : (

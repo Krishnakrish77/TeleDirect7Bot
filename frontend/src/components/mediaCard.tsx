@@ -55,7 +55,7 @@ function MediaCardBase({
         </span>
         <span className="card-copy">
           <span className="eyebrow">{card.eyebrow}</span>
-          <strong>{card.title}{card.year ? ` (${card.year})` : ''}</strong>
+          <strong dir="auto">{card.title}{card.year ? ` (${card.year})` : ''}</strong>
           {card.subtitle && <span>{card.subtitle}</span>}
         </span>
       </a>
