@@ -124,3 +124,6 @@ gen_session.session
 
 # Frontend dependencies / caches
 frontend/node_modules/
+
+# Local automation artifacts
+outputs/
