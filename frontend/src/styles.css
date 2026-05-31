@@ -514,6 +514,7 @@ img {
   display: grid;
   gap: 0.8rem;
   margin-top: 0.2rem;
+  min-width: 0;
 }
 
 .hub-tabs,
@@ -633,6 +634,11 @@ img {
 .shelf-stack {
   display: grid;
   gap: clamp(1.7rem, 3vw, 2.6rem);
+  min-width: 0;
+}
+
+.shelf-section {
+  min-width: 0;
 }
 
 .card-row,
@@ -641,6 +647,8 @@ img {
   grid-auto-flow: column;
   grid-auto-columns: clamp(148px, 15vw, 205px);
   gap: clamp(0.8rem, 1.4vw, 1.1rem);
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   padding: 0.1rem 0.1rem 0.85rem;
   scroll-snap-type: x mandatory;
