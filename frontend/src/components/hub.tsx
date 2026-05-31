@@ -22,7 +22,7 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
 
   return (
     <section className="hero-stage" aria-label={hero.title}>
-      <img className="hero-bg" src={bg} alt="" />
+      <img className="hero-bg" src={bg} alt="" decoding="async" fetchPriority="high" />
       <div className="hero-vignette" />
       <div className="hero-content">
         <p className="eyebrow">{hero.eyebrow}</p>
@@ -52,7 +52,7 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
               onClick={() => setActive(index)}
               aria-label={item.title}
             >
-              <img src={item.posterUrl} alt="" loading="lazy" />
+              <img src={item.posterUrl} alt="" loading="lazy" decoding="async" />
             </button>
           ))}
         </div>
@@ -201,7 +201,7 @@ export function ContinueWatching() {
           const title = entry.series_title || entry.title;
           return (
             <a key={entry.key} href={entry.watch_url} className="continue-card">
-              <img src={entry.poster_path ? `https://image.tmdb.org/t/p/w342${entry.poster_path}` : entry.thumb_url} alt="" loading="lazy" />
+              <img src={entry.poster_path ? `https://image.tmdb.org/t/p/w342${entry.poster_path}` : entry.thumb_url} alt="" loading="lazy" decoding="async" />
               <button
                 type="button"
                 className="forget-button"
@@ -337,8 +337,9 @@ export function MediaCard({
         <img
           src={card.posterUrl}
           alt=""
-          loading={isMusic ? 'eager' : 'lazy'}
+          loading="lazy"
           decoding="async"
+          fetchPriority="low"
           onError={(event) => {
             event.currentTarget.style.display = 'none';
           }}

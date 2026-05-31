@@ -17,7 +17,7 @@
   --teal: #14b8a6;
   --rose: #fb7185;
   --green: #22c55e;
-  --shadow: 0 18px 55px rgba(0, 0, 0, 0.38);
+  --shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
   --radius: 8px;
   letter-spacing: 0;
 }
@@ -129,7 +129,6 @@ img {
   border-radius: 8px;
   background: var(--brand);
   color: #fff;
-  box-shadow: 0 10px 25px rgba(249, 115, 22, 0.22);
 }
 
 .brand-mark svg {
@@ -153,12 +152,12 @@ img {
   background: rgba(21, 23, 26, 0.86);
   color: #fff;
   padding: 0 2.75rem;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.03);
 }
 
 .top-search input:focus {
   border-color: rgba(249, 115, 22, 0.62);
-  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.18);
+  outline: 2px solid rgba(249, 115, 22, 0.32);
+  outline-offset: 1px;
 }
 
 .search-leading,
@@ -192,7 +191,8 @@ img {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: rgba(7, 8, 9, 0.98);
-  box-shadow: var(--shadow);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  contain: layout paint style;
 }
 
 .suggestion {
@@ -268,7 +268,7 @@ img {
   border: 1px solid transparent;
   cursor: pointer;
   color: var(--text);
-  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+  transition: border-color 0.12s ease, background-color 0.12s ease, color 0.12s ease;
 }
 
 .icon-button {
@@ -381,7 +381,8 @@ img {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: #111317;
-  box-shadow: var(--shadow);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  contain: layout paint style;
 }
 
 .account-menu a,
@@ -538,7 +539,6 @@ img {
 
 .primary-action:hover,
 .primary-action:focus-visible {
-  transform: translateY(-1px);
   outline: none;
 }
 
@@ -728,6 +728,18 @@ img {
   min-width: 0;
 }
 
+@supports (content-visibility: auto) {
+  .continue-section,
+  .shelf-section,
+  .grid-section,
+  .detail-section,
+  .quality-section,
+  .episode-block {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 520px;
+  }
+}
+
 .card-row,
 .continue-row {
   display: grid;
@@ -738,7 +750,10 @@ img {
   max-width: 100%;
   overflow-x: auto;
   padding: 0.1rem 0.1rem 0.85rem;
-  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .continue-row {
@@ -754,6 +769,7 @@ img {
   display: grid;
   gap: 0.65rem;
   min-width: 0;
+  contain: layout style;
 }
 
 .poster-wrap {
@@ -763,6 +779,7 @@ img {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
+  contain: paint;
 }
 
 .media-card.poster .poster-wrap {
@@ -879,6 +896,7 @@ img {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: clamp(0.9rem, 2vw, 1.25rem);
+  align-items: start;
 }
 
 .load-more-wrap {
@@ -901,6 +919,7 @@ img {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
+  contain: layout paint style;
 }
 
 .continue-card img {
@@ -983,9 +1002,7 @@ img {
 .loading-stack span {
   height: 96px;
   border-radius: 8px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.05));
-  background-size: 220% 100%;
-  animation: loading 1.2s ease-in-out infinite;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .watch-main {
@@ -1016,7 +1033,7 @@ img {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
-  box-shadow: var(--shadow);
+  contain: paint;
 }
 
 .watch-fallback img {
@@ -1150,6 +1167,7 @@ img {
   border-radius: 8px;
   overflow: hidden;
   background: rgba(21, 23, 26, 0.58);
+  contain: layout style;
 }
 
 .track-row {
@@ -1160,6 +1178,7 @@ img {
   min-height: 64px;
   padding: 0.55rem 0.75rem;
   border-bottom: 1px solid var(--line);
+  contain: layout paint style;
 }
 
 .track-row:last-child {
@@ -1217,7 +1236,8 @@ img {
   padding: 0.75rem max(1rem, env(safe-area-inset-right, 0px)) calc(0.75rem + env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
   border-top: 1px solid var(--line-strong);
   background: #111317;
-  box-shadow: 0 -14px 35px rgba(0, 0, 0, 0.34);
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04);
+  contain: layout paint style;
 }
 
 .mini-track {
@@ -1331,7 +1351,7 @@ img {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: var(--panel);
-  box-shadow: var(--shadow);
+  contain: paint;
 }
 
 .detail-poster img {
@@ -1415,6 +1435,7 @@ img {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(21, 23, 26, 0.66);
+  contain: layout paint style;
 }
 
 .variant-row.active,
@@ -1465,6 +1486,7 @@ img {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(21, 23, 26, 0.58);
+  contain: layout paint style;
 }
 
 .episode-thumb {
@@ -1536,19 +1558,21 @@ img {
   z-index: 91;
   border: 1px solid var(--line-strong);
   background: #111317;
-  box-shadow: var(--shadow);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  contain: layout paint style;
 }
 
 .now-sheet {
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   display: grid;
   justify-items: center;
   gap: 1rem;
   width: min(94vw, 460px);
+  margin: 0 auto;
   padding: 1.3rem;
   border-radius: 8px;
-  transform: translateX(-50%);
 }
 
 .now-art {
@@ -1609,6 +1633,7 @@ img {
 
 .queue-list {
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .queue-row {
@@ -1658,12 +1683,21 @@ img {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: #000;
+  contain: layout paint style;
 }
 
 .video-shell video {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  background: #000;
+}
+
+.video-brightness-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
   background: #000;
 }
 
@@ -1831,11 +1865,6 @@ img {
   width: min(14rem, 100%);
 }
 
-@keyframes loading {
-  from { background-position: 120% 0; }
-  to { background-position: -120% 0; }
-}
-
 .modal-layer {
   position: fixed;
   inset: 0;
@@ -1865,7 +1894,7 @@ img {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: #111317;
-  box-shadow: var(--shadow);
+  contain: layout paint style;
 }
 
 .modal-panel h2 {

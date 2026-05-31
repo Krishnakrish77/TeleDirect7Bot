@@ -76,7 +76,7 @@ export function WatchPage({
       return (
         <main className="watch-main">
           <section className="watch-fallback">
-            <img src={video.posterUrl} alt="" />
+            <img src={video.posterUrl} alt="" decoding="async" />
             <div>
               <p className="eyebrow">Classic player</p>
               <h1>{video.title}</h1>
@@ -98,7 +98,7 @@ export function WatchPage({
     return (
       <main className="watch-main">
         <section className="watch-fallback">
-          <img src={card.posterUrl} alt="" />
+          <img src={card.posterUrl} alt="" decoding="async" />
           <div>
             <p className="eyebrow">{card.mediaKind || 'Media'}</p>
             <h1>{card.title}</h1>
@@ -131,7 +131,7 @@ export function WatchPage({
     <main className="watch-main">
       <section className="audio-watch">
         <div className="audio-art">
-          <img src={track.posterUrl || track.thumbUrl} alt="" />
+          <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" />
         </div>
         <div className="audio-details">
           <p className="eyebrow">{track.qualityLabel || track.format || 'Music'}</p>
@@ -485,7 +485,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         setVolume(next);
         showToast(`Volume ${Math.round(next * 100)}%`);
       } else {
-        const next = Math.max(0.45, Math.min(1.35, brightness + dy / 650));
+        const next = Math.max(0.45, Math.min(1, brightness + dy / 650));
         setBrightness(next);
         showToast(`Brightness ${Math.round(next * 100)}%`);
       }
@@ -532,7 +532,6 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           crossOrigin="anonymous"
           playsInline
           preload="metadata"
-          style={{ filter: `brightness(${brightness})` }}
         >
           {subtitles.map((track, index) => (
             <track
@@ -545,6 +544,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
             />
           ))}
         </video>
+        <div className="video-brightness-overlay" style={{ opacity: Math.max(0, 1 - brightness) }} />
 
         {toast && <div className="gesture-toast">{toast}</div>}
 
@@ -687,4 +687,3 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     </main>
   );
 }
-

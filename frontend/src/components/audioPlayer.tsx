@@ -28,7 +28,7 @@ export function MiniPlayer({
   return (
     <aside className="mini-player" aria-label="Audio player">
       <button type="button" className="mini-track mini-track-button" onClick={onExpand}>
-        <img src={track.posterUrl || track.thumbUrl} alt="" />
+        <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" />
         <span>
           <strong>{track.title}</strong>
           <span>{[track.artist, track.albumTitle].filter(Boolean).join(' - ')}</span>
@@ -93,7 +93,7 @@ export function NowPlayingSheet({
         <button type="button" className="icon-button modal-close" onClick={onClose} aria-label="Close">
           <XIcon />
         </button>
-        <img className="now-art" src={track.posterUrl || track.thumbUrl} alt="" />
+        <img className="now-art" src={track.posterUrl || track.thumbUrl} alt="" decoding="async" />
         <div className="now-copy">
           <p className="eyebrow">{track.qualityLabel || track.format || 'Now playing'}</p>
           <h2>{track.title}</h2>
@@ -173,7 +173,7 @@ export function QueueDrawer({
                   onClick={() => (active ? togglePlayback() : playQueueIndex(index))}
                 >
                   <span className="track-number">{index + 1}</span>
-                  <img src={track.posterUrl || track.thumbUrl} alt="" />
+                  <img src={track.posterUrl || track.thumbUrl} alt="" loading="lazy" decoding="async" />
                   <span className="track-title">
                     <strong>{track.title}</strong>
                     <span>{[track.artist, track.albumTitle].filter(Boolean).join(' - ')}</span>
@@ -193,4 +193,3 @@ export function QueueDrawer({
     </div>
   );
 }
-

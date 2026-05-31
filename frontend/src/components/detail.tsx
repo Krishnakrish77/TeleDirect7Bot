@@ -103,10 +103,10 @@ function DetailHero({
 }) {
   return (
     <section className="detail-hero">
-      {(backdropUrl || posterUrl) && <img className="detail-backdrop" src={backdropUrl || posterUrl} alt="" />}
+      {(backdropUrl || posterUrl) && <img className="detail-backdrop" src={backdropUrl || posterUrl} alt="" decoding="async" fetchPriority="high" />}
       <div className="detail-gradient" />
       <div className="detail-poster">
-        <img src={posterUrl || backdropUrl} alt="" />
+        <img src={posterUrl || backdropUrl} alt="" decoding="async" fetchPriority="high" />
       </div>
       <div className="detail-copy">
         <p className="eyebrow">{subtitle}</p>
@@ -246,7 +246,7 @@ function SeriesDetail({
                 {block.entries.map((entry) => (
                   <article key={entry.rep.key} className="episode-card">
                     <a className="episode-thumb" href={entry.rep.playHref}>
-                      <img src={entry.rep.episodeStillUrl || entry.rep.thumbUrl} alt="" loading="lazy" />
+                      <img src={entry.rep.episodeStillUrl || entry.rep.thumbUrl} alt="" loading="lazy" decoding="async" />
                       {entry.rep.durationLabel && <span className="card-badge">{entry.rep.durationLabel}</span>}
                     </a>
                     <div>
@@ -541,4 +541,3 @@ function CardGridSection({
     </section>
   );
 }
-

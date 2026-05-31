@@ -222,9 +222,9 @@ export function SearchMenu({ suggestions, onPick }: { suggestions: Suggestion[];
         <a key={item.url} href={localAppHref(item.url) || item.url} className="suggestion" onClick={onPick}>
           <span className="suggestion-art">
             {item.poster_path ? (
-              <img src={`https://image.tmdb.org/t/p/w92${item.poster_path}`} alt="" loading="lazy" />
+              <img src={`https://image.tmdb.org/t/p/w92${item.poster_path}`} alt="" loading="lazy" decoding="async" />
             ) : (
-              <img src={`/thumb/${item.secure_hash}${item.message_id}.jpg`} alt="" loading="lazy" />
+              <img src={`/thumb/${item.secure_hash}${item.message_id}.jpg`} alt="" loading="lazy" decoding="async" />
             )}
           </span>
           <span className="suggestion-copy">
@@ -298,4 +298,3 @@ export function SignInModal({
     </div>
   );
 }
-
