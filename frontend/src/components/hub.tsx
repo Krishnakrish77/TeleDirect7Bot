@@ -457,8 +457,9 @@ export function MediaCard({
         <img
           src={card.posterUrl}
           alt=""
-          loading="lazy"
-          decoding="async"
+          loading={isMusic ? 'eager' : 'lazy'}
+          decoding={isMusic ? 'sync' : 'async'}
+          draggable={false}
           onError={(event) => {
             event.currentTarget.style.display = 'none';
           }}

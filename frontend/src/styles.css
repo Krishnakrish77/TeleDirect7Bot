@@ -897,17 +897,15 @@ img {
   display: grid;
   gap: 0.65rem;
   min-width: 0;
-  contain: layout style;
 }
 
 .poster-wrap {
   position: relative;
-  display: block;
+  display: grid;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
-  contain: paint;
 }
 
 .media-card.poster .poster-wrap {
@@ -920,8 +918,8 @@ img {
 
 .poster-wrap img,
 .poster-placeholder {
-  position: absolute;
-  inset: 0;
+  grid-area: 1 / 1;
+  min-width: 0;
 }
 
 .poster-wrap img {
@@ -929,6 +927,7 @@ img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  background: var(--panel);
 }
 
 .poster-placeholder {
