@@ -1,4 +1,4 @@
-import { memo, type MouseEvent, useEffect, useState } from 'react';
+import { memo, type MouseEvent } from 'react';
 import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon } from '../icons';
 import type { HubCard } from '../types';
 
@@ -18,13 +18,6 @@ function MediaCardBase({
   const isMusic = card.type === 'track' || card.type === 'album';
   const width = card.aspect === 'square' ? 512 : 342;
   const height = card.aspect === 'square' ? 512 : 513;
-  const [imageReady, setImageReady] = useState(false);
-  const [imageFailed, setImageFailed] = useState(false);
-
-  useEffect(() => {
-    setImageReady(false);
-    setImageFailed(false);
-  }, [card.posterUrl]);
 
   return (
     <article className={`media-card ${card.aspect === 'square' ? 'square' : 'poster'}`}>
@@ -34,7 +27,7 @@ function MediaCardBase({
             {isMusic ? <MusicIcon /> : <FilmIcon />}
           </span>
           <img
-            className={imageReady ? 'poster-image ready' : 'poster-image'}
+            className="poster-image"
             src={card.posterUrl}
             alt=""
             width={width}
@@ -43,20 +36,18 @@ function MediaCardBase({
             decoding="async"
             fetchPriority={priority ? 'high' : undefined}
             draggable={false}
-            hidden={imageFailed}
             onLoad={(event) => {
               const image = event.currentTarget;
               const decode = image.decode?.();
               if (decode) {
                 void decode
                   .catch(() => undefined)
-                  .finally(() => setImageReady(true));
+                  .finally(() => image.classList.add('ready'));
                 return;
               }
-              setImageReady(true);
+              image.classList.add('ready');
             }}
             onError={(event) => {
-              setImageFailed(true);
               event.currentTarget.hidden = true;
             }}
           />

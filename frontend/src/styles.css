@@ -2238,12 +2238,38 @@ img {
   }
 
   .media-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 0.85rem;
+    align-items: flex-start;
   }
 
   .media-grid.music-grid {
-    grid-template-columns: repeat(2, minmax(0, 160px));
     justify-content: center;
+  }
+
+  .media-grid .media-card {
+    flex: 0 0 calc((100% - 0.85rem) / 2);
+    max-width: calc((100% - 0.85rem) / 2);
+  }
+
+  .media-grid.music-grid .media-card {
+    flex-basis: min(160px, calc((100% - 0.85rem) / 2));
+    max-width: min(160px, calc((100% - 0.85rem) / 2));
+  }
+
+  .media-grid .poster-wrap {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .media-grid .poster-image,
+  .media-grid .poster-placeholder {
+    border: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--panel);
   }
 
   .save-button {
