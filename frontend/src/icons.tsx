@@ -85,12 +85,41 @@ export function ChevronRightIcon(props: Props) {
   );
 }
 
+export function ChevronDownIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </IconBase>
+  );
+}
+
 export function FilterIcon(props: Props) {
   return (
     <IconBase {...props}>
       <path d="M4 6h16" />
       <path d="M7 12h10" />
       <path d="M10 18h4" />
+    </IconBase>
+  );
+}
+
+export function ChartIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 19V5" />
+      <path d="M4 19h16" />
+      <path d="M8 16v-5" />
+      <path d="M13 16V8" />
+      <path d="M18 16v-3" />
+    </IconBase>
+  );
+}
+
+export function ShieldIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+      <path d="M9 12l2 2 4-4" />
     </IconBase>
   );
 }

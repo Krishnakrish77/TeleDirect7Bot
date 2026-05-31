@@ -178,14 +178,25 @@
       const subIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"/></svg>';
       const shrIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>';
 
-      // PiP first — in-app feature, accessible even in fullscreen/landscape
+      // PiP first — in-app feature, accessible even in fullscreen/landscape.
+      // Safari/iOS exposes PiP through WebKit presentation APIs instead of
+      // the standard document.pictureInPictureEnabled path.
       const pipIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><rect x="2" y="4" width="20" height="14" rx="2"/><rect x="12" y="11" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>';
-      if (document.pictureInPictureEnabled) {
+      const standardPip = document.pictureInPictureEnabled && typeof video.requestPictureInPicture === "function";
+      const webkitPip = typeof video.webkitSupportsPresentationMode === "function"
+        && video.webkitSupportsPresentationMode("picture-in-picture")
+        && typeof video.webkitSetPresentationMode === "function";
+      if (standardPip || webkitPip) {
         menu.appendChild(menuItem(pipIcon, "Picture in Picture", () => {
-          if (document.pictureInPictureElement) {
+          if (standardPip && document.pictureInPictureElement) {
             document.exitPictureInPicture().catch(function() {});
-          } else {
+          } else if (standardPip) {
             video.requestPictureInPicture().catch(function() {});
+          } else if (webkitPip) {
+            const mode = video.webkitPresentationMode === "picture-in-picture"
+              ? "inline"
+              : "picture-in-picture";
+            video.webkitSetPresentationMode(mode);
           }
         }));
       }

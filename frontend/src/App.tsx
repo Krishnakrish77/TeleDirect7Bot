@@ -24,6 +24,8 @@ import {
 import {
   BookmarkIcon,
   CheckIcon,
+  ChartIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
   FilmIcon,
   FilterIcon,
@@ -31,6 +33,7 @@ import {
   MusicIcon,
   PauseIcon,
   PlayIcon,
+  ShieldIcon,
   SearchIcon,
   SkipBackIcon,
   SkipForwardIcon,
@@ -904,7 +907,27 @@ function Header({
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement | null>(null);
   const suggestions = useSuggestions(query);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    const closeOnPointer = (event: PointerEvent) => {
+      if (!accountRef.current?.contains(event.target as Node)) {
+        setAccountOpen(false);
+      }
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setAccountOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnPointer);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnPointer);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [accountOpen]);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -955,17 +978,54 @@ function Header({
             <a className="icon-button" href="/watchlist" aria-label="Watchlist">
               <BookmarkIcon />
             </a>
-            <div className="profile-chip">
-              {user.photo ? (
-                <img src={user.photo} alt="" />
-              ) : (
-                <span>{(user.name || 'U')[0].toUpperCase()}</span>
+            <div className="account-menu-wrap" ref={accountRef}>
+              <button
+                className="profile-chip"
+                type="button"
+                onClick={() => setAccountOpen((current) => !current)}
+                aria-haspopup="menu"
+                aria-expanded={accountOpen}
+              >
+                <span className="profile-avatar">
+                  {user.photo ? (
+                    <img src={user.photo} alt="" />
+                  ) : (
+                    <span>{(user.name || 'U')[0].toUpperCase()}</span>
+                  )}
+                </span>
+                <strong>{user.name || user.username || 'User'}</strong>
+                <ChevronDownIcon className="profile-chevron" />
+              </button>
+              {accountOpen && (
+                <div className="account-menu" role="menu">
+                  <a href="/watchlist" role="menuitem" onClick={() => setAccountOpen(false)}>
+                    <BookmarkIcon />
+                    <span>Watchlist</span>
+                  </a>
+                  <a href="/stats" role="menuitem" onClick={() => setAccountOpen(false)}>
+                    <ChartIcon />
+                    <span>Stats</span>
+                  </a>
+                  {user.is_admin && (
+                    <a href="/admin" role="menuitem" onClick={() => setAccountOpen(false)}>
+                      <ShieldIcon />
+                      <span>Admin panel</span>
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setAccountOpen(false);
+                      onSignOut();
+                    }}
+                  >
+                    <LogOutIcon />
+                    <span>Sign out</span>
+                  </button>
+                </div>
               )}
-              <strong>{user.name || user.username || 'User'}</strong>
             </div>
-            <button className="icon-button" type="button" onClick={onSignOut} aria-label="Sign out">
-              <LogOutIcon />
-            </button>
           </>
         ) : (
           <button className="signin-button" type="button" onClick={onSignIn} disabled={me === null}>
