@@ -76,7 +76,30 @@ export function FilterBar({
   setQuery: (next: string) => void;
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
 }) {
-  const clearAll = () => {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const hasFilters = Boolean(
+    query ||
+    params.tag ||
+    params.quality ||
+    params.genre ||
+    params.year ||
+    params.sort !== 'newest',
+  );
+  const sortLabel = filters.sortOptions.find((option) => option.value === params.sort)?.label || 'Newest';
+  const yearOptions = [
+    { value: '', label: 'Any' },
+    ...filters.years.map((year) => ({ value: String(year), label: String(year) })),
+  ];
+  const qualityOptions = [
+    { value: '', label: 'Any' },
+    ...filters.qualities.map((quality) => ({ value: quality, label: quality })),
+  ];
+  const genreOptions = [
+    { value: '', label: 'Any' },
+    ...filters.genres.map((genre) => ({ value: genre, label: genre })),
+  ];
+
+  const clearAll = (replace = false) => {
     setQuery('');
     update({
       q: '',
@@ -85,50 +108,141 @@ export function FilterBar({
       genre: '',
       year: null,
       sort: 'newest',
-      view: '',
       offset: 0,
-    });
+    }, replace);
   };
 
   return (
-    <div className="filter-bar">
-      <div className="filter-heading">
-        <FilterIcon />
-        <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
+    <>
+      <div className="filter-bar desktop-filter-bar">
+        <div className="filter-heading">
+          <FilterIcon />
+          <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
+        </div>
+        <label>
+          <span>Year</span>
+          <select value={params.year || ''} onChange={(event) => update({ year: event.currentTarget.value ? Number(event.currentTarget.value) : null })}>
+            <option value="">Any</option>
+            {filters.years.map((year) => <option key={year} value={year}>{year}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Quality</span>
+          <select value={params.quality} onChange={(event) => update({ quality: event.currentTarget.value })}>
+            <option value="">Any</option>
+            {filters.qualities.map((quality) => <option key={quality} value={quality}>{quality}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Genre</span>
+          <select value={params.genre} onChange={(event) => update({ genre: event.currentTarget.value })}>
+            <option value="">Any</option>
+            {filters.genres.map((genre) => <option key={genre} value={genre}>{genre}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Sort</span>
+          <select value={params.sort} onChange={(event) => update({ sort: event.currentTarget.value })}>
+            {filters.sortOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        {hasFilters && (
+          <button className="text-button" type="button" onClick={() => clearAll()}>Reset</button>
+        )}
       </div>
-      <label>
-        <span>Year</span>
-        <select value={params.year || ''} onChange={(event) => update({ year: event.currentTarget.value ? Number(event.currentTarget.value) : null })}>
-          <option value="">Any</option>
-          {filters.years.map((year) => <option key={year} value={year}>{year}</option>)}
-        </select>
-      </label>
-      <label>
-        <span>Quality</span>
-        <select value={params.quality} onChange={(event) => update({ quality: event.currentTarget.value })}>
-          <option value="">Any</option>
-          {filters.qualities.map((quality) => <option key={quality} value={quality}>{quality}</option>)}
-        </select>
-      </label>
-      <label>
-        <span>Genre</span>
-        <select value={params.genre} onChange={(event) => update({ genre: event.currentTarget.value })}>
-          <option value="">Any</option>
-          {filters.genres.map((genre) => <option key={genre} value={genre}>{genre}</option>)}
-        </select>
-      </label>
-      <label>
-        <span>Sort</span>
-        <select value={params.sort} onChange={(event) => update({ sort: event.currentTarget.value })}>
-          {filters.sortOptions.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-      </label>
-      {(query || params.tag || params.quality || params.genre || params.year || params.view || params.sort !== 'newest') && (
-        <button className="text-button" type="button" onClick={clearAll}>Reset</button>
+
+      <div className="mobile-filter-bar">
+        <div className="filter-heading">
+          <FilterIcon />
+          <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
+        </div>
+        <button type="button" className="filter-summary-button" onClick={() => setMobileOpen(true)}>
+          <span>Filters</span>
+          <strong>{hasFilters ? 'Active' : 'Any'}</strong>
+        </button>
+        <button type="button" className="filter-summary-button" onClick={() => setMobileOpen(true)}>
+          <span>Sort</span>
+          <strong>{sortLabel}</strong>
+        </button>
+      </div>
+
+      {mobileOpen && (
+        <div className="filter-sheet-layer" role="dialog" aria-modal="true" aria-label="Filters">
+          <button className="filter-sheet-scrim" type="button" onClick={() => setMobileOpen(false)} aria-label="Close filters" />
+          <div className="filter-sheet">
+            <div className="filter-sheet-heading">
+              <div>
+                <p className="eyebrow">Browse</p>
+                <h2>Filters</h2>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setMobileOpen(false)} aria-label="Close filters">
+                <XIcon />
+              </button>
+            </div>
+            <FilterOptionGroup
+              title="Year"
+              options={yearOptions}
+              value={params.year ? String(params.year) : ''}
+              onChange={(value) => update({ year: value ? Number(value) : null }, true)}
+            />
+            <FilterOptionGroup
+              title="Quality"
+              options={qualityOptions}
+              value={params.quality}
+              onChange={(value) => update({ quality: value }, true)}
+            />
+            <FilterOptionGroup
+              title="Genre"
+              options={genreOptions}
+              value={params.genre}
+              onChange={(value) => update({ genre: value }, true)}
+            />
+            <FilterOptionGroup
+              title="Sort"
+              options={filters.sortOptions}
+              value={params.sort}
+              onChange={(value) => update({ sort: value }, true)}
+            />
+            <div className="filter-sheet-actions">
+              <button className="text-button" type="button" onClick={() => clearAll(true)} disabled={!hasFilters}>Reset</button>
+              <button className="primary-action" type="button" onClick={() => setMobileOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>
       )}
-    </div>
+    </>
+  );
+}
+
+function FilterOptionGroup({
+  title,
+  options,
+  value,
+  onChange,
+}: {
+  title: string;
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <section className="filter-option-group">
+      <h3>{title}</h3>
+      <div className="filter-option-list">
+        {options.map((option) => (
+          <button
+            key={option.value || 'any'}
+            type="button"
+            className={value === option.value ? 'filter-option active' : 'filter-option'}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
