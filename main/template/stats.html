@@ -2,10 +2,18 @@
 {% block title %}Stats · TeleDirect{% endblock %}
 
 {% block content %}
-<div class="w-full max-w-lg mx-auto space-y-4">
+{# ── Layout wrapper ──────────────────────────────────────────────────────────
+   Mobile  : single column, max-w-lg, space-y-4 gutters.
+   lg+     : two-column bento grid, max-w-5xl, gap-4.
+             Full-width sections use a nested lg:col-span-2 div so they
+             always span both columns regardless of conditional rendering.
+             Each pair-row is its own wrapper so missing conditional cards
+             don't leave orphaned half-width slots. #}
+<div class="w-full max-w-lg lg:max-w-5xl mx-auto">
+<div class="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-4">
 
-  {# Back nav #}
-  <div class="flex items-center gap-2 mb-2">
+  {# ── Back nav ─────────────────────────────────────────────────────────── #}
+  <div class="flex items-center gap-2 mb-2 lg:col-span-2">
     <a href="/" class="text-slate-500 hover:text-slate-300 transition-colors">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
            stroke="currentColor" stroke-width="2" class="w-5 h-5">
@@ -16,7 +24,7 @@
   </div>
 
   {% if total_plays == 0 %}
-    <div class="text-center py-24">
+    <div class="lg:col-span-2 text-center py-24">
       <p class="text-4xl mb-3">🍿</p>
       <p class="text-lg font-semibold text-white">No activity yet</p>
       <p class="text-sm text-slate-400 mt-1">Start watching to see your year in review.</p>
@@ -27,33 +35,35 @@
     </div>
   {% else %}
 
-  {# ── HERO ─────────────────────────────────────────────────────────────── #}
-  <div class="rounded-2xl bg-gradient-to-br from-brand-600 to-brand-900 p-8 text-center">
+  {# ── HERO — always full width ──────────────────────────────────────────── #}
+  <div class="lg:col-span-2 rounded-2xl bg-gradient-to-br from-brand-600 to-brand-900
+              p-8 lg:p-12 text-center">
     <p class="text-sm font-medium text-brand-200 uppercase tracking-widest mb-2">Past 12 months</p>
-    <p class="text-6xl sm:text-7xl font-black text-white leading-none">
-      {{ total_hours }}<span class="text-3xl font-semibold text-brand-200">h</span>
-      {% if total_mins %}<span class="text-3xl font-semibold text-brand-200"> {{ total_mins }}m</span>{% endif %}
+    <p class="text-6xl sm:text-7xl lg:text-8xl font-black text-white leading-none">
+      {{ total_hours }}<span class="text-3xl lg:text-4xl font-semibold text-brand-200">h</span>
+      {% if total_mins %}<span class="text-3xl lg:text-4xl font-semibold text-brand-200"> {{ total_mins }}m</span>{% endif %}
     </p>
-    <p class="mt-3 text-brand-200 text-sm">of content watched &amp; listened to</p>
+    <p class="mt-3 text-brand-200 text-sm lg:text-base">of content watched &amp; listened to</p>
     {% if equiv_movies > 0 %}
-      <p class="mt-4 text-xs text-brand-300">
+      <p class="mt-4 text-xs lg:text-sm text-brand-300">
         That's about {{ equiv_movies }} movies
         {% if equiv_flights > 0 %} or {{ equiv_flights }} long-haul flights{% endif %}
       </p>
     {% endif %}
   </div>
 
-  {# ── PERSONALITY — only shown after meaningful activity ──────────────── #}
+  {# ── PERSONALITY + TOP TITLE — pair at lg ─────────────────────────────── #}
   {% if personality %}
-  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6 text-center">
+  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6 text-center
+              flex flex-col items-center justify-center">
     <p class="text-xs text-slate-500 uppercase tracking-widest mb-2">You are a</p>
-    <p class="text-3xl font-black text-white">{{ personality }}</p>
+    <p class="text-3xl lg:text-4xl font-black text-white">{{ personality }}</p>
   </div>
   {% endif %}
 
-  {# ── TOP TITLE ────────────────────────────────────────────────────────── #}
   {% if top_title %}
-  <div class="rounded-2xl bg-ink-800/80 border border-white/5 overflow-hidden">
+  <div class="rounded-2xl bg-ink-800/80 border border-white/5 overflow-hidden
+              {% if not personality %}lg:col-span-2{% endif %}">
     <div class="px-6 pt-5 pb-3">
       <p class="text-xs text-slate-500 uppercase tracking-widest">
         {%- if top_title.media_kind == 'audio' %}#1 Most Played{%- else %}#1 Most Watched{%- endif %}
@@ -91,7 +101,6 @@
         </span>
       </div>
     </a>
-    {# "Also watched" — only render when there are other titles in the list #}
     {% if most_replayed %}
     <div class="border-t border-white/5 px-6 py-4">
       <p class="text-[10px] text-slate-600 uppercase tracking-wider mb-2">
@@ -116,7 +125,7 @@
   </div>
   {% endif %}
 
-  {# ── TOP GENRE ─────────────────────────────────────────────────────────── #}
+  {# ── TOP GENRE + SCHEDULE — pair at lg ────────────────────────────────── #}
   {% if top_genres %}
   <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6">
     <p class="text-xs text-slate-500 uppercase tracking-widest mb-4">Taste</p>
@@ -137,8 +146,8 @@
   </div>
   {% endif %}
 
-  {# ── SCHEDULE ─────────────────────────────────────────────────────────── #}
-  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6">
+  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6
+              {% if not top_genres %}lg:col-span-2{% endif %}">
     <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Schedule</p>
     {% if timed_plays >= 5 %}
     <p class="text-2xl font-bold text-white mb-4">
@@ -162,14 +171,10 @@
     {% endif %}
   </div>
 
-  {# ── TOP CREATOR ──────────────────────────────────────────────────────── #}
+  {# ── TOP CREATOR — full width (already a 2-col inner grid) ───────────── #}
   {% if top_artists or top_director %}
-  <div class="grid grid-cols-2 gap-4">
+  <div class="lg:col-span-2 grid grid-cols-2 gap-4">
     {% if top_artists %}
-    {# Plain div, NOT an anchor — the primary artist name and each runner-up
-       are their own links. Wrapping the card in <a> and nesting the runner-up
-       <a>s inside it is invalid HTML: the browser auto-closes the outer anchor
-       at the first nested one, splitting the card into two grid cells. #}
     <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-5 group
                 hover:border-brand-400/30 hover:bg-ink-800 transition-colors">
       <p class="text-[10px] text-slate-500 uppercase tracking-wider">Top Artist{{ 's' if top_artists | length > 1 }}</p>
@@ -201,9 +206,10 @@
   </div>
   {% endif %}
 
-  {# ── VIDEO VS AUDIO ───────────────────────────────────────────────────── #}
+  {# ── VIDEO/AUDIO + MOST ACTIVE MONTH — pair at lg ─────────────────────── #}
   {% if n_video > 0 or n_audio > 0 %}
-  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6">
+  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6
+              {% if not best_month %}lg:col-span-2{% endif %}">
     <p class="text-xs text-slate-500 uppercase tracking-widest mb-3">What You Watch &amp; Listen To</p>
     <div class="flex gap-3 text-center">
       {% if n_video > 0 %}
@@ -232,32 +238,33 @@
   </div>
   {% endif %}
 
-  {# ── MOST ACTIVE MONTH ────────────────────────────────────────────────── #}
   {% if best_month %}
-  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-5">
+  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-5
+              flex flex-col justify-center
+              {% if not (n_video > 0 or n_audio > 0) %}lg:col-span-2{% endif %}">
     <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Most Active Month</p>
-    <p class="text-2xl font-black text-white">{{ best_month[0] }}</p>
+    <p class="text-2xl lg:text-3xl font-black text-white">{{ best_month[0] }}</p>
     <p class="text-xs text-slate-500 mt-1">{{ best_month[1] }} title{{ '' if best_month[1] == 1 else 's' }} completed</p>
   </div>
   {% endif %}
 
-  {# ── STREAKS ──────────────────────────────────────────────────────────── #}
+  {# ── STREAKS — full width ─────────────────────────────────────────────── #}
   {% if current_streak > 0 or longest_streak > 0 %}
-  <div class="grid grid-cols-2 gap-3">
+  <div class="lg:col-span-2 grid grid-cols-2 gap-3">
     <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-5 text-center">
-      <p class="text-3xl font-black text-white">{{ current_streak }}<span class="text-lg font-semibold text-slate-400">d</span></p>
+      <p class="text-3xl lg:text-4xl font-black text-white">{{ current_streak }}<span class="text-lg font-semibold text-slate-400">d</span></p>
       <p class="text-[10px] text-slate-500 mt-1">Current streak 🔥</p>
     </div>
     <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-5 text-center">
-      <p class="text-3xl font-black text-white">{{ longest_streak }}<span class="text-lg font-semibold text-slate-400">d</span></p>
+      <p class="text-3xl lg:text-4xl font-black text-white">{{ longest_streak }}<span class="text-lg font-semibold text-slate-400">d</span></p>
       <p class="text-[10px] text-slate-500 mt-1">Longest streak</p>
       <p class="text-[9px] text-slate-700 mt-0.5">within 1 year</p>
     </div>
   </div>
   {% endif %}
 
-  {# ── COMPLETION + ACTIVE DAYS ─────────────────────────────────────────── #}
-  <div class="grid grid-cols-3 gap-3">
+  {# ── COMPLETION STATS — full width ────────────────────────────────────── #}
+  <div class="lg:col-span-2 grid grid-cols-3 gap-3">
     <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-4 text-center">
       <p class="text-3xl font-black text-white">{{ total_titles }}</p>
       <p class="text-[10px] text-slate-500 mt-1">Titles</p>
@@ -276,14 +283,14 @@
     </div>
   </div>
 
-  {# ── HEATMAP ──────────────────────────────────────────────────────────── #}
-  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6">
+  {# ── HEATMAP — full width, bigger cells on lg ─────────────────────────── #}
+  <div class="lg:col-span-2 rounded-2xl bg-ink-800/80 border border-white/5 p-6">
     <p class="text-xs text-slate-500 uppercase tracking-widest mb-4">Last 12 weeks</p>
-    <div class="flex gap-1 flex-wrap">
+    <div class="flex gap-1 lg:gap-1.5 flex-wrap">
       {%- for cell in heatmap -%}
         {%- if cell.dow == 0 and not loop.first -%}<div class="w-full h-0"></div>{%- endif -%}
         <div title="{{ cell.date }}: {{ cell.count }}"
-             class="w-3.5 h-3.5 rounded-sm flex-shrink-0
+             class="w-3.5 h-3.5 lg:w-5 lg:h-5 rounded-sm flex-shrink-0
              {%- if cell.count == 0 %} bg-ink-700
              {%- elif cell.count == 1 %} bg-brand-800
              {%- elif cell.count <= 3 %} bg-brand-600
@@ -293,5 +300,6 @@
   </div>
 
   {% endif %}
+</div>
 </div>
 {% endblock %}
