@@ -218,6 +218,7 @@ export function WatchPage({
                     <strong>{item.title}</strong>
                     <span>{[item.artist, item.qualityLabel].filter(Boolean).join(' - ')}</span>
                   </span>
+                  <span className="track-duration">{item.durationLabel}</span>
                   <button
                     type="button"
                     className="icon-button"

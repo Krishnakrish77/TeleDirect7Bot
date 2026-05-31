@@ -16,7 +16,7 @@ function App() {
   const route = parseRoute(location.pathname);
   const isHubRoute = route.kind === 'hub';
   const { params, update } = useHubParams(location.key, navigate);
-  const { data, loading, error, stale } = useHub(params, isHubRoute);
+  const { data, loading, error } = useHub(params, isHubRoute);
   const detail = useDetail(route, location.search);
   const { me, reload } = useMe();
   const user = me?.user ?? null;
@@ -62,8 +62,10 @@ function App() {
 
   const activeView = params.view || '';
   const activeFilters = Boolean(params.q || params.tag || params.quality || params.genre || params.year || params.view);
-  const currentHubData = data && !stale ? data : null;
-  const hubLoading = loading || stale;
+  const expectedHubMode = activeFilters ? 'grid' : 'shelves';
+  const canRenderHubData = data?.mode === expectedHubMode;
+  const currentHubData = data;
+  const hubLoading = loading && !canRenderHubData;
   const watchKey = route.kind === 'watch' ? route.key : '';
   const onBottomSearch = useCallback(() => {
     navigate('/app');

@@ -7,6 +7,7 @@ reaches parity route by route.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from pathlib import Path
@@ -15,8 +16,9 @@ from urllib.parse import urlencode, urljoin
 
 from aiohttp import web
 
-from main.utils import media_index
 from main.utils import codec_probe
+from main.utils import media_index
+from main.utils import thumb_cache
 from main.utils.codec_probe import _clean_music_tag
 from main.utils.hub_query import AlbumGroup, HubItem, MovieGroup, SeriesGroup
 from main.utils.human_readable import humanbytes
@@ -42,6 +44,15 @@ _VALID_VIEWS = {"", "list", "movies", "series", "music"}
 _APP_ROUTE_RE = re.compile(r"^/app(?:/.*)?$")
 
 
+@routes.get("/robots.txt")
+async def robots_txt(_: web.Request) -> web.Response:
+    return web.Response(
+        text="User-agent: *\nDisallow: /admin\nDisallow: /api\nAllow: /app\nAllow: /\n",
+        content_type="text/plain",
+        headers={"Cache-Control": "max-age=86400"},
+    )
+
+
 def _json(data, *, status: int = 200) -> web.Response:
     return web.Response(
         text=json.dumps(data, separators=(",", ":")),
@@ -65,6 +76,30 @@ def _tmdb_image(path: str, size: str = "w342") -> str:
 
 def _thumb(item: HubItem) -> str:
     return f"/thumb/{item.secure_hash}{item.message_id}.jpg"
+
+
+def _thumb_source_id(card) -> Optional[int]:
+    poster = getattr(card, "poster_item", None)
+    if poster is not None:
+        return int(poster.message_id)
+    message_id = getattr(card, "message_id", None)
+    return int(message_id) if message_id else None
+
+
+def _prewarm_card_thumbs(cards) -> None:
+    message_ids = []
+    seen = set()
+    for card in cards:
+        message_id = _thumb_source_id(card)
+        if message_id and message_id not in seen:
+            message_ids.append(message_id)
+            seen.add(message_id)
+    if not message_ids:
+        return
+    try:
+        asyncio.create_task(thumb_cache.prewarm_from_store(message_ids))
+    except RuntimeError:
+        pass
 
 
 def _watch_url(item: HubItem) -> str:
@@ -205,7 +240,7 @@ def _card_from_album(card: AlbumGroup) -> dict:
             f"{'' if card.track_count == 1 else 's'}"
         ),
         "eyebrow": "Album",
-        "badge": f"{card.track_count} tracks",
+        "badge": f"{card.track_count} track{'s' if card.track_count != 1 else ''}",
         "href": f"/app/album/{card.album_key}",
         "playHref": _app_watch_url(poster),
         "detailsHref": f"/app/album/{card.album_key}",
@@ -371,6 +406,16 @@ async def api_hub(request: web.Request) -> web.Response:
     }
 
     if _is_landing(params):
+        raw_shelves = media_index.shelves()
+        hero_items = media_index.pick_heroes()
+        _prewarm_card_thumbs(
+            hero_items
+            + [
+                item
+                for shelf in raw_shelves
+                for item in (shelf.get("items") or [])
+            ]
+        )
         shelves = [
             {
                 "name": shelf["name"],
@@ -382,14 +427,14 @@ async def api_hub(request: web.Request) -> web.Response:
                 "total": shelf.get("total", 0),
                 "items": [_card(item) for item in shelf.get("items") or []],
             }
-            for shelf in media_index.shelves()
+            for shelf in raw_shelves
         ]
         return _json({
             "mode": "shelves",
             "params": params,
             "filters": base_filters,
             "catalogueSize": media_index.size(),
-            "heroes": [_hero(item) for item in media_index.pick_heroes()],
+            "heroes": [_hero(item) for item in hero_items],
             "shelves": shelves,
             "items": [],
             "total": 0,
@@ -412,6 +457,8 @@ async def api_hub(request: web.Request) -> web.Response:
     next_offset = params["offset"] + params["limit"]
     if next_offset >= total:
         next_offset = None
+
+    _prewarm_card_thumbs(items)
 
     return _json({
         "mode": "grid",

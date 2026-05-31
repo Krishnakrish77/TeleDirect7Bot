@@ -1299,26 +1299,13 @@ def query_grouped(
         music_albums = [_build_album_group(tracks) for tracks in audio_buckets.values()]
         combined = sorted(
             music_albums + audio_singles,
-            key=lambda c: -(c.latest_message_id if hasattr(c, "latest_message_id") else c.message_id),
+            key=_grouped_sort_key(sort),
         )
         total = len(combined)
         page_items = combined[offset:offset + limit]
         return page_items, total
 
-    if sort == "newest":
-        sort_key = lambda x: -_card_message_id(x)
-    elif sort == "oldest":
-        sort_key = lambda x: _card_message_id(x)
-    elif sort == "title_az":
-        sort_key = lambda x: _card_title(x).lower()
-    elif sort == "title_za":
-        sort_key = lambda x: tuple(-ord(c) for c in _card_title(x).lower())
-    elif sort == "largest":
-        sort_key = lambda x: -_card_file_size(x)
-    else:
-        sort_key = lambda x: -_card_message_id(x)
-
-    combined = sorted(grouped_series + grouped_movies + standalone, key=sort_key)
+    combined = sorted(grouped_series + grouped_movies + standalone, key=_grouped_sort_key(sort))
     total = len(combined)
     page = combined[offset : offset + limit]
     return page, total
@@ -1350,6 +1337,18 @@ def _card_file_size(card) -> int:
     if isinstance(card, AlbumGroup):
         return card.max_file_size  # pre-computed at build time, avoids O(N) scan
     return card.file_size
+
+
+def _grouped_sort_key(sort: str):
+    if sort == "oldest":
+        return lambda card: _card_message_id(card)
+    if sort == "title_az":
+        return lambda card: _card_title(card).lower()
+    if sort == "title_za":
+        return lambda card: tuple(-ord(c) for c in _card_title(card).lower())
+    if sort == "largest":
+        return lambda card: -_card_file_size(card)
+    return lambda card: -_card_message_id(card)
 
 
 def _series_matches_query(it: HubItem, q: str) -> bool:

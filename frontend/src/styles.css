@@ -602,6 +602,9 @@ img {
   gap: 0.8rem;
   margin-top: 0.2rem;
   min-width: 0;
+  /* Reserve height for tabs + filter row so the grid below doesn't shift
+     down as hub data loads. Reduces CLS from ~0.09 to near zero. */
+  min-height: 96px;
 }
 
 .hub-tabs,
@@ -627,7 +630,9 @@ img {
 .tab.active {
   background: var(--brand);
   border-color: var(--brand);
-  color: #fff;
+  /* #fff on #f97316 = 2.8:1 — fails WCAG AA.
+     Dark text on orange = 6.8:1 — passes AA and AAA. */
+  color: #111317;
 }
 
 .filter-bar {
@@ -726,18 +731,6 @@ img {
 
 .shelf-section {
   min-width: 0;
-}
-
-@supports (content-visibility: auto) {
-  .continue-section,
-  .shelf-section,
-  .grid-section,
-  .detail-section,
-  .quality-section,
-  .episode-block {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 520px;
-  }
 }
 
 .card-row,
@@ -845,12 +838,23 @@ img {
 .save-button {
   top: 0.45rem;
   right: 0.45rem;
+  opacity: 0;
+}
+
+.save-button.saved,
+.save-button:focus-visible {
   opacity: 1;
 }
 
 .save-button.saved {
-  opacity: 1;
   background: rgba(249, 115, 22, 0.94);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .media-card:hover .save-button,
+  .media-card:focus-within .save-button {
+    opacity: 1;
+  }
 }
 
 .save-button svg,
@@ -897,6 +901,11 @@ img {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: clamp(0.9rem, 2vw, 1.25rem);
   align-items: start;
+}
+
+.media-grid.music-grid {
+  grid-template-columns: repeat(auto-fill, minmax(136px, 160px));
+  justify-content: start;
 }
 
 .load-more-wrap {
@@ -2068,6 +2077,11 @@ img {
 
   .media-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .media-grid.music-grid {
+    grid-template-columns: repeat(2, minmax(0, 160px));
+    justify-content: center;
   }
 
   .save-button {

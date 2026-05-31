@@ -275,6 +275,10 @@ export function GridView({
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
   onToggleSaved: (card: HubCard) => void;
 }) {
+  const isMusicGrid =
+    params.view === 'music' ||
+    (data.items.length > 0 && data.items.every((card) => card.aspect === 'square'));
+
   return (
     <section className="grid-section">
       <div className="section-heading">
@@ -285,7 +289,7 @@ export function GridView({
       </div>
       {data.items.length ? (
         <>
-          <div className="media-grid">
+          <div className={isMusicGrid ? 'media-grid music-grid' : 'media-grid'}>
             {data.items.map((card) => (
               <MediaCard
                 key={`${card.type}:${card.itemId}`}
@@ -300,7 +304,7 @@ export function GridView({
               <button
                 type="button"
                 className="secondary-action"
-                onClick={() => update({ offset: data.nextOffset || 0 })}
+                onClick={() => update({ offset: data.nextOffset || 0 }, true)}
               >
                 <span>More</span>
                 <ChevronRightIcon />
@@ -339,7 +343,6 @@ export function MediaCard({
           alt=""
           loading="lazy"
           decoding="async"
-          fetchPriority="low"
           onError={(event) => {
             event.currentTarget.style.display = 'none';
           }}

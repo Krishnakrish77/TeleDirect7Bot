@@ -3,12 +3,15 @@ import { addWatchlist, fetchDetail, fetchHub, fetchMe, fetchSuggestions, fetchWa
 import type { AppRoute } from '../navigation';
 import type { DetailResponse, HubParams, HubResponse, MeResponse, Suggestion, User } from '../types';
 
+function pageFamilyKey(params: HubParams): string {
+  return hubParamsKey({ ...params, offset: 0 });
+}
+
 export function useHub(params: HubParams, enabled = true) {
   const [data, setData] = useState<HubResponse | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState('');
   const requestKey = hubParamsKey(params);
-  const stale = Boolean(enabled && data && hubParamsKey(data.params) !== requestKey);
 
   useEffect(() => {
     if (!enabled) {
@@ -20,7 +23,27 @@ export function useHub(params: HubParams, enabled = true) {
     setLoading(true);
     setError('');
     fetchHub(params, controller.signal)
-      .then(setData)
+      .then((response) => {
+        setData((current) => {
+          if (
+            params.offset > 0 &&
+            current?.mode === 'grid' &&
+            response.mode === 'grid' &&
+            pageFamilyKey(current.params) === pageFamilyKey(response.params)
+          ) {
+            const seen = new Set(current.items.map((item) => item.itemId));
+            const items = current.items.slice();
+            for (const item of response.items) {
+              if (!seen.has(item.itemId)) {
+                seen.add(item.itemId);
+                items.push(item);
+              }
+            }
+            return { ...response, items };
+          }
+          return response;
+        });
+      })
       .catch((err: Error) => {
         if (controller.signal.aborted) return;
         setError(err.message || 'Unable to load the library');
@@ -31,7 +54,7 @@ export function useHub(params: HubParams, enabled = true) {
     return () => controller.abort();
   }, [enabled, requestKey]);
 
-  return { data, loading, error, stale };
+  return { data, loading, error };
 }
 
 export function useDetail(route: AppRoute, locationSearch: string) {
