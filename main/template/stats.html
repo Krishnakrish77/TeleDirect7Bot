@@ -86,7 +86,7 @@
             <span class="{% if top_title.year %}ml-2{% endif %}text-brand-400 font-medium">
               {{ top_title.count }}
               {%- if top_title.is_series %} episodes
-              {%- elif top_title.media_kind == 'audio' %} tracks
+              {%- elif top_title.media_kind == 'audio' %} plays
               {%- else %} plays
               {%- endif %}
             </span>
