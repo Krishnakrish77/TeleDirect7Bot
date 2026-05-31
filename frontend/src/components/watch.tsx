@@ -109,13 +109,13 @@ export function WatchPage({
     : Boolean(data.next);
 
   return (
-    <main className="watch-main">
+    <main className="watch-main audio-watch-main">
       <section className="audio-watch">
         <div className="audio-art">
           <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" />
         </div>
         <div className="audio-details">
-          <p className="eyebrow">{track.qualityLabel || track.format || 'Music'}</p>
+          <p className="eyebrow">{[track.qualityLabel || track.format || 'Music', queue.length > 1 ? `${queue.length} tracks` : ''].filter(Boolean).join(' - ')}</p>
           <h1 dir="auto">{track.title}</h1>
           <p className="audio-subtitle">
             {[track.artist, track.albumTitle].filter(Boolean).join(' - ')}
@@ -182,7 +182,7 @@ export function WatchPage({
       </section>
 
       {queue.length > 1 && (
-        <section className="track-list-section">
+        <section className="track-list-section audio-queue-section">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Album</p>

@@ -1557,13 +1557,28 @@ img {
 
 .watch-main {
   display: grid;
-  gap: clamp(1.4rem, 3vw, 2.4rem);
+  gap: clamp(1rem, 2vw, 1.5rem);
   width: min(100%, 1180px);
   margin: 0 auto;
   padding: clamp(1rem, 3vw, 2rem);
 }
 
-.audio-watch,
+.audio-watch-main {
+  width: min(100%, 1120px);
+}
+
+.audio-watch {
+  display: grid;
+  grid-template-columns: minmax(170px, 260px) minmax(0, 1fr);
+  gap: clamp(1rem, 3vw, 1.7rem);
+  align-items: start;
+  min-height: 0;
+  padding: clamp(0.85rem, 2vw, 1.25rem);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(21, 23, 26, 0.62);
+}
+
 .watch-fallback {
   display: grid;
   grid-template-columns: minmax(220px, 360px) minmax(0, 1fr);
@@ -1596,7 +1611,7 @@ img {
 .audio-details h1 {
   margin: 0.4rem 0 0;
   color: #fff;
-  font-size: clamp(2rem, 5vw, 4.8rem);
+  font-size: clamp(2rem, 5vw, 4.2rem);
   line-height: 1;
 }
 
@@ -1626,15 +1641,20 @@ img {
 
 .audio-details {
   min-width: 0;
+  align-self: center;
 }
 
 .audio-subtitle {
-  margin: 0.8rem 0 0;
+  margin: 0.6rem 0 0;
   font-size: clamp(1rem, 2vw, 1.2rem);
 }
 
 .audio-overview {
-  margin: 1rem 0 0;
+  display: -webkit-box;
+  margin: 0.75rem 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .watch-controls,
@@ -1645,7 +1665,7 @@ img {
 }
 
 .watch-controls {
-  margin-top: 1.6rem;
+  margin-top: 1.1rem;
 }
 
 .player-play {
@@ -1680,7 +1700,7 @@ img {
 
 .watch-progress {
   max-width: 44rem;
-  margin-top: 1.1rem;
+  margin-top: 0.85rem;
 }
 
 .watch-progress span,
@@ -1704,11 +1724,15 @@ img {
 
 .classic-link {
   width: fit-content;
-  margin-top: 0.95rem;
+  margin-top: 0.65rem;
 }
 
 .track-list-section {
   min-width: 0;
+}
+
+.audio-queue-section {
+  margin-top: -0.15rem;
 }
 
 .track-list {
@@ -1725,8 +1749,8 @@ img {
   grid-template-columns: 3rem minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 0.8rem;
-  min-height: 64px;
-  padding: 0.55rem 0.75rem;
+  min-height: 56px;
+  padding: 0.45rem 0.7rem;
   border-bottom: 1px solid var(--line);
   contain: layout paint style;
 }
@@ -1779,11 +1803,11 @@ img {
   bottom: 0;
   z-index: 70;
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) auto minmax(16rem, 0.8fr);
-  gap: 1rem;
+  grid-template-columns: minmax(12rem, 1fr) auto minmax(14rem, 0.75fr);
+  gap: 0.8rem;
   align-items: center;
-  min-height: 82px;
-  padding: 0.75rem max(1rem, env(safe-area-inset-right, 0px)) calc(0.75rem + env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
+  min-height: 72px;
+  padding: 0.55rem max(1rem, env(safe-area-inset-right, 0px)) calc(0.55rem + env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
   border-top: 1px solid var(--line-strong);
   background: #111317;
   box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04);
@@ -1792,15 +1816,15 @@ img {
 
 .mini-track {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  gap: 0.7rem;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 0.65rem;
   align-items: center;
   min-width: 0;
 }
 
 .mini-track img {
-  width: 52px;
-  height: 52px;
+  width: 46px;
+  height: 46px;
   border-radius: 8px;
   object-fit: cover;
   background: var(--panel-strong);
@@ -1859,6 +1883,96 @@ img {
   width: min(100%, 1500px);
   margin: 0 auto;
   padding: clamp(1rem, 3vw, 2rem);
+}
+
+.music-detail-main {
+  width: min(100%, 1160px);
+  gap: clamp(1rem, 2vw, 1.5rem);
+}
+
+.album-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) minmax(0, 1fr);
+  gap: clamp(1rem, 3vw, 1.7rem);
+  align-items: end;
+  min-height: 0;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  padding: clamp(1rem, 2.6vw, 1.6rem);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(21, 23, 26, 0.72);
+  isolation: isolate;
+}
+
+.album-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.16;
+}
+
+.album-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(90deg, rgba(11, 12, 14, 0.88), rgba(11, 12, 14, 0.66)),
+    linear-gradient(0deg, rgba(11, 12, 14, 0.96), rgba(11, 12, 14, 0.24));
+}
+
+.album-hero-art {
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.album-hero-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.album-hero-copy {
+  min-width: 0;
+}
+
+.album-hero-copy h1 {
+  max-width: 18ch;
+  margin: 0.35rem 0 0;
+  color: #fff;
+  font-size: clamp(2.15rem, 5vw, 4.4rem);
+  line-height: 0.98;
+}
+
+.album-artist-link {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 0.55rem;
+  color: #fdba74;
+  font-weight: 800;
+}
+
+.album-overview {
+  display: -webkit-box;
+  max-width: 56rem;
+  margin: 0.75rem 0 0;
+  overflow: hidden;
+  color: #d7e2ef;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.album-track-section {
+  min-width: 0;
 }
 
 .detail-hero {
@@ -2118,15 +2232,15 @@ img {
   bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   display: grid;
   justify-items: center;
-  gap: 1rem;
-  width: min(94vw, 460px);
+  gap: 0.85rem;
+  width: min(94vw, 420px);
   margin: 0 auto;
-  padding: 1.3rem;
+  padding: 1rem;
   border-radius: 8px;
 }
 
 .now-art {
-  width: min(68vw, 300px);
+  width: min(64vw, 240px);
   aspect-ratio: 1 / 1;
   border-radius: 8px;
   object-fit: cover;
@@ -2218,7 +2332,8 @@ img {
 .video-titlebar h1 {
   margin: 0.25rem 0 0;
   color: #fff;
-  font-size: clamp(1.5rem, 3.5vw, 2.7rem);
+  font-size: clamp(1.35rem, 3vw, 2.35rem);
+  line-height: 1.05;
 }
 
 .video-titlebar p:not(.eyebrow) {
@@ -2727,7 +2842,10 @@ img {
     padding: clamp(1.25rem, 2.4vw, 2.8rem);
   }
 
-  .audio-watch,
+  .audio-watch {
+    grid-template-columns: minmax(190px, 300px) minmax(0, 1fr);
+  }
+
   .watch-fallback {
     grid-template-columns: minmax(260px, 420px) minmax(0, 1fr);
     min-height: min(720px, calc(100svh - 140px));
@@ -2735,7 +2853,7 @@ img {
 
   .mini-player {
     left: 0;
-    grid-template-columns: minmax(18rem, 1fr) auto minmax(22rem, 0.8fr);
+    grid-template-columns: minmax(18rem, 1fr) auto minmax(20rem, 0.75fr);
     padding-inline: clamp(1.25rem, 2.4vw, 2.5rem);
   }
 
@@ -2847,7 +2965,12 @@ img {
     display: none;
   }
 
-  .audio-watch,
+  .audio-watch {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    align-items: start;
+  }
+
   .watch-fallback {
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
@@ -3067,6 +3190,25 @@ img {
     padding-inline: 0.85rem;
   }
 
+  .music-detail-main {
+    gap: 0.9rem;
+  }
+
+  .album-hero {
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: center;
+    padding: 0.85rem;
+  }
+
+  .album-hero-copy h1 {
+    max-width: none;
+    font-size: clamp(1.65rem, 8vw, 2.65rem);
+  }
+
+  .album-overview {
+    display: none;
+  }
+
   .detail-hero {
     margin-inline: -0.85rem;
     min-height: 590px;
@@ -3107,7 +3249,7 @@ img {
   }
 
   .audio-art {
-    width: min(100%, 320px);
+    width: min(100%, 280px);
   }
 
   .watch-controls {
@@ -3130,7 +3272,7 @@ img {
 
   .mini-player {
     bottom: calc(64px + env(safe-area-inset-bottom, 0px));
-    min-height: 104px;
+    min-height: 94px;
     padding-inline: 0.75rem;
   }
 
@@ -3157,8 +3299,8 @@ img {
     height: 40px;
   }
 
-  .video-main {
-    gap: 0.9rem;
+.video-main {
+    gap: 0.75rem;
   }
 
   .video-shell {

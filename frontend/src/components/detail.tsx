@@ -292,36 +292,81 @@ function AlbumDetail({
 }) {
   const first = data.tracks[0];
   return (
-    <main className="detail-main">
-      <DetailHero
+    <main className="detail-main music-detail-main">
+      <AlbumHero
         title={data.title}
         subtitle={[data.artist, `${data.trackCount} track${data.trackCount === 1 ? '' : 's'}`].filter(Boolean).join(' - ')}
         overview={data.overview}
         posterUrl={data.posterUrl}
         backdropUrl={data.backdropUrl}
-        playHref={first?.appHref}
+        artistHref={data.artistHref}
+        artist={data.artist}
+        onPlayAll={first ? () => playTrack(first, data.tracks) : undefined}
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
-      >
-        {data.artistHref && <a className="section-link" href={data.artistHref}>{data.artist}</a>}
-      </DetailHero>
-      <section className="detail-section">
+      />
+      <section className="detail-section album-track-section">
         <div className="section-heading">
           <div>
             <p className="eyebrow">Album</p>
             <h2>Tracks</h2>
           </div>
-          {first && (
-            <button type="button" className="primary-action" onClick={() => playTrack(first, data.tracks)}>
-              <PlayIcon />
-              <span>Play all</span>
-            </button>
-          )}
         </div>
         <TrackList tracks={data.tracks} queue={data.tracks} player={player} togglePlayback={togglePlayback} addToQueue={addToQueue} />
       </section>
       <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
     </main>
+  );
+}
+
+function AlbumHero({
+  title,
+  subtitle,
+  overview,
+  posterUrl,
+  backdropUrl,
+  artist,
+  artistHref,
+  onPlayAll,
+  saved,
+  onToggleSaved,
+}: {
+  title: string;
+  subtitle: string;
+  overview: string;
+  posterUrl: string;
+  backdropUrl: string;
+  artist: string;
+  artistHref: string;
+  onPlayAll?: () => void;
+  saved: boolean;
+  onToggleSaved: () => void;
+}) {
+  return (
+    <section className="album-hero">
+      {(backdropUrl || posterUrl) && <img className="album-backdrop" src={backdropUrl || posterUrl} alt="" decoding="async" fetchPriority="high" />}
+      <div className="album-hero-art">
+        <img src={posterUrl || backdropUrl} alt="" decoding="async" fetchPriority="high" />
+      </div>
+      <div className="album-hero-copy">
+        <p className="eyebrow">{subtitle || 'Album'}</p>
+        <h1 dir="auto">{title}</h1>
+        {artistHref && artist && <a className="album-artist-link" href={artistHref}>{artist}</a>}
+        {overview && <p className="album-overview">{overview}</p>}
+        <div className="hero-actions">
+          {onPlayAll && (
+            <button type="button" className="primary-action" onClick={onPlayAll}>
+              <PlayIcon />
+              <span>Play all</span>
+            </button>
+          )}
+          <button type="button" className={saved ? 'secondary-action saved-action' : 'secondary-action'} onClick={onToggleSaved}>
+            {saved ? <CheckIcon /> : <BookmarkIcon />}
+            <span>{saved ? 'Saved' : 'Save'}</span>
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
