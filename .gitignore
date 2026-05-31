@@ -121,3 +121,6 @@ test.py
 test2.py
 gen_session.py
 gen_session.session
+
+# Frontend dependencies / caches
+frontend/node_modules/
