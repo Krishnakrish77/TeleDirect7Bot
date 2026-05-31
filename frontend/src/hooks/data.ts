@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { addWatchlist, fetchDetail, fetchHub, fetchMe, fetchSuggestions, fetchWatchlist, removeWatchlist } from '../api';
+import { addWatchlist, fetchDetail, fetchHub, fetchMe, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
 import type { AppRoute } from '../navigation';
 import type { DetailResponse, HubParams, HubResponse, MeResponse, Suggestion, User } from '../types';
 
@@ -7,6 +7,8 @@ export function useHub(params: HubParams, enabled = true) {
   const [data, setData] = useState<HubResponse | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState('');
+  const requestKey = hubParamsKey(params);
+  const stale = Boolean(enabled && data && hubParamsKey(data.params) !== requestKey);
 
   useEffect(() => {
     if (!enabled) {
@@ -27,9 +29,9 @@ export function useHub(params: HubParams, enabled = true) {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [enabled, params]);
+  }, [enabled, requestKey]);
 
-  return { data, loading, error };
+  return { data, loading, error, stale };
 }
 
 export function useDetail(route: AppRoute, locationSearch: string) {
@@ -130,4 +132,3 @@ export function useSuggestions(q: string) {
 
   return items;
 }
-

@@ -1,5 +1,5 @@
-import { MouseEvent, useCallback, useEffect, useState } from 'react';
-import { hubSearchParams } from './api';
+import { MouseEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { hubParamsKey, hubSearchParams } from './api';
 import type { HubParams, ViewValue } from './types';
 
 const DEFAULT_PARAMS: HubParams = {
@@ -42,6 +42,10 @@ function appUrl(params: Partial<HubParams>): string {
   const qs = hubSearchParams(params);
   const base = appBase();
   return qs.toString() ? `${base}?${qs}` : base;
+}
+
+function sameParams(left: HubParams, right: HubParams): boolean {
+  return hubParamsKey(left) === hubParamsKey(right);
 }
 
 export function localAppHref(href: string | null): string | null {
@@ -130,31 +134,35 @@ export function parseRoute(pathname: string): AppRoute {
 
 export function useHubParams(locationKey: string, navigate: (href: string, replace?: boolean) => void) {
   const [params, setParams] = useState<HubParams>(() => parseParams());
+  const paramsRef = useRef(params);
 
   useEffect(() => {
-    setParams(parseParams());
+    const next = parseParams();
+    paramsRef.current = next;
+    setParams((current) => sameParams(current, next) ? current : next);
   }, [locationKey]);
 
   const update = useCallback((patch: Partial<HubParams>, replace = false) => {
-    setParams((current) => {
-      const next: HubParams = { ...current, ...patch };
-      if (
-        patch.q !== undefined ||
-        patch.tag !== undefined ||
-        patch.quality !== undefined ||
-        patch.genre !== undefined ||
-        patch.year !== undefined ||
-        patch.sort !== undefined ||
-        patch.view !== undefined
-      ) {
-        next.offset = 0;
-      }
-      const url = appUrl(next);
-      navigate(url, replace);
-      return next;
-    });
+    const current = paramsRef.current;
+    const next: HubParams = { ...current, ...patch };
+    if (
+      patch.q !== undefined ||
+      patch.tag !== undefined ||
+      patch.quality !== undefined ||
+      patch.genre !== undefined ||
+      patch.year !== undefined ||
+      patch.sort !== undefined ||
+      patch.view !== undefined
+    ) {
+      next.offset = 0;
+    }
+
+    if (!sameParams(current, next)) {
+      paramsRef.current = next;
+      setParams(next);
+    }
+    navigate(appUrl(next), replace);
   }, [navigate]);
 
   return { params, update };
 }
-

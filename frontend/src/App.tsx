@@ -16,7 +16,7 @@ function App() {
   const route = parseRoute(location.pathname);
   const isHubRoute = route.kind === 'hub';
   const { params, update } = useHubParams(location.key, navigate);
-  const { data, loading, error } = useHub(params, isHubRoute);
+  const { data, loading, error, stale } = useHub(params, isHubRoute);
   const detail = useDetail(route, location.search);
   const { me, reload } = useMe();
   const user = me?.user ?? null;
@@ -62,6 +62,8 @@ function App() {
 
   const activeView = params.view || '';
   const activeFilters = Boolean(params.q || params.tag || params.quality || params.genre || params.year || params.view);
+  const currentHubData = data && !stale ? data : null;
+  const hubLoading = loading || stale;
   const watchKey = route.kind === 'watch' ? route.key : '';
   const onBottomSearch = useCallback(() => {
     navigate('/app');
@@ -94,8 +96,8 @@ function App() {
 
       {isHubRoute ? (
         <main className="hub-main">
-          {data?.mode === 'shelves' && data.heroes.length > 0 && (
-            <HeroStage heroes={data.heroes} />
+          {currentHubData?.mode === 'shelves' && !activeFilters && currentHubData.heroes.length > 0 && (
+            <HeroStage heroes={currentHubData.heroes} />
           )}
 
           <div className="hub-toolbar">
@@ -130,16 +132,16 @@ function App() {
             )}
           </div>
 
-          {data?.mode === 'shelves' && !activeFilters && (
+          {currentHubData?.mode === 'shelves' && !activeFilters && (
             <ContinueWatching />
           )}
 
-          {loading && <LoadingRows />}
+          {hubLoading && <LoadingRows />}
           {error && <ErrorPanel message={error} />}
 
-          {!loading && !error && data?.mode === 'shelves' && (
+          {!hubLoading && !error && currentHubData?.mode === 'shelves' && !activeFilters && (
             <div className="shelf-stack">
-              {data.shelves.map((shelf) => (
+              {currentHubData.shelves.map((shelf) => (
                 <ShelfRow
                   key={shelf.name}
                   shelf={shelf}
@@ -150,9 +152,9 @@ function App() {
             </div>
           )}
 
-          {!loading && !error && data?.mode === 'grid' && (
+          {!hubLoading && !error && currentHubData?.mode === 'grid' && (
             <GridView
-              data={data}
+              data={currentHubData}
               saved={saved}
               params={params}
               update={update}

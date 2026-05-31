@@ -48,6 +48,10 @@ export function hubSearchParams(params: Partial<HubParams>): URLSearchParams {
   return qs;
 }
 
+export function hubParamsKey(params: Partial<HubParams>): string {
+  return hubSearchParams(params).toString();
+}
+
 export async function fetchHub(
   params: Partial<HubParams>,
   signal?: AbortSignal,
