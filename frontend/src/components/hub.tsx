@@ -395,7 +395,7 @@ export function GridView({
   const isMusicGrid =
     params.view === 'music' ||
     (data.items.length > 0 && data.items.every((card) => card.aspect === 'square'));
-  const priorityCount = isMusicGrid ? 8 : 4;
+  const priorityCount = 8;
 
   return (
     <section className="grid-section">
