@@ -927,11 +927,11 @@ img {
   -webkit-line-clamp: 1;
 }
 
-/* Subtle fade + pointer-lock while a grid filter refetch is in flight */
+/* Avoid fading the entire poster grid. On low-end Android GPUs, opacity on a
+   large image grid promotes a huge composited layer and can produce scroll
+   flicker/pixelation while the filtered grid is on screen. */
 .grid-refetching {
-  opacity: 0.55;
   pointer-events: none;
-  transition: opacity 0.15s ease;
 }
 
 .grid-section {
@@ -950,6 +950,20 @@ img {
 .media-grid.music-grid {
   grid-template-columns: repeat(auto-fill, minmax(136px, 160px));
   justify-content: start;
+}
+
+.media-grid .poster-wrap {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.media-grid .poster-image,
+.media-grid .poster-placeholder {
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--panel);
 }
 
 .load-more-wrap {
@@ -2563,20 +2577,6 @@ img {
   .media-grid.music-grid .media-card {
     flex-basis: min(160px, calc((100% - 0.85rem) / 2));
     max-width: min(160px, calc((100% - 0.85rem) / 2));
-  }
-
-  .media-grid .poster-wrap {
-    overflow: visible;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  .media-grid .poster-image,
-  .media-grid .poster-placeholder {
-    border: 1px solid var(--line);
-    border-radius: 0;
-    background: var(--panel);
   }
 
   .save-button {
