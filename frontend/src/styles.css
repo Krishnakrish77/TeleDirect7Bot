@@ -443,9 +443,12 @@ img {
 
 .eyebrow {
   margin: 0;
-  color: #fdba74;
+  /* Muted grey — eyebrows are informational metadata (Movie/Series/720p),
+     not interactive. Orange was overused across both decorative labels and
+     interactive CTAs, diluting the brand colour's affordance signal. */
+  color: var(--muted);
   font-size: 0.8125rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: none;
   letter-spacing: 0;
 }
@@ -896,13 +899,22 @@ img {
   -webkit-line-clamp: 1;
 }
 
+/* Subtle fade + pointer-lock while a grid filter refetch is in flight */
+.grid-refetching {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
 .grid-section {
   min-width: 0;
 }
 
 .media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* 170px min keeps cards wide enough for 2-line titles to display without
+     awkward mid-word breaks at 1440px (was 150px → 8+ columns, too narrow). */
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: clamp(0.9rem, 2vw, 1.25rem);
   align-items: start;
 }
@@ -1015,6 +1027,58 @@ img {
   color: var(--rose);
 }
 
+/* ── Skeleton loading ────────────────────────────────────────────────────── */
+@keyframes td-shimmer {
+  from { opacity: 0.55; }
+  to   { opacity: 1; }
+}
+
+.skeleton-block {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  animation: td-shimmer 1.3s ease-in-out infinite alternate;
+}
+
+.skeleton-hub {
+  display: grid;
+  gap: 2rem;
+  padding-bottom: 3rem;
+}
+
+/* Hero placeholder */
+.skeleton-hero {
+  width: 100%;
+  height: clamp(320px, 48svh, 520px);
+  border-radius: 12px;
+}
+
+/* Shelf row: heading + horizontal card strip */
+.skeleton-shelf {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.skeleton-heading {
+  width: 180px;
+  height: 22px;
+  border-radius: 6px;
+  animation-delay: 0.1s;
+}
+
+.skeleton-cards {
+  display: flex;
+  gap: 0.75rem;
+  overflow: hidden;
+}
+
+.skeleton-card {
+  flex: 0 0 160px;
+  aspect-ratio: 2/3;
+  border-radius: 8px;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+/* Legacy loading-stack kept for non-hub uses */
 .loading-stack {
   display: grid;
   gap: 0.8rem;
@@ -1024,6 +1088,7 @@ img {
   height: 96px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
+  animation: td-shimmer 1.3s ease-in-out infinite alternate;
 }
 
 .watch-main {
@@ -2290,7 +2355,10 @@ img {
   }
 
   .hero-stage {
-    height: clamp(500px, 74svh, 600px);
+    /* 74svh at 768x1024 = 757px, capped to 600px — hero fills ~85% of screen
+       leaving no visible hint that content exists below. Cap tighter so at
+       least one shelf row is always visible above the fold. */
+    height: clamp(420px, 58svh, 540px);
     min-height: 0;
     margin-inline: -0.85rem;
   }

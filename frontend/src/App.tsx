@@ -165,6 +165,7 @@ function App() {
               params={params}
               update={update}
               onToggleSaved={onToggleSaved}
+              loading={loading}
             />
           )}
         </main>

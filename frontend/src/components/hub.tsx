@@ -369,12 +369,14 @@ export function GridView({
   saved,
   update,
   onToggleSaved,
+  loading = false,
 }: {
   data: HubResponse;
   params: HubParams;
   saved: Set<string>;
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
   onToggleSaved: (card: HubCard) => void;
+  loading?: boolean;
 }) {
   const isMusicGrid =
     params.view === 'music' ||
@@ -382,7 +384,7 @@ export function GridView({
   const priorityCount = 8;
 
   return (
-    <section className="grid-section">
+    <section className={loading ? 'grid-section grid-refetching' : 'grid-section'}>
       <div className="section-heading">
         <div>
           <p className="eyebrow">{data.total.toLocaleString()} results</p>

@@ -66,8 +66,12 @@ def _duration(seconds: int) -> str:
     if not seconds:
         return ""
     h, rem = divmod(int(seconds), 3600)
-    m, s = divmod(rem, 60)
-    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+    m = rem // 60
+    if h and m:
+        return f"{h}h {m}m"
+    if h:
+        return f"{h}h"
+    return f"{m}m"
 
 
 def _tmdb_image(path: str, size: str = "w342") -> str:
