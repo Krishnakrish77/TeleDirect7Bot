@@ -652,6 +652,78 @@ async def admin_dedupe(request: web.Request) -> web.Response:
     )
 
 
+@routes.get("/admin/series-list")
+async def admin_series_list(request: web.Request) -> web.Response:
+    """Return all series (key, title, episode_count) for the merge-series picker."""
+    _require_session(request)
+    series: dict = {}
+    for it in media_index._items.values():
+        if it.series_key and it.series_title:
+            if it.series_key not in series:
+                series[it.series_key] = {
+                    "key": it.series_key,
+                    "title": it.series_title,
+                    "count": 0,
+                }
+            series[it.series_key]["count"] += 1
+    return web.json_response(
+        sorted(series.values(), key=lambda s: s["title"].lower())
+    )
+
+
+@routes.post("/admin/merge-series")
+async def admin_merge_series(request: web.Request) -> web.Response:
+    """Move every episode from source_key into target_key.
+
+    Updates series_key and series_title on all source items in-memory
+    and persists to MongoDB.  Removes any 'series_title' admin_locked flag
+    so the reassignment is not blocked by a previously-set lock.
+    """
+    _require_session(request)
+    try:
+        body = await request.json()
+        source_key = (body.get("source_key") or "").strip()
+        target_key = (body.get("target_key") or "").strip()
+    except Exception:
+        return web.json_response({"error": "invalid body"}, status=400)
+
+    if not source_key or not target_key:
+        return web.json_response({"error": "source_key and target_key required"}, status=400)
+    if source_key == target_key:
+        return web.json_response({"error": "source and target must differ"}, status=400)
+
+    source_items = [it for it in media_index._items.values() if it.series_key == source_key]
+    target_items = [it for it in media_index._items.values() if it.series_key == target_key]
+
+    if not target_items:
+        return web.json_response({"error": f"Target series '{target_key}' not found"}, status=404)
+    if not source_items:
+        return web.json_response({"error": f"Source series '{source_key}' not found"}, status=404)
+
+    target_title = target_items[0].series_title
+
+    for it in source_items:
+        it.series_key = target_key
+        it.series_title = target_title
+        # Remove series_title lock so the reassignment is not silently
+        # blocked by a previously-set admin_locked entry.
+        if it.admin_locked and "series_title" in it.admin_locked:
+            it.admin_locked = [f for f in it.admin_locked if f != "series_title"]
+        await media_index._store_upsert(it)
+
+    await media_index.persist_now()
+    logging.info(
+        "admin: merged %d episodes from '%s' into '%s'",
+        len(source_items), source_key, target_key,
+    )
+    return web.json_response({
+        "ok": True,
+        "merged": len(source_items),
+        "target_title": target_title,
+        "target_key": target_key,
+    })
+
+
 @routes.post("/admin/prune-stale")
 async def admin_prune_stale(request: web.Request) -> web.Response:
     """Remove index entries whose BIN_CHANNEL messages no longer exist.

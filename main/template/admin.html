@@ -13,6 +13,58 @@
          editing: null,
          aiModels: [],
          aiModelsLoading: false,
+         // ── Merge-series modal ──────────────────────────────────────────
+         mergeOpen: false,
+         mergeSource: '',
+         mergeTarget: '',
+         mergeSeries: [],
+         mergeLoading: false,
+         mergeResult: null,
+         mergeError: '',
+         async loadMergeSeries() {
+           if (this.mergeSeries.length) return;
+           try {
+             const r = await fetch('/admin/series-list');
+             if (r.ok) this.mergeSeries = await r.json();
+           } catch(_) {}
+         },
+         get mergeSourceInfo() {
+           const k = (this.mergeSource || '').trim();
+           return k ? this.mergeSeries.find(s => s.key === k || s.title.toLowerCase() === k.toLowerCase()) || null : null;
+         },
+         get mergeTargetInfo() {
+           const k = (this.mergeTarget || '').trim();
+           return k ? this.mergeSeries.find(s => s.key === k || s.title.toLowerCase() === k.toLowerCase()) || null : null;
+         },
+         async executeMerge() {
+           const src = this.mergeSourceInfo?.key || this.mergeSource.trim();
+           const tgt = this.mergeTargetInfo?.key || this.mergeTarget.trim();
+           if (!src || !tgt || src === tgt) return;
+           this.mergeLoading = true;
+           this.mergeResult = null;
+           this.mergeError = '';
+           try {
+             const r = await fetch('/admin/merge-series', {
+               method: 'POST',
+               headers: {'Content-Type': 'application/json'},
+               body: JSON.stringify({source_key: src, target_key: tgt}),
+             });
+             const data = await r.json();
+             if (!r.ok) {
+               this.mergeError = data.error || `HTTP ${r.status}`;
+             } else {
+               this.mergeResult = data;
+               this.mergeSource = '';
+               // Refresh the series list so it reflects the new state
+               this.mergeSeries = [];
+               await this.loadMergeSeries();
+             }
+           } catch(e) {
+             this.mergeError = e?.message || 'Request failed';
+           } finally {
+             this.mergeLoading = false;
+           }
+         },
          async fetchAiModels() {
            if (this.aiModels.length || this.aiModelsLoading) return;
            this.aiModelsLoading = true;
@@ -231,6 +283,7 @@
     {% include "admin/_catalogue_table.html" %}
     {% include "admin/_pagination.html" %}
     {% include "admin/_edit_modal.html" %}
+    {% include "admin/_merge_series_modal.html" %}
   </div>
 
   <style>[x-cloak] { display: none !important; }</style>

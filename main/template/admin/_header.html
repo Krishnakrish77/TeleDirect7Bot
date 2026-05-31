@@ -129,6 +129,14 @@
               </button>
             </form>
             <div class="my-1 border-t border-white/5"></div>
+            <button type="button"
+                    @click="$dispatch('open-merge-series'); menuOpen = false"
+                    class="w-full text-left px-4 py-2 text-sm text-slate-200
+                           hover:bg-ink-800 transition-colors">
+              <span class="block font-medium">Merge series</span>
+              <span class="block text-xs text-slate-500">Collapse two series cards into one (fixes split-group duplicates).</span>
+            </button>
+            <div class="my-1 border-t border-white/5"></div>
             <form hx-post="/admin/migrate-to-mongo" hx-swap="none"
                   hx-confirm="Migrate the in-memory catalogue to MongoDB? Requires MONGO_URI to be set."
                   @htmx:after-request.camel="$dispatch('admin-progress-tick'); menuOpen = false"

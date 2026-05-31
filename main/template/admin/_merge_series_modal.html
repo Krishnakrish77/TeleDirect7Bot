@@ -1,0 +1,106 @@
+{# Merge-series modal — collapses two separate series cards into one.
+   Triggered by: @open-merge-series event from the Maintenance dropdown.
+   Alpine state lives on the parent admin x-data component. #}
+<div x-show="mergeOpen" x-cloak
+     @open-merge-series.window="mergeOpen = true; $nextTick(() => loadMergeSeries())"
+     @keydown.escape.window="mergeOpen = false"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4
+            bg-black/60 backdrop-blur-sm">
+  <div @click.outside="mergeOpen = false"
+       class="bg-ink-900 border border-white/10 rounded-2xl p-6 w-full max-w-lg
+              shadow-2xl flex flex-col gap-4">
+
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-bold text-white">Merge series</h2>
+      <button type="button" @click="mergeOpen = false"
+              class="text-slate-400 hover:text-white p-1">✕</button>
+    </div>
+
+    <p class="text-sm text-slate-400">
+      Move every episode from the <span class="text-rose-400">source</span>
+      into the <span class="text-brand-300">target</span>. The source series
+      card disappears; all its episodes live under the target's title and URL.
+    </p>
+
+    {# Source #}
+    <div>
+      <label class="block text-xs uppercase tracking-wider text-rose-400 mb-1">
+        Source — series to dissolve
+      </label>
+      <input type="text" list="merge-series-list"
+             x-model="mergeSource"
+             placeholder="Type series name or key…"
+             class="w-full px-3 py-2 rounded-lg bg-ink-800 border border-white/10
+                    text-slate-100 text-sm placeholder-slate-600
+                    focus:outline-none focus:ring-2 focus:ring-rose-400/50" />
+      <template x-if="mergeSourceInfo">
+        <p class="mt-1 text-xs text-slate-400"
+           x-text="`${mergeSourceInfo.title} · ${mergeSourceInfo.count} episode${mergeSourceInfo.count === 1 ? '' : 's'}`"></p>
+      </template>
+    </div>
+
+    {# Arrow #}
+    <div class="flex items-center gap-2 text-slate-500 text-sm">
+      <div class="flex-1 border-t border-white/10"></div>
+      <span>merge into ↓</span>
+      <div class="flex-1 border-t border-white/10"></div>
+    </div>
+
+    {# Target #}
+    <div>
+      <label class="block text-xs uppercase tracking-wider text-brand-300 mb-1">
+        Target — series to keep
+      </label>
+      <input type="text" list="merge-series-list"
+             x-model="mergeTarget"
+             placeholder="Type series name or key…"
+             class="w-full px-3 py-2 rounded-lg bg-ink-800 border border-white/10
+                    text-slate-100 text-sm placeholder-slate-600
+                    focus:outline-none focus:ring-2 focus:ring-brand-400/50" />
+      <template x-if="mergeTargetInfo">
+        <p class="mt-1 text-xs text-slate-400"
+           x-text="`${mergeTargetInfo.title} · ${mergeTargetInfo.count} episode${mergeTargetInfo.count === 1 ? '' : 's'}`"></p>
+      </template>
+    </div>
+
+    {# Datalist shared by both inputs — populated once lazily #}
+    <datalist id="merge-series-list">
+      <template x-for="s in mergeSeries" :key="s.key">
+        <option :value="s.key" :label="`${s.title} (${s.count})`"></option>
+      </template>
+    </datalist>
+
+    {# Error / result #}
+    <template x-if="mergeError">
+      <p class="text-sm text-red-400 bg-red-400/10 px-3 py-2 rounded-lg"
+         x-text="mergeError"></p>
+    </template>
+    <template x-if="mergeResult">
+      <p class="text-sm text-brand-300 bg-brand-400/10 px-3 py-2 rounded-lg">
+        ✓ Moved <span x-text="mergeResult.merged"></span> episodes into
+        "<span x-text="mergeResult.target_title"></span>".
+        <a :href="`/series/${mergeResult.target_key}`"
+           class="underline hover:text-brand-200 ml-1">View series →</a>
+      </p>
+    </template>
+
+    {# Actions #}
+    <div class="flex gap-3 pt-1">
+      <button type="button" @click="mergeOpen = false"
+              class="flex-1 py-2.5 rounded-xl border border-white/10
+                     text-slate-300 text-sm hover:bg-ink-800 transition-colors">
+        Cancel
+      </button>
+      <button type="button"
+              @click="executeMerge()"
+              :disabled="!mergeSource || !mergeTarget || mergeSource === mergeTarget || mergeLoading"
+              class="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500
+                     text-white font-semibold text-sm transition-colors
+                     disabled:opacity-40 disabled:cursor-not-allowed">
+        <span x-show="!mergeLoading">Merge</span>
+        <span x-show="mergeLoading">Merging…</span>
+      </button>
+    </div>
+
+  </div>
+</div>
