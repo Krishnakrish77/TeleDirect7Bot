@@ -77,6 +77,7 @@ export function FilterBar({
   setQuery: (next: string) => void;
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
 }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
   const hasFilters = Boolean(
     query ||
     params.tag ||
@@ -85,6 +86,7 @@ export function FilterBar({
     params.year ||
     params.sort !== 'newest',
   );
+  const sortLabel = filters.sortOptions.find((option) => option.value === params.sort)?.label || 'Newest';
   const yearOptions = [
     { value: '', label: 'Any' },
     ...filters.years.map((year) => ({ value: String(year), label: String(year) })),
@@ -167,27 +169,104 @@ export function FilterBar({
   };
 
   return (
-    <div className="filter-bar" aria-label="Browse filters">
-      <div className="filter-heading">
-        <FilterIcon />
-        <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
+    <>
+      <div className="filter-bar desktop-filter-bar" aria-label="Browse filters">
+        <div className="filter-heading">
+          <FilterIcon />
+          <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
+        </div>
+        <div className="filter-controls">
+          {controls.map((control) => (
+            <label key={control.id} className="filter-control">
+              <span>{control.label}</span>
+              <select value={control.value} onChange={(event) => control.onChange(event.currentTarget.value)} aria-label={control.label}>
+                {control.options.map((option) => (
+                  <option key={option.value || 'any'} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+        {hasFilters && (
+          <button className="text-button" type="button" onClick={() => clearAll()}>Reset</button>
+        )}
       </div>
-      <div className="filter-controls">
-        {controls.map((control) => (
-          <label key={control.id} className="filter-control">
-            <span>{control.label}</span>
-            <select value={control.value} onChange={(event) => control.onChange(event.currentTarget.value)} aria-label={control.label}>
-              {control.options.map((option) => (
-                <option key={option.value || 'any'} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
+
+      <div className="mobile-filter-bar" aria-label="Browse filters">
+        <div className="filter-heading">
+          <FilterIcon />
+          <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
+        </div>
+        <button type="button" className="filter-summary-button" onClick={() => setMobileOpen(true)}>
+          <span>Filters</span>
+          <strong>{hasFilters ? 'Active' : 'Any'}</strong>
+        </button>
+        <button type="button" className="filter-summary-button" onClick={() => setMobileOpen(true)}>
+          <span>Sort</span>
+          <strong>{sortLabel}</strong>
+        </button>
+      </div>
+
+      {mobileOpen && (
+        <div className="filter-sheet-layer" role="dialog" aria-modal="true" aria-label="Filters">
+          <button className="filter-sheet-scrim" type="button" onClick={() => setMobileOpen(false)} aria-label="Close filters" />
+          <div className="filter-sheet">
+            <div className="filter-sheet-heading">
+              <div>
+                <p className="eyebrow">Browse</p>
+                <h2>Filters</h2>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setMobileOpen(false)} aria-label="Close filters">
+                <XIcon />
+              </button>
+            </div>
+            {controls.map((control) => (
+              <FilterOptionGroup
+                key={control.id}
+                title={control.label}
+                options={control.options}
+                value={control.value}
+                onChange={(value) => control.onChange(value)}
+              />
+            ))}
+            <div className="filter-sheet-actions">
+              <button className="text-button" type="button" onClick={() => clearAll(true)} disabled={!hasFilters}>Reset</button>
+              <button className="primary-action" type="button" onClick={() => setMobileOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function FilterOptionGroup({
+  title,
+  options,
+  value,
+  onChange,
+}: {
+  title: string;
+  options: FilterOption[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <section className="filter-option-group">
+      <h3>{title}</h3>
+      <div className="filter-option-list">
+        {options.map((option) => (
+          <button
+            key={option.value || 'any'}
+            type="button"
+            className={value === option.value ? 'filter-option active' : 'filter-option'}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
         ))}
       </div>
-      {hasFilters && (
-        <button className="text-button" type="button" onClick={() => clearAll()}>Reset</button>
-      )}
-    </div>
+    </section>
   );
 }
 
