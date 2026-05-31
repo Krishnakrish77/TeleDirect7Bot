@@ -2,7 +2,9 @@ import {
   FormEvent,
   KeyboardEvent,
   MouseEvent,
+  ReactNode,
   RefObject,
+  TouchEvent,
   useCallback,
   useEffect,
   useRef,
@@ -11,9 +13,12 @@ import {
 import {
   addWatchlist,
   fetchContinueItems,
+  fetchAudioTracks,
+  fetchDetail,
   fetchHub,
   fetchMe,
   fetchSuggestions,
+  fetchSubtitles,
   fetchWatch,
   fetchWatchlist,
   hubSearchParams,
@@ -23,36 +28,53 @@ import {
 } from './api';
 import {
   BookmarkIcon,
+  CaptionsIcon,
   CheckIcon,
   ChartIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  DownloadIcon,
   FilmIcon,
   FilterIcon,
+  HomeIcon,
+  ListIcon,
   LogOutIcon,
   MusicIcon,
   PauseIcon,
+  PictureInPictureIcon,
   PlayIcon,
+  ShareIcon,
   ShieldIcon,
   SearchIcon,
   SkipBackIcon,
   SkipForwardIcon,
   UserIcon,
+  VolumeIcon,
+  MaximizeIcon,
   XIcon,
 } from './icons';
 import type {
+  AlbumDetailResponse,
+  ArtistDetailResponse,
+  AudioTrackOption,
   ContinueEntry,
   ContinueItem,
+  DetailResponse,
   HeroItem,
   HubCard,
   HubParams,
   HubResponse,
   MeResponse,
+  MovieDetailResponse,
+  PersonDetailResponse,
+  SeriesDetailResponse,
+  SubtitleTrack,
   Suggestion,
   TelegramAuthUser,
   User,
   ViewValue,
   WatchResponse,
+  WatchVideo,
   WatchTrack,
 } from './types';
 
@@ -108,6 +130,7 @@ function localAppHref(href: string | null): string | null {
   if (!href) return null;
   if (href === '/app') return appBase();
   if (href.startsWith('/app?')) return `${appBase()}${href.slice('/app'.length)}`;
+  if (/^\/(movie|series|album|artist|person)\//.test(href)) return `/app${href}`;
   return href;
 }
 
@@ -168,9 +191,22 @@ function useAppNavigation() {
   return { location, navigate, onLinkClick };
 }
 
-function parseRoute(pathname: string): { kind: 'hub' } | { kind: 'watch'; key: string } {
+type AppRoute =
+  | { kind: 'hub' }
+  | { kind: 'watch'; key: string }
+  | { kind: 'detail'; detailKind: 'movie' | 'series' | 'album' | 'artist' | 'person'; key: string };
+
+function parseRoute(pathname: string): AppRoute {
   const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);
   if (watch) return { kind: 'watch', key: decodeURIComponent(watch[1]) };
+  const detail = pathname.match(/^\/app\/(movie|series|album|artist|person)\/([^/?#]+)/);
+  if (detail) {
+    return {
+      kind: 'detail',
+      detailKind: detail[1] as 'movie' | 'series' | 'album' | 'artist' | 'person',
+      key: decodeURIComponent(detail[2]),
+    };
+  }
   return { kind: 'hub' };
 }
 
@@ -229,6 +265,38 @@ function useHub(params: HubParams, enabled = true) {
       });
     return () => controller.abort();
   }, [enabled, params]);
+
+  return { data, loading, error };
+}
+
+function useDetail(route: AppRoute, locationSearch: string) {
+  const [data, setData] = useState<DetailResponse | null>(null);
+  const [loading, setLoading] = useState(route.kind === 'detail');
+  const [error, setError] = useState('');
+  const detailKind = route.kind === 'detail' ? route.detailKind : '';
+  const detailKey = route.kind === 'detail' ? route.key : '';
+
+  useEffect(() => {
+    if (!detailKind || !detailKey) {
+      setLoading(false);
+      setError('');
+      setData(null);
+      return;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    fetchDetail(detailKind as 'movie' | 'series' | 'album' | 'artist' | 'person', detailKey, locationSearch, controller.signal)
+      .then(setData)
+      .catch((err: Error) => {
+        if (controller.signal.aborted) return;
+        setError(err.message || 'Unable to load this page');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [detailKind, detailKey, locationSearch]);
 
   return { data, loading, error };
 }
@@ -396,6 +464,38 @@ function useAudioPlayer() {
     startAudio(nextTrack, true);
   }, [startAudio]);
 
+  const playQueueIndex = useCallback((index: number) => {
+    const current = playerRef.current;
+    const nextTrack = current.queue[index];
+    if (!nextTrack) return;
+    setPlayer((state) => ({
+      ...state,
+      track: nextTrack,
+      queueIndex: index,
+      playing: true,
+      currentTime: 0,
+      duration: nextTrack.duration || 0,
+      error: '',
+    }));
+    startAudio(nextTrack, true);
+  }, [startAudio]);
+
+  const addToQueue = useCallback((track: WatchTrack, playNext = false) => {
+    setPlayer((state) => {
+      if (!state.track) {
+        window.setTimeout(() => playTrack(track, [track]), 0);
+        return state;
+      }
+      const queue = state.queue.length ? [...state.queue] : [state.track];
+      const existing = queue.findIndex((item) => item.key === track.key);
+      if (existing >= 0) queue.splice(existing, 1);
+      const insertAt = playNext ? Math.max(0, state.queueIndex + 1) : queue.length;
+      queue.splice(insertAt, 0, track);
+      const queueIndex = queue.findIndex((item) => item.key === state.track?.key);
+      return { ...state, queue, queueIndex: queueIndex >= 0 ? queueIndex : state.queueIndex };
+    });
+  }, [playTrack]);
+
   const togglePlayback = useCallback((track?: WatchTrack, queue?: WatchTrack[]) => {
     const current = playerRef.current;
     if (track && current.track?.key !== track.key) {
@@ -468,7 +568,7 @@ function useAudioPlayer() {
     };
   }, [playRelative]);
 
-  return { audioRef, player, playTrack, playRelative, togglePlayback, seek };
+  return { audioRef, player, playTrack, playRelative, playQueueIndex, addToQueue, togglePlayback, seek };
 }
 
 function App() {
@@ -477,11 +577,14 @@ function App() {
   const isHubRoute = route.kind === 'hub';
   const { params, update } = useHubParams(location.key, navigate);
   const { data, loading, error } = useHub(params, isHubRoute);
+  const detail = useDetail(route, location.search);
   const { me, reload } = useMe();
   const user = me?.user ?? null;
   const { saved, toggle } = useWatchlist(user);
   const audio = useAudioPlayer();
   const [signInOpen, setSignInOpen] = useState(false);
+  const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
   const [query, setQuery] = useState(params.q);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -520,6 +623,10 @@ function App() {
   const activeView = params.view || '';
   const activeFilters = Boolean(params.q || params.tag || params.quality || params.genre || params.year || params.view);
   const watchKey = route.kind === 'watch' ? route.key : '';
+  const onBottomSearch = useCallback(() => {
+    navigate('/app');
+    window.setTimeout(() => searchRef.current?.focus(), 30);
+  }, [navigate]);
   const onSearchSubmit = useCallback(() => {
     update({ q: query.trim(), offset: 0 });
   }, [query, update]);
@@ -532,6 +639,7 @@ function App() {
         query={query}
         setQuery={setQuery}
         searchRef={searchRef}
+        activeView={activeView}
         onSearchSubmit={onSearchSubmit}
         onSignIn={() => setSignInOpen(true)}
         onSignOut={async () => {
@@ -612,14 +720,37 @@ function App() {
             />
           )}
         </main>
+      ) : route.kind === 'detail' ? (
+        <DetailPage
+          route={route}
+          data={detail.data}
+          loading={detail.loading}
+          error={detail.error}
+          saved={saved}
+          onToggleSaved={(itemId) => {
+            if (!user) {
+              requireAuth();
+              return;
+            }
+            void toggle(itemId);
+          }}
+          navigate={navigate}
+          playTrack={audio.playTrack}
+          togglePlayback={audio.togglePlayback}
+          addToQueue={audio.addToQueue}
+          player={audio.player}
+        />
       ) : (
         <WatchPage
           watchKey={watchKey}
           player={audio.player}
           playTrack={audio.playTrack}
           playRelative={audio.playRelative}
+          playQueueIndex={audio.playQueueIndex}
+          addToQueue={audio.addToQueue}
           togglePlayback={audio.togglePlayback}
           seek={audio.seek}
+          onOpenQueue={() => setQueueOpen(true)}
         />
       )}
 
@@ -632,8 +763,33 @@ function App() {
       <MiniPlayer
         player={audio.player}
         playRelative={audio.playRelative}
+        playQueueIndex={audio.playQueueIndex}
         togglePlayback={audio.togglePlayback}
         seek={audio.seek}
+        onExpand={() => setNowPlayingOpen(true)}
+        onOpenQueue={() => setQueueOpen(true)}
+      />
+      <NowPlayingSheet
+        open={nowPlayingOpen}
+        player={audio.player}
+        playRelative={audio.playRelative}
+        togglePlayback={audio.togglePlayback}
+        seek={audio.seek}
+        onClose={() => setNowPlayingOpen(false)}
+        onOpenQueue={() => setQueueOpen(true)}
+      />
+      <QueueDrawer
+        open={queueOpen}
+        player={audio.player}
+        playQueueIndex={audio.playQueueIndex}
+        togglePlayback={audio.togglePlayback}
+        onClose={() => setQueueOpen(false)}
+      />
+      <BottomNav
+        user={user}
+        activeView={activeView}
+        onSearch={onBottomSearch}
+        onAccount={() => setSignInOpen(true)}
       />
     </div>
   );
@@ -643,20 +799,566 @@ function isWatchTrack(item: WatchResponse['item']): item is WatchTrack {
   return item.type === 'track' && 'appHref' in item;
 }
 
+function isWatchVideo(item: WatchResponse['item']): item is WatchVideo {
+  return item.type === 'video' && 'directSrc' in item;
+}
+
+function DetailPage({
+  route,
+  data,
+  loading,
+  error,
+  saved,
+  onToggleSaved,
+  navigate,
+  playTrack,
+  togglePlayback,
+  addToQueue,
+  player,
+}: {
+  route: Extract<AppRoute, { kind: 'detail' }>;
+  data: DetailResponse | null;
+  loading: boolean;
+  error: string;
+  saved: Set<string>;
+  onToggleSaved: (itemId: string) => void;
+  navigate: (href: string, replace?: boolean) => void;
+  playTrack: (track: WatchTrack, queue?: WatchTrack[]) => void;
+  togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
+  addToQueue: (track: WatchTrack, playNext?: boolean) => void;
+  player: PlayerState;
+}) {
+  if (loading) {
+    return <main className="detail-main"><LoadingRows /></main>;
+  }
+  if (error || !data) {
+    return <main className="detail-main"><ErrorPanel message={error || 'Unable to load this page'} /></main>;
+  }
+  if (route.detailKind !== data.kind) {
+    return <main className="detail-main"><ErrorPanel message="This page changed while loading." /></main>;
+  }
+  switch (data.kind) {
+    case 'movie':
+      return <MovieDetail data={data} saved={saved} onToggleSaved={onToggleSaved} />;
+    case 'series':
+      return <SeriesDetail data={data} saved={saved} onToggleSaved={onToggleSaved} navigate={navigate} />;
+    case 'album':
+      return (
+        <AlbumDetail
+          data={data}
+          saved={saved}
+          onToggleSaved={onToggleSaved}
+          playTrack={playTrack}
+          togglePlayback={togglePlayback}
+          addToQueue={addToQueue}
+          player={player}
+        />
+      );
+    case 'artist':
+      return (
+        <ArtistDetail
+          data={data}
+          playTrack={playTrack}
+          togglePlayback={togglePlayback}
+          addToQueue={addToQueue}
+          player={player}
+          saved={saved}
+          onToggleSaved={onToggleSaved}
+        />
+      );
+    case 'person':
+      return <PersonDetail data={data} saved={saved} onToggleSaved={onToggleSaved} />;
+    default:
+      return <main className="detail-main"><ErrorPanel message="Unsupported detail page" /></main>;
+  }
+}
+
+function DetailHero({
+  title,
+  subtitle,
+  overview,
+  posterUrl,
+  backdropUrl,
+  genres = [],
+  playHref,
+  classicHref,
+  saved,
+  onToggleSaved,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  overview: string;
+  posterUrl: string;
+  backdropUrl: string;
+  genres?: string[];
+  playHref?: string;
+  classicHref?: string;
+  saved?: boolean;
+  onToggleSaved?: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <section className="detail-hero">
+      {(backdropUrl || posterUrl) && <img className="detail-backdrop" src={backdropUrl || posterUrl} alt="" />}
+      <div className="detail-gradient" />
+      <div className="detail-poster">
+        <img src={posterUrl || backdropUrl} alt="" />
+      </div>
+      <div className="detail-copy">
+        <p className="eyebrow">{subtitle}</p>
+        <h1>{title}</h1>
+        {overview && <p className="detail-overview">{overview}</p>}
+        {genres.length > 0 && (
+          <div className="hero-meta">
+            {genres.slice(0, 5).map((genre) => <span key={genre}>{genre}</span>)}
+          </div>
+        )}
+        <div className="hero-actions">
+          {playHref && (
+            <a className="primary-action" href={playHref}>
+              <PlayIcon />
+              <span>Play</span>
+            </a>
+          )}
+          {onToggleSaved && (
+            <button type="button" className={saved ? 'secondary-action saved-action' : 'secondary-action'} onClick={onToggleSaved}>
+              {saved ? <CheckIcon /> : <BookmarkIcon />}
+              <span>{saved ? 'Saved' : 'Save'}</span>
+            </button>
+          )}
+          {classicHref && (
+            <a className="secondary-action" href={classicHref}>
+              <span>Classic</span>
+            </a>
+          )}
+        </div>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function MovieDetail({
+  data,
+  saved,
+  onToggleSaved,
+}: {
+  data: MovieDetailResponse;
+  saved: Set<string>;
+  onToggleSaved: (itemId: string) => void;
+}) {
+  return (
+    <main className="detail-main">
+      <DetailHero
+        title={`${data.title}${data.year ? ` (${data.year})` : ''}`}
+        subtitle={`${data.variants.length} version${data.variants.length === 1 ? '' : 's'}`}
+        overview={data.overview}
+        posterUrl={data.posterUrl}
+        backdropUrl={data.backdropUrl}
+        genres={data.genres}
+        playHref={data.playHref}
+        classicHref={data.classicHref}
+        saved={saved.has(data.savedId)}
+        onToggleSaved={() => onToggleSaved(data.savedId)}
+      >
+        <CreditLinks label="Director" items={data.directors} />
+        <CreditLinks label="Cast" items={data.cast} />
+      </DetailHero>
+
+      <section className="detail-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Versions</p>
+            <h2>Choose playback</h2>
+          </div>
+        </div>
+        <div className="variant-list">
+          {data.variants.map((variant) => (
+            <a key={variant.key} className="variant-row" href={variant.playHref}>
+              <span>{variant.quality || 'Version'}</span>
+              <strong>{variant.label || variant.title}</strong>
+              <ChevronRightIcon />
+            </a>
+          ))}
+        </div>
+      </section>
+      <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
+    </main>
+  );
+}
+
+function SeriesDetail({
+  data,
+  saved,
+  onToggleSaved,
+  navigate,
+}: {
+  data: SeriesDetailResponse;
+  saved: Set<string>;
+  onToggleSaved: (itemId: string) => void;
+  navigate: (href: string, replace?: boolean) => void;
+}) {
+  return (
+    <main className="detail-main">
+      <DetailHero
+        title={data.title}
+        subtitle={`${data.seasonCount} season${data.seasonCount === 1 ? '' : 's'} - ${data.totalEpisodeCount} episodes`}
+        overview={data.overview}
+        posterUrl={data.posterUrl}
+        backdropUrl={data.backdropUrl}
+        genres={data.genres}
+        playHref={data.playHref}
+        classicHref={data.classicHref}
+        saved={saved.has(data.savedId)}
+        onToggleSaved={() => onToggleSaved(data.savedId)}
+      >
+        <CreditLinks label="Cast" items={data.cast} />
+      </DetailHero>
+
+      <section className="detail-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">{data.episodeCount} shown</p>
+            <h2>Episodes</h2>
+          </div>
+          {data.showSelector && (
+            <select
+              className="season-select"
+              value={data.selectedSeason}
+              onChange={(event) => navigate(`/app/series/${data.key}?season=${event.currentTarget.value}`)}
+              aria-label="Season"
+            >
+              {data.seasonOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        <div className="episode-stack">
+          {data.seasonBlocks.map((block) => (
+            <section key={block.season ?? 'misc'} className="episode-block">
+              <h3>{block.season !== null ? `Season ${block.season}` : 'Episodes'}</h3>
+              <div className="episode-grid">
+                {block.entries.map((entry) => (
+                  <article key={entry.rep.key} className="episode-card">
+                    <a className="episode-thumb" href={entry.rep.playHref}>
+                      <img src={entry.rep.episodeStillUrl || entry.rep.thumbUrl} alt="" loading="lazy" />
+                      {entry.rep.durationLabel && <span className="card-badge">{entry.rep.durationLabel}</span>}
+                    </a>
+                    <div>
+                      <p className="eyebrow">{entry.rep.episodeLabel || 'Episode'}</p>
+                      <h4><a href={entry.rep.playHref}>{entry.rep.title}</a></h4>
+                      {entry.rep.episodeOverview && <p>{entry.rep.episodeOverview}</p>}
+                      {entry.variants.length > 1 && (
+                        <div className="variant-chips">
+                          {entry.variants.map((variant) => (
+                            <a key={variant.key} href={variant.playHref}>{variant.quality || variant.fileSizeLabel || 'Version'}</a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </section>
+      <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
+    </main>
+  );
+}
+
+function AlbumDetail({
+  data,
+  saved,
+  onToggleSaved,
+  playTrack,
+  togglePlayback,
+  addToQueue,
+  player,
+}: {
+  data: AlbumDetailResponse;
+  saved: Set<string>;
+  onToggleSaved: (itemId: string) => void;
+  playTrack: (track: WatchTrack, queue?: WatchTrack[]) => void;
+  togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
+  addToQueue: (track: WatchTrack, playNext?: boolean) => void;
+  player: PlayerState;
+}) {
+  const first = data.tracks[0];
+  return (
+    <main className="detail-main">
+      <DetailHero
+        title={data.title}
+        subtitle={[data.artist, `${data.trackCount} track${data.trackCount === 1 ? '' : 's'}`].filter(Boolean).join(' - ')}
+        overview={data.overview}
+        posterUrl={data.posterUrl}
+        backdropUrl={data.backdropUrl}
+        playHref={first?.appHref}
+        saved={saved.has(data.savedId)}
+        onToggleSaved={() => onToggleSaved(data.savedId)}
+      >
+        {data.artistHref && <a className="section-link" href={data.artistHref}>{data.artist}</a>}
+      </DetailHero>
+      <section className="detail-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Album</p>
+            <h2>Tracks</h2>
+          </div>
+          {first && (
+            <button type="button" className="primary-action" onClick={() => playTrack(first, data.tracks)}>
+              <PlayIcon />
+              <span>Play all</span>
+            </button>
+          )}
+        </div>
+        <TrackList tracks={data.tracks} queue={data.tracks} player={player} togglePlayback={togglePlayback} addToQueue={addToQueue} />
+      </section>
+      <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
+    </main>
+  );
+}
+
+function ArtistDetail({
+  data,
+  playTrack,
+  togglePlayback,
+  addToQueue,
+  player,
+  saved,
+  onToggleSaved,
+}: {
+  data: ArtistDetailResponse;
+  playTrack: (track: WatchTrack, queue?: WatchTrack[]) => void;
+  togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
+  addToQueue: (track: WatchTrack, playNext?: boolean) => void;
+  player: PlayerState;
+  saved: Set<string>;
+  onToggleSaved: (itemId: string) => void;
+}) {
+  const first = data.tracks[0];
+  return (
+    <main className="detail-main">
+      <DetailHero
+        title={data.title}
+        subtitle={data.subtitle}
+        overview=""
+        posterUrl={data.posterUrl}
+        backdropUrl={data.backdropUrl}
+        playHref={first?.appHref}
+      />
+      {data.albums.length > 0 && (
+        <section className="detail-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Discography</p>
+              <h2>Albums</h2>
+            </div>
+          </div>
+          <div className="card-row">
+            {data.albums.map((card) => (
+              <MediaCard key={card.itemId} card={card} saved={saved.has(card.itemId)} onToggleSaved={(item) => onToggleSaved(item.itemId)} />
+            ))}
+          </div>
+        </section>
+      )}
+      <section className="detail-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Tracks</p>
+            <h2>All songs</h2>
+          </div>
+          {first && (
+            <button type="button" className="primary-action" onClick={() => playTrack(first, data.tracks)}>
+              <PlayIcon />
+              <span>Play</span>
+            </button>
+          )}
+        </div>
+        <TrackList tracks={data.tracks} queue={data.tracks} player={player} togglePlayback={togglePlayback} addToQueue={addToQueue} />
+      </section>
+    </main>
+  );
+}
+
+function PersonDetail({
+  data,
+  saved,
+  onToggleSaved,
+}: {
+  data: PersonDetailResponse;
+  saved: Set<string>;
+  onToggleSaved: (itemId: string) => void;
+}) {
+  return (
+    <main className="detail-main">
+      <DetailHero
+        title={data.title}
+        subtitle={`${data.roleLabel} - ${data.totalUnique} title${data.totalUnique === 1 ? '' : 's'}`}
+        overview=""
+        posterUrl={data.posterUrl}
+        backdropUrl={data.backdropUrl}
+      />
+      {data.castItems.length > 0 && (
+        <CardGridSection title="As Actor" items={data.castItems} saved={saved} onToggleSaved={onToggleSaved} />
+      )}
+      {data.directedItems.length > 0 && (
+        <CardGridSection title="As Director" items={data.directedItems} saved={saved} onToggleSaved={onToggleSaved} />
+      )}
+    </main>
+  );
+}
+
+function CreditLinks({ label, items }: { label: string; items: Array<{ name: string; href: string }> }) {
+  if (!items.length) return null;
+  return (
+    <p className="credit-links">
+      <span>{label}</span>
+      {items.slice(0, 8).map((item) => (
+        <a key={item.href} href={item.href}>{item.name}</a>
+      ))}
+    </p>
+  );
+}
+
+function TrackList({
+  tracks,
+  queue,
+  player,
+  togglePlayback,
+  addToQueue,
+}: {
+  tracks: WatchTrack[];
+  queue: WatchTrack[];
+  player: PlayerState;
+  togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
+  addToQueue: (track: WatchTrack, playNext?: boolean) => void;
+}) {
+  return (
+    <div className="track-list">
+      {tracks.map((track, index) => {
+        const active = player.track?.key === track.key;
+        return (
+          <a key={track.key} className={active ? 'track-row active' : 'track-row'} href={track.appHref}>
+            <span className="track-number">{track.trackNumber || index + 1}</span>
+            <span className="track-title">
+              <strong>{track.title}</strong>
+              <span>{[track.artist, track.albumTitle, track.qualityLabel].filter(Boolean).join(' - ')}</span>
+            </span>
+            <span className="track-duration">{track.durationLabel}</span>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                togglePlayback(track, queue);
+              }}
+              aria-label={active && player.playing ? 'Pause' : 'Play'}
+            >
+              {active && player.playing ? <PauseIcon /> : <PlayIcon />}
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                addToQueue(track, true);
+              }}
+              aria-label="Play next"
+            >
+              <ListIcon />
+            </button>
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+function RelatedRows({
+  rows,
+  saved,
+  onToggleSaved,
+}: {
+  rows: Array<{ name: string; items: HubCard[] }>;
+  saved: Set<string>;
+  onToggleSaved: (card: HubCard) => void;
+}) {
+  if (!rows.length) return null;
+  return (
+    <div className="shelf-stack">
+      {rows.map((row) => (
+        <section key={row.name} className="shelf-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Related</p>
+              <h2>{row.name}</h2>
+            </div>
+          </div>
+          <div className="card-row">
+            {row.items.map((card) => (
+              <MediaCard key={`${card.type}:${card.itemId}`} card={card} saved={saved.has(card.itemId)} onToggleSaved={onToggleSaved} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function CardGridSection({
+  title,
+  items,
+  saved,
+  onToggleSaved,
+}: {
+  title: string;
+  items: HubCard[];
+  saved: Set<string>;
+  onToggleSaved: (itemId: string) => void;
+}) {
+  return (
+    <section className="detail-section">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Filmography</p>
+          <h2>{title}</h2>
+        </div>
+      </div>
+      <div className="media-grid">
+        {items.map((card) => (
+          <MediaCard key={`${card.type}:${card.itemId}`} card={card} saved={saved.has(card.itemId)} onToggleSaved={(item) => onToggleSaved(item.itemId)} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function WatchPage({
   watchKey,
   player,
   playTrack,
   playRelative,
+  playQueueIndex,
+  addToQueue,
   togglePlayback,
   seek,
+  onOpenQueue,
 }: {
   watchKey: string;
   player: PlayerState;
   playTrack: (track: WatchTrack, queue?: WatchTrack[]) => void;
   playRelative: (delta: number) => void;
+  playQueueIndex: (index: number) => void;
+  addToQueue: (track: WatchTrack, playNext?: boolean) => void;
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   seek: (seconds: number) => void;
+  onOpenQueue: () => void;
 }) {
   const [data, setData] = useState<WatchResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -692,6 +1394,29 @@ function WatchPage({
         <ErrorPanel message={error || 'Unable to load this item'} />
       </main>
     );
+  }
+
+  if (isWatchVideo(data.item)) {
+    if (!data.reactVideoBeta && !data.item.reactVideoBeta) {
+      const video = data.item;
+      return (
+        <main className="watch-main">
+          <section className="watch-fallback">
+            <img src={video.posterUrl} alt="" />
+            <div>
+              <p className="eyebrow">Classic player</p>
+              <h1>{video.title}</h1>
+              <p>{video.overview || video.subtitle || 'Video playback is currently routed through the classic player.'}</p>
+              <a className="primary-action" href={video.classicHref || data.classicHref || video.href}>
+                <PlayIcon />
+                <span>Open player</span>
+              </a>
+            </div>
+          </section>
+        </main>
+      );
+    }
+    return <VideoWatchPage video={data.item} />;
   }
 
   if (!isWatchTrack(data.item)) {
@@ -769,6 +1494,15 @@ function WatchPage({
             >
               <SkipForwardIcon />
             </button>
+            <button
+              type="button"
+              className="icon-button player-nav"
+              onClick={onOpenQueue}
+              disabled={queue.length < 2}
+              aria-label="Open queue"
+            >
+              <ListIcon />
+            </button>
           </div>
 
           <div className="watch-progress">
@@ -822,9 +1556,457 @@ function WatchPage({
                   >
                     {active && player.playing ? <PauseIcon /> : <PlayIcon />}
                   </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      addToQueue(item, true);
+                    }}
+                    aria-label="Play next"
+                  >
+                    <ListIcon />
+                  </button>
                 </a>
               );
             })}
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
+
+function VideoWatchPage({ video }: { video: WatchVideo }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(video.duration || 0);
+  const [sourceMode, setSourceMode] = useState<'direct' | 'hls'>('direct');
+  const [audioIndex, setAudioIndex] = useState(0);
+  const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
+  const [activeSub, setActiveSub] = useState('');
+  const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
+  const [volume, setVolume] = useState(1);
+  const [brightness, setBrightness] = useState(1);
+  const [error, setError] = useState(video.knownUnplayable ? 'This file is marked as difficult for browser playback.' : '');
+  const [showNext, setShowNext] = useState(false);
+  const [nextCountdown, setNextCountdown] = useState(5);
+  const [toast, setToast] = useState('');
+  const gestureRef = useRef({ x: 0, y: 0, t: 0, moved: false, lastTap: 0 });
+
+  const sourceSrc = sourceMode === 'hls'
+    ? `${video.hlsSrc}${audioIndex ? `?a=${audioIndex}` : ''}`
+    : video.directSrc;
+  const rangeMax = Math.max(1, Math.round(duration || video.duration || 0));
+  const hasIntro = video.introEnd > video.introStart;
+  const showSkipIntro = hasIntro && currentTime >= video.introStart && currentTime < video.introEnd;
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(''), 900);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSubtitles(video.subtitleBase, controller.signal).then(setSubtitles).catch(() => setSubtitles([]));
+    fetchAudioTracks(video.audioTrackBase, controller.signal).then(setAudioTracks).catch(() => setAudioTracks([]));
+    return () => controller.abort();
+  }, [video.audioTrackBase, video.subtitleBase]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.volume = volume;
+  }, [volume]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    Array.from(el.textTracks || []).forEach((track, index) => {
+      const id = subtitles[index]?.id;
+      track.mode = id && id === activeSub ? 'showing' : 'disabled';
+    });
+  }, [activeSub, subtitles]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    let restored = false;
+    let lastSave = 0;
+    const loadResume = () => {
+      if (restored || !el.duration) return;
+      restored = true;
+      try {
+        const data = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
+        const entry = data[video.resumeKey];
+        if (entry?.pos > 0 && entry.pos < el.duration * 0.95) {
+          el.currentTime = entry.pos;
+        }
+      } catch (_) {
+        // Local resume state is best-effort only.
+      }
+    };
+    const saveResume = (force = false) => {
+      if (!el.duration || !Number.isFinite(el.duration)) return;
+      const now = Date.now();
+      if (!force && now - lastSave < 5000) return;
+      lastSave = now;
+      const pct = el.currentTime / el.duration;
+      try {
+        const data = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
+        if (pct >= 0.95 || pct < 0.02) {
+          delete data[video.resumeKey];
+        } else {
+          data[video.resumeKey] = {
+            pos: el.currentTime,
+            dur: el.duration,
+            t: now,
+            title: video.title,
+          };
+        }
+        localStorage.setItem('td:cw', JSON.stringify(data));
+      } catch (_) {
+        // Ignore quota/private-mode failures.
+      }
+    };
+    const onTime = () => {
+      setCurrentTime(el.currentTime || 0);
+      setDuration(el.duration || video.duration || 0);
+      saveResume();
+    };
+    const onLoaded = () => {
+      setDuration(el.duration || video.duration || 0);
+      loadResume();
+    };
+    const onEnded = () => {
+      saveResume(true);
+      setPlaying(false);
+      if (video.nextEpisode) setShowNext(true);
+    };
+    const onError = () => {
+      if (sourceMode === 'direct' && video.hlsSrc) {
+        setSourceMode('hls');
+        setError('');
+      } else {
+        setPlaying(false);
+        setError('Browser playback failed. The classic player and VLC links are available.');
+      }
+    };
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    el.addEventListener('timeupdate', onTime);
+    el.addEventListener('loadedmetadata', onLoaded);
+    el.addEventListener('durationchange', onLoaded);
+    el.addEventListener('play', onPlay);
+    el.addEventListener('pause', onPause);
+    el.addEventListener('ended', onEnded);
+    el.addEventListener('error', onError);
+    const onBeforeUnload = () => saveResume(true);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      el.removeEventListener('timeupdate', onTime);
+      el.removeEventListener('loadedmetadata', onLoaded);
+      el.removeEventListener('durationchange', onLoaded);
+      el.removeEventListener('play', onPlay);
+      el.removeEventListener('pause', onPause);
+      el.removeEventListener('ended', onEnded);
+      el.removeEventListener('error', onError);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      saveResume(true);
+    };
+  }, [sourceMode, video]);
+
+  useEffect(() => {
+    if (!showNext || !video.nextEpisode) return;
+    setNextCountdown(5);
+    const interval = window.setInterval(() => {
+      setNextCountdown((current) => {
+        if (current <= 1) {
+          window.clearInterval(interval);
+          window.location.href = video.nextEpisode?.playHref || video.nextEpisode?.classicHref || '#';
+          return 0;
+        }
+        return current - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [showNext, video.nextEpisode]);
+
+  const toggleVideo = () => {
+    const el = videoRef.current;
+    if (!el || video.knownUnplayable) return;
+    if (el.paused) {
+      el.play().catch(() => setError('Tap play again or open the classic player.'));
+    } else {
+      el.pause();
+    }
+  };
+
+  const seekVideo = (seconds: number) => {
+    const el = videoRef.current;
+    if (!el) return;
+    const next = Math.max(0, Math.min(seconds, duration || video.duration || seconds));
+    el.currentTime = next;
+    setCurrentTime(next);
+  };
+
+  const togglePip = () => {
+    const el = videoRef.current as (HTMLVideoElement & {
+      webkitSupportsPresentationMode?: (mode: string) => boolean;
+      webkitSetPresentationMode?: (mode: string) => void;
+      webkitPresentationMode?: string;
+    }) | null;
+    if (!el) return;
+    if (document.pictureInPictureElement) {
+      document.exitPictureInPicture().catch(() => undefined);
+    } else if (document.pictureInPictureEnabled && el.requestPictureInPicture) {
+      el.requestPictureInPicture().catch(() => undefined);
+    } else if (el.webkitSupportsPresentationMode?.('picture-in-picture') && el.webkitSetPresentationMode) {
+      el.webkitSetPresentationMode(el.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+    }
+  };
+
+  const toggleFullscreen = () => {
+    const target = shellRef.current;
+    if (!target) return;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+    else target.requestFullscreen?.().catch(() => undefined);
+  };
+
+  const shareVideo = async () => {
+    const data = { title: video.title, url: window.location.href };
+    if (navigator.share) {
+      try { await navigator.share(data); } catch (_) { return; }
+    } else if (navigator.clipboard) {
+      await navigator.clipboard.writeText(window.location.href).catch(() => undefined);
+      showToast('Link copied');
+    }
+  };
+
+  const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    const now = Date.now();
+    const last = gestureRef.current.lastTap;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (now - last < 280) {
+      const delta = touch.clientX < rect.left + rect.width / 2 ? -10 : 10;
+      seekVideo((videoRef.current?.currentTime || 0) + delta);
+      showToast(delta > 0 ? '+10s' : '-10s');
+    }
+    gestureRef.current = { x: touch.clientX, y: touch.clientY, t: now, moved: false, lastTap: now };
+  };
+
+  const onTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    const start = gestureRef.current;
+    const dy = start.y - touch.clientY;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (Math.abs(dy) > 36) {
+      start.moved = true;
+      if (start.x > rect.left + rect.width / 2) {
+        const next = Math.max(0, Math.min(1, volume + dy / 500));
+        setVolume(next);
+        showToast(`Volume ${Math.round(next * 100)}%`);
+      } else {
+        const next = Math.max(0.45, Math.min(1.35, brightness + dy / 650));
+        setBrightness(next);
+        showToast(`Brightness ${Math.round(next * 100)}%`);
+      }
+    }
+  };
+
+  const onTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.changedTouches[0];
+    const start = gestureRef.current;
+    const dx = touch.clientX - start.x;
+    if (Math.abs(dx) > 60) {
+      const delta = Math.round(dx / 6);
+      seekVideo((videoRef.current?.currentTime || 0) + delta);
+      showToast(delta > 0 ? `+${delta}s` : `${delta}s`);
+    }
+  };
+
+  return (
+    <main className="video-main">
+      <section className="video-titlebar">
+        <a className="section-link" href={video.classicHref}>
+          <span>Classic player</span>
+          <ChevronRightIcon />
+        </a>
+        <div>
+          <p className="eyebrow">{video.quality || 'Video'}</p>
+          <h1>{video.title}</h1>
+          {video.subtitle && <p>{video.subtitle}</p>}
+        </div>
+      </section>
+
+      <section
+        className="video-shell"
+        ref={shellRef}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        <video
+          key={`${sourceMode}:${audioIndex}:${video.key}`}
+          ref={videoRef}
+          src={video.knownUnplayable ? undefined : sourceSrc}
+          poster={video.backdropUrl || video.posterUrl}
+          crossOrigin="anonymous"
+          playsInline
+          preload="metadata"
+          style={{ filter: `brightness(${brightness})` }}
+        >
+          {subtitles.map((track, index) => (
+            <track
+              key={track.id}
+              id={String(index)}
+              kind="subtitles"
+              src={track.url}
+              srcLang={track.language || 'und'}
+              label={track.label || track.language || `Subtitle ${index + 1}`}
+            />
+          ))}
+        </video>
+
+        {toast && <div className="gesture-toast">{toast}</div>}
+
+        {(error || video.knownUnplayable) && (
+          <div className="video-overlay-message">
+            <FilmIcon />
+            <strong>This video needs another player</strong>
+            <span>{error || 'Open it in VLC or the classic player.'}</span>
+            <div>
+              <a className="primary-action" href={video.classicHref}>Classic</a>
+              <a className="secondary-action" href={video.vlcHref}>VLC</a>
+            </div>
+          </div>
+        )}
+
+        {showSkipIntro && (
+          <button type="button" className="skip-intro" onClick={() => seekVideo(video.introEnd)}>
+            Skip intro
+            <SkipForwardIcon />
+          </button>
+        )}
+
+        {showNext && video.nextEpisode && (
+          <div className="next-episode-card">
+            <p className="eyebrow">Up next · {nextCountdown}s</p>
+            <strong>{video.nextEpisode.title}</strong>
+            <div>
+              <a className="primary-action" href={video.nextEpisode.playHref}>
+                <PlayIcon />
+                <span>Play</span>
+              </a>
+              <button type="button" className="secondary-action" onClick={() => setShowNext(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        <div className="video-controls">
+          <button type="button" className="player-play video-play" onClick={toggleVideo} aria-label={playing ? 'Pause' : 'Play'}>
+            {playing ? <PauseIcon /> : <PlayIcon />}
+          </button>
+          <div className="video-time">
+            <span>{formatClock(currentTime)}</span>
+            <input
+              type="range"
+              min="0"
+              max={rangeMax}
+              value={Math.min(rangeMax, Math.round(currentTime))}
+              onChange={(event) => seekVideo(Number(event.currentTarget.value))}
+              aria-label="Playback position"
+            />
+            <span>{formatClock(duration)}</span>
+          </div>
+          <button type="button" className="icon-button" onClick={togglePip} aria-label="Picture in picture">
+            <PictureInPictureIcon />
+          </button>
+          <button type="button" className="icon-button" onClick={toggleFullscreen} aria-label="Fullscreen">
+            <MaximizeIcon />
+          </button>
+        </div>
+      </section>
+
+      <section className="video-actions">
+        <label className="volume-control">
+          <VolumeIcon />
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={volume}
+            onChange={(event) => setVolume(Number(event.currentTarget.value))}
+            aria-label="Volume"
+          />
+        </label>
+        <label>
+          <CaptionsIcon />
+          <select value={activeSub} onChange={(event) => setActiveSub(event.currentTarget.value)} disabled={!subtitles.length} aria-label="Captions">
+            <option value="">Captions off</option>
+            {subtitles.map((track) => (
+              <option key={track.id} value={track.id}>{track.label || track.language || track.id}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <VolumeIcon />
+          <select
+            value={audioIndex}
+            onChange={(event) => {
+              setAudioIndex(Number(event.currentTarget.value));
+              setSourceMode('hls');
+            }}
+            disabled={!audioTracks.length}
+            aria-label="Audio track"
+          >
+            <option value={0}>Default audio</option>
+            {audioTracks.map((track) => (
+              <option key={track.index} value={track.index}>{track.label || track.language || `Track ${track.index + 1}`}</option>
+            ))}
+          </select>
+        </label>
+        <button type="button" className="secondary-action" onClick={() => setSourceMode(sourceMode === 'direct' ? 'hls' : 'direct')}>
+          <span>{sourceMode === 'direct' ? 'HLS' : 'Direct'}</span>
+        </button>
+        <a className="secondary-action" href={video.vlcHref}>
+          <PlayIcon />
+          <span>VLC</span>
+        </a>
+        <a className="secondary-action" href={video.downloadHref} download>
+          <DownloadIcon />
+          <span>Download</span>
+        </a>
+        <button type="button" className="secondary-action" onClick={shareVideo}>
+          <ShareIcon />
+          <span>Share</span>
+        </button>
+      </section>
+
+      {video.qualityVariants.length > 0 && (
+        <section className="quality-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Versions</p>
+              <h2>Quality variants</h2>
+            </div>
+          </div>
+          <div className="variant-list">
+            <a className="variant-row active" href={video.appHref}>
+              <span>{video.quality || 'Current'}</span>
+              <strong>{[video.fileSizeLabel, video.durationLabel].filter(Boolean).join(' - ')}</strong>
+            </a>
+            {video.qualityVariants.map((variant) => (
+              <a key={variant.key} className="variant-row" href={variant.playHref}>
+                <span>{variant.quality || 'Version'}</span>
+                <strong>{variant.label || variant.title}</strong>
+              </a>
+            ))}
           </div>
         </section>
       )}
@@ -837,11 +2019,16 @@ function MiniPlayer({
   playRelative,
   togglePlayback,
   seek,
+  onExpand,
+  onOpenQueue,
 }: {
   player: PlayerState;
   playRelative: (delta: number) => void;
+  playQueueIndex: (index: number) => void;
   togglePlayback: (track?: WatchTrack) => void;
   seek: (seconds: number) => void;
+  onExpand: () => void;
+  onOpenQueue: () => void;
 }) {
   const track = player.track;
   if (!track) return null;
@@ -852,13 +2039,13 @@ function MiniPlayer({
 
   return (
     <aside className="mini-player" aria-label="Audio player">
-      <a className="mini-track" href={track.appHref}>
+      <button type="button" className="mini-track mini-track-button" onClick={onExpand}>
         <img src={track.posterUrl || track.thumbUrl} alt="" />
         <span>
           <strong>{track.title}</strong>
           <span>{[track.artist, track.albumTitle].filter(Boolean).join(' - ')}</span>
         </span>
-      </a>
+      </button>
       <div className="mini-controls">
         <button type="button" className="icon-button" onClick={() => playRelative(-1)} disabled={!hasPrev} aria-label="Previous track">
           <SkipBackIcon />
@@ -868,6 +2055,9 @@ function MiniPlayer({
         </button>
         <button type="button" className="icon-button" onClick={() => playRelative(1)} disabled={!hasNext} aria-label="Next track">
           <SkipForwardIcon />
+        </button>
+        <button type="button" className="icon-button" onClick={onOpenQueue} disabled={player.queue.length < 2} aria-label="Open queue">
+          <ListIcon />
         </button>
       </div>
       <div className="mini-progress">
@@ -887,12 +2077,186 @@ function MiniPlayer({
   );
 }
 
+function NowPlayingSheet({
+  open,
+  player,
+  playRelative,
+  togglePlayback,
+  seek,
+  onClose,
+  onOpenQueue,
+}: {
+  open: boolean;
+  player: PlayerState;
+  playRelative: (delta: number) => void;
+  togglePlayback: (track?: WatchTrack) => void;
+  seek: (seconds: number) => void;
+  onClose: () => void;
+  onOpenQueue: () => void;
+}) {
+  const track = player.track;
+  if (!open || !track) return null;
+  const duration = player.duration || track.duration || 0;
+  const rangeMax = Math.max(1, Math.round(duration));
+  return (
+    <div className="sheet-layer" role="dialog" aria-modal="true" aria-label="Now playing">
+      <button type="button" className="modal-scrim" onClick={onClose} aria-label="Close" />
+      <section className="now-sheet">
+        <button type="button" className="icon-button modal-close" onClick={onClose} aria-label="Close">
+          <XIcon />
+        </button>
+        <img className="now-art" src={track.posterUrl || track.thumbUrl} alt="" />
+        <div className="now-copy">
+          <p className="eyebrow">{track.qualityLabel || track.format || 'Now playing'}</p>
+          <h2>{track.title}</h2>
+          <p>{[track.artist, track.albumTitle].filter(Boolean).join(' - ')}</p>
+        </div>
+        <div className="watch-progress now-progress">
+          <span>{formatClock(player.currentTime)}</span>
+          <input
+            type="range"
+            min="0"
+            max={rangeMax}
+            value={Math.min(rangeMax, Math.round(player.currentTime))}
+            onChange={(event) => seek(Number(event.currentTarget.value))}
+            aria-label="Playback position"
+          />
+          <span>{formatClock(duration)}</span>
+        </div>
+        <div className="watch-controls now-controls">
+          <button type="button" className="icon-button player-nav" onClick={() => playRelative(-1)} disabled={player.queueIndex <= 0} aria-label="Previous track">
+            <SkipBackIcon />
+          </button>
+          <button type="button" className="player-play" onClick={() => togglePlayback()} aria-label={player.playing ? 'Pause' : 'Play'}>
+            {player.playing ? <PauseIcon /> : <PlayIcon />}
+          </button>
+          <button type="button" className="icon-button player-nav" onClick={() => playRelative(1)} disabled={player.queueIndex + 1 >= player.queue.length} aria-label="Next track">
+            <SkipForwardIcon />
+          </button>
+          <button type="button" className="icon-button player-nav" onClick={onOpenQueue} disabled={player.queue.length < 2} aria-label="Open queue">
+            <ListIcon />
+          </button>
+        </div>
+        <a className="section-link classic-link" href={track.classicHref}>
+          <span>Classic player</span>
+          <ChevronRightIcon />
+        </a>
+      </section>
+    </div>
+  );
+}
+
+function QueueDrawer({
+  open,
+  player,
+  playQueueIndex,
+  togglePlayback,
+  onClose,
+}: {
+  open: boolean;
+  player: PlayerState;
+  playQueueIndex: (index: number) => void;
+  togglePlayback: (track?: WatchTrack) => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="sheet-layer" role="dialog" aria-modal="true" aria-label="Queue">
+      <button type="button" className="modal-scrim" onClick={onClose} aria-label="Close" />
+      <aside className="queue-drawer">
+        <div className="drawer-heading">
+          <div>
+            <p className="eyebrow">Queue</p>
+            <h2>Up next</h2>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
+            <XIcon />
+          </button>
+        </div>
+        {player.queue.length ? (
+          <div className="track-list queue-list">
+            {player.queue.map((track, index) => {
+              const active = index === player.queueIndex;
+              return (
+                <button
+                  type="button"
+                  key={`${track.key}:${index}`}
+                  className={active ? 'track-row active queue-row' : 'track-row queue-row'}
+                  onClick={() => (active ? togglePlayback() : playQueueIndex(index))}
+                >
+                  <span className="track-number">{index + 1}</span>
+                  <img src={track.posterUrl || track.thumbUrl} alt="" />
+                  <span className="track-title">
+                    <strong>{track.title}</strong>
+                    <span>{[track.artist, track.albumTitle].filter(Boolean).join(' - ')}</span>
+                  </span>
+                  {active && player.playing ? <PauseIcon /> : <PlayIcon />}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <MusicIcon />
+            <strong>No queued tracks</strong>
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function BottomNav({
+  user,
+  activeView,
+  onSearch,
+  onAccount,
+}: {
+  user: User | null;
+  activeView: ViewValue | '';
+  onSearch: () => void;
+  onAccount: () => void;
+}) {
+  return (
+    <nav className="bottom-nav" aria-label="Primary">
+      <a className={activeView === '' ? 'active' : ''} href="/app">
+        <HomeIcon />
+        <span>Home</span>
+      </a>
+      <button type="button" onClick={onSearch}>
+        <SearchIcon />
+        <span>Search</span>
+      </button>
+      <a href="/watchlist">
+        <BookmarkIcon />
+        <span>Watchlist</span>
+      </a>
+      <a className={activeView === 'music' ? 'active' : ''} href="/app?view=music">
+        <MusicIcon />
+        <span>Music</span>
+      </a>
+      {user ? (
+        <a href="/watchlist">
+          <UserIcon />
+          <span>Account</span>
+        </a>
+      ) : (
+        <button type="button" onClick={onAccount}>
+          <UserIcon />
+          <span>Account</span>
+        </button>
+      )}
+    </nav>
+  );
+}
+
 function Header({
   me,
   user,
   query,
   setQuery,
   searchRef,
+  activeView,
   onSearchSubmit,
   onSignIn,
   onSignOut,
@@ -902,6 +2266,7 @@ function Header({
   query: string;
   setQuery: (next: string) => void;
   searchRef: RefObject<HTMLInputElement | null>;
+  activeView: ViewValue | '';
   onSearchSubmit: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
@@ -947,6 +2312,13 @@ function Header({
         </span>
         <span>TeleDirect</span>
       </a>
+
+      <nav className="desktop-shortcuts" aria-label="Browse">
+        <a className={activeView === '' ? 'active' : ''} href="/app">Home</a>
+        <a className={activeView === 'movies' ? 'active' : ''} href="/app?view=movies">Movies</a>
+        <a className={activeView === 'series' ? 'active' : ''} href="/app?view=series">Series</a>
+        <a className={activeView === 'music' ? 'active' : ''} href="/app?view=music">Music</a>
+      </nav>
 
       <form className="top-search" role="search" onSubmit={handleSubmit}>
         <SearchIcon className="search-leading" />
@@ -1042,7 +2414,7 @@ function SearchMenu({ suggestions, onPick }: { suggestions: Suggestion[]; onPick
   return (
     <div className="search-menu">
       {suggestions.map((item) => (
-        <a key={item.url} href={item.url} className="suggestion" onClick={onPick}>
+        <a key={item.url} href={localAppHref(item.url) || item.url} className="suggestion" onClick={onPick}>
           <span className="suggestion-art">
             {item.poster_path ? (
               <img src={`https://image.tmdb.org/t/p/w92${item.poster_path}`} alt="" loading="lazy" />

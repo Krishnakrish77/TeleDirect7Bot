@@ -1,3 +1,16 @@
+FROM node:22-slim AS frontend-builder
+
+WORKDIR /app
+
+COPY frontend/package*.json frontend/
+RUN cd frontend && npm ci
+
+COPY frontend frontend
+RUN cd frontend \
+    && mkdir -p ../main/server/static \
+    && npm run build
+
+
 FROM python:3.12-slim
 
 ARG TAILWINDCSS_VERSION=v3.4.17
@@ -23,6 +36,8 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+COPY --from=frontend-builder /app/main/server/static/app main/server/static/app
 
 # Pre-compile Tailwind. Scans template/**/*.html for class usage and emits a
 # small minified CSS instead of running the JIT engine in every browser.

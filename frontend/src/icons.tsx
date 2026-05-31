@@ -167,6 +167,91 @@ export function FilmIcon(props: Props) {
   );
 }
 
+export function HomeIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="m3 11 9-8 9 8" />
+      <path d="M5 10v10h14V10" />
+      <path d="M9 20v-6h6v6" />
+    </IconBase>
+  );
+}
+
+export function ListIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M8 6h13" />
+      <path d="M8 12h13" />
+      <path d="M8 18h13" />
+      <path d="M3 6h.01" />
+      <path d="M3 12h.01" />
+      <path d="M3 18h.01" />
+    </IconBase>
+  );
+}
+
+export function VolumeIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+    </IconBase>
+  );
+}
+
+export function CaptionsIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M7 12h2" />
+      <path d="M11 12h6" />
+      <path d="M7 15h5" />
+      <path d="M14 15h3" />
+    </IconBase>
+  );
+}
+
+export function MaximizeIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+      <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+      <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+      <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+    </IconBase>
+  );
+}
+
+export function PictureInPictureIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <rect x="12" y="12" width="6" height="4" rx="1" />
+    </IconBase>
+  );
+}
+
+export function DownloadIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 21h14" />
+    </IconBase>
+  );
+}
+
+export function ShareIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <path d="m16 6-4-4-4 4" />
+      <path d="M12 2v13" />
+    </IconBase>
+  );
+}
+
 export function XIcon(props: Props) {
   return (
     <IconBase {...props}>

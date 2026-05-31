@@ -1,8 +1,11 @@
 import type {
   ContinueItem,
+  DetailResponse,
   HubParams,
   HubResponse,
   MeResponse,
+  AudioTrackOption,
+  SubtitleTrack,
   Suggestion,
   TelegramAuthUser,
   WatchResponse,
@@ -60,6 +63,27 @@ export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
 
 export async function fetchWatch(key: string, signal?: AbortSignal): Promise<WatchResponse> {
   return request<WatchResponse>(`/api/watch/${encodeURIComponent(key)}`, { signal });
+}
+
+export async function fetchDetail(
+  kind: 'movie' | 'series' | 'album' | 'artist' | 'person',
+  key: string,
+  search = '',
+  signal?: AbortSignal,
+): Promise<DetailResponse> {
+  const suffix = search || '';
+  const pathKey = encodeURIComponent(key).replace(/%3A/gi, ':');
+  return request<DetailResponse>(`/api/app/${kind}/${pathKey}${suffix}`, { signal });
+}
+
+export async function fetchSubtitles(base: string, signal?: AbortSignal): Promise<SubtitleTrack[]> {
+  if (!base) return [];
+  return request<SubtitleTrack[]>(`${base}/list.json`, { signal });
+}
+
+export async function fetchAudioTracks(base: string, signal?: AbortSignal): Promise<AudioTrackOption[]> {
+  if (!base) return [];
+  return request<AudioTrackOption[]>(`${base}/audio-list.json`, { signal });
 }
 
 export async function fetchSuggestions(q: string, signal?: AbortSignal): Promise<Suggestion[]> {

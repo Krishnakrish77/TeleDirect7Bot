@@ -11,11 +11,12 @@ import json
 import re
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 
 from aiohttp import web
 
 from main.utils import media_index
+from main.utils import codec_probe
 from main.utils.codec_probe import _clean_music_tag
 from main.utils.hub_query import AlbumGroup, HubItem, MovieGroup, SeriesGroup
 from main.utils.human_readable import humanbytes
@@ -74,6 +75,22 @@ def _app_watch_url(item: HubItem) -> str:
     return f"/app/watch/{item.secure_hash}{item.message_id}"
 
 
+def _play_url(item: HubItem) -> str:
+    if (item.media_kind or "") == "audio":
+        return _app_watch_url(item)
+    return _app_watch_url(item) if Var.REACT_VIDEO_BETA else _watch_url(item)
+
+
+def _detail_url(item: HubItem) -> str:
+    if item.series_key:
+        return f"/app/series/{item.series_key}"
+    if item.movie_key:
+        return f"/app/movie/{item.movie_key}"
+    if item.album_key:
+        return f"/app/album/{item.album_key}"
+    return _app_watch_url(item) if (item.media_kind or "") == "audio" else _play_url(item)
+
+
 def _stream_url(item: HubItem) -> str:
     return f"/{item.secure_hash}{item.message_id}"
 
@@ -119,7 +136,9 @@ def _card_from_item(item: HubItem) -> dict:
         "subtitle": subtitle,
         "eyebrow": "Music" if is_audio else (item.quality or "Video"),
         "badge": item.quality or common["durationLabel"],
-        "href": _app_watch_url(item) if is_audio else common["href"],
+        "href": _detail_url(item),
+        "playHref": _play_url(item),
+        "detailsHref": _detail_url(item),
         "aspect": "square" if is_audio else "poster",
     }
 
@@ -140,7 +159,9 @@ def _card_from_series(card: SeriesGroup) -> dict:
         ),
         "eyebrow": "Series",
         "badge": f"{card.episode_count} ep",
-        "href": f"/series/{card.series_key}",
+        "href": f"/app/series/{card.series_key}",
+        "playHref": _play_url(poster),
+        "detailsHref": f"/app/series/{card.series_key}",
         "aspect": "poster",
         "episodeCount": card.episode_count,
         "seasonCount": card.season_count,
@@ -162,7 +183,9 @@ def _card_from_movie(card: MovieGroup) -> dict:
         ),
         "eyebrow": "Movie",
         "badge": f"{card.variant_count} versions",
-        "href": f"/movie/{card.movie_key}",
+        "href": f"/app/movie/{card.movie_key}",
+        "playHref": _play_url(poster),
+        "detailsHref": f"/app/movie/{card.movie_key}",
         "aspect": "poster",
         "variantCount": card.variant_count,
     }
@@ -183,7 +206,9 @@ def _card_from_album(card: AlbumGroup) -> dict:
         ),
         "eyebrow": "Album",
         "badge": f"{card.track_count} tracks",
-        "href": f"/album/{card.album_key}",
+        "href": f"/app/album/{card.album_key}",
+        "playHref": _app_watch_url(poster),
+        "detailsHref": f"/app/album/{card.album_key}",
         "aspect": "square",
         "artist": artist,
         "trackCount": card.track_count,
@@ -202,25 +227,22 @@ def _card(card) -> dict:
 
 def _hero(item: HubItem) -> dict:
     common = _item_common(item)
-    details_href = common["href"]
+    details_href = _detail_url(item)
     kind = "Movie"
     if item.series_key:
-        details_href = f"/series/{item.series_key}"
         kind = "Series"
     elif item.movie_key:
-        details_href = f"/movie/{item.movie_key}"
+        kind = "Movie"
     elif item.album_key:
-        details_href = f"/album/{item.album_key}"
         kind = "Album"
     elif item.media_kind == "audio":
         kind = "Music"
-        details_href = _app_watch_url(item)
     return {
         **common,
         "type": "hero",
         "itemId": str(item.message_id),
         "detailsHref": details_href,
-        "playHref": _app_watch_url(item) if item.media_kind == "audio" else common["href"],
+        "playHref": _play_url(item),
         "eyebrow": kind,
         "meta": [
             str(v) for v in (
@@ -320,6 +342,7 @@ async def api_me(request: web.Request) -> web.Response:
         "app": {
             "name": "TeleDirect",
             "spaPath": "/app",
+            "reactVideoBeta": Var.REACT_VIDEO_BETA,
         },
     })
 
@@ -405,6 +428,402 @@ async def api_hub(request: web.Request) -> web.Response:
     })
 
 
+def _person_link(name: str) -> dict:
+    return {"name": name, "href": f"/app/person/{media_index._person_slug(name)}"}
+
+
+def _meta_payload(item: HubItem) -> dict:
+    poster = _tmdb_image(item.poster_path) or _thumb(item)
+    backdrop = _tmdb_image(item.backdrop_path, "w1280")
+    title = _clean_music_tag(item.title or item.file_name or "Untitled")
+    return {
+        "title": title,
+        "year": item.year,
+        "overview": item.overview or item.description or "",
+        "posterUrl": poster,
+        "thumbUrl": _thumb(item),
+        "backdropUrl": backdrop,
+        "genres": item.tmdb_genres or [],
+        "director": item.director or "",
+        "directors": [_person_link(name) for name in media_index._director_credits(item.director or "")],
+        "cast": [_person_link(name) for name in (item.cast or [])[:12]],
+        "imdbId": item.imdb_id or "",
+        "imdbHref": f"https://www.imdb.com/title/{item.imdb_id}/" if item.imdb_id else "",
+        "trailerKey": item.trailer_key or "",
+    }
+
+
+def _episode_label(item: HubItem) -> str:
+    if item.season is not None and item.episode is not None:
+        end = f"-E{item.episode_end:02d}" if item.episode_end else ""
+        return f"S{item.season:02d}E{item.episode:02d}{end}"
+    if item.episode is not None:
+        end = f"-{item.episode_end}" if item.episode_end else ""
+        return f"Episode {item.episode}{end}"
+    return ""
+
+
+def _video_choice_payload(item: HubItem) -> dict:
+    common = _item_common(item)
+    label_bits = [item.quality or "", common["fileSizeLabel"], common["durationLabel"]]
+    return {
+        **common,
+        "key": f"{item.secure_hash}{item.message_id}",
+        "itemId": str(item.message_id),
+        "type": "item",
+        "title": item.episode_title or common["title"],
+        "subtitle": item.file_name or "",
+        "episodeLabel": _episode_label(item),
+        "episodeOverview": item.episode_overview or "",
+        "episodeStillUrl": _tmdb_image(item.episode_still_path, "w300") or _thumb(item),
+        "label": " - ".join(bit for bit in label_bits if bit),
+        "playHref": _play_url(item),
+        "appHref": _app_watch_url(item),
+        "classicHref": _watch_url(item),
+        "href": _play_url(item),
+    }
+
+
+def _related_rows(item: HubItem, *, limit: int = 14) -> list[dict]:
+    rows: list[dict] = []
+    exclude = {
+        f"movie:{item.movie_key}" if item.movie_key else "",
+        f"series:{item.series_key}" if item.series_key else "",
+        f"album:{item.album_key}" if item.album_key else "",
+        str(item.message_id),
+    }
+    if item.tmdb_genres:
+        cards, _total = media_index.query_grouped(
+            genre=item.tmdb_genres[0],
+            sort="newest",
+            view="music" if item.media_kind == "audio" else "",
+            offset=0,
+            limit=limit + 6,
+        )
+        row_items = []
+        for card in cards:
+            payload = _card(card)
+            if payload.get("itemId") not in exclude:
+                row_items.append(payload)
+            if len(row_items) >= limit:
+                break
+        if row_items:
+            rows.append({"name": f"More {item.tmdb_genres[0]}", "items": row_items})
+
+    if item.media_kind == "audio" and item.artist:
+        artist_slug = media_index._artist_slug(media_index._primary_artist(item.artist))
+        artist_tracks = [
+            track for track in media_index.tracks_by_artist_slug(artist_slug)
+            if track.message_id != item.message_id
+        ][:limit]
+        if artist_tracks:
+            rows.append({
+                "name": f"More by {_clean_music_tag(media_index.artist_display_name(artist_slug))}",
+                "items": [_card_from_item(track) for track in artist_tracks],
+            })
+
+    if not rows:
+        for shelf in media_index.shelves(per_shelf=limit):
+            row_items = []
+            for card in shelf.get("items") or []:
+                payload = _card(card)
+                if payload.get("itemId") not in exclude:
+                    row_items.append(payload)
+                if len(row_items) >= limit:
+                    break
+            if row_items:
+                rows.append({"name": shelf.get("name") or "More to watch", "items": row_items})
+                break
+    return rows
+
+
+def _movie_detail_payload(key: str) -> dict | None:
+    variants = media_index.variants_for_movie(key)
+    if not variants:
+        return None
+    enriched = next((v for v in variants if v.tmdb_id), variants[0])
+    preferred = max(variants, key=lambda v: (v.file_size or 0, v.message_id))
+    meta = _meta_payload(enriched)
+    return {
+        "kind": "movie",
+        "key": key,
+        "savedId": f"movie:{key}",
+        "title": meta["title"],
+        "year": meta["year"],
+        "overview": meta["overview"],
+        "posterUrl": meta["posterUrl"],
+        "backdropUrl": meta["backdropUrl"],
+        "genres": meta["genres"],
+        "director": meta["director"],
+        "directors": meta["directors"],
+        "cast": meta["cast"],
+        "imdbHref": meta["imdbHref"],
+        "trailerKey": meta["trailerKey"],
+        "playHref": _play_url(preferred),
+        "classicHref": _watch_url(preferred),
+        "variants": [_video_choice_payload(v) for v in variants],
+        "related": _related_rows(enriched),
+    }
+
+
+def _series_blocks(episodes: list[HubItem]) -> tuple[list[dict], list[dict], bool, str, int, int]:
+    numbered_seasons = sorted({e.season for e in episodes if e.season is not None})
+    has_misc = any(e.season is None for e in episodes)
+    seasons: dict = {}
+    if len(numbered_seasons) == 1:
+        seasons[numbered_seasons[0]] = list(episodes)
+        has_misc = False
+    else:
+        for ep in episodes:
+            seasons.setdefault(ep.season, []).append(ep)
+
+    season_blocks = []
+    for season, eps in sorted(seasons.items(), key=lambda kv: (kv[0] is None, kv[0])):
+        by_ep: dict = {}
+        extras: list[HubItem] = []
+        for ep in eps:
+            if ep.episode is None:
+                extras.append(ep)
+            else:
+                by_ep.setdefault((ep.episode, ep.episode_end), []).append(ep)
+        entries = []
+        for ep_key in sorted(by_ep.keys()):
+            variants = sorted(by_ep[ep_key], key=lambda v: -(v.file_size or 0))
+            unique: list[HubItem] = []
+            seen_hash: set[str] = set()
+            duplicate_count = 0
+            for variant in variants:
+                if variant.secure_hash and variant.secure_hash in seen_hash:
+                    duplicate_count += 1
+                    continue
+                if variant.secure_hash:
+                    seen_hash.add(variant.secure_hash)
+                unique.append(variant)
+            entries.append({
+                "rep": _video_choice_payload(unique[0]),
+                "variants": [_video_choice_payload(v) for v in unique],
+                "duplicateCount": duplicate_count,
+            })
+        for ep in extras:
+            entries.append({
+                "rep": _video_choice_payload(ep),
+                "variants": [_video_choice_payload(ep)],
+                "duplicateCount": 0,
+            })
+        season_blocks.append({"season": season, "entries": entries})
+
+    season_options: list[dict] = [
+        {"value": str(season), "label": f"Season {season}"}
+        for season in numbered_seasons
+    ]
+    if has_misc:
+        season_options.append({"value": "misc", "label": "Other episodes"})
+    show_selector = len(season_options) > 1
+    if show_selector:
+        season_options.append({"value": "all", "label": "All seasons"})
+    total_episode_count = (
+        len({(e.season, e.episode) for e in episodes if e.episode is not None})
+        or len(episodes)
+    )
+    season_count = max(1, len(numbered_seasons))
+    default_selected = str(numbered_seasons[-1]) if show_selector and numbered_seasons else ("misc" if show_selector else "all")
+    return season_blocks, season_options, show_selector, default_selected, total_episode_count, season_count
+
+
+def _series_detail_payload(key: str, season_raw: str = "") -> dict | None:
+    episodes = media_index.episodes_for_series(key)
+    if not episodes:
+        return None
+    blocks, options, show_selector, default_selected, total_count, season_count = _series_blocks(episodes)
+    valid = {option["value"] for option in options}
+    selected = season_raw if season_raw in valid else default_selected
+    if selected == "all":
+        visible = blocks
+    elif selected == "misc":
+        visible = [block for block in blocks if block["season"] is None]
+    else:
+        try:
+            selected_int = int(selected)
+        except ValueError:
+            visible = []
+        else:
+            visible = [block for block in blocks if block["season"] == selected_int]
+
+    visible_entries = [entry for block in visible for entry in block["entries"]]
+    first_entry = visible_entries[0]["rep"] if visible_entries else _video_choice_payload(episodes[0])
+    enriched = next((e for e in episodes if e.tmdb_id), episodes[0])
+    meta = _meta_payload(enriched)
+    return {
+        "kind": "series",
+        "key": key,
+        "savedId": f"series:{key}",
+        "title": episodes[0].series_title or key,
+        "year": meta["year"],
+        "overview": meta["overview"],
+        "posterUrl": meta["posterUrl"],
+        "backdropUrl": meta["backdropUrl"],
+        "genres": meta["genres"],
+        "director": meta["director"],
+        "directors": meta["directors"],
+        "cast": meta["cast"],
+        "imdbHref": meta["imdbHref"],
+        "trailerKey": meta["trailerKey"],
+        "playHref": first_entry["playHref"],
+        "classicHref": first_entry["classicHref"],
+        "seasonOptions": options,
+        "showSelector": show_selector,
+        "selectedSeason": selected,
+        "episodeCount": len(visible_entries) or len(visible),
+        "totalEpisodeCount": total_count,
+        "seasonCount": season_count,
+        "seasonBlocks": visible,
+        "related": _related_rows(enriched),
+    }
+
+
+def _album_detail_payload(key: str) -> dict | None:
+    tracks = media_index.tracks_for_album(key)
+    if not tracks:
+        return None
+    rep = (
+        next((t for t in tracks if t.artist and t.has_thumb), None)
+        or next((t for t in tracks if t.artist), None)
+        or tracks[0]
+    )
+    unique_artists = {t.artist for t in tracks if t.artist}
+    if len(unique_artists) == 1:
+        display_artist = unique_artists.pop()
+    elif len(unique_artists) > 1:
+        display_artist = "Various Artists"
+    else:
+        display_artist = ""
+    return {
+        "kind": "album",
+        "key": key,
+        "savedId": f"album:{key}",
+        "title": _clean_music_tag(rep.album_title or rep.title or key),
+        "artist": _clean_music_tag(display_artist),
+        "artistHref": f"/app/artist/{media_index._artist_slug(display_artist)}" if display_artist and display_artist != "Various Artists" else "",
+        "year": rep.year,
+        "overview": rep.overview or rep.description or "",
+        "posterUrl": _thumb(rep),
+        "backdropUrl": _tmdb_image(rep.backdrop_path, "w1280") or _thumb(rep),
+        "trackCount": len(tracks),
+        "playHref": _app_watch_url(tracks[0]),
+        "tracks": [_track_payload(track) for track in tracks],
+        "related": _related_rows(rep),
+    }
+
+
+def _artist_detail_payload(slug: str) -> dict | None:
+    tracks = media_index.tracks_by_artist_slug(slug)
+    if not tracks:
+        return None
+    albums: dict[str, list[HubItem]] = {}
+    singles: list[HubItem] = []
+    for track in tracks:
+        if track.album_key:
+            albums.setdefault(track.album_key, []).append(track)
+        else:
+            singles.append(track)
+    album_cards = []
+    for album_key, album_tracks in albums.items():
+        group = media_index._build_album_group(album_tracks)
+        album_cards.append(_card_from_album(group))
+    album_cards.sort(key=lambda card: card.get("title") or "")
+    name = _clean_music_tag(media_index.artist_display_name(slug))
+    return {
+        "kind": "artist",
+        "key": slug,
+        "title": name,
+        "subtitle": f"{len(tracks)} track{'' if len(tracks) == 1 else 's'}",
+        "artist": name,
+        "posterUrl": _thumb(tracks[0]),
+        "backdropUrl": _tmdb_image(tracks[0].backdrop_path, "w1280") or _thumb(tracks[0]),
+        "tracks": [_track_payload(track) for track in tracks],
+        "albums": album_cards,
+        "singles": [_track_payload(track) for track in singles],
+    }
+
+
+def _person_detail_payload(slug: str) -> dict | None:
+    cast_items = media_index.items_by_cast_slug(slug)
+    directed_items = media_index.items_by_director_slug(slug)
+    if not cast_items and not directed_items:
+        return None
+    person_name = (
+        next((n for it in cast_items for n in (it.cast or [])
+              if media_index._person_slug(n) == slug), None)
+        or next((n for it in directed_items
+                 for n in media_index._director_credits(it.director or "")
+                 if media_index._person_slug(n) == slug), None)
+        or slug
+    )
+    if cast_items and directed_items:
+        role_label = "Actor & Director"
+    elif directed_items:
+        role_label = "Director"
+    else:
+        role_label = "Actor"
+    all_items = cast_items + directed_items
+    rep = next((item for item in all_items if item.backdrop_path), all_items[0])
+    return {
+        "kind": "person",
+        "key": slug,
+        "title": person_name,
+        "subtitle": role_label,
+        "roleLabel": role_label,
+        "totalUnique": len({it.message_id for it in cast_items} | {it.message_id for it in directed_items}),
+        "posterUrl": _tmdb_image(rep.poster_path) or _thumb(rep),
+        "backdropUrl": _tmdb_image(rep.backdrop_path, "w1280") or _thumb(rep),
+        "castItems": [_card_from_item(item) for item in cast_items],
+        "directedItems": [_card_from_item(item) for item in directed_items],
+    }
+
+
+@routes.get(r"/api/app/movie/{key:[a-z0-9][a-z0-9:\-]*}")
+async def api_app_movie(request: web.Request) -> web.Response:
+    payload = _movie_detail_payload(request.match_info["key"])
+    if payload is None:
+        return _json({"error": "Movie not found"}, status=404)
+    return _json(payload)
+
+
+@routes.get(r"/api/app/series/{key:[a-z0-9][a-z0-9\-]*}")
+async def api_app_series(request: web.Request) -> web.Response:
+    payload = _series_detail_payload(
+        request.match_info["key"],
+        (request.query.get("season") or "").strip().lower(),
+    )
+    if payload is None:
+        return _json({"error": "Series not found"}, status=404)
+    return _json(payload)
+
+
+@routes.get(r"/api/app/album/{key:[a-z0-9][a-z0-9\-]*}")
+async def api_app_album(request: web.Request) -> web.Response:
+    payload = _album_detail_payload(request.match_info["key"])
+    if payload is None:
+        return _json({"error": "Album not found"}, status=404)
+    return _json(payload)
+
+
+@routes.get(r"/api/app/artist/{slug:[a-z0-9][a-z0-9\-]*}")
+async def api_app_artist(request: web.Request) -> web.Response:
+    payload = _artist_detail_payload(request.match_info["slug"])
+    if payload is None:
+        return _json({"error": "Artist not found"}, status=404)
+    return _json(payload)
+
+
+@routes.get(r"/api/app/person/{slug:[a-z0-9][a-z0-9\-]*}")
+async def api_app_person(request: web.Request) -> web.Response:
+    payload = _person_detail_payload(request.match_info["slug"])
+    if payload is None:
+        return _json({"error": "Person not found"}, status=404)
+    return _json(payload)
+
+
 def _parse_watch_key(key: str) -> tuple[str, int] | None:
     match = re.match(r"^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$", key or "")
     if not match:
@@ -467,6 +886,89 @@ def _track_payload(item: HubItem) -> dict:
     }
 
 
+def _video_watch_payload(item: HubItem) -> dict:
+    common = _item_common(item)
+    title = item.episode_title or common["title"]
+    if item.series_title and item.season is not None and item.episode is not None:
+        title = f"{item.series_title} {_episode_label(item)}"
+        if item.episode_title:
+            title = f"{title} - {item.episode_title}"
+    absolute_stream = urljoin(Var.URL, f"{item.secure_hash}{item.message_id}")
+
+    quality_variants: list[HubItem] = []
+    if item.movie_key:
+        quality_variants = [
+            variant for variant in media_index.variants_for_movie(item.movie_key)
+            if variant.message_id != item.message_id
+        ]
+    elif item.series_key and item.episode is not None:
+        quality_variants = [
+            episode for episode in media_index.episodes_for_series(item.series_key)
+            if (
+                episode.season == item.season
+                and episode.episode == item.episode
+                and episode.episode_end == item.episode_end
+                and episode.message_id != item.message_id
+            )
+        ]
+
+    next_ep_raw = media_index.next_episode(item)
+    next_ep = None
+    if next_ep_raw:
+        next_item = None
+        next_key = (next_ep_raw.get("url") or "").rsplit("/", 1)[-1]
+        parsed_next = _parse_watch_key(next_key)
+        if parsed_next:
+            next_hash, next_message_id = parsed_next
+            candidate = media_index.get_item(next_message_id)
+            if candidate is not None and candidate.secure_hash == next_hash:
+                next_item = candidate
+        if next_item:
+            next_ep = {
+                **next_ep_raw,
+                "key": f"{next_item.secure_hash}{next_item.message_id}",
+                "playHref": _play_url(next_item),
+                "classicHref": _watch_url(next_item),
+                "posterUrl": _tmdb_image(next_item.episode_still_path, "w300") or _thumb(next_item),
+            }
+
+    return {
+        **common,
+        "key": f"{item.secure_hash}{item.message_id}",
+        "itemId": str(item.message_id),
+        "type": "video",
+        "title": title,
+        "subtitle": " - ".join(part for part in [
+            item.series_title if item.series_key else "",
+            _episode_label(item),
+            item.quality or "",
+            common["fileSizeLabel"],
+        ] if part),
+        "episodeLabel": _episode_label(item),
+        "classicHref": _watch_url(item),
+        "appHref": _app_watch_url(item),
+        "directSrc": _stream_url(item),
+        "hlsSrc": f"/hls/{item.secure_hash}{item.message_id}/playlist.m3u8",
+        "subtitleBase": f"/sub/{item.secure_hash}{item.message_id}",
+        "audioTrackBase": f"/hls/{item.secure_hash}{item.message_id}",
+        "streamHref": _stream_url(item),
+        "absoluteStreamHref": absolute_stream,
+        "downloadHref": _stream_url(item),
+        "vlcHref": f"vlc://{absolute_stream}",
+        "knownUnplayable": codec_probe.known_unplayable(item),
+        "videoCodec": item.video_codec or "",
+        "pixFmt": item.pix_fmt or "",
+        "qualityVariants": [_video_choice_payload(variant) for variant in quality_variants],
+        "nextEpisode": next_ep,
+        "introStart": float(item.intro_start or 0),
+        "introEnd": float(item.intro_end or 0),
+        "duration": item.duration or 0,
+        "resumeKey": f"{item.secure_hash}{item.message_id}",
+        "metadata": _meta_payload(item),
+        "reactVideoBeta": Var.REACT_VIDEO_BETA,
+    }
+
+
 @routes.get(r"/api/watch/{key:[A-Za-z0-9_-]+}")
 async def api_watch(request: web.Request) -> web.Response:
     parsed = _parse_watch_key(request.match_info["key"])
@@ -480,8 +982,9 @@ async def api_watch(request: web.Request) -> web.Response:
     if (item.media_kind or "") != "audio":
         return _json({
             "mediaKind": item.media_kind or "video",
+            "reactVideoBeta": Var.REACT_VIDEO_BETA,
             "classicHref": _watch_url(item),
-            "item": _card_from_item(item),
+            "item": _video_watch_payload(item),
         })
 
     tracks = []

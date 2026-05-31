@@ -71,6 +71,12 @@ class Var(object):
     # Free tier at aistudio.google.com — no credit card required.
     GEMINI_API_KEY = environ.get("GEMINI_API_KEY", "").strip()
 
+    # Feature-flag the React-owned video player. The classic /watch route
+    # remains the production default/fallback until parity is complete.
+    REACT_VIDEO_BETA = str(environ.get("REACT_VIDEO_BETA", "")).lower() in {
+        "1", "true", "yes", "on",
+    }
+
     BANNED_CHANNELS = list({int(x) for x in str(environ.get("BANNED_CHANNELS", "")).split()})
     BANNED_USERS = list({int(x) for x in str(environ.get("BANNED_USERS", "")).split()})
 
