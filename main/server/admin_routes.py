@@ -30,7 +30,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import media_index, trending as _trending
+from main.utils import media_index, thumb_cache, trending as _trending
 from main.utils.human_readable import humanbytes
 from main.utils.index_entry import IndexEntry, render
 from main.utils import series as series_parse
@@ -744,6 +744,11 @@ async def admin_prune_stale(request: web.Request) -> web.Response:
         try:
             thumb_ids = await media_index._store.thumb_ids()
             live_ids = set(media_index._items.keys())
+            live_ids.update(
+                thumb_cache.cache_id(mid, audio=True)
+                for mid, item in media_index._items.items()
+                if getattr(item, "media_kind", "") == "audio"
+            )
             orphan_ids = [t for t in thumb_ids if t not in live_ids]
             for orphan in orphan_ids:
                 try:
@@ -1956,13 +1961,21 @@ async def admin_edit(request: web.Request) -> web.Response:
                                         if len(_img) > _THUMB_MAX_BYTES:
                                             thumb_msg = " — thumbnail too large (> 5 MB)"
                                         else:
-                                            thumb_cache.set_(message_id, _img)
+                                            _thumb_keys = [message_id]
+                                            _item = media_index.get_item(message_id)
+                                            if getattr(_item, "media_kind", "") == "audio":
+                                                _thumb_keys.append(
+                                                    thumb_cache.cache_id(message_id, audio=True)
+                                                )
+                                            for _thumb_key in _thumb_keys:
+                                                thumb_cache.set_(_thumb_key, _img)
                                             _tc_store = thumb_cache._store()
                                             if _tc_store:
-                                                try:
-                                                    await _tc_store.set_thumb(message_id, _img)
-                                                except Exception:
-                                                    pass
+                                                for _thumb_key in _thumb_keys:
+                                                    try:
+                                                        await _tc_store.set_thumb(_thumb_key, _img)
+                                                    except Exception:
+                                                        pass
                                             thumb_msg = " — thumbnail updated"
                             else:
                                 thumb_msg = f" — thumbnail fetch failed ({_r.status})"

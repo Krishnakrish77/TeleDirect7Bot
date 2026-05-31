@@ -406,11 +406,12 @@ export function GridView({
       {data.items.length ? (
         <>
           <div className={isMusicGrid ? 'media-grid music-grid' : 'media-grid'}>
-            {data.items.map((card) => (
+            {data.items.map((card, index) => (
               <MediaCard
                 key={`${card.type}:${card.itemId}`}
                 card={card}
                 saved={saved.has(card.itemId)}
+                priority={index < 4}
                 onToggleSaved={onToggleSaved}
               />
             ))}
@@ -441,10 +442,12 @@ export function GridView({
 export function MediaCard({
   card,
   saved,
+  priority = false,
   onToggleSaved,
 }: {
   card: HubCard;
   saved: boolean;
+  priority?: boolean;
   onToggleSaved: (card: HubCard) => void;
 }) {
   const isMusic = card.type === 'track' || card.type === 'album';
@@ -457,8 +460,9 @@ export function MediaCard({
         <img
           src={card.posterUrl}
           alt=""
-          loading={isMusic ? 'eager' : 'lazy'}
-          decoding={isMusic ? 'sync' : 'async'}
+          loading={priority ? 'eager' : 'lazy'}
+          decoding="async"
+          fetchPriority={priority ? 'high' : undefined}
           draggable={false}
           onError={(event) => {
             event.currentTarget.style.display = 'none';

@@ -379,7 +379,9 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0, seek: float = 1
             "-i", source_url,
             "-map", "0:v:0",     # explicitly select APIC stream
             "-frames:v", "1",
-            "-q:v", "1",
+            "-vf", "scale=512:512:force_original_aspect_ratio=decrease:flags=bicubic",
+            "-pix_fmt", "yuvj420p",
+            "-q:v", "3",
             "-f", "image2pipe",
             "-vcodec", "mjpeg",
             "-",

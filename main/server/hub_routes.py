@@ -938,7 +938,7 @@ async def hub_album(request: web.Request) -> web.Response:
 
     # Fire-and-forget thumb prewarm — don't block the response
     asyncio.create_task(thumb_cache.prewarm_from_store(
-        t.message_id for t in tracks
+        thumb_cache.cache_id(t.message_id, audio=True) for t in tracks
     ))
 
     # Prefer a track that has both artist metadata AND a thumbnail for the album art.
@@ -1149,7 +1149,9 @@ async def hub_thumb(request: web.Request) -> web.Response:
                 pass
         return None
 
-    data = await thumb_cache.cached_or_fetch(message_id, fetch)
+    is_audio_item = getattr(item, "media_kind", "") == "audio"
+    cache_key = thumb_cache.cache_id(message_id, audio=is_audio_item)
+    data = await thumb_cache.cached_or_fetch(cache_key, fetch)
     if data is None:
         raise web.HTTPNotFound(text="thumb not found")
 

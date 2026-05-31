@@ -559,8 +559,16 @@ async def _probe_quietly(item) -> None:
             async def _fetch_thumb():
                 # seek=0.0: APIC lives in ID3 header at byte 0; seeking past
                 # it via a Range request causes ffmpeg to miss it entirely.
-                return await hls.grab_thumbnail(source_url, duration=0, seek=0.0)
-            await thumb_cache.cached_or_fetch(item.message_id, _fetch_thumb)
+                return await hls.grab_thumbnail(
+                    source_url,
+                    duration=0,
+                    seek=0.0,
+                    is_audio=True,
+                )
+            await thumb_cache.cached_or_fetch(
+                thumb_cache.cache_id(item.message_id, audio=True),
+                _fetch_thumb,
+            )
         except Exception:
             logging.debug("codec_probe: thumb pre-warm failed for bin:%d",
                           item.message_id, exc_info=True)

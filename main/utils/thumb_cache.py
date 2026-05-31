@@ -35,6 +35,15 @@ _cache: "OrderedDict[int, Tuple[float, bytes]]" = OrderedDict()
 _locks: Dict[int, asyncio.Lock] = {}
 _failures: Dict[int, float] = {}  # message_id → timestamp of last fetch failure
 _global_lock = asyncio.Lock()
+_AUDIO_THUMB_VERSION = 2
+
+
+def cache_id(message_id: int, *, audio: bool = False) -> int:
+    """Return the durable cache key for a generated thumbnail variant."""
+    mid = int(message_id)
+    if audio:
+        return -(mid * 10 + _AUDIO_THUMB_VERSION)
+    return mid
 
 
 def _store():
@@ -49,7 +58,7 @@ def _store():
 
 
 async def prewarm_from_store(message_ids) -> int:
-    """Bulk-hydrate L1 from L2 for a list of message_ids.
+    """Bulk-hydrate L1 from L2 for a list of thumbnail cache ids.
 
     Designed to be called by page renderers right before they emit N
     /thumb/ URLs. One Mongo round-trip replaces N find_one calls. Returns
@@ -99,15 +108,18 @@ async def clear(message_id: int) -> None:
     """Evict a single entry from L1 and L2 so it is re-fetched on next request.
     Used by the admin panel after changing thumbnail fetch logic (e.g. switching
     from Telegram's compressed thumb to ffmpeg APIC for audio tracks)."""
-    _cache.pop(message_id, None)
-    _locks.pop(message_id, None)
-    _failures.pop(message_id, None)
+    keys = {int(message_id), cache_id(message_id, audio=True)}
+    for key in keys:
+        _cache.pop(key, None)
+        _locks.pop(key, None)
+        _failures.pop(key, None)
     store = _store()
     if store is not None:
-        try:
-            await store.remove_thumb(message_id)
-        except Exception:
-            logging.exception("thumb_cache: clear failed for msg %d", message_id)
+        for key in keys:
+            try:
+                await store.remove_thumb(key)
+            except Exception:
+                logging.exception("thumb_cache: clear failed for msg %d", key)
 
 
 def lock_for(message_id: int) -> asyncio.Lock:

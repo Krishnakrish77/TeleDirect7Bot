@@ -75,15 +75,24 @@ def _tmdb_image(path: str, size: str = "w342") -> str:
 
 
 def _thumb(item: HubItem) -> str:
-    return f"/thumb/{item.secure_hash}{item.message_id}.jpg"
+    suffix = "?v=audio2" if (item.media_kind or "") == "audio" else ""
+    return f"/thumb/{item.secure_hash}{item.message_id}.jpg{suffix}"
 
 
 def _thumb_source_id(card) -> Optional[int]:
     poster = getattr(card, "poster_item", None)
     if poster is not None:
-        return int(poster.message_id)
+        return thumb_cache.cache_id(
+            poster.message_id,
+            audio=(poster.media_kind or "") == "audio",
+        )
     message_id = getattr(card, "message_id", None)
-    return int(message_id) if message_id else None
+    if not message_id:
+        return None
+    return thumb_cache.cache_id(
+        message_id,
+        audio=(getattr(card, "media_kind", "") or "") == "audio",
+    )
 
 
 def _prewarm_card_thumbs(cards) -> None:
