@@ -387,6 +387,12 @@ img {
   color: var(--muted);
 }
 
+.account-menu-divider {
+  height: 1px;
+  margin: 0.35rem 0.25rem;
+  background: var(--line);
+}
+
 .account-menu span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2063,10 +2069,6 @@ img {
     height: 18px;
   }
 
-  .primary-nav-spacer {
-    flex: 1 1 auto;
-  }
-
   .app-header {
     grid-template-columns: auto minmax(24rem, 54rem) auto;
     gap: 1.1rem;
@@ -2270,10 +2272,6 @@ img {
     outline: none;
   }
 
-  .primary-nav .primary-nav-wide,
-  .primary-nav .primary-nav-spacer {
-    display: none;
-  }
 }
 
 @media (max-width: 860px) {

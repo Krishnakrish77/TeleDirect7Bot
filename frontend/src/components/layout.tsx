@@ -42,19 +42,6 @@ export function PrimaryNav({
           <span>Watchlist</span>
         </a>
       )}
-      <span className="primary-nav-spacer" aria-hidden="true" />
-      {user && (
-        <a className="primary-nav-wide" href="/stats">
-          <ChartIcon />
-          <span>Stats</span>
-        </a>
-      )}
-      {user?.is_admin && (
-        <a className="primary-nav-wide" href="/admin">
-          <ShieldIcon />
-          <span>Admin</span>
-        </a>
-      )}
     </nav>
   );
 }
@@ -169,10 +156,6 @@ export function Header({
             </button>
             {accountOpen && (
               <div className="account-menu" role="menu">
-                <a href="/watchlist" role="menuitem" onClick={() => setAccountOpen(false)}>
-                  <BookmarkIcon />
-                  <span>Watchlist</span>
-                </a>
                 <a href="/stats" role="menuitem" onClick={() => setAccountOpen(false)}>
                   <ChartIcon />
                   <span>Stats</span>
@@ -183,6 +166,7 @@ export function Header({
                     <span>Admin panel</span>
                   </a>
                 )}
+                <span className="account-menu-divider" aria-hidden="true" />
                 <button
                   type="button"
                   role="menuitem"
