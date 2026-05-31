@@ -112,15 +112,7 @@ def _resolve_item(item_id: str) -> Optional[dict]:
         return None
 
 
-# ── Page ─────────────────────────────────────────────────────────────────────
-
-@routes.get("/watchlist")
-async def watchlist_page(request: web.Request) -> web.Response:
-    user = _get_user(request)
-    if not user:
-        raise web.HTTPFound("/")
-
-    user_id = int(user["sub"])
+async def _items_for_user(user_id: int) -> list[dict]:
     ids = await watchlist_store.get_ids(user_id)
     items = [r for iid in ids if (r := _resolve_item(iid)) is not None]
 
@@ -139,7 +131,21 @@ async def watchlist_page(request: web.Request) -> web.Response:
 
     for it in items:
         it["cw_pct"] = _cw_by_mid.get(it["item_id"]) if it["item_id"].isdigit() else None
+    return items
 
+
+# ── Page ─────────────────────────────────────────────────────────────────────
+
+@routes.get("/watchlist")
+async def watchlist_page(request: web.Request) -> web.Response:
+    if request.cookies.get("td_ui") == "react" and request.headers.get("HX-Request") != "true":
+        raise web.HTTPFound("/app/watchlist")
+
+    user = _get_user(request)
+    if not user:
+        raise web.HTTPFound("/")
+
+    items = await _items_for_user(int(user["sub"]))
     tpl = _env.get_template("watchlist.html")
     body = await tpl.render_async(
         user=user,
@@ -166,6 +172,18 @@ async def api_get(request: web.Request) -> web.Response:
         return _json({"error": "unauthenticated"}, status=401)
     ids = await watchlist_store.get_ids(int(user["sub"]))
     return _json({"ids": ids})
+
+
+@routes.get("/api/app/watchlist")
+async def api_app_get(request: web.Request) -> web.Response:
+    user = _get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    items = await _items_for_user(int(user["sub"]))
+    return _json({
+        "items": items,
+        "mongoAvailable": watchlist_store.is_available(),
+    })
 
 
 @routes.post("/api/watchlist/{iid}")

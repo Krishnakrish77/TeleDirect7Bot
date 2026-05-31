@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { signOut } from './api';
 import { classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
-import { useDetail, useHub, useMe, useWatchlist } from './hooks/data';
+import { useDetail, useHub, useMe, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
 import { Header, PrimaryNav, SignInModal } from './components/layout';
 import { HeroStage, FilterBar, ContinueWatching, ShelfRow, GridView } from './components/hub';
 import { DetailPage } from './components/detail';
 import { WatchPage } from './components/watch';
+import { WatchlistPage } from './components/watchlistPage';
+import { StatsPage } from './components/statsPage';
 import { MiniPlayer, NowPlayingSheet, QueueDrawer } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
 import type { HubCard, HubFilters } from './types';
@@ -40,7 +42,9 @@ function App() {
   const detail = useDetail(route, location.search);
   const { me, reload } = useMe();
   const user = me?.user ?? null;
-  const { saved, toggle } = useWatchlist(user);
+  const { saved, toggle, remove: removeSaved } = useWatchlist(user);
+  const watchlistPage = useWatchlistItems(user, route.kind === 'watchlist');
+  const statsPage = useStats(user, route.kind === 'stats');
   const audio = useAudioPlayer();
   const [signInOpen, setSignInOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -80,8 +84,21 @@ function App() {
     }
     void toggle(card.itemId);
   }, [requireAuth, toggle, user]);
+  const onRemoveFromWatchlistPage = useCallback((card: HubCard) => {
+    if (!user) {
+      requireAuth();
+      return;
+    }
+    watchlistPage.removeItem(card.itemId);
+    void removeSaved(card.itemId);
+  }, [removeSaved, requireAuth, user, watchlistPage]);
 
   const activeView = params.view || '';
+  const activeSection = route.kind === 'watchlist'
+    ? 'watchlist'
+    : isHubRoute
+      ? (activeView === 'movies' || activeView === 'series' || activeView === 'music' ? activeView : 'home')
+      : '';
   const activeFilters = Boolean(params.q || params.tag || params.quality || params.genre || params.year || params.view);
   const expectedHubMode = activeFilters ? 'grid' : 'shelves';
   const canRenderHubData = data?.mode === expectedHubMode;
@@ -119,6 +136,7 @@ function App() {
       <PrimaryNav
         user={user}
         activeView={activeView}
+        activeSection={activeSection}
       />
 
       {isHubRoute ? (
@@ -190,6 +208,23 @@ function App() {
           togglePlayback={audio.togglePlayback}
           addToQueue={audio.addToQueue}
           player={audio.player}
+        />
+      ) : route.kind === 'watchlist' ? (
+        <WatchlistPage
+          user={user}
+          data={watchlistPage.data}
+          loading={watchlistPage.loading}
+          error={watchlistPage.error}
+          onToggleSaved={onRemoveFromWatchlistPage}
+          onSignIn={() => setSignInOpen(true)}
+        />
+      ) : route.kind === 'stats' ? (
+        <StatsPage
+          user={user}
+          data={statsPage.data}
+          loading={statsPage.loading}
+          error={statsPage.error}
+          onSignIn={() => setSignInOpen(true)}
         />
       ) : (
         <WatchPage

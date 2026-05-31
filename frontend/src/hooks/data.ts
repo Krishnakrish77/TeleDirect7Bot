@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { addWatchlist, fetchDetail, fetchHub, fetchMe, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
+import { addWatchlist, fetchAppWatchlist, fetchDetail, fetchHub, fetchMe, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
 import type { AppRoute } from '../navigation';
-import type { DetailResponse, HubParams, HubResponse, MeResponse, Suggestion, User } from '../types';
+import type { DetailResponse, HubParams, HubResponse, MeResponse, StatsResponse, Suggestion, User, WatchlistPageResponse } from '../types';
 
 function pageFamilyKey(params: HubParams): string {
   return hubParamsKey({ ...params, offset: 0 });
@@ -132,7 +132,84 @@ export function useWatchlist(user: User | null | undefined) {
     }
   }, [saved]);
 
-  return { saved, toggle };
+  const remove = useCallback(async (itemId: string) => {
+    const next = new Set(saved);
+    next.delete(itemId);
+    setSaved(next);
+    try {
+      await removeWatchlist(itemId);
+    } catch (_) {
+      setSaved(saved);
+    }
+  }, [saved]);
+
+  return { saved, toggle, remove };
+}
+
+export function useWatchlistItems(user: User | null | undefined, enabled = true) {
+  const [data, setData] = useState<WatchlistPageResponse | null>(null);
+  const [loading, setLoading] = useState(Boolean(user && enabled));
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!enabled || !user) {
+      setData(null);
+      setLoading(false);
+      setError('');
+      return;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    fetchAppWatchlist(controller.signal)
+      .then(setData)
+      .catch((err: Error) => {
+        if (controller.signal.aborted) return;
+        setError(err.message || 'Unable to load your watchlist');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [enabled, user]);
+
+  const removeItem = useCallback((itemId: string) => {
+    setData((current) => current
+      ? { ...current, items: current.items.filter((item) => item.item_id !== itemId) }
+      : current);
+  }, []);
+
+  return { data, loading, error, removeItem };
+}
+
+export function useStats(user: User | null | undefined, enabled = true) {
+  const [data, setData] = useState<StatsResponse | null>(null);
+  const [loading, setLoading] = useState(Boolean(user && enabled));
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!enabled || !user) {
+      setData(null);
+      setLoading(false);
+      setError('');
+      return;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    fetchStats(controller.signal)
+      .then(setData)
+      .catch((err: Error) => {
+        if (controller.signal.aborted) return;
+        setError(err.message || 'Unable to load your stats');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [enabled, user]);
+
+  return { data, loading, error };
 }
 
 export function useSuggestions(q: string) {

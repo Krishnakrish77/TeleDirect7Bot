@@ -52,6 +52,8 @@ export function localAppHref(href: string | null): string | null {
   if (!href) return null;
   if (href === '/app') return appBase();
   if (href.startsWith('/app?')) return `${appBase()}${href.slice('/app'.length)}`;
+  if (href === '/watchlist') return '/app/watchlist';
+  if (href === '/stats') return '/app/stats';
   if (/^\/(movie|series|album|artist|person)\//.test(href)) return `/app${href}`;
   return href;
 }
@@ -62,6 +64,8 @@ export function classicPathForApp(pathname: string, search: string): string {
   }
   const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);
   if (watch) return `/watch/${watch[1]}${search}`;
+  if (pathname === '/app/watchlist') return `/watchlist${search}`;
+  if (pathname === '/app/stats') return `/stats${search}`;
   const detail = pathname.match(/^\/app\/(movie|series|album|artist|person)\/([^/?#]+)/);
   if (detail) return `/${detail[1]}/${detail[2]}${search}`;
   return '/';
@@ -130,10 +134,14 @@ export function useAppNavigation() {
 
 export type AppRoute =
   | { kind: 'hub' }
+  | { kind: 'watchlist' }
+  | { kind: 'stats' }
   | { kind: 'watch'; key: string }
   | { kind: 'detail'; detailKind: 'movie' | 'series' | 'album' | 'artist' | 'person'; key: string };
 
 export function parseRoute(pathname: string): AppRoute {
+  if (pathname === '/app/watchlist') return { kind: 'watchlist' };
+  if (pathname === '/app/stats') return { kind: 'stats' };
   const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);
   if (watch) return { kind: 'watch', key: decodeURIComponent(watch[1]) };
   const detail = pathname.match(/^\/app\/(movie|series|album|artist|person)\/([^/?#]+)/);

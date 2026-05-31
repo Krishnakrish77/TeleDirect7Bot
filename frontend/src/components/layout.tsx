@@ -14,30 +14,32 @@ declare global {
 export function PrimaryNav({
   user,
   activeView,
+  activeSection,
 }: {
   user: User | null;
   activeView: ViewValue | '';
+  activeSection: 'home' | 'movies' | 'series' | 'music' | 'watchlist' | '';
 }) {
   return (
     <nav className="primary-nav" aria-label="Primary">
-      <a className={activeView === '' ? 'active' : ''} href="/app">
+      <a className={activeSection === 'home' ? 'active' : ''} href="/app">
         <HomeIcon />
         <span>Home</span>
       </a>
-      <a className={activeView === 'movies' ? 'active' : ''} href="/app?view=movies">
+      <a className={activeView === 'movies' && activeSection === 'movies' ? 'active' : ''} href="/app?view=movies">
         <FilmIcon />
         <span>Movies</span>
       </a>
-      <a className={activeView === 'series' ? 'active' : ''} href="/app?view=series">
+      <a className={activeView === 'series' && activeSection === 'series' ? 'active' : ''} href="/app?view=series">
         <FilmIcon />
         <span>Series</span>
       </a>
-      <a className={activeView === 'music' ? 'active' : ''} href="/app?view=music">
+      <a className={activeView === 'music' && activeSection === 'music' ? 'active' : ''} href="/app?view=music">
         <MusicIcon />
         <span>Music</span>
       </a>
       {user && (
-        <a href="/watchlist">
+        <a className={activeSection === 'watchlist' ? 'active' : ''} href="/app/watchlist">
           <BookmarkIcon />
           <span>Watchlist</span>
         </a>
@@ -161,7 +163,7 @@ export function Header({
             </button>
             {accountOpen && (
               <div className="account-menu" role="menu">
-                <a href="/stats" role="menuitem" onClick={() => setAccountOpen(false)}>
+                <a href="/app/stats" role="menuitem" onClick={() => setAccountOpen(false)}>
                   <ChartIcon />
                   <span>Stats</span>
                 </a>

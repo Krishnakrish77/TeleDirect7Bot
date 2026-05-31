@@ -288,6 +288,82 @@ export interface ContinueItem {
   watch_url: string;
 }
 
+export interface WatchlistItem {
+  item_id: string;
+  url: string;
+  title: string;
+  year: number | null;
+  poster: string;
+  kind: string;
+  subtitle: string;
+  cw_pct?: number | null;
+}
+
+export interface WatchlistPageResponse {
+  items: WatchlistItem[];
+  mongoAvailable: boolean;
+}
+
+export interface StatsTitle {
+  title: string;
+  poster: string;
+  url: string;
+  media_kind: string;
+  year: number | string | null;
+  is_series: boolean;
+  count?: number;
+}
+
+export interface StatsDowBar {
+  label: string;
+  count: number;
+  pct: number;
+}
+
+export interface StatsHeatmapCell {
+  date: string;
+  count: number;
+  dow: number;
+}
+
+export interface StatsResponse {
+  total_seconds: number;
+  video_seconds: number;
+  audio_seconds: number;
+  total_hours: number;
+  total_mins: number;
+  video_hours: number;
+  video_mins: number;
+  audio_hours: number;
+  audio_mins: number;
+  total_plays: number;
+  total_titles: number;
+  active_days: number;
+  equiv_movies: number;
+  equiv_flights: number;
+  top_title: StatsTitle | null;
+  most_replayed: StatsTitle[];
+  top_genres: Array<[string, number]>;
+  top_genre: string;
+  top_director: [string, number] | null;
+  top_artists: Array<[string, number]>;
+  best_month: [string, number] | null;
+  finished: number;
+  started: number;
+  n_video: number;
+  n_audio: number;
+  dow_bars: StatsDowBar[];
+  best_day: string;
+  tod_label: string;
+  tod_emoji: string;
+  timed_plays: number;
+  completion: number;
+  personality: string;
+  heatmap: StatsHeatmapCell[];
+  current_streak: number;
+  longest_streak: number;
+}
+
 export interface TelegramAuthUser {
   id: number;
   first_name?: string;

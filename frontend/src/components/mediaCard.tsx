@@ -36,17 +36,6 @@ function MediaCardBase({
             decoding="async"
             fetchPriority={priority ? 'high' : undefined}
             draggable={false}
-            onLoad={(event) => {
-              const image = event.currentTarget;
-              const decode = image.decode?.();
-              if (decode) {
-                void decode
-                  .catch(() => undefined)
-                  .finally(() => image.classList.add('ready'));
-                return;
-              }
-              image.classList.add('ready');
-            }}
             onError={(event) => {
               event.currentTarget.hidden = true;
             }}

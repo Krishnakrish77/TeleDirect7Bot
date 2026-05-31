@@ -4,11 +4,13 @@ import type {
   HubParams,
   HubResponse,
   MeResponse,
+  StatsResponse,
   AudioTrackOption,
   SubtitleTrack,
   Suggestion,
   TelegramAuthUser,
   WatchResponse,
+  WatchlistPageResponse,
 } from './types';
 
 export class ApiError extends Error {
@@ -99,6 +101,14 @@ export async function fetchSuggestions(q: string, signal?: AbortSignal): Promise
 export async function fetchWatchlist(signal?: AbortSignal): Promise<Set<string>> {
   const data = await request<{ ids: string[] }>('/api/watchlist', { signal });
   return new Set(data.ids || []);
+}
+
+export async function fetchAppWatchlist(signal?: AbortSignal): Promise<WatchlistPageResponse> {
+  return request<WatchlistPageResponse>('/api/app/watchlist', { signal });
+}
+
+export async function fetchStats(signal?: AbortSignal): Promise<StatsResponse> {
+  return request<StatsResponse>('/api/app/stats', { signal });
 }
 
 export async function addWatchlist(itemId: string): Promise<void> {

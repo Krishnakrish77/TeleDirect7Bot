@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
@@ -26,6 +27,15 @@ import re as _re
 _env.filters["artist_slug"] = lambda s: _re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
 from main.utils.media_index import _person_slug as _mpslug
 _env.filters["person_slug"] = lambda s: _mpslug(s or "")
+
+def _json(data: dict, *, status: int = 200) -> web.Response:
+    return web.Response(
+        text=json.dumps(data, separators=(",", ":")),
+        content_type="application/json",
+        status=status,
+        headers={"Cache-Control": "no-store"},
+    )
+
 
 _CW_KEY_RE = re.compile(r'^[A-Za-z0-9_-]*[A-Za-z_-](\d+)$')
 
@@ -65,14 +75,7 @@ def _personality(top_genre: str, night_pct: int, weekend_pct: int,
     return "Dedicated Viewer 🍿"
 
 
-@routes.get("/stats")
-async def stats_page(request: web.Request) -> web.Response:
-    user = get_user(request)
-    if not user:
-        raise web.HTTPFound("/")
-
-    user_id = int(user["sub"])
-
+async def _stats_payload(user_id: int) -> dict:
     import asyncio
     cw_data, history = await asyncio.gather(
         cw_store.get_all(user_id),
@@ -380,40 +383,64 @@ async def stats_page(request: web.Request) -> web.Response:
         if total_plays >= 10 or total_hours >= 3 else ""
     )
 
+    return {
+        "total_seconds": total_seconds,
+        "video_seconds": video_seconds,
+        "audio_seconds": audio_seconds,
+        "total_hours": total_hours,
+        "total_mins": total_mins,
+        "video_hours": video_hours,
+        "video_mins": video_mins,
+        "audio_hours": audio_hours,
+        "audio_mins": audio_mins,
+        "total_plays": total_plays,
+        "total_titles": total_titles,
+        "active_days": active_days,
+        "equiv_movies": equiv_movies,
+        "equiv_flights": equiv_flights,
+        "top_title": top_title,
+        "most_replayed": most_replayed[1:] if len(most_replayed) > 1 else [],
+        "top_genres": top_genres,
+        "top_genre": top_genre,
+        "top_director": top_director[0] if top_director else None,
+        "top_artists": top_artists,
+        "best_month": best_month,
+        "finished": finished,
+        "started": started,
+        "n_video": n_video,
+        "n_audio": n_audio,
+        "dow_bars": dow_bars,
+        "best_day": best_day_name,
+        "tod_label": tod_label,
+        "tod_emoji": tod_emoji,
+        "timed_plays": timed_plays,
+        "completion": completion,
+        "personality": personality,
+        "heatmap": heatmap,
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+    }
+
+
+@routes.get("/stats")
+async def stats_page(request: web.Request) -> web.Response:
+    if request.cookies.get("td_ui") == "react" and request.headers.get("HX-Request") != "true":
+        raise web.HTTPFound("/app/stats")
+
+    user = get_user(request)
+    if not user:
+        raise web.HTTPFound("/")
+
+    payload = await _stats_payload(int(user["sub"]))
     tpl  = _env.get_template("stats.html")
-    body = await tpl.render_async(
-        user         = user,
-        total_hours  = total_hours,
-        total_mins   = total_mins,
-        total_plays  = total_plays,
-        total_titles = total_titles,
-        active_days  = active_days,
-        equiv_movies = equiv_movies,
-        equiv_flights= equiv_flights,
-        top_title    = top_title,
-        most_replayed= most_replayed[1:] if len(most_replayed) > 1 else [],
-        top_genres   = top_genres,
-        top_genre    = top_genre,
-        top_director = top_director[0] if top_director else None,
-        top_artists  = top_artists,
-        best_month   = best_month,
-        finished     = finished,
-        started      = started,
-        n_video      = n_video,
-        n_audio      = n_audio,
-        dow_bars     = dow_bars,
-        best_day     = best_day_name,
-        tod_label    = tod_label,
-        tod_emoji    = tod_emoji,
-        timed_plays  = timed_plays,
-        completion      = completion,
-        personality     = personality,
-        heatmap         = heatmap,
-        current_streak  = current_streak,
-        longest_streak  = longest_streak,
-        video_hours     = video_hours,
-        video_mins      = video_mins,
-        audio_hours     = audio_hours,
-        audio_mins      = audio_mins,
-    )
+    body = await tpl.render_async(user=user, **payload)
     return web.Response(text=body, content_type="text/html")
+
+
+@routes.get("/api/app/stats")
+async def api_app_stats(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    payload = await _stats_payload(int(user["sub"]))
+    return _json(payload)
