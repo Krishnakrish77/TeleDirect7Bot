@@ -59,7 +59,7 @@ describe('FilterBar', () => {
     expect(update).toHaveBeenCalledWith({ sort: 'title_az', offset: 0 });
   });
 
-  it('uses a compact advanced filter sheet with tags included', () => {
+  it('uses a compact inline advanced filter group with tags included', () => {
     const update = vi.fn();
 
     render(
@@ -74,18 +74,18 @@ describe('FilterBar', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Filters/i }));
-    const dialog = screen.getByRole('dialog', { name: 'Filters' });
+    const advanced = screen.getByLabelText('Advanced filters');
 
-    expect(within(dialog).getByText('1080p / Action')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Filters/i }).getAttribute('aria-expanded')).toBe('true');
 
-    fireEvent.change(within(dialog).getByLabelText('Tag'), { target: { value: 'Tamil' } });
+    fireEvent.change(within(advanced).getByLabelText('Tag'), { target: { value: 'Tamil' } });
     expect(update).toHaveBeenCalledWith({ tag: 'Tamil', offset: 0 });
 
-    fireEvent.change(within(dialog).getByLabelText('Year'), { target: { value: '2026' } });
+    fireEvent.change(within(advanced).getByLabelText('Year'), { target: { value: '2026' } });
     expect(update).toHaveBeenCalledWith({ year: 2026, offset: 0 });
   });
 
-  it('resets all filters and query from the sheet', () => {
+  it('resets all filters and query from the expanded filter group', () => {
     const update = vi.fn();
     const setQuery = vi.fn();
 
@@ -101,7 +101,7 @@ describe('FilterBar', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Filters/i }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Filters' })).getByRole('button', { name: 'Reset' }));
+    fireEvent.click(within(screen.getByLabelText('Advanced filters')).getByRole('button', { name: 'Reset' }));
 
     expect(setQuery).toHaveBeenCalledWith('');
     expect(update).toHaveBeenCalledWith({

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FilterIcon, XIcon } from '../icons';
+import { FilterIcon } from '../icons';
 import type { FilterOption, HubFilters, HubParams, ViewValue } from '../types';
 
 type FilterControl = {
@@ -158,7 +158,13 @@ export function FilterBar({
       </div>
 
       <div className="filter-action-row">
-        <button type="button" className="filter-drawer-button" onClick={() => setFiltersOpen(true)} aria-haspopup="dialog">
+        <button
+          type="button"
+          className="filter-drawer-button"
+          onClick={() => setFiltersOpen((open) => !open)}
+          aria-expanded={filtersOpen}
+          aria-controls="advanced-filters"
+        >
           <span>Filters</span>
           <strong>{summary}</strong>
           <small>{activeFilterCount ? `${activeFilterCount} active` : 'Optional'}</small>
@@ -166,38 +172,21 @@ export function FilterBar({
         <SelectControl control={sortControl} className="filter-sort-control" />
       </div>
 
-      <div className="filter-inline-controls" aria-label="Advanced filters">
+      <div
+        id="advanced-filters"
+        className={filtersOpen ? 'filter-inline-controls expanded' : 'filter-inline-controls'}
+        aria-label="Advanced filters"
+      >
         {metadataControls.map((control) => (
           <SelectControl key={control.id} control={control} />
         ))}
-      </div>
-
-      {filtersOpen && (
-        <div className="filter-sheet-layer" role="dialog" aria-modal="true" aria-label="Filters">
-          <button className="filter-sheet-scrim" type="button" onClick={() => setFiltersOpen(false)} aria-label="Close filters" />
-          <div className="filter-sheet">
-            <div className="filter-sheet-heading">
-              <div>
-                <p className="eyebrow">Browse</p>
-                <h2>Filters</h2>
-                <span>{summary}</span>
-              </div>
-              <button className="icon-button" type="button" onClick={() => setFiltersOpen(false)} aria-label="Close filters">
-                <XIcon />
-              </button>
-            </div>
-            <div className="filter-sheet-selects">
-              {metadataControls.map((control) => (
-                <SelectControl key={control.id} control={control} />
-              ))}
-            </div>
-            <div className="filter-sheet-actions">
-              <button className="filter-clear-button" type="button" onClick={() => clearAll(true)} disabled={!hasFilters}>Reset</button>
-              <button className="primary-action" type="button" onClick={() => setFiltersOpen(false)}>Done</button>
-            </div>
+        {filtersOpen && (
+          <div className="filter-inline-actions">
+            <button className="filter-clear-button" type="button" onClick={() => clearAll(true)} disabled={!hasFilters}>Reset</button>
+            <button className="primary-action" type="button" onClick={() => setFiltersOpen(false)}>Done</button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   );
 }
