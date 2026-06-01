@@ -5,6 +5,7 @@ import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard
 import type { AppRoute } from '../navigation';
 import { LoadingRows, ErrorPanel } from './common';
 import { MediaCard } from './mediaCard';
+import { RatingControls } from './rating';
 
 export function DetailPage({
   route,
@@ -17,6 +18,7 @@ export function DetailPage({
   playTrack,
   togglePlayback,
   addToQueue,
+  shuffleQueue,
   player,
 }: {
   route: Extract<AppRoute, { kind: 'detail' }>;
@@ -29,6 +31,7 @@ export function DetailPage({
   playTrack: (track: WatchTrack, queue?: WatchTrack[]) => void;
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
+  shuffleQueue: (queue: WatchTrack[]) => void;
   player: PlayerState;
 }) {
   if (loading) {
@@ -54,6 +57,7 @@ export function DetailPage({
           playTrack={playTrack}
           togglePlayback={togglePlayback}
           addToQueue={addToQueue}
+          shuffleQueue={shuffleQueue}
           player={player}
         />
       );
@@ -151,6 +155,7 @@ function MovieDetail({
   saved: Set<string>;
   onToggleSaved: (itemId: string) => void;
 }) {
+  const ratingId = data.variants[0]?.itemId || null;
   return (
     <main className="detail-main">
       <DetailHero
@@ -167,6 +172,7 @@ function MovieDetail({
       >
         <CreditLinks label="Director" items={data.directors} />
         <CreditLinks label="Cast" items={data.cast} />
+        <RatingControls messageId={ratingId} />
       </DetailHero>
 
       <section className="detail-section">
@@ -202,6 +208,7 @@ function SeriesDetail({
   onToggleSaved: (itemId: string) => void;
   navigate: (href: string, replace?: boolean) => void;
 }) {
+  const ratingId = data.seasonBlocks[0]?.entries[0]?.rep.itemId || null;
   return (
     <main className="detail-main">
       <DetailHero
@@ -217,6 +224,7 @@ function SeriesDetail({
         onToggleSaved={() => onToggleSaved(data.savedId)}
       >
         <CreditLinks label="Cast" items={data.cast} />
+        <RatingControls messageId={ratingId} />
       </DetailHero>
 
       <section className="detail-section">
@@ -280,6 +288,7 @@ function AlbumDetail({
   playTrack,
   togglePlayback,
   addToQueue,
+  shuffleQueue,
   player,
 }: {
   data: AlbumDetailResponse;
@@ -288,6 +297,7 @@ function AlbumDetail({
   playTrack: (track: WatchTrack, queue?: WatchTrack[]) => void;
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
+  shuffleQueue: (queue: WatchTrack[]) => void;
   player: PlayerState;
 }) {
   const first = data.tracks[0];
@@ -302,6 +312,7 @@ function AlbumDetail({
         artistHref={data.artistHref}
         artist={data.artist}
         onPlayAll={first ? () => playTrack(first, data.tracks) : undefined}
+        onShuffle={data.tracks.length > 1 ? () => shuffleQueue(data.tracks) : undefined}
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
       />
@@ -328,6 +339,7 @@ function AlbumHero({
   artist,
   artistHref,
   onPlayAll,
+  onShuffle,
   saved,
   onToggleSaved,
 }: {
@@ -339,6 +351,7 @@ function AlbumHero({
   artist: string;
   artistHref: string;
   onPlayAll?: () => void;
+  onShuffle?: () => void;
   saved: boolean;
   onToggleSaved: () => void;
 }) {
@@ -358,6 +371,11 @@ function AlbumHero({
             <button type="button" className="primary-action" onClick={onPlayAll}>
               <PlayIcon />
               <span>Play all</span>
+            </button>
+          )}
+          {onShuffle && (
+            <button type="button" className="secondary-action" onClick={onShuffle}>
+              <span>Shuffle</span>
             </button>
           )}
           <button type="button" className={saved ? 'secondary-action saved-action' : 'secondary-action'} onClick={onToggleSaved}>
@@ -520,6 +538,18 @@ function TrackList({
               aria-label="Play next"
             >
               <ListIcon />
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                addToQueue(track, false);
+              }}
+              aria-label="Add to queue"
+            >
+              <span aria-hidden="true">+</span>
             </button>
           </a>
         );

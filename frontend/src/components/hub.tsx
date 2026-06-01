@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchContinueItems } from '../api';
+import { dismissRecommendation, fetchContinueItems, fetchContinueMap } from '../api';
 import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, FilterIcon, PlayIcon, XIcon } from '../icons';
-import type { ContinueEntry, ContinueItem, FilterOption, HeroItem, HubCard, HubFilters, HubParams, HubResponse, ViewValue } from '../types';
+import type { ContinueEntry, ContinueItem, FilterOption, HeroItem, HubCard, HubFilters, HubParams, HubResponse, RecommendationMeta, ViewValue } from '../types';
 import { MediaCard } from './mediaCard';
 
 export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
@@ -274,33 +274,48 @@ export function ContinueWatching() {
   const [entries, setEntries] = useState<Array<ContinueEntry & ContinueItem>>([]);
 
   const load = useCallback(() => {
+    const controller = new AbortController();
     let raw: Record<string, Omit<ContinueEntry, 'key'>> = {};
     try {
       raw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
     } catch (_) {
       raw = {};
     }
-    const local = Object.entries(raw)
-      .map(([key, value]) => ({ key, ...value }))
-      .filter((entry) => entry.dur > 0 && entry.pos / entry.dur > 0.02 && entry.pos / entry.dur < 0.95)
-      .sort((a, b) => (b.t || 0) - (a.t || 0))
-      .slice(0, 10);
 
-    if (!local.length) {
-      setEntries([]);
-      return;
-    }
+    const hydrate = async () => {
+      try {
+        const server = await fetchContinueMap(controller.signal);
+        Object.entries(server).forEach(([key, value]) => {
+          if (!raw[key] || (value.t || 0) > (raw[key].t || 0)) raw[key] = value;
+        });
+        localStorage.setItem('td:cw', JSON.stringify(raw));
+      } catch (_) {
+        // Signed-out users and offline sessions use local resume data.
+      }
 
-    const controller = new AbortController();
-    fetchContinueItems(local.map((entry) => entry.key), controller.signal)
-      .then((items) => {
+      const local = Object.entries(raw)
+        .map(([key, value]) => ({ key, ...value }))
+        .filter((entry) => entry.dur > 0 && entry.pos / entry.dur > 0.02 && entry.pos / entry.dur < 0.95)
+        .sort((a, b) => (b.t || 0) - (a.t || 0))
+        .slice(0, 10);
+
+      if (!local.length) {
+        setEntries([]);
+        return;
+      }
+
+      try {
+        const items = await fetchContinueItems(local.map((entry) => entry.key), controller.signal);
         const byKey = new Map(items.map((item) => [item.key, item]));
         setEntries(local.flatMap((entry) => {
           const item = byKey.get(entry.key);
           return item ? [{ ...entry, ...item }] : [];
         }));
-      })
-      .catch(() => setEntries([]));
+      } catch (_) {
+        setEntries([]);
+      }
+    };
+    void hydrate();
     return () => controller.abort();
   }, []);
 
@@ -369,14 +384,17 @@ export function ShelfRow({
   shelf,
   saved,
   onToggleSaved,
+  onDismiss,
 }: {
-  shelf: { name: string; href: string | null; items: HubCard[] };
+  shelf: { name: string; href: string | null; items: HubCard[]; dismissable?: boolean; recMeta?: Array<RecommendationMeta | null> };
   saved: Set<string>;
   onToggleSaved: (card: HubCard) => void;
+  onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const [canScrollBack, setCanScrollBack] = useState(false);
   const [canScrollForward, setCanScrollForward] = useState(false);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const updateScrollState = useCallback(() => {
     const row = rowRef.current;
@@ -430,14 +448,24 @@ export function ShelfRow({
         </div>
       </div>
       <div className="card-row" ref={rowRef}>
-        {shelf.items.map((card) => (
-          <MediaCard
-            key={`${card.type}:${card.itemId}`}
-            card={card}
-            saved={saved.has(card.itemId)}
-            onToggleSaved={onToggleSaved}
-          />
-        ))}
+        {shelf.items.map((card, index) => {
+          const recMeta = shelf.dismissable ? shelf.recMeta?.[index] || card.recMeta || null : null;
+          if (dismissed.has(card.itemId)) return null;
+          return (
+            <MediaCard
+              key={`${card.type}:${card.itemId}`}
+              card={card}
+              saved={saved.has(card.itemId)}
+              onToggleSaved={onToggleSaved}
+              dismissMeta={recMeta}
+              onDismiss={(meta, dismissedCard) => {
+                setDismissed((current) => new Set(current).add(dismissedCard.itemId));
+                if (onDismiss) onDismiss(meta, dismissedCard);
+                else void dismissRecommendation(meta.tmdbId, meta.kind).catch(() => undefined);
+              }}
+            />
+          );
+        })}
       </div>
     </section>
   );

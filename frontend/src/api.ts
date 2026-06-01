@@ -6,7 +6,10 @@ import type {
   MeResponse,
   StatsResponse,
   AudioTrackOption,
+  ContinueEntry,
+  ContinueMap,
   SubtitleTrack,
+  RatingResponse,
   Suggestion,
   TelegramAuthUser,
   WatchResponse,
@@ -123,6 +126,55 @@ export async function fetchContinueItems(keys: string[], signal?: AbortSignal): 
   if (!keys.length) return [];
   const qs = new URLSearchParams({ keys: keys.join(',') });
   return request<ContinueItem[]>(`/api/items?${qs}`, { signal });
+}
+
+export async function fetchContinueMap(signal?: AbortSignal): Promise<ContinueMap> {
+  return request<ContinueMap>('/api/cw', { signal });
+}
+
+export async function saveContinueEntry(key: string, entry: Omit<ContinueEntry, 'key'>): Promise<void> {
+  await request<{ ok: boolean }>(`/api/cw/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+    keepalive: true,
+  });
+}
+
+export async function deleteContinueEntry(key: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/cw/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    keepalive: true,
+  });
+}
+
+export async function recordWatchHistory(key: string, title: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/wh/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+    keepalive: true,
+  });
+}
+
+export async function fetchRating(messageId: string | number, signal?: AbortSignal): Promise<RatingResponse> {
+  return request<RatingResponse>(`/api/rate/${encodeURIComponent(String(messageId))}`, { signal });
+}
+
+export async function setRating(messageId: string | number, rating: 'up' | 'down'): Promise<RatingResponse> {
+  return request<RatingResponse>(`/api/rate/${encodeURIComponent(String(messageId))}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rating }),
+  });
+}
+
+export async function dismissRecommendation(tmdbId: number, kind: 'movie' | 'tv'): Promise<void> {
+  await request<{ ok: boolean }>('/api/dismiss', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tmdb_id: tmdbId, kind }),
+  });
 }
 
 export async function signInTelegram(user: TelegramAuthUser): Promise<{ ok: boolean; token?: string }> {

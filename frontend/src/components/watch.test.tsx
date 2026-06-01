@@ -1,19 +1,29 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchAudioTracks, fetchSubtitles, fetchWatch } from '../api';
+import { deleteContinueEntry, fetchAudioTracks, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, setRating } from '../api';
 import type { PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, WatchVideo } from '../types';
 import { WatchPage } from './watch';
 
 vi.mock('../api', () => ({
   fetchAudioTracks: vi.fn(),
+  deleteContinueEntry: vi.fn(),
+  fetchRating: vi.fn(),
   fetchSubtitles: vi.fn(),
   fetchWatch: vi.fn(),
+  recordWatchHistory: vi.fn(),
+  saveContinueEntry: vi.fn(),
+  setRating: vi.fn(),
 }));
 
 const fetchWatchMock = vi.mocked(fetchWatch);
 const fetchSubtitlesMock = vi.mocked(fetchSubtitles);
 const fetchAudioTracksMock = vi.mocked(fetchAudioTracks);
+const fetchRatingMock = vi.mocked(fetchRating);
+const saveContinueEntryMock = vi.mocked(saveContinueEntry);
+const deleteContinueEntryMock = vi.mocked(deleteContinueEntry);
+const recordWatchHistoryMock = vi.mocked(recordWatchHistory);
+const setRatingMock = vi.mocked(setRating);
 
 const emptyPlayer: PlayerState = {
   track: null,
@@ -23,6 +33,13 @@ const emptyPlayer: PlayerState = {
   currentTime: 0,
   duration: 0,
   error: '',
+  speed: 1,
+  repeatMode: 'off',
+  volume: 1,
+  muted: false,
+  nextTrack: null,
+  nextCountdown: 5,
+  queueToast: '',
 };
 
 function makeVideo(overrides: Partial<WatchVideo> = {}): WatchVideo {
@@ -62,6 +79,7 @@ function makeVideo(overrides: Partial<WatchVideo> = {}): WatchVideo {
     absoluteStreamHref: 'https://example.test/stream/video-key',
     downloadHref: '/download/video-key',
     vlcHref: 'vlc://stream/video-key',
+    vlcTrackingToken: '',
     knownUnplayable: false,
     videoCodec: 'h264',
     pixFmt: 'yuv420p',
@@ -95,7 +113,7 @@ function makeVideo(overrides: Partial<WatchVideo> = {}): WatchVideo {
       trailerKey: '',
     },
     ...overrides,
-  };
+  } as WatchVideo;
 }
 
 function renderWatchPage(video = makeVideo()) {
@@ -112,8 +130,15 @@ function renderWatchPage(video = makeVideo()) {
       playRelative={vi.fn()}
       playQueueIndex={vi.fn()}
       addToQueue={vi.fn()}
+      shuffleQueue={vi.fn()}
       togglePlayback={vi.fn()}
       seek={vi.fn()}
+      setSpeed={vi.fn()}
+      cycleRepeatMode={vi.fn()}
+      setVolume={vi.fn()}
+      toggleMute={vi.fn()}
+      confirmNext={vi.fn()}
+      cancelNext={vi.fn()}
       onOpenQueue={vi.fn()}
     />,
   );
@@ -123,6 +148,11 @@ beforeEach(() => {
   localStorage.clear();
   fetchSubtitlesMock.mockResolvedValue([]);
   fetchAudioTracksMock.mockResolvedValue([]);
+  fetchRatingMock.mockResolvedValue({ rating: null, counts: { up: 0, down: 0 } });
+  saveContinueEntryMock.mockResolvedValue(undefined);
+  deleteContinueEntryMock.mockResolvedValue(undefined);
+  recordWatchHistoryMock.mockResolvedValue(undefined);
+  setRatingMock.mockResolvedValue({ rating: null, counts: { up: 0, down: 0 } });
 });
 
 describe('WatchPage video player', () => {
@@ -229,5 +259,16 @@ describe('WatchPage video player', () => {
 
     fireEvent.keyDown(window, { key: 'm' });
     await waitFor(() => expect(video.muted).toBe(true));
+  });
+
+  it('applies playback speed changes from the video controls', async () => {
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+
+    fireEvent.change(screen.getAllByLabelText('Playback speed')[0], { target: { value: '1.5' } });
+
+    await waitFor(() => expect(video.playbackRate).toBe(1.5));
   });
 });

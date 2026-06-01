@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { HubCard } from '../types';
 import { getMediaCardDisplay, MediaCard } from './mediaCard';
@@ -78,5 +78,23 @@ describe('MediaCard', () => {
       eyebrow: 'Song',
       subtitle: 'Anirudh',
     });
+  });
+
+  it('surfaces dismiss controls for recommendation cards', () => {
+    const onDismiss = vi.fn();
+    const media = card();
+
+    render(
+      <MediaCard
+        card={media}
+        saved={false}
+        onToggleSaved={vi.fn()}
+        dismissMeta={{ tmdbId: 123, kind: 'movie' }}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Not for me'));
+    expect(onDismiss).toHaveBeenCalledWith({ tmdbId: 123, kind: 'movie' }, media);
   });
 });

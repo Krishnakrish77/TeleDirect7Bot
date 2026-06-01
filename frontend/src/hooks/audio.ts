@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { deleteContinueEntry, recordWatchHistory, saveContinueEntry } from '../api';
 import type { WatchTrack } from '../types';
+
+export type RepeatMode = 'off' | 'all' | 'one';
 
 export interface PlayerState {
   track: WatchTrack | null;
@@ -9,6 +12,87 @@ export interface PlayerState {
   currentTime: number;
   duration: number;
   error: string;
+  speed: number;
+  repeatMode: RepeatMode;
+  volume: number;
+  muted: boolean;
+  nextTrack: WatchTrack | null;
+  nextCountdown: number;
+  queueToast: string;
+}
+
+const SPEED_KEY = 'td:speed';
+const REPEAT_KEY = 'td:repeat';
+const VOLUME_KEY = 'td:volume';
+const MUTED_KEY = 'td:muted';
+const PLAYER_KEY = 'td:reactPlayer';
+const NOW_PLAYING_KEY = 'td:nowplaying';
+const QUEUE_KEY = 'td:queue';
+const QUEUE_INDEX_KEY = 'td:queueIndex';
+const PRELOAD_AT_SECONDS = 30;
+const CROSSFADE_SECONDS = 3;
+const NEXT_COUNTDOWN_SECONDS = 5;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function trackSrc(track: WatchTrack): string {
+  return new URL(track.streamHref, window.location.origin).href;
+}
+
+function readNumber(key: string, fallback: number): number {
+  try {
+    const parsed = Number(localStorage.getItem(key));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function readRepeatMode(): RepeatMode {
+  try {
+    const value = localStorage.getItem(REPEAT_KEY);
+    return value === 'all' || value === 'one' ? value : 'off';
+  } catch (_) {
+    return 'off';
+  }
+}
+
+function initialPlayerState(): PlayerState {
+  const base: PlayerState = {
+    track: null,
+    queue: [],
+    queueIndex: -1,
+    playing: false,
+    currentTime: 0,
+    duration: 0,
+    error: '',
+    speed: clamp(readNumber(SPEED_KEY, 1), 0.5, 3),
+    repeatMode: readRepeatMode(),
+    volume: clamp(readNumber(VOLUME_KEY, 1), 0, 1),
+    muted: localStorage.getItem(MUTED_KEY) === '1',
+    nextTrack: null,
+    nextCountdown: NEXT_COUNTDOWN_SECONDS,
+    queueToast: '',
+  };
+
+  try {
+    const stored = JSON.parse(localStorage.getItem(PLAYER_KEY) || 'null') as Partial<PlayerState> | null;
+    if (!stored?.track) return base;
+    const queue = Array.isArray(stored.queue) && stored.queue.length ? stored.queue : [stored.track];
+    const queueIndex = Math.max(0, queue.findIndex((item) => item.key === stored.track?.key));
+    return {
+      ...base,
+      track: stored.track,
+      queue,
+      queueIndex,
+      currentTime: Number(stored.currentTime) || 0,
+      duration: Number(stored.duration) || stored.track.duration || 0,
+    };
+  } catch (_) {
+    return base;
+  }
 }
 
 export function formatClock(seconds: number): string {
@@ -20,32 +104,139 @@ export function formatClock(seconds: number): string {
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function persistNowPlaying(player: PlayerState): void {
+  try {
+    if (!player.track) {
+      localStorage.removeItem(PLAYER_KEY);
+      localStorage.removeItem(NOW_PLAYING_KEY);
+      sessionStorage.removeItem(QUEUE_KEY);
+      sessionStorage.removeItem(QUEUE_INDEX_KEY);
+      return;
+    }
+    localStorage.setItem(PLAYER_KEY, JSON.stringify({
+      track: player.track,
+      queue: player.queue,
+      queueIndex: player.queueIndex,
+      currentTime: Math.floor(player.currentTime),
+      duration: Math.floor(player.duration || player.track.duration || 0),
+      speed: player.speed,
+      repeatMode: player.repeatMode,
+      volume: player.volume,
+      muted: player.muted,
+    }));
+    localStorage.setItem(NOW_PLAYING_KEY, JSON.stringify({
+      url: player.track.classicHref,
+      streamUrl: player.track.streamHref,
+      title: player.track.title,
+      artist: player.track.artist || player.track.albumTitle || '',
+      art: player.track.posterUrl || player.track.thumbUrl || '',
+      position: Math.floor(player.currentTime),
+      nextUrl: player.queue[player.queueIndex + 1]?.classicHref || null,
+      nextStreamUrl: player.queue[player.queueIndex + 1]?.streamHref || null,
+      nextTitle: player.queue[player.queueIndex + 1]?.title || null,
+      nextArtist: player.queue[player.queueIndex + 1]?.artist || null,
+      nextArt: player.queue[player.queueIndex + 1]?.posterUrl || null,
+      prevUrl: player.queue[player.queueIndex - 1]?.classicHref || null,
+      prevStreamUrl: player.queue[player.queueIndex - 1]?.streamHref || null,
+    }));
+    sessionStorage.setItem(QUEUE_KEY, JSON.stringify(player.queue.map((track) => ({
+      hash: track.key,
+      watchUrl: track.classicHref,
+      streamUrl: track.streamHref,
+      title: track.title,
+      artist: track.artist,
+      art: track.posterUrl || track.thumbUrl,
+    }))));
+    sessionStorage.setItem(QUEUE_INDEX_KEY, String(player.queueIndex));
+  } catch (_) {
+    // Storage is best-effort; playback must continue in private/quota-limited modes.
+  }
+}
+
 export function useAudioPlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [player, setPlayer] = useState<PlayerState>({
-    track: null,
-    queue: [],
-    queueIndex: -1,
-    playing: false,
-    currentTime: 0,
-    duration: 0,
-    error: '',
-  });
+  const bufferRef = useRef<HTMLAudioElement | null>(null);
+  const activeSlotRef = useRef<'primary' | 'buffer'>('primary');
+  const preloadedKeyRef = useRef('');
+  const crossfadeRef = useRef(false);
+  const pendingNextIndexRef = useRef<number | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const cwLastSyncRef = useRef(0);
+  const persistLastRef = useRef(0);
+  const [player, setPlayer] = useState<PlayerState>(() => initialPlayerState());
   const playerRef = useRef(player);
 
   useEffect(() => {
     playerRef.current = player;
   }, [player]);
 
-  const startAudio = useCallback((track: WatchTrack, reset = false) => {
-    const audio = audioRef.current;
+  const getActiveAudio = useCallback(() => (
+    activeSlotRef.current === 'primary' ? audioRef.current : bufferRef.current
+  ), []);
+
+  const getInactiveAudio = useCallback(() => (
+    activeSlotRef.current === 'primary' ? bufferRef.current : audioRef.current
+  ), []);
+
+  const applyOutputSettings = useCallback((audio: HTMLAudioElement | null, fadeVolume?: number) => {
     if (!audio) return;
-    const nextSrc = new URL(track.streamHref, window.location.origin).href;
+    const current = playerRef.current;
+    audio.playbackRate = current.speed;
+    audio.muted = current.muted;
+    audio.volume = current.muted ? 0 : clamp(fadeVolume ?? current.volume, 0, 1);
+  }, []);
+
+  const showQueueToast = useCallback((message: string) => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    setPlayer((state) => ({ ...state, queueToast: message }));
+    toastTimerRef.current = window.setTimeout(() => {
+      setPlayer((state) => ({ ...state, queueToast: '' }));
+    }, 1400);
+  }, []);
+
+  const updateMediaSession = useCallback((state: PlayerState) => {
+    if (!('mediaSession' in navigator) || !state.track) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: state.track.title || '',
+        artist: state.track.artist || state.track.albumTitle || '',
+        album: state.track.albumTitle || '',
+        artwork: state.track.posterUrl ? [{ src: state.track.posterUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
+      });
+      navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
+      navigator.mediaSession.setActionHandler('play', () => {
+        const audio = getActiveAudio();
+        void audio?.play();
+      });
+      navigator.mediaSession.setActionHandler('pause', () => getActiveAudio()?.pause());
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        const audio = getActiveAudio();
+        if (audio && Number.isFinite(details.seekTime)) audio.currentTime = details.seekTime || 0;
+      });
+      const duration = state.duration || state.track.duration || 0;
+      if (navigator.mediaSession.setPositionState && duration > 0) {
+        navigator.mediaSession.setPositionState({
+          duration,
+          playbackRate: state.speed,
+          position: clamp(state.currentTime, 0, duration),
+        });
+      }
+    } catch (_) {
+      // Media Session support is uneven; ignore per-browser failures.
+    }
+  }, [getActiveAudio]);
+
+  const startAudio = useCallback((track: WatchTrack, reset = false) => {
+    const audio = getActiveAudio();
+    if (!audio) return;
+    const nextSrc = trackSrc(track);
     if (audio.src !== nextSrc) {
       audio.src = track.streamHref;
       reset = true;
+      preloadedKeyRef.current = '';
     }
     if (reset) audio.currentTime = 0;
+    applyOutputSettings(audio);
     const promise = audio.play();
     if (promise) {
       promise.catch(() => {
@@ -56,7 +247,15 @@ export function useAudioPlayer() {
         }));
       });
     }
-  }, []);
+  }, [applyOutputSettings, getActiveAudio]);
+
+  const stopInactive = useCallback(() => {
+    const inactive = getInactiveAudio();
+    if (!inactive) return;
+    inactive.pause();
+    inactive.removeAttribute('src');
+    inactive.load();
+  }, [getInactiveAudio]);
 
   const playTrack = useCallback((track: WatchTrack, queue?: WatchTrack[]) => {
     const current = playerRef.current;
@@ -64,6 +263,8 @@ export function useAudioPlayer() {
     const found = nextQueue.findIndex((item) => item.key === track.key);
     const queueIndex = found >= 0 ? found : 0;
     const sameTrack = current.track?.key === track.key;
+    pendingNextIndexRef.current = null;
+    stopInactive();
     setPlayer((state) => ({
       ...state,
       track,
@@ -73,34 +274,28 @@ export function useAudioPlayer() {
       currentTime: sameTrack ? state.currentTime : 0,
       duration: sameTrack ? state.duration : track.duration || 0,
       error: '',
+      nextTrack: null,
+      nextCountdown: NEXT_COUNTDOWN_SECONDS,
     }));
     startAudio(track, !sameTrack);
-  }, [startAudio]);
+  }, [startAudio, stopInactive]);
 
-  const playRelative = useCallback((delta: number) => {
+  const resolveNextIndex = useCallback((delta: number) => {
     const current = playerRef.current;
-    const nextIndex = current.queueIndex + delta;
-    const nextTrack = current.queue[nextIndex];
-    if (!nextTrack) {
-      setPlayer((state) => ({ ...state, playing: false }));
-      return;
+    const raw = current.queueIndex + delta;
+    if (raw >= 0 && raw < current.queue.length) return raw;
+    if (current.repeatMode === 'all' && current.queue.length > 0) {
+      return raw < 0 ? current.queue.length - 1 : 0;
     }
-    setPlayer((state) => ({
-      ...state,
-      track: nextTrack,
-      queueIndex: nextIndex,
-      playing: true,
-      currentTime: 0,
-      duration: nextTrack.duration || 0,
-      error: '',
-    }));
-    startAudio(nextTrack, true);
-  }, [startAudio]);
+    return -1;
+  }, []);
 
   const playQueueIndex = useCallback((index: number) => {
     const current = playerRef.current;
     const nextTrack = current.queue[index];
     if (!nextTrack) return;
+    pendingNextIndexRef.current = null;
+    stopInactive();
     setPlayer((state) => ({
       ...state,
       track: nextTrack,
@@ -109,11 +304,62 @@ export function useAudioPlayer() {
       currentTime: 0,
       duration: nextTrack.duration || 0,
       error: '',
+      nextTrack: null,
+      nextCountdown: NEXT_COUNTDOWN_SECONDS,
     }));
     startAudio(nextTrack, true);
-  }, [startAudio]);
+  }, [startAudio, stopInactive]);
+
+  const playRelative = useCallback((delta: number) => {
+    const index = resolveNextIndex(delta);
+    if (index < 0) {
+      setPlayer((state) => ({ ...state, playing: false }));
+      return;
+    }
+    playQueueIndex(index);
+  }, [playQueueIndex, resolveNextIndex]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.setActionHandler('nexttrack', () => playRelative(1));
+      navigator.mediaSession.setActionHandler('previoustrack', () => playRelative(-1));
+    } catch (_) {
+      // Some browsers expose Media Session partially.
+    }
+  }, [playRelative]);
+
+  const confirmNext = useCallback(() => {
+    const index = pendingNextIndexRef.current;
+    if (index === null) return;
+    pendingNextIndexRef.current = null;
+    playQueueIndex(index);
+  }, [playQueueIndex]);
+
+  const cancelNext = useCallback(() => {
+    pendingNextIndexRef.current = null;
+    setPlayer((state) => ({
+      ...state,
+      nextTrack: null,
+      nextCountdown: NEXT_COUNTDOWN_SECONDS,
+      playing: false,
+    }));
+  }, []);
+
+  const scheduleNext = useCallback((index: number) => {
+    const nextTrack = playerRef.current.queue[index];
+    if (!nextTrack) return;
+    pendingNextIndexRef.current = index;
+    setPlayer((state) => ({
+      ...state,
+      playing: false,
+      nextTrack,
+      nextCountdown: NEXT_COUNTDOWN_SECONDS,
+    }));
+  }, []);
 
   const addToQueue = useCallback((track: WatchTrack, playNext = false) => {
+    const message = playNext ? 'Playing next' : 'Added to queue';
     setPlayer((state) => {
       if (!state.track) {
         window.setTimeout(() => playTrack(track, [track]), 0);
@@ -125,8 +371,52 @@ export function useAudioPlayer() {
       const insertAt = playNext ? Math.max(0, state.queueIndex + 1) : queue.length;
       queue.splice(insertAt, 0, track);
       const queueIndex = queue.findIndex((item) => item.key === state.track?.key);
-      return { ...state, queue, queueIndex: queueIndex >= 0 ? queueIndex : state.queueIndex };
+      return { ...state, queue, queueIndex: queueIndex >= 0 ? queueIndex : state.queueIndex, queueToast: message };
     });
+    showQueueToast(message);
+  }, [playTrack, showQueueToast]);
+
+  const removeFromQueue = useCallback((index: number) => {
+    setPlayer((state) => {
+      if (index < 0 || index >= state.queue.length) return state;
+      if (index === state.queueIndex) return state;
+      const queue = state.queue.filter((_, itemIndex) => itemIndex !== index);
+      const queueIndex = index < state.queueIndex ? state.queueIndex - 1 : state.queueIndex;
+      return { ...state, queue, queueIndex };
+    });
+  }, []);
+
+  const clearQueue = useCallback(() => {
+    setPlayer((state) => state.track
+      ? { ...state, queue: [state.track], queueIndex: 0, nextTrack: null, nextCountdown: NEXT_COUNTDOWN_SECONDS }
+      : state);
+  }, []);
+
+  const moveQueueItem = useCallback((index: number, direction: -1 | 1) => {
+    setPlayer((state) => {
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || index >= state.queue.length || nextIndex >= state.queue.length) return state;
+      const queue = state.queue.slice();
+      const [item] = queue.splice(index, 1);
+      queue.splice(nextIndex, 0, item);
+      const queueIndex = queue.findIndex((track) => track.key === state.track?.key);
+      return { ...state, queue, queueIndex };
+    });
+  }, []);
+
+  const shuffleQueue = useCallback((queue: WatchTrack[]) => {
+    if (!queue.length) return;
+    const shuffled = queue.slice();
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swap]] = [shuffled[swap], shuffled[index]];
+    }
+    try {
+      sessionStorage.setItem(`td:shuffle:${shuffled[0].albumTitle || 'queue'}`, JSON.stringify(shuffled.map((track) => track.key)));
+    } catch (_) {
+      // Shuffle persistence is only for same-tab continuity.
+    }
+    playTrack(shuffled[0], shuffled);
   }, [playTrack]);
 
   const togglePlayback = useCallback((track?: WatchTrack, queue?: WatchTrack[]) => {
@@ -135,7 +425,7 @@ export function useAudioPlayer() {
       playTrack(track, queue);
       return;
     }
-    const audio = audioRef.current;
+    const audio = getActiveAudio();
     if (!audio || !current.track) return;
     if (audio.paused) {
       setPlayer((state) => ({ ...state, playing: true, error: '' }));
@@ -152,30 +442,200 @@ export function useAudioPlayer() {
     } else {
       audio.pause();
     }
-  }, [playTrack]);
+  }, [getActiveAudio, playTrack]);
 
   const seek = useCallback((seconds: number) => {
-    const audio = audioRef.current;
+    const audio = getActiveAudio();
     if (!audio) return;
     audio.currentTime = seconds;
     setPlayer((state) => ({ ...state, currentTime: seconds }));
+  }, [getActiveAudio]);
+
+  const setSpeed = useCallback((speed: number) => {
+    const next = clamp(speed, 0.5, 3);
+    try {
+      localStorage.setItem(SPEED_KEY, String(next));
+    } catch (_) {
+      // Preference only.
+    }
+    setPlayer((state) => ({ ...state, speed: next }));
+    if (audioRef.current) audioRef.current.playbackRate = next;
+    if (bufferRef.current) bufferRef.current.playbackRate = next;
+  }, [applyOutputSettings]);
+
+  const setRepeatMode = useCallback((mode: RepeatMode) => {
+    try {
+      localStorage.setItem(REPEAT_KEY, mode);
+    } catch (_) {
+      // Preference only.
+    }
+    setPlayer((state) => ({ ...state, repeatMode: mode }));
   }, []);
 
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+  const cycleRepeatMode = useCallback(() => {
+    const current = playerRef.current.repeatMode;
+    const next: RepeatMode = current === 'off' ? 'all' : current === 'all' ? 'one' : 'off';
+    setRepeatMode(next);
+  }, [setRepeatMode]);
 
-    const onTime = () => {
+  const setVolume = useCallback((value: number) => {
+    const next = clamp(value, 0, 1);
+    try {
+      localStorage.setItem(VOLUME_KEY, String(next));
+      localStorage.setItem(MUTED_KEY, next <= 0 ? '1' : '0');
+    } catch (_) {
+      // Preference only.
+    }
+    setPlayer((state) => ({ ...state, volume: next, muted: next <= 0 }));
+    [audioRef.current, bufferRef.current].forEach((audio) => {
+      if (!audio) return;
+      audio.muted = next <= 0;
+      audio.volume = next <= 0 ? 0 : next;
+    });
+  }, [applyOutputSettings]);
+
+  const toggleMute = useCallback(() => {
+    const next = !playerRef.current.muted;
+    try {
+      localStorage.setItem(MUTED_KEY, next ? '1' : '0');
+    } catch (_) {
+      // Preference only.
+    }
+    setPlayer((state) => ({ ...state, muted: next }));
+    [audioRef.current, bufferRef.current].forEach((audio) => {
+      if (!audio) return;
+      audio.muted = next;
+      audio.volume = next ? 0 : playerRef.current.volume;
+    });
+  }, [applyOutputSettings]);
+
+  const maybeCrossfade = useCallback((audio: HTMLAudioElement) => {
+    const current = playerRef.current;
+    const nextIndex = resolveNextIndex(1);
+    const next = nextIndex >= 0 ? current.queue[nextIndex] : null;
+    const duration = audio.duration || current.duration;
+    if (!next || current.repeatMode === 'one' || !Number.isFinite(duration) || duration <= 0) return;
+    const remaining = duration - audio.currentTime;
+    const inactive = getInactiveAudio();
+    if (!inactive) return;
+    const nextSrc = trackSrc(next);
+    if (remaining <= PRELOAD_AT_SECONDS && preloadedKeyRef.current !== next.key) {
+      inactive.src = next.streamHref;
+      inactive.preload = 'auto';
+      inactive.load();
+      preloadedKeyRef.current = next.key;
+    }
+    if (remaining > CROSSFADE_SECONDS || crossfadeRef.current) return;
+    crossfadeRef.current = true;
+    inactive.src = inactive.src || next.streamHref;
+    inactive.currentTime = 0;
+    applyOutputSettings(inactive, 0);
+    const from = audio;
+    const to = inactive;
+    const targetSlot = activeSlotRef.current === 'primary' ? 'buffer' : 'primary';
+    to.play()
+      .then(() => {
+        activeSlotRef.current = targetSlot;
+        pendingNextIndexRef.current = null;
+        setPlayer((state) => ({
+          ...state,
+          track: next,
+          queueIndex: nextIndex,
+          playing: true,
+          currentTime: 0,
+          duration: next.duration || 0,
+          nextTrack: null,
+          nextCountdown: NEXT_COUNTDOWN_SECONDS,
+        }));
+        const started = performance.now();
+        const tick = () => {
+          const progress = clamp((performance.now() - started) / (CROSSFADE_SECONDS * 1000), 0, 1);
+          const baseVolume = playerRef.current.muted ? 0 : playerRef.current.volume;
+          from.volume = baseVolume * (1 - progress);
+          to.volume = baseVolume * progress;
+          if (progress < 1) {
+            requestAnimationFrame(tick);
+            return;
+          }
+          from.pause();
+          from.removeAttribute('src');
+          from.load();
+          applyOutputSettings(to);
+          preloadedKeyRef.current = '';
+          crossfadeRef.current = false;
+        };
+        requestAnimationFrame(tick);
+      })
+      .catch(() => {
+        crossfadeRef.current = false;
+      });
+  }, [applyOutputSettings, getInactiveAudio, resolveNextIndex]);
+
+  useEffect(() => {
+    const audioNodes = [audioRef.current, bufferRef.current].filter(Boolean) as HTMLAudioElement[];
+    if (!audioNodes.length) return undefined;
+
+    const onTime = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (audio !== getActiveAudio()) return;
+      const now = Date.now();
+      const current = playerRef.current;
+      const currentTime = audio.currentTime || 0;
+      const duration = audio.duration || current.duration || current.track?.duration || 0;
       setPlayer((state) => ({
         ...state,
-        currentTime: audio.currentTime || 0,
-        duration: audio.duration || state.duration || state.track?.duration || 0,
+        currentTime,
+        duration,
       }));
+      if (current.track && now - persistLastRef.current > 2000) {
+        persistLastRef.current = now;
+        persistNowPlaying({ ...current, currentTime, duration });
+      }
+      if (current.track && currentTime > 5 && duration > 0 && now - cwLastSyncRef.current > 30000) {
+        cwLastSyncRef.current = now;
+        void saveContinueEntry(current.track.key, {
+          pos: Math.floor(currentTime),
+          dur: Math.floor(duration),
+          t: now,
+          title: current.track.title,
+        }).catch(() => undefined);
+      }
+      if ('mediaSession' in navigator && current.track && duration > 0) {
+        updateMediaSession({ ...current, currentTime, duration });
+      }
+      maybeCrossfade(audio);
     };
-    const onPlay = () => setPlayer((state) => ({ ...state, playing: true, error: '' }));
-    const onPause = () => setPlayer((state) => ({ ...state, playing: false }));
-    const onEnded = () => playRelative(1);
-    const onError = () => {
+
+    const onPlay = (event: Event) => {
+      if (event.currentTarget !== getActiveAudio()) return;
+      setPlayer((state) => ({ ...state, playing: true, error: '' }));
+    };
+    const onPause = (event: Event) => {
+      if (event.currentTarget !== getActiveAudio()) return;
+      setPlayer((state) => ({ ...state, playing: false }));
+    };
+    const onEnded = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (audio !== getActiveAudio() || crossfadeRef.current) return;
+      const current = playerRef.current;
+      if (current.track) {
+        void recordWatchHistory(current.track.key, current.track.title).catch(() => undefined);
+        void deleteContinueEntry(current.track.key).catch(() => undefined);
+      }
+      if (current.repeatMode === 'one' && current.track) {
+        audio.currentTime = 0;
+        void audio.play();
+        return;
+      }
+      const nextIndex = resolveNextIndex(1);
+      if (nextIndex < 0) {
+        setPlayer((state) => ({ ...state, playing: false }));
+        return;
+      }
+      scheduleNext(nextIndex);
+    };
+    const onError = (event: Event) => {
+      if (event.currentTarget !== getActiveAudio()) return;
       setPlayer((state) => ({
         ...state,
         playing: false,
@@ -183,24 +643,81 @@ export function useAudioPlayer() {
       }));
     };
 
-    audio.addEventListener('timeupdate', onTime);
-    audio.addEventListener('loadedmetadata', onTime);
-    audio.addEventListener('durationchange', onTime);
-    audio.addEventListener('play', onPlay);
-    audio.addEventListener('pause', onPause);
-    audio.addEventListener('ended', onEnded);
-    audio.addEventListener('error', onError);
+    audioNodes.forEach((audio) => {
+      audio.addEventListener('timeupdate', onTime);
+      audio.addEventListener('loadedmetadata', onTime);
+      audio.addEventListener('durationchange', onTime);
+      audio.addEventListener('play', onPlay);
+      audio.addEventListener('pause', onPause);
+      audio.addEventListener('ended', onEnded);
+      audio.addEventListener('error', onError);
+      applyOutputSettings(audio);
+    });
+
     return () => {
-      audio.removeEventListener('timeupdate', onTime);
-      audio.removeEventListener('loadedmetadata', onTime);
-      audio.removeEventListener('durationchange', onTime);
-      audio.removeEventListener('play', onPlay);
-      audio.removeEventListener('pause', onPause);
-      audio.removeEventListener('ended', onEnded);
-      audio.removeEventListener('error', onError);
+      audioNodes.forEach((audio) => {
+        audio.removeEventListener('timeupdate', onTime);
+        audio.removeEventListener('loadedmetadata', onTime);
+        audio.removeEventListener('durationchange', onTime);
+        audio.removeEventListener('play', onPlay);
+        audio.removeEventListener('pause', onPause);
+        audio.removeEventListener('ended', onEnded);
+        audio.removeEventListener('error', onError);
+      });
     };
-  }, [playRelative]);
+  }, [applyOutputSettings, getActiveAudio, maybeCrossfade, resolveNextIndex, scheduleNext, updateMediaSession]);
 
-  return { audioRef, player, playTrack, playRelative, playQueueIndex, addToQueue, togglePlayback, seek };
+  useEffect(() => {
+    const audio = getActiveAudio();
+    const current = playerRef.current;
+    if (!audio || !current.track || audio.src) return;
+    audio.src = current.track.streamHref;
+    audio.currentTime = current.currentTime || 0;
+    applyOutputSettings(audio);
+  }, [applyOutputSettings, getActiveAudio]);
+
+  useEffect(() => {
+    persistNowPlaying(player);
+    updateMediaSession(player);
+  }, [player.queue, player.queueIndex, player.repeatMode, player.speed, player.track, player.volume, player.muted, updateMediaSession]);
+
+  useEffect(() => {
+    if (!player.nextTrack) return undefined;
+    if (player.nextCountdown <= 0) {
+      confirmNext();
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      setPlayer((state) => state.nextTrack
+        ? { ...state, nextCountdown: state.nextCountdown - 1 }
+        : state);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [confirmNext, player.nextCountdown, player.nextTrack]);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+  }, []);
+
+  return {
+    audioRef,
+    bufferRef,
+    player,
+    playTrack,
+    playRelative,
+    playQueueIndex,
+    addToQueue,
+    removeFromQueue,
+    clearQueue,
+    moveQueueItem,
+    shuffleQueue,
+    togglePlayback,
+    seek,
+    setSpeed,
+    cycleRepeatMode,
+    setVolume,
+    toggleMute,
+    confirmNext,
+    cancelNext,
+  };
 }
-

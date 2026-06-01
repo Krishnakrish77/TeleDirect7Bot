@@ -8,7 +8,10 @@ reaches parity route by route.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Optional
@@ -18,7 +21,9 @@ from aiohttp import web
 
 from main.utils import codec_probe
 from main.utils import media_index
+from main.utils import rec_engine
 from main.utils import thumb_cache
+from main.utils import trending
 from main.utils.codec_probe import _clean_music_tag
 from main.utils.hub_query import AlbumGroup, HubItem, MovieGroup, SeriesGroup
 from main.utils.human_readable import humanbytes
@@ -176,6 +181,19 @@ def _detail_url(item: HubItem) -> str:
 
 def _stream_url(item: HubItem) -> str:
     return f"/{item.secure_hash}{item.message_id}"
+
+
+def _vlc_tracking_token(request: web.Request, item: HubItem) -> str:
+    user = get_user(request)
+    if not user:
+        return ""
+    user_id = int(user["sub"])
+    token = hmac.new(
+        Var.JWT_SECRET.encode(),
+        f"{user_id}:{item.message_id}".encode(),
+        hashlib.sha256,
+    ).hexdigest()[:32]
+    return f"{user_id}:{token}"
 
 
 def _item_common(item: HubItem) -> dict:
@@ -468,6 +486,59 @@ async def api_hub(request: web.Request) -> web.Response:
     if _is_landing(params):
         raw_shelves = media_index.shelves()
         hero_items = media_index.pick_heroes()
+        user = get_user(request)
+        if user:
+            try:
+                rec_items = await asyncio.wait_for(
+                    rec_engine.get_recommendations(int(user["sub"])),
+                    timeout=12.0,
+                )
+                if rec_items:
+                    rec_meta = []
+                    for card in rec_items:
+                        tid = getattr(card, "tmdb_id", None)
+                        skey = getattr(card, "series_key", "")
+                        if tid is None:
+                            poster = getattr(card, "poster_item", None)
+                            if poster:
+                                tid = getattr(poster, "tmdb_id", None)
+                                skey = getattr(poster, "series_key", "")
+                        rec_meta.append(
+                            {"tmdbId": tid, "kind": "tv" if skey else "movie"}
+                            if tid else None
+                        )
+                    raw_shelves = [
+                        {
+                            "name": "Recommended for you",
+                            "items": rec_items,
+                            "link": None,
+                            "total": len(rec_items),
+                            "dismissable": True,
+                            "rec_meta": rec_meta,
+                        },
+                    ] + list(raw_shelves)
+            except asyncio.TimeoutError:
+                logging.warning("spa hub: rec_engine timed out, skipping shelf")
+            except Exception:
+                logging.exception("spa hub: rec_engine failed, skipping shelf")
+
+        try:
+            tr = await asyncio.wait_for(trending.get_trending(), timeout=10.0)
+            tr_items = tr.get("in_library", [])
+            if len(tr_items) >= trending._MIN_SHELF_ITEMS:
+                raw_shelves = list(raw_shelves) + [
+                    {
+                        "name": "Trending",
+                        "items": tr_items,
+                        "link": None,
+                        "total": len(tr_items),
+                    },
+                ]
+        except asyncio.TimeoutError:
+            logging.warning("spa hub: trending timed out, skipping shelf")
+        except Exception:
+            logging.exception("spa hub: trending failed, skipping shelf")
+
         _prewarm_card_thumbs(
             hero_items
             + [
@@ -486,6 +557,8 @@ async def api_hub(request: web.Request) -> web.Response:
                 ),
                 "total": shelf.get("total", 0),
                 "items": [_card(item) for item in shelf.get("items") or []],
+                "dismissable": bool(shelf.get("dismissable")),
+                "recMeta": shelf.get("rec_meta") or [],
             }
             for shelf in raw_shelves
         ]
@@ -992,10 +1065,11 @@ def _track_payload(item: HubItem) -> dict:
         "appHref": _app_watch_url(item),
         "classicHref": _watch_url(item),
         "streamHref": _stream_url(item),
+        "albumHref": f"/app/album/{item.album_key}" if item.album_key else "",
     }
 
 
-def _video_watch_payload(item: HubItem) -> dict:
+def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
     common = _item_common(item)
     title = item.episode_title or common["title"]
     if item.series_title and item.season is not None and item.episode is not None:
@@ -1003,6 +1077,7 @@ def _video_watch_payload(item: HubItem) -> dict:
         if item.episode_title:
             title = f"{title} - {item.episode_title}"
     absolute_stream = urljoin(Var.URL, f"{item.secure_hash}{item.message_id}")
+    vlc_token = _vlc_tracking_token(request, item)
 
     quality_variants: list[HubItem] = []
     if item.movie_key:
@@ -1063,6 +1138,7 @@ def _video_watch_payload(item: HubItem) -> dict:
         "absoluteStreamHref": absolute_stream,
         "downloadHref": _stream_url(item),
         "vlcHref": f"vlc://{absolute_stream}",
+        "vlcTrackingToken": vlc_token,
         "knownUnplayable": codec_probe.known_unplayable(item),
         "videoCodec": item.video_codec or "",
         "pixFmt": item.pix_fmt or "",
@@ -1090,7 +1166,7 @@ async def api_watch(request: web.Request) -> web.Response:
         return _json({
             "mediaKind": item.media_kind or "video",
             "classicHref": _watch_url(item),
-            "item": _video_watch_payload(item),
+            "item": _video_watch_payload(request, item),
         })
 
     tracks = []

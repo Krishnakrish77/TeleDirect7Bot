@@ -1,10 +1,14 @@
-import { TouchEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { fetchAudioTracks, fetchSubtitles, fetchWatch } from '../api';
+import { DragEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { deleteContinueEntry, fetchAudioTracks, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
 import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { LyricsPanel } from './lyrics';
+import { RatingControls } from './rating';
+import { attachHls, hlsUrl } from '../media/hls';
+import { restoreCachedSubtitle, revokeSubtitleTrack, subtitleFileToTrack } from '../media/subtitles';
+import { buildVlcHref } from '../media/vlc';
 
 function isWatchTrack(item: WatchResponse['item']): item is WatchTrack {
   return item.type === 'track' && 'appHref' in item;
@@ -21,8 +25,15 @@ export function WatchPage({
   playRelative,
   playQueueIndex,
   addToQueue,
+  shuffleQueue,
   togglePlayback,
   seek,
+  setSpeed,
+  cycleRepeatMode,
+  setVolume,
+  toggleMute,
+  confirmNext,
+  cancelNext,
   onOpenQueue,
 }: {
   watchKey: string;
@@ -31,8 +42,15 @@ export function WatchPage({
   playRelative: (delta: number) => void;
   playQueueIndex: (index: number) => void;
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
+  shuffleQueue: (queue: WatchTrack[]) => void;
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   seek: (seconds: number) => void;
+  setSpeed: (speed: number) => void;
+  cycleRepeatMode: () => void;
+  setVolume: (volume: number) => void;
+  toggleMute: () => void;
+  confirmNext: () => void;
+  cancelNext: () => void;
   onOpenQueue: () => void;
 }) {
   const [data, setData] = useState<WatchResponse | null>(null);
@@ -112,6 +130,14 @@ export function WatchPage({
     if (!current) return;
     const upperBound = duration > 0 ? duration : Number.POSITIVE_INFINITY;
     seek(Math.max(0, Math.min(upperBound, currentTime + delta)));
+  };
+  const shareAudio = async () => {
+    const payload = { title: track.title, url: window.location.href };
+    if (navigator.share) {
+      try { await navigator.share(payload); } catch (_) { return; }
+    } else if (navigator.clipboard) {
+      await navigator.clipboard.writeText(window.location.href).catch(() => undefined);
+    }
   };
 
   return (
@@ -197,6 +223,68 @@ export function WatchPage({
             />
             <span>{formatClock(duration)}</span>
           </div>
+          <div className="audio-actions">
+            <a className="secondary-action" href={track.streamHref} download>
+              <DownloadIcon />
+              <span>Download</span>
+            </a>
+            <button type="button" className="secondary-action" onClick={shareAudio}>
+              <ShareIcon />
+              <span>Share</span>
+            </button>
+            {track.albumHref && (
+              <a className="secondary-action" href={track.albumHref}>
+                <ListIcon />
+                <span>Album</span>
+              </a>
+            )}
+          </div>
+          <div className="player-settings audio-watch-settings" aria-label="Audio settings">
+            <div className="speed-controls" aria-label="Playback speed">
+              {[0.75, 1, 1.5, 2].map((speed) => (
+                <button
+                  key={speed}
+                  type="button"
+                  className={player.speed === speed ? 'active' : ''}
+                  onClick={() => setSpeed(speed)}
+                >
+                  {speed === 0.75 ? '3/4x' : `${speed}x`}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="secondary-action compact-action" onClick={cycleRepeatMode}>
+              <span>Repeat {player.repeatMode}</span>
+            </button>
+            <label className="volume-control audio-volume-control">
+              <button type="button" className="icon-button" onClick={toggleMute} aria-label={player.muted ? 'Unmute audio' : 'Mute audio'}>
+                <VolumeIcon />
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={player.muted ? 0 : player.volume}
+                onChange={(event) => setVolume(Number(event.currentTarget.value))}
+                aria-label="Audio volume"
+              />
+            </label>
+          </div>
+          {player.nextTrack && (
+            <div className="next-track-card inline-next-track-card">
+              <p className="eyebrow">Up next - {player.nextCountdown}s</p>
+              <strong>{player.nextTrack.title}</strong>
+              <span>{[player.nextTrack.artist, player.nextTrack.albumTitle].filter(Boolean).join(' - ')}</span>
+              <div>
+                <button type="button" className="primary-action" onClick={confirmNext}>
+                  <PlayIcon />
+                  <span>Play now</span>
+                </button>
+                <button type="button" className="secondary-action" onClick={cancelNext}>Cancel</button>
+              </div>
+            </div>
+          )}
+          {player.queueToast && <p className="queue-toast" role="status">{player.queueToast}</p>}
           <LyricsPanel
             track={track}
             currentTime={currentTime}
@@ -224,6 +312,9 @@ export function WatchPage({
               <p className="eyebrow">Album</p>
               <h2>{track.albumTitle || 'Tracks'}</h2>
             </div>
+            <button type="button" className="secondary-action" onClick={() => shuffleQueue(queue)}>
+              <span>Shuffle</span>
+            </button>
           </div>
           <div className="track-list">
             {queue.map((item, index) => {
@@ -260,6 +351,18 @@ export function WatchPage({
                   >
                     <ListIcon />
                   </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      addToQueue(item, false);
+                    }}
+                    aria-label="Add to queue"
+                  >
+                    <span aria-hidden="true">+</span>
+                  </button>
                 </a>
               );
             })}
@@ -273,6 +376,8 @@ export function WatchPage({
 function VideoWatchPage({ video }: { video: WatchVideo }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const hlsRef = useRef<{ destroy: () => void } | null>(null);
+  const subInputRef = useRef<HTMLInputElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(video.duration || 0);
@@ -281,8 +386,11 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
   const [activeSub, setActiveSub] = useState('');
   const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
+  const [customSubtitles, setCustomSubtitles] = useState<SubtitleTrack[]>([]);
+  const [subtitleStatus, setSubtitleStatus] = useState('');
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [brightness, setBrightness] = useState(1);
   const [error, setError] = useState(video.knownUnplayable ? 'This file is marked as difficult for browser playback.' : '');
   const [showNext, setShowNext] = useState(false);
@@ -298,9 +406,12 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   });
   const gestureRef = useRef({ x: 0, y: 0, t: 0, moved: false, lastTap: 0 });
 
-  const sourceSrc = sourceMode === 'hls'
-    ? `${video.hlsSrc}${audioIndex ? `?a=${audioIndex}` : ''}`
-    : video.directSrc;
+  const sourceSrc = sourceMode === 'hls' ? hlsUrl(video.hlsSrc, audioIndex) : video.directSrc;
+  const allSubtitles = useMemo(() => [...subtitles, ...customSubtitles], [customSubtitles, subtitles]);
+  const vlcHref = useMemo(
+    () => buildVlcHref(video.absoluteStreamHref || video.streamHref || video.vlcHref.replace(/^vlc:\/\//, ''), video.vlcTrackingToken),
+    [video.absoluteStreamHref, video.streamHref, video.vlcHref, video.vlcTrackingToken],
+  );
   const rangeMax = Math.max(1, Math.round(duration || video.duration || 0));
   const hasIntro = video.introEnd > video.introStart;
   const showSkipIntro = hasIntro && currentTime >= video.introStart && currentTime < video.introEnd;
@@ -324,6 +435,51 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   }, [video.audioTrackBase, video.subtitleBase]);
 
   useEffect(() => {
+    const restored = restoreCachedSubtitle(video.resumeKey);
+    if (!restored) return undefined;
+    setCustomSubtitles([restored]);
+    setSubtitleStatus(`Restored "${restored.label}" subtitles.`);
+    return () => revokeSubtitleTrack(restored);
+  }, [video.resumeKey]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return undefined;
+    hlsRef.current?.destroy();
+    hlsRef.current = null;
+    if (video.knownUnplayable) {
+      el.removeAttribute('src');
+      return undefined;
+    }
+    const savedTime = el.currentTime || 0;
+    let cancelled = false;
+    if (sourceMode === 'hls' && video.hlsSrc) {
+      attachHls(el, sourceSrc, video.directSrc, () => {
+        if (!cancelled) setError('HLS playback failed. Falling back to the direct stream.');
+      }).then((instance) => {
+        if (cancelled) {
+          instance?.destroy();
+          return;
+        }
+        hlsRef.current = instance;
+        if (savedTime > 0 && Number.isFinite(savedTime)) {
+          try { el.currentTime = savedTime; } catch (_) { /* ignore invalid seek */ }
+        }
+      });
+    } else if (video.directSrc) {
+      el.src = video.directSrc;
+      if (savedTime > 0 && Number.isFinite(savedTime)) {
+        try { el.currentTime = savedTime; } catch (_) { /* ignore invalid seek */ }
+      }
+    }
+    return () => {
+      cancelled = true;
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+    };
+  }, [sourceMode, sourceSrc, video.directSrc, video.hlsSrc, video.knownUnplayable]);
+
+  useEffect(() => {
     try {
       localStorage.setItem('td:videoAutoplay', autoplayNext ? '1' : '0');
     } catch (_) {
@@ -341,17 +497,25 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
+    el.playbackRate = playbackRate;
+  }, [playbackRate, sourceSrc]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
     Array.from(el.textTracks || []).forEach((track, index) => {
-      const id = subtitles[index]?.id;
+      const id = allSubtitles[index]?.id;
       track.mode = id && id === activeSub ? 'showing' : 'disabled';
     });
-  }, [activeSub, sourceSrc, subtitles]);
+  }, [activeSub, allSubtitles, sourceSrc]);
 
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
     let restored = false;
     let lastSave = 0;
+    let lastServerSave = 0;
+    let completed = false;
     const loadResume = () => {
       if (restored || !el.duration) return;
       restored = true;
@@ -386,6 +550,26 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         localStorage.setItem('td:cw', JSON.stringify(data));
       } catch (_) {
         // Ignore quota/private-mode failures.
+      }
+      if (pct >= 0.95) {
+        if (!completed) {
+          completed = true;
+          void deleteContinueEntry(video.resumeKey).catch(() => undefined);
+          void recordWatchHistory(video.resumeKey, video.title).catch(() => undefined);
+        }
+      } else if (pct >= 0.02) {
+        const shouldSync = force || now - lastServerSave > 30000;
+        if (shouldSync) {
+          lastServerSave = now;
+          void saveContinueEntry(video.resumeKey, {
+            pos: Math.floor(el.currentTime),
+            dur: Math.floor(el.duration),
+            t: now,
+            title: video.title,
+          }).catch(() => undefined);
+        }
+      } else if (force) {
+        void deleteContinueEntry(video.resumeKey).catch(() => undefined);
       }
     };
     const onTime = () => {
@@ -513,6 +697,30 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     }
   }, [showToast, video.title]);
 
+  const loadSubtitleFile = useCallback(async (file: File | null | undefined) => {
+    if (!file) return;
+    try {
+      const track = await subtitleFileToTrack(file, video.resumeKey);
+      setCustomSubtitles((current) => {
+        current.forEach(revokeSubtitleTrack);
+        return [track];
+      });
+      setActiveSub(track.id);
+      setSubtitleStatus(`Loaded "${file.name}" as subtitles.`);
+    } catch (err) {
+      setSubtitleStatus(err instanceof Error ? err.message : 'Could not load subtitles.');
+    }
+  }, [video.resumeKey]);
+
+  const openAirPlay = useCallback(() => {
+    const el = videoRef.current as (HTMLVideoElement & { webkitShowPlaybackTargetPicker?: () => void }) | null;
+    if (el?.webkitShowPlaybackTargetPicker) {
+      el.webkitShowPlaybackTargetPicker();
+      return;
+    }
+    showToast('AirPlay unavailable');
+  }, [showToast]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -584,6 +792,15 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     }
   };
 
+  const onDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  };
+
+  const onDropSubtitle = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    void loadSubtitleFile(event.dataTransfer.files?.[0]);
+  };
+
   return (
     <main className="video-main">
       <section className="video-titlebar">
@@ -595,6 +812,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           <p className="eyebrow">{video.quality || 'Video'}</p>
           <h1 dir="auto">{video.title}</h1>
           {video.subtitle && <p>{video.subtitle}</p>}
+          <RatingControls messageId={video.messageId || video.itemId} />
         </div>
       </section>
 
@@ -604,17 +822,27 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
+        onDragOver={onDragOver}
+        onDrop={onDropSubtitle}
       >
+        <input
+          ref={subInputRef}
+          type="file"
+          accept=".srt,.vtt,text/vtt"
+          hidden
+          onChange={(event) => {
+            void loadSubtitleFile(event.currentTarget.files?.[0]);
+            event.currentTarget.value = '';
+          }}
+        />
         <video
-          key={`${sourceMode}:${audioIndex}:${video.key}`}
           ref={videoRef}
-          src={video.knownUnplayable ? undefined : sourceSrc}
           poster={video.backdropUrl || video.posterUrl}
           crossOrigin="anonymous"
           playsInline
           preload="metadata"
         >
-          {subtitles.map((track, index) => (
+          {allSubtitles.map((track, index) => (
             <track
               key={track.id}
               id={String(index)}
@@ -636,7 +864,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
             <span>{error || 'Open it in VLC or the classic player.'}</span>
             <div>
               <a className="primary-action" href={video.classicHref}>Classic player</a>
-              <a className="secondary-action" href={video.vlcHref}>VLC</a>
+              <a className="secondary-action" href={vlcHref}>VLC</a>
             </div>
           </div>
         )}
@@ -712,13 +940,17 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
             </button>
             <label className="video-menu-row">
               <span>Captions</span>
-              <select value={activeSub} onChange={(event) => setActiveSub(event.currentTarget.value)} disabled={!subtitles.length} aria-label="Captions">
+              <select value={activeSub} onChange={(event) => setActiveSub(event.currentTarget.value)} disabled={!allSubtitles.length} aria-label="Captions">
                 <option value="">Off</option>
-                {subtitles.map((track) => (
+                {allSubtitles.map((track) => (
                   <option key={track.id} value={track.id}>{track.label || track.language || track.id}</option>
                 ))}
               </select>
             </label>
+            <button type="button" className="video-menu-row" role="menuitem" onClick={() => subInputRef.current?.click()}>
+              <span>Load subtitles</span>
+              <strong>SRT/VTT</strong>
+            </button>
             <label className="video-menu-row">
               <span>Audio</span>
               <select
@@ -740,11 +972,23 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
               <span>Source</span>
               <strong>{sourceMode === 'direct' ? 'Direct' : 'HLS'}</strong>
             </button>
+            <label className="video-menu-row">
+              <span>Speed</span>
+              <select value={playbackRate} onChange={(event) => setPlaybackRate(Number(event.currentTarget.value))} aria-label="Playback speed">
+                {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
+                  <option key={rate} value={rate}>{rate}x</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="video-menu-row" role="menuitem" onClick={openAirPlay}>
+              <span>AirPlay</span>
+              <strong>Open</strong>
+            </button>
             <a className="video-menu-row" role="menuitem" href={video.classicHref}>
               <span>Classic player</span>
               <strong>Open</strong>
             </a>
-            <a className="video-menu-row" role="menuitem" href={video.vlcHref}>
+            <a className="video-menu-row" role="menuitem" href={vlcHref}>
               <span>VLC</span>
               <strong>Open</strong>
             </a>
@@ -775,9 +1019,9 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         </label>
         <label>
           <CaptionsIcon />
-          <select value={activeSub} onChange={(event) => setActiveSub(event.currentTarget.value)} disabled={!subtitles.length} aria-label="Captions">
+          <select value={activeSub} onChange={(event) => setActiveSub(event.currentTarget.value)} disabled={!allSubtitles.length} aria-label="Captions">
             <option value="">Captions off</option>
-            {subtitles.map((track) => (
+            {allSubtitles.map((track) => (
               <option key={track.id} value={track.id}>{track.label || track.language || track.id}</option>
             ))}
           </select>
@@ -802,7 +1046,22 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         <button type="button" className="secondary-action" onClick={() => setSourceMode(sourceMode === 'direct' ? 'hls' : 'direct')}>
           <span>{sourceMode === 'direct' ? 'HLS' : 'Direct'}</span>
         </button>
-        <a className="secondary-action" href={video.vlcHref}>
+        <label>
+          <span>Speed</span>
+          <select value={playbackRate} onChange={(event) => setPlaybackRate(Number(event.currentTarget.value))} aria-label="Playback speed">
+            {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
+              <option key={rate} value={rate}>{rate}x</option>
+            ))}
+          </select>
+        </label>
+        <button type="button" className="secondary-action" onClick={() => subInputRef.current?.click()}>
+          <CaptionsIcon />
+          <span>Load subtitles</span>
+        </button>
+        <button type="button" className="secondary-action" onClick={openAirPlay}>
+          <span>AirPlay</span>
+        </button>
+        <a className="secondary-action" href={vlcHref}>
           <PlayIcon />
           <span>VLC</span>
         </a>
@@ -814,6 +1073,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           <ShareIcon />
           <span>Share</span>
         </button>
+        {subtitleStatus && <p className="subtitle-status">{subtitleStatus}</p>}
       </section>
 
       {video.qualityVariants.length > 0 && (

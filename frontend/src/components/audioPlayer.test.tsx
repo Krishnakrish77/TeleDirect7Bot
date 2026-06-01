@@ -35,8 +35,9 @@ function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
     qualityLabel: 'MP3',
     appHref: '/app/watch/track-key',
     classicHref: '/watch/track-key',
+    albumHref: '/app/album/album',
     ...overrides,
-  };
+  } as WatchTrack;
 }
 
 function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
@@ -49,8 +50,15 @@ function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
     currentTime: 35,
     duration: 100,
     error: '',
+    speed: 1,
+    repeatMode: 'off',
+    volume: 1,
+    muted: false,
+    nextTrack: null,
+    nextCountdown: 5,
+    queueToast: '',
     ...overrides,
-  };
+  } as PlayerState;
 }
 
 describe('NowPlayingSheet', () => {
@@ -64,6 +72,12 @@ describe('NowPlayingSheet', () => {
         playRelative={vi.fn()}
         togglePlayback={vi.fn()}
         seek={seek}
+        setSpeed={vi.fn()}
+        cycleRepeatMode={vi.fn()}
+        setVolume={vi.fn()}
+        toggleMute={vi.fn()}
+        confirmNext={vi.fn()}
+        cancelNext={vi.fn()}
         onClose={vi.fn()}
         onOpenQueue={vi.fn()}
       />,
@@ -74,5 +88,47 @@ describe('NowPlayingSheet', () => {
 
     fireEvent.click(screen.getByLabelText('Forward 10 seconds'));
     expect(seek).toHaveBeenCalledWith(45);
+  });
+
+  it('exposes speed, repeat, volume, and pending next-track actions', () => {
+    const setSpeed = vi.fn();
+    const cycleRepeatMode = vi.fn();
+    const setVolume = vi.fn();
+    const confirmNext = vi.fn();
+    const cancelNext = vi.fn();
+    const nextTrack = makeTrack({ key: 'next-track', title: 'Next Theme' });
+
+    render(
+      <NowPlayingSheet
+        open
+        player={makePlayer({ nextTrack, nextCountdown: 3 })}
+        playRelative={vi.fn()}
+        togglePlayback={vi.fn()}
+        seek={vi.fn()}
+        setSpeed={setSpeed}
+        cycleRepeatMode={cycleRepeatMode}
+        setVolume={setVolume}
+        toggleMute={vi.fn()}
+        confirmNext={confirmNext}
+        cancelNext={cancelNext}
+        onClose={vi.fn()}
+        onOpenQueue={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('1.5x'));
+    expect(setSpeed).toHaveBeenCalledWith(1.5);
+
+    fireEvent.click(screen.getByText('Repeat off'));
+    expect(cycleRepeatMode).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Audio volume'), { target: { value: '0.4' } });
+    expect(setVolume).toHaveBeenCalledWith(0.4);
+
+    fireEvent.click(screen.getByText('Play now'));
+    expect(confirmNext).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(cancelNext).toHaveBeenCalledTimes(1);
   });
 });

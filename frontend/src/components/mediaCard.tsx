@@ -1,12 +1,14 @@
 import { memo, type MouseEvent } from 'react';
-import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon } from '../icons';
-import type { HubCard } from '../types';
+import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, XIcon } from '../icons';
+import type { HubCard, RecommendationMeta } from '../types';
 
 interface MediaCardProps {
   card: HubCard;
   saved: boolean;
   priority?: boolean;
   onToggleSaved: (card: HubCard) => void;
+  dismissMeta?: RecommendationMeta | null;
+  onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
 }
 
 export function getMediaCardDisplay(card: HubCard): { eyebrow: string; title: string; subtitle: string } {
@@ -40,6 +42,8 @@ function MediaCardBase({
   saved,
   priority = false,
   onToggleSaved,
+  dismissMeta,
+  onDismiss,
 }: MediaCardProps) {
   const isMusic = card.type === 'track' || card.type === 'album';
   const width = card.aspect === 'square' ? 512 : 342;
@@ -97,6 +101,20 @@ function MediaCardBase({
       >
         {saved ? <CheckIcon /> : <BookmarkIcon />}
       </button>
+      {dismissMeta && onDismiss && (
+        <button
+          type="button"
+          className="dismiss-button"
+          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onDismiss(dismissMeta, card);
+          }}
+          aria-label="Not for me"
+        >
+          <XIcon />
+        </button>
+      )}
     </article>
   );
 }

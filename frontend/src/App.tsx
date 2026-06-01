@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { signOut } from './api';
+import { dismissRecommendation, signOut } from './api';
 import { classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useDetail, useHub, useMe, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
@@ -11,7 +11,7 @@ import { WatchlistPage } from './components/watchlistPage';
 import { StatsPage } from './components/statsPage';
 import { MiniPlayer, NowPlayingSheet, QueueDrawer } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
-import type { HubCard, HubFilters } from './types';
+import type { HubCard, HubFilters, RecommendationMeta } from './types';
 
 const DEFAULT_FILTERS: HubFilters = {
   years: [],
@@ -92,6 +92,13 @@ function App() {
     watchlistPage.removeItem(card.itemId);
     void removeSaved(card.itemId);
   }, [removeSaved, requireAuth, user, watchlistPage]);
+  const onDismissRecommendation = useCallback((meta: RecommendationMeta) => {
+    if (!user) {
+      requireAuth();
+      return;
+    }
+    void dismissRecommendation(meta.tmdbId, meta.kind);
+  }, [requireAuth, user]);
 
   const activeView = params.view || '';
   const activeSection = route.kind === 'watchlist'
@@ -178,6 +185,7 @@ function App() {
                   shelf={shelf}
                   saved={saved}
                   onToggleSaved={onToggleSaved}
+                  onDismiss={onDismissRecommendation}
                 />
               ))}
             </div>
@@ -212,6 +220,7 @@ function App() {
           playTrack={audio.playTrack}
           togglePlayback={audio.togglePlayback}
           addToQueue={audio.addToQueue}
+          shuffleQueue={audio.shuffleQueue}
           player={audio.player}
         />
       ) : route.kind === 'watchlist' ? (
@@ -239,8 +248,15 @@ function App() {
           playRelative={audio.playRelative}
           playQueueIndex={audio.playQueueIndex}
           addToQueue={audio.addToQueue}
+          shuffleQueue={audio.shuffleQueue}
           togglePlayback={audio.togglePlayback}
           seek={audio.seek}
+          setSpeed={audio.setSpeed}
+          cycleRepeatMode={audio.cycleRepeatMode}
+          setVolume={audio.setVolume}
+          toggleMute={audio.toggleMute}
+          confirmNext={audio.confirmNext}
+          cancelNext={audio.cancelNext}
           onOpenQueue={() => setQueueOpen(true)}
         />
       )}
@@ -251,6 +267,7 @@ function App() {
         onClose={() => setSignInOpen(false)}
       />
       <audio ref={audio.audioRef} preload="metadata" />
+      <audio ref={audio.bufferRef} preload="none" />
       <MiniPlayer
         player={audio.player}
         playRelative={audio.playRelative}
@@ -266,6 +283,12 @@ function App() {
         playRelative={audio.playRelative}
         togglePlayback={audio.togglePlayback}
         seek={audio.seek}
+        setSpeed={audio.setSpeed}
+        cycleRepeatMode={audio.cycleRepeatMode}
+        setVolume={audio.setVolume}
+        toggleMute={audio.toggleMute}
+        confirmNext={audio.confirmNext}
+        cancelNext={audio.cancelNext}
         onClose={() => setNowPlayingOpen(false)}
         onOpenQueue={() => setQueueOpen(true)}
       />
@@ -274,6 +297,9 @@ function App() {
         player={audio.player}
         playQueueIndex={audio.playQueueIndex}
         togglePlayback={audio.togglePlayback}
+        removeFromQueue={audio.removeFromQueue}
+        clearQueue={audio.clearQueue}
+        moveQueueItem={audio.moveQueueItem}
         onClose={() => setQueueOpen(false)}
       />
     </div>

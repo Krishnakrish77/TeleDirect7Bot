@@ -35,8 +35,9 @@ function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
     qualityLabel: 'MP3',
     appHref: '/app/watch/track-key',
     classicHref: '/watch/track-key',
+    albumHref: '/app/album/album',
     ...overrides,
-  };
+  } as WatchTrack;
 }
 
 beforeEach(() => clearLyricsCache());

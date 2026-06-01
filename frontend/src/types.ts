@@ -69,6 +69,12 @@ export interface HubCard {
   episodeCount?: number;
   seasonCount?: number;
   trackCount?: number;
+  recMeta?: RecommendationMeta | null;
+}
+
+export interface RecommendationMeta {
+  tmdbId: number;
+  kind: 'movie' | 'tv';
 }
 
 export interface HeroItem extends HubCard {
@@ -82,6 +88,8 @@ export interface Shelf {
   href: string | null;
   total: number;
   items: HubCard[];
+  dismissable?: boolean;
+  recMeta?: Array<RecommendationMeta | null>;
 }
 
 export interface HubResponse {
@@ -128,6 +136,7 @@ export interface WatchTrack {
   qualityLabel: string;
   appHref: string;
   classicHref: string;
+  albumHref: string;
 }
 
 export interface PersonLink {
@@ -198,6 +207,7 @@ export interface WatchVideo {
   absoluteStreamHref: string;
   downloadHref: string;
   vlcHref: string;
+  vlcTrackingToken: string;
   knownUnplayable: boolean;
   videoCodec: string;
   pixFmt: string;
@@ -275,6 +285,18 @@ export interface ContinueEntry {
   dur: number;
   t: number;
   title: string;
+}
+
+export type ContinueMap = Record<string, Omit<ContinueEntry, 'key'>>;
+
+export interface RatingCounts {
+  up: number;
+  down: number;
+}
+
+export interface RatingResponse {
+  rating: 'up' | 'down' | null;
+  counts: RatingCounts;
 }
 
 export interface ContinueItem {
