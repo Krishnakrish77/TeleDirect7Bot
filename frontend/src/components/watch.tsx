@@ -4,6 +4,7 @@ import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, Maxim
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
+import { LyricsPanel } from './lyrics';
 
 function isWatchTrack(item: WatchResponse['item']): item is WatchTrack {
   return item.type === 'track' && 'appHref' in item;
@@ -196,6 +197,18 @@ export function WatchPage({
             />
             <span>{formatClock(duration)}</span>
           </div>
+          <LyricsPanel
+            track={track}
+            currentTime={currentTime}
+            seek={(seconds) => {
+              if (!current) {
+                playTrack(track, queue);
+                window.setTimeout(() => seek(seconds), 0);
+                return;
+              }
+              seek(seconds);
+            }}
+          />
           {player.error && current && <p className="player-error">{player.error}</p>}
           <a className="section-link classic-link" href={track.classicHref}>
             <span>Classic player</span>

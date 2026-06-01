@@ -1723,6 +1723,97 @@ img {
   accent-color: var(--brand);
 }
 
+.lyrics-panel {
+  display: grid;
+  gap: 0.75rem;
+  width: min(100%, 44rem);
+  margin-top: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(11, 12, 14, 0.58);
+}
+
+.lyrics-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.lyrics-heading h2 {
+  margin: 0.2rem 0 0;
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.lyrics-heading > span {
+  flex: 0 0 auto;
+  color: var(--dim);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.lyrics-lines {
+  display: grid;
+  gap: 0.1rem;
+  max-height: min(32svh, 20rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+
+.lyrics-lines::-webkit-scrollbar {
+  display: none;
+}
+
+.lyric-line {
+  width: 100%;
+  min-height: 34px;
+  padding: 0.25rem 0;
+  border: 0;
+  background: transparent;
+  color: rgba(148, 163, 184, 0.58);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.94rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.lyric-line.past {
+  color: rgba(100, 116, 139, 0.42);
+}
+
+.lyric-line.active {
+  color: #fff;
+  font-size: 1.06rem;
+  font-weight: 850;
+}
+
+.lyric-line:hover,
+.lyric-line:focus-visible {
+  color: #fdba74;
+  outline: none;
+}
+
+.lyrics-plain,
+.lyrics-empty {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.lyrics-plain {
+  max-height: min(34svh, 20rem);
+  overflow: auto;
+  white-space: pre-line;
+}
+
 .player-error {
   margin: 0.75rem 0 0;
   color: #fecdd3;
@@ -2280,6 +2371,23 @@ img {
 
 .now-controls {
   margin-top: 0;
+}
+
+.now-lyrics {
+  width: 100%;
+  margin-top: 0;
+}
+
+.now-lyrics .lyrics-heading h2 {
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.now-lyrics .lyrics-lines,
+.now-lyrics .lyrics-plain {
+  max-height: min(28svh, 13rem);
 }
 
 .queue-drawer {
@@ -3463,7 +3571,7 @@ img {
   .audio-watch {
     grid-template-columns: minmax(96px, 150px) minmax(0, 1fr);
     align-items: center;
-    padding: 0.75rem;
+    padding: 0.55rem;
   }
 
   .audio-art {
@@ -3482,6 +3590,14 @@ img {
 
   .audio-overview {
     display: none;
+  }
+
+  .audio-watch .watch-controls {
+    margin-top: 0.55rem;
+  }
+
+  .audio-watch .watch-progress {
+    margin-top: 0.45rem;
   }
 
   .now-sheet {
@@ -3511,8 +3627,24 @@ img {
 
   .now-progress,
   .now-controls,
+  .now-lyrics,
   .now-sheet .classic-link {
     grid-column: 2;
+  }
+
+  .lyrics-panel {
+    margin-top: 0.45rem;
+    gap: 0.32rem;
+    padding: 0.5rem;
+  }
+
+  .lyrics-heading h2 {
+    font-size: 0.92rem;
+  }
+
+  .lyrics-lines,
+  .lyrics-plain {
+    max-height: 3rem;
   }
 }
 

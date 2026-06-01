@@ -1,6 +1,7 @@
 import { ChevronRightIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
+import { LyricsPanel } from './lyrics';
 
 export function MiniPlayer({
   player,
@@ -138,6 +139,12 @@ export function NowPlayingSheet({
           <span>Classic player</span>
           <ChevronRightIcon />
         </a>
+        <LyricsPanel
+          className="now-lyrics"
+          track={track}
+          currentTime={player.currentTime}
+          seek={seek}
+        />
       </section>
     </div>
   );
