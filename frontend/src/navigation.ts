@@ -38,10 +38,11 @@ function appBase(): string {
   return window.location.pathname.startsWith('/static/app') ? '/static/app/' : '/app';
 }
 
-function appUrl(params: Partial<HubParams>): string {
+export function appUrl(params: Partial<HubParams>, path = ''): string {
   const qs = hubSearchParams(params);
-  const base = appBase();
-  return qs.toString() ? `${base}?${qs}` : base;
+  const base = appBase().replace(/\/$/, '');
+  const target = `${base}${path}`;
+  return qs.toString() ? `${target}?${qs}` : target;
 }
 
 function sameParams(left: HubParams, right: HubParams): boolean {
@@ -66,6 +67,7 @@ export function classicPathForApp(pathname: string, search: string): string {
   if (watch) return `/watch/${watch[1]}${search}`;
   if (pathname === '/app/watchlist') return `/watchlist${search}`;
   if (pathname === '/app/stats') return `/stats${search}`;
+  if (pathname === '/app/filters') return `/${search}`;
   const detail = pathname.match(/^\/app\/(movie|series|album|artist|person)\/([^/?#]+)/);
   if (detail) return `/${detail[1]}/${detail[2]}${search}`;
   return '/';
@@ -134,12 +136,14 @@ export function useAppNavigation() {
 
 export type AppRoute =
   | { kind: 'hub' }
+  | { kind: 'filters' }
   | { kind: 'watchlist' }
   | { kind: 'stats' }
   | { kind: 'watch'; key: string }
   | { kind: 'detail'; detailKind: 'movie' | 'series' | 'album' | 'artist' | 'person'; key: string };
 
 export function parseRoute(pathname: string): AppRoute {
+  if (pathname === '/app/filters') return { kind: 'filters' };
   if (pathname === '/app/watchlist') return { kind: 'watchlist' };
   if (pathname === '/app/stats') return { kind: 'stats' };
   const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);

@@ -4,7 +4,7 @@ import { classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubPara
 import { useAudioPlayer } from './hooks/audio';
 import { useDetail, useHub, useMe, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
 import { Header, PrimaryNav, SignInModal } from './components/layout';
-import { FilterBar } from './components/filters';
+import { FilterBar, FilterPage } from './components/filters';
 import { HeroStage, ContinueWatching, ShelfRow, GridView } from './components/hub';
 import { DetailPage } from './components/detail';
 import { WatchPage } from './components/watch';
@@ -39,8 +39,9 @@ function App() {
   const { location, navigate, onLinkClick } = useAppNavigation();
   const route = parseRoute(location.pathname);
   const isHubRoute = route.kind === 'hub';
+  const isFilterRoute = route.kind === 'filters';
   const { params, update } = useHubParams(location.key, navigate);
-  const { data, loading, error } = useHub(params, isHubRoute);
+  const { data, loading, error } = useHub(params, isHubRoute || isFilterRoute);
   const detail = useDetail(route, location.search);
   const { me, reload } = useMe();
   const user = me?.user ?? null;
@@ -204,6 +205,15 @@ function App() {
             />
           )}
         </main>
+      ) : isFilterRoute ? (
+        <FilterPage
+          filters={filters}
+          catalogueSize={data?.catalogueSize ?? 0}
+          params={params}
+          query={query}
+          setQuery={setQuery}
+          navigate={navigate}
+        />
       ) : route.kind === 'detail' ? (
         <DetailPage
           route={route}

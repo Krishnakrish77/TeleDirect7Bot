@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { HubFilters, HubParams } from '../types';
-import { FilterBar } from './filters';
+import { FilterBar, FilterPage } from './filters';
 
 const filters: HubFilters = {
   years: [2026, 2025],
@@ -59,7 +59,7 @@ describe('FilterBar', () => {
     expect(update).toHaveBeenCalledWith({ sort: 'title_az', offset: 0 });
   });
 
-  it('uses a compact inline advanced filter group with tags included', () => {
+  it('links advanced filters to the dedicated filter page', () => {
     const update = vi.fn();
 
     render(
@@ -73,19 +73,13 @@ describe('FilterBar', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Filters/i }));
-    const advanced = screen.getByLabelText('Advanced filters');
+    const filtersLink = screen.getByRole('link', { name: /Filters/i });
 
-    expect(screen.getByRole('button', { name: /Filters/i }).getAttribute('aria-expanded')).toBe('true');
-
-    fireEvent.change(within(advanced).getByLabelText('Tag'), { target: { value: 'Tamil' } });
-    expect(update).toHaveBeenCalledWith({ tag: 'Tamil', offset: 0 });
-
-    fireEvent.change(within(advanced).getByLabelText('Year'), { target: { value: '2026' } });
-    expect(update).toHaveBeenCalledWith({ year: 2026, offset: 0 });
+    expect(filtersLink.getAttribute('href')).toContain('/app/filters?quality=1080p&genre=Action');
+    expect(update).not.toHaveBeenCalled();
   });
 
-  it('resets all filters and query from the expanded filter group', () => {
+  it('resets all filters and query from the browse toolbar', () => {
     const update = vi.fn();
     const setQuery = vi.fn();
 
@@ -100,8 +94,7 @@ describe('FilterBar', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Filters/i }));
-    fireEvent.click(within(screen.getByLabelText('Advanced filters')).getByRole('button', { name: 'Reset' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
 
     expect(setQuery).toHaveBeenCalledWith('');
     expect(update).toHaveBeenCalledWith({
@@ -113,6 +106,58 @@ describe('FilterBar', () => {
       sort: 'newest',
       view: '',
       offset: 0,
-    }, true);
+    }, false);
+  });
+});
+
+describe('FilterPage', () => {
+  it('updates filter route params without rendering a modal', () => {
+    const navigate = vi.fn();
+
+    render(
+      <FilterPage
+        filters={filters}
+        catalogueSize={596}
+        params={params({ view: 'movies', quality: '1080p', genre: 'Action' })}
+        query=""
+        setQuery={vi.fn()}
+        navigate={navigate}
+      />,
+    );
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByText('596 titles')).toBeTruthy();
+    expect(screen.getAllByText('1080p').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Action').length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText('Tag'), { target: { value: 'Tamil' } });
+    expect(navigate.mock.calls[0][0]).toContain('/app/filters?tag=Tamil&quality=1080p&genre=Action&view=movies');
+    expect(navigate.mock.calls[0][1]).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Series' }));
+    expect(navigate.mock.calls[1][0]).toContain('/app/filters?quality=1080p&genre=Action&view=series');
+    expect(navigate.mock.calls[1][1]).toBe(true);
+  });
+
+  it('applies filters by linking back to results and can reset on the filter route', () => {
+    const navigate = vi.fn();
+    const setQuery = vi.fn();
+
+    render(
+      <FilterPage
+        filters={filters}
+        catalogueSize={596}
+        params={params({ q: 'theme', tag: 'Tamil', year: 2026 })}
+        query="theme"
+        setQuery={setQuery}
+        navigate={navigate}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'Show results' }).getAttribute('href')).toContain('/app?q=theme&tag=Tamil&year=2026');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(setQuery).toHaveBeenCalledWith('');
+    expect(navigate).toHaveBeenCalledWith('/app/filters', true);
   });
 });

@@ -3,6 +3,7 @@ import { classicPathForApp, localAppHref, parseRoute } from './navigation';
 
 describe('React app navigation', () => {
   it('parses app watchlist and stats routes', () => {
+    expect(parseRoute('/app/filters')).toEqual({ kind: 'filters' });
     expect(parseRoute('/app/watchlist')).toEqual({ kind: 'watchlist' });
     expect(parseRoute('/app/stats')).toEqual({ kind: 'stats' });
   });
@@ -13,6 +14,7 @@ describe('React app navigation', () => {
   });
 
   it('maps app watchlist and stats routes back to classic URLs', () => {
+    expect(classicPathForApp('/app/filters', '?view=movies')).toBe('/?view=movies');
     expect(classicPathForApp('/app/watchlist', '')).toBe('/watchlist');
     expect(classicPathForApp('/app/stats', '')).toBe('/stats');
   });

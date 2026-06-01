@@ -39,17 +39,17 @@ function card(overrides: Partial<HubCard> = {}): HubCard {
 }
 
 describe('MediaCard', () => {
-  it('does not repeat year or quality metadata on video cards', () => {
+  it('shows year and quality once in the video subtitle', () => {
     render(<MediaCard card={card()} saved={false} onToggleSaved={vi.fn()} />);
 
     expect(screen.getByText('Video')).toBeTruthy();
     expect(screen.getByText('Kalki 2898-AD')).toBeTruthy();
-    expect(screen.getByText('2h 55m')).toBeTruthy();
-    expect(screen.queryByText(/2024/)).toBeNull();
-    expect(screen.queryByText(/720p/)).toBeNull();
+    expect(screen.getByText('2024 - 2h 55m - 720p')).toBeTruthy();
+    expect(screen.getAllByText(/2024/)).toHaveLength(1);
+    expect(screen.getAllByText(/720p/)).toHaveLength(1);
   });
 
-  it('shows album artist without repeating track count', () => {
+  it('shows album artist and track count once in the subtitle', () => {
     const album = card({
       type: 'album',
       itemId: 'album:navarasa',
@@ -67,8 +67,8 @@ describe('MediaCard', () => {
 
     expect(screen.getByText('Album')).toBeTruthy();
     expect(screen.getByText('Navarasa')).toBeTruthy();
-    expect(screen.getByText('Karthik')).toBeTruthy();
-    expect(screen.queryByText(/3 tracks/)).toBeNull();
+    expect(screen.getByText('Karthik - 3 tracks')).toBeTruthy();
+    expect(screen.getAllByText(/3 tracks/)).toHaveLength(1);
     expect(screen.queryByText(/2021/)).toBeNull();
   });
 

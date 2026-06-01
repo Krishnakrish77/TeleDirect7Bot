@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import { FilterIcon } from '../icons';
+import { appUrl } from '../navigation';
 import type { FilterOption, HubFilters, HubParams, ViewValue } from '../types';
 
 type FilterControl = {
@@ -27,22 +27,7 @@ function SelectControl({ control, className = '' }: { control: FilterControl; cl
   );
 }
 
-export function FilterBar({
-  filters,
-  catalogueSize,
-  params,
-  query,
-  setQuery,
-  update,
-}: {
-  filters: HubFilters;
-  catalogueSize: number;
-  params: HubParams;
-  query: string;
-  setQuery: (next: string) => void;
-  update: (patch: Partial<HubParams>, replace?: boolean) => void;
-}) {
-  const [filtersOpen, setFiltersOpen] = useState(false);
+function filterOptions(filters: HubFilters, params: HubParams, update: (patch: Partial<HubParams>, replace?: boolean) => void) {
   const viewOptions = filters.views.length ? filters.views : [
     { value: '', label: 'All' },
     { value: 'movies', label: 'Movies' },
@@ -103,13 +88,70 @@ export function FilterBar({
     options: sortOptions,
     onChange: (value) => update({ sort: value, offset: 0 }),
   };
-  const activeLabels = [
+
+  return { viewOptions, yearOptions, qualityOptions, genreOptions, tagOptions, metadataControls, sortControl };
+}
+
+function activeFilterLabels({
+  filters,
+  params,
+  query,
+}: {
+  filters: HubFilters;
+  params: HubParams;
+  query: string;
+}) {
+  const qualityOptions = [
+    { value: '', label: 'Any quality' },
+    ...filters.qualities.map((quality) => ({ value: quality, label: quality })),
+  ];
+  const genreOptions = [
+    { value: '', label: 'Any genre' },
+    ...filters.genres.map((genre) => ({ value: genre, label: genre })),
+  ];
+  const tagOptions = [
+    { value: '', label: 'Any tag' },
+    ...filters.tags.map((tag) => ({ value: tag.name, label: tag.name })),
+  ];
+  return [
     query ? `Search: ${query}` : '',
     params.year ? String(params.year) : '',
     params.quality ? optionLabel(qualityOptions, params.quality) : '',
     params.genre ? optionLabel(genreOptions, params.genre) : '',
     params.tag ? optionLabel(tagOptions, params.tag) : '',
   ].filter(Boolean);
+}
+
+function clearParams(): Partial<HubParams> {
+  return {
+    q: '',
+    tag: '',
+    quality: '',
+    genre: '',
+    year: null,
+    sort: 'newest',
+    view: '',
+    offset: 0,
+  };
+}
+
+export function FilterBar({
+  filters,
+  catalogueSize,
+  params,
+  query,
+  setQuery,
+  update,
+}: {
+  filters: HubFilters;
+  catalogueSize: number;
+  params: HubParams;
+  query: string;
+  setQuery: (next: string) => void;
+  update: (patch: Partial<HubParams>, replace?: boolean) => void;
+}) {
+  const { viewOptions, metadataControls, sortControl } = filterOptions(filters, params, update);
+  const activeLabels = activeFilterLabels({ filters, params, query });
   const activeFilterCount = activeLabels.length;
   const hasFilters = activeFilterCount > 0 || params.sort !== 'newest' || Boolean(params.view);
   const summary = activeFilterCount
@@ -117,16 +159,7 @@ export function FilterBar({
     : 'Any year, quality, genre';
   const clearAll = (replace = false) => {
     setQuery('');
-    update({
-      q: '',
-      tag: '',
-      quality: '',
-      genre: '',
-      year: null,
-      sort: 'newest',
-      view: '',
-      offset: 0,
-    }, replace);
+    update(clearParams(), replace);
   };
 
   return (
@@ -158,35 +191,99 @@ export function FilterBar({
       </div>
 
       <div className="filter-action-row">
-        <button
-          type="button"
-          className="filter-drawer-button"
-          onClick={() => setFiltersOpen((open) => !open)}
-          aria-expanded={filtersOpen}
-          aria-controls="advanced-filters"
-        >
+        <a className="filter-drawer-button" href={appUrl({ ...params, offset: 0 }, '/filters')}>
           <span>Filters</span>
           <strong>{summary}</strong>
           <small>{activeFilterCount ? `${activeFilterCount} active` : 'Optional'}</small>
-        </button>
+        </a>
         <SelectControl control={sortControl} className="filter-sort-control" />
       </div>
 
       <div
         id="advanced-filters"
-        className={filtersOpen ? 'filter-inline-controls expanded' : 'filter-inline-controls'}
+        className="filter-inline-controls"
         aria-label="Advanced filters"
       >
         {metadataControls.map((control) => (
           <SelectControl key={control.id} control={control} />
         ))}
-        {filtersOpen && (
-          <div className="filter-inline-actions">
-            <button className="filter-clear-button" type="button" onClick={() => clearAll(true)} disabled={!hasFilters}>Reset</button>
-            <button className="primary-action" type="button" onClick={() => setFiltersOpen(false)}>Done</button>
-          </div>
-        )}
       </div>
     </section>
+  );
+}
+
+export function FilterPage({
+  filters,
+  catalogueSize,
+  params,
+  query,
+  setQuery,
+  navigate,
+}: {
+  filters: HubFilters;
+  catalogueSize: number;
+  params: HubParams;
+  query: string;
+  setQuery: (next: string) => void;
+  navigate: (href: string, replace?: boolean) => void;
+}) {
+  const updateFilterRoute = (patch: Partial<HubParams>, replace = true) => {
+    const next = { ...params, ...patch, offset: 0 };
+    navigate(appUrl(next, '/filters'), replace);
+  };
+  const { viewOptions, metadataControls, sortControl } = filterOptions(filters, params, updateFilterRoute);
+  const activeLabels = activeFilterLabels({ filters, params, query });
+  const hasFilters = activeLabels.length > 0 || params.sort !== 'newest' || Boolean(params.view);
+  const clearAll = () => {
+    setQuery('');
+    navigate(appUrl(clearParams(), '/filters'), true);
+  };
+
+  return (
+    <main className="page-main filter-page">
+      <div className="page-title filter-page-title">
+        <div>
+          <p className="eyebrow">Browse</p>
+          <h1>Filters</h1>
+        </div>
+        <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
+      </div>
+
+      <section className="filter-page-panel" aria-label="Content type">
+        <div className="filter-view-row">
+          {viewOptions.map((option) => (
+            <button
+              key={option.value || 'all'}
+              type="button"
+              className={params.view === option.value ? 'filter-view-chip active' : 'filter-view-chip'}
+              aria-pressed={params.view === option.value}
+              onClick={() => updateFilterRoute({ view: option.value as ViewValue, offset: 0 }, true)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="filter-page-selects">
+          <SelectControl control={sortControl} />
+          {metadataControls.map((control) => (
+            <SelectControl key={control.id} control={control} />
+          ))}
+        </div>
+
+        {activeLabels.length > 0 && (
+          <div className="applied-filter-row" aria-label="Applied filters">
+            {activeLabels.map((label) => (
+              <span key={label}>{label}</span>
+            ))}
+          </div>
+        )}
+
+        <div className="filter-page-actions">
+          <button className="filter-clear-button" type="button" onClick={clearAll} disabled={!hasFilters}>Reset</button>
+          <a className="primary-action" href={appUrl({ ...params, offset: 0 })}>Show results</a>
+        </div>
+      </section>
+    </main>
   );
 }

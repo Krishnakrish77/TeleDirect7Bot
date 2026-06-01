@@ -11,30 +11,69 @@ interface MediaCardProps {
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
 }
 
+function joinMetadata(parts: Array<string | number | null | undefined>) {
+  const seen = new Set<string>();
+  return parts
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .filter((part) => {
+      const key = part.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(' - ');
+}
+
+function countLabel(count: number | undefined, singular: string) {
+  if (!count) return '';
+  return `${count} ${singular}${count === 1 ? '' : 's'}`;
+}
+
 export function getMediaCardDisplay(card: HubCard): { eyebrow: string; title: string; subtitle: string } {
   const title = card.title;
   if (card.type === 'album') {
-    return { eyebrow: 'Album', title, subtitle: card.artist || '' };
+    return {
+      eyebrow: 'Album',
+      title,
+      subtitle: joinMetadata([
+        card.artist,
+        countLabel(card.trackCount, 'track'),
+      ]) || card.subtitle,
+    };
   }
   if (card.type === 'track') {
-    return { eyebrow: 'Song', title, subtitle: card.artist || card.albumTitle || '' };
+    return {
+      eyebrow: 'Song',
+      title,
+      subtitle: joinMetadata([card.artist, card.albumTitle]),
+    };
   }
   if (card.type === 'series') {
-    const subtitle = card.episodeCount
-      ? `${card.episodeCount} episode${card.episodeCount === 1 ? '' : 's'}`
-      : card.subtitle;
+    const subtitle = joinMetadata([
+      card.year,
+      countLabel(card.episodeCount, 'episode') || card.subtitle,
+      countLabel(card.seasonCount, 'season'),
+    ]);
     return { eyebrow: 'Series', title, subtitle };
   }
   if (card.type === 'movie') {
-    const subtitle = card.variantCount && card.variantCount > 1
-      ? `${card.variantCount} version${card.variantCount === 1 ? '' : 's'}`
-      : card.durationLabel || '';
+    const subtitle = joinMetadata([
+      card.year,
+      countLabel(card.variantCount, 'version') || card.subtitle,
+      card.durationLabel,
+      card.variantCount && card.variantCount > 1 ? '' : card.quality,
+    ]);
     return { eyebrow: 'Movie', title, subtitle };
   }
   if (card.mediaKind === 'audio') {
-    return { eyebrow: 'Song', title, subtitle: card.artist || card.albumTitle || '' };
+    return { eyebrow: 'Song', title, subtitle: joinMetadata([card.artist, card.albumTitle]) };
   }
-  return { eyebrow: 'Video', title, subtitle: card.durationLabel || card.genres[0] || '' };
+  return {
+    eyebrow: 'Video',
+    title,
+    subtitle: card.subtitle || joinMetadata([card.year, card.durationLabel, card.quality, card.genres[0]]),
+  };
 }
 
 function MediaCardBase({
