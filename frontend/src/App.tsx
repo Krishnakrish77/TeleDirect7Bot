@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { dismissRecommendation, signOut } from './api';
 import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
-import { useDetail, useHub, useMe, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
+import { useAdmin, useDetail, useHub, useMe, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
 import { Header, PrimaryNav, SignInModal } from './components/layout';
 import { FilterBar, FilterPage } from './components/filters';
 import { HeroStage, ContinueWatching, ShelfRow, GridView } from './components/hub';
@@ -10,6 +10,7 @@ import { DetailPage } from './components/detail';
 import { WatchPage } from './components/watch';
 import { WatchlistPage } from './components/watchlistPage';
 import { StatsPage } from './components/statsPage';
+import { AdminPage } from './components/adminPage';
 import { MiniPlayer, NowPlayingSheet } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
 import { QueueDrawer } from './components/queueDrawer';
@@ -48,6 +49,7 @@ function App() {
   const { saved, toggle, remove: removeSaved } = useWatchlist(user);
   const watchlistPage = useWatchlistItems(user, route.kind === 'watchlist');
   const statsPage = useStats(user, route.kind === 'stats');
+  const adminPage = useAdmin(user, route.kind === 'admin', location.search);
   const audio = useAudioPlayer();
   const [signInOpen, setSignInOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -254,6 +256,18 @@ function App() {
           loading={statsPage.loading}
           error={statsPage.error}
           onSignIn={() => setSignInOpen(true)}
+        />
+      ) : route.kind === 'admin' ? (
+        <AdminPage
+          user={user}
+          data={adminPage.data}
+          loading={adminPage.loading}
+          error={adminPage.error}
+          locationSearch={location.search}
+          navigate={navigate}
+          onSignIn={() => setSignInOpen(true)}
+          reload={adminPage.reload}
+          updateData={adminPage.updateData}
         />
       ) : (
         <WatchPage

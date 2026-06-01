@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { addWatchlist, fetchAppWatchlist, fetchDetail, fetchHub, fetchMe, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
+import { addWatchlist, fetchAdmin, fetchAppWatchlist, fetchDetail, fetchHub, fetchMe, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
 import type { AppRoute } from '../navigation';
-import type { DetailResponse, HubParams, HubResponse, MeResponse, StatsResponse, Suggestion, User, WatchlistPageResponse } from '../types';
+import type { AdminResponse, DetailResponse, HubParams, HubResponse, MeResponse, StatsResponse, Suggestion, User, WatchlistPageResponse } from '../types';
 
 function pageFamilyKey(params: HubParams): string {
   return hubParamsKey({ ...params, offset: 0 });
@@ -210,6 +210,42 @@ export function useStats(user: User | null | undefined, enabled = true) {
   }, [enabled, user]);
 
   return { data, loading, error };
+}
+
+export function useAdmin(user: User | null | undefined, enabled = true, search = '') {
+  const [data, setData] = useState<AdminResponse | null>(null);
+  const [loading, setLoading] = useState(Boolean(user?.is_admin && enabled));
+  const [error, setError] = useState('');
+
+  const reload = useCallback(() => {
+    if (!enabled || !user?.is_admin) {
+      setData(null);
+      setLoading(false);
+      setError('');
+      return undefined;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    fetchAdmin(search, controller.signal)
+      .then(setData)
+      .catch((err: Error) => {
+        if (controller.signal.aborted) return;
+        setError(err.message || 'Unable to load admin data');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [enabled, search, user?.is_admin]);
+
+  useEffect(() => reload(), [reload]);
+
+  const updateData = useCallback((updater: (current: AdminResponse | null) => AdminResponse | null) => {
+    setData(updater);
+  }, []);
+
+  return { data, loading, error, reload, updateData };
 }
 
 export function useSuggestions(q: string) {

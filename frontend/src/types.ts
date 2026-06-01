@@ -386,6 +386,129 @@ export interface StatsResponse {
   longest_streak: number;
 }
 
+export interface AdminFilterOption {
+  value: string;
+  label: string;
+}
+
+export interface AdminItem {
+  messageId: number;
+  secureHash: string;
+  watchKey: string;
+  title: string;
+  year: number | null;
+  quality: string;
+  tags: string[];
+  fileName: string;
+  fileSize: number;
+  fileSizeLabel: string;
+  duration: number;
+  description: string;
+  hidden: boolean;
+  duplicate: boolean;
+  hasThumb: boolean;
+  missingThumb: boolean;
+  missingPoster: boolean;
+  mediaKind: string;
+  seriesTitle: string;
+  seriesKey: string;
+  season: number | null;
+  episode: number | null;
+  episodeEnd: number | null;
+  tmdbId: number | null;
+  tmdbKind: 'movie' | 'tv';
+  imdbId: string;
+  artist: string;
+  albumTitle: string;
+  trackNumber: number | null;
+  adminLocked: string[];
+  posterUrl: string;
+  watchHref: string;
+  classicHref: string;
+}
+
+export interface AdminProgressState {
+  running?: boolean;
+  done?: number;
+  scanned?: number;
+  total?: number;
+  indexed?: number;
+  enriched?: number;
+  failed?: number;
+  found_incompatible?: number;
+  filled?: number;
+  phase?: string;
+  error?: string;
+  last_title?: string;
+}
+
+export interface AdminStatusResponse {
+  seed: AdminProgressState;
+  enrich: AdminProgressState;
+  reindex: AdminProgressState;
+  probe: AdminProgressState;
+  episode_fill: AdminProgressState;
+  migrate: AdminProgressState;
+  catalogue_size: number;
+}
+
+export interface AdminStats {
+  total: number;
+  total_size_bytes: number;
+  kinds: {
+    series_episodes: number;
+    movies: number;
+    movie_variant_groups: number;
+    movie_variant_extras: number;
+    standalone: number;
+  };
+  quality_buckets: Array<[string, number]>;
+  enrichment: {
+    enriched: number;
+    attempted_no_match: number;
+    never_attempted: number;
+  };
+  codec_health: {
+    probed_playable: number;
+    probed_unplayable: number;
+    never_probed: number;
+  };
+  top_genres: Array<[string, number]>;
+  missing_poster: number;
+  missing_thumb: number;
+  duplicate_groups: number;
+  duplicate_extras: number;
+  audio_count: number;
+  album_count: number;
+}
+
+export interface AdminResponse {
+  items: AdminItem[];
+  catalogueSize: number;
+  filteredCount: number;
+  page: number;
+  totalPages: number;
+  pageSize: number;
+  filterName: string;
+  searchQ: string;
+  sortCol: string;
+  sortDir: 'asc' | 'desc';
+  stats: AdminStats;
+  knownSeries: string[];
+  filters: AdminFilterOption[];
+  sortOptions: AdminFilterOption[];
+  capabilities: {
+    gemini: boolean;
+  };
+  status: AdminStatusResponse;
+}
+
+export interface AdminActionResponse {
+  ok: boolean;
+  message: string;
+  status?: AdminStatusResponse;
+}
+
 export interface TelegramAuthUser {
   id: number;
   first_name?: string;

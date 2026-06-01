@@ -85,6 +85,260 @@ def _html(body: str, *, status: int = 200) -> web.Response:
     )
 
 
+_ADMIN_PAGE_SIZE = 100
+_ADMIN_FILTERS = [
+    ("all", "All"),
+    ("unenriched", "Unenriched"),
+    ("enriched", "Enriched"),
+    ("series", "Series"),
+    ("movies", "Movies"),
+    ("music", "Music"),
+    ("no-poster", "No poster"),
+    ("no-thumb", "No thumb"),
+    ("duplicates", "Duplicates"),
+    ("hidden", "Hidden"),
+]
+_ADMIN_SORT_COLUMNS = {"date", "title", "size", "quality"}
+_ADMIN_QUALITY_ORDER = {"4K": 4, "2160p": 4, "1080p": 3, "720p": 2, "480p": 1, "": 0}
+
+
+def _admin_catalogue_context(request: web.Request) -> dict:
+    try:
+        page = max(1, int(request.query.get("page", "1") or "1"))
+    except ValueError:
+        page = 1
+    filter_name = (request.query.get("filter") or "all").strip()
+    if filter_name not in {key for key, _ in _ADMIN_FILTERS}:
+        filter_name = "all"
+    q = (request.query.get("q") or "").strip().lower()
+    sort_col = (request.query.get("sort") or "date").strip()
+    sort_dir = (request.query.get("dir") or "desc").strip()
+    if sort_col not in _ADMIN_SORT_COLUMNS:
+        sort_col = "date"
+    if sort_dir not in {"asc", "desc"}:
+        sort_dir = "desc"
+
+    def _sort_key(it):
+        if sort_col == "title":
+            return (it.title or "").lower()
+        if sort_col == "size":
+            return it.file_size or 0
+        if sort_col == "quality":
+            return _ADMIN_QUALITY_ORDER.get(it.quality or "", 0)
+        return it.message_id
+
+    items_all = sorted(
+        media_index._items.values(),
+        key=_sort_key,
+        reverse=(sort_dir == "desc"),
+    )
+    catalogue_size = sum(1 for it in items_all if not it.hidden)
+
+    by_key: dict = {}
+    for it in items_all:
+        if it.secure_hash and it.file_size:
+            by_key.setdefault((it.secure_hash, it.file_size), []).append(it)
+    duplicate_message_ids: set = {
+        m.message_id
+        for members in by_key.values() if len(members) > 1
+        for m in members
+    }
+
+    def _passes_filter(it) -> bool:
+        if filter_name == "unenriched" and it.tmdb_id:
+            return False
+        if filter_name == "enriched" and not it.tmdb_id:
+            return False
+        if filter_name == "series" and not it.series_key:
+            return False
+        if filter_name == "movies" and it.series_key:
+            return False
+        if filter_name == "no-poster" and (it.poster_path or not it.tmdb_id):
+            return False
+        if filter_name == "duplicates" and it.message_id not in duplicate_message_ids:
+            return False
+        if filter_name == "no-thumb" and (it.has_thumb or it.duration):
+            return False
+        if filter_name == "music" and getattr(it, "media_kind", "") != "audio":
+            return False
+        if filter_name == "hidden" and not it.hidden:
+            return False
+        if filter_name != "hidden" and it.hidden:
+            return False
+        return True
+
+    filtered = [it for it in items_all if _passes_filter(it)]
+
+    if q:
+        def _matches(it) -> bool:
+            blob = " ".join((
+                it.title or "",
+                it.series_title or "",
+                it.file_name or "",
+                " ".join(it.tags or []),
+                it.imdb_id or "",
+                getattr(it, "artist", "") or "",
+                getattr(it, "album_title", "") or "",
+                f"bin:{it.message_id}",
+            )).lower()
+            return q in blob
+        filtered = [it for it in filtered if _matches(it)]
+
+    if filter_name == "duplicates":
+        filtered.sort(
+            key=lambda it: (_sort_key(it), it.secure_hash or "", it.message_id),
+            reverse=(sort_dir == "desc"),
+        )
+
+    filtered_count = len(filtered)
+    total_pages = max(1, (filtered_count + _ADMIN_PAGE_SIZE - 1) // _ADMIN_PAGE_SIZE)
+    page = min(page, total_pages)
+    start = (page - 1) * _ADMIN_PAGE_SIZE
+    items_page = filtered[start : start + _ADMIN_PAGE_SIZE]
+
+    raw = request.cookies.get(_FLASH_COOKIE) or ""
+    flash = ""
+    if raw:
+        from urllib.parse import unquote as _u
+        try:
+            flash = _u(raw)
+        except Exception:
+            flash = ""
+
+    _series_counts: dict = {}
+    for _it in media_index._items.values():
+        if _it.series_title:
+            _series_counts[_it.series_title] = _series_counts.get(_it.series_title, 0) + 1
+    known_series = [s for s, _ in sorted(
+        _series_counts.items(), key=lambda kv: (-kv[1], kv[0]),
+    )]
+
+    return {
+        "items": items_page,
+        "catalogue_size": catalogue_size,
+        "filtered_count": filtered_count,
+        "page": page,
+        "total_pages": total_pages,
+        "page_size": _ADMIN_PAGE_SIZE,
+        "filter_name": filter_name,
+        "search_q": request.query.get("q") or "",
+        "sort_col": sort_col,
+        "sort_dir": sort_dir,
+        "stats": media_index.stats(),
+        "duplicate_message_ids": duplicate_message_ids,
+        "known_series": known_series,
+        "flash": flash,
+        "raw_flash": raw,
+    }
+
+
+def _admin_thumb_url(item) -> str:
+    if not item.secure_hash:
+        return ""
+    suffix = "?v=audio2" if getattr(item, "media_kind", "") == "audio" else ""
+    return f"/thumb/{item.secure_hash}{item.message_id}.jpg{suffix}"
+
+
+def _admin_item_payload(item, duplicate_message_ids: set) -> dict:
+    watch_key = f"{item.secure_hash}{item.message_id}" if item.secure_hash else str(item.message_id)
+    return {
+        "messageId": item.message_id,
+        "secureHash": item.secure_hash or "",
+        "watchKey": watch_key,
+        "title": item.title or "",
+        "year": item.year,
+        "quality": item.quality or "",
+        "tags": list(item.tags or []),
+        "fileName": item.file_name or "",
+        "fileSize": item.file_size or 0,
+        "fileSizeLabel": humanbytes(item.file_size) if item.file_size else "",
+        "duration": item.duration or 0,
+        "description": item.description or "",
+        "hidden": bool(item.hidden),
+        "duplicate": item.message_id in duplicate_message_ids,
+        "hasThumb": bool(item.has_thumb),
+        "missingThumb": not item.has_thumb and not item.duration,
+        "missingPoster": bool(item.tmdb_id and not item.poster_path),
+        "mediaKind": getattr(item, "media_kind", "") or "",
+        "seriesTitle": item.series_title or "",
+        "seriesKey": item.series_key or "",
+        "season": item.season,
+        "episode": item.episode,
+        "episodeEnd": item.episode_end,
+        "tmdbId": item.tmdb_id,
+        "tmdbKind": item.tmdb_kind or ("tv" if item.series_key else "movie"),
+        "imdbId": item.imdb_id or "",
+        "artist": getattr(item, "artist", "") or "",
+        "albumTitle": getattr(item, "album_title", "") or "",
+        "trackNumber": getattr(item, "track_number", None),
+        "adminLocked": list(item.admin_locked or []),
+        "posterUrl": _admin_thumb_url(item),
+        "watchHref": f"/app/watch/{watch_key}",
+        "classicHref": f"/watch/{watch_key}",
+    }
+
+
+def _admin_context_payload(ctx: dict) -> dict:
+    return {
+        "items": [
+            _admin_item_payload(item, ctx["duplicate_message_ids"])
+            for item in ctx["items"]
+        ],
+        "catalogueSize": ctx["catalogue_size"],
+        "filteredCount": ctx["filtered_count"],
+        "page": ctx["page"],
+        "totalPages": ctx["total_pages"],
+        "pageSize": ctx["page_size"],
+        "filterName": ctx["filter_name"],
+        "searchQ": ctx["search_q"],
+        "sortCol": ctx["sort_col"],
+        "sortDir": ctx["sort_dir"],
+        "stats": ctx["stats"],
+        "knownSeries": ctx["known_series"],
+        "filters": [{"value": key, "label": label} for key, label in _ADMIN_FILTERS],
+        "sortOptions": [
+            {"value": "date", "label": "Newest"},
+            {"value": "title", "label": "Title"},
+            {"value": "size", "label": "Size"},
+            {"value": "quality", "label": "Quality"},
+        ],
+        "capabilities": {
+            "gemini": bool(Var.GEMINI_API_KEY),
+        },
+    }
+
+
+def _admin_status_payload() -> dict:
+    from main.utils import codec_probe
+    return {
+        "seed": media_index.seed_state(),
+        "enrich": media_index.enrichment_state(),
+        "reindex": media_index.reindex_state(),
+        "probe": codec_probe.state(),
+        "episode_fill": media_index.episode_fill_state(),
+        "migrate": media_index.migrate_state(),
+        "catalogue_size": media_index.size(),
+    }
+
+
+def _require_api_admin(request: web.Request) -> dict:
+    user = _get_admin_user(request)
+    if user is None:
+        raise web.HTTPForbidden(
+            text=json.dumps({"error": "Admin access required"}),
+            content_type="application/json",
+            headers={"Cache-Control": "no-store"},
+        )
+    return user
+
+
+def _prefers_react_admin(request: web.Request) -> bool:
+    return (
+        request.cookies.get("td_ui") == "react"
+        and request.headers.get("HX-Request", "").lower() != "true"
+    )
+
+
 @routes.get("/admin/login")
 async def admin_login_get(request: web.Request) -> web.Response:
     """Redirect legacy /admin/login URLs to /admin."""
@@ -136,6 +390,12 @@ def _pop_flash(request: web.Request, resp: web.Response) -> str:
 
 @routes.get("/admin")
 async def admin_home(request: web.Request) -> web.Response:
+    if _prefers_react_admin(request):
+        target = "/app/admin"
+        if request.query_string:
+            target = f"{target}?{request.query_string}"
+        raise web.HTTPFound(target)
+
     user = _get_admin_user(request)
     if user is None:
         # Not authenticated or not admin — show Telegram login page
@@ -192,160 +452,44 @@ async def admin_home(request: web.Request) -> web.Response:
         )
     _require_session(request)
 
-    # ── Query params: filter, search, pagination, sort ───────────────
-    try:
-        page = max(1, int(request.query.get("page", "1") or "1"))
-    except ValueError:
-        page = 1
-    filter_name = (request.query.get("filter") or "all").strip()
-    q = (request.query.get("q") or "").strip().lower()
-    sort_col = (request.query.get("sort") or "date").strip()
-    sort_dir = (request.query.get("dir") or "desc").strip()
-    if sort_col not in {"date", "title", "size", "quality"}:
-        sort_col = "date"
-    if sort_dir not in {"asc", "desc"}:
-        sort_dir = "desc"
-    PAGE_SIZE = 100
-
-    _QUALITY_ORDER = {"4K": 4, "2160p": 4, "1080p": 3, "720p": 2, "480p": 1, "": 0}
-
-    def _sort_key(it):
-        if sort_col == "title":
-            return (it.title or "").lower()
-        if sort_col == "size":
-            return it.file_size or 0
-        if sort_col == "quality":
-            return _QUALITY_ORDER.get(it.quality or "", 0)
-        return it.message_id  # date (default)
-
-    items_all = sorted(
-        media_index._items.values(),
-        key=_sort_key,
-        reverse=(sort_dir == "desc"),
-    )
-    # Exclude hidden items from the count shown in the UI (they're not
-    # visible in the default view, so the count should match what's shown).
-    catalogue_size = sum(1 for it in items_all if not it.hidden)
-
-    # ── Duplicate detection — must run over the full catalogue, not the
-    # paged slice, so the "duplicates" filter still finds groups whose
-    # members span pages.
-    by_key: dict = {}
-    for it in items_all:
-        if it.secure_hash and it.file_size:
-            by_key.setdefault((it.secure_hash, it.file_size), []).append(it)
-    # Single-pass set comprehension — avoids a second O(n) loop over by_key
-    duplicate_message_ids: set = {
-        m.message_id
-        for members in by_key.values() if len(members) > 1
-        for m in members
-    }
-
-    # ── Server-side filter — mirrors the (now-removed) JS rowVisible() ──
-    def _passes_filter(it) -> bool:
-        if filter_name == "unenriched" and it.tmdb_id:
-            return False
-        if filter_name == "enriched" and not it.tmdb_id:
-            return False
-        if filter_name == "series" and not it.series_key:
-            return False
-        if filter_name == "movies" and it.series_key:
-            return False
-        # No-poster = enriched item with no poster_path (matches the
-        # admin chip definition: unenriched items naturally lack posters).
-        if filter_name == "no-poster" and (it.poster_path or not it.tmdb_id):
-            return False
-        if filter_name == "duplicates" and it.message_id not in duplicate_message_ids:
-            return False
-        # No-thumb = uploaded as document (no native thumb + no duration).
-        if filter_name == "no-thumb" and (it.has_thumb or it.duration):
-            return False
-        if filter_name == "music" and getattr(it, "media_kind", "") != "audio":
-            return False
-        if filter_name == "hidden" and not it.hidden:
-            return False
-        # By default, hide hidden items from all other views
-        if filter_name != "hidden" and it.hidden:
-            return False
-        return True
-
-    filtered = [it for it in items_all if _passes_filter(it)]
-
-    # ── Server-side search — case-insensitive substring across the same
-    # field blob the JS code used (title, series_title, file_name, tags,
-    # imdb_id, bin:msg_id).
-    if q:
-        def _matches(it) -> bool:
-            blob = " ".join((
-                it.title or "",
-                it.series_title or "",
-                it.file_name or "",
-                " ".join(it.tags or []),
-                it.imdb_id or "",
-                getattr(it, "artist", "") or "",
-                getattr(it, "album_title", "") or "",
-                f"bin:{it.message_id}",
-            )).lower()
-            return q in blob
-        filtered = [it for it in filtered if _matches(it)]
-
-    # Duplicates view: primary key is the user's chosen column, tiebreaker
-    # is (secure_hash, message_id) so duplicate pairs are always adjacent.
-    # Previously this re-sort unconditionally overwrote the column sort.
-    if filter_name == "duplicates":
-        filtered.sort(
-            key=lambda it: (_sort_key(it), it.secure_hash or "", it.message_id),
-            reverse=(sort_dir == "desc"),
-        )
-
-    # ── Pagination ────────────────────────────────────────────────────
-    filtered_count = len(filtered)
-    total_pages = max(1, (filtered_count + PAGE_SIZE - 1) // PAGE_SIZE)
-    page = min(page, total_pages)
-    start = (page - 1) * PAGE_SIZE
-    items_page = filtered[start : start + PAGE_SIZE]
-
-    # Flash cookie (unchanged).
-    raw = request.cookies.get(_FLASH_COOKIE) or ""
-    flash = ""
-    if raw:
-        from urllib.parse import unquote as _u
-        try:
-            flash = _u(raw)
-        except Exception:
-            flash = ""
-
-    # Distinct series titles for the bulk 'Set series' datalist autocomplete.
-    _series_counts: dict = {}
-    for _it in media_index._items.values():
-        if _it.series_title:
-            _series_counts[_it.series_title] = _series_counts.get(_it.series_title, 0) + 1
-    known_series = [s for s, _ in sorted(
-        _series_counts.items(), key=lambda kv: (-kv[1], kv[0]),
-    )]
-
+    ctx = _admin_catalogue_context(request)
     tpl = _env.get_template("admin.html")
     body = await tpl.render_async(
-        items=items_page,
-        catalogue_size=catalogue_size,
-        filtered_count=filtered_count,
-        page=page,
-        total_pages=total_pages,
-        page_size=PAGE_SIZE,
-        filter_name=filter_name,
-        search_q=request.query.get("q") or "",
-        sort_col=sort_col,
-        sort_dir=sort_dir,
-        stats=media_index.stats(),
-        duplicate_message_ids=duplicate_message_ids,
-        known_series=known_series,
-        flash=flash,
+        items=ctx["items"],
+        catalogue_size=ctx["catalogue_size"],
+        filtered_count=ctx["filtered_count"],
+        page=ctx["page"],
+        total_pages=ctx["total_pages"],
+        page_size=ctx["page_size"],
+        filter_name=ctx["filter_name"],
+        search_q=ctx["search_q"],
+        sort_col=ctx["sort_col"],
+        sort_dir=ctx["sort_dir"],
+        stats=ctx["stats"],
+        duplicate_message_ids=ctx["duplicate_message_ids"],
+        known_series=ctx["known_series"],
+        flash=ctx["flash"],
         var=Var,
     )
     resp = _html(body)
-    if raw:
+    if ctx["raw_flash"]:
         resp.del_cookie(_FLASH_COOKIE, path="/admin")
     return resp
+
+
+@routes.get("/api/app/admin")
+async def api_app_admin(request: web.Request) -> web.Response:
+    _require_api_admin(request)
+    ctx = _admin_catalogue_context(request)
+    payload = _admin_context_payload(ctx)
+    payload["status"] = _admin_status_payload()
+    return web.json_response(payload, headers={"Cache-Control": "no-store"})
+
+
+@routes.get("/api/app/admin/status")
+async def api_app_admin_status(request: web.Request) -> web.Response:
+    _require_api_admin(request)
+    return web.json_response(_admin_status_payload(), headers={"Cache-Control": "no-store"})
 
 
 @routes.get("/admin/dashboard")
@@ -381,20 +525,7 @@ async def admin_clear_audio_tmdb(request: web.Request) -> web.Response:
 async def admin_clear_audio_thumbs(request: web.Request) -> web.Response:
     """Bust the L1+L2 thumbnail cache for every audio item."""
     _require_session(request)
-    from main.utils import thumb_cache
-    audio_ids = [
-        it.message_id
-        for it in media_index._items.values()
-        if getattr(it, "media_kind", "") == "audio"
-    ]
-    cleared = 0
-    for mid in audio_ids:
-        try:
-            await thumb_cache.clear(mid)
-            cleared += 1
-        except Exception:
-            pass
-    msg = f"Cleared thumbnail cache for {cleared} audio item(s)"
+    msg = await _admin_clear_thumb_cache(audio_only=True)
     if _is_htmx(request):
         return web.Response(text=msg, status=200)
     raise _redirect_with_flash(msg)
@@ -404,16 +535,7 @@ async def admin_clear_audio_thumbs(request: web.Request) -> web.Response:
 async def admin_clear_all_thumbs(request: web.Request) -> web.Response:
     """Bust the L1+L2 thumbnail cache for every item in the catalogue."""
     _require_session(request)
-    from main.utils import thumb_cache
-    all_ids = [it.message_id for it in media_index._items.values()]
-    cleared = 0
-    for mid in all_ids:
-        try:
-            await thumb_cache.clear(mid)
-            cleared += 1
-        except Exception:
-            pass
-    msg = f"Cleared thumbnail cache for {cleared} item(s)"
+    msg = await _admin_clear_thumb_cache(audio_only=False)
     if _is_htmx(request):
         return web.Response(text=msg, status=200)
     raise _redirect_with_flash(msg)
@@ -545,16 +667,7 @@ async def admin_status(request: web.Request) -> web.Response:
     polls this every couple of seconds while either pipeline is active.
     """
     _require_session(request)
-    from main.utils import codec_probe
-    return web.json_response({
-        "seed": media_index.seed_state(),
-        "enrich": media_index.enrichment_state(),
-        "reindex": media_index.reindex_state(),
-        "probe": codec_probe.state(),
-        "episode_fill": media_index.episode_fill_state(),
-        "migrate": media_index.migrate_state(),
-        "catalogue_size": media_index.size(),
-    }, headers={"Cache-Control": "no-store"})
+    return web.json_response(_admin_status_payload(), headers={"Cache-Control": "no-store"})
 
 
 @routes.post("/admin/migrate-to-mongo")
@@ -614,42 +727,7 @@ async def admin_dedupe(request: web.Request) -> web.Response:
     forwarded into BIN_CHANNEL more than once.
     """
     _require_session(request)
-    # Joint key — secure_hash alone has too few effective bits (the
-    # leading ~4 chars of file_unique_id are constant across all
-    # bot-uploaded media) so hash-only matching false-positives
-    # different files into the same group. file_size catches what
-    # the hash misses.
-    by_key: dict = {}
-    for it in media_index._items.values():
-        if not it.secure_hash or not it.file_size:
-            continue
-        by_key.setdefault((it.secure_hash, it.file_size), []).append(it)
-
-    deleted = 0
-    groups = 0
-    for k, items in by_key.items():
-        if len(items) <= 1:
-            continue
-        groups += 1
-        # Keep the OLDEST upload (lowest message_id) as the canonical
-        # entry; delete the rest from BIN + catalogue.
-        keepers = sorted(items, key=lambda v: v.message_id)
-        for extra in keepers[1:]:
-            try:
-                await StreamBot.delete_messages(Var.BIN_CHANNEL, extra.message_id)
-            except Exception:
-                logging.exception(
-                    "admin: dedupe delete failed for bin:%d",
-                    extra.message_id,
-                )
-                continue
-            await media_index.remove(extra.message_id, bot=StreamBot)
-            deleted += 1
-
-    raise _redirect_with_flash(
-        f"De-dup pass: {deleted} extra upload{'' if deleted == 1 else 's'} "
-        f"removed across {groups} duplicate group{'' if groups == 1 else 's'}."
-    )
+    raise _redirect_with_flash(await _admin_dedupe_uploads())
 
 
 @routes.get("/admin/series-list")
@@ -733,41 +811,7 @@ async def admin_prune_stale(request: web.Request) -> web.Response:
     in batches of 100 and removes any that come back empty.
     """
     _require_session(request)
-    removed = await media_index.prune_stale(StreamBot, Var.BIN_CHANNEL)
-
-    # Orphan thumbs — entries that no longer have a matching item in the
-    # catalogue. These can accumulate via paths that bypass remove()
-    # (manual Mongo edit, bulk reseed, etc.). Cleanup is cheap: list both
-    # collections and diff in-process.
-    thumbs_removed = 0
-    if media_index._store_active():
-        try:
-            thumb_ids = await media_index._store.thumb_ids()
-            live_ids = set(media_index._items.keys())
-            live_ids.update(
-                thumb_cache.cache_id(mid, audio=True)
-                for mid, item in media_index._items.items()
-                if getattr(item, "media_kind", "") == "audio"
-            )
-            orphan_ids = [t for t in thumb_ids if t not in live_ids]
-            for orphan in orphan_ids:
-                try:
-                    await media_index._store.remove_thumb(orphan)
-                    thumbs_removed += 1
-                except Exception:
-                    logging.exception(
-                        "admin: orphan thumb delete failed for bin:%d", orphan,
-                    )
-        except Exception:
-            logging.exception("admin: orphan thumb scan failed")
-
-    msg = (
-        f"Pruned {removed} stale entr{'y' if removed == 1 else 'ies'} "
-        f"(checked {len(media_index._items)} items)."
-    )
-    if thumbs_removed:
-        msg += f" Cleared {thumbs_removed} orphan thumb(s)."
-    raise _redirect_with_flash(msg)
+    raise _redirect_with_flash(await _admin_prune_stale_entries())
 
 
 @routes.post("/admin/fetch-episodes")
@@ -897,119 +941,22 @@ async def admin_action(request: web.Request) -> web.Response:
             season_num = int(season_raw) if season_raw else 1
         except ValueError:
             season_num = 1
-        # series_parse is the module-level alias for main.utils.series.
-        series_key = series_parse.slugify(series_title)
-
-        # Sort ascending so episode numbers track upload order
-        # (oldest selected item = first episode). Preserve any
-        # explicit episode numbers already on items.
-        sorted_ids = sorted(ids)
-        affected: list = []
-        async with media_index._lock:
-            existing_eps = set()
-            for mid in sorted_ids:
-                it = media_index.get_item(mid)
-                if it and it.episode:
-                    existing_eps.add(it.episode)
-            next_ep = 1
-            for mid in sorted_ids:
-                it = media_index.get_item(mid)
-                if it is None:
-                    continue
-                it.series_title = series_title
-                it.series_key   = series_key
-                it.season       = season_num
-                if not it.episode:
-                    while next_ep in existing_eps:
-                        next_ep += 1
-                    it.episode = next_ep
-                    existing_eps.add(next_ep)
-                    next_ep += 1
-                it.movie_key = ""
-                affected.append(it)
-            # No-op when Mongo is the durable store, but keeps the
-            # JSON-snapshot path correct for non-Mongo deployments.
-            media_index._persist_unlocked()
-
-        # Write-through to Mongo (no-op when not configured).
-        for it in affected:
-            await media_index._store_upsert(it)
-
+        affected = await _bulk_assign_series(ids, series_title, season_num)
         raise _redirect_with_flash(
             f"Assigned series '{series_title}' (S{season_num:02d}) to "
-            f"{len(affected)} item(s)",
+            f"{affected} item(s)",
             target=_target,
         )
 
     if action == "enrich":
-        import asyncio as _aio
-        import time as _time
-
-        async def _run(id_list: list) -> None:
-            # Mirror state into _enrich_state so the progress bar picks it
-            # up automatically via /admin/status polling.
-            video_count = sum(
-                1 for mid in id_list
-                if getattr(media_index.get_item(mid), "media_kind", "") != "audio"
-            )
-            media_index._enrich_state.update(
-                running=True, done=0, total=video_count,
-                enriched=0, failed=0, last_title="",
-                started_at=_time.time(), finished_at=0.0,
-            )
-            done = enriched = 0
-            for mid in id_list:
-                item = media_index.get_item(mid)
-                if item:
-                    if getattr(item, "media_kind", "") == "audio":
-                        continue  # TMDB doesn't cover music; skip silently
-                    media_index._enrich_state["last_title"] = item.title or ""
-                ok = await media_index.enrich_one(mid, bot=StreamBot)
-                if ok:
-                    enriched += 1
-                done += 1
-                media_index._enrich_state.update(
-                    done=done, enriched=enriched, failed=done - enriched,
-                )
-                await _aio.sleep(0)
-            media_index._enrich_state.update(running=False, finished_at=_time.time())
-            logging.info("bulk enrich: %d/%d enriched", enriched, done)
-
-        _aio.create_task(_run(ids))
+        _queue_selected_enrich(ids)
         raise _redirect_with_flash(
             f"Enrichment queued for {len(ids)} items — watch the progress bar",
             target=_target,
         )
 
     if action == "probe":
-        from main.utils import codec_probe
-        import asyncio as _aio
-        import time as _time
-
-        async def _run_probe(id_list: list) -> None:
-            # Mirror state into probe_state so the probe progress bar
-            # in the UI picks it up automatically via /admin/status polling.
-            codec_probe.probe_state.update(
-                running=True, done=0, total=len(id_list),
-                found_incompatible=0, started_at=_time.time(), finished_at=0.0,
-            )
-            done = found = 0
-            for mid in id_list:
-                item = media_index.get_item(mid)
-                if item is None:
-                    continue
-                item.probed_at = 0.0
-                ok = await codec_probe.probe_item(item)
-                if ok:
-                    found += 1
-                done += 1
-                codec_probe.probe_state["done"] = done
-                codec_probe.probe_state["found_incompatible"] = found
-                await _aio.sleep(0)
-            codec_probe.probe_state.update(running=False, finished_at=_time.time())
-            logging.info("bulk probe: %d/%d had video streams", found, done)
-
-        _aio.create_task(_run_probe(ids))
+        _queue_selected_probe(ids)
         raise _redirect_with_flash(
             f"Probe queued for {len(ids)} item(s) — watch the progress bar",
             target=_target,
@@ -1025,38 +972,7 @@ async def admin_action(request: web.Request) -> web.Response:
         except ValueError:
             raise _redirect_with_flash("Enter a numeric TMDB id", target=_target)
 
-        import asyncio as _aio
-        import time as _time
-
-        async def _run_tmdb(id_list: list, tid: int, tkind: str) -> None:
-            # Reuse the enrichment state tracker so the existing progress
-            # bar in the UI picks it up.
-            media_index._enrich_state.update(
-                running=True, done=0, total=len(id_list),
-                enriched=0, failed=0, last_title="",
-                started_at=_time.time(), finished_at=0.0,
-            )
-            done = enriched = 0
-            for mid in id_list:
-                item = media_index.get_item(mid)
-                if item:
-                    media_index._enrich_state["last_title"] = item.title or ""
-                ok = await media_index.enrich_with_tmdb_id(
-                    mid, tid, tkind, bot=StreamBot,
-                )
-                if ok:
-                    enriched += 1
-                done += 1
-                media_index._enrich_state.update(
-                    done=done, enriched=enriched, failed=done - enriched,
-                )
-                await _aio.sleep(0)
-            media_index._enrich_state.update(running=False, finished_at=_time.time())
-            logging.info(
-                "bulk tmdb-id (%s/%d): %d/%d applied", tkind, tid, enriched, done,
-            )
-
-        _aio.create_task(_run_tmdb(ids, tmdb_id_int, tmdb_kind))
+        _queue_selected_tmdb(ids, tmdb_id_int, tmdb_kind)
         raise _redirect_with_flash(
             f"TMDB id {tmdb_id_int} ({tmdb_kind}) queued for {len(ids)} item(s) — "
             "watch the progress bar",
@@ -2226,6 +2142,383 @@ async def _bulk_quality(ids: List[int], quality: str) -> int:
         if status in ("written", "local-only"):
             n += 1
     return n
+
+
+def _admin_json_message(message: str, **extra) -> web.Response:
+    payload = {"ok": True, "message": message}
+    payload.update(extra)
+    return web.json_response(payload, headers={"Cache-Control": "no-store"})
+
+
+def _admin_json_ids(raw) -> List[int]:
+    ids: List[int] = []
+    for value in raw or []:
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+async def _bulk_assign_series(ids: List[int], series_title: str, season_num: int) -> int:
+    series_key = series_parse.slugify(series_title)
+    affected: list = []
+    async with media_index._lock:
+        existing_eps = set()
+        for mid in sorted(ids):
+            it = media_index.get_item(mid)
+            if it and it.episode:
+                existing_eps.add(it.episode)
+        next_ep = 1
+        for mid in sorted(ids):
+            it = media_index.get_item(mid)
+            if it is None:
+                continue
+            it.series_title = series_title
+            it.series_key = series_key
+            it.season = season_num
+            if not it.episode:
+                while next_ep in existing_eps:
+                    next_ep += 1
+                it.episode = next_ep
+                existing_eps.add(next_ep)
+                next_ep += 1
+            it.movie_key = ""
+            affected.append(it)
+        media_index._persist_unlocked()
+
+    for it in affected:
+        await media_index._store_upsert(it)
+    return len(affected)
+
+
+def _queue_selected_enrich(ids: List[int]) -> None:
+    async def _run(id_list: List[int]) -> None:
+        video_count = sum(
+            1 for mid in id_list
+            if getattr(media_index.get_item(mid), "media_kind", "") != "audio"
+        )
+        media_index._enrich_state.update(
+            running=True, done=0, total=video_count,
+            enriched=0, failed=0, last_title="",
+            started_at=time.time(), finished_at=0.0,
+        )
+        done = enriched = 0
+        for mid in id_list:
+            item = media_index.get_item(mid)
+            if item:
+                if getattr(item, "media_kind", "") == "audio":
+                    continue
+                media_index._enrich_state["last_title"] = item.title or ""
+            ok = await media_index.enrich_one(mid, bot=StreamBot)
+            if ok:
+                enriched += 1
+            done += 1
+            media_index._enrich_state.update(
+                done=done, enriched=enriched, failed=done - enriched,
+            )
+            await asyncio.sleep(0)
+        media_index._enrich_state.update(running=False, finished_at=time.time())
+        logging.info("react admin bulk enrich: %d/%d enriched", enriched, done)
+
+    asyncio.create_task(_run(ids))
+
+
+def _queue_selected_probe(ids: List[int]) -> None:
+    from main.utils import codec_probe
+
+    async def _run_probe(id_list: List[int]) -> None:
+        codec_probe.probe_state.update(
+            running=True, done=0, total=len(id_list),
+            found_incompatible=0, started_at=time.time(), finished_at=0.0,
+        )
+        done = found = 0
+        for mid in id_list:
+            item = media_index.get_item(mid)
+            if item is None:
+                continue
+            item.probed_at = 0.0
+            ok = await codec_probe.probe_item(item)
+            if ok:
+                found += 1
+            done += 1
+            codec_probe.probe_state["done"] = done
+            codec_probe.probe_state["found_incompatible"] = found
+            await asyncio.sleep(0)
+        codec_probe.probe_state.update(running=False, finished_at=time.time())
+        logging.info("react admin bulk probe: %d/%d had video streams", found, done)
+
+    asyncio.create_task(_run_probe(ids))
+
+
+def _queue_selected_tmdb(ids: List[int], tmdb_id: int, tmdb_kind: str) -> None:
+    async def _run_tmdb(id_list: List[int]) -> None:
+        media_index._enrich_state.update(
+            running=True, done=0, total=len(id_list),
+            enriched=0, failed=0, last_title="",
+            started_at=time.time(), finished_at=0.0,
+        )
+        done = enriched = 0
+        for mid in id_list:
+            item = media_index.get_item(mid)
+            if item:
+                media_index._enrich_state["last_title"] = item.title or ""
+            ok = await media_index.enrich_with_tmdb_id(
+                mid, tmdb_id, tmdb_kind, bot=StreamBot,
+            )
+            if ok:
+                enriched += 1
+            done += 1
+            media_index._enrich_state.update(
+                done=done, enriched=enriched, failed=done - enriched,
+            )
+            await asyncio.sleep(0)
+        media_index._enrich_state.update(running=False, finished_at=time.time())
+        logging.info(
+            "react admin bulk tmdb-id (%s/%d): %d/%d applied",
+            tmdb_kind, tmdb_id, enriched, done,
+        )
+
+    asyncio.create_task(_run_tmdb(ids))
+
+
+async def _admin_dedupe_uploads() -> str:
+    by_key: dict = {}
+    for it in media_index._items.values():
+        if not it.secure_hash or not it.file_size:
+            continue
+        by_key.setdefault((it.secure_hash, it.file_size), []).append(it)
+
+    deleted = 0
+    groups = 0
+    for items in by_key.values():
+        if len(items) <= 1:
+            continue
+        groups += 1
+        keepers = sorted(items, key=lambda v: v.message_id)
+        for extra in keepers[1:]:
+            try:
+                await StreamBot.delete_messages(Var.BIN_CHANNEL, extra.message_id)
+            except Exception:
+                logging.exception(
+                    "admin: dedupe delete failed for bin:%d",
+                    extra.message_id,
+                )
+                continue
+            await media_index.remove(extra.message_id, bot=StreamBot)
+            deleted += 1
+
+    return (
+        f"De-dup pass: {deleted} extra upload{'' if deleted == 1 else 's'} "
+        f"removed across {groups} duplicate group{'' if groups == 1 else 's'}."
+    )
+
+
+async def _admin_prune_stale_entries() -> str:
+    removed = await media_index.prune_stale(StreamBot, Var.BIN_CHANNEL)
+    thumbs_removed = 0
+    if media_index._store_active():
+        try:
+            thumb_ids = await media_index._store.thumb_ids()
+            live_ids = set(media_index._items.keys())
+            live_ids.update(
+                thumb_cache.cache_id(mid, audio=True)
+                for mid, item in media_index._items.items()
+                if getattr(item, "media_kind", "") == "audio"
+            )
+            orphan_ids = [t for t in thumb_ids if t not in live_ids]
+            for orphan in orphan_ids:
+                try:
+                    await media_index._store.remove_thumb(orphan)
+                    thumbs_removed += 1
+                except Exception:
+                    logging.exception(
+                        "admin: orphan thumb delete failed for bin:%d", orphan,
+                    )
+        except Exception:
+            logging.exception("admin: orphan thumb scan failed")
+
+    msg = (
+        f"Pruned {removed} stale entr{'y' if removed == 1 else 'ies'} "
+        f"(checked {len(media_index._items)} items)."
+    )
+    if thumbs_removed:
+        msg += f" Cleared {thumbs_removed} orphan thumb(s)."
+    return msg
+
+
+async def _admin_clear_thumb_cache(*, audio_only: bool) -> str:
+    ids = [
+        it.message_id
+        for it in media_index._items.values()
+        if not audio_only or getattr(it, "media_kind", "") == "audio"
+    ]
+    cleared = 0
+    for mid in ids:
+        try:
+            await thumb_cache.clear(mid)
+            cleared += 1
+        except Exception:
+            pass
+    scope = "audio item" if audio_only else "item"
+    return f"Cleared thumbnail cache for {cleared} {scope}(s)"
+
+
+@routes.post("/api/app/admin/action")
+async def api_app_admin_action(request: web.Request) -> web.Response:
+    _require_api_admin(request)
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid body"}, status=400)
+
+    action = (data.get("action") or "").strip()
+    ids = _admin_json_ids(data.get("ids"))
+    if not ids:
+        return web.json_response({"error": "Nothing selected"}, status=400)
+
+    if action == "delete":
+        n = await _bulk_delete(ids)
+        return _admin_json_message(f"Deleted {n} entries")
+
+    if action in ("hide", "unhide"):
+        hidden = action == "hide"
+        n = 0
+        for mid in ids:
+            if await media_index.set_hidden(mid, hidden):
+                n += 1
+        verb = "Hidden" if hidden else "Unhidden"
+        return _admin_json_message(f"{verb} {n} entries")
+
+    if action == "retag":
+        tags = _normalise_tags(data.get("tags") or "")
+        n = await _bulk_retag(ids, tags)
+        return _admin_json_message(f"Re-tagged {n} entries")
+
+    if action == "quality":
+        quality = (data.get("quality") or "").strip()
+        if quality not in {"480p", "720p", "1080p", "4K"}:
+            return web.json_response({"error": "Invalid quality"}, status=400)
+        n = await _bulk_quality(ids, quality)
+        return _admin_json_message(f"Updated quality on {n} entries")
+
+    if action == "series":
+        series_title = (data.get("seriesTitle") or "").strip()
+        if not series_title:
+            return web.json_response({"error": "Series title can't be empty"}, status=400)
+        try:
+            season_num = int(data.get("season") or 1)
+        except (TypeError, ValueError):
+            season_num = 1
+        n = await _bulk_assign_series(ids, series_title, season_num)
+        return _admin_json_message(
+            f"Assigned series '{series_title}' (S{season_num:02d}) to {n} item(s)"
+        )
+
+    if action == "enrich":
+        _queue_selected_enrich(ids)
+        return _admin_json_message(
+            f"Enrichment queued for {len(ids)} items",
+            status=_admin_status_payload(),
+        )
+
+    if action == "probe":
+        _queue_selected_probe(ids)
+        return _admin_json_message(
+            f"Probe queued for {len(ids)} item(s)",
+            status=_admin_status_payload(),
+        )
+
+    if action == "tmdb-id":
+        tmdb_kind = (data.get("tmdbKind") or "tv").strip().lower()
+        if tmdb_kind not in ("tv", "movie"):
+            tmdb_kind = "tv"
+        try:
+            tmdb_id = int(data.get("tmdbId") or 0)
+        except (TypeError, ValueError):
+            return web.json_response({"error": "Enter a numeric TMDB id"}, status=400)
+        if tmdb_id < 1:
+            return web.json_response({"error": "Enter a numeric TMDB id"}, status=400)
+        _queue_selected_tmdb(ids, tmdb_id, tmdb_kind)
+        return _admin_json_message(
+            f"TMDB id {tmdb_id} ({tmdb_kind}) queued for {len(ids)} item(s)",
+            status=_admin_status_payload(),
+        )
+
+    return web.json_response({"error": "Unknown action"}, status=400)
+
+
+@routes.post("/api/app/admin/maintenance")
+async def api_app_admin_maintenance(request: web.Request) -> web.Response:
+    _require_api_admin(request)
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid body"}, status=400)
+    action = (data.get("action") or "").strip()
+
+    if action == "enrich":
+        force = bool(data.get("force"))
+        state = media_index.enrichment_state()
+        if not state.get("running"):
+            asyncio.create_task(media_index.enrich_all(bot=StreamBot, force=force))
+            return _admin_json_message("Enrichment started", status=_admin_status_payload())
+        return _admin_json_message("Enrichment already running", status=_admin_status_payload())
+
+    if action == "reindex":
+        state = media_index.reindex_state()
+        if not state.get("running"):
+            asyncio.create_task(media_index.reindex_all(bot=StreamBot))
+        return _admin_json_message("Re-index queued", status=_admin_status_payload())
+
+    if action == "probe-codecs":
+        from main.utils import codec_probe
+        if not codec_probe.state().get("running"):
+            asyncio.create_task(codec_probe.probe_all_missing())
+        return _admin_json_message("Codec probe queued", status=_admin_status_payload())
+
+    if action == "fetch-episodes":
+        if not media_index.episode_fill_state().get("running"):
+            asyncio.create_task(media_index.fill_episode_details(bot=StreamBot))
+        return _admin_json_message("Episode details fetch queued", status=_admin_status_payload())
+
+    if action == "clear-audio-thumbs":
+        return _admin_json_message(await _admin_clear_thumb_cache(audio_only=True))
+
+    if action == "clear-all-thumbs":
+        return _admin_json_message(await _admin_clear_thumb_cache(audio_only=False))
+
+    if action == "clear-audio-tmdb":
+        fixed = await media_index.clear_audio_tmdb_mismatches()
+        msg = (
+            f"Cleared TMDB data from {fixed} audio item(s)"
+            if fixed else "No mis-enriched audio items found"
+        )
+        return _admin_json_message(msg)
+
+    if action == "dedupe":
+        return _admin_json_message(await _admin_dedupe_uploads())
+
+    if action == "prune-stale":
+        return _admin_json_message(await _admin_prune_stale_entries())
+
+    if action == "migrate-to-mongo":
+        import os
+        if not os.environ.get("MONGO_URI"):
+            return web.json_response(
+                {"error": "MONGO_URI env var is not set"},
+                status=400,
+            )
+        if not media_index.migrate_state().get("running"):
+            db_name = os.environ.get("MONGO_DB") or "teledirect"
+            items_coll = os.environ.get("MONGO_COLLECTION") or "items"
+            meta_coll = os.environ.get("MONGO_META_COLLECTION") or "meta"
+            asyncio.create_task(media_index.migrate_to_mongo(
+                os.environ["MONGO_URI"], db_name, items_coll, meta_coll,
+            ))
+        return _admin_json_message("Migration queued", status=_admin_status_payload())
+
+    return web.json_response({"error": "Unknown maintenance action"}, status=400)
 
 
 @routes.post(r"/admin/hide/{id:\d+}")

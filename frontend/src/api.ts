@@ -1,4 +1,7 @@
 import type {
+  AdminActionResponse,
+  AdminResponse,
+  AdminStatusResponse,
   ContinueItem,
   DetailResponse,
   HubParams,
@@ -112,6 +115,30 @@ export async function fetchAppWatchlist(signal?: AbortSignal): Promise<Watchlist
 
 export async function fetchStats(signal?: AbortSignal): Promise<StatsResponse> {
   return request<StatsResponse>('/api/app/stats', { signal });
+}
+
+export async function fetchAdmin(search = '', signal?: AbortSignal): Promise<AdminResponse> {
+  return request<AdminResponse>(`/api/app/admin${search}`, { signal });
+}
+
+export async function fetchAdminStatus(signal?: AbortSignal): Promise<AdminStatusResponse> {
+  return request<AdminStatusResponse>('/api/app/admin/status', { signal });
+}
+
+export async function runAdminAction(payload: Record<string, unknown>): Promise<AdminActionResponse> {
+  return request<AdminActionResponse>('/api/app/admin/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function runAdminMaintenance(action: string, payload: Record<string, unknown> = {}): Promise<AdminActionResponse> {
+  return request<AdminActionResponse>('/api/app/admin/maintenance', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...payload }),
+  });
 }
 
 export async function addWatchlist(itemId: string): Promise<void> {

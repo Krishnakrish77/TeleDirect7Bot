@@ -98,6 +98,8 @@
       if (!link) return;
       function reactPath(path, search) {
         if (path === '/' || path === '') return '/app' + (search || '');
+        if (path === '/admin') return '/app/admin' + (search || '');
+        if (path.indexOf('/admin/') === 0) return '/app/admin';
         if (path.indexOf('/watch/') === 0) return '/app' + path + (search || '');
         if (/^\/(movie|series|album|artist|person)\//.test(path)) {
           return '/app' + path + (search || '');

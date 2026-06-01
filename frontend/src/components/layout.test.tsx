@@ -73,4 +73,13 @@ describe('Header search', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
     expect(onSearchClear).toHaveBeenCalledTimes(1);
   });
+
+  it('routes admins to the React admin panel', () => {
+    renderHeader({
+      user: { ...user, is_admin: true },
+      accountOpen: true,
+    });
+
+    expect(screen.getByRole('menuitem', { name: /Admin panel/i }).getAttribute('href')).toBe('/app/admin');
+  });
 });

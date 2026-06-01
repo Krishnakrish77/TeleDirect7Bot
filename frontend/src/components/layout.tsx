@@ -177,7 +177,7 @@ export function Header({
                   <span>Stats</span>
                 </a>
                 {user.is_admin && (
-                  <a href="/admin" role="menuitem" onClick={() => setAccountOpen(false)}>
+                  <a href="/app/admin" role="menuitem" onClick={() => setAccountOpen(false)}>
                     <ShieldIcon />
                     <span>Admin panel</span>
                   </a>
