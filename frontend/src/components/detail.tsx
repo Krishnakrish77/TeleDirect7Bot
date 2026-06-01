@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { BookmarkIcon, CheckIcon, ChevronRightIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon } from '../icons';
+import { BookmarkIcon, CheckIcon, ChevronRightIcon, ListIcon, PauseIcon, PlayIcon, ShuffleIcon } from '../icons';
 import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, SeriesDetailResponse, WatchTrack } from '../types';
 import type { AppRoute } from '../navigation';
@@ -303,28 +303,32 @@ function AlbumDetail({
   const first = data.tracks[0];
   return (
     <main className="detail-main music-detail-main">
-      <AlbumHero
-        title={data.title}
-        subtitle={[data.artist, `${data.trackCount} track${data.trackCount === 1 ? '' : 's'}`].filter(Boolean).join(' - ')}
-        overview={data.overview}
-        posterUrl={data.posterUrl}
-        backdropUrl={data.backdropUrl}
-        artistHref={data.artistHref}
-        artist={data.artist}
-        onPlayAll={first ? () => playTrack(first, data.tracks) : undefined}
-        onShuffle={data.tracks.length > 1 ? () => shuffleQueue(data.tracks) : undefined}
-        saved={saved.has(data.savedId)}
-        onToggleSaved={() => onToggleSaved(data.savedId)}
-      />
-      <section className="detail-section album-track-section">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Album</p>
-            <h2>Tracks</h2>
+      <div className="album-layout">
+        <AlbumHero
+          title={data.title}
+          artistHref={data.artistHref}
+          artist={data.artist}
+          year={data.year}
+          trackCount={data.trackCount}
+          overview={data.overview}
+          posterUrl={data.posterUrl}
+          backdropUrl={data.backdropUrl}
+          onPlayAll={first ? () => playTrack(first, data.tracks) : undefined}
+          onShuffle={data.tracks.length > 1 ? () => shuffleQueue(data.tracks) : undefined}
+          saved={saved.has(data.savedId)}
+          onToggleSaved={() => onToggleSaved(data.savedId)}
+        />
+        <section className="detail-section album-track-section">
+          <div className="section-heading album-track-heading">
+            <div>
+              <p className="eyebrow">Album</p>
+              <h2>Tracks</h2>
+            </div>
+            <span>{data.trackCount} track{data.trackCount === 1 ? '' : 's'}</span>
           </div>
-        </div>
-        <TrackList tracks={data.tracks} queue={data.tracks} player={player} togglePlayback={togglePlayback} addToQueue={addToQueue} />
-      </section>
+          <TrackList tracks={data.tracks} queue={data.tracks} player={player} togglePlayback={togglePlayback} addToQueue={addToQueue} context="album" />
+        </section>
+      </div>
       <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
     </main>
   );
@@ -332,39 +336,45 @@ function AlbumDetail({
 
 function AlbumHero({
   title,
-  subtitle,
+  artist,
+  artistHref,
+  year,
+  trackCount,
   overview,
   posterUrl,
   backdropUrl,
-  artist,
-  artistHref,
   onPlayAll,
   onShuffle,
   saved,
   onToggleSaved,
 }: {
   title: string;
-  subtitle: string;
+  artist: string;
+  artistHref: string;
+  year: number | null;
+  trackCount: number;
   overview: string;
   posterUrl: string;
   backdropUrl: string;
-  artist: string;
-  artistHref: string;
   onPlayAll?: () => void;
   onShuffle?: () => void;
   saved: boolean;
   onToggleSaved: () => void;
 }) {
   return (
-    <section className="album-hero">
+    <section className="album-hero" aria-label="Album summary">
       {(backdropUrl || posterUrl) && <img className="album-backdrop" src={backdropUrl || posterUrl} alt="" decoding="async" fetchPriority="high" />}
       <div className="album-hero-art">
         <img src={posterUrl || backdropUrl} alt="" decoding="async" fetchPriority="high" />
       </div>
       <div className="album-hero-copy">
-        <p className="eyebrow">{subtitle || 'Album'}</p>
+        <p className="eyebrow">Album</p>
         <h1 dir="auto">{title}</h1>
         {artistHref && artist && <a className="album-artist-link" href={artistHref}>{artist}</a>}
+        <div className="album-stats" aria-label="Album metadata">
+          {year && <span>{year}</span>}
+          <span>{trackCount} track{trackCount === 1 ? '' : 's'}</span>
+        </div>
         {overview && <p className="album-overview">{overview}</p>}
         <div className="hero-actions">
           {onPlayAll && (
@@ -375,6 +385,7 @@ function AlbumHero({
           )}
           {onShuffle && (
             <button type="button" className="secondary-action" onClick={onShuffle}>
+              <ShuffleIcon />
               <span>Shuffle</span>
             </button>
           )}
@@ -496,13 +507,20 @@ function TrackList({
   player,
   togglePlayback,
   addToQueue,
+  context = 'default',
 }: {
   tracks: WatchTrack[];
   queue: WatchTrack[];
   player: PlayerState;
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
+  context?: 'default' | 'album';
 }) {
+  const subtitleForTrack = (track: WatchTrack) => {
+    if (context === 'album') return [track.artist, track.format].filter(Boolean).join(' - ');
+    return [track.artist, track.albumTitle, track.qualityLabel].filter(Boolean).join(' - ');
+  };
+
   return (
     <div className="track-list">
       {tracks.map((track, index) => {
@@ -512,7 +530,7 @@ function TrackList({
             <span className="track-number">{track.trackNumber || index + 1}</span>
             <span className="track-title">
               <strong>{track.title}</strong>
-              <span>{[track.artist, track.albumTitle, track.qualityLabel].filter(Boolean).join(' - ')}</span>
+              <span>{subtitleForTrack(track)}</span>
             </span>
             <span className="track-duration">{track.durationLabel}</span>
             <button
@@ -523,7 +541,7 @@ function TrackList({
                 event.stopPropagation();
                 togglePlayback(track, queue);
               }}
-              aria-label={active && player.playing ? 'Pause' : 'Play'}
+              aria-label={active && player.playing ? `Pause ${track.title}` : `Play ${track.title}`}
             >
               {active && player.playing ? <PauseIcon /> : <PlayIcon />}
             </button>
@@ -535,7 +553,7 @@ function TrackList({
                 event.stopPropagation();
                 addToQueue(track, true);
               }}
-              aria-label="Play next"
+              aria-label={`Play ${track.title} next`}
             >
               <ListIcon />
             </button>
@@ -547,7 +565,7 @@ function TrackList({
                 event.stopPropagation();
                 addToQueue(track, false);
               }}
-              aria-label="Add to queue"
+              aria-label={`Add ${track.title} to queue`}
             >
               <span aria-hidden="true">+</span>
             </button>

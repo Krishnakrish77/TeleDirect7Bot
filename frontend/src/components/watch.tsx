@@ -1,6 +1,6 @@
 import { DragEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { deleteContinueEntry, fetchAudioTracks, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
-import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
+import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -203,7 +203,6 @@ export function WatchPage({
               type="button"
               className="icon-button player-nav"
               onClick={onOpenQueue}
-              disabled={queue.length < 2}
               aria-label="Open queue"
             >
               <ListIcon />
@@ -313,6 +312,7 @@ export function WatchPage({
               <h2>{track.albumTitle || 'Tracks'}</h2>
             </div>
             <button type="button" className="secondary-action" onClick={() => shuffleQueue(queue)}>
+              <ShuffleIcon />
               <span>Shuffle</span>
             </button>
           </div>
@@ -335,7 +335,7 @@ export function WatchPage({
                       event.stopPropagation();
                       togglePlayback(item, queue);
                     }}
-                    aria-label={active && player.playing ? 'Pause' : 'Play'}
+                    aria-label={active && player.playing ? `Pause ${item.title}` : `Play ${item.title}`}
                   >
                     {active && player.playing ? <PauseIcon /> : <PlayIcon />}
                   </button>
@@ -347,7 +347,7 @@ export function WatchPage({
                       event.stopPropagation();
                       addToQueue(item, true);
                     }}
-                    aria-label="Play next"
+                    aria-label={`Play ${item.title} next`}
                   >
                     <ListIcon />
                   </button>
@@ -359,7 +359,7 @@ export function WatchPage({
                       event.stopPropagation();
                       addToQueue(item, false);
                     }}
-                    aria-label="Add to queue"
+                    aria-label={`Add ${item.title} to queue`}
                   >
                     <span aria-hidden="true">+</span>
                   </button>
@@ -397,6 +397,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const [nextCountdown, setNextCountdown] = useState(5);
   const [toast, setToast] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [autoplayNext, setAutoplayNext] = useState(() => {
     try {
       return localStorage.getItem('td:videoAutoplay') !== '0';
@@ -415,6 +416,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const rangeMax = Math.max(1, Math.round(duration || video.duration || 0));
   const hasIntro = video.introEnd > video.introStart;
   const showSkipIntro = hasIntro && currentTime >= video.introStart && currentTime < video.introEnd;
+  const activeSubtitle = allSubtitles.find((track) => track.id === activeSub);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -486,6 +488,12 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       // Local preference only.
     }
   }, [autoplayNext]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => setFullscreen(document.fullscreenElement === shellRef.current);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -687,6 +695,14 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     else enterNativeFullscreen();
   }, []);
 
+  const toggleCaptions = useCallback(() => {
+    if (!allSubtitles.length) {
+      showToast('Captions unavailable');
+      return;
+    }
+    setActiveSub((current) => current ? '' : allSubtitles[0].id);
+  }, [allSubtitles, showToast]);
+
   const shareVideo = useCallback(async () => {
     const data = { title: video.title, url: window.location.href };
     if (navigator.share) {
@@ -855,6 +871,18 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         </video>
         <div className="video-brightness-overlay" style={{ opacity: Math.max(0, 1 - brightness) }} />
 
+        <div className="video-topbar">
+          <div className="video-topbar-copy">
+            <strong dir="auto">{video.title}</strong>
+            {video.subtitle && <span>{video.subtitle}</span>}
+          </div>
+          <div className="video-topbar-badges" aria-label="Playback state">
+            <span>{sourceMode === 'hls' ? 'HLS' : 'Direct'}</span>
+            {video.quality && <span>{video.quality}</span>}
+            {activeSubtitle && <span>{activeSubtitle.label || activeSubtitle.language || 'Captions'}</span>}
+          </div>
+        </div>
+
         {toast && <div className="gesture-toast">{toast}</div>}
 
         {(error || video.knownUnplayable) && (
@@ -915,10 +943,19 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           <button type="button" className="icon-button" onClick={() => setMuted((isMuted) => !isMuted)} aria-label={muted ? 'Unmute' : 'Mute'}>
             <VolumeIcon />
           </button>
+          <button
+            type="button"
+            className={activeSub ? 'icon-button active' : 'icon-button'}
+            onClick={toggleCaptions}
+            disabled={!allSubtitles.length}
+            aria-label={activeSub ? 'Turn captions off' : 'Turn captions on'}
+          >
+            <CaptionsIcon />
+          </button>
           <button type="button" className="icon-button video-pip-control" onClick={togglePip} aria-label="Picture in picture">
             <PictureInPictureIcon />
           </button>
-          <button type="button" className="icon-button" onClick={toggleFullscreen} aria-label="Fullscreen">
+          <button type="button" className="icon-button" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
             <MaximizeIcon />
           </button>
           <button type="button" className="icon-button" onClick={() => setMenuOpen((open) => !open)} aria-label="More video options" aria-expanded={menuOpen}>
@@ -946,6 +983,18 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
                   <option key={track.id} value={track.id}>{track.label || track.language || track.id}</option>
                 ))}
               </select>
+            </label>
+            <label className="video-menu-row video-menu-range">
+              <span>Volume</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={muted ? 0 : volume}
+                onChange={(event) => changeVolume(Number(event.currentTarget.value))}
+                aria-label="Video volume"
+              />
             </label>
             <button type="button" className="video-menu-row" role="menuitem" onClick={() => subInputRef.current?.click()}>
               <span>Load subtitles</span>
@@ -980,10 +1029,26 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
                 ))}
               </select>
             </label>
+            {video.qualityVariants.length > 0 && (
+              <>
+                <div className="video-menu-label" role="presentation">Quality</div>
+                <a className="video-menu-row" role="menuitem" href={video.appHref}>
+                  <span>{video.quality || 'Current'}</span>
+                  <strong>Current</strong>
+                </a>
+                {video.qualityVariants.map((variant) => (
+                  <a key={variant.key} className="video-menu-row" role="menuitem" href={variant.playHref}>
+                    <span>{variant.quality || variant.label || variant.title}</span>
+                    <strong>Open</strong>
+                  </a>
+                ))}
+              </>
+            )}
             <button type="button" className="video-menu-row" role="menuitem" onClick={openAirPlay}>
               <span>AirPlay</span>
               <strong>Open</strong>
             </button>
+            {subtitleStatus && <div className="video-menu-status" role="status">{subtitleStatus}</div>}
             <a className="video-menu-row" role="menuitem" href={video.classicHref}>
               <span>Classic player</span>
               <strong>Open</strong>

@@ -134,6 +134,9 @@ export function QueueDrawer({
     return sections;
   }, [currentIndex, queue]);
   const totalLabel = queue.length ? pluralizeTracks(queue.length) : 'No tracks';
+  const progressLabel = currentTrack
+    ? `${formatClock(player.currentTime)} / ${formatClock(player.duration || currentTrack.duration || 0)}`
+    : '';
 
   if (!open) return null;
 
@@ -143,8 +146,8 @@ export function QueueDrawer({
       <aside className="queue-drawer">
         <div className="drawer-heading">
           <div>
-            <p className="eyebrow">Queue</p>
-            <h2>Now playing</h2>
+            <p className="eyebrow">Now playing</p>
+            <h2>Queue</h2>
             <p className="queue-count">{totalLabel}</p>
           </div>
           <div className="drawer-actions">
@@ -161,6 +164,7 @@ export function QueueDrawer({
               <p className="eyebrow">Playing now</p>
               <strong>{currentTrack.title}</strong>
               <span>{trackSubtitle(currentTrack)}</span>
+              {progressLabel && <small>{progressLabel}</small>}
             </div>
             <button
               type="button"
@@ -174,6 +178,10 @@ export function QueueDrawer({
         ) : null}
         {queue.length ? (
           <div className="queue-body">
+            <div className="queue-summary-strip" aria-label="Queue summary">
+              <span aria-label={`${upNext.length} up next`}><strong>{upNext.length}</strong> up next</span>
+              <span aria-label={`${played.length} played`}><strong>{played.length}</strong> played</span>
+            </div>
             <section className="queue-section" aria-label="Up next">
               <div className="queue-section-heading">
                 <div>

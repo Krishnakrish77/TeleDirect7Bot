@@ -47,7 +47,7 @@ export function MiniPlayer({
         <button type="button" className="icon-button" onClick={() => playRelative(1)} disabled={!hasNext} aria-label="Next track">
           <SkipForwardIcon />
         </button>
-        <button type="button" className="icon-button" onClick={onOpenQueue} disabled={player.queue.length < 2} aria-label="Open queue">
+        <button type="button" className="icon-button" onClick={onOpenQueue} aria-label="Open queue">
           <ListIcon />
         </button>
       </div>
@@ -146,7 +146,7 @@ export function NowPlayingSheet({
           <button type="button" className="icon-button player-nav" onClick={() => playRelative(1)} disabled={player.queueIndex + 1 >= player.queue.length} aria-label="Next track">
             <SkipForwardIcon />
           </button>
-          <button type="button" className="icon-button player-nav" onClick={onOpenQueue} disabled={player.queue.length < 2} aria-label="Open queue">
+          <button type="button" className="icon-button player-nav" onClick={onOpenQueue} aria-label="Open queue">
             <ListIcon />
           </button>
         </div>

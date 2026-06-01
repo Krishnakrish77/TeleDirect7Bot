@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { dismissRecommendation, signOut } from './api';
-import { classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
+import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useDetail, useHub, useMe, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
 import { Header, PrimaryNav, SignInModal } from './components/layout';
@@ -59,14 +59,6 @@ function App() {
   useEffect(() => setQuery(params.q), [params.q]);
 
   useEffect(() => {
-    if (!isHubRoute) return;
-    const timer = window.setTimeout(() => {
-      if (query !== params.q) update({ q: query }, true);
-    }, 260);
-    return () => window.clearTimeout(timer);
-  }, [isHubRoute, query, params.q, update]);
-
-  useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
@@ -123,8 +115,18 @@ function App() {
     route.kind === 'watch' ? 'watch-route' : '',
   ].filter(Boolean).join(' ');
   const onSearchSubmit = useCallback(() => {
-    update({ q: query.trim(), offset: 0 });
-  }, [query, update]);
+    const nextQuery = query.trim();
+    const nextParams = { ...params, q: nextQuery, offset: 0 };
+    setQuery(nextQuery);
+    navigate(appUrl(nextParams));
+  }, [navigate, params, query]);
+
+  const onSearchClear = useCallback(() => {
+    setQuery('');
+    if (!params.q) return;
+    const nextParams = { ...params, q: '', offset: 0 };
+    navigate(appUrl(nextParams, isFilterRoute ? '/filters' : ''), true);
+  }, [isFilterRoute, navigate, params]);
 
   return (
     <div className={shellClass} onClick={onLinkClick}>
@@ -138,6 +140,7 @@ function App() {
         setAccountOpen={setAccountOpen}
         classicUiHref={classicUiHref}
         onSearchSubmit={onSearchSubmit}
+        onSearchClear={onSearchClear}
         onSignIn={() => setSignInOpen(true)}
         onSignOut={async () => {
           try {
@@ -166,7 +169,7 @@ function App() {
                 filters={filters}
                 catalogueSize={data?.catalogueSize ?? 0}
                 params={params}
-                query={query}
+                query={params.q}
                 setQuery={setQuery}
                 update={update}
               />
@@ -210,7 +213,7 @@ function App() {
           filters={filters}
           catalogueSize={data?.catalogueSize ?? 0}
           params={params}
-          query={query}
+          query={params.q}
           setQuery={setQuery}
           navigate={navigate}
         />

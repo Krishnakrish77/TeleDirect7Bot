@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteContinueEntry, fetchAudioTracks, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, setRating } from '../api';
 import type { PlayerState } from '../hooks/audio';
-import type { AudioTrackOption, WatchVideo } from '../types';
+import type { AudioTrackOption, SubtitleTrack, VideoChoice, WatchTrack, WatchVideo } from '../types';
 import { WatchPage } from './watch';
 
 vi.mock('../api', () => ({
@@ -114,6 +114,62 @@ function makeVideo(overrides: Partial<WatchVideo> = {}): WatchVideo {
     },
     ...overrides,
   } as WatchVideo;
+}
+
+function makeVideoChoice(overrides: Partial<VideoChoice> = {}): VideoChoice {
+  const base = makeVideo({
+    key: 'video-key-720',
+    itemId: 'item-video-key-720',
+    title: 'Pilot 720p',
+    quality: '720p',
+    appHref: '/app/watch/video-key-720',
+    classicHref: '/watch/video-key-720',
+  });
+  return {
+    ...base,
+    type: 'movie',
+    label: '720p',
+    playHref: '/app/watch/video-key-720',
+    detailsHref: '/app/movie/pilot',
+    aspect: 'poster',
+    ...overrides,
+  } as unknown as VideoChoice;
+}
+
+function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
+  return {
+    key: 'track-key',
+    itemId: 'item-track-key',
+    type: 'track',
+    messageId: 7,
+    secureHash: 'hash',
+    title: 'Theme',
+    year: 2026,
+    mediaKind: 'music',
+    posterUrl: '/thumb/track.jpg',
+    thumbUrl: '/thumb/track.jpg',
+    backdropUrl: '/thumb/track-backdrop.jpg',
+    duration: 100,
+    durationLabel: '1:40',
+    fileSize: 1000,
+    fileSizeLabel: '1 KB',
+    quality: 'mp3',
+    genres: [],
+    tags: [],
+    overview: '',
+    artist: 'Composer',
+    albumTitle: 'Album',
+    href: '/watch/track-key',
+    streamHref: '/stream/track-key',
+    watchKey: 'track-key',
+    trackNumber: 1,
+    format: 'MP3',
+    qualityLabel: 'MP3',
+    appHref: '/app/watch/track-key',
+    classicHref: '/watch/track-key',
+    albumHref: '/app/album/album',
+    ...overrides,
+  };
 }
 
 function renderWatchPage(video = makeVideo()) {
@@ -245,6 +301,36 @@ describe('WatchPage video player', () => {
     await waitFor(() => expect(video.muted).toBe(false));
   });
 
+  it('toggles captions from the visible fullscreen-safe controls', async () => {
+    const subtitles: SubtitleTrack[] = [
+      { id: 'eng', url: '/sub/video-key/en.vtt', language: 'en', label: 'English', codec: 'vtt', kind: 'subtitles' },
+    ];
+    fetchSubtitlesMock.mockResolvedValue(subtitles);
+    renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const captionsButton = await screen.findByLabelText('Turn captions on') as HTMLButtonElement;
+    await waitFor(() => expect(captionsButton.disabled).toBe(false));
+
+    fireEvent.click(captionsButton);
+
+    expect(screen.getByLabelText('Turn captions off')).toBeTruthy();
+    expect(screen.getAllByText('English').length).toBeGreaterThan(0);
+  });
+
+  it('keeps volume and quality variants available inside the video menu', async () => {
+    const view = renderWatchPage(makeVideo({ qualityVariants: [makeVideoChoice()] }));
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    fireEvent.click(screen.getByLabelText('More video options'));
+
+    fireEvent.change(screen.getByLabelText('Video volume'), { target: { value: '0.4' } });
+    await waitFor(() => expect(video.volume).toBe(0.4));
+
+    expect(screen.getByRole('menuitem', { name: /720pOpen/i }).getAttribute('href')).toBe('/app/watch/video-key-720');
+  });
+
   it('supports keyboard shortcuts for video seeking and mute', async () => {
     const view = renderWatchPage();
 
@@ -270,5 +356,45 @@ describe('WatchPage video player', () => {
     fireEvent.change(screen.getAllByLabelText('Playback speed')[0], { target: { value: '1.5' } });
 
     await waitFor(() => expect(video.playbackRate).toBe(1.5));
+  });
+});
+
+describe('WatchPage audio player', () => {
+  it('keeps queue available from the audio watch page even for one track', async () => {
+    const track = makeTrack();
+    const onOpenQueue = vi.fn();
+    fetchWatchMock.mockResolvedValue({
+      mediaKind: 'music',
+      item: track,
+      albumTracks: [track],
+    });
+
+    render(
+      <WatchPage
+        watchKey={track.key}
+        player={{ ...emptyPlayer, track, queue: [track], queueIndex: 0 }}
+        playTrack={vi.fn()}
+        playRelative={vi.fn()}
+        playQueueIndex={vi.fn()}
+        addToQueue={vi.fn()}
+        shuffleQueue={vi.fn()}
+        togglePlayback={vi.fn()}
+        seek={vi.fn()}
+        setSpeed={vi.fn()}
+        cycleRepeatMode={vi.fn()}
+        setVolume={vi.fn()}
+        toggleMute={vi.fn()}
+        confirmNext={vi.fn()}
+        cancelNext={vi.fn()}
+        onOpenQueue={onOpenQueue}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Theme', level: 1 });
+    const queueButton = screen.getByLabelText('Open queue') as HTMLButtonElement;
+    expect(queueButton.disabled).toBe(false);
+
+    fireEvent.click(queueButton);
+    expect(onOpenQueue).toHaveBeenCalledTimes(1);
   });
 });

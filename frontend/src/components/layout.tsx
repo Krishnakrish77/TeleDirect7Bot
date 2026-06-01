@@ -58,6 +58,7 @@ export function Header({
   setAccountOpen,
   classicUiHref,
   onSearchSubmit,
+  onSearchClear,
   onSignIn,
   onSignOut,
 }: {
@@ -70,12 +71,13 @@ export function Header({
   setAccountOpen: Dispatch<SetStateAction<boolean>>;
   classicUiHref: string;
   onSearchSubmit: () => void;
+  onSearchClear: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement | null>(null);
-  const suggestions = useSuggestions(query);
+  const suggestions = useSuggestions(query.trim());
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -101,6 +103,11 @@ export function Header({
     onSearchSubmit();
   };
 
+  const handleClear = () => {
+    setOpen(false);
+    onSearchClear();
+  };
+
   const handleKey = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') setOpen(false);
   };
@@ -115,7 +122,9 @@ export function Header({
       </a>
 
       <form className="top-search" role="search" onSubmit={handleSubmit}>
-        <SearchIcon className="search-leading" />
+        <button type="submit" className="icon-button search-leading search-submit" aria-label="Search">
+          <SearchIcon />
+        </button>
         <input
           ref={searchRef}
           value={query}
@@ -129,7 +138,7 @@ export function Header({
           autoComplete="off"
         />
         {query && (
-          <button type="button" className="icon-button clear-search" onClick={() => setQuery('')} aria-label="Clear search">
+          <button type="button" className="icon-button clear-search" onClick={handleClear} aria-label="Clear search">
             <XIcon />
           </button>
         )}

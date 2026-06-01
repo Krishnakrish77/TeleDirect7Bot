@@ -157,9 +157,12 @@ describe('QueueDrawer', () => {
       />,
     );
 
-    expect(screen.getByRole('heading', { name: 'Now playing' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Queue' })).toBeTruthy();
     expect(screen.getByText('Current Theme')).toBeTruthy();
+    expect(screen.getByText('0:35 / 1:40')).toBeTruthy();
     expect(screen.getByRole('heading', { name: '2 tracks' })).toBeTruthy();
+    expect(screen.getByLabelText('2 up next')).toBeTruthy();
+    expect(screen.getByLabelText('0 played')).toBeTruthy();
 
     fireEvent.click(screen.getByLabelText('Play Second Theme'));
     expect(playQueueIndex).toHaveBeenCalledWith(1);
@@ -195,6 +198,8 @@ describe('QueueDrawer', () => {
     );
 
     expect(screen.getByText('Nothing queued')).toBeTruthy();
+    expect(screen.getByLabelText('0 up next')).toBeTruthy();
+    expect(screen.getByLabelText('1 played')).toBeTruthy();
     expect(screen.getByText('Played earlier')).toBeTruthy();
     expect(screen.getByLabelText('Play First Theme')).toBeTruthy();
   });

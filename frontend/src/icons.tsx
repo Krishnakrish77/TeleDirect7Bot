@@ -61,6 +61,18 @@ export function SkipForwardIcon(props: Props) {
   );
 }
 
+export function ShuffleIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M16 3h5v5" />
+      <path d="M4 20 21 3" />
+      <path d="M21 16v5h-5" />
+      <path d="m15 15 6 6" />
+      <path d="M4 4h3l4 4" />
+    </IconBase>
+  );
+}
+
 export function BookmarkIcon(props: Props) {
   return (
     <IconBase {...props}>
