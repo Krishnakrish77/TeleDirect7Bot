@@ -166,6 +166,23 @@ describe('AdminPage', () => {
     expect(navigate).toHaveBeenCalledWith('/app/admin?filter=movies');
   });
 
+  it('renders episode zero as a valid episode label', () => {
+    renderAdmin({
+      data: {
+        ...adminData,
+        items: [{
+          ...adminData.items[0],
+          seriesTitle: 'Specials',
+          seriesKey: 'specials',
+          season: 1,
+          episode: 0,
+        }],
+      },
+    });
+
+    expect(screen.getByText('Specials - S01E00')).toBeTruthy();
+  });
+
   it('runs selected-row bulk actions and reloads data', async () => {
     const reload = vi.fn();
     renderAdmin({ reload });

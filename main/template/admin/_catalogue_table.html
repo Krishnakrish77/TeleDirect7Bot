@@ -83,7 +83,7 @@
                     {% else %}—{% endif %}
                   {% elif item.series_key %}
                     {{ item.series_title }}
-                    {% if item.season and item.episode %}
+                    {% if item.season is not none and item.episode is not none %}
                       <span class="text-slate-500">S{{ '%02d' % item.season }}E{{ '%02d' % item.episode }}</span>
                     {% endif %}
                   {% else %}—{% endif %}
@@ -112,9 +112,9 @@
                           data-description="{{ item.description }}"
                           data-file-name="{{ item.file_name or '' }}"
                           data-series-title="{{ item.series_title or '' }}"
-                          data-season="{{ item.season or '' }}"
-                          data-episode="{{ item.episode or '' }}"
-                          data-episode-end="{{ item.episode_end or '' }}"
+                          data-season="{{ item.season if item.season is not none else '' }}"
+                          data-episode="{{ item.episode if item.episode is not none else '' }}"
+                          data-episode-end="{{ item.episode_end if item.episode_end is not none else '' }}"
                           data-tmdb-id="{{ item.tmdb_id or '' }}"
                           {# Default to 'tv' when the item already looks like
                              a TV episode (has a series_key) so the manual

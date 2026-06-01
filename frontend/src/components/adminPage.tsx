@@ -49,7 +49,7 @@ function itemSubtitle(item: AdminItem): string {
     return [item.artist, item.albumTitle].filter(Boolean).join(' - ') || 'Music';
   }
   if (item.seriesTitle) {
-    const episode = item.season && item.episode
+    const episode = item.season !== null && item.episode !== null
       ? `S${String(item.season).padStart(2, '0')}E${String(item.episode).padStart(2, '0')}`
       : '';
     return [item.seriesTitle, episode].filter(Boolean).join(' - ');

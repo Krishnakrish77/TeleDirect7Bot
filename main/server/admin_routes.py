@@ -2167,7 +2167,7 @@ async def _bulk_assign_series(ids: List[int], series_title: str, season_num: int
         existing_eps = set()
         for mid in sorted(ids):
             it = media_index.get_item(mid)
-            if it and it.episode:
+            if it and it.episode is not None:
                 existing_eps.add(it.episode)
         next_ep = 1
         for mid in sorted(ids):
@@ -2177,7 +2177,7 @@ async def _bulk_assign_series(ids: List[int], series_title: str, season_num: int
             it.series_title = series_title
             it.series_key = series_key
             it.season = season_num
-            if not it.episode:
+            if it.episode is None:
                 while next_ep in existing_eps:
                     next_ep += 1
                 it.episode = next_ep
