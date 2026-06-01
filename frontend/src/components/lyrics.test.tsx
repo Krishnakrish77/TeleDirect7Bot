@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearLyricsCache, parseLrc } from '../hooks/lyrics';
 import type { WatchTrack } from '../types';
-import { LyricsPanel } from './lyrics';
+import { LyricsFlipCard, LyricsPanel } from './lyrics';
 
 function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
   return {
@@ -85,5 +85,52 @@ describe('LyricsPanel', () => {
     render(<LyricsPanel track={makeTrack({ title: 'Plain Song' })} currentTime={0} seek={vi.fn()} />);
 
     expect(await screen.findByText((_, element) => element?.textContent === 'Plain\nLyrics')).toBeTruthy();
+  });
+
+  it('deduplicates concurrent lyric fetches for repeated lyrics surfaces', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        syncedLyrics: '[00:01.00]First line',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const track = makeTrack({ title: 'Shared Song' });
+
+    render(
+      <>
+        <LyricsPanel track={track} currentTime={1.2} seek={vi.fn()} />
+        <LyricsPanel track={track} currentTime={1.2} seek={vi.fn()} />
+      </>,
+    );
+
+    expect(await screen.findAllByRole('button', { name: 'First line' })).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LyricsFlipCard', () => {
+  it('flips album art to synced lyrics and lets the user seek', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        syncedLyrics: '[00:01.00]First line\n[00:12.50]Second line',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const seek = vi.fn();
+
+    render(<LyricsFlipCard track={makeTrack()} currentTime={12.6} seek={seek} />);
+
+    fireEvent.click(screen.getByLabelText('Show lyrics'));
+
+    expect(await screen.findByRole('button', { name: 'Second line' })).toBeTruthy();
+    expect(screen.getByLabelText('Hide lyrics')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'First line' }));
+    expect(seek).toHaveBeenCalledWith(1);
+
+    fireEvent.click(screen.getByLabelText('Hide lyrics'));
+    expect(screen.getByLabelText('Show lyrics')).toBeTruthy();
   });
 });

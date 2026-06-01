@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLyrics } from '../hooks/lyrics';
+import { XIcon } from '../icons';
 import type { WatchTrack } from '../types';
 
 export function LyricsPanel({
@@ -73,5 +74,52 @@ export function LyricsPanel({
         <div className="lyrics-empty">No lyrics available</div>
       )}
     </section>
+  );
+}
+
+export function LyricsFlipCard({
+  track,
+  currentTime,
+  seek,
+}: {
+  track: WatchTrack | null;
+  currentTime: number;
+  seek: (seconds: number) => void;
+}) {
+  const [flipped, setFlipped] = useState(false);
+  if (!track) return null;
+
+  return (
+    <div className={flipped ? 'lyrics-flip-card flipped' : 'lyrics-flip-card'}>
+      <div className="lyrics-flip-inner">
+        <div className="lyrics-flip-face lyrics-flip-front">
+          <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" />
+          <button
+            type="button"
+            className="lyrics-flip-toggle"
+            onClick={() => setFlipped(true)}
+            aria-label="Show lyrics"
+          >
+            <span>Lyrics</span>
+          </button>
+        </div>
+        <div className="lyrics-flip-face lyrics-flip-back">
+          <div className="lyrics-flip-back-header">
+            <span>Lyrics</span>
+            <button type="button" onClick={() => setFlipped(false)} aria-label="Hide lyrics">
+              <XIcon />
+            </button>
+          </div>
+          {flipped && (
+            <LyricsPanel
+              className="lyrics-flip-panel"
+              track={track}
+              currentTime={currentTime}
+              seek={seek}
+            />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

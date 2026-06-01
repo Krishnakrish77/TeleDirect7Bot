@@ -14,9 +14,11 @@ export interface LyricsResult {
 
 const EMPTY_LYRICS: LyricsResult = { synced: [], plain: '', unavailable: true };
 const lyricsCache = new Map<string, LyricsResult>();
+const lyricsRequests = new Map<string, Promise<LyricsResult>>();
 
 export function clearLyricsCache() {
   lyricsCache.clear();
+  lyricsRequests.clear();
 }
 
 function lyricsKey(track: WatchTrack): string {
@@ -41,33 +43,43 @@ export function parseLrc(raw: string): LyricLine[] {
     .sort((a, b) => a.t - b.t);
 }
 
-async function fetchLyrics(track: WatchTrack, signal: AbortSignal): Promise<LyricsResult> {
+async function fetchLyrics(track: WatchTrack): Promise<LyricsResult> {
   const key = lyricsKey(track);
   const cached = lyricsCache.get(key);
   if (cached) return cached;
+  const pending = lyricsRequests.get(key);
+  if (pending) return pending;
 
-  const params = new URLSearchParams({
-    track_name: track.title,
-    artist_name: track.artist || '',
-  });
-  const response = await fetch(`https://lrclib.net/api/get?${params}`, {
-    headers: { Accept: 'application/json' },
-    signal,
-  });
-  if (!response.ok) {
-    lyricsCache.set(key, EMPTY_LYRICS);
-    return EMPTY_LYRICS;
+  const request = (async () => {
+    const params = new URLSearchParams({
+      track_name: track.title,
+      artist_name: track.artist || '',
+    });
+    const response = await fetch(`https://lrclib.net/api/get?${params}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      lyricsCache.set(key, EMPTY_LYRICS);
+      return EMPTY_LYRICS;
+    }
+
+    const data = await response.json() as { syncedLyrics?: string; plainLyrics?: string };
+    const synced = data.syncedLyrics ? parseLrc(data.syncedLyrics) : [];
+    const result = synced.length
+      ? { synced, plain: '', unavailable: false }
+      : data.plainLyrics
+        ? { synced: [], plain: data.plainLyrics, unavailable: false }
+        : EMPTY_LYRICS;
+    lyricsCache.set(key, result);
+    return result;
+  })();
+
+  lyricsRequests.set(key, request);
+  try {
+    return await request;
+  } finally {
+    lyricsRequests.delete(key);
   }
-
-  const data = await response.json() as { syncedLyrics?: string; plainLyrics?: string };
-  const synced = data.syncedLyrics ? parseLrc(data.syncedLyrics) : [];
-  const result = synced.length
-    ? { synced, plain: '', unavailable: false }
-    : data.plainLyrics
-      ? { synced: [], plain: data.plainLyrics, unavailable: false }
-      : EMPTY_LYRICS;
-  lyricsCache.set(key, result);
-  return result;
 }
 
 export function useLyrics(track: WatchTrack | null) {
@@ -87,15 +99,20 @@ export function useLyrics(track: WatchTrack | null) {
       setState({ loading: false, lyrics: cached });
       return undefined;
     }
-    const controller = new AbortController();
+    let cancelled = false;
     setState({ loading: true, lyrics: EMPTY_LYRICS });
-    fetchLyrics(track, controller.signal)
-      .then((lyrics) => setState({ loading: false, lyrics }))
+    fetchLyrics(track)
+      .then((lyrics) => {
+        if (!cancelled) setState({ loading: false, lyrics });
+      })
       .catch((error: Error) => {
-        if (controller.signal.aborted || error.name === 'AbortError') return;
-        setState({ loading: false, lyrics: EMPTY_LYRICS });
+        if (!cancelled && error.name !== 'AbortError') {
+          setState({ loading: false, lyrics: EMPTY_LYRICS });
+        }
       });
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, [cacheKey, track]);
 
   return state;

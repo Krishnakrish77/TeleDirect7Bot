@@ -4,7 +4,7 @@ import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, Maxim
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
-import { LyricsPanel } from './lyrics';
+import { LyricsFlipCard, LyricsPanel } from './lyrics';
 import { RatingControls } from './rating';
 import { attachHls, hlsUrl } from '../media/hls';
 import { restoreCachedSubtitle, revokeSubtitleTrack, subtitleFileToTrack } from '../media/subtitles';
@@ -143,9 +143,18 @@ export function WatchPage({
   return (
     <main className="watch-main audio-watch-main">
       <section className="audio-watch">
-        <div className="audio-art">
-          <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" />
-        </div>
+        <LyricsFlipCard
+          track={track}
+          currentTime={currentTime}
+          seek={(seconds) => {
+            if (!current) {
+              playTrack(track, queue);
+              window.setTimeout(() => seek(seconds), 0);
+              return;
+            }
+            seek(seconds);
+          }}
+        />
         <div className="audio-details">
           <p className="eyebrow">{[track.qualityLabel || track.format || 'Music', queue.length > 1 ? `${queue.length} tracks` : ''].filter(Boolean).join(' - ')}</p>
           <h1 dir="auto">{track.title}</h1>
