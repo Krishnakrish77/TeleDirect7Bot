@@ -93,6 +93,14 @@ export function ChevronDownIcon(props: Props) {
   );
 }
 
+export function ChevronUpIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="m6 15 6-6 6 6" />
+    </IconBase>
+  );
+}
+
 export function FilterIcon(props: Props) {
   return (
     <IconBase {...props}>

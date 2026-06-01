@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 import { NowPlayingSheet } from './audioPlayer';
+import { QueueDrawer } from './queueDrawer';
 
 function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
   return {
@@ -130,5 +131,71 @@ describe('NowPlayingSheet', () => {
 
     fireEvent.click(screen.getByText('Cancel'));
     expect(cancelNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('QueueDrawer', () => {
+  it('separates the current track from upcoming queue actions', () => {
+    const current = makeTrack({ key: 'current-theme', title: 'Current Theme' });
+    const second = makeTrack({ key: 'second-theme', title: 'Second Theme', durationLabel: '2:00' });
+    const third = makeTrack({ key: 'third-theme', title: 'Third Theme' });
+    const playQueueIndex = vi.fn();
+    const moveQueueItem = vi.fn();
+    const removeFromQueue = vi.fn();
+    const clearQueue = vi.fn();
+
+    render(
+      <QueueDrawer
+        open
+        player={makePlayer({ track: current, queue: [current, second, third], queueIndex: 0 })}
+        playQueueIndex={playQueueIndex}
+        togglePlayback={vi.fn()}
+        removeFromQueue={removeFromQueue}
+        clearQueue={clearQueue}
+        moveQueueItem={moveQueueItem}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Now playing' })).toBeTruthy();
+    expect(screen.getByText('Current Theme')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '2 tracks' })).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Play Second Theme'));
+    expect(playQueueIndex).toHaveBeenCalledWith(1);
+
+    const moveSecondUp = screen.getByLabelText('Move Second Theme up') as HTMLButtonElement;
+    expect(moveSecondUp.disabled).toBe(true);
+
+    fireEvent.click(screen.getByLabelText('Move Third Theme up'));
+    expect(moveQueueItem).toHaveBeenCalledWith(2, -1);
+
+    fireEvent.click(screen.getByLabelText('Remove Second Theme'));
+    expect(removeFromQueue).toHaveBeenCalledWith(1);
+
+    fireEvent.click(screen.getByText('Clear queue'));
+    expect(clearQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows played tracks separately when the queue has history', () => {
+    const first = makeTrack({ key: 'first-theme', title: 'First Theme' });
+    const current = makeTrack({ key: 'current-theme', title: 'Current Theme' });
+
+    render(
+      <QueueDrawer
+        open
+        player={makePlayer({ track: current, queue: [first, current], queueIndex: 1 })}
+        playQueueIndex={vi.fn()}
+        togglePlayback={vi.fn()}
+        removeFromQueue={vi.fn()}
+        clearQueue={vi.fn()}
+        moveQueueItem={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Nothing queued')).toBeTruthy();
+    expect(screen.getByText('Played earlier')).toBeTruthy();
+    expect(screen.getByLabelText('Play First Theme')).toBeTruthy();
   });
 });

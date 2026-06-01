@@ -4,13 +4,15 @@ import { classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubPara
 import { useAudioPlayer } from './hooks/audio';
 import { useDetail, useHub, useMe, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
 import { Header, PrimaryNav, SignInModal } from './components/layout';
-import { HeroStage, FilterBar, ContinueWatching, ShelfRow, GridView } from './components/hub';
+import { FilterBar } from './components/filters';
+import { HeroStage, ContinueWatching, ShelfRow, GridView } from './components/hub';
 import { DetailPage } from './components/detail';
 import { WatchPage } from './components/watch';
 import { WatchlistPage } from './components/watchlistPage';
 import { StatsPage } from './components/statsPage';
-import { MiniPlayer, NowPlayingSheet, QueueDrawer } from './components/audioPlayer';
+import { MiniPlayer, NowPlayingSheet } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
+import { QueueDrawer } from './components/queueDrawer';
 import type { HubCard, HubFilters, RecommendationMeta } from './types';
 
 const DEFAULT_FILTERS: HubFilters = {

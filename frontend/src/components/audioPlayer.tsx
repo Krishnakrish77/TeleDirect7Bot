@@ -1,4 +1,4 @@
-import { ChevronRightIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
+import { ChevronRightIcon, ListIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 import { LyricsPanel } from './lyrics';
@@ -207,79 +207,6 @@ export function NowPlayingSheet({
           seek={seek}
         />
       </section>
-    </div>
-  );
-}
-
-export function QueueDrawer({
-  open,
-  player,
-  playQueueIndex,
-  togglePlayback,
-  removeFromQueue,
-  clearQueue,
-  moveQueueItem,
-  onClose,
-}: {
-  open: boolean;
-  player: PlayerState;
-  playQueueIndex: (index: number) => void;
-  togglePlayback: (track?: WatchTrack) => void;
-  removeFromQueue: (index: number) => void;
-  clearQueue: () => void;
-  moveQueueItem: (index: number, direction: -1 | 1) => void;
-  onClose: () => void;
-}) {
-  if (!open) return null;
-  return (
-    <div className="sheet-layer" role="dialog" aria-modal="true" aria-label="Queue">
-      <button type="button" className="modal-scrim" onClick={onClose} aria-label="Close" />
-      <aside className="queue-drawer">
-        <div className="drawer-heading">
-          <div>
-            <p className="eyebrow">Queue</p>
-            <h2>Up next</h2>
-          </div>
-          <div className="drawer-actions">
-            <button type="button" className="text-button" onClick={clearQueue} disabled={player.queue.length < 2}>Clear</button>
-            <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
-              <XIcon />
-            </button>
-          </div>
-        </div>
-        {player.queue.length ? (
-          <div className="track-list queue-list">
-            {player.queue.map((track, index) => {
-              const active = index === player.queueIndex;
-              return (
-                <div key={`${track.key}:${index}`} className={active ? 'track-row active queue-row' : 'track-row queue-row'}>
-                  <span className="track-number">{index + 1}</span>
-                  <img src={track.posterUrl || track.thumbUrl} alt="" loading="lazy" decoding="async" />
-                  <button type="button" className="queue-title-button" onClick={() => (active ? togglePlayback() : playQueueIndex(index))}>
-                    <span className="track-title">
-                    <strong>{track.title}</strong>
-                    <span>{[track.artist, track.albumTitle].filter(Boolean).join(' - ')}</span>
-                    </span>
-                    {active && player.playing ? <PauseIcon /> : <PlayIcon />}
-                  </button>
-                  <div className="queue-row-actions">
-                    <button type="button" className="icon-button" onClick={() => moveQueueItem(index, -1)} disabled={index === 0} aria-label="Move up">↑</button>
-                    <button type="button" className="icon-button" onClick={() => moveQueueItem(index, 1)} disabled={index + 1 === player.queue.length} aria-label="Move down">↓</button>
-                    <button type="button" className="icon-button" onClick={() => removeFromQueue(index)} disabled={active} aria-label="Remove from queue">
-                      <XIcon />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="empty-state">
-            <MusicIcon />
-            <strong>No queued tracks</strong>
-          </div>
-        )}
-      </aside>
     </div>
   );
 }
