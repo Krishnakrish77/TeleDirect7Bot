@@ -107,6 +107,11 @@ export function WatchPage({
   const nextAvailable = current
     ? player.queueIndex + 1 < player.queue.length
     : Boolean(data.next);
+  const seekAudioBy = (delta: number) => {
+    if (!current) return;
+    const upperBound = duration > 0 ? duration : Number.POSITIVE_INFINITY;
+    seek(Math.max(0, Math.min(upperBound, currentTime + delta)));
+  };
 
   return (
     <main className="watch-main audio-watch-main">
@@ -134,11 +139,29 @@ export function WatchPage({
             </button>
             <button
               type="button"
+              className="icon-button player-nav"
+              onClick={() => seekAudioBy(-10)}
+              disabled={!current}
+              aria-label="Rewind 10 seconds"
+            >
+              <span aria-hidden="true">-10</span>
+            </button>
+            <button
+              type="button"
               className="player-play"
               onClick={() => togglePlayback(track, queue)}
               aria-label={playing ? 'Pause' : 'Play'}
             >
               {playing ? <PauseIcon /> : <PlayIcon />}
+            </button>
+            <button
+              type="button"
+              className="icon-button player-nav"
+              onClick={() => seekAudioBy(10)}
+              disabled={!current}
+              aria-label="Forward 10 seconds"
+            >
+              <span aria-hidden="true">+10</span>
             </button>
             <button
               type="button"
@@ -246,6 +269,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const [activeSub, setActiveSub] = useState('');
   const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
   const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
   const [brightness, setBrightness] = useState(1);
   const [error, setError] = useState(video.knownUnplayable ? 'This file is marked as difficult for browser playback.' : '');
   const [showNext, setShowNext] = useState(false);
@@ -273,6 +297,12 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     window.setTimeout(() => setToast(''), 900);
   }, []);
 
+  const changeVolume = useCallback((nextVolume: number) => {
+    const next = Math.max(0, Math.min(1, nextVolume));
+    setVolume(next);
+    setMuted(next <= 0);
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     fetchSubtitles(video.subtitleBase, controller.signal).then(setSubtitles).catch(() => setSubtitles([]));
@@ -292,7 +322,8 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     const el = videoRef.current;
     if (!el) return;
     el.volume = volume;
-  }, [sourceSrc, volume]);
+    el.muted = muted;
+  }, [muted, sourceSrc, volume]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -407,7 +438,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     return () => window.clearInterval(interval);
   }, [autoplayNext, showNext, video.nextEpisode]);
 
-  const toggleVideo = () => {
+  const toggleVideo = useCallback(() => {
     const el = videoRef.current;
     if (!el || video.knownUnplayable) return;
     if (el.paused) {
@@ -415,17 +446,23 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     } else {
       el.pause();
     }
-  };
+  }, [video.knownUnplayable]);
 
-  const seekVideo = (seconds: number) => {
+  const seekVideo = useCallback((seconds: number) => {
     const el = videoRef.current;
     if (!el) return;
     const next = Math.max(0, Math.min(seconds, duration || video.duration || seconds));
     el.currentTime = next;
     setCurrentTime(next);
-  };
+  }, [duration, video.duration]);
 
-  const togglePip = () => {
+  const seekVideoBy = useCallback((delta: number) => {
+    const base = videoRef.current?.currentTime ?? currentTime;
+    seekVideo(base + delta);
+    showToast(delta > 0 ? '+10s' : '-10s');
+  }, [currentTime, seekVideo, showToast]);
+
+  const togglePip = useCallback(() => {
     const el = videoRef.current as (HTMLVideoElement & {
       webkitSupportsPresentationMode?: (mode: string) => boolean;
       webkitSetPresentationMode?: (mode: string) => void;
@@ -439,9 +476,9 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     } else if (el.webkitSupportsPresentationMode?.('picture-in-picture') && el.webkitSetPresentationMode) {
       el.webkitSetPresentationMode(el.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
     }
-  };
+  }, []);
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = useCallback(() => {
     const target = shellRef.current;
     const el = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
     const enterNativeFullscreen = () => {
@@ -451,9 +488,9 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
     else if (target.requestFullscreen) target.requestFullscreen().catch(enterNativeFullscreen);
     else enterNativeFullscreen();
-  };
+  }, []);
 
-  const shareVideo = async () => {
+  const shareVideo = useCallback(async () => {
     const data = { title: video.title, url: window.location.href };
     if (navigator.share) {
       try { await navigator.share(data); } catch (_) { return; }
@@ -461,7 +498,35 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       await navigator.clipboard.writeText(window.location.href).catch(() => undefined);
       showToast('Link copied');
     }
-  };
+  }, [showToast, video.title]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      if (target?.isContentEditable || tagName === 'INPUT' || tagName === 'SELECT' || tagName === 'TEXTAREA' || tagName === 'BUTTON') {
+        return;
+      }
+      if (event.key === ' ' || event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        toggleVideo();
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        seekVideoBy(-10);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        seekVideoBy(10);
+      } else if (event.key.toLowerCase() === 'm') {
+        event.preventDefault();
+        setMuted((isMuted) => !isMuted);
+      } else if (event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        toggleFullscreen();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [seekVideoBy, toggleFullscreen, toggleVideo]);
 
   const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     const touch = event.touches[0];
@@ -485,7 +550,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       start.moved = true;
       if (start.x > rect.left + rect.width / 2) {
         const next = Math.max(0, Math.min(1, volume + dy / 500));
-        setVolume(next);
+        changeVolume(next);
         showToast(`Volume ${Math.round(next * 100)}%`);
       } else {
         const next = Math.max(0.45, Math.min(1, brightness + dy / 650));
@@ -588,6 +653,9 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           <button type="button" className="player-play video-play" onClick={toggleVideo} aria-label={playing ? 'Pause' : 'Play'}>
             {playing ? <PauseIcon /> : <PlayIcon />}
           </button>
+          <button type="button" className="icon-button video-step" onClick={() => seekVideoBy(-10)} aria-label="Rewind 10 seconds">
+            <span aria-hidden="true">-10</span>
+          </button>
           <div className="video-time">
             <span>{formatClock(currentTime)}</span>
             <input
@@ -600,7 +668,13 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
             />
             <span>{formatClock(duration)}</span>
           </div>
-          <button type="button" className="icon-button" onClick={togglePip} aria-label="Picture in picture">
+          <button type="button" className="icon-button video-step" onClick={() => seekVideoBy(10)} aria-label="Forward 10 seconds">
+            <span aria-hidden="true">+10</span>
+          </button>
+          <button type="button" className="icon-button" onClick={() => setMuted((isMuted) => !isMuted)} aria-label={muted ? 'Unmute' : 'Mute'}>
+            <VolumeIcon />
+          </button>
+          <button type="button" className="icon-button video-pip-control" onClick={togglePip} aria-label="Picture in picture">
             <PictureInPictureIcon />
           </button>
           <button type="button" className="icon-button" onClick={toggleFullscreen} aria-label="Fullscreen">
@@ -682,7 +756,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
             max="1"
             step="0.01"
             value={volume}
-            onChange={(event) => setVolume(Number(event.currentTarget.value))}
+            onChange={(event) => changeVolume(Number(event.currentTarget.value))}
             aria-label="Volume"
           />
         </label>

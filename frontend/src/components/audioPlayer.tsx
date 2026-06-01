@@ -1,4 +1,4 @@
-import { BookmarkIcon, ChevronRightIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, XIcon } from '../icons';
+import { ChevronRightIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 
@@ -86,6 +86,9 @@ export function NowPlayingSheet({
   if (!open || !track) return null;
   const duration = player.duration || track.duration || 0;
   const rangeMax = Math.max(1, Math.round(duration));
+  const seekBy = (delta: number) => {
+    seek(Math.max(0, Math.min(rangeMax, player.currentTime + delta)));
+  };
   return (
     <div className="sheet-layer" role="dialog" aria-modal="true" aria-label="Now playing">
       <button type="button" className="modal-scrim" onClick={onClose} aria-label="Close" />
@@ -115,8 +118,14 @@ export function NowPlayingSheet({
           <button type="button" className="icon-button player-nav" onClick={() => playRelative(-1)} disabled={player.queueIndex <= 0} aria-label="Previous track">
             <SkipBackIcon />
           </button>
+          <button type="button" className="icon-button player-nav" onClick={() => seekBy(-10)} aria-label="Rewind 10 seconds">
+            <span aria-hidden="true">-10</span>
+          </button>
           <button type="button" className="player-play" onClick={() => togglePlayback()} aria-label={player.playing ? 'Pause' : 'Play'}>
             {player.playing ? <PauseIcon /> : <PlayIcon />}
+          </button>
+          <button type="button" className="icon-button player-nav" onClick={() => seekBy(10)} aria-label="Forward 10 seconds">
+            <span aria-hidden="true">+10</span>
           </button>
           <button type="button" className="icon-button player-nav" onClick={() => playRelative(1)} disabled={player.queueIndex + 1 >= player.queue.length} aria-label="Next track">
             <SkipForwardIcon />

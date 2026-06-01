@@ -120,6 +120,7 @@ function renderWatchPage(video = makeVideo()) {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   fetchSubtitlesMock.mockResolvedValue([]);
   fetchAudioTracksMock.mockResolvedValue([]);
 });
@@ -192,5 +193,41 @@ describe('WatchPage video player', () => {
 
     await waitFor(() => expect(requestFullscreen).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1));
+  });
+
+  it('supports visible skip controls and mute in the video controls', async () => {
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+
+    fireEvent.click(screen.getByLabelText('Forward 10 seconds'));
+    expect(video.currentTime).toBe(10);
+
+    fireEvent.click(screen.getByLabelText('Rewind 10 seconds'));
+    expect(video.currentTime).toBe(0);
+
+    fireEvent.click(screen.getByLabelText('Mute'));
+    await waitFor(() => expect(video.muted).toBe(true));
+    expect(screen.getByLabelText('Unmute')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '0.5' } });
+    await waitFor(() => expect(video.muted).toBe(false));
+  });
+
+  it('supports keyboard shortcuts for video seeking and mute', async () => {
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(video.currentTime).toBe(10);
+
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(video.currentTime).toBe(0);
+
+    fireEvent.keyDown(window, { key: 'm' });
+    await waitFor(() => expect(video.muted).toBe(true));
   });
 });

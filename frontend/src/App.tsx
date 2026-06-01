@@ -107,12 +107,17 @@ function App() {
   const filters = data?.filters ?? DEFAULT_FILTERS;
   const watchKey = route.kind === 'watch' ? route.key : '';
   const classicUiHref = uiModeHref('classic', classicPathForApp(location.pathname, location.search));
+  const shellClass = [
+    'app-shell',
+    audio.player.track ? 'has-player' : '',
+    route.kind === 'watch' ? 'watch-route' : '',
+  ].filter(Boolean).join(' ');
   const onSearchSubmit = useCallback(() => {
     update({ q: query.trim(), offset: 0 });
   }, [query, update]);
 
   return (
-    <div className={audio.player.track ? 'app-shell has-player' : 'app-shell'} onClick={onLinkClick}>
+    <div className={shellClass} onClick={onLinkClick}>
       <Header
         me={me}
         user={user}
