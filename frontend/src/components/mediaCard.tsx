@@ -9,6 +9,32 @@ interface MediaCardProps {
   onToggleSaved: (card: HubCard) => void;
 }
 
+export function getMediaCardDisplay(card: HubCard): { eyebrow: string; title: string; subtitle: string } {
+  const title = card.title;
+  if (card.type === 'album') {
+    return { eyebrow: 'Album', title, subtitle: card.artist || '' };
+  }
+  if (card.type === 'track') {
+    return { eyebrow: 'Song', title, subtitle: card.artist || card.albumTitle || '' };
+  }
+  if (card.type === 'series') {
+    const subtitle = card.episodeCount
+      ? `${card.episodeCount} episode${card.episodeCount === 1 ? '' : 's'}`
+      : card.subtitle;
+    return { eyebrow: 'Series', title, subtitle };
+  }
+  if (card.type === 'movie') {
+    const subtitle = card.variantCount && card.variantCount > 1
+      ? `${card.variantCount} version${card.variantCount === 1 ? '' : 's'}`
+      : card.durationLabel || '';
+    return { eyebrow: 'Movie', title, subtitle };
+  }
+  if (card.mediaKind === 'audio') {
+    return { eyebrow: 'Song', title, subtitle: card.artist || card.albumTitle || '' };
+  }
+  return { eyebrow: 'Video', title, subtitle: card.durationLabel || card.genres[0] || '' };
+}
+
 function MediaCardBase({
   card,
   saved,
@@ -18,6 +44,7 @@ function MediaCardBase({
   const isMusic = card.type === 'track' || card.type === 'album';
   const width = card.aspect === 'square' ? 512 : 342;
   const height = card.aspect === 'square' ? 512 : 513;
+  const display = getMediaCardDisplay(card);
 
   return (
     <article className={`media-card ${card.aspect === 'square' ? 'square' : 'poster'}`}>
@@ -51,12 +78,11 @@ function MediaCardBase({
               event.currentTarget.hidden = true;
             }}
           />
-          {card.badge && <span className="card-badge">{card.badge}</span>}
         </span>
         <span className="card-copy">
-          <span className="eyebrow">{card.eyebrow}</span>
-          <strong dir="auto">{card.title}{card.year ? ` (${card.year})` : ''}</strong>
-          {card.subtitle && <span>{card.subtitle}</span>}
+          <span className="eyebrow">{display.eyebrow}</span>
+          <strong dir="auto">{display.title}</strong>
+          {display.subtitle && <span>{display.subtitle}</span>}
         </span>
       </a>
       <button

@@ -483,17 +483,16 @@ img {
 
 .hero-content h1 {
   display: -webkit-box;
-  max-width: min(15ch, 100%);
-  max-height: 2.05em;
+  max-width: min(20ch, 100%);
   margin: 0.55rem 0 0;
   overflow: hidden;
-  font-size: clamp(2.3rem, 5.4vw, 5.2rem);
+  font-size: clamp(2.2rem, 4.8vw, 5rem);
   line-height: 1.02;
   letter-spacing: 0;
   overflow-wrap: break-word;
   text-wrap: balance;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .hero-overview {
@@ -1024,7 +1023,7 @@ img {
 
 .card-copy {
   display: block;
-  min-height: 4.65rem;
+  min-height: 3.65rem;
   min-width: 0;
 }
 
@@ -1978,12 +1977,12 @@ img {
 .detail-hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(160px, 240px) minmax(0, 1fr);
   gap: clamp(1.2rem, 4vw, 3rem);
   align-items: end;
-  min-height: clamp(430px, 58svh, 640px);
+  min-height: clamp(360px, 48svh, 540px);
   margin: 0 calc(clamp(1rem, 3vw, 2rem) * -1);
-  padding: clamp(7rem, 13vw, 12rem) clamp(1rem, 5vw, 4rem) clamp(2rem, 4vw, 3rem);
+  padding: clamp(4.5rem, 9vw, 7rem) clamp(1rem, 5vw, 4rem) clamp(1.5rem, 3vw, 2.4rem);
   overflow: hidden;
   border-bottom: 1px solid var(--line);
   background: #08090b;
@@ -2029,11 +2028,13 @@ img {
 }
 
 .detail-copy h1 {
-  max-width: 18ch;
+  max-width: min(22ch, 100%);
   margin: 0.45rem 0 0;
   color: #fff;
-  font-size: clamp(2.2rem, 5.5vw, 5.4rem);
-  line-height: 0.98;
+  font-size: clamp(2rem, 4.7vw, 4.7rem);
+  line-height: 1;
+  overflow-wrap: break-word;
+  text-wrap: balance;
 }
 
 .detail-overview {
@@ -2761,8 +2762,8 @@ img {
   }
 
   .hero-content h1 {
-    max-width: min(15ch, 76rem);
-    font-size: clamp(3rem, 5.1vw, 5.6rem);
+    max-width: min(20ch, 76rem);
+    font-size: clamp(2.8rem, 4.8vw, 5.2rem);
   }
 
   .hero-strip {
@@ -2829,12 +2830,12 @@ img {
   }
 
   .detail-hero {
-    grid-template-columns: minmax(220px, 330px) minmax(0, 1fr);
-    min-height: clamp(520px, 64svh, 740px);
+    grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+    min-height: clamp(400px, 52svh, 600px);
   }
 
   .detail-copy h1 {
-    max-width: 16ch;
+    max-width: min(20ch, 100%);
   }
 
   .watch-main {
@@ -2993,13 +2994,13 @@ img {
   }
 
   .detail-hero {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: end;
-    min-height: 620px;
+    grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+    align-items: center;
+    min-height: clamp(340px, 46svh, 480px);
   }
 
   .detail-poster {
-    width: min(48vw, 210px);
+    width: 100%;
   }
 
   .video-titlebar {
@@ -3104,10 +3105,10 @@ img {
   }
 
   .hero-content h1 {
-    max-width: 11ch;
-    max-height: 3.15em;
-    font-size: clamp(2.15rem, 12vw, 3.45rem);
-    -webkit-line-clamp: 3;
+    max-width: 100%;
+    font-size: clamp(1.85rem, 9.5vw, 3rem);
+    line-height: 1.04;
+    -webkit-line-clamp: 4;
   }
 
   .hero-overview {
@@ -3210,17 +3211,27 @@ img {
   }
 
   .detail-hero {
+    grid-template-columns: 108px minmax(0, 1fr);
+    align-items: center;
+    gap: 0.85rem;
     margin-inline: -0.85rem;
-    min-height: 590px;
-    padding: 7rem 0.85rem 2rem;
+    min-height: 0;
+    padding: 5rem 0.85rem 1.25rem;
   }
 
   .detail-copy h1 {
-    font-size: clamp(2rem, 13vw, 3.5rem);
+    max-width: none;
+    font-size: clamp(1.55rem, 7.4vw, 2.45rem);
+    line-height: 1.05;
   }
 
   .detail-overview {
-    -webkit-line-clamp: 3;
+    display: none;
+  }
+
+  .detail-copy .hero-meta,
+  .credit-links {
+    display: none;
   }
 
   .episode-grid {
