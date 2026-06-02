@@ -549,6 +549,8 @@ export interface SeriesEntry {
   rep: VideoChoice;
   variants: VideoChoice[];
   duplicateCount: number;
+  progressPct: number;
+  watched: boolean;
 }
 
 export interface SeriesSeasonBlock {

@@ -255,6 +255,7 @@ function SeriesDetail({
                   <article key={entry.rep.key} className="episode-card">
                     <a className="episode-thumb" href={entry.rep.playHref}>
                       <img src={entry.rep.episodeStillUrl || entry.rep.thumbUrl} alt="" loading="lazy" decoding="async" />
+                      <EpisodePlaybackState progressPct={entry.progressPct} watched={entry.watched} />
                       {entry.rep.durationLabel && <span className="card-badge">{entry.rep.durationLabel}</span>}
                     </a>
                     <div>
@@ -278,6 +279,25 @@ function SeriesDetail({
       </section>
       <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
     </main>
+  );
+}
+
+function EpisodePlaybackState({ progressPct, watched }: { progressPct: number; watched: boolean }) {
+  const progress = Math.max(0, Math.min(100, Math.round(progressPct || 0)));
+  if (!progress && !watched) return null;
+  const complete = watched && !progress;
+  const label = complete ? 'Watched' : `${progress}% watched`;
+  const width = complete ? 100 : progress;
+  return (
+    <>
+      <span className={complete ? 'episode-progress-badge watched' : 'episode-progress-badge'} aria-label={label}>
+        {complete && <CheckIcon />}
+        <span>{complete ? 'Watched' : `${progress}%`}</span>
+      </span>
+      <span className="episode-progress-track" aria-hidden="true">
+        <span style={{ width: `${width}%` }} />
+      </span>
+    </>
   );
 }
 

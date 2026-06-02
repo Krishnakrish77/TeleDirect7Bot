@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlayerState } from '../hooks/audio';
-import type { AlbumDetailResponse, MovieDetailResponse, VideoChoice, WatchTrack } from '../types';
+import type { AlbumDetailResponse, MovieDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
 import { DetailPage } from './detail';
 
 function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
@@ -142,6 +142,65 @@ function makeMovie(): MovieDetailResponse {
   };
 }
 
+function makeSeries(): SeriesDetailResponse {
+  const started = makeVideoChoice({
+    type: 'item',
+    itemId: '101',
+    key: 'hash101',
+    title: 'Training Day',
+    episodeLabel: 'S01E01',
+    episodeOverview: 'Peter starts training.',
+    episodeStillUrl: '/thumb/episode-1.jpg',
+    playHref: '/app/watch/hash101',
+    classicHref: '/watch/hash101',
+  });
+  const watched = makeVideoChoice({
+    type: 'item',
+    itemId: '102',
+    key: 'hash102',
+    title: 'Team Up',
+    episodeLabel: 'S01E02',
+    episodeOverview: 'The team comes together.',
+    episodeStillUrl: '/thumb/episode-2.jpg',
+    playHref: '/app/watch/hash102',
+    classicHref: '/watch/hash102',
+  });
+  return {
+    kind: 'series',
+    key: 'ultimate-spiderman',
+    savedId: 'series:ultimate-spiderman',
+    title: 'Ultimate Spiderman',
+    year: 2026,
+    overview: 'A series overview.',
+    posterUrl: '/thumb/series.jpg',
+    backdropUrl: '/thumb/series-backdrop.jpg',
+    genres: ['Action'],
+    director: '',
+    directors: [],
+    cast: [],
+    imdbHref: '',
+    trailerKey: '',
+    playHref: '/app/watch/hash101',
+    classicHref: '/watch/hash101',
+    seasonOptions: [{ value: '1', label: 'Season 1' }],
+    showSelector: false,
+    selectedSeason: '1',
+    episodeCount: 2,
+    totalEpisodeCount: 2,
+    seasonCount: 1,
+    seasonBlocks: [
+      {
+        season: 1,
+        entries: [
+          { rep: started, variants: [started], duplicateCount: 0, progressPct: 42, watched: false },
+          { rep: watched, variants: [watched], duplicateCount: 0, progressPct: 0, watched: true },
+        ],
+      },
+    ],
+    related: [],
+  };
+}
+
 describe('Album detail', () => {
   it('renders a dense album summary with tracks and playback actions', () => {
     const album = makeAlbum();
@@ -183,6 +242,33 @@ describe('Album detail', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Play Theme next' }));
     expect(addToQueue).toHaveBeenCalledWith(album.tracks[0], true);
+  });
+});
+
+describe('Series detail', () => {
+  it('shows in-progress and completed episode states', () => {
+    render(
+      <DetailPage
+        route={{ kind: 'detail', detailKind: 'series', key: 'ultimate-spiderman' }}
+        data={makeSeries()}
+        loading={false}
+        error=""
+        saved={new Set()}
+        onToggleSaved={vi.fn()}
+        navigate={vi.fn()}
+        playTrack={vi.fn()}
+        togglePlayback={vi.fn()}
+        addToQueue={vi.fn()}
+        shuffleQueue={vi.fn()}
+        player={makePlayer()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Ultimate Spiderman' })).toBeTruthy();
+    expect(screen.getByLabelText('42% watched')).toBeTruthy();
+    expect(screen.getByLabelText('Watched')).toBeTruthy();
+    expect(screen.getByText('Training Day')).toBeTruthy();
+    expect(screen.getByText('Team Up')).toBeTruthy();
   });
 });
 

@@ -3204,6 +3204,62 @@ img {
   object-fit: cover;
 }
 
+.episode-thumb .card-badge {
+  top: 0.45rem;
+  right: 0.45rem;
+  bottom: auto;
+}
+
+.episode-progress-badge {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.45rem;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  min-height: 24px;
+  max-width: calc(100% - 0.9rem);
+  padding: 0.25rem 0.45rem;
+  border: 1px solid rgba(249, 115, 22, 0.34);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fdba74;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.episode-progress-badge svg {
+  width: 13px;
+  height: 13px;
+}
+
+.episode-progress-badge.watched {
+  border-color: rgba(34, 197, 94, 0.36);
+  color: #bbf7d0;
+}
+
+.episode-progress-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.episode-progress-track span {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
+
+.episode-progress-badge.watched + .episode-progress-track span {
+  background: #22c55e;
+}
+
 .episode-card h4 {
   margin: 0.2rem 0 0;
   color: #fff;

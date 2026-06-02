@@ -20,10 +20,12 @@ from urllib.parse import urlencode, urljoin
 from aiohttp import web
 
 from main.utils import codec_probe
+from main.utils import cw_store
 from main.utils import media_index
 from main.utils import rec_engine
 from main.utils import thumb_cache
 from main.utils import trending
+from main.utils import wh_store
 from main.utils.codec_probe import _clean_music_tag
 from main.utils.hub_query import AlbumGroup, HubItem, MovieGroup, SeriesGroup
 from main.utils.human_readable import humanbytes
@@ -664,6 +666,41 @@ def _video_choice_payload(item: HubItem) -> dict:
     }
 
 
+def _cw_progress_pct(entry: dict | None) -> int:
+    if not entry:
+        return 0
+    try:
+        pos = float(entry.get("pos") or 0)
+        dur = float(entry.get("dur") or 0)
+    except (TypeError, ValueError):
+        return 0
+    if dur <= 0:
+        return 0
+    pct = pos / dur
+    if pct < 0.02 or pct >= 0.95:
+        return 0
+    return max(1, min(94, round(pct * 100)))
+
+
+async def _attach_series_playback_state(payload: dict, user_id: int | None) -> None:
+    if not user_id:
+        return
+    cw_data, history = await asyncio.gather(
+        cw_store.get_all(user_id),
+        wh_store.get_recent(user_id, limit=500),
+    )
+    watched_keys = {str(item.get("cw_key") or "") for item in history}
+    for block in payload.get("seasonBlocks") or []:
+        for entry in block.get("entries") or []:
+            keys = [
+                str(variant.get("key") or "")
+                for variant in entry.get("variants") or []
+                if variant.get("key")
+            ]
+            entry["watched"] = any(key in watched_keys for key in keys)
+            entry["progressPct"] = max((_cw_progress_pct(cw_data.get(key)) for key in keys), default=0)
+
+
 def _related_rows(item: HubItem, *, limit: int = 14) -> list[dict]:
     rows: list[dict] = []
     exclude = {
@@ -783,12 +820,16 @@ def _series_blocks(episodes: list[HubItem]) -> tuple[list[dict], list[dict], boo
                 "rep": _video_choice_payload(unique[0]),
                 "variants": [_video_choice_payload(v) for v in unique],
                 "duplicateCount": duplicate_count,
+                "progressPct": 0,
+                "watched": False,
             })
         for ep in extras:
             entries.append({
                 "rep": _video_choice_payload(ep),
                 "variants": [_video_choice_payload(ep)],
                 "duplicateCount": 0,
+                "progressPct": 0,
+                "watched": False,
             })
         season_blocks.append({"season": season, "entries": entries})
 
@@ -979,6 +1020,8 @@ async def api_app_series(request: web.Request) -> web.Response:
     )
     if payload is None:
         return _json({"error": "Series not found"}, status=404)
+    user = get_user(request)
+    await _attach_series_playback_state(payload, int(user["sub"]) if user else None)
     return _json(payload)
 
 
