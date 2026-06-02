@@ -385,6 +385,39 @@ export function useAudioPlayer() {
     }));
   }, []);
 
+  const dismissPlayer = useCallback(() => {
+    pendingNextIndexRef.current = null;
+    preloadedKeyRef.current = '';
+    crossfadeRef.current = false;
+    [audioRef.current, bufferRef.current].forEach((audio) => {
+      if (!audio) return;
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    });
+    if ('mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.playbackState = 'none';
+        navigator.mediaSession.metadata = null;
+      } catch (_) {
+        // Ignore uneven browser Media Session support.
+      }
+    }
+    setPlayer((state) => ({
+      ...state,
+      track: null,
+      queue: [],
+      queueIndex: -1,
+      playing: false,
+      currentTime: 0,
+      duration: 0,
+      error: '',
+      nextTrack: null,
+      nextCountdown: NEXT_COUNTDOWN_SECONDS,
+      queueToast: '',
+    }));
+  }, []);
+
   const scheduleNext = useCallback((index: number) => {
     const nextTrack = playerRef.current.queue[index];
     if (!nextTrack) return;
@@ -766,5 +799,6 @@ export function useAudioPlayer() {
     toggleMute,
     confirmNext,
     cancelNext,
+    dismissPlayer,
   };
 }

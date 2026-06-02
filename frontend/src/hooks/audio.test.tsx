@@ -48,6 +48,8 @@ function AudioHarness({ track = makeTrack() }: { track?: WatchTrack }) {
       <button type="button" onClick={() => audio.playTrack(track, [track])}>Start</button>
       <button type="button" onClick={() => audio.toggleMute()}>Mute</button>
       <button type="button" onClick={() => audio.togglePlayback()}>Toggle</button>
+      <button type="button" onClick={() => audio.dismissPlayer()}>Dismiss</button>
+      <span data-testid="track">{audio.player.track?.title || 'none'}</span>
       <span data-testid="muted">{String(audio.player.muted)}</span>
       <span data-testid="volume">{audio.player.volume}</span>
     </div>
@@ -105,5 +107,33 @@ describe('useAudioPlayer', () => {
     expect(screen.getByTestId('volume').textContent).toBe('1');
     expect(primary.muted).toBe(false);
     expect(primary.volume).toBe(1);
+  });
+
+  it('dismisses the player by stopping audio and clearing persisted playback', async () => {
+    const play = vi.mocked(HTMLMediaElement.prototype.play);
+    const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+    const load = vi.mocked(HTMLMediaElement.prototype.load);
+
+    render(<AudioHarness />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    const buffer = screen.getByTestId('buffer-audio') as HTMLAudioElement;
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Theme'));
+    await waitFor(() => expect(localStorage.getItem('td:reactPlayer')).toBeTruthy());
+    pause.mockClear();
+    load.mockClear();
+
+    fireEvent.click(screen.getByText('Dismiss'));
+
+    await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('none'));
+    expect(primary.getAttribute('src')).toBeNull();
+    expect(buffer.getAttribute('src')).toBeNull();
+    expect(pause).toHaveBeenCalledTimes(2);
+    expect(load).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(localStorage.getItem('td:reactPlayer')).toBeNull());
+    expect(localStorage.getItem('td:nowplaying')).toBeNull();
   });
 });

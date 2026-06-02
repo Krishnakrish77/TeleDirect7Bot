@@ -407,6 +407,8 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const [toast, setToast] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsTimerRef = useRef<number | null>(null);
   const [autoplayNext, setAutoplayNext] = useState(() => {
     try {
       return localStorage.getItem('td:videoAutoplay') !== '0';
@@ -432,6 +434,27 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     setToast(message);
     window.setTimeout(() => setToast(''), 900);
   }, []);
+
+  const clearControlsTimer = useCallback(() => {
+    if (controlsTimerRef.current !== null) {
+      window.clearTimeout(controlsTimerRef.current);
+      controlsTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleControlsHide = useCallback(() => {
+    clearControlsTimer();
+    if (!playing || menuOpen || error || showNext) return;
+    controlsTimerRef.current = window.setTimeout(() => {
+      setControlsVisible(false);
+      controlsTimerRef.current = null;
+    }, 2200);
+  }, [clearControlsTimer, error, menuOpen, playing, showNext]);
+
+  const revealVideoControls = useCallback(() => {
+    setControlsVisible(true);
+    scheduleControlsHide();
+  }, [scheduleControlsHide]);
 
   const changeVolume = useCallback((nextVolume: number) => {
     const next = Math.max(0, Math.min(1, nextVolume));
@@ -504,6 +527,16 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     document.addEventListener('fullscreenchange', onFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    if (!playing || menuOpen || error || showNext) {
+      clearControlsTimer();
+      setControlsVisible(true);
+      return undefined;
+    }
+    scheduleControlsHide();
+    return clearControlsTimer;
+  }, [clearControlsTimer, error, menuOpen, playing, scheduleControlsHide, showNext]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -776,6 +809,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   }, [seekVideoBy, toggleFullscreen, toggleVideo]);
 
   const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    revealVideoControls();
     const touch = event.touches[0];
     const now = Date.now();
     const last = gestureRef.current.lastTap;
@@ -843,8 +877,10 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       </section>
 
       <section
-        className="video-shell"
+        className={controlsVisible || menuOpen ? 'video-shell controls-visible' : 'video-shell controls-hidden'}
         ref={shellRef}
+        onPointerMove={revealVideoControls}
+        onFocusCapture={revealVideoControls}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteContinueEntry, fetchAudioTracks, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, setRating } from '../api';
 import type { PlayerState } from '../hooks/audio';
@@ -297,6 +297,27 @@ describe('WatchPage video player', () => {
     fireEvent.click(screen.getByLabelText('Mute'));
     await waitFor(() => expect(video.muted).toBe(true));
     expect(screen.getByLabelText('Unmute')).toBeTruthy();
+  });
+
+  it('hides video controls during playback and reveals them on pointer movement', async () => {
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    vi.useFakeTimers();
+    const shell = view.container.querySelector('.video-shell') as HTMLElement;
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+
+    fireEvent.play(video);
+    expect(shell.className).toContain('controls-visible');
+    await act(async () => {});
+    act(() => {
+      vi.advanceTimersByTime(2300);
+    });
+    expect(shell.className).toContain('controls-hidden');
+
+    fireEvent.pointerMove(shell);
+
+    expect(shell.className).toContain('controls-visible');
   });
 
   it('toggles captions from the visible fullscreen-safe controls', async () => {

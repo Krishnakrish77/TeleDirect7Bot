@@ -1,4 +1,4 @@
-import { ChevronRightIcon, ListIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
+import { ChevronRightIcon, ListIcon, PauseIcon, PlayIcon, RepeatIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 import { LyricsPanel } from './lyrics';
@@ -12,6 +12,7 @@ export function MiniPlayer({
   seek,
   onExpand,
   onOpenQueue,
+  onDismiss,
 }: {
   player: PlayerState;
   playRelative: (delta: number) => void;
@@ -20,6 +21,7 @@ export function MiniPlayer({
   seek: (seconds: number) => void;
   onExpand: () => void;
   onOpenQueue: () => void;
+  onDismiss: () => void;
 }) {
   const track = player.track;
   if (!track) return null;
@@ -49,6 +51,9 @@ export function MiniPlayer({
         </button>
         <button type="button" className="icon-button" onClick={onOpenQueue} aria-label="Open queue">
           <ListIcon />
+        </button>
+        <button type="button" className="icon-button mini-dismiss" onClick={onDismiss} aria-label="Close mini player">
+          <XIcon />
         </button>
       </div>
       <div className="mini-progress">
@@ -163,8 +168,15 @@ export function NowPlayingSheet({
               </button>
             ))}
           </div>
-          <button type="button" className="secondary-action compact-action" onClick={cycleRepeatMode}>
-            <span>Repeat {player.repeatMode}</span>
+          <button
+            type="button"
+            className={player.repeatMode === 'off' ? 'icon-button repeat-button' : 'icon-button repeat-button active'}
+            onClick={cycleRepeatMode}
+            aria-label={`Repeat ${player.repeatMode}`}
+            title={`Repeat ${player.repeatMode}`}
+          >
+            <RepeatIcon />
+            {player.repeatMode === 'one' && <span aria-hidden="true">1</span>}
           </button>
           <label className="volume-control audio-volume-control">
             <button type="button" className="icon-button" onClick={toggleMute} aria-label={player.muted ? 'Unmute audio' : 'Mute audio'}>

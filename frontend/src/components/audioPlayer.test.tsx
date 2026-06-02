@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
-import { NowPlayingSheet } from './audioPlayer';
+import { MiniPlayer, NowPlayingSheet } from './audioPlayer';
 import { QueueDrawer } from './queueDrawer';
 
 function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
@@ -62,6 +62,29 @@ function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
   } as PlayerState;
 }
 
+describe('MiniPlayer', () => {
+  it('lets users close the persistent mini player', () => {
+    const onDismiss = vi.fn();
+
+    render(
+      <MiniPlayer
+        player={makePlayer()}
+        playRelative={vi.fn()}
+        playQueueIndex={vi.fn()}
+        togglePlayback={vi.fn()}
+        seek={vi.fn()}
+        onExpand={vi.fn()}
+        onOpenQueue={vi.fn()}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Close mini player'));
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('NowPlayingSheet', () => {
   it('exposes quick seek controls for the audio player', () => {
     const seek = vi.fn();
@@ -120,7 +143,7 @@ describe('NowPlayingSheet', () => {
     fireEvent.click(screen.getByText('1.5x'));
     expect(setSpeed).toHaveBeenCalledWith(1.5);
 
-    fireEvent.click(screen.getByText('Repeat off'));
+    fireEvent.click(screen.getByLabelText('Repeat off'));
     expect(cycleRepeatMode).toHaveBeenCalledTimes(1);
 
     fireEvent.change(screen.getByLabelText('Audio volume'), { target: { value: '0.4' } });

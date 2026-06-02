@@ -305,6 +305,7 @@ function App() {
         seek={audio.seek}
         onExpand={() => setNowPlayingOpen(true)}
         onOpenQueue={() => setQueueOpen(true)}
+        onDismiss={audio.dismissPlayer}
       />
       <NowPlayingSheet
         open={nowPlayingOpen}

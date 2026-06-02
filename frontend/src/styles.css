@@ -2489,6 +2489,39 @@ img {
   padding: 0 0.75rem;
 }
 
+.now-controls,
+.now-sheet .player-settings {
+  justify-content: center;
+}
+
+.repeat-button {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+}
+
+.repeat-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.repeat-button.active {
+  border-color: rgba(249, 115, 22, 0.42);
+  background: rgba(249, 115, 22, 0.16);
+  color: #fff;
+}
+
+.repeat-button span {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  color: #fdba74;
+  font-size: 0.58rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .audio-volume-control {
   width: min(14rem, 100%);
 }
@@ -2759,6 +2792,15 @@ img {
 
 .mini-controls {
   justify-self: center;
+}
+
+.mini-dismiss {
+  color: var(--muted);
+}
+
+.mini-dismiss:hover,
+.mini-dismiss:focus-visible {
+  color: #fff;
 }
 
 .mini-play {
@@ -3722,6 +3764,7 @@ img {
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.58);
   pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .video-topbar-copy {
@@ -3783,12 +3826,24 @@ img {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.72);
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .video-controls .icon-button.active {
   border-color: rgba(249, 115, 22, 0.5);
   background: rgba(249, 115, 22, 0.16);
   color: #fff;
+}
+
+.video-shell.controls-hidden .video-topbar {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.video-shell.controls-hidden .video-controls {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
 }
 
 .video-play {
@@ -4070,11 +4125,12 @@ img {
 
   .now-controls {
     grid-area: controls;
-    justify-content: flex-start;
+    justify-content: center;
   }
 
   .now-sheet .player-settings {
     grid-area: settings;
+    justify-content: center;
   }
 
   .now-sheet .next-track-card {
