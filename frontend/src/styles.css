@@ -2166,6 +2166,177 @@ img {
   animation: td-shimmer 1.3s ease-in-out infinite alternate;
 }
 
+/* Grid skeleton (watchlist, liked songs) */
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: clamp(0.75rem, 2vw, 1rem);
+  padding-top: 0.5rem;
+}
+
+.skeleton-music-grid {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.skeleton-grid-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+
+.skeleton-grid-art {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+
+.skeleton-grid-square {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+
+.skeleton-grid-title {
+  height: 14px;
+  width: 80%;
+  border-radius: 4px;
+}
+
+.skeleton-grid-sub {
+  height: 11px;
+  width: 55%;
+  border-radius: 4px;
+}
+
+/* Playlist/liked-songs skeleton */
+.skeleton-playlist {
+  display: grid;
+  gap: 1rem;
+}
+
+.skeleton-playlist-hero {
+  display: flex;
+  gap: clamp(1rem, 3vw, 2rem);
+  align-items: flex-end;
+  padding-bottom: 1rem;
+}
+
+.skeleton-playlist-art {
+  flex-shrink: 0;
+  width: clamp(120px, 20vw, 200px);
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+}
+
+.skeleton-playlist-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.skeleton-playlist-title {
+  height: 28px;
+  width: 60%;
+  border-radius: 6px;
+}
+
+.skeleton-playlist-sub {
+  height: 14px;
+  width: 35%;
+  border-radius: 4px;
+}
+
+.skeleton-playlist-actions {
+  height: 36px;
+  width: 200px;
+  border-radius: 999px;
+  margin-top: 0.5rem;
+}
+
+.skeleton-track-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+.skeleton-track-num {
+  flex-shrink: 0;
+  width: 20px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.skeleton-track-art {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+}
+
+.skeleton-track-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.skeleton-track-title {
+  height: 13px;
+  width: 55%;
+  border-radius: 3px;
+}
+
+.skeleton-track-sub {
+  height: 11px;
+  width: 35%;
+  border-radius: 3px;
+}
+
+/* ── Liked Songs page ───────────────────────────────────────────────────── */
+.liked-songs-hero {
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(1rem, 3vw, 2rem);
+  padding: clamp(1.5rem, 4vw, 3rem) 0 clamp(1rem, 2vw, 1.5rem);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: clamp(1rem, 2vw, 1.5rem);
+}
+
+.liked-songs-art {
+  display: grid;
+  flex-shrink: 0;
+  width: clamp(120px, 18vw, 180px);
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%);
+  place-items: center;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.liked-songs-art svg {
+  width: 48%;
+  height: 48%;
+}
+
+.liked-songs-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.liked-songs-copy h1 {
+  margin: 0.3rem 0 0.2rem;
+  color: #fff;
+  font-size: clamp(2rem, 6vw, 4rem);
+  line-height: 1;
+}
+
 .watch-main {
   display: grid;
   gap: clamp(1rem, 2vw, 1.5rem);

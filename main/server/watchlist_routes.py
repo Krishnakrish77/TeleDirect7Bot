@@ -186,6 +186,19 @@ async def api_app_get(request: web.Request) -> web.Response:
     })
 
 
+@routes.get("/api/app/liked-songs")
+async def api_app_liked_songs(request: web.Request) -> web.Response:
+    user = _get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    items = await _items_for_user(int(user["sub"]))
+    audio_items = [it for it in items if it.get("kind") in ("audio", "album")]
+    return _json({
+        "items": audio_items,
+        "mongoAvailable": watchlist_store.is_available(),
+    })
+
+
 @routes.post("/api/watchlist/{iid}")
 async def api_add(request: web.Request) -> web.Response:
     user = _get_user(request)

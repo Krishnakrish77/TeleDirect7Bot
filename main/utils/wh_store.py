@@ -95,5 +95,41 @@ async def get_recent(user_id: int, limit: int = 20) -> list:
         return []
 
 
+_top_plays_cache: dict = {"data": [], "at": 0.0}
+_TOP_PLAYS_TTL = 4 * 3600  # 4 hours
+
+
+async def get_top_plays(limit: int = 20) -> list:
+    """Return [{cw_key, play_count}] sorted by total plays across all users.
+
+    Results are cached for _TOP_PLAYS_TTL to avoid hammering the aggregation
+    pipeline on every hub page load.
+    """
+    import time as _time
+    global _top_plays_cache
+    if _time.time() - _top_plays_cache["at"] < _TOP_PLAYS_TTL and _top_plays_cache["data"]:
+        return _top_plays_cache["data"][:limit]
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        pipeline = [
+            {"$group": {
+                "_id": "$cw_key",
+                "play_count": {"$sum": "$play_count"},
+            }},
+            {"$sort": {"play_count": -1}},
+            {"$limit": limit * 3},  # over-fetch so dedup in caller still has enough
+        ]
+        docs = await db["watch_history"].aggregate(pipeline).to_list(length=limit * 3)
+        result = [{"cw_key": d["_id"], "play_count": d["play_count"]} for d in docs]
+        _top_plays_cache = {"data": result, "at": _time.time()}
+        return result[:limit]
+    except Exception:
+        logging.exception("wh_store: get_top_plays failed")
+        return []
+
+
 def is_available() -> bool:
     return _get_db() is not None

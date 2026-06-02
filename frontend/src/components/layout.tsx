@@ -2,7 +2,7 @@ import { FormEvent, KeyboardEvent, RefObject, useEffect, useRef, useState, type 
 import { signInTelegram } from '../api';
 import { useSuggestions } from '../hooks/data';
 import { localAppHref } from '../navigation';
-import { BookmarkIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HomeIcon, ListIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, UserIcon, XIcon } from '../icons';
+import { BookmarkIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HeartIcon, HomeIcon, ListIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, UserIcon, XIcon } from '../icons';
 import type { MeResponse, Suggestion, TelegramAuthUser, User, ViewValue } from '../types';
 
 declare global {
@@ -18,7 +18,7 @@ export function PrimaryNav({
 }: {
   user: User | null;
   activeView: ViewValue | '';
-  activeSection: 'home' | 'movies' | 'series' | 'music' | 'watchlist' | '';
+  activeSection: 'home' | 'movies' | 'series' | 'music' | 'watchlist' | 'liked-songs' | '';
 }) {
   return (
     <nav className="primary-nav" aria-label="Primary">
@@ -42,6 +42,12 @@ export function PrimaryNav({
         <a className={activeSection === 'watchlist' ? 'active' : ''} href="/app/watchlist">
           <BookmarkIcon />
           <span>Watchlist</span>
+        </a>
+      )}
+      {user && (
+        <a className={activeSection === 'liked-songs' ? 'active' : ''} href="/app/liked-songs">
+          <HeartIcon />
+          <span>Liked</span>
         </a>
       )}
     </nav>

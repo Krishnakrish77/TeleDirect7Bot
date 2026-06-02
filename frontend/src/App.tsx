@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { dismissRecommendation, signOut } from './api';
 import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
-import { useAdmin, useDetail, useHub, useMe, usePlaylistDetail, usePlaylists, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
+import { useAdmin, useDetail, useHub, useLikedSongs, useMe, usePlaylistDetail, usePlaylists, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
 import { Header, PrimaryNav, ScrollToTop, SignInModal } from './components/layout';
 import { FilterBar, FilterPage } from './components/filters';
 import { HeroStage, ContinueWatching, ShelfRow, GridView } from './components/hub';
 import { DetailPage } from './components/detail';
 import { WatchPage } from './components/watch';
 import { WatchlistPage } from './components/watchlistPage';
+import { LikedSongsPage } from './components/likedSongsPage';
 import { AddToPlaylistSheet } from './components/addToPlaylistSheet';
 import { PlaylistDetailPage, PlaylistsPage } from './components/playlistsPage';
 import { StatsPage } from './components/statsPage';
@@ -52,6 +53,7 @@ function App() {
   const user = me?.user ?? null;
   const { saved, toggle, remove: removeSaved } = useWatchlist(user);
   const watchlistPage = useWatchlistItems(user, route.kind === 'watchlist');
+  const likedSongs = useLikedSongs(user, route.kind === 'liked-songs');
   const playlistsPage = usePlaylists(user, route.kind === 'playlists');
   const playlistDetail = usePlaylistDetail(user, route.kind === 'playlist' ? route.playlistId : '', route.kind === 'playlist');
   const statsPage = useStats(user, route.kind === 'stats');
@@ -114,9 +116,11 @@ function App() {
   const activeView = params.view || '';
   const activeSection = route.kind === 'watchlist'
     ? 'watchlist'
-    : isHubRoute
-      ? (activeView === 'movies' || activeView === 'series' || activeView === 'music' ? activeView : 'home')
-      : '';
+    : route.kind === 'liked-songs'
+      ? 'liked-songs'
+      : isHubRoute
+        ? (activeView === 'movies' || activeView === 'series' || activeView === 'music' ? activeView : 'home')
+        : '';
   const activeFilters = Boolean(params.q || params.tag || params.quality || params.genre || params.year || params.view);
   const expectedHubMode = activeFilters ? 'grid' : 'shelves';
   const canRenderHubData = data?.mode === expectedHubMode;
@@ -264,6 +268,21 @@ function App() {
           onToggleSaved={onRemoveFromWatchlistPage}
           onSignIn={() => setSignInOpen(true)}
         />
+      ) : route.kind === 'liked-songs' ? (
+        <LikedSongsPage
+          user={user}
+          data={likedSongs.data}
+          loading={likedSongs.loading}
+          error={likedSongs.error}
+          onToggleSaved={(card) => {
+            if (!user) { requireAuth(); return; }
+            likedSongs.removeItem(card.itemId);
+            void removeSaved(card.itemId);
+          }}
+          onSignIn={() => setSignInOpen(true)}
+          playTrack={audio.playTrack}
+          shuffleQueue={audio.shuffleQueue}
+        />
       ) : route.kind === 'playlists' ? (
         <PlaylistsPage
           user={user}
@@ -332,6 +351,11 @@ function App() {
           cancelNext={audio.cancelNext}
           onOpenQueue={() => setQueueOpen(true)}
           onAddToPlaylist={onAddToPlaylist}
+          savedIds={saved}
+          onToggleSaved={(itemId) => {
+            if (!user) { requireAuth(); return; }
+            void toggle(itemId);
+          }}
         />
       )}
 

@@ -87,7 +87,7 @@ export function WatchlistPage({
         <span>{data?.items.length ?? 0} saved</span>
       </section>
 
-      {loading && <LoadingRows variant="detail" />}
+      {loading && <LoadingRows variant="grid" />}
       {error && <ErrorPanel message={error} />}
 
       {!loading && !error && data && (

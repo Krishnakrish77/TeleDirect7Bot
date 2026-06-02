@@ -54,6 +54,7 @@ export function localAppHref(href: string | null): string | null {
   if (href === '/app') return appBase();
   if (href.startsWith('/app?')) return `${appBase()}${href.slice('/app'.length)}`;
   if (href === '/watchlist') return '/app/watchlist';
+  if (href === '/liked-songs') return '/app/liked-songs';
   if (href === '/playlists') return '/app/playlists';
   if (/^\/playlist\/[a-f0-9]{32}$/.test(href)) return `/app${href}`;
   if (href === '/stats') return '/app/stats';
@@ -145,6 +146,7 @@ export type AppRoute =
   | { kind: 'hub' }
   | { kind: 'filters' }
   | { kind: 'watchlist' }
+  | { kind: 'liked-songs' }
   | { kind: 'playlists' }
   | { kind: 'playlist'; playlistId: string }
   | { kind: 'stats' }
@@ -157,6 +159,7 @@ export type AppRoute =
 export function parseRoute(pathname: string): AppRoute {
   if (pathname === '/app/filters') return { kind: 'filters' };
   if (pathname === '/app/watchlist') return { kind: 'watchlist' };
+  if (pathname === '/app/liked-songs') return { kind: 'liked-songs' };
   if (pathname === '/app/playlists') return { kind: 'playlists' };
   const playlist = pathname.match(/^\/app\/playlist\/([a-f0-9]{32})/);
   if (playlist) return { kind: 'playlist', playlistId: playlist[1] };

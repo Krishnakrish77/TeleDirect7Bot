@@ -542,6 +542,39 @@ async def api_hub(request: web.Request) -> web.Response:
         except Exception:
             logging.exception("spa hub: trending failed, skipping shelf")
 
+        try:
+            top_plays = await asyncio.wait_for(wh_store.get_top_plays(40), timeout=5.0)
+            top_cards: list[dict] = []
+            seen_groups: set[str] = set()
+            _cw_key_re = re.compile(r'^[A-Za-z0-9_-]*[A-Za-z_-](\d+)$')
+            for entry in top_plays:
+                m = _cw_key_re.match(entry.get("cw_key", ""))
+                if not m:
+                    continue
+                item = media_index.get_item(int(m.group(1)))
+                if item is None:
+                    continue
+                group_key = item.series_key or item.movie_key or item.album_key or str(item.message_id)
+                if group_key in seen_groups:
+                    continue
+                seen_groups.add(group_key)
+                top_cards.append(_card_from_item(item))
+                if len(top_cards) >= 20:
+                    break
+            if len(top_cards) >= 3:
+                raw_shelves = list(raw_shelves) + [
+                    {
+                        "name": "Most Played",
+                        "items": top_cards,
+                        "link": None,
+                        "total": len(top_cards),
+                    },
+                ]
+        except asyncio.TimeoutError:
+            logging.warning("spa hub: top_plays timed out, skipping shelf")
+        except Exception:
+            logging.exception("spa hub: top_plays failed, skipping shelf")
+
         _prewarm_card_thumbs(
             hero_items
             + [

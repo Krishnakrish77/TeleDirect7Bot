@@ -120,6 +120,10 @@ export async function fetchAppWatchlist(signal?: AbortSignal): Promise<Watchlist
   return request<WatchlistPageResponse>('/api/app/watchlist', { signal });
 }
 
+export async function fetchLikedSongs(signal?: AbortSignal): Promise<WatchlistPageResponse> {
+  return request<WatchlistPageResponse>('/api/app/liked-songs', { signal });
+}
+
 export async function fetchPlaylists(signal?: AbortSignal): Promise<PlaylistsResponse> {
   return request<PlaylistsResponse>('/api/app/playlists', { signal });
 }

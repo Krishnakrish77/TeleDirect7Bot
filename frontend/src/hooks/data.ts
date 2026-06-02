@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { addWatchlist, fetchAdmin, fetchAppWatchlist, fetchDetail, fetchHub, fetchMe, fetchPlaylistDetail, fetchPlaylists, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
+import { addWatchlist, fetchAdmin, fetchAppWatchlist, fetchDetail, fetchHub, fetchLikedSongs, fetchMe, fetchPlaylistDetail, fetchPlaylists, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
 import type { AppRoute } from '../navigation';
 import type { AdminResponse, DetailResponse, HubParams, HubResponse, MeResponse, PlaylistDetailResponse, PlaylistsResponse, StatsResponse, Suggestion, User, WatchlistPageResponse } from '../types';
 
@@ -166,6 +166,42 @@ export function useWatchlistItems(user: User | null | undefined, enabled = true)
       .catch((err: Error) => {
         if (controller.signal.aborted) return;
         setError(err.message || 'Unable to load your watchlist');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [enabled, user]);
+
+  const removeItem = useCallback((itemId: string) => {
+    setData((current) => current
+      ? { ...current, items: current.items.filter((item) => item.item_id !== itemId) }
+      : current);
+  }, []);
+
+  return { data, loading, error, removeItem };
+}
+
+export function useLikedSongs(user: User | null | undefined, enabled = true) {
+  const [data, setData] = useState<WatchlistPageResponse | null>(null);
+  const [loading, setLoading] = useState(Boolean(user && enabled));
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!enabled || !user) {
+      setData(null);
+      setLoading(false);
+      setError('');
+      return;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    fetchLikedSongs(controller.signal)
+      .then(setData)
+      .catch((err: Error) => {
+        if (controller.signal.aborted) return;
+        setError(err.message || 'Unable to load liked songs');
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);

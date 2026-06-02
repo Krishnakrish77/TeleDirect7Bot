@@ -1,6 +1,6 @@
 import { DragEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { deleteContinueEntry, fetchAudioTracks, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
-import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
+import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -36,6 +36,8 @@ export function WatchPage({
   cancelNext,
   onOpenQueue,
   onAddToPlaylist,
+  savedIds,
+  onToggleSaved,
 }: {
   watchKey: string;
   player: PlayerState;
@@ -54,6 +56,8 @@ export function WatchPage({
   cancelNext: () => void;
   onOpenQueue: () => void;
   onAddToPlaylist?: (track: WatchTrack) => void;
+  savedIds?: Set<string>;
+  onToggleSaved?: (itemId: string) => void;
 }) {
   const [data, setData] = useState<WatchResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -237,6 +241,17 @@ export function WatchPage({
             <span>{formatClock(duration)}</span>
           </div>
           <div className="audio-actions">
+            {onToggleSaved && (
+              <button
+                type="button"
+                className={savedIds?.has(track.itemId) ? 'secondary-action saved-action' : 'secondary-action'}
+                onClick={() => onToggleSaved(track.itemId)}
+                aria-label={savedIds?.has(track.itemId) ? 'Remove from liked songs' : 'Like this song'}
+              >
+                <HeartIcon filled={savedIds?.has(track.itemId)} />
+                <span>{savedIds?.has(track.itemId) ? 'Liked' : 'Like'}</span>
+              </button>
+            )}
             <a className="secondary-action" href={track.streamHref} download>
               <DownloadIcon />
               <span>Download</span>

@@ -84,7 +84,7 @@ export function PlaylistsPage({
       </div>
 
       {createError && <ErrorPanel message={createError} />}
-      {loading && <LoadingRows />}
+      {loading && <LoadingRows variant="grid" />}
       {error && <ErrorPanel message={error} />}
       {data && !data.available && <ErrorPanel message="Playlist storage is unavailable on this deployment." />}
       {!loading && !error && data?.playlists.length === 0 && (
@@ -180,7 +180,7 @@ export function PlaylistDetailPage({
       </main>
     );
   }
-  if (loading) return <main className="page-main"><LoadingRows /></main>;
+  if (loading) return <main className="page-main"><LoadingRows variant="playlist" /></main>;
   if (error || !data) return <main className="page-main"><ErrorPanel message={error || 'Unable to load playlist'} /></main>;
 
   const queue = data.tracks;
