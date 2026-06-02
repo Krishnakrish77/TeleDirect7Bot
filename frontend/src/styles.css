@@ -3125,88 +3125,76 @@ img {
   padding: 0 0.65rem;
 }
 
-.version-list {
+.playback-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: 0.75rem;
-  align-items: start;
+  gap: 0.5rem;
+  width: min(100%, 760px);
 }
 
-.version-card {
+.playback-option {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(4rem, 6rem) minmax(0, 1fr) minmax(5rem, auto) auto;
   align-items: center;
-  gap: 0.8rem;
-  min-height: 78px;
-  height: auto;
-  max-height: 120px;
-  padding: 0.85rem;
+  gap: 0.75rem;
+  min-height: 52px;
+  max-height: 72px;
+  padding: 0.65rem 0.75rem;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(21, 23, 26, 0.66);
-  aspect-ratio: auto;
-  contain: layout paint style;
+  background: rgba(21, 23, 26, 0.72);
 }
 
-.version-card.active,
-.version-card:hover,
-.version-card:focus-visible {
+.playback-option.active,
+.playback-option:hover,
+.playback-option:focus-visible {
   border-color: rgba(249, 115, 22, 0.42);
-  background: rgba(249, 115, 22, 0.11);
+  background: rgba(249, 115, 22, 0.12);
   outline: none;
 }
 
-.version-card.active .version-play {
-  background: var(--brand);
-  color: #fff;
-}
-
-.version-play {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: #fff;
-  color: #0b0c0e;
-}
-
-.version-play svg {
-  width: 17px;
-  height: 17px;
-}
-
-.version-copy {
-  display: grid;
-  min-width: 0;
-  gap: 0.18rem;
-}
-
-.version-quality {
-  width: fit-content;
+.playback-option strong {
   color: #fdba74;
-  font-size: 0.8rem;
-  font-weight: 800;
+  font-size: 0.86rem;
+  font-weight: 900;
 }
 
-.version-copy strong {
+.playback-option span,
+.playback-option small {
   min-width: 0;
   overflow: hidden;
-  color: #fff;
-  font-size: 0.98rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.version-copy small {
-  min-width: 0;
-  overflow: hidden;
+.playback-option span {
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 850;
+}
+
+.playback-option small {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.playback-option em {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 0.65rem;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.playback-option.active em {
+  background: var(--brand);
 }
 
 .episode-stack {
@@ -5493,6 +5481,22 @@ img {
 }
 
 @media (max-width: 420px) {
+  .playback-option {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.32rem 0.55rem;
+    max-height: none;
+  }
+
+  .playback-option strong,
+  .playback-option small {
+    grid-column: 1;
+  }
+
+  .playback-option em {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
+
   .filter-action-row {
     grid-template-columns: minmax(0, 1fr);
   }

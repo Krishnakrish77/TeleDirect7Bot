@@ -1123,34 +1123,24 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
               <h2>Quality variants</h2>
             </div>
           </div>
-          <div className="version-list">
-            <a className="version-card active" href={video.appHref} aria-current="true" aria-label={`Current ${video.quality || 'version'}`}>
-              <span className="version-play" aria-hidden="true">
-                <PlayIcon />
-              </span>
-              <span className="version-copy">
-                <span className="version-quality">{video.quality || 'Current'}</span>
-                <strong>Current version</strong>
-                <small>{video.durationLabel || 'Now playing'}</small>
-              </span>
-              <ChevronRightIcon />
+          <div className="playback-options">
+            <a className="playback-option active" href={video.appHref} aria-current="true" aria-label={`Current ${video.quality || 'version'}`}>
+              <strong>{video.quality || 'Current'}</strong>
+              <span>Current version</span>
+              <small>{video.durationLabel || 'Now playing'}</small>
+              <em>Playing</em>
             </a>
             {video.qualityVariants.map((variant) => (
               <a
                 key={variant.key}
-                className="version-card"
+                className="playback-option"
                 href={variant.playHref}
                 aria-label={`Open ${[variant.title, variant.quality].filter(Boolean).join(' ') || 'version'}`}
               >
-                <span className="version-play" aria-hidden="true">
-                  <PlayIcon />
-                </span>
-                <span className="version-copy">
-                  <span className="version-quality">{variant.quality || 'Version'}</span>
-                  <strong>{variant.title || variant.label || 'Playback version'}</strong>
-                  <small>{[variant.durationLabel, variant.fileSizeLabel].filter(Boolean).join(' - ')}</small>
-                </span>
-                <ChevronRightIcon />
+                <strong>{variant.quality || 'Version'}</strong>
+                <span>{variant.title || variant.label || 'Playback version'}</span>
+                <small>{[variant.durationLabel, variant.fileSizeLabel].filter(Boolean).join(' - ')}</small>
+                <em>Open</em>
               </a>
             ))}
           </div>
