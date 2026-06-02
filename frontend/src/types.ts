@@ -153,6 +153,7 @@ export interface VideoChoice extends HubCard {
   episodeLabel?: string;
   episodeOverview?: string;
   episodeStillUrl?: string;
+  firstAired?: string;
 }
 
 export interface SubtitleTrack {

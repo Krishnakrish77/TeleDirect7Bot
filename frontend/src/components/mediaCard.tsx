@@ -2,6 +2,19 @@ import { memo, type MouseEvent } from 'react';
 import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, XIcon } from '../icons';
 import type { HubCard, RecommendationMeta } from '../types';
 
+function getLocalCwPct(watchKey: string): number {
+  try {
+    const raw = localStorage.getItem('td:cw');
+    if (!raw) return 0;
+    const entry = JSON.parse(raw)[watchKey];
+    if (!entry?.dur || !entry?.pos) return 0;
+    const pct = entry.pos / entry.dur;
+    return pct > 0.02 && pct < 0.95 ? Math.max(4, Math.min(96, Math.round(pct * 100))) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 interface MediaCardProps {
   card: HubCard;
   saved: boolean;
@@ -88,6 +101,7 @@ function MediaCardBase({
   const width = card.aspect === 'square' ? 512 : 342;
   const height = card.aspect === 'square' ? 512 : 513;
   const display = getMediaCardDisplay(card);
+  const progressPct = card.watchKey ? getLocalCwPct(card.watchKey) : 0;
 
   return (
     <article className={`media-card ${card.aspect === 'square' ? 'square' : 'poster'}`}>
@@ -121,6 +135,11 @@ function MediaCardBase({
               event.currentTarget.hidden = true;
             }}
           />
+          {progressPct > 0 && (
+            <span className="card-progress" aria-hidden="true">
+              <span style={{ width: `${progressPct}%` }} />
+            </span>
+          )}
         </span>
         <span className="card-copy">
           <span className="eyebrow">{display.eyebrow}</span>

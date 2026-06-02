@@ -175,6 +175,10 @@ export async function deleteContinueEntry(key: string): Promise<void> {
   });
 }
 
+export async function clearAllContinue(): Promise<void> {
+  await request<{ ok: boolean }>('/api/cw', { method: 'DELETE', keepalive: true });
+}
+
 export async function recordWatchHistory(key: string, title: string): Promise<void> {
   await request<{ ok: boolean }>(`/api/wh/${encodeURIComponent(key)}`, {
     method: 'POST',

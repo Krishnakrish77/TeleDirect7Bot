@@ -3,7 +3,7 @@ import { dismissRecommendation, signOut } from './api';
 import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useAdmin, useDetail, useHub, useMe, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
-import { Header, PrimaryNav, SignInModal } from './components/layout';
+import { Header, PrimaryNav, ScrollToTop, SignInModal } from './components/layout';
 import { FilterBar, FilterPage } from './components/filters';
 import { HeroStage, ContinueWatching, ShelfRow, GridView } from './components/hub';
 import { DetailPage } from './components/detail';
@@ -332,6 +332,7 @@ function App() {
         moveQueueItem={audio.moveQueueItem}
         onClose={() => setQueueOpen(false)}
       />
+      <ScrollToTop />
     </div>
   );
 }

@@ -1236,6 +1236,24 @@ img {
   background: var(--brand);
 }
 
+.card-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: block;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.card-progress span {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+  border-radius: 0 2px 2px 0;
+}
+
 .empty-state {
   display: grid;
   justify-items: center;
@@ -3314,6 +3332,13 @@ img {
   -webkit-line-clamp: 2;
 }
 
+.episode-airdate {
+  margin-left: 0.4rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
 .variant-chips {
   display: flex;
   flex-wrap: wrap;
@@ -4316,6 +4341,64 @@ img {
   min-height: 48px;
   display: grid;
   place-items: center;
+}
+
+.trailer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(6px);
+}
+
+.trailer-frame {
+  position: relative;
+  width: min(100%, 960px);
+  aspect-ratio: 16 / 9;
+}
+
+.trailer-frame iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 8px;
+}
+
+.trailer-close {
+  position: absolute;
+  top: -2.75rem;
+  right: 0;
+  color: #fff;
+}
+
+.scroll-top-btn {
+  position: fixed;
+  right: 1.25rem;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  z-index: 50;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(21, 23, 26, 0.88);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.12s;
+}
+
+.scroll-top-btn:hover {
+  background: var(--panel);
+}
+
+.has-player .scroll-top-btn {
+  bottom: calc(172px + env(safe-area-inset-bottom, 0px));
 }
 
 .form-error {

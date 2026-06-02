@@ -658,6 +658,7 @@ def _video_choice_payload(item: HubItem) -> dict:
         "episodeLabel": _episode_label(item),
         "episodeOverview": item.episode_overview or "",
         "episodeStillUrl": _tmdb_image(item.episode_still_path, "w300") or _thumb(item),
+        "firstAired": item.episode_air_date or "",
         "label": " - ".join(bit for bit in label_bits if bit),
         "playHref": _play_url(item),
         "appHref": _app_watch_url(item),

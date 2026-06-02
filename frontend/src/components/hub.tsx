@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { dismissRecommendation, fetchContinueItems, fetchContinueMap } from '../api';
+import { clearAllContinue, dismissRecommendation, fetchContinueItems, fetchContinueMap } from '../api';
 import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, PlayIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
@@ -134,6 +134,12 @@ export function ContinueWatching() {
     setEntries((current) => current.filter((entry) => entry.key !== key));
   };
 
+  const forgetAll = () => {
+    try { localStorage.removeItem('td:cw'); } catch (_) { /* ignore */ }
+    void clearAllContinue().catch(() => undefined);
+    setEntries([]);
+  };
+
   return (
     <section className="continue-section">
       <div className="section-heading">
@@ -141,6 +147,9 @@ export function ContinueWatching() {
           <p className="eyebrow">Resume</p>
           <h2>Continue playing</h2>
         </div>
+        <button type="button" className="secondary-action compact-action" onClick={forgetAll}>
+          Clear all
+        </button>
       </div>
       <div className="continue-row">
         {entries.map((entry) => {

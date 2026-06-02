@@ -1,5 +1,5 @@
-import { ReactNode } from 'react';
-import { BookmarkIcon, CheckIcon, ChevronRightIcon, ListIcon, PauseIcon, PlayIcon, ShuffleIcon } from '../icons';
+import { ReactNode, useState } from 'react';
+import { BookmarkIcon, CheckIcon, ChevronRightIcon, ListIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
 import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, SeriesDetailResponse, WatchTrack } from '../types';
 import type { AppRoute } from '../navigation';
@@ -89,6 +89,8 @@ function DetailHero({
   genres = [],
   playHref,
   classicHref,
+  imdbHref,
+  trailerKey,
   saved,
   onToggleSaved,
   children,
@@ -101,10 +103,13 @@ function DetailHero({
   genres?: string[];
   playHref?: string;
   classicHref?: string;
+  imdbHref?: string;
+  trailerKey?: string;
   saved?: boolean;
   onToggleSaved?: () => void;
   children?: ReactNode;
 }) {
+  const [trailerOpen, setTrailerOpen] = useState(false);
   return (
     <section className="detail-hero">
       {(backdropUrl || posterUrl) && <img className="detail-backdrop" src={backdropUrl || posterUrl} alt="" decoding="async" fetchPriority="high" />}
@@ -128,11 +133,22 @@ function DetailHero({
               <span>Play</span>
             </a>
           )}
+          {trailerKey && (
+            <button type="button" className="secondary-action" onClick={() => setTrailerOpen(true)}>
+              <PlayIcon />
+              <span>Trailer</span>
+            </button>
+          )}
           {onToggleSaved && (
             <button type="button" className={saved ? 'secondary-action saved-action' : 'secondary-action'} onClick={onToggleSaved}>
               {saved ? <CheckIcon /> : <BookmarkIcon />}
               <span>{saved ? 'Saved' : 'Save'}</span>
             </button>
+          )}
+          {imdbHref && (
+            <a className="secondary-action" href={imdbHref} target="_blank" rel="noopener noreferrer">
+              <span>IMDb</span>
+            </a>
           )}
           {classicHref && (
             <a className="secondary-action" href={classicHref} title="Open in the original player">
@@ -142,6 +158,27 @@ function DetailHero({
         </div>
         {children}
       </div>
+      {trailerOpen && (
+        <div
+          className="trailer-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Trailer"
+          onClick={() => setTrailerOpen(false)}
+        >
+          <div className="trailer-frame" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="icon-button trailer-close" onClick={() => setTrailerOpen(false)} aria-label="Close trailer">
+              <XIcon />
+            </button>
+            <iframe
+              src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0`}
+              title="Trailer"
+              allow="autoplay; fullscreen"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -167,6 +204,8 @@ function MovieDetail({
         genres={data.genres}
         playHref={data.playHref}
         classicHref={data.classicHref}
+        imdbHref={data.imdbHref}
+        trailerKey={data.trailerKey}
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
       >
@@ -226,6 +265,8 @@ function SeriesDetail({
         genres={data.genres}
         playHref={data.playHref}
         classicHref={data.classicHref}
+        imdbHref={data.imdbHref}
+        trailerKey={data.trailerKey}
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
       >
@@ -265,7 +306,14 @@ function SeriesDetail({
                       {entry.rep.durationLabel && <span className="card-badge">{entry.rep.durationLabel}</span>}
                     </a>
                     <div>
-                      <p className="eyebrow">{entry.rep.episodeLabel || 'Episode'}</p>
+                      <p className="eyebrow">
+                        {entry.rep.episodeLabel || 'Episode'}
+                        {entry.rep.firstAired && (
+                          <time className="episode-airdate" dateTime={entry.rep.firstAired}>
+                            {entry.rep.firstAired.slice(0, 4)}
+                          </time>
+                        )}
+                      </p>
                       <h4><a href={entry.rep.playHref}>{entry.rep.title}</a></h4>
                       {entry.rep.episodeOverview && <p>{entry.rep.episodeOverview}</p>}
                       {entry.variants.length > 1 && (
