@@ -191,12 +191,15 @@ export function FilterBar({
       </div>
 
       <div className="filter-action-row">
+        <SelectControl control={sortControl} className="filter-sort-control" />
         <a className="filter-drawer-button" href={appUrl({ ...params, offset: 0 }, '/filters')}>
+          <FilterIcon />
           <span>Filters</span>
           <strong>{summary}</strong>
-          <small>{activeFilterCount ? `${activeFilterCount} active` : 'Optional'}</small>
+          {(activeFilterCount > 0 || params.sort !== 'newest') && (
+            <small>{activeFilterCount + (params.sort !== 'newest' ? 1 : 0)}</small>
+          )}
         </a>
-        <SelectControl control={sortControl} className="filter-sort-control" />
       </div>
 
       <div

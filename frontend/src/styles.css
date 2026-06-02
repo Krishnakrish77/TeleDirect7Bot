@@ -727,6 +727,13 @@ img {
   text-align: left;
 }
 
+.filter-drawer-button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--teal);
+}
+
 .filter-drawer-button span,
 .filter-select-control span {
   color: var(--dim);
@@ -5943,6 +5950,133 @@ select.edit-field-input {
 @media (max-width: 680px) {
   .hub-main {
     padding-inline: 0.85rem;
+  }
+
+  /* ── Compact single-row filter bar (OTT style) ─────────────────────── */
+  .hub-toolbar {
+    gap: 0;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: var(--bg, #0a0c0e);
+    padding: 0.4rem 0 0.55rem;
+    margin-inline: -0.85rem;
+    padding-inline: 0.85rem;
+  }
+
+  .filter-panel {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
+  }
+
+  .filter-panel-header {
+    display: none;
+  }
+
+  .filter-view-row {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 0.35rem;
+    padding-bottom: 2px; /* prevent clip of focus ring */
+    grid-template-columns: unset;
+  }
+
+  .filter-view-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filter-view-chip {
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 0 1rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+  }
+
+  .filter-action-row {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: 0.5rem;
+    grid-template-columns: unset;
+  }
+
+  /* Compact sort select — show just the value, hide the label */
+  .filter-sort-control {
+    display: flex;
+    align-items: center;
+    min-height: 34px;
+    min-width: 0;
+    width: auto;
+    padding: 0 0.45rem;
+    border-radius: 999px;
+    grid-template-columns: unset;
+  }
+
+  .filter-sort-control > span {
+    display: none;
+  }
+
+  .filter-sort-control select {
+    height: 34px;
+    font-size: 0.8rem;
+    padding: 0 0.25rem;
+    min-width: 6.5rem;
+    max-width: 8rem;
+    border: none;
+    background: #15171a;
+  }
+
+  /* Compact filter button: icon + count badge only */
+  .filter-drawer-button {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 34px;
+    min-width: auto;
+    padding: 0 0.65rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+  }
+
+  .filter-drawer-button svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+  }
+
+  .filter-drawer-button > span {
+    /* "Filters" text — hide on very narrow, keep on medium mobile */
+    display: none;
+  }
+
+  .filter-drawer-button > strong {
+    display: none;
+  }
+
+  .filter-drawer-button > small {
+    /* count badge */
+    min-height: 18px;
+    min-width: 18px;
+    padding: 0.1rem 0.38rem;
+    font-size: 0.68rem;
+    font-weight: 900;
+  }
+
+  .filter-inline-controls {
+    display: none !important;
   }
 
   .page-main,
