@@ -11,6 +11,10 @@ beforeEach(() => {
     configurable: true,
     value: vi.fn(),
   });
+  Object.defineProperty(HTMLMediaElement.prototype, 'load', {
+    configurable: true,
+    value: vi.fn(),
+  });
 });
 
 afterEach(() => {

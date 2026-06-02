@@ -32,6 +32,8 @@ const QUEUE_INDEX_KEY = 'td:queueIndex';
 const PRELOAD_AT_SECONDS = 30;
 const CROSSFADE_SECONDS = 3;
 const NEXT_COUNTDOWN_SECONDS = 5;
+const DEFAULT_VOLUME = 1;
+const SILENT_VOLUME = 0.001;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -47,6 +49,15 @@ function readNumber(key: string, fallback: number): number {
     return Number.isFinite(parsed) ? parsed : fallback;
   } catch (_) {
     return fallback;
+  }
+}
+
+function persistOutputSettings(volume: number, muted: boolean): void {
+  try {
+    localStorage.setItem(VOLUME_KEY, String(volume));
+    localStorage.setItem(MUTED_KEY, muted ? '1' : '0');
+  } catch (_) {
+    // Preference only.
   }
 }
 
@@ -70,7 +81,7 @@ function initialPlayerState(): PlayerState {
     error: '',
     speed: clamp(readNumber(SPEED_KEY, 1), 0.5, 3),
     repeatMode: readRepeatMode(),
-    volume: clamp(readNumber(VOLUME_KEY, 1), 0, 1),
+    volume: clamp(readNumber(VOLUME_KEY, DEFAULT_VOLUME), 0, 1),
     muted: localStorage.getItem(MUTED_KEY) === '1',
     nextTrack: null,
     nextCountdown: NEXT_COUNTDOWN_SECONDS,
@@ -160,6 +171,7 @@ export function useAudioPlayer() {
   const preloadedKeyRef = useRef('');
   const crossfadeRef = useRef(false);
   const pendingNextIndexRef = useRef<number | null>(null);
+  const explicitSilentOutputRef = useRef(false);
   const toastTimerRef = useRef<number | null>(null);
   const cwLastSyncRef = useRef(0);
   const persistLastRef = useRef(0);
@@ -184,6 +196,31 @@ export function useAudioPlayer() {
     audio.playbackRate = current.speed;
     audio.muted = current.muted;
     audio.volume = current.muted ? 0 : clamp(fadeVolume ?? current.volume, 0, 1);
+  }, []);
+
+  const ensureAudibleOutput = useCallback(() => {
+    const current = playerRef.current;
+    if (explicitSilentOutputRef.current || (!current.muted && current.volume > SILENT_VOLUME)) return;
+
+    const restoredVolume = current.volume > SILENT_VOLUME ? current.volume : DEFAULT_VOLUME;
+    persistOutputSettings(restoredVolume, false);
+    playerRef.current = {
+      ...current,
+      muted: false,
+      volume: restoredVolume,
+      error: '',
+    };
+    setPlayer((state) => ({
+      ...state,
+      muted: false,
+      volume: restoredVolume,
+      error: '',
+    }));
+    [audioRef.current, bufferRef.current].forEach((audio) => {
+      if (!audio) return;
+      audio.muted = false;
+      audio.volume = restoredVolume;
+    });
   }, []);
 
   const showQueueToast = useCallback((message: string) => {
@@ -258,6 +295,7 @@ export function useAudioPlayer() {
   }, [getInactiveAudio]);
 
   const playTrack = useCallback((track: WatchTrack, queue?: WatchTrack[]) => {
+    ensureAudibleOutput();
     const current = playerRef.current;
     const nextQueue = queue?.length ? queue : current.queue.length ? current.queue : [track];
     const found = nextQueue.findIndex((item) => item.key === track.key);
@@ -278,7 +316,7 @@ export function useAudioPlayer() {
       nextCountdown: NEXT_COUNTDOWN_SECONDS,
     }));
     startAudio(track, !sameTrack);
-  }, [startAudio, stopInactive]);
+  }, [ensureAudibleOutput, startAudio, stopInactive]);
 
   const resolveNextIndex = useCallback((delta: number) => {
     const current = playerRef.current;
@@ -291,6 +329,7 @@ export function useAudioPlayer() {
   }, []);
 
   const playQueueIndex = useCallback((index: number) => {
+    ensureAudibleOutput();
     const current = playerRef.current;
     const nextTrack = current.queue[index];
     if (!nextTrack) return;
@@ -308,7 +347,7 @@ export function useAudioPlayer() {
       nextCountdown: NEXT_COUNTDOWN_SECONDS,
     }));
     startAudio(nextTrack, true);
-  }, [startAudio, stopInactive]);
+  }, [ensureAudibleOutput, startAudio, stopInactive]);
 
   const playRelative = useCallback((delta: number) => {
     const index = resolveNextIndex(delta);
@@ -428,6 +467,8 @@ export function useAudioPlayer() {
     const audio = getActiveAudio();
     if (!audio || !current.track) return;
     if (audio.paused) {
+      ensureAudibleOutput();
+      applyOutputSettings(audio);
       setPlayer((state) => ({ ...state, playing: true, error: '' }));
       const promise = audio.play();
       if (promise) {
@@ -442,7 +483,7 @@ export function useAudioPlayer() {
     } else {
       audio.pause();
     }
-  }, [getActiveAudio, playTrack]);
+  }, [applyOutputSettings, ensureAudibleOutput, getActiveAudio, playTrack]);
 
   const seek = useCallback((seconds: number) => {
     const audio = getActiveAudio();
@@ -461,7 +502,7 @@ export function useAudioPlayer() {
     setPlayer((state) => ({ ...state, speed: next }));
     if (audioRef.current) audioRef.current.playbackRate = next;
     if (bufferRef.current) bufferRef.current.playbackRate = next;
-  }, [applyOutputSettings]);
+  }, []);
 
   const setRepeatMode = useCallback((mode: RepeatMode) => {
     try {
@@ -480,34 +521,40 @@ export function useAudioPlayer() {
 
   const setVolume = useCallback((value: number) => {
     const next = clamp(value, 0, 1);
-    try {
-      localStorage.setItem(VOLUME_KEY, String(next));
-      localStorage.setItem(MUTED_KEY, next <= 0 ? '1' : '0');
-    } catch (_) {
-      // Preference only.
-    }
-    setPlayer((state) => ({ ...state, volume: next, muted: next <= 0 }));
+    const silent = next <= SILENT_VOLUME;
+    explicitSilentOutputRef.current = silent;
+    persistOutputSettings(next, silent);
+    playerRef.current = {
+      ...playerRef.current,
+      volume: next,
+      muted: silent,
+    };
+    setPlayer((state) => ({ ...state, volume: next, muted: silent }));
     [audioRef.current, bufferRef.current].forEach((audio) => {
       if (!audio) return;
-      audio.muted = next <= 0;
-      audio.volume = next <= 0 ? 0 : next;
+      audio.muted = silent;
+      audio.volume = silent ? 0 : next;
     });
-  }, [applyOutputSettings]);
+  }, []);
 
   const toggleMute = useCallback(() => {
-    const next = !playerRef.current.muted;
-    try {
-      localStorage.setItem(MUTED_KEY, next ? '1' : '0');
-    } catch (_) {
-      // Preference only.
-    }
-    setPlayer((state) => ({ ...state, muted: next }));
+    const current = playerRef.current;
+    const nextMuted = !current.muted;
+    const nextVolume = !nextMuted && current.volume <= SILENT_VOLUME ? DEFAULT_VOLUME : current.volume;
+    explicitSilentOutputRef.current = nextMuted;
+    persistOutputSettings(nextVolume, nextMuted);
+    playerRef.current = {
+      ...current,
+      volume: nextVolume,
+      muted: nextMuted,
+    };
+    setPlayer((state) => ({ ...state, volume: nextVolume, muted: nextMuted }));
     [audioRef.current, bufferRef.current].forEach((audio) => {
       if (!audio) return;
-      audio.muted = next;
-      audio.volume = next ? 0 : playerRef.current.volume;
+      audio.muted = nextMuted;
+      audio.volume = nextMuted ? 0 : nextVolume;
     });
-  }, [applyOutputSettings]);
+  }, []);
 
   const maybeCrossfade = useCallback((audio: HTMLAudioElement) => {
     const current = playerRef.current;
