@@ -133,4 +133,18 @@ describe('LyricsFlipCard', () => {
     fireEvent.click(screen.getByLabelText('Hide lyrics'));
     expect(screen.getByLabelText('Show lyrics')).toBeTruthy();
   });
+
+  it('hides the inactive flip face from assistive technology', () => {
+    const view = render(<LyricsFlipCard track={makeTrack()} currentTime={0} seek={vi.fn()} />);
+    const front = view.container.querySelector('.lyrics-flip-front');
+    const back = view.container.querySelector('.lyrics-flip-back');
+
+    expect(front?.getAttribute('aria-hidden')).toBeNull();
+    expect(back?.getAttribute('aria-hidden')).toBe('true');
+
+    fireEvent.click(screen.getByLabelText('Show lyrics'));
+
+    expect(front?.getAttribute('aria-hidden')).toBe('true');
+    expect(back?.getAttribute('aria-hidden')).toBeNull();
+  });
 });

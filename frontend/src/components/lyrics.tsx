@@ -92,7 +92,7 @@ export function LyricsFlipCard({
   return (
     <div className={flipped ? 'lyrics-flip-card flipped' : 'lyrics-flip-card'}>
       <div className="lyrics-flip-inner">
-        <div className="lyrics-flip-face lyrics-flip-front">
+        <div className="lyrics-flip-face lyrics-flip-front" aria-hidden={flipped || undefined}>
           <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" />
           <button
             type="button"
@@ -103,7 +103,7 @@ export function LyricsFlipCard({
             <span>Lyrics</span>
           </button>
         </div>
-        <div className="lyrics-flip-face lyrics-flip-back">
+        <div className="lyrics-flip-face lyrics-flip-back" aria-hidden={!flipped || undefined}>
           <div className="lyrics-flip-back-header">
             <span>Lyrics</span>
             <button type="button" onClick={() => setFlipped(false)} aria-label="Hide lyrics">

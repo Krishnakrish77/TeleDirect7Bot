@@ -426,6 +426,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const hasIntro = video.introEnd > video.introStart;
   const showSkipIntro = hasIntro && currentTime >= video.introStart && currentTime < video.introEnd;
   const activeSubtitle = allSubtitles.find((track) => track.id === activeSub);
+  const displaySubtitle = video.subtitle && video.subtitle !== video.quality ? video.subtitle : '';
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -836,7 +837,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         <div>
           <p className="eyebrow">{video.quality || 'Video'}</p>
           <h1 dir="auto">{video.title}</h1>
-          {video.subtitle && <p>{video.subtitle}</p>}
+          {displaySubtitle && <p>{displaySubtitle}</p>}
           <RatingControls messageId={video.messageId || video.itemId} />
         </div>
       </section>
@@ -883,7 +884,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         <div className="video-topbar">
           <div className="video-topbar-copy">
             <strong dir="auto">{video.title}</strong>
-            {video.subtitle && <span>{video.subtitle}</span>}
+            {displaySubtitle && <span>{displaySubtitle}</span>}
           </div>
           <div className="video-topbar-badges" aria-label="Playback state">
             <span>{sourceMode === 'hls' ? 'HLS' : 'Direct'}</span>
@@ -1077,8 +1078,6 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           </div>
         )}
       </section>
-
-      {subtitleStatus && <p className="subtitle-status">{subtitleStatus}</p>}
 
       {video.qualityVariants.length > 0 && (
         <section className="quality-section">

@@ -4024,13 +4024,6 @@ img {
   width: min(14rem, 100%);
 }
 
-.subtitle-status {
-  flex-basis: 100%;
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
 @media (min-width: 780px) and (min-height: 640px) {
   .now-sheet {
     top: 50%;
@@ -5073,7 +5066,7 @@ img {
     right: 0.45rem;
     bottom: 4.2rem;
     width: auto;
-    max-height: min(54svh, 24rem);
+    max-height: min(54svh, 24rem, calc(100% - 5.5rem));
   }
 
   .video-time span {

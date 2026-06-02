@@ -519,6 +519,7 @@ export function AdminPage({
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
   const visibleIds = useMemo(() => new Set(data?.items.map((item) => item.messageId) || []), [data]);
+  const pipelineRunning = statusRunning(data?.status);
 
   useEffect(() => {
     if (data) setQuery(data.searchQ);
@@ -535,14 +536,14 @@ export function AdminPage({
   }, [visibleIds]);
 
   useEffect(() => {
-    if (!statusRunning(data?.status)) return undefined;
+    if (!pipelineRunning) return undefined;
     const timer = window.setInterval(() => {
       fetchAdminStatus()
         .then((status) => updateData((current) => current ? { ...current, status } : current))
         .catch(() => undefined);
     }, 2500);
     return () => window.clearInterval(timer);
-  }, [data?.status, updateData]);
+  }, [pipelineRunning, updateData]);
 
   if (!user || !user.is_admin) {
     return <AdminGate user={user} onSignIn={onSignIn} />;

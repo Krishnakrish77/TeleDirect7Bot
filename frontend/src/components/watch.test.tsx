@@ -329,6 +329,35 @@ describe('WatchPage video player', () => {
     expect(screen.getByRole('menuitem', { name: /720pOpen/i }).getAttribute('href')).toBe('/app/watch/video-key-720');
   });
 
+  it('does not repeat the quality as a subtitle in the video titlebar', async () => {
+    const view = renderWatchPage(makeVideo({ quality: '720p', subtitle: '720p' }));
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+
+    expect(view.container.querySelector('.video-titlebar p:not(.eyebrow)')).toBeNull();
+    expect(view.container.querySelector('.video-topbar-copy span')).toBeNull();
+  });
+
+  it('shows uploaded subtitle status only inside the options menu', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:subtitle'),
+    });
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    fireEvent.click(screen.getByLabelText('More video options'));
+    const input = view.container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello'], 'custom.vtt', { type: 'text/vtt' });
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    const status = await screen.findByRole('status');
+    expect(status.textContent).toBe('Loaded "custom.vtt" as subtitles.');
+    expect(status.className).toBe('video-menu-status');
+    expect(view.container.querySelector('.subtitle-status')).toBeNull();
+  });
+
   it('supports keyboard shortcuts for video seeking and mute', async () => {
     const view = renderWatchPage();
 

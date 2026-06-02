@@ -228,6 +228,32 @@ Large batch shipped since the last audit. Validated against the live deployment 
 
 ---
 
+## DELIVERY LOG — 2026-06-02 (React UI — admin console + video options menu + lyrics flip card)
+
+_Audited via live Vite dev server + Chrome DevTools MCP. Viewports tested: 500px (Chromium default) and 1280×800._
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **React admin console** (`/app/admin`) | ✅ Shipped | Auth gate, hero metrics (movies/episodes/tracks/cleanup), live pipeline status with progress bars (6 workers), maintenance action grid, bulk-select bar with tag/quality/series/TMDB fields, paginated item list with hide/unhide. 2.5s polling auto-starts when any worker is running. Classic admin link preserved. |
+| **LyricsFlipCard in audio watch** | ✅ Shipped | Album art replaced with flip card; "Lyrics" badge overlay triggers flip to synced lyrics panel. Track art + lyrics side-by-side on desktop, stacked on mobile. LRCLIB lyrics load on demand only when flipped. |
+| **Video options menu (⋮)** | ✅ Shipped | All secondary controls (Autoplay, Captions, Volume, Load Subtitles, Audio, Source, Speed, AirPlay, Classic, VLC, Download, Share) moved from standalone `video-actions` section into an overlay menu triggered by `MoreVerticalIcon`. 2-column grid layout at ≥780px wide. |
+
+### Bugs found
+
+| # | Severity | Issue | Fix |
+|---|----------|-------|-----|
+| 1 | 🔴 **Critical** | **Video options menu: top 4 rows unreachable on all phones.** At `max-width: 680px`, `max-height: min(54svh, 24rem)` sizes the menu against viewport height (~852px on iPhone Pro → 384px), but the 16:9 shell is only ~221px tall. The menu extends 163px above the shell's top edge and is clipped by `video-shell { overflow: hidden }`. Items permanently hidden: Autoplay next, Captions, Volume, Load subtitles. `scrollTop` starts at 0 so the user cannot scroll up to reach them. | In `styles.css` at the `max-width: 680px` breakpoint, change to `max-height: min(54svh, 24rem, calc(100% - 5.5rem))`. The `100%` resolves to shell height, capping the menu to the available space above the controls bar. |
+| 2 | 🟡 Minor | **Subtitle status shown twice.** `subtitleStatus` renders inside the menu as `.video-menu-status` (line 1060) AND as a standalone `<p class="subtitle-status">` outside the shell (line 1081). When a subtitle file is loaded both fire simultaneously. | Delete `watch.tsx:1081`: `{subtitleStatus && <p className="subtitle-status">{subtitleStatus}</p>}` |
+| 3 | 🟡 Accessibility | **LyricsFlipCard: hidden face exposed to screen readers.** The flip uses `opacity: 0` + `pointer-events: none` only — no `aria-hidden`. In the default state a screen reader announces both "Show lyrics" (front) and "Hide lyrics" + back-face lyric buttons (back). | Add `aria-hidden={flipped || undefined}` to `.lyrics-flip-front` div and `aria-hidden={!flipped || undefined}` to `.lyrics-flip-back` div in `lyrics.tsx`. |
+
+### Minor observations
+
+- **Quality shown twice in video titlebar** — for standalone movies, `video.subtitle` appears to equal `video.quality` (both render "720p"). Guard: `{video.subtitle && video.subtitle !== video.quality && <p>{video.subtitle}</p>}`. May be a backend data issue.
+- **Admin status-poll timer recreates on every response** — `useEffect` at `adminPage.tsx:537` lists `data?.status` as a dependency but the interval mutates that same field every 2.5s. Switch the dep to `statusRunning(data?.status)` (boolean) to stabilise.
+- **`.subtitle-status { flex-basis: 100% }` is dead CSS** — was styled for the removed `video-actions` flex container; the property does nothing in its new context.
+
+---
+
 ## React Frontend UI/UX Audit — `/app`
 _Tested: 2026-05-31 · Viewports: 1440px desktop, 768px tablet, 390px mobile_
 _Tool: Chrome DevTools MCP — live screenshots + DOM inspection_

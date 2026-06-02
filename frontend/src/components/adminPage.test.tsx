@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { runAdminAction, runAdminMaintenance } from '../api';
+import { fetchAdminStatus, runAdminAction, runAdminMaintenance } from '../api';
 import type { AdminResponse, User } from '../types';
 import { AdminPage } from './adminPage';
 
@@ -22,6 +22,17 @@ const adminUser: User = {
 const viewer: User = {
   ...adminUser,
   is_admin: false,
+};
+
+const noopAdminProps = {
+  user: adminUser,
+  loading: false,
+  error: '',
+  locationSearch: '',
+  navigate: vi.fn(),
+  onSignIn: vi.fn(),
+  reload: vi.fn(),
+  updateData: vi.fn(),
 };
 
 const adminData: AdminResponse = {
@@ -139,6 +150,7 @@ function renderAdmin(props: Partial<Parameters<typeof AdminPage>[0]> = {}) {
 }
 
 beforeEach(() => {
+  vi.mocked(fetchAdminStatus).mockResolvedValue(adminData.status);
   vi.mocked(runAdminAction).mockResolvedValue({ ok: true, message: 'Done' });
   vi.mocked(runAdminMaintenance).mockResolvedValue({ ok: true, message: 'Queued' });
 });
@@ -207,5 +219,41 @@ describe('AdminPage', () => {
       expect(runAdminMaintenance).toHaveBeenCalledWith('reindex');
     });
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the status polling interval stable while workers keep running', () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval');
+    const runningData = {
+      ...adminData,
+      status: {
+        ...adminData.status,
+        seed: { running: true, done: 1, total: 10 },
+      },
+    };
+    const stillRunningData = {
+      ...runningData,
+      status: {
+        ...runningData.status,
+        seed: { running: true, done: 2, total: 10 },
+      },
+    };
+    const stoppedData = {
+      ...runningData,
+      status: {
+        ...runningData.status,
+        seed: { running: false, done: 10, total: 10 },
+      },
+    };
+
+    const view = render(<AdminPage {...noopAdminProps} data={runningData} />);
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+
+    view.rerender(<AdminPage {...noopAdminProps} data={stillRunningData} />);
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    expect(clearIntervalSpy).not.toHaveBeenCalled();
+
+    view.rerender(<AdminPage {...noopAdminProps} data={stoppedData} />);
+    expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
   });
 });
