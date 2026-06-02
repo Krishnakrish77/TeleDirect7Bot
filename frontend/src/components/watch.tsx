@@ -1078,77 +1078,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         )}
       </section>
 
-      <section className="video-actions">
-        <label className="volume-control">
-          <VolumeIcon />
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={volume}
-            onChange={(event) => changeVolume(Number(event.currentTarget.value))}
-            aria-label="Volume"
-          />
-        </label>
-        <label>
-          <CaptionsIcon />
-          <select value={activeSub} onChange={(event) => setActiveSub(event.currentTarget.value)} disabled={!allSubtitles.length} aria-label="Captions">
-            <option value="">Captions off</option>
-            {allSubtitles.map((track) => (
-              <option key={track.id} value={track.id}>{track.label || track.language || track.id}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <VolumeIcon />
-          <select
-            value={audioIndex}
-            onChange={(event) => {
-              setAudioIndex(Number(event.currentTarget.value));
-              setSourceMode('hls');
-            }}
-            disabled={!audioTracks.length}
-            aria-label="Audio track"
-          >
-            <option value={0}>Default audio</option>
-            {audioTracks.map((track) => (
-              <option key={track.index} value={track.index}>{track.label || track.language || `Track ${track.index + 1}`}</option>
-            ))}
-          </select>
-        </label>
-        <button type="button" className="secondary-action" onClick={() => setSourceMode(sourceMode === 'direct' ? 'hls' : 'direct')}>
-          <span>{sourceMode === 'direct' ? 'HLS' : 'Direct'}</span>
-        </button>
-        <label>
-          <span>Speed</span>
-          <select value={playbackRate} onChange={(event) => setPlaybackRate(Number(event.currentTarget.value))} aria-label="Playback speed">
-            {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
-              <option key={rate} value={rate}>{rate}x</option>
-            ))}
-          </select>
-        </label>
-        <button type="button" className="secondary-action" onClick={() => subInputRef.current?.click()}>
-          <CaptionsIcon />
-          <span>Load subtitles</span>
-        </button>
-        <button type="button" className="secondary-action" onClick={openAirPlay}>
-          <span>AirPlay</span>
-        </button>
-        <a className="secondary-action" href={vlcHref}>
-          <PlayIcon />
-          <span>VLC</span>
-        </a>
-        <a className="secondary-action" href={video.downloadHref} download>
-          <DownloadIcon />
-          <span>Download</span>
-        </a>
-        <button type="button" className="secondary-action" onClick={shareVideo}>
-          <ShareIcon />
-          <span>Share</span>
-        </button>
-        {subtitleStatus && <p className="subtitle-status">{subtitleStatus}</p>}
-      </section>
+      {subtitleStatus && <p className="subtitle-status">{subtitleStatus}</p>}
 
       {video.qualityVariants.length > 0 && (
         <section className="quality-section">

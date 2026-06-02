@@ -3228,9 +3228,16 @@ img {
   justify-items: center;
   gap: 0.85rem;
   width: min(94vw, 420px);
+  max-height: calc(100svh - 1rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   margin: 0 auto;
   padding: 1rem;
   border-radius: 8px;
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.now-sheet::-webkit-scrollbar {
+  display: none;
 }
 
 .now-art {
@@ -3282,6 +3289,14 @@ img {
 .now-lyrics .lyrics-lines,
 .now-lyrics .lyrics-plain {
   max-height: min(28svh, 13rem);
+}
+
+.now-lyrics .lyrics-plain {
+  scrollbar-width: none;
+}
+
+.now-lyrics .lyrics-plain::-webkit-scrollbar {
+  display: none;
 }
 
 .queue-drawer {
@@ -3816,6 +3831,11 @@ img {
   border-radius: 8px;
   background: rgba(15, 17, 21, 0.97);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  scrollbar-width: none;
+}
+
+.video-options-menu::-webkit-scrollbar {
+  display: none;
 }
 
 .video-menu-row {
@@ -4009,6 +4029,103 @@ img {
   margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+@media (min-width: 780px) and (min-height: 640px) {
+  .now-sheet {
+    top: 50%;
+    bottom: auto;
+    left: 50%;
+    right: auto;
+    grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+    grid-template-areas:
+      "art copy"
+      "art progress"
+      "art controls"
+      "art settings"
+      "art next"
+      "art lyrics"
+      "art classic";
+    align-items: start;
+    justify-items: stretch;
+    gap: 0.9rem 1.2rem;
+    width: min(92vw, 920px);
+    max-height: min(86svh, 720px);
+    padding: clamp(1rem, 2vw, 1.35rem);
+    overflow: hidden;
+    transform: translate(-50%, -50%);
+  }
+
+  .now-art {
+    grid-area: art;
+    width: 100%;
+    max-height: min(64svh, 520px);
+  }
+
+  .now-copy {
+    grid-area: copy;
+    text-align: left;
+  }
+
+  .now-copy h2 {
+    font-size: clamp(1.35rem, 2.4vw, 2.25rem);
+  }
+
+  .now-progress {
+    grid-area: progress;
+  }
+
+  .now-controls {
+    grid-area: controls;
+    justify-content: flex-start;
+  }
+
+  .now-sheet .player-settings {
+    grid-area: settings;
+  }
+
+  .now-sheet .next-track-card {
+    grid-area: next;
+  }
+
+  .now-lyrics {
+    grid-area: lyrics;
+    align-self: stretch;
+  }
+
+  .now-lyrics .lyrics-lines,
+  .now-lyrics .lyrics-plain {
+    max-height: min(24svh, 15rem);
+  }
+
+  .now-sheet .classic-link {
+    grid-area: classic;
+  }
+
+  .video-options-menu {
+    width: min(44rem, calc(100% - 1.5rem));
+    max-height: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem;
+    overflow: visible;
+  }
+
+  .video-menu-label,
+  .video-menu-status {
+    grid-column: 1 / -1;
+  }
+
+  .video-menu-row {
+    min-height: 40px;
+  }
+
+  .video-menu-row select {
+    max-width: 11rem;
+  }
+
+  .video-menu-range input {
+    width: min(11rem, 100%);
+  }
 }
 
 .modal-layer {
@@ -4922,9 +5039,11 @@ img {
     left: 0.45rem;
     right: 0.45rem;
     bottom: 0.45rem;
-    grid-template-columns: auto auto minmax(0, 1fr) repeat(6, auto);
-    gap: 0.35rem;
-    padding: 0.4rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.38rem;
+    padding: 0.45rem;
   }
 
   .video-topbar {
@@ -4950,9 +5069,11 @@ img {
   }
 
   .video-options-menu {
+    left: 0.45rem;
     right: 0.45rem;
     bottom: 4.2rem;
-    width: min(18rem, calc(100% - 0.9rem));
+    width: auto;
+    max-height: min(54svh, 24rem);
   }
 
   .video-time span {
@@ -4960,6 +5081,8 @@ img {
   }
 
   .video-time {
+    order: -1;
+    flex: 1 0 100%;
     grid-template-columns: minmax(0, 1fr);
   }
 

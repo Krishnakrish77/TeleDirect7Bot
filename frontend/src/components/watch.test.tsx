@@ -239,6 +239,7 @@ describe('WatchPage video player', () => {
     const view = renderWatchPage();
 
     await screen.findByRole('heading', { name: 'Pilot' });
+    fireEvent.click(screen.getByLabelText('More video options'));
     const audioSelect = await screen.findByLabelText('Audio track');
 
     fireEvent.change(audioSelect, { target: { value: '1' } });
@@ -296,9 +297,6 @@ describe('WatchPage video player', () => {
     fireEvent.click(screen.getByLabelText('Mute'));
     await waitFor(() => expect(video.muted).toBe(true));
     expect(screen.getByLabelText('Unmute')).toBeTruthy();
-
-    fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '0.5' } });
-    await waitFor(() => expect(video.muted).toBe(false));
   });
 
   it('toggles captions from the visible fullscreen-safe controls', async () => {
@@ -353,7 +351,8 @@ describe('WatchPage video player', () => {
     await screen.findByRole('heading', { name: 'Pilot' });
     const video = view.container.querySelector('video') as HTMLVideoElement;
 
-    fireEvent.change(screen.getAllByLabelText('Playback speed')[0], { target: { value: '1.5' } });
+    fireEvent.click(screen.getByLabelText('More video options'));
+    fireEvent.change(screen.getByLabelText('Playback speed'), { target: { value: '1.5' } });
 
     await waitFor(() => expect(video.playbackRate).toBe(1.5));
   });
