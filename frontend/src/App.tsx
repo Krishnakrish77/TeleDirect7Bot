@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { dismissRecommendation, signOut } from './api';
 import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
+import { useArtColor } from './hooks/artColor';
 import { useAdmin, useDetail, useHub, useLikedSongs, useMe, usePlaylistDetail, usePlaylists, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
 import { Header, PrimaryNav, ScrollToTop, SignInModal } from './components/layout';
 import { FilterBar, FilterPage } from './components/filters';
@@ -59,6 +60,21 @@ function App() {
   const statsPage = useStats(user, route.kind === 'stats');
   const adminPage = useAdmin(user, route.kind === 'admin', location.search);
   const audio = useAudioPlayer();
+  const artColor = useArtColor(audio.player.track?.posterUrl || audio.player.track?.thumbUrl);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (artColor) {
+      root.style.setProperty('--art-r', String(artColor[0]));
+      root.style.setProperty('--art-g', String(artColor[1]));
+      root.style.setProperty('--art-b', String(artColor[2]));
+    } else {
+      root.style.removeProperty('--art-r');
+      root.style.removeProperty('--art-g');
+      root.style.removeProperty('--art-b');
+    }
+  }, [artColor]);
+
   const [signInOpen, setSignInOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);

@@ -2347,6 +2347,22 @@ img {
 
 .audio-watch-main {
   width: min(100%, 1120px);
+  position: relative;
+}
+
+/* Ambient art-colour glow behind the whole audio watch page */
+.audio-watch-main::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 90% 65% at 5% 8%,
+    rgba(var(--art-r, 21), var(--art-g, 23), var(--art-b, 26), 0.22),
+    transparent 70%
+  );
+  transition: background 0.7s ease;
 }
 
 .audio-watch {
@@ -2358,7 +2374,8 @@ img {
   padding: clamp(0.85rem, 2vw, 1.25rem);
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(21, 23, 26, 0.62);
+  background: rgba(var(--art-r, 21), var(--art-g, 23), var(--art-b, 26), 0.18);
+  transition: background 0.7s ease;
 }
 
 .watch-fallback {
@@ -2946,9 +2963,16 @@ img {
   min-height: 72px;
   padding: 0.55rem max(1rem, env(safe-area-inset-right, 0px)) calc(0.55rem + env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
   border-top: 1px solid var(--line-strong);
-  background: #111317;
+  background:
+    linear-gradient(
+      to right,
+      rgba(var(--art-r, 17), var(--art-g, 19), var(--art-b, 23), 0.28) 0%,
+      transparent 55%
+    ),
+    #111317;
   box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04);
   contain: layout paint style;
+  transition: background 0.7s ease;
 }
 
 .mini-track {
@@ -3940,9 +3964,16 @@ img {
   position: fixed;
   z-index: 91;
   border: 1px solid var(--line-strong);
-  background: #111317;
+  background:
+    radial-gradient(
+      ellipse 100% 50% at 50% 0%,
+      rgba(var(--art-r, 17), var(--art-g, 19), var(--art-b, 23), 0.30),
+      transparent 70%
+    ),
+    #111317;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
   contain: layout paint style;
+  transition: background 0.7s ease;
 }
 
 .now-sheet {
