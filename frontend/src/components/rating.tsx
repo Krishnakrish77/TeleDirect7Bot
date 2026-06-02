@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchRating, setRating } from '../api';
+import { ThumbDownIcon, ThumbUpIcon } from '../icons';
 import type { RatingCounts } from '../types';
 
 function numericId(value: string | number | null | undefined): string {
@@ -40,11 +41,11 @@ export function RatingControls({ messageId }: { messageId: string | number | nul
   return (
     <div className="rating-controls" aria-label="Title rating">
       <button type="button" className={rating === 'up' ? 'active' : ''} onClick={() => vote('up')} aria-label="Rate up">
-        <span aria-hidden="true">↑</span>
+        <ThumbUpIcon />
         <strong>{counts.up || ''}</strong>
       </button>
       <button type="button" className={rating === 'down' ? 'active down' : 'down'} onClick={() => vote('down')} aria-label="Rate down">
-        <span aria-hidden="true">↓</span>
+        <ThumbDownIcon />
         <strong>{counts.down || ''}</strong>
       </button>
     </div>

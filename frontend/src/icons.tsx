@@ -100,6 +100,24 @@ export function CheckIcon(props: Props) {
   );
 }
 
+export function ThumbUpIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M7 10v11" />
+      <path d="M15 6.5 14 10h5.2a2 2 0 0 1 1.94 2.5l-1.4 5.5A4 4 0 0 1 15.86 21H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2.3a2 2 0 0 0 1.7-1l3.2-5.3a2.2 2.2 0 0 1 4.1 1.4Z" />
+    </IconBase>
+  );
+}
+
+export function ThumbDownIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M17 14V3" />
+      <path d="M9 17.5 10 14H4.8a2 2 0 0 1-1.94-2.5l1.4-5.5A4 4 0 0 1 8.14 3H20a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-2.3a2 2 0 0 0-1.7 1l-3.2 5.3a2.2 2.2 0 0 1-4.1-1.4Z" />
+    </IconBase>
+  );
+}
+
 export function ChevronRightIcon(props: Props) {
   return (
     <IconBase {...props}>

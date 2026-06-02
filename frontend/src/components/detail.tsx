@@ -182,11 +182,22 @@ function MovieDetail({
             <h2>Choose playback</h2>
           </div>
         </div>
-        <div className="variant-list">
+        <div className="version-list">
           {data.variants.map((variant) => (
-            <a key={variant.key} className="variant-row" href={variant.playHref}>
-              <span>{variant.quality || 'Version'}</span>
-              <strong>{variant.label || variant.title}</strong>
+            <a
+              key={variant.key}
+              className="version-card"
+              href={variant.playHref}
+              aria-label={`Play ${[variant.title, variant.quality].filter(Boolean).join(' ') || 'version'}`}
+            >
+              <span className="version-play" aria-hidden="true">
+                <PlayIcon />
+              </span>
+              <span className="version-copy">
+                <span className="version-quality">{variant.quality || 'Version'}</span>
+                <strong>{variant.title || variant.label || 'Playback version'}</strong>
+                <small>{[variant.durationLabel, variant.fileSizeLabel].filter(Boolean).join(' - ')}</small>
+              </span>
               <ChevronRightIcon />
             </a>
           ))}

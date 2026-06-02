@@ -297,6 +297,11 @@ describe('Movie detail', () => {
     expect(screen.getByRole('heading', { name: 'A Very Long Movie Title That Should Stay Readable On Mobile (2026)' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Play' }).getAttribute('href')).toBe('/app/watch/very-long-title');
     expect(screen.getByRole('link', { name: 'Classic player' }).getAttribute('href')).toBe('/watch/very-long-title');
+    const versionLink = screen.getByRole('link', { name: 'Play Kalki 1080p' });
+    expect(versionLink.className).toBe('version-card');
+    expect(versionLink.getAttribute('href')).toBe('/app/watch/kalki');
+    expect(screen.getByText('Kalki')).toBeTruthy();
+    expect(screen.getByText('2:00:00 - 1 KB')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(onToggleSaved).toHaveBeenCalledWith('movie:very-long-title');

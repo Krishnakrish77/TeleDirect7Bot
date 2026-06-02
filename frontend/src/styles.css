@@ -3095,6 +3095,11 @@ img {
   font-weight: 850;
 }
 
+.rating-controls svg {
+  width: 17px;
+  height: 17px;
+}
+
 .rating-controls button.active {
   border-color: rgba(249, 115, 22, 0.45);
   color: #fdba74;
@@ -3120,43 +3125,86 @@ img {
   padding: 0 0.65rem;
 }
 
-.variant-list {
+.version-list {
   display: grid;
-  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 0.75rem;
+  align-items: start;
 }
 
-.variant-row {
+.version-card {
   display: grid;
-  grid-template-columns: minmax(5rem, auto) minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.85rem;
-  min-height: 56px;
-  padding: 0.75rem 0.9rem;
+  gap: 0.8rem;
+  min-height: 78px;
+  height: auto;
+  max-height: 120px;
+  padding: 0.85rem;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(21, 23, 26, 0.66);
+  aspect-ratio: auto;
   contain: layout paint style;
 }
 
-.variant-row.active,
-.variant-row:hover,
-.variant-row:focus-visible {
+.version-card.active,
+.version-card:hover,
+.version-card:focus-visible {
   border-color: rgba(249, 115, 22, 0.42);
   background: rgba(249, 115, 22, 0.11);
   outline: none;
 }
 
-.variant-row span {
+.version-card.active .version-play {
+  background: var(--brand);
+  color: #fff;
+}
+
+.version-play {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #fff;
+  color: #0b0c0e;
+}
+
+.version-play svg {
+  width: 17px;
+  height: 17px;
+}
+
+.version-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.18rem;
+}
+
+.version-quality {
+  width: fit-content;
   color: #fdba74;
   font-size: 0.8rem;
   font-weight: 800;
 }
 
-.variant-row strong {
+.version-copy strong {
   min-width: 0;
   overflow: hidden;
   color: #fff;
-  font-size: 0.9rem;
+  font-size: 0.98rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-copy small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5050,14 +5098,6 @@ img {
 
   .episode-thumb {
     width: 100%;
-  }
-
-  .variant-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .variant-row span {
-    grid-column: 1 / -1;
   }
 
   .watch-fallback h1,
