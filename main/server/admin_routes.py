@@ -2521,6 +2521,207 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
     return web.json_response({"error": "Unknown maintenance action"}, status=400)
 
 
+# ── SPA sub-page endpoints ────────────────────────────────────────────────────
+
+@routes.get("/api/app/admin/dashboard")
+async def api_app_admin_dashboard(request: web.Request) -> web.Response:
+    """Catalogue insights for the React admin dashboard."""
+    _require_api_admin(request)
+    s = media_index.dashboard_stats()
+    return web.json_response({
+        **s,
+        "storage_by_quality": [{"quality": q, "bytes": b, "label": humanbytes(b)} for q, b in s["storage_by_quality"]],
+        "storage_by_codec":   [{"codec": c,   "bytes": b, "label": humanbytes(b)} for c, b in s["storage_by_codec"]],
+        "year_distribution":  [{"decade": d,  "count": n} for d, n in s["year_distribution"]],
+        "total_size_label":   humanbytes(s.get("total_size_bytes") or 0),
+        "recent_additions":   [{**it, "watchHref": f"/app/watch/{it['secure_hash']}{it['message_id']}"} for it in s["recent_additions"]],
+        "largest_items":      [{**it, "watchHref": f"/app/watch/{it['secure_hash']}{it['message_id']}", "fileSizeLabel": humanbytes(it.get("file_size") or 0)} for it in s["largest_items"]],
+    }, headers={"Cache-Control": "no-store"})
+
+
+@routes.get("/api/app/admin/trending-gaps")
+async def api_app_admin_trending_gaps(request: web.Request) -> web.Response:
+    """TMDB trending titles missing from the library."""
+    _require_api_admin(request)
+    try:
+        tr = await asyncio.wait_for(_trending.get_trending(), timeout=15.0)
+        gaps = tr.get("missing", [])
+    except Exception:
+        logging.exception("api: trending_gaps fetch failed")
+        gaps = []
+    return web.json_response({"gaps": gaps}, headers={"Cache-Control": "no-store"})
+
+
+@routes.post("/api/app/admin/trending-gaps/refresh")
+async def api_app_admin_trending_gaps_refresh(request: web.Request) -> web.Response:
+    """Invalidate trending cache so the next GET re-fetches."""
+    _require_api_admin(request)
+    _trending.invalidate()
+    return web.json_response({"ok": True})
+
+
+@routes.get(r"/api/app/admin/item/{id:\d+}")
+async def api_app_admin_item_get(request: web.Request) -> web.Response:
+    """Full item payload for the edit modal."""
+    _require_api_admin(request)
+    message_id = int(request.match_info["id"])
+    item = media_index.get_item(message_id)
+    if item is None:
+        return web.json_response({"error": "Not found"}, status=404)
+    return web.json_response(
+        {**_admin_item_payload(item, set()),
+         "introStart": item.intro_start,
+         "introEnd": item.intro_end,
+         "trackNumber": getattr(item, "track_number", None),
+         "thumbUrl": ""},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@routes.post(r"/api/app/admin/item/{id:\d+}")
+async def api_app_admin_item_save(request: web.Request) -> web.Response:
+    """JSON edit endpoint — mirrors the classic /admin/edit/{id} form handler."""
+    _require_api_admin(request)
+    message_id = int(request.match_info["id"])
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+
+    new_title = (body.get("title") or "").strip()
+    if not new_title:
+        return web.json_response({"error": "Title is required"}, status=400)
+
+    def _int_or_none(val):
+        try: return int(val) if val is not None and str(val).strip() else None
+        except (ValueError, TypeError): return None
+
+    def _float_or_none(val):
+        try:
+            v = float(val)
+            return v if v >= 0 else None
+        except (ValueError, TypeError):
+            return None
+
+    new_year        = _int_or_none(body.get("year"))
+    new_tags        = _normalise_tags(body.get("tags") or "")
+    new_description = (body.get("description") or "").strip()
+    new_file_name   = (body.get("fileName") or "").strip()
+    new_series_title = (body.get("seriesTitle") or "").strip()
+    new_season       = _int_or_none(body.get("season"))
+    new_episode      = _int_or_none(body.get("episode"))
+    new_episode_end  = _int_or_none(body.get("episodeEnd"))
+    new_intro_start  = _float_or_none(body.get("introStart"))
+    new_intro_end    = _float_or_none(body.get("introEnd"))
+    if new_intro_start is not None and new_intro_end is not None and new_intro_end <= new_intro_start:
+        new_intro_end = None
+    new_artist       = (body.get("artist") or "").strip()
+    new_album_title  = (body.get("albumTitle") or "").strip()
+    new_track_number = _int_or_none(body.get("trackNumber"))
+    thumb_url        = (body.get("thumbUrl") or "").strip()
+    tmdb_id_raw      = body.get("tmdbId")
+    tmdb_kind        = (body.get("tmdbKind") or "movie").lower()
+    if tmdb_kind not in ("movie", "tv"):
+        tmdb_kind = "movie"
+    manual_tmdb_id   = _int_or_none(tmdb_id_raw)
+    admin_locked_src = body.get("adminLocked") or []
+
+    item_before = media_index.get_item(message_id)
+    if item_before is None:
+        return web.json_response({"error": "Item not found"}, status=404)
+
+    title_changed = new_title != (item_before.title or "")
+    year_changed  = new_year != item_before.year
+
+    def apply(entry, item):
+        entry.title       = new_title
+        entry.year        = new_year
+        entry.tags        = new_tags
+        entry.description = new_description
+        item.file_name    = new_file_name
+        if new_series_title:
+            item.series_title = new_series_title
+            item.series_key   = series_parse.slugify(new_series_title)
+            item.season       = new_season if new_season is not None else 1
+            item.episode      = new_episode
+            item.episode_end  = new_episode_end
+            item.movie_key    = ""
+        else:
+            item.series_title = ""
+            item.series_key   = ""
+            item.season = item.episode = item.episode_end = None
+            if not item.movie_key:
+                item.movie_key = compute_movie_key(new_title, new_year, new_file_name or item.file_name)
+        item.intro_start = new_intro_start
+        item.intro_end   = new_intro_end
+        item.artist      = new_artist
+        if new_album_title != item.album_title:
+            item.album_title = new_album_title
+            from main.utils.series import slugify as _sl
+            if item.album_title:
+                item.album_key = _sl(item.album_title)
+            elif item.artist:
+                item.album_key = _sl(item.artist)
+            else:
+                item.album_key = ""
+        item.track_number = new_track_number
+
+    status, _reason = await _rewrite_caption(message_id, apply)
+
+    if status in ("written", "local-only"):
+        item_after = media_index.get_item(message_id)
+        if item_after is not None:
+            submitted = [f for f in admin_locked_src if f in ("title", "year", "series_title")]
+            locked = set(submitted)
+            if new_title: locked.add("title")
+            if new_year is not None: locked.add("year")
+            else: locked.discard("year")
+            if new_series_title: locked.add("series_title")
+            else: locked.discard("series_title")
+            item_after.admin_locked = sorted(locked)
+            await media_index._store_upsert(item_after)
+
+    if status in ("written", "local-only") and manual_tmdb_id is not None:
+        await media_index.enrich_with_tmdb_id(message_id, manual_tmdb_id, tmdb_kind, bot=StreamBot)
+    elif status in ("written", "local-only") and (title_changed or year_changed):
+        from main.utils import tmdb
+        if tmdb.is_configured():
+            item_now = media_index.get_item(message_id)
+            if item_now is not None:
+                for _f in ("tmdb_id", "tmdb_kind", "imdb_id", "poster_path",
+                           "backdrop_path", "overview", "tmdb_genres"):
+                    if hasattr(item_now, _f): setattr(item_now, _f, None if _f == "tmdb_id" else "")
+                if hasattr(item_now, "tmdb_genres"): item_now.tmdb_genres = []
+                if hasattr(item_now, "enriched_at"): item_now.enriched_at = 0.0
+            asyncio.create_task(media_index.enrich_one(message_id, bot=StreamBot))
+
+    if thumb_url:
+        _thumb_max = 5 * 1024 * 1024
+        if thumb_url == "__clear__":
+            await thumb_cache.clear_item(f"{item_before.secure_hash}{item_before.message_id}")
+        elif thumb_url.startswith(("http://", "https://")):
+            try:
+                async with aiohttp.ClientSession() as sess:
+                    async with sess.get(thumb_url, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                        if r.status == 200 and int(r.headers.get("Content-Length", "0")) <= _thumb_max:
+                            data_bytes = await r.read()
+                            if len(data_bytes) <= _thumb_max:
+                                await thumb_cache.store(
+                                    f"{item_before.secure_hash}{item_before.message_id}", data_bytes)
+            except Exception:
+                logging.exception("api: thumb download failed for %s", thumb_url)
+
+    if status == "failed":
+        return web.json_response({"error": "Save failed — item may no longer exist"}, status=500)
+
+    item_result = media_index.get_item(message_id)
+    return web.json_response({
+        "ok": True,
+        "status": status,
+        "item": _admin_item_payload(item_result, set()) if item_result else None,
+    }, headers={"Cache-Control": "no-store"})
+
+
 @routes.post(r"/admin/hide/{id:\d+}")
 async def admin_hide(request: web.Request) -> web.Response:
     """Toggle hidden flag on one item. Body: action=hide|show."""

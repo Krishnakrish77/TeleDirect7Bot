@@ -17,6 +17,7 @@ export default defineConfig(({ mode }) => {
         '/api': backend,
         '/auth': backend,
         '/search': backend,
+        '/admin': backend,
         '/thumb': backend,
         '/watch': backend,
         '/hls': backend,

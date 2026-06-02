@@ -635,3 +635,92 @@ export type DetailResponse =
   | AlbumDetailResponse
   | ArtistDetailResponse
   | PersonDetailResponse;
+
+export interface AdminDashboardResponse {
+  total: number;
+  total_size_bytes: number;
+  total_size_label: string;
+  kinds: AdminStats['kinds'];
+  audio_count: number;
+  album_count: number;
+  enrichment: AdminStats['enrichment'];
+  codec_health: AdminStats['codec_health'];
+  top_genres: Array<[string, number]>;
+  missing_poster: number;
+  missing_thumb: number;
+  duplicate_groups: number;
+  duplicate_extras: number;
+  storage_by_quality: Array<{ quality: string; bytes: number; label: string }>;
+  storage_by_codec: Array<{ codec: string; bytes: number; label: string }>;
+  year_distribution: Array<{ decade: number; count: number }>;
+  year_distribution_max: number;
+  quality_counts: Record<string, number>;
+  top_series: Array<{ key: string; title: string; count: number }>;
+  recent_additions: Array<{
+    message_id: number; secure_hash: string; title: string; year: number | null;
+    file_size: number; series_title: string; season: number | null; episode: number | null;
+    quality: string; watchHref: string;
+  }>;
+  largest_items: Array<{
+    message_id: number; secure_hash: string; title: string; year: number | null;
+    file_size: number; quality: string; watchHref: string; fileSizeLabel: string;
+  }>;
+}
+
+export interface AdminTrendingGap {
+  title: string;
+  year: string;
+  kind: 'movie' | 'tv';
+  poster: string;
+  vote: string;
+  tmdb_url: string;
+}
+
+export interface AdminItemEditPayload {
+  title: string;
+  year: number | null;
+  tags: string;
+  description: string;
+  fileName: string;
+  seriesTitle: string;
+  season: number | null;
+  episode: number | null;
+  episodeEnd: number | null;
+  introStart: number | null;
+  introEnd: number | null;
+  artist: string;
+  albumTitle: string;
+  trackNumber: number | null;
+  thumbUrl: string;
+  tmdbId: number | null;
+  tmdbKind: 'movie' | 'tv';
+  adminLocked: string[];
+}
+
+export interface AiSuggestResponse {
+  title?: string;
+  year?: number;
+  file_name?: string;
+  series_title?: string;
+  season?: number;
+  episode?: number;
+  tags?: string;
+  description?: string;
+  artist?: string;
+  album_title?: string;
+  track_number?: number;
+  reasoning?: string;
+  error?: string;
+}
+
+export interface TmdbPreviewResult {
+  tmdb_id: number;
+  kind: string;
+  title: string;
+  year: number | null;
+  overview: string;
+  poster_path: string;
+  genres: string[];
+  imdb_id: string;
+  error?: string;
+}

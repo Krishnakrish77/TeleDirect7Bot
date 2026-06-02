@@ -1,8 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { fetchAdminStatus, runAdminAction, runAdminMaintenance } from '../api';
-import { ChartIcon, ChevronRightIcon, FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon } from '../icons';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { aiSuggestItem, fetchAdminItem, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem } from '../api';
+import { ChartIcon, ChevronRightIcon, FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, XIcon } from '../icons';
 import { uiModeHref } from '../navigation';
-import type { AdminItem, AdminResponse, AdminStatusResponse, User } from '../types';
+import type { AdminItem, AdminItemEditPayload, AdminResponse, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 
 type Navigate = (href: string, replace?: boolean) => void;
@@ -101,11 +101,11 @@ function AdminHero({ data }: { data: AdminResponse }) {
             <ShieldIcon />
             <span>Classic admin</span>
           </a>
-          <a className="secondary-action" href="/admin/dashboard">
+          <a className="secondary-action" href="/app/admin/dashboard">
             <ChartIcon />
             <span>Dashboard</span>
           </a>
-          <a className="secondary-action" href="/admin/trending-gaps">
+          <a className="secondary-action" href="/app/admin/trending">
             <ChevronRightIcon />
             <span>Trending gaps</span>
           </a>
@@ -388,11 +388,13 @@ function AdminItemRow({
   selected,
   onSelect,
   onToggleHidden,
+  onEdit,
 }: {
   item: AdminItem;
   selected: boolean;
   onSelect: (checked: boolean) => void;
   onToggleHidden: () => void;
+  onEdit: () => void;
 }) {
   return (
     <article className={['admin-row', item.hidden ? 'hidden-row' : '', item.duplicate ? 'duplicate-row' : ''].filter(Boolean).join(' ')}>
@@ -430,9 +432,406 @@ function AdminItemRow({
       </div>
       <div className="admin-row-actions">
         <button type="button" onClick={onToggleHidden}>{item.hidden ? 'Unhide' : 'Hide'}</button>
-        <a href={uiModeHref('classic', `/admin?q=bin:${item.messageId}`)}>Classic edit</a>
+        <button type="button" onClick={onEdit}>Edit</button>
       </div>
     </article>
+  );
+}
+
+// ── Edit Modal ────────────────────────────────────────────────────────────────
+
+function FieldLabel({ name, locked, onUnlock }: { name: string; locked: boolean; onUnlock: () => void }) {
+  return (
+    <span className="edit-field-label">
+      {name}
+      {locked && (
+        <span className="edit-lock-badge">
+          🔒 locked
+          <button type="button" onClick={onUnlock} title="Unlock">✕</button>
+        </span>
+      )}
+    </span>
+  );
+}
+
+function EditModal({
+  messageId,
+  hasGemini,
+  onClose,
+  onSaved,
+}: {
+  messageId: number;
+  hasGemini: boolean;
+  onClose: () => void;
+  onSaved: (updated: AdminItem) => void;
+}) {
+  type FormState = AdminItemEditPayload & {
+    imdbInput: string;
+    thumbUrlInput: string;
+    aiModel: string;
+  };
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiReasoning, setAiReasoning] = useState('');
+  const [aiError, setAiError] = useState('');
+  const [aiModels, setAiModels] = useState<Array<{ id: string; name: string }>>([]);
+  const [tmdbPreview, setTmdbPreview] = useState<TmdbPreviewResult | null>(null);
+  const [tmdbPreviewLoading, setTmdbPreviewLoading] = useState(false);
+  const [imdbLoading, setImdbLoading] = useState(false);
+  const [imdbError, setImdbError] = useState('');
+  const tmdbDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [form, setForm] = useState<FormState>({
+    title: '', year: null, tags: '', description: '', fileName: '',
+    seriesTitle: '', season: null, episode: null, episodeEnd: null,
+    introStart: null, introEnd: null,
+    artist: '', albumTitle: '', trackNumber: null,
+    thumbUrl: '', thumbUrlInput: '', tmdbId: null, tmdbKind: 'movie',
+    adminLocked: [], imdbInput: '', aiModel: 'gemini-2.5-flash-lite',
+  });
+
+  const isAudio = useRef(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchAdminItem(messageId, controller.signal)
+      .then((data) => {
+        const d = data as Record<string, unknown>;
+        isAudio.current = d['mediaKind'] === 'audio';
+        setForm((prev) => ({
+          ...prev,
+          title:        String(d['title'] || ''),
+          year:         (d['year'] as number | null) ?? null,
+          tags:         Array.isArray(d['tags']) ? (d['tags'] as string[]).join(' ') : '',
+          description:  String(d['description'] || ''),
+          fileName:     String(d['fileName'] || ''),
+          seriesTitle:  String(d['seriesTitle'] || ''),
+          season:       (d['season'] as number | null) ?? null,
+          episode:      (d['episode'] as number | null) ?? null,
+          episodeEnd:   (d['episodeEnd'] as number | null) ?? null,
+          introStart:   (d['introStart'] as number | null) ?? null,
+          introEnd:     (d['introEnd'] as number | null) ?? null,
+          artist:       String(d['artist'] || ''),
+          albumTitle:   String(d['albumTitle'] || ''),
+          trackNumber:  (d['trackNumber'] as number | null) ?? null,
+          tmdbId:       (d['tmdbId'] as number | null) ?? null,
+          tmdbKind:     (d['tmdbKind'] as 'movie' | 'tv') || 'movie',
+          adminLocked:  Array.isArray(d['adminLocked']) ? d['adminLocked'] as string[] : [],
+        }));
+        setLoading(false);
+      })
+      .catch((err: Error) => {
+        if (!controller.signal.aborted) {
+          setError(err.message);
+          setLoading(false);
+        }
+      });
+    return () => controller.abort();
+  }, [messageId]);
+
+  useEffect(() => {
+    if (!hasGemini) return;
+    fetchAiModels().then(setAiModels).catch(() => setAiModels([]));
+  }, [hasGemini]);
+
+  const setField = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const unlockField = (field: string) => {
+    setForm((prev) => ({ ...prev, adminLocked: prev.adminLocked.filter((f) => f !== field) }));
+  };
+
+  const handleTmdbIdChange = (value: string) => {
+    const num = value ? parseInt(value, 10) : null;
+    setField('tmdbId', isNaN(num as number) ? null : num);
+    if (tmdbDebounceRef.current) clearTimeout(tmdbDebounceRef.current);
+    if (num && num > 0) {
+      tmdbDebounceRef.current = setTimeout(() => {
+        setTmdbPreviewLoading(true);
+        fetchTmdbPreview(num, form.tmdbKind)
+          .then(setTmdbPreview)
+          .catch(() => setTmdbPreview(null))
+          .finally(() => setTmdbPreviewLoading(false));
+      }, 500);
+    } else {
+      setTmdbPreview(null);
+    }
+  };
+
+  const handleTmdbKindChange = (kind: 'movie' | 'tv') => {
+    setField('tmdbKind', kind);
+    if (form.tmdbId) {
+      setTmdbPreviewLoading(true);
+      fetchTmdbPreview(form.tmdbId, kind)
+        .then(setTmdbPreview)
+        .catch(() => setTmdbPreview(null))
+        .finally(() => setTmdbPreviewLoading(false));
+    }
+  };
+
+  const handleResolveImdb = async () => {
+    if (!form.imdbInput.trim()) return;
+    setImdbLoading(true);
+    setImdbError('');
+    try {
+      const res = await resolveTmdbImdb(form.imdbInput.trim());
+      if (res.error) { setImdbError(res.error); return; }
+      setForm((prev) => ({ ...prev, tmdbId: res.tmdb_id, tmdbKind: res.kind as 'movie' | 'tv' }));
+      setTmdbPreviewLoading(true);
+      fetchTmdbPreview(res.tmdb_id, res.kind)
+        .then(setTmdbPreview)
+        .catch(() => setTmdbPreview(null))
+        .finally(() => setTmdbPreviewLoading(false));
+    } catch (err) {
+      setImdbError(err instanceof Error ? err.message : 'Resolve failed');
+    } finally {
+      setImdbLoading(false);
+    }
+  };
+
+  const handleAiSuggest = async () => {
+    setAiLoading(true);
+    setAiError('');
+    setAiReasoning('');
+    try {
+      const res: AiSuggestResponse = await aiSuggestItem(messageId, form.aiModel);
+      if (res.error) { setAiError(res.error); return; }
+      if (res.reasoning) setAiReasoning(res.reasoning);
+      setForm((prev) => ({
+        ...prev,
+        ...(res.title       && { title: res.title }),
+        ...(res.year        && { year: res.year }),
+        ...(res.file_name   && { fileName: res.file_name }),
+        ...(res.series_title && { seriesTitle: res.series_title }),
+        ...(res.season      && { season: res.season }),
+        ...(res.episode     && { episode: res.episode }),
+        ...(res.tags        && { tags: res.tags }),
+        ...(res.description && { description: res.description }),
+        ...(res.artist      && { artist: res.artist }),
+        ...(res.album_title && { albumTitle: res.album_title }),
+        ...(res.track_number && { trackNumber: res.track_number }),
+      }));
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'AI suggest failed');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!form.title.trim()) { setError('Title is required'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const payload: AdminItemEditPayload = {
+        title: form.title, year: form.year, tags: form.tags, description: form.description,
+        fileName: form.fileName, seriesTitle: form.seriesTitle,
+        season: form.season, episode: form.episode, episodeEnd: form.episodeEnd,
+        introStart: form.introStart, introEnd: form.introEnd,
+        artist: form.artist, albumTitle: form.albumTitle, trackNumber: form.trackNumber,
+        thumbUrl: form.thumbUrlInput || form.thumbUrl,
+        tmdbId: form.tmdbId, tmdbKind: form.tmdbKind, adminLocked: form.adminLocked,
+      };
+      const res = await saveAdminItem(messageId, payload);
+      if (res.item) onSaved(res.item as AdminItem);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Edit item">
+      <button className="modal-scrim" type="button" onClick={onClose} aria-label="Close" />
+      <div className="edit-modal-panel">
+        <div className="edit-modal-header">
+          <h2>Edit bin:{messageId}</h2>
+          {hasGemini && (
+            <div className="edit-ai-row">
+              <select
+                className="edit-field-input"
+                value={form.aiModel}
+                onChange={(e) => setField('aiModel', e.currentTarget.value)}
+                disabled={!aiModels.length}
+              >
+                {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {!aiModels.length && <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>}
+              </select>
+              <button type="button" className="edit-ai-btn" onClick={handleAiSuggest} disabled={aiLoading}>
+                {aiLoading ? '⏳ Searching…' : '✨ Suggest'}
+              </button>
+            </div>
+          )}
+          <button className="icon-button modal-close" type="button" onClick={onClose} aria-label="Close"><XIcon /></button>
+        </div>
+
+        <div className="edit-modal-body">
+          {loading && <LoadingRows />}
+          {!loading && (
+            <>
+              {(error || aiError) && <p className="edit-error">{error || aiError}</p>}
+              {aiReasoning && <p className="edit-ai-reasoning"><strong>AI:</strong> {aiReasoning}</p>}
+
+              <label className="edit-field">
+                <FieldLabel name="Title" locked={form.adminLocked.includes('title')} onUnlock={() => unlockField('title')} />
+                <input className="edit-field-input" value={form.title} onChange={(e) => setField('title', e.currentTarget.value)} required />
+              </label>
+
+              <label className="edit-field edit-field-narrow">
+                <FieldLabel name="Year" locked={form.adminLocked.includes('year')} onUnlock={() => unlockField('year')} />
+                <input className="edit-field-input" type="number" min="1900" max="2099" value={form.year ?? ''} onChange={(e) => setField('year', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+              </label>
+
+              <label className="edit-field">
+                <span className="edit-field-label">Tags</span>
+                <input className="edit-field-input" value={form.tags} onChange={(e) => setField('tags', e.currentTarget.value)} placeholder="space-separated, no # prefix" />
+              </label>
+
+              <label className="edit-field">
+                <span className="edit-field-label">Display name <span className="edit-field-hint">(filename override)</span></span>
+                <input className="edit-field-input" value={form.fileName} onChange={(e) => setField('fileName', e.currentTarget.value)} />
+              </label>
+
+              <label className="edit-field">
+                <span className="edit-field-label">Description</span>
+                <textarea className="edit-field-input" rows={3} value={form.description} onChange={(e) => setField('description', e.currentTarget.value)} />
+              </label>
+
+              {/* Series */}
+              <div className="edit-section">
+                <p className="edit-section-label">Series <span className="edit-field-hint">(groups into a /series/ page)</span></p>
+                <label className="edit-field">
+                  <FieldLabel name="Series title" locked={form.adminLocked.includes('series_title')} onUnlock={() => unlockField('series_title')} />
+                  <input className="edit-field-input" value={form.seriesTitle} onChange={(e) => setField('seriesTitle', e.currentTarget.value)} />
+                </label>
+                <div className="edit-field-row">
+                  <label className="edit-field">
+                    <span className="edit-field-label">Season</span>
+                    <input className="edit-field-input" type="number" min="1" value={form.season ?? ''} onChange={(e) => setField('season', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+                  </label>
+                  <label className="edit-field">
+                    <span className="edit-field-label">Ep start</span>
+                    <input className="edit-field-input" type="number" min="0" value={form.episode ?? ''} onChange={(e) => setField('episode', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+                  </label>
+                  <label className="edit-field">
+                    <span className="edit-field-label">Ep end</span>
+                    <input className="edit-field-input" type="number" min="2" value={form.episodeEnd ?? ''} onChange={(e) => setField('episodeEnd', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+                  </label>
+                </div>
+              </div>
+
+              {/* Intro — video only */}
+              {!isAudio.current && (
+                <div className="edit-section">
+                  <p className="edit-section-label">Skip Intro timestamps (seconds)</p>
+                  <div className="edit-field-row">
+                    <label className="edit-field">
+                      <span className="edit-field-label">Intro start</span>
+                      <input className="edit-field-input" type="number" min="0" step="0.5" value={form.introStart ?? ''} onChange={(e) => setField('introStart', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
+                    </label>
+                    <label className="edit-field">
+                      <span className="edit-field-label">Intro end</span>
+                      <input className="edit-field-input" type="number" min="0" step="0.5" value={form.introEnd ?? ''} onChange={(e) => setField('introEnd', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Music — audio only */}
+              {isAudio.current && (
+                <div className="edit-section">
+                  <p className="edit-section-label">Music</p>
+                  <label className="edit-field">
+                    <span className="edit-field-label">Artist</span>
+                    <input className="edit-field-input" value={form.artist} onChange={(e) => setField('artist', e.currentTarget.value)} />
+                  </label>
+                  <label className="edit-field">
+                    <span className="edit-field-label">Album</span>
+                    <input className="edit-field-input" value={form.albumTitle} onChange={(e) => setField('albumTitle', e.currentTarget.value)} />
+                  </label>
+                  <label className="edit-field edit-field-narrow">
+                    <span className="edit-field-label">Track #</span>
+                    <input className="edit-field-input" type="number" min="1" value={form.trackNumber ?? ''} onChange={(e) => setField('trackNumber', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+                  </label>
+                </div>
+              )}
+
+              {/* Thumbnail */}
+              <div className="edit-section">
+                <p className="edit-section-label">Thumbnail <span className="edit-field-hint">(paste image URL to override)</span></p>
+                <div className="edit-field-row">
+                  <input className="edit-field-input" style={{ flex: 1 }} value={form.thumbUrlInput} onChange={(e) => setField('thumbUrlInput', e.currentTarget.value)} placeholder="https://image.tmdb.org/t/p/w500/… or any .jpg URL" />
+                  <button type="button" className="secondary-action compact-action" onClick={() => setField('thumbUrlInput', '__clear__')}>Clear</button>
+                </div>
+              </div>
+
+              {/* TMDB */}
+              <div className="edit-section">
+                <p className="edit-section-label">TMDB override</p>
+                <label className="edit-field">
+                  <span className="edit-field-label">IMDb id or URL</span>
+                  <div className="edit-field-row">
+                    <input className="edit-field-input" style={{ flex: 1 }} value={form.imdbInput} onChange={(e) => setField('imdbInput', e.currentTarget.value)} placeholder="tt1234567 or https://imdb.com/title/tt1234567/" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleResolveImdb(); } }} />
+                    <button type="button" className="primary-action compact-action" onClick={() => void handleResolveImdb()} disabled={imdbLoading}>
+                      {imdbLoading ? 'Resolving…' : 'Resolve →'}
+                    </button>
+                  </div>
+                  {imdbError && <p className="edit-error" style={{ marginTop: '0.25rem' }}>{imdbError}</p>}
+                </label>
+                <div className="edit-field-row" style={{ marginTop: '0.5rem' }}>
+                  <label className="edit-field" style={{ flex: 1 }}>
+                    <span className="edit-field-label">TMDB id</span>
+                    <input className="edit-field-input" type="number" min="1" value={form.tmdbId ?? ''} onChange={(e) => handleTmdbIdChange(e.currentTarget.value)} placeholder="e.g. 27205" />
+                  </label>
+                  <label className="edit-field">
+                    <span className="edit-field-label">Kind</span>
+                    <select className="edit-field-input" value={form.tmdbKind} onChange={(e) => handleTmdbKindChange(e.currentTarget.value as 'movie' | 'tv')}>
+                      <option value="movie">Movie</option>
+                      <option value="tv">TV</option>
+                    </select>
+                  </label>
+                </div>
+                {tmdbPreviewLoading && <p className="edit-field-hint" style={{ marginTop: '0.5rem' }}>Fetching from TMDB…</p>}
+                {tmdbPreview && !tmdbPreviewLoading && (
+                  <div className="edit-tmdb-preview">
+                    {tmdbPreview.poster_path && (
+                      <img src={`https://image.tmdb.org/t/p/w92${tmdbPreview.poster_path}`} alt="" />
+                    )}
+                    <div>
+                      <p><strong>{tmdbPreview.title}</strong>{tmdbPreview.year ? ` (${tmdbPreview.year})` : ''}</p>
+                      <p className="edit-field-hint">{tmdbPreview.kind}{tmdbPreview.imdb_id ? ` · ${tmdbPreview.imdb_id}` : ''}</p>
+                      <p className="edit-field-hint" style={{ WebkitLineClamp: 3, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{tmdbPreview.overview}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="edit-modal-footer">
+          <button type="button" className="secondary-action" style={{ marginRight: 'auto', color: 'var(--error, #f87171)', borderColor: 'var(--error, #f87171)' }} onClick={async () => { if (!confirm('Clear all TMDB enrichment for this item?')) return; try { await saveAdminItem(messageId, { ...form, tmdbId: -1, tmdbKind: form.tmdbKind, adminLocked: [] }); onClose(); } catch (_) { /* ignore */ } }}>
+            Clear TMDB
+          </button>
+          <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
+          <button type="button" className="primary-action" onClick={() => void handleSave()} disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -441,12 +840,14 @@ function AdminList({
   selected,
   setSelected,
   onToggleHidden,
+  onEdit,
   updateParam,
 }: {
   data: AdminResponse;
   selected: Set<number>;
   setSelected: (next: Set<number>) => void;
   onToggleHidden: (item: AdminItem) => void;
+  onEdit: (item: AdminItem) => void;
   updateParam: (patch: Record<string, string | number | null>) => void;
 }) {
   const allPageSelected = data.items.length > 0 && data.items.every((item) => selected.has(item.messageId));
@@ -481,6 +882,7 @@ function AdminList({
               setSelected(next);
             }}
             onToggleHidden={() => onToggleHidden(item)}
+            onEdit={() => onEdit(item)}
           />
         ))}
       </div>
@@ -518,6 +920,7 @@ export function AdminPage({
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
   const visibleIds = useMemo(() => new Set(data?.items.map((item) => item.messageId) || []), [data]);
   const pipelineRunning = statusRunning(data?.status);
 
@@ -652,9 +1055,24 @@ export function AdminPage({
             selected={selected}
             setSelected={setSelected}
             onToggleHidden={runSingleHiddenAction}
+            onEdit={(item) => setEditingId(item.messageId)}
             updateParam={updateParam}
           />
         </>
+      )}
+      {editingId !== null && (
+        <EditModal
+          messageId={editingId}
+          hasGemini={Boolean(data?.capabilities?.gemini)}
+          onClose={() => setEditingId(null)}
+          onSaved={(updated) => {
+            updateData((current) => current ? {
+              ...current,
+              items: current.items.map((it) => it.messageId === updated.messageId ? updated : it),
+            } : current);
+            setEditingId(null);
+          }}
+        />
       )}
     </main>
   );

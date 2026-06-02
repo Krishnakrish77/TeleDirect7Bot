@@ -68,7 +68,7 @@ export function classicPathForApp(pathname: string, search: string): string {
   if (watch) return `/watch/${watch[1]}${search}`;
   if (pathname === '/app/watchlist') return `/watchlist${search}`;
   if (pathname === '/app/stats') return `/stats${search}`;
-  if (pathname === '/app/admin') return `/admin${search}`;
+  if (pathname === '/app/admin' || pathname.startsWith('/app/admin/')) return `/admin${search}`;
   if (pathname === '/app/filters') return `/${search}`;
   const detail = pathname.match(/^\/app\/(movie|series|album|artist|person)\/([^/?#]+)/);
   if (detail) return `/${detail[1]}/${detail[2]}${search}`;
@@ -142,6 +142,8 @@ export type AppRoute =
   | { kind: 'watchlist' }
   | { kind: 'stats' }
   | { kind: 'admin' }
+  | { kind: 'admin-dashboard' }
+  | { kind: 'admin-trending' }
   | { kind: 'watch'; key: string }
   | { kind: 'detail'; detailKind: 'movie' | 'series' | 'album' | 'artist' | 'person'; key: string };
 
@@ -149,6 +151,8 @@ export function parseRoute(pathname: string): AppRoute {
   if (pathname === '/app/filters') return { kind: 'filters' };
   if (pathname === '/app/watchlist') return { kind: 'watchlist' };
   if (pathname === '/app/stats') return { kind: 'stats' };
+  if (pathname === '/app/admin/dashboard') return { kind: 'admin-dashboard' };
+  if (pathname === '/app/admin/trending') return { kind: 'admin-trending' };
   if (pathname === '/app/admin') return { kind: 'admin' };
   const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);
   if (watch) return { kind: 'watch', key: decodeURIComponent(watch[1]) };

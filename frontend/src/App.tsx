@@ -11,6 +11,8 @@ import { WatchPage } from './components/watch';
 import { WatchlistPage } from './components/watchlistPage';
 import { StatsPage } from './components/statsPage';
 import { AdminPage } from './components/adminPage';
+import { AdminDashboard } from './components/adminDashboard';
+import { AdminTrendingGaps } from './components/adminTrendingGaps';
 import { MiniPlayer, NowPlayingSheet } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
 import { QueueDrawer } from './components/queueDrawer';
@@ -257,6 +259,10 @@ function App() {
           error={statsPage.error}
           onSignIn={() => setSignInOpen(true)}
         />
+      ) : route.kind === 'admin-dashboard' ? (
+        <AdminDashboard user={user} onSignIn={() => setSignInOpen(true)} />
+      ) : route.kind === 'admin-trending' ? (
+        <AdminTrendingGaps user={user} onSignIn={() => setSignInOpen(true)} />
       ) : route.kind === 'admin' ? (
         <AdminPage
           user={user}

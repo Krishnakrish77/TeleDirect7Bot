@@ -1,7 +1,10 @@
 import type {
   AdminActionResponse,
+  AdminDashboardResponse,
+  AdminItemEditPayload,
   AdminResponse,
   AdminStatusResponse,
+  AiSuggestResponse,
   ContinueItem,
   DetailResponse,
   HubParams,
@@ -15,6 +18,7 @@ import type {
   RatingResponse,
   Suggestion,
   TelegramAuthUser,
+  TmdbPreviewResult,
   WatchResponse,
   WatchlistPageResponse,
 } from './types';
@@ -177,6 +181,50 @@ export async function deleteContinueEntry(key: string): Promise<void> {
 
 export async function clearAllContinue(): Promise<void> {
   await request<{ ok: boolean }>('/api/cw', { method: 'DELETE', keepalive: true });
+}
+
+export async function fetchAdminDashboard(signal?: AbortSignal): Promise<AdminDashboardResponse> {
+  return request<AdminDashboardResponse>('/api/app/admin/dashboard', { signal });
+}
+
+export async function fetchAdminTrendingGaps(signal?: AbortSignal): Promise<{ gaps: Array<{ title: string; year: string; kind: string; poster: string; vote: string; tmdb_url: string }> }> {
+  return request('/api/app/admin/trending-gaps', { signal });
+}
+
+export async function refreshAdminTrendingGaps(): Promise<void> {
+  await request('/api/app/admin/trending-gaps/refresh', { method: 'POST' });
+}
+
+export async function fetchAdminItem(id: number, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return request(`/api/app/admin/item/${id}`, { signal });
+}
+
+export async function saveAdminItem(id: number, payload: AdminItemEditPayload): Promise<{ ok: boolean; status: string; item: unknown }> {
+  return request(`/api/app/admin/item/${id}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchAiModels(signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
+  return request<Array<{ id: string; name: string }>>('/admin/ai-models', { signal });
+}
+
+export async function aiSuggestItem(id: number, model: string, fields?: string): Promise<AiSuggestResponse> {
+  const qs = new URLSearchParams({ model });
+  if (fields) qs.set('fields', fields);
+  return request<AiSuggestResponse>(`/admin/ai-suggest/${id}?${qs}`, { method: 'POST' });
+}
+
+export async function fetchTmdbPreview(tmdbId: number, kind: string, signal?: AbortSignal): Promise<TmdbPreviewResult> {
+  const qs = new URLSearchParams({ id: String(tmdbId), kind });
+  return request<TmdbPreviewResult>(`/admin/tmdb-preview?${qs}`, { signal });
+}
+
+export async function resolveTmdbImdb(imdbInput: string, signal?: AbortSignal): Promise<{ tmdb_id: number; kind: string; imdb_id: string; error?: string }> {
+  const qs = new URLSearchParams({ imdb_id: imdbInput });
+  return request(`/admin/tmdb-resolve-imdb?${qs}`, { signal });
 }
 
 export async function recordWatchHistory(key: string, title: string): Promise<void> {

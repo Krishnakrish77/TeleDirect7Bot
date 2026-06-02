@@ -156,11 +156,14 @@ export function WatchPage({
           }}
         />
         <div className="audio-details">
-          <p className="eyebrow">{[track.qualityLabel || track.format || 'Music', queue.length > 1 ? `${queue.length} tracks` : ''].filter(Boolean).join(' - ')}</p>
+          <p className="eyebrow">{[track.format || 'Music', queue.length > 1 ? `${queue.length} tracks` : ''].filter(Boolean).join(' - ')}</p>
           <h1 dir="auto">{track.title}</h1>
           <p className="audio-subtitle">
             {[track.artist, track.albumTitle].filter(Boolean).join(' - ')}
           </p>
+          {track.qualityLabel && track.qualityLabel !== track.format && (
+            <p className="audio-quality-badge">{track.qualityLabel}</p>
+          )}
           {track.overview && <p className="audio-overview">{track.overview}</p>}
 
           <div className="watch-controls">
