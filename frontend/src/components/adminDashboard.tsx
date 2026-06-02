@@ -174,7 +174,7 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
                     )}
                   </a>
                   <span style={{ color: 'var(--muted)', fontSize: '0.75rem', flexShrink: 0 }}>
-                    {[it.quality, it.file_size ? `${Math.round(it.file_size / 1024 / 1024 / 1024 * 10) / 10} GiB` : ''].filter(Boolean).join(' · ')}
+                    {[it.quality, it.fileSizeLabel].filter(Boolean).join(' · ')}
                   </span>
                 </div>
               ))}

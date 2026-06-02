@@ -199,6 +199,10 @@ export async function fetchAdminItem(id: number, signal?: AbortSignal): Promise<
   return request(`/api/app/admin/item/${id}`, { signal });
 }
 
+export async function clearAdminItemTmdb(id: number): Promise<{ ok: boolean; item: unknown }> {
+  return request(`/api/app/admin/item/${id}/clear-tmdb`, { method: 'POST' });
+}
+
 export async function saveAdminItem(id: number, payload: AdminItemEditPayload): Promise<{ ok: boolean; status: string; item: unknown }> {
   return request(`/api/app/admin/item/${id}`, {
     method: 'POST',

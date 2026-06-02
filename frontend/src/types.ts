@@ -658,8 +658,8 @@ export interface AdminDashboardResponse {
   top_series: Array<{ key: string; title: string; count: number }>;
   recent_additions: Array<{
     message_id: number; secure_hash: string; title: string; year: number | null;
-    file_size: number; series_title: string; season: number | null; episode: number | null;
-    quality: string; watchHref: string;
+    file_size: number; fileSizeLabel: string; series_title: string; season: number | null;
+    episode: number | null; quality: string; watchHref: string;
   }>;
   largest_items: Array<{
     message_id: number; secure_hash: string; title: string; year: number | null;

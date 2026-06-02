@@ -2534,7 +2534,7 @@ async def api_app_admin_dashboard(request: web.Request) -> web.Response:
         "storage_by_codec":   [{"codec": c,   "bytes": b, "label": humanbytes(b)} for c, b in s["storage_by_codec"]],
         "year_distribution":  [{"decade": d,  "count": n} for d, n in s["year_distribution"]],
         "total_size_label":   humanbytes(s.get("total_size_bytes") or 0),
-        "recent_additions":   [{**it, "watchHref": f"/app/watch/{it['secure_hash']}{it['message_id']}"} for it in s["recent_additions"]],
+        "recent_additions":   [{**it, "watchHref": f"/app/watch/{it['secure_hash']}{it['message_id']}", "fileSizeLabel": humanbytes(it.get("file_size") or 0)} for it in s["recent_additions"]],
         "largest_items":      [{**it, "watchHref": f"/app/watch/{it['secure_hash']}{it['message_id']}", "fileSizeLabel": humanbytes(it.get("file_size") or 0)} for it in s["largest_items"]],
     }, headers={"Cache-Control": "no-store"})
 
@@ -2576,6 +2576,33 @@ async def api_app_admin_item_get(request: web.Request) -> web.Response:
          "thumbUrl": ""},
         headers={"Cache-Control": "no-store"},
     )
+
+
+@routes.post(r"/api/app/admin/item/{id:\d+}/clear-tmdb")
+async def api_app_admin_item_clear_tmdb(request: web.Request) -> web.Response:
+    """Wipe all TMDB-derived fields for an item (JSON-auth version of /admin/clear-tmdb/{id})."""
+    _require_api_admin(request)
+    message_id = int(request.match_info["id"])
+    item = media_index.get_item(message_id)
+    if item is None:
+        return web.json_response({"error": "Not found"}, status=404)
+    async with media_index._lock:
+        item.tmdb_id = None
+        item.tmdb_kind = ""
+        item.imdb_id = ""
+        item.poster_path = ""
+        item.backdrop_path = ""
+        item.overview = ""
+        item.tmdb_genres = []
+        item.enriched_at = 0.0
+        item.episode_title = ""
+        item.episode_overview = ""
+        item.episode_still_path = ""
+        item.episode_air_date = ""
+        media_index._persist_unlocked()
+    await media_index._store_upsert(item)
+    return web.json_response({"ok": True, "item": _admin_item_payload(item, set())},
+                             headers={"Cache-Control": "no-store"})
 
 
 @routes.post(r"/api/app/admin/item/{id:\d+}")
@@ -2681,7 +2708,7 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
             item_after.admin_locked = sorted(locked)
             await media_index._store_upsert(item_after)
 
-    if status in ("written", "local-only") and manual_tmdb_id is not None:
+    if status in ("written", "local-only") and manual_tmdb_id is not None and manual_tmdb_id > 0:
         await media_index.enrich_with_tmdb_id(message_id, manual_tmdb_id, tmdb_kind, bot=StreamBot)
     elif status in ("written", "local-only") and (title_changed or year_changed):
         from main.utils import tmdb
@@ -2689,11 +2716,14 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
             item_now = media_index.get_item(message_id)
             if item_now is not None:
                 for _f in ("tmdb_id", "tmdb_kind", "imdb_id", "poster_path",
-                           "backdrop_path", "overview", "tmdb_genres"):
+                           "backdrop_path", "overview"):
                     if hasattr(item_now, _f): setattr(item_now, _f, None if _f == "tmdb_id" else "")
                 if hasattr(item_now, "tmdb_genres"): item_now.tmdb_genres = []
                 if hasattr(item_now, "enriched_at"): item_now.enriched_at = 0.0
             asyncio.create_task(media_index.enrich_one(message_id, bot=StreamBot))
+
+    if status == "failed":
+        return web.json_response({"error": "Save failed — item may no longer exist"}, status=500)
 
     if thumb_url:
         _thumb_max = 5 * 1024 * 1024
@@ -2710,9 +2740,6 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
                                     f"{item_before.secure_hash}{item_before.message_id}", data_bytes)
             except Exception:
                 logging.exception("api: thumb download failed for %s", thumb_url)
-
-    if status == "failed":
-        return web.json_response({"error": "Save failed — item may no longer exist"}, status=500)
 
     item_result = media_index.get_item(message_id)
     return web.json_response({

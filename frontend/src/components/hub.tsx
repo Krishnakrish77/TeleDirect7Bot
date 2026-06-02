@@ -135,9 +135,9 @@ export function ContinueWatching() {
   };
 
   const forgetAll = () => {
-    try { localStorage.removeItem('td:cw'); } catch (_) { /* ignore */ }
-    void clearAllContinue().catch(() => undefined);
     setEntries([]);
+    void clearAllContinue()
+      .finally(() => { try { localStorage.removeItem('td:cw'); } catch (_) { /* ignore */ } });
   };
 
   return (

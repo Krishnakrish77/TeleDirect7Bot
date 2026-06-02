@@ -1,5 +1,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { aiSuggestItem, fetchAdminItem, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem } from '../api';
+import { aiSuggestItem, clearAdminItemTmdb, fetchAdminItem, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem } from '../api';
+
+// Module-level cache so AI models aren't re-fetched on every modal open.
+let _cachedAiModels: Array<{ id: string; name: string }> | null = null;
 import { ChartIcon, ChevronRightIcon, FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, XIcon } from '../icons';
 import { uiModeHref } from '../navigation';
 import type { AdminItem, AdminItemEditPayload, AdminResponse, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
@@ -477,12 +480,13 @@ function EditModal({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiReasoning, setAiReasoning] = useState('');
   const [aiError, setAiError] = useState('');
-  const [aiModels, setAiModels] = useState<Array<{ id: string; name: string }>>([]);
+  const [aiModels, setAiModels] = useState<Array<{ id: string; name: string }>>(_cachedAiModels || []);
   const [tmdbPreview, setTmdbPreview] = useState<TmdbPreviewResult | null>(null);
   const [tmdbPreviewLoading, setTmdbPreviewLoading] = useState(false);
   const [imdbLoading, setImdbLoading] = useState(false);
   const [imdbError, setImdbError] = useState('');
   const tmdbDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isAudio, setIsAudio] = useState(false);
 
   const [form, setForm] = useState<FormState>({
     title: '', year: null, tags: '', description: '', fileName: '',
@@ -493,14 +497,12 @@ function EditModal({
     adminLocked: [], imdbInput: '', aiModel: 'gemini-2.5-flash-lite',
   });
 
-  const isAudio = useRef(false);
-
   useEffect(() => {
     const controller = new AbortController();
     fetchAdminItem(messageId, controller.signal)
       .then((data) => {
         const d = data as Record<string, unknown>;
-        isAudio.current = d['mediaKind'] === 'audio';
+        setIsAudio(d['mediaKind'] === 'audio');
         setForm((prev) => ({
           ...prev,
           title:        String(d['title'] || ''),
@@ -533,9 +535,16 @@ function EditModal({
   }, [messageId]);
 
   useEffect(() => {
-    if (!hasGemini) return;
-    fetchAiModels().then(setAiModels).catch(() => setAiModels([]));
+    if (!hasGemini || _cachedAiModels) return;
+    fetchAiModels()
+      .then((models) => { _cachedAiModels = models; setAiModels(models); })
+      .catch(() => undefined);
   }, [hasGemini]);
+
+  // Cancel pending TMDB preview debounce on unmount.
+  useEffect(() => () => {
+    if (tmdbDebounceRef.current) clearTimeout(tmdbDebounceRef.current);
+  }, []);
 
   const setField = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -545,6 +554,10 @@ function EditModal({
     setForm((prev) => ({ ...prev, adminLocked: prev.adminLocked.filter((f) => f !== field) }));
   };
 
+  // Always holds the latest tmdbKind so the debounced preview reads current, not stale, kind.
+  const tmdbKindRef = useRef(form.tmdbKind);
+  useEffect(() => { tmdbKindRef.current = form.tmdbKind; }, [form.tmdbKind]);
+
   const handleTmdbIdChange = (value: string) => {
     const num = value ? parseInt(value, 10) : null;
     setField('tmdbId', isNaN(num as number) ? null : num);
@@ -552,7 +565,7 @@ function EditModal({
     if (num && num > 0) {
       tmdbDebounceRef.current = setTimeout(() => {
         setTmdbPreviewLoading(true);
-        fetchTmdbPreview(num, form.tmdbKind)
+        fetchTmdbPreview(num, tmdbKindRef.current)
           .then(setTmdbPreview)
           .catch(() => setTmdbPreview(null))
           .finally(() => setTmdbPreviewLoading(false));
@@ -633,7 +646,7 @@ function EditModal({
         season: form.season, episode: form.episode, episodeEnd: form.episodeEnd,
         introStart: form.introStart, introEnd: form.introEnd,
         artist: form.artist, albumTitle: form.albumTitle, trackNumber: form.trackNumber,
-        thumbUrl: form.thumbUrlInput || form.thumbUrl,
+        thumbUrl: form.thumbUrlInput,
         tmdbId: form.tmdbId, tmdbKind: form.tmdbKind, adminLocked: form.adminLocked,
       };
       const res = await saveAdminItem(messageId, payload);
@@ -733,7 +746,7 @@ function EditModal({
               </div>
 
               {/* Intro — video only */}
-              {!isAudio.current && (
+              {!isAudio && (
                 <div className="edit-section">
                   <p className="edit-section-label">Skip Intro timestamps (seconds)</p>
                   <div className="edit-field-row">
@@ -750,7 +763,7 @@ function EditModal({
               )}
 
               {/* Music — audio only */}
-              {isAudio.current && (
+              {isAudio && (
                 <div className="edit-section">
                   <p className="edit-section-label">Music</p>
                   <label className="edit-field">
@@ -822,7 +835,7 @@ function EditModal({
         </div>
 
         <div className="edit-modal-footer">
-          <button type="button" className="secondary-action" style={{ marginRight: 'auto', color: 'var(--error, #f87171)', borderColor: 'var(--error, #f87171)' }} onClick={async () => { if (!confirm('Clear all TMDB enrichment for this item?')) return; try { await saveAdminItem(messageId, { ...form, tmdbId: -1, tmdbKind: form.tmdbKind, adminLocked: [] }); onClose(); } catch (_) { /* ignore */ } }}>
+          <button type="button" className="secondary-action" style={{ marginRight: 'auto', color: 'var(--error, #f87171)', borderColor: 'var(--error, #f87171)' }} onClick={async () => { if (!confirm('Clear all TMDB enrichment for this item?')) return; try { const res = await clearAdminItemTmdb(messageId); if (res.item) onSaved(res.item as AdminItem); onClose(); } catch (_) { /* ignore */ } }}>
             Clear TMDB
           </button>
           <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
