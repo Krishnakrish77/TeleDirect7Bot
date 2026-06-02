@@ -558,7 +558,7 @@ async def api_hub(request: web.Request) -> web.Response:
                 if group_key in seen_groups:
                     continue
                 seen_groups.add(group_key)
-                top_cards.append(_card_from_item(item))
+                top_cards.append(item)  # store HubItem; api_hub calls _card() later
                 if len(top_cards) >= 20:
                     break
             if len(top_cards) >= 3:
