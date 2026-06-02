@@ -70,6 +70,7 @@ export function classicPathForApp(pathname: string, search: string): string {
   const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);
   if (watch) return `/watch/${watch[1]}${search}`;
   if (pathname === '/app/watchlist') return `/watchlist${search}`;
+  if (pathname === '/app/liked-songs') return `/watchlist${search}`;
   if (pathname === '/app/playlists') return '/?view=music';
   const playlist = pathname.match(/^\/app\/playlist\/([a-f0-9]{32})/);
   if (playlist) return '/?view=music';

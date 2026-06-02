@@ -280,8 +280,6 @@ function App() {
             void removeSaved(card.itemId);
           }}
           onSignIn={() => setSignInOpen(true)}
-          playTrack={audio.playTrack}
-          shuffleQueue={audio.shuffleQueue}
         />
       ) : route.kind === 'playlists' ? (
         <PlaylistsPage

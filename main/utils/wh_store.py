@@ -95,7 +95,7 @@ async def get_recent(user_id: int, limit: int = 20) -> list:
         return []
 
 
-_top_plays_cache: dict = {"data": [], "at": 0.0}
+_top_plays_cache: dict = {"data": None, "at": 0.0}
 _TOP_PLAYS_TTL = 4 * 3600  # 4 hours
 
 
@@ -107,7 +107,7 @@ async def get_top_plays(limit: int = 20) -> list:
     """
     import time as _time
     global _top_plays_cache
-    if _time.time() - _top_plays_cache["at"] < _TOP_PLAYS_TTL and _top_plays_cache["data"]:
+    if _time.time() - _top_plays_cache["at"] < _TOP_PLAYS_TTL and _top_plays_cache["data"] is not None:
         return _top_plays_cache["data"][:limit]
     await _ensure_indexes()
     db = _get_db()

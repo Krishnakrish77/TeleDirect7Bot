@@ -23,6 +23,7 @@ from main.utils import media_index
 from main.vars import Var
 
 routes = web.RouteTableDef()
+_CW_KEY_RE = re.compile(r'^[A-Za-z0-9_-]*[A-Za-z_-](\d+)$')
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
 _env = Environment(
@@ -120,10 +121,8 @@ async def _items_for_user(user_id: int) -> list[dict]:
     # Build a message_id → progress-fraction dict from CW data.
     cw_data = await cw_store.get_all(user_id)
     _cw_by_mid: dict = {}
-    import re as _re
-    _ck_re = _re.compile(r'^[A-Za-z0-9_-]*[A-Za-z_-](\d+)$')
     for ck, entry in cw_data.items():
-        m = _ck_re.match(ck)
+        m = _CW_KEY_RE.match(ck)
         if m and entry.get("dur", 0) > 0:
             pct = min(1.0, entry["pos"] / entry["dur"])
             if 0.02 < pct < 0.95:   # only show meaningful progress
@@ -191,10 +190,29 @@ async def api_app_liked_songs(request: web.Request) -> web.Response:
     user = _get_user(request)
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
-    items = await _items_for_user(int(user["sub"]))
-    audio_items = [it for it in items if it.get("kind") in ("audio", "album")]
+    # Pre-filter IDs to audio kinds before resolving, avoiding O(N) resolution
+    # of non-audio items that would be discarded anyway.
+    all_ids = await watchlist_store.get_ids(int(user["sub"]))
+    audio_ids = [iid for iid in all_ids if iid.startswith("album:") or iid.isdigit()]
+    resolved = []
+    for iid in audio_ids:
+        item = _resolve_item(iid)
+        if item and item.get("kind") in ("audio", "album"):
+            resolved.append(item)
+    # Attach CW progress only for individual audio items.
+    if any(it["item_id"].isdigit() for it in resolved):
+        cw_data = await cw_store.get_all(int(user["sub"]))
+        cw_by_mid: dict = {}
+        for ck, entry in cw_data.items():
+            m = _CW_KEY_RE.match(ck)
+            if m and entry.get("dur", 0) > 0:
+                pct = min(1.0, entry["pos"] / entry["dur"])
+                if 0.02 < pct < 0.95:
+                    cw_by_mid[m.group(1)] = pct
+        for it in resolved:
+            it["cw_pct"] = cw_by_mid.get(it["item_id"]) if it["item_id"].isdigit() else None
     return _json({
-        "items": audio_items,
+        "items": resolved,
         "mongoAvailable": watchlist_store.is_available(),
     })
 

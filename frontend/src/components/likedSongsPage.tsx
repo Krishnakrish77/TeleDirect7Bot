@@ -1,6 +1,6 @@
+import { useState } from 'react';
 import { HeartIcon, PlayIcon, ShuffleIcon } from '../icons';
-import { localAppHref } from '../navigation';
-import type { HubCard, User, WatchlistItem, WatchlistPageResponse, WatchTrack } from '../types';
+import type { HubCard, User, WatchlistPageResponse } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { MediaCard } from './mediaCard';
 import { watchlistCard } from './watchlistPage';
@@ -12,8 +12,6 @@ export function LikedSongsPage({
   error,
   onToggleSaved,
   onSignIn,
-  playTrack,
-  shuffleQueue,
 }: {
   user: User | null;
   data: WatchlistPageResponse | null;
@@ -21,9 +19,9 @@ export function LikedSongsPage({
   error: string;
   onToggleSaved: (card: HubCard) => void;
   onSignIn: () => void;
-  playTrack: (track: WatchTrack, queue?: WatchTrack[]) => void;
-  shuffleQueue: (queue: WatchTrack[]) => void;
 }) {
+  const [unlikeError, setUnlikeError] = useState('');
+
   if (!user) {
     return (
       <main className="page-main">
@@ -37,6 +35,16 @@ export function LikedSongsPage({
   }
 
   const count = data?.items.length ?? 0;
+  const firstItem = data?.items[0] ? watchlistCard(data.items[0]) : null;
+
+  const handleToggle = (card: HubCard) => {
+    setUnlikeError('');
+    try {
+      onToggleSaved(card);
+    } catch (err) {
+      setUnlikeError(err instanceof Error ? err.message : 'Unable to unlike song');
+    }
+  };
 
   return (
     <main className="page-main">
@@ -50,11 +58,23 @@ export function LikedSongsPage({
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
             {count} {count === 1 ? 'song' : 'songs'}
           </p>
+          {count > 0 && (
+            <div className="hero-actions">
+              <a className="primary-action" href={firstItem?.href || '#'}>
+                <PlayIcon />
+                <span>Play</span>
+              </a>
+              <a className="secondary-action" href={`${firstItem?.href || '#'}?shuffle=1`}>
+                <ShuffleIcon />
+                <span>Shuffle</span>
+              </a>
+            </div>
+          )}
         </div>
       </section>
 
       {loading && <LoadingRows variant="music-grid" />}
-      {error && <ErrorPanel message={error} />}
+      {(error || unlikeError) && <ErrorPanel message={error || unlikeError} />}
 
       {!loading && !error && data && (
         data.items.length === 0 ? (
@@ -64,7 +84,7 @@ export function LikedSongsPage({
             <span>Tap the heart on any track to save it here.</span>
           </div>
         ) : (
-          <div className={`media-grid music-grid`}>
+          <div className="media-grid music-grid">
             {data.items.map((item, index) => {
               const card = watchlistCard(item);
               return (
@@ -73,7 +93,7 @@ export function LikedSongsPage({
                   card={card}
                   saved
                   priority={index < 8}
-                  onToggleSaved={onToggleSaved}
+                  onToggleSaved={handleToggle}
                 />
               );
             })}

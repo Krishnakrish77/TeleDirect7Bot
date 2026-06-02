@@ -146,7 +146,12 @@ export function useWatchlist(user: User | null | undefined) {
   return { saved, toggle, remove };
 }
 
-export function useWatchlistItems(user: User | null | undefined, enabled = true) {
+function useWatchlistEndpoint(
+  fetchFn: (signal: AbortSignal) => Promise<WatchlistPageResponse>,
+  errorMsg: string,
+  user: User | null | undefined,
+  enabled: boolean,
+) {
   const [data, setData] = useState<WatchlistPageResponse | null>(null);
   const [loading, setLoading] = useState(Boolean(user && enabled));
   const [error, setError] = useState('');
@@ -161,17 +166,17 @@ export function useWatchlistItems(user: User | null | undefined, enabled = true)
     const controller = new AbortController();
     setLoading(true);
     setError('');
-    fetchAppWatchlist(controller.signal)
+    fetchFn(controller.signal)
       .then(setData)
       .catch((err: Error) => {
         if (controller.signal.aborted) return;
-        setError(err.message || 'Unable to load your watchlist');
+        setError(err.message || errorMsg);
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [enabled, user]);
+  }, [enabled, fetchFn, user]);
 
   const removeItem = useCallback((itemId: string) => {
     setData((current) => current
@@ -182,40 +187,12 @@ export function useWatchlistItems(user: User | null | undefined, enabled = true)
   return { data, loading, error, removeItem };
 }
 
+export function useWatchlistItems(user: User | null | undefined, enabled = true) {
+  return useWatchlistEndpoint(fetchAppWatchlist, 'Unable to load your watchlist', user, enabled);
+}
+
 export function useLikedSongs(user: User | null | undefined, enabled = true) {
-  const [data, setData] = useState<WatchlistPageResponse | null>(null);
-  const [loading, setLoading] = useState(Boolean(user && enabled));
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!enabled || !user) {
-      setData(null);
-      setLoading(false);
-      setError('');
-      return;
-    }
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    fetchLikedSongs(controller.signal)
-      .then(setData)
-      .catch((err: Error) => {
-        if (controller.signal.aborted) return;
-        setError(err.message || 'Unable to load liked songs');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [enabled, user]);
-
-  const removeItem = useCallback((itemId: string) => {
-    setData((current) => current
-      ? { ...current, items: current.items.filter((item) => item.item_id !== itemId) }
-      : current);
-  }, []);
-
-  return { data, loading, error, removeItem };
+  return useWatchlistEndpoint(fetchLikedSongs, 'Unable to load liked songs', user, enabled);
 }
 
 export function usePlaylists(user: User | null | undefined, enabled = true) {
