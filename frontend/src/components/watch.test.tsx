@@ -355,6 +355,9 @@ describe('WatchPage video player', () => {
 
     await screen.findByRole('heading', { name: 'Pilot' });
 
+    const titlebar = view.container.querySelector('.video-titlebar') as HTMLElement;
+    expect(titlebar.firstElementChild?.querySelector('h1')?.textContent).toBe('Pilot');
+    expect(titlebar.lastElementChild?.textContent).toContain('Classic player');
     expect(view.container.querySelector('.video-titlebar p:not(.eyebrow)')).toBeNull();
     expect(view.container.querySelector('.video-topbar-copy span')).toBeNull();
   });

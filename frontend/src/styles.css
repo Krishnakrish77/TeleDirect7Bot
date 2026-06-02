@@ -3793,10 +3793,19 @@ img {
 }
 
 .video-titlebar {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
-  align-items: end;
+  align-items: start;
+}
+
+.video-titlebar > div {
+  min-width: 0;
+}
+
+.video-titlebar .section-link {
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .video-titlebar h1 {
@@ -5247,8 +5256,11 @@ select.edit-field-input {
   }
 
   .video-titlebar {
-    align-items: start;
-    flex-direction: column-reverse;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .video-titlebar .section-link {
+    justify-self: start;
   }
 
   .video-actions {
@@ -5877,8 +5889,7 @@ select.edit-field-input {
   }
 
   .video-titlebar {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.75rem;
     align-items: center;
   }
@@ -5898,6 +5909,10 @@ select.edit-field-input {
     font-size: clamp(1rem, 3.2vw, 1.35rem);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .video-titlebar .section-link {
+    justify-self: end;
   }
 
   .video-shell {

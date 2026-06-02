@@ -867,16 +867,16 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   return (
     <main className="video-main">
       <section className="video-titlebar">
-        <a className="section-link" href={video.classicHref}>
-          <span>Classic player</span>
-          <ChevronRightIcon />
-        </a>
         <div>
           <p className="eyebrow">{video.quality || 'Video'}</p>
           <h1 dir="auto">{video.title}</h1>
           {displaySubtitle && <p>{displaySubtitle}</p>}
           <RatingControls messageId={video.messageId || video.itemId} />
         </div>
+        <a className="section-link" href={video.classicHref}>
+          <span>Classic player</span>
+          <ChevronRightIcon />
+        </a>
       </section>
 
       <section
