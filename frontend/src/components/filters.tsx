@@ -164,18 +164,7 @@ export function FilterBar({
 
   return (
     <section className="filter-panel" aria-label="Browse filters">
-      <div className="filter-panel-header">
-        <div className="filter-heading">
-          <FilterIcon />
-          <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
-        </div>
-        {hasFilters && (
-          <button className="filter-clear-button" type="button" onClick={() => clearAll()}>
-            Reset
-          </button>
-        )}
-      </div>
-
+      {/* Category chips — always visible, scroll on mobile */}
       <div className="filter-view-row" role="group" aria-label="Content type">
         {viewOptions.map((option) => (
           <button
@@ -190,26 +179,28 @@ export function FilterBar({
         ))}
       </div>
 
+      {/* Inline controls: Year / Quality / Genre / Tag — desktop only */}
+      <div className="filter-inline-controls" aria-label="Advanced filters">
+        {metadataControls.map((control) => (
+          <SelectControl key={control.id} control={control} />
+        ))}
+      </div>
+
+      {/* Right side: Sort + Reset (desktop) or Sort + Filters link (mobile) */}
       <div className="filter-action-row">
         <SelectControl control={sortControl} className="filter-sort-control" />
+        {hasFilters && (
+          <button className="filter-clear-button" type="button" onClick={() => clearAll()}>
+            Reset
+          </button>
+        )}
         <a className="filter-drawer-button" href={appUrl({ ...params, offset: 0 }, '/filters')}>
           <FilterIcon />
           <span>Filters</span>
-          <strong>{summary}</strong>
           {(activeFilterCount > 0 || params.sort !== 'newest') && (
             <small>{activeFilterCount + (params.sort !== 'newest' ? 1 : 0)}</small>
           )}
         </a>
-      </div>
-
-      <div
-        id="advanced-filters"
-        className="filter-inline-controls"
-        aria-label="Advanced filters"
-      >
-        {metadataControls.map((control) => (
-          <SelectControl key={control.id} control={control} />
-        ))}
       </div>
     </section>
   );

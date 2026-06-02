@@ -625,75 +625,55 @@ img {
 }
 
 .hub-toolbar {
+  position: sticky;
+  top: 128px; /* header (~76px) + primary-nav (~52px) on desktop */
+  z-index: 25;
   display: grid;
-  gap: 0.8rem;
-  margin-top: 0.2rem;
+  gap: 0.6rem;
+  margin-top: 0;
+  padding-block: 0.4rem;
   min-width: 0;
   min-height: 0;
+  background: #0b0c0e;
   isolation: isolate;
 }
 
+/* ── Filter bar — single compact row at all sizes ─────────────────────── */
 .filter-panel {
-  position: relative;
-  display: grid;
-  gap: 0.7rem;
-  min-width: 0;
-  overflow: hidden;
-  padding: 0.72rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #111317;
-  background-clip: padding-box;
-  isolation: isolate;
-}
-
-.filter-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-width: 0;
-}
-
-.filter-heading {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-height: 32px;
-  min-width: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-weight: 800;
-}
-
-.filter-heading svg {
-  width: 16px;
-  height: 16px;
-  color: var(--teal);
-}
-
-.filter-view-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.4rem;
   min-width: 0;
+  height: 48px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #111317;
+  overflow: hidden;
+}
+
+/* Category chips */
+.filter-view-row {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0.3rem;
 }
 
 .filter-view-chip {
-  min-width: 0;
-  min-height: 40px;
-  padding: 0 0.5rem;
-  overflow: hidden;
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 0.9rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #15171a;
+  border-radius: 999px;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 0.85rem;
-  font-weight: 850;
-  text-overflow: ellipsis;
+  font-size: 0.82rem;
+  font-weight: 700;
   white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
 .filter-view-chip.active,
@@ -702,122 +682,105 @@ img {
   background: var(--brand);
   color: #111317;
   outline: none;
-}
-
-.filter-action-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(10rem, 15rem);
-  gap: 0.55rem;
-  min-width: 0;
-}
-
-.filter-drawer-button {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.18rem 0.7rem;
-  min-height: 50px;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #15171a;
-  color: var(--text);
-  cursor: pointer;
-  padding: 0.5rem 0.7rem;
-  text-align: left;
-}
-
-.filter-drawer-button svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  color: var(--teal);
-}
-
-.filter-drawer-button span,
-.filter-select-control span {
-  color: var(--dim);
-  font-size: 0.76rem;
   font-weight: 800;
 }
 
-.filter-drawer-button strong {
+/* Divider between chip section and filter controls */
+.filter-view-row::after {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+  flex-shrink: 0;
+  margin-inline: 0.25rem;
+}
+
+/* Inline filter controls: Year / Quality / Genre / Tag — visible on desktop */
+.filter-inline-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 1;
   min-width: 0;
   overflow: hidden;
-  color: #fff;
-  font-size: 0.9rem;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.filter-drawer-button small {
-  grid-row: 1 / 3;
-  grid-column: 2;
-  align-self: center;
-  padding: 0.25rem 0.42rem;
-  border-radius: 999px;
-  background: rgba(20, 184, 166, 0.12);
-  color: #5eead4;
-  font-size: 0.68rem;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-.filter-select-control {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+/* Right side: Sort + Reset + mobile Filters link */
+.filter-action-row {
+  display: flex;
   align-items: center;
-  gap: 0.45rem;
-  min-height: 50px;
-  min-width: 0;
-  padding-left: 0.7rem;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Compact bordered pill for all selects */
+.filter-select-control {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 32px;
+  padding: 0 0.5rem 0 0.7rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #15171a;
+  border-radius: 999px;
+  background: transparent;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.filter-select-control span {
+  color: var(--dim);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .filter-select-control select {
-  width: 100%;
-  height: 48px;
-  min-width: 0;
   border: 0;
   outline: 0;
-  color: #fff;
   background: transparent;
-  padding-right: 0.55rem;
-}
-
-.filter-inline-controls {
-  display: none;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.55rem;
+  color: #e2e8f0;
+  font: inherit;
+  font-size: 0.82rem;
+  height: 32px;
   min-width: 0;
-  border-radius: 8px;
-  background: #111317;
+  max-width: 9rem;
+  cursor: pointer;
+  padding: 0;
 }
 
+/* Reset button */
 .filter-clear-button {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-height: 34px;
+  height: 32px;
   padding: 0 0.7rem;
-  border: 1px solid rgba(251, 113, 133, 0.25);
-  border-radius: 8px;
-  background: rgba(251, 113, 133, 0.1);
+  border: 1px solid rgba(251, 113, 133, 0.3);
+  border-radius: 999px;
+  background: rgba(251, 113, 133, 0.08);
   color: #fecdd3;
   cursor: pointer;
   font: inherit;
-  font-size: 0.8rem;
-  font-weight: 850;
+  font-size: 0.78rem;
+  font-weight: 700;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .filter-clear-button:disabled {
-  cursor: default;
-  opacity: 0.45;
+  display: none;
 }
+
+/* Filters link — mobile only, hidden by default */
+.filter-drawer-button {
+  display: none;
+}
+
+/* header with icon + count — not used in panel, exists only for filter page */
+.filter-panel-header { display: none; }
+.filter-heading { display: none; }
+.filter-heading svg { display: none; }
 
 .filter-page {
   width: min(100%, 760px);
@@ -5601,50 +5564,6 @@ select.edit-field-input {
     min-height: 0;
   }
 
-  .filter-panel {
-    grid-template-columns: minmax(14rem, 0.95fr) minmax(0, 1fr) minmax(10rem, 14rem);
-    align-items: end;
-    gap: 0.7rem;
-    padding: 0.8rem;
-  }
-
-  .filter-panel-header {
-    grid-column: 1;
-    align-self: stretch;
-    flex-direction: column;
-    align-items: start;
-    justify-content: center;
-  }
-
-  .filter-view-row {
-    grid-column: 2;
-    align-self: stretch;
-  }
-
-  .filter-action-row {
-    grid-column: 3;
-    grid-template-columns: minmax(0, 1fr);
-    align-self: stretch;
-  }
-
-  .filter-drawer-button {
-    display: none;
-  }
-
-  .filter-inline-controls {
-    grid-column: 1 / -1;
-    display: grid;
-  }
-
-  .filter-select-control,
-  .text-button {
-    min-height: 42px;
-  }
-
-  .filter-select-control select {
-    height: 40px;
-  }
-
   .card-row {
     grid-auto-columns: clamp(164px, 10.8vw, 220px);
     gap: 1.1rem;
@@ -5952,132 +5871,88 @@ select.edit-field-input {
     padding-inline: 0.85rem;
   }
 
-  /* ── Compact single-row filter bar (OTT style) ─────────────────────── */
+  /* ── Mobile filter bar: scrollable chips + Filters link ─ */
   .hub-toolbar {
-    gap: 0;
-    position: sticky;
-    top: 0;
-    z-index: 30;
-    background: var(--bg, #0a0c0e);
-    padding: 0.4rem 0 0.55rem;
+    top: 120px; /* mobile header is taller (~120px) due to stacked search row */
+    background: #0b0c0e;
+    padding-block: 0.45rem;
     margin-inline: -0.85rem;
     padding-inline: 0.85rem;
   }
 
   .filter-panel {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 0;
+    height: 40px;
     padding: 0;
     border: none;
     border-radius: 0;
     background: transparent;
     overflow: visible;
-  }
-
-  .filter-panel-header {
-    display: none;
+    gap: 0.5rem;
   }
 
   .filter-view-row {
-    display: flex;
     flex: 1 1 0;
     min-width: 0;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    gap: 0.35rem;
-    padding-bottom: 2px; /* prevent clip of focus ring */
-    grid-template-columns: unset;
   }
 
-  .filter-view-row::-webkit-scrollbar {
-    display: none;
-  }
+  .filter-view-row::-webkit-scrollbar { display: none; }
 
-  .filter-view-chip {
-    flex: 0 0 auto;
-    min-height: 34px;
-    padding: 0 1rem;
-    border-radius: 999px;
-    font-size: 0.82rem;
-  }
+  /* Remove the divider on mobile — space is too tight */
+  .filter-view-row::after { display: none; }
 
-  .filter-action-row {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 0.35rem;
-    margin-left: 0.5rem;
-    grid-template-columns: unset;
-  }
+  /* Inline controls hidden on mobile */
+  .filter-inline-controls { display: none; }
 
-  /* Compact sort select — show just the value, hide the label */
-  .filter-sort-control {
-    display: flex;
-    align-items: center;
-    min-height: 34px;
-    min-width: 0;
-    width: auto;
-    padding: 0 0.45rem;
-    border-radius: 999px;
-    grid-template-columns: unset;
-  }
+  /* Reset hidden on mobile — available from /filters */
+  .filter-clear-button { display: none; }
 
-  .filter-sort-control > span {
-    display: none;
-  }
-
-  .filter-sort-control select {
-    height: 34px;
-    font-size: 0.8rem;
-    padding: 0 0.25rem;
-    min-width: 6.5rem;
-    max-width: 8rem;
-    border: none;
-    background: #15171a;
-  }
-
-  /* Compact filter button: icon + count badge only */
+  /* Show the Filters link on mobile */
   .filter-drawer-button {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    min-height: 34px;
-    min-width: auto;
-    padding: 0 0.65rem;
+    gap: 0.25rem;
+    height: 32px;
+    padding: 0 0.6rem;
+    border: 1px solid var(--line);
     border-radius: 999px;
-    font-size: 0.82rem;
-  }
-
-  .filter-drawer-button svg {
-    width: 15px;
-    height: 15px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
     flex-shrink: 0;
   }
 
-  .filter-drawer-button > span {
-    /* "Filters" text — hide on very narrow, keep on medium mobile */
-    display: none;
+  .filter-drawer-button svg {
+    width: 13px;
+    height: 13px;
+    color: var(--teal);
   }
 
-  .filter-drawer-button > strong {
-    display: none;
-  }
+  .filter-drawer-button > span { display: inline; }
 
   .filter-drawer-button > small {
-    /* count badge */
-    min-height: 18px;
-    min-width: 18px;
-    padding: 0.1rem 0.38rem;
-    font-size: 0.68rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 0.28rem;
+    border-radius: 999px;
+    background: rgba(20, 184, 166, 0.2);
+    color: #5eead4;
+    font-size: 0.65rem;
     font-weight: 900;
   }
 
-  .filter-inline-controls {
-    display: none !important;
-  }
+  /* Sort is inside the Filters page on mobile — hide it from the bar */
+  .filter-sort-control { display: none; }
 
   .page-main,
   .stats-main,
@@ -6254,27 +6129,6 @@ select.edit-field-input {
     min-height: 38px;
     padding-inline: 0.32rem;
     font-size: 0.78rem;
-  }
-
-  .filter-action-row {
-    grid-template-columns: minmax(0, 1fr) minmax(8.4rem, 0.78fr);
-    gap: 0.42rem;
-  }
-
-  .filter-drawer-button,
-  .filter-select-control {
-    min-height: 48px;
-  }
-
-  .filter-sort-control {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.12rem;
-    padding: 0.42rem 0.58rem;
-  }
-
-  .filter-sort-control select {
-    height: 24px;
-    padding: 0;
   }
 
   .media-grid {
@@ -6796,21 +6650,6 @@ select.edit-field-input {
   .playback-option em {
     grid-column: 2;
     grid-row: 1 / span 3;
-  }
-
-  .filter-action-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .filter-sort-control {
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 0.45rem;
-    padding: 0 0 0 0.7rem;
-  }
-
-  .filter-sort-control select {
-    height: 46px;
-    padding-right: 0.55rem;
   }
 
   .queue-row {
