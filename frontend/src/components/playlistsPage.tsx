@@ -336,12 +336,12 @@ export function PlaylistDetailPage({
         </div>
       ) : (
         <div className="playlist-track-list">
-          {visibleTracks.map((track) => {
+          {visibleTracks.map((track, displayIndex) => {
             const sourceIndex = data.tracks.findIndex((item) => item.messageId === track.messageId);
             const active = player.track?.key === track.key;
             return (
               <a key={track.key} className={active ? 'playlist-track-row active' : 'playlist-track-row'} href={track.appHref}>
-                <span className="track-number">{sourceIndex + 1}</span>
+                <span className="track-number">{displayIndex + 1}</span>
                 <img src={track.posterUrl || track.thumbUrl} alt="" loading="lazy" decoding="async" />
                 <span className="track-title">
                   <strong>{track.title}</strong>

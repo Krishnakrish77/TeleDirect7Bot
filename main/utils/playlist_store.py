@@ -149,6 +149,14 @@ async def add_track(
             "artist": artist[:200],
             "added_at": now,
         }
+        _has_room = {"$lt": [
+            {"$size": {"$filter": {
+                "input": {"$ifNull": ["$tracks", []]},
+                "as": "track",
+                "cond": {"$ne": ["$$track.message_id", message_id]},
+            }}},
+            _MAX_TRACKS,
+        ]}
         result = await db["playlists"].update_one(
             {"user_id": user_id, "playlist_id": playlist_id},
             [
@@ -174,7 +182,9 @@ async def add_track(
                                 },
                             }
                         },
-                        "updated_at": now,
+                        # Only advance updated_at when a track is actually appended.
+                        # Using $$NOW so the timestamp matches when the write occurs.
+                        "updated_at": {"$cond": [_has_room, "$$NOW", "$updated_at"]},
                     }
                 }
             ],

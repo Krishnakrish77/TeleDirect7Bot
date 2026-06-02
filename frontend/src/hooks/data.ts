@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { addWatchlist, fetchAdmin, fetchAppWatchlist, fetchDetail, fetchHub, fetchMe, fetchPlaylistDetail, fetchPlaylists, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
 import type { AppRoute } from '../navigation';
 import type { AdminResponse, DetailResponse, HubParams, HubResponse, MeResponse, PlaylistDetailResponse, PlaylistsResponse, StatsResponse, Suggestion, User, WatchlistPageResponse } from '../types';
@@ -186,15 +186,19 @@ export function usePlaylists(user: User | null | undefined, enabled = true) {
   const [data, setData] = useState<PlaylistsResponse | null>(null);
   const [loading, setLoading] = useState(Boolean(user && enabled));
   const [error, setError] = useState('');
+  const controllerRef = useRef<AbortController | null>(null);
 
   const reload = useCallback(() => {
+    controllerRef.current?.abort();
     if (!enabled || !user) {
+      controllerRef.current = null;
       setData(null);
       setLoading(false);
       setError('');
       return undefined;
     }
     const controller = new AbortController();
+    controllerRef.current = controller;
     setLoading(true);
     setError('');
     fetchPlaylists(controller.signal)

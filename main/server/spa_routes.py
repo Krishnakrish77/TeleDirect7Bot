@@ -1264,9 +1264,9 @@ async def api_app_rename_playlist(request: web.Request) -> web.Response:
         return _json({"error": "name required"}, status=400)
     playlist_id = request.match_info["playlist_id"]
     ok = await playlist_store.rename(int(user["sub"]), playlist_id, name)
-    if not ok and await playlist_store.get_one(int(user["sub"]), playlist_id) is None:
-        return _json({"error": "playlist not found"}, status=404)
     playlist = await playlist_store.get_one(int(user["sub"]), playlist_id)
+    if not ok and playlist is None:
+        return _json({"error": "playlist not found"}, status=404)
     return _json(_playlist_detail_payload(playlist) if playlist else {"ok": ok})
 
 
@@ -1310,6 +1310,8 @@ async def api_app_add_playlist_track(request: web.Request) -> web.Response:
         payload["artist"],
     )
     if not ok:
+        if not playlist_store.is_available():
+            return _json({"error": "playlist storage unavailable"}, status=503)
         playlist = await playlist_store.get_one(int(user["sub"]), playlist_id)
         if playlist is None:
             return _json({"error": "playlist not found"}, status=404)
@@ -1347,6 +1349,8 @@ async def api_app_reorder_playlist_tracks(request: web.Request) -> web.Response:
             message_ids.append(int(raw_id))
         except (TypeError, ValueError):
             return _json({"error": "invalid messageIds"}, status=400)
+    if len(message_ids) != len(set(message_ids)):
+        return _json({"error": "duplicate messageIds"}, status=400)
     playlist_id = request.match_info["playlist_id"]
     ok = await playlist_store.reorder_tracks(int(user["sub"]), playlist_id, message_ids)
     if not ok and await playlist_store.get_one(int(user["sub"]), playlist_id) is None:
