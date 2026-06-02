@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { addWatchlist, fetchAdmin, fetchAppWatchlist, fetchDetail, fetchHub, fetchMe, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
+import { addWatchlist, fetchAdmin, fetchAppWatchlist, fetchDetail, fetchHub, fetchMe, fetchPlaylistDetail, fetchPlaylists, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
 import type { AppRoute } from '../navigation';
-import type { AdminResponse, DetailResponse, HubParams, HubResponse, MeResponse, StatsResponse, Suggestion, User, WatchlistPageResponse } from '../types';
+import type { AdminResponse, DetailResponse, HubParams, HubResponse, MeResponse, PlaylistDetailResponse, PlaylistsResponse, StatsResponse, Suggestion, User, WatchlistPageResponse } from '../types';
 
 function pageFamilyKey(params: HubParams): string {
   return hubParamsKey({ ...params, offset: 0 });
@@ -180,6 +180,70 @@ export function useWatchlistItems(user: User | null | undefined, enabled = true)
   }, []);
 
   return { data, loading, error, removeItem };
+}
+
+export function usePlaylists(user: User | null | undefined, enabled = true) {
+  const [data, setData] = useState<PlaylistsResponse | null>(null);
+  const [loading, setLoading] = useState(Boolean(user && enabled));
+  const [error, setError] = useState('');
+
+  const reload = useCallback(() => {
+    if (!enabled || !user) {
+      setData(null);
+      setLoading(false);
+      setError('');
+      return undefined;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    fetchPlaylists(controller.signal)
+      .then(setData)
+      .catch((err: Error) => {
+        if (controller.signal.aborted) return;
+        setError(err.message || 'Unable to load playlists');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [enabled, user]);
+
+  useEffect(() => reload(), [reload]);
+
+  return { data, loading, error, reload, setData };
+}
+
+export function usePlaylistDetail(user: User | null | undefined, playlistId: string, enabled = true) {
+  const [data, setData] = useState<PlaylistDetailResponse | null>(null);
+  const [loading, setLoading] = useState(Boolean(user && playlistId && enabled));
+  const [error, setError] = useState('');
+
+  const reload = useCallback(() => {
+    if (!enabled || !user || !playlistId) {
+      setData(null);
+      setLoading(false);
+      setError('');
+      return undefined;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    fetchPlaylistDetail(playlistId, controller.signal)
+      .then(setData)
+      .catch((err: Error) => {
+        if (controller.signal.aborted) return;
+        setError(err.message || 'Unable to load playlist');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [enabled, playlistId, user]);
+
+  useEffect(() => reload(), [reload]);
+
+  return { data, loading, error, reload, setData };
 }
 
 export function useStats(user: User | null | undefined, enabled = true) {

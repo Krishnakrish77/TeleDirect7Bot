@@ -22,6 +22,7 @@ from aiohttp import web
 from main.utils import codec_probe
 from main.utils import cw_store
 from main.utils import media_index
+from main.utils import playlist_store
 from main.utils import rec_engine
 from main.utils import thumb_cache
 from main.utils import trending
@@ -1111,6 +1112,247 @@ def _track_payload(item: HubItem) -> dict:
         "streamHref": _stream_url(item),
         "albumHref": f"/app/album/{item.album_key}" if item.album_key else "",
     }
+
+
+def _iso_datetime(value) -> str:
+    if not value:
+        return ""
+    try:
+        return value.isoformat()
+    except AttributeError:
+        return str(value)
+
+
+def _playlist_limits_payload() -> dict:
+    return {
+        "maxPlaylists": getattr(playlist_store, "_MAX_PLAYLISTS", 50),
+        "maxTracks": getattr(playlist_store, "_MAX_TRACKS", 500),
+    }
+
+
+def _playlist_cover_urls(track_entries: list[dict]) -> list[str]:
+    covers: list[str] = []
+    seen: set[str] = set()
+    for entry in track_entries[:4]:
+        try:
+            message_id = int(entry.get("message_id"))
+        except (TypeError, ValueError):
+            continue
+        item = media_index.get_item(message_id)
+        if item is None:
+            continue
+        if entry.get("secure_hash") and entry.get("secure_hash") != item.secure_hash:
+            continue
+        cover = _thumb(item)
+        if cover and cover not in seen:
+            seen.add(cover)
+            covers.append(cover)
+    return covers
+
+
+def _playlist_summary_payload(playlist: dict) -> dict:
+    return {
+        "playlistId": playlist.get("playlist_id", ""),
+        "name": playlist.get("name") or "Untitled",
+        "trackCount": int(playlist.get("track_count", len(playlist.get("tracks") or [])) or 0),
+        "coverUrls": _playlist_cover_urls(playlist.get("cover_tracks") or playlist.get("tracks") or []),
+        "createdAt": _iso_datetime(playlist.get("created_at")),
+        "updatedAt": _iso_datetime(playlist.get("updated_at")),
+    }
+
+
+def _playlist_track_payload_from_entry(entry: dict) -> Optional[dict]:
+    try:
+        message_id = int(entry.get("message_id"))
+    except (TypeError, ValueError):
+        return None
+    item = media_index.get_item(message_id)
+    if item is None:
+        return None
+    if entry.get("secure_hash") and entry.get("secure_hash") != item.secure_hash:
+        return None
+    if (item.media_kind or "") != "audio":
+        return None
+    return _track_payload(item)
+
+
+def _playlist_detail_payload(playlist: dict) -> dict:
+    tracks = [
+        payload for entry in (playlist.get("tracks") or [])
+        if (payload := _playlist_track_payload_from_entry(entry)) is not None
+    ]
+    summary = _playlist_summary_payload({
+        **playlist,
+        "track_count": len(tracks),
+        "cover_tracks": playlist.get("tracks") or [],
+    })
+    return {
+        **summary,
+        "tracks": tracks,
+        "available": playlist_store.is_available(),
+        **_playlist_limits_payload(),
+    }
+
+
+def _playlist_library_payload(playlists: list[dict]) -> dict:
+    return {
+        "available": playlist_store.is_available(),
+        "playlists": [_playlist_summary_payload(playlist) for playlist in playlists],
+        **_playlist_limits_payload(),
+    }
+
+
+async def _playlist_body(request: web.Request) -> dict:
+    try:
+        body = await request.json()
+    except Exception:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+@routes.get("/api/app/playlists")
+async def api_app_playlists(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    playlists = await playlist_store.get_all(int(user["sub"]))
+    return _json(_playlist_library_payload(playlists))
+
+
+@routes.post("/api/app/playlists")
+async def api_app_create_playlist(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    if not playlist_store.is_available():
+        return _json({"error": "playlist storage unavailable"}, status=503)
+    body = await _playlist_body(request)
+    name = str(body.get("name") or "").strip()[:100]
+    if not name:
+        return _json({"error": "name required"}, status=400)
+    playlist_id = await playlist_store.create(int(user["sub"]), name)
+    if playlist_id is None:
+        return _json({"error": "playlist limit reached"}, status=422)
+    playlist = await playlist_store.get_one(int(user["sub"]), playlist_id)
+    return _json(_playlist_detail_payload(playlist or {
+        "playlist_id": playlist_id,
+        "name": name,
+        "tracks": [],
+    }), status=201)
+
+
+@routes.get(r"/api/app/playlists/{playlist_id:[a-f0-9]{32}}")
+async def api_app_playlist_detail(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    playlist_id = request.match_info["playlist_id"]
+    playlist = await playlist_store.get_one(int(user["sub"]), playlist_id)
+    if playlist is None:
+        return _json({"error": "playlist not found"}, status=404)
+    return _json(_playlist_detail_payload(playlist))
+
+
+@routes.patch(r"/api/app/playlists/{playlist_id:[a-f0-9]{32}}")
+async def api_app_rename_playlist(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    body = await _playlist_body(request)
+    name = str(body.get("name") or "").strip()[:100]
+    if not name:
+        return _json({"error": "name required"}, status=400)
+    playlist_id = request.match_info["playlist_id"]
+    ok = await playlist_store.rename(int(user["sub"]), playlist_id, name)
+    if not ok and await playlist_store.get_one(int(user["sub"]), playlist_id) is None:
+        return _json({"error": "playlist not found"}, status=404)
+    playlist = await playlist_store.get_one(int(user["sub"]), playlist_id)
+    return _json(_playlist_detail_payload(playlist) if playlist else {"ok": ok})
+
+
+@routes.delete(r"/api/app/playlists/{playlist_id:[a-f0-9]{32}}")
+async def api_app_delete_playlist(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    await playlist_store.delete(int(user["sub"]), request.match_info["playlist_id"])
+    return _json({"ok": True})
+
+
+@routes.post(r"/api/app/playlists/{playlist_id:[a-f0-9]{32}}/tracks")
+async def api_app_add_playlist_track(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    if not playlist_store.is_available():
+        return _json({"error": "playlist storage unavailable"}, status=503)
+    body = await _playlist_body(request)
+    try:
+        message_id = int(body.get("messageId", body.get("message_id")))
+    except (TypeError, ValueError):
+        return _json({"error": "invalid messageId"}, status=400)
+    item = media_index.get_item(message_id)
+    if item is None:
+        return _json({"error": "track not found"}, status=404)
+    secure_hash = str(body.get("secureHash", body.get("secure_hash", "")))
+    if secure_hash and secure_hash != item.secure_hash:
+        return _json({"error": "track changed"}, status=409)
+    if (item.media_kind or "") != "audio":
+        return _json({"error": "only audio tracks can be added to playlists"}, status=400)
+    playlist_id = request.match_info["playlist_id"]
+    payload = _track_payload(item)
+    ok = await playlist_store.add_track(
+        int(user["sub"]),
+        playlist_id,
+        item.message_id,
+        item.secure_hash,
+        payload["title"],
+        payload["artist"],
+    )
+    if not ok:
+        playlist = await playlist_store.get_one(int(user["sub"]), playlist_id)
+        if playlist is None:
+            return _json({"error": "playlist not found"}, status=404)
+        return _json({"error": "playlist is full"}, status=422)
+    playlist = await playlist_store.get_one(int(user["sub"]), playlist_id)
+    return _json(_playlist_detail_payload(playlist) if playlist else {"ok": True})
+
+
+@routes.delete(r"/api/app/playlists/{playlist_id:[a-f0-9]{32}}/tracks/{message_id:\d+}")
+async def api_app_remove_playlist_track(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    await playlist_store.remove_track(
+        int(user["sub"]),
+        request.match_info["playlist_id"],
+        int(request.match_info["message_id"]),
+    )
+    playlist = await playlist_store.get_one(int(user["sub"]), request.match_info["playlist_id"])
+    return _json(_playlist_detail_payload(playlist) if playlist else {"ok": True})
+
+
+@routes.post(r"/api/app/playlists/{playlist_id:[a-f0-9]{32}}/reorder")
+async def api_app_reorder_playlist_tracks(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    body = await _playlist_body(request)
+    raw_ids = body.get("messageIds", body.get("message_ids"))
+    if not isinstance(raw_ids, list):
+        return _json({"error": "messageIds required"}, status=400)
+    message_ids: list[int] = []
+    for raw_id in raw_ids[:getattr(playlist_store, "_MAX_TRACKS", 500)]:
+        try:
+            message_ids.append(int(raw_id))
+        except (TypeError, ValueError):
+            return _json({"error": "invalid messageIds"}, status=400)
+    playlist_id = request.match_info["playlist_id"]
+    ok = await playlist_store.reorder_tracks(int(user["sub"]), playlist_id, message_ids)
+    if not ok and await playlist_store.get_one(int(user["sub"]), playlist_id) is None:
+        return _json({"error": "playlist not found"}, status=404)
+    playlist = await playlist_store.get_one(int(user["sub"]), playlist_id)
+    return _json(_playlist_detail_payload(playlist) if playlist else {"ok": ok})
 
 
 def _video_watch_payload(request: web.Request, item: HubItem) -> dict:

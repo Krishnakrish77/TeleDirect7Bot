@@ -208,6 +208,7 @@ describe('Album detail', () => {
     const shuffleQueue = vi.fn();
     const togglePlayback = vi.fn();
     const addToQueue = vi.fn();
+    const onAddToPlaylist = vi.fn();
 
     render(
       <DetailPage
@@ -223,6 +224,7 @@ describe('Album detail', () => {
         addToQueue={addToQueue}
         shuffleQueue={shuffleQueue}
         player={makePlayer()}
+        onAddToPlaylist={onAddToPlaylist}
       />,
     );
 
@@ -242,6 +244,9 @@ describe('Album detail', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Play Theme next' }));
     expect(addToQueue).toHaveBeenCalledWith(album.tracks[0], true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Theme to playlist' }));
+    expect(onAddToPlaylist).toHaveBeenCalledWith(album.tracks[0]);
   });
 });
 

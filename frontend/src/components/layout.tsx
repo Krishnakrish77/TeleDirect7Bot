@@ -2,7 +2,7 @@ import { FormEvent, KeyboardEvent, RefObject, useEffect, useRef, useState, type 
 import { signInTelegram } from '../api';
 import { useSuggestions } from '../hooks/data';
 import { localAppHref } from '../navigation';
-import { BookmarkIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HomeIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, UserIcon, XIcon } from '../icons';
+import { BookmarkIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HomeIcon, ListIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, UserIcon, XIcon } from '../icons';
 import type { MeResponse, Suggestion, TelegramAuthUser, User, ViewValue } from '../types';
 
 declare global {
@@ -175,6 +175,10 @@ export function Header({
                 <a href="/app/stats" role="menuitem" onClick={() => setAccountOpen(false)}>
                   <ChartIcon />
                   <span>Stats</span>
+                </a>
+                <a href="/app/playlists" role="menuitem" onClick={() => setAccountOpen(false)}>
+                  <ListIcon />
+                  <span>Playlists</span>
                 </a>
                 {user.is_admin && (
                   <a href="/app/admin" role="menuitem" onClick={() => setAccountOpen(false)}>

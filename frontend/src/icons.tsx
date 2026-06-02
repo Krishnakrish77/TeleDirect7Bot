@@ -239,6 +239,18 @@ export function ListIcon(props: Props) {
   );
 }
 
+export function ListPlusIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M11 6h10" />
+      <path d="M11 12h10" />
+      <path d="M11 18h10" />
+      <path d="M3 12h6" />
+      <path d="M6 9v6" />
+    </IconBase>
+  );
+}
+
 export function VolumeIcon(props: Props) {
   return (
     <IconBase {...props}>

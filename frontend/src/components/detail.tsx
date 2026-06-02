@@ -1,5 +1,5 @@
 import { ReactNode, useState } from 'react';
-import { BookmarkIcon, CheckIcon, ChevronRightIcon, ListIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
+import { BookmarkIcon, CheckIcon, ChevronRightIcon, ListIcon, ListPlusIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
 import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, SeriesDetailResponse, WatchTrack } from '../types';
 import type { AppRoute } from '../navigation';
@@ -20,6 +20,7 @@ export function DetailPage({
   addToQueue,
   shuffleQueue,
   player,
+  onAddToPlaylist,
 }: {
   route: Extract<AppRoute, { kind: 'detail' }>;
   data: DetailResponse | null;
@@ -33,6 +34,7 @@ export function DetailPage({
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
   shuffleQueue: (queue: WatchTrack[]) => void;
   player: PlayerState;
+  onAddToPlaylist?: (track: WatchTrack) => void;
 }) {
   if (loading) {
     return <main className="detail-main"><LoadingRows /></main>;
@@ -59,6 +61,7 @@ export function DetailPage({
           addToQueue={addToQueue}
           shuffleQueue={shuffleQueue}
           player={player}
+          onAddToPlaylist={onAddToPlaylist}
         />
       );
     case 'artist':
@@ -69,6 +72,7 @@ export function DetailPage({
           togglePlayback={togglePlayback}
           addToQueue={addToQueue}
           player={player}
+          onAddToPlaylist={onAddToPlaylist}
           saved={saved}
           onToggleSaved={onToggleSaved}
         />
@@ -364,6 +368,7 @@ function AlbumDetail({
   addToQueue,
   shuffleQueue,
   player,
+  onAddToPlaylist,
 }: {
   data: AlbumDetailResponse;
   saved: Set<string>;
@@ -373,6 +378,7 @@ function AlbumDetail({
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
   shuffleQueue: (queue: WatchTrack[]) => void;
   player: PlayerState;
+  onAddToPlaylist?: (track: WatchTrack) => void;
 }) {
   const first = data.tracks[0];
   return (
@@ -400,7 +406,7 @@ function AlbumDetail({
             </div>
             <span>{data.trackCount} track{data.trackCount === 1 ? '' : 's'}</span>
           </div>
-          <TrackList tracks={data.tracks} queue={data.tracks} player={player} togglePlayback={togglePlayback} addToQueue={addToQueue} context="album" />
+          <TrackList tracks={data.tracks} queue={data.tracks} player={player} togglePlayback={togglePlayback} addToQueue={addToQueue} onAddToPlaylist={onAddToPlaylist} context="album" />
         </section>
       </div>
       <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
@@ -479,6 +485,7 @@ function ArtistDetail({
   togglePlayback,
   addToQueue,
   player,
+  onAddToPlaylist,
   saved,
   onToggleSaved,
 }: {
@@ -487,6 +494,7 @@ function ArtistDetail({
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
   player: PlayerState;
+  onAddToPlaylist?: (track: WatchTrack) => void;
   saved: Set<string>;
   onToggleSaved: (itemId: string) => void;
 }) {
@@ -529,7 +537,7 @@ function ArtistDetail({
             </button>
           )}
         </div>
-        <TrackList tracks={data.tracks} queue={data.tracks} player={player} togglePlayback={togglePlayback} addToQueue={addToQueue} />
+        <TrackList tracks={data.tracks} queue={data.tracks} player={player} togglePlayback={togglePlayback} addToQueue={addToQueue} onAddToPlaylist={onAddToPlaylist} />
       </section>
     </main>
   );
@@ -581,6 +589,7 @@ function TrackList({
   player,
   togglePlayback,
   addToQueue,
+  onAddToPlaylist,
   context = 'default',
 }: {
   tracks: WatchTrack[];
@@ -588,6 +597,7 @@ function TrackList({
   player: PlayerState;
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
+  onAddToPlaylist?: (track: WatchTrack) => void;
   context?: 'default' | 'album';
 }) {
   const subtitleForTrack = (track: WatchTrack) => {
@@ -600,7 +610,15 @@ function TrackList({
       {tracks.map((track, index) => {
         const active = player.track?.key === track.key;
         return (
-          <a key={track.key} className={active ? 'track-row active' : 'track-row'} href={track.appHref}>
+          <a
+            key={track.key}
+            className={[
+              'track-row',
+              onAddToPlaylist ? 'has-playlist' : '',
+              active ? 'active' : '',
+            ].filter(Boolean).join(' ')}
+            href={track.appHref}
+          >
             <span className="track-number">{track.trackNumber || index + 1}</span>
             <span className="track-title">
               <strong>{track.title}</strong>
@@ -643,6 +661,20 @@ function TrackList({
             >
               <span aria-hidden="true">+</span>
             </button>
+            {onAddToPlaylist && (
+              <button
+                type="button"
+                className="icon-button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onAddToPlaylist(track);
+                }}
+                aria-label={`Add ${track.title} to playlist`}
+              >
+                <ListPlusIcon />
+              </button>
+            )}
           </a>
         );
       })}

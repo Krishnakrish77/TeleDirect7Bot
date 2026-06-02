@@ -54,6 +54,8 @@ export function localAppHref(href: string | null): string | null {
   if (href === '/app') return appBase();
   if (href.startsWith('/app?')) return `${appBase()}${href.slice('/app'.length)}`;
   if (href === '/watchlist') return '/app/watchlist';
+  if (href === '/playlists') return '/app/playlists';
+  if (/^\/playlist\/[a-f0-9]{32}$/.test(href)) return `/app${href}`;
   if (href === '/stats') return '/app/stats';
   if (href === '/admin') return '/app/admin';
   if (/^\/(movie|series|album|artist|person)\//.test(href)) return `/app${href}`;
@@ -67,6 +69,9 @@ export function classicPathForApp(pathname: string, search: string): string {
   const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);
   if (watch) return `/watch/${watch[1]}${search}`;
   if (pathname === '/app/watchlist') return `/watchlist${search}`;
+  if (pathname === '/app/playlists') return '/?view=music';
+  const playlist = pathname.match(/^\/app\/playlist\/([a-f0-9]{32})/);
+  if (playlist) return '/?view=music';
   if (pathname === '/app/stats') return `/stats${search}`;
   if (pathname === '/app/admin' || pathname.startsWith('/app/admin/')) return `/admin${search}`;
   if (pathname === '/app/filters') return `/${search}`;
@@ -140,6 +145,8 @@ export type AppRoute =
   | { kind: 'hub' }
   | { kind: 'filters' }
   | { kind: 'watchlist' }
+  | { kind: 'playlists' }
+  | { kind: 'playlist'; playlistId: string }
   | { kind: 'stats' }
   | { kind: 'admin' }
   | { kind: 'admin-dashboard' }
@@ -150,6 +157,9 @@ export type AppRoute =
 export function parseRoute(pathname: string): AppRoute {
   if (pathname === '/app/filters') return { kind: 'filters' };
   if (pathname === '/app/watchlist') return { kind: 'watchlist' };
+  if (pathname === '/app/playlists') return { kind: 'playlists' };
+  const playlist = pathname.match(/^\/app\/playlist\/([a-f0-9]{32})/);
+  if (playlist) return { kind: 'playlist', playlistId: playlist[1] };
   if (pathname === '/app/stats') return { kind: 'stats' };
   if (pathname === '/app/admin/dashboard') return { kind: 'admin-dashboard' };
   if (pathname === '/app/admin/trending') return { kind: 'admin-trending' };

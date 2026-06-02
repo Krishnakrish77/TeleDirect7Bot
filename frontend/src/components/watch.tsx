@@ -1,6 +1,6 @@
 import { DragEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { deleteContinueEntry, fetchAudioTracks, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
-import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
+import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -35,6 +35,7 @@ export function WatchPage({
   confirmNext,
   cancelNext,
   onOpenQueue,
+  onAddToPlaylist,
 }: {
   watchKey: string;
   player: PlayerState;
@@ -52,6 +53,7 @@ export function WatchPage({
   confirmNext: () => void;
   cancelNext: () => void;
   onOpenQueue: () => void;
+  onAddToPlaylist?: (track: WatchTrack) => void;
 }) {
   const [data, setData] = useState<WatchResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -332,7 +334,15 @@ export function WatchPage({
             {queue.map((item, index) => {
               const active = player.track?.key === item.key;
               return (
-                <a key={item.key} className={active ? 'track-row active' : 'track-row'} href={item.appHref}>
+                <a
+                  key={item.key}
+                  className={[
+                    'track-row',
+                    onAddToPlaylist ? 'has-playlist' : '',
+                    active ? 'active' : '',
+                  ].filter(Boolean).join(' ')}
+                  href={item.appHref}
+                >
                   <span className="track-number">{item.trackNumber || index + 1}</span>
                   <span className="track-title">
                     <strong>{item.title}</strong>
@@ -375,6 +385,20 @@ export function WatchPage({
                   >
                     <span aria-hidden="true">+</span>
                   </button>
+                  {onAddToPlaylist && (
+                    <button
+                      type="button"
+                      className="icon-button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onAddToPlaylist(item);
+                      }}
+                      aria-label={`Add ${item.title} to playlist`}
+                    >
+                      <ListPlusIcon />
+                    </button>
+                  )}
                 </a>
               );
             })}

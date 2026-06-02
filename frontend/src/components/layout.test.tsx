@@ -81,5 +81,6 @@ describe('Header search', () => {
     });
 
     expect(screen.getByRole('menuitem', { name: /Admin panel/i }).getAttribute('href')).toBe('/app/admin');
+    expect(screen.getByRole('menuitem', { name: /Playlists/i }).getAttribute('href')).toBe('/app/playlists');
   });
 });

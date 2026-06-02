@@ -10,6 +10,8 @@ import type {
   HubParams,
   HubResponse,
   MeResponse,
+  PlaylistDetailResponse,
+  PlaylistsResponse,
   StatsResponse,
   AudioTrackOption,
   ContinueEntry,
@@ -20,6 +22,7 @@ import type {
   TelegramAuthUser,
   TmdbPreviewResult,
   WatchResponse,
+  WatchTrack,
   WatchlistPageResponse,
 } from './types';
 
@@ -115,6 +118,57 @@ export async function fetchWatchlist(signal?: AbortSignal): Promise<Set<string>>
 
 export async function fetchAppWatchlist(signal?: AbortSignal): Promise<WatchlistPageResponse> {
   return request<WatchlistPageResponse>('/api/app/watchlist', { signal });
+}
+
+export async function fetchPlaylists(signal?: AbortSignal): Promise<PlaylistsResponse> {
+  return request<PlaylistsResponse>('/api/app/playlists', { signal });
+}
+
+export async function fetchPlaylistDetail(playlistId: string, signal?: AbortSignal): Promise<PlaylistDetailResponse> {
+  return request<PlaylistDetailResponse>(`/api/app/playlists/${encodeURIComponent(playlistId)}`, { signal });
+}
+
+export async function createPlaylist(name: string): Promise<PlaylistDetailResponse> {
+  return request<PlaylistDetailResponse>('/api/app/playlists', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function renamePlaylist(playlistId: string, name: string): Promise<PlaylistDetailResponse> {
+  return request<PlaylistDetailResponse>(`/api/app/playlists/${encodeURIComponent(playlistId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function deletePlaylist(playlistId: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/app/playlists/${encodeURIComponent(playlistId)}`, { method: 'DELETE' });
+}
+
+export async function addTrackToPlaylist(playlistId: string, track: WatchTrack): Promise<PlaylistDetailResponse> {
+  return request<PlaylistDetailResponse>(`/api/app/playlists/${encodeURIComponent(playlistId)}/tracks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageId: track.messageId, secureHash: track.secureHash }),
+  });
+}
+
+export async function removeTrackFromPlaylist(playlistId: string, messageId: number): Promise<PlaylistDetailResponse> {
+  return request<PlaylistDetailResponse>(
+    `/api/app/playlists/${encodeURIComponent(playlistId)}/tracks/${encodeURIComponent(String(messageId))}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function reorderPlaylistTracks(playlistId: string, messageIds: number[]): Promise<PlaylistDetailResponse> {
+  return request<PlaylistDetailResponse>(`/api/app/playlists/${encodeURIComponent(playlistId)}/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageIds }),
+  });
 }
 
 export async function fetchStats(signal?: AbortSignal): Promise<StatsResponse> {

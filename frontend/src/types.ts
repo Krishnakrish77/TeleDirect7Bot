@@ -252,6 +252,29 @@ export interface WatchResponse {
   albumTracks?: WatchTrack[];
 }
 
+export interface PlaylistSummary {
+  playlistId: string;
+  name: string;
+  trackCount: number;
+  coverUrls: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlaylistsResponse {
+  available: boolean;
+  playlists: PlaylistSummary[];
+  maxPlaylists: number;
+  maxTracks: number;
+}
+
+export interface PlaylistDetailResponse extends PlaylistSummary {
+  tracks: WatchTrack[];
+  available: boolean;
+  maxPlaylists: number;
+  maxTracks: number;
+}
+
 export interface User {
   sub: number;
   name: string;
