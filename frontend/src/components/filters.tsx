@@ -164,6 +164,11 @@ export function FilterBar({
 
   return (
     <section className="filter-panel" aria-label="Browse filters">
+      <div className="filter-count" aria-label="Catalogue size">
+        <FilterIcon />
+        <strong>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</strong>
+      </div>
+
       {/* Category chips — always visible, scroll on mobile */}
       <div className="filter-view-row" role="group" aria-label="Content type">
         {viewOptions.map((option) => (

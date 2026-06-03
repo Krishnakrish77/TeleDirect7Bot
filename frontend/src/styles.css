@@ -652,6 +652,37 @@ img {
   overflow: hidden;
 }
 
+.filter-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.filter-count svg {
+  width: 17px;
+  height: 17px;
+  color: var(--teal);
+}
+
+.filter-count strong {
+  color: #cbd5e1;
+  font-weight: 850;
+}
+
+.filter-count::after {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 18px;
+  margin-left: 0.25rem;
+  background: var(--line);
+}
+
 /* Category chips */
 .filter-view-row {
   display: flex;
