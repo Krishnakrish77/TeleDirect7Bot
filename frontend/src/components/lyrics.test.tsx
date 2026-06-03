@@ -53,6 +53,13 @@ describe('parseLrc', () => {
     ]);
   });
 
+  it('ignores blank timestamp markers so empty rows cannot become active', () => {
+    expect(parseLrc('[00:01.00]First\n[00:02.00] \n[00:03.00]Second')).toEqual([
+      { t: 1, text: 'First' },
+      { t: 3, text: 'Second' },
+    ]);
+  });
+
   it('selects the active line with a small display lead', () => {
     const lines = parseLrc('[00:01.00]First\n[00:03.00]Second');
 
@@ -150,6 +157,46 @@ describe('LyricsPanel', () => {
     expect(opening.className).toContain('active');
     expect(opening.getAttribute('aria-current')).toBe('true');
     expect(screen.getByRole('button', { name: 'Second line' }).className).toContain('future');
+  });
+
+  it('prefers synced lyrics from search when the exact lookup only returns plain text', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ plainLyrics: 'Plain only' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([{
+          trackName: 'Vaa Kannamma',
+          artistName: 'Hesham Abdul Wahab',
+          albumName: 'Once More',
+          duration: 284,
+          syncedLyrics: '[00:03.56]Synced search line\n[00:11.18]Next search line',
+          plainLyrics: 'Plain search text',
+        }]),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <LyricsPanel
+        track={makeTrack({
+          title: 'Vaa Kannamma',
+          artist: 'Hesham Abdul Wahab',
+          albumTitle: 'Once More',
+          duration: 284,
+        })}
+        currentTime={4}
+        seek={vi.fn()}
+      />,
+    );
+
+    const syncedLine = await screen.findByRole('button', { name: 'Synced search line' });
+    expect(syncedLine.className).toContain('active');
+    expect(screen.getByText('LRCLIB synced')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/get?');
+    expect(fetchMock.mock.calls[1][0]).toContain('/api/search?');
   });
 
   it('does not show stale synced lyrics while a new track is loading', async () => {

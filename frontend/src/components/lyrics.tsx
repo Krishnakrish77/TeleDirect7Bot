@@ -43,7 +43,9 @@ export function LyricsPanel({
           <p className="eyebrow">Lyrics</p>
           <h2>{track.title}</h2>
         </div>
-        {!loading && !lyrics.unavailable && <span>LRCLIB</span>}
+        {!loading && !lyrics.unavailable && (
+          <span>{lyrics.synced.length ? 'LRCLIB synced' : 'LRCLIB text'}</span>
+        )}
       </div>
 
       {loading ? (
