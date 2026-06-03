@@ -20,16 +20,19 @@ export function LyricsPanel({
   const activeIndex = useMemo(() => {
     return lyricsActiveIndex(lyrics.synced, currentTime);
   }, [currentTime, lyrics.synced]);
+  const displayIndex = activeIndex >= 0
+    ? activeIndex
+    : lyrics.synced.length ? 0 : -1;
 
   useEffect(() => {
     const container = scrollRef.current;
     const active = activeRef.current;
-    if (!container || !active || activeIndex < 0) return;
+    if (!container || !active || displayIndex < 0) return;
     const top = active.offsetTop - container.clientHeight / 2 + active.clientHeight / 2;
     if (typeof container.scrollTo === 'function') {
       container.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
     }
-  }, [activeIndex]);
+  }, [displayIndex]);
 
   if (!track) return null;
 
@@ -48,14 +51,16 @@ export function LyricsPanel({
       ) : lyrics.synced.length ? (
         <div className="lyrics-lines" ref={scrollRef}>
           {lyrics.synced.map((line, index) => {
-            const state = index === activeIndex ? 'active' : index < activeIndex ? 'past' : 'future';
+            const state = index === displayIndex
+              ? 'active'
+              : activeIndex >= 0 && index < activeIndex ? 'past' : 'future';
             return (
               <button
                 key={`${line.t}:${index}`}
-                ref={index === activeIndex ? activeRef : undefined}
+                ref={index === displayIndex ? activeRef : undefined}
                 type="button"
                 className={`lyric-line ${state}`}
-                aria-current={index === activeIndex ? 'true' : undefined}
+                aria-current={index === displayIndex ? 'true' : undefined}
                 onClick={() => seek(line.t)}
               >
                 {line.text || '\u00a0'}

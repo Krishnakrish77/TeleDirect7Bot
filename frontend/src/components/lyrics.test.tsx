@@ -136,6 +136,22 @@ describe('LyricsPanel', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps a visible highlighted lyric before the first timestamp starts', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        syncedLyrics: '[00:08.00]Opening line\n[00:14.00]Second line',
+      }),
+    }));
+
+    render(<LyricsPanel track={makeTrack({ title: 'Slow Intro' })} currentTime={0} seek={vi.fn()} />);
+
+    const opening = await screen.findByRole('button', { name: 'Opening line' });
+    expect(opening.className).toContain('active');
+    expect(opening.getAttribute('aria-current')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Second line' }).className).toContain('future');
+  });
+
   it('does not show stale synced lyrics while a new track is loading', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({

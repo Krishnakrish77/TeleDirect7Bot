@@ -2550,9 +2550,10 @@ img {
 
 .lyrics-flip-panel .lyrics-lines,
 .lyrics-flip-panel .lyrics-plain {
+  --lyrics-center-pad: 2.25rem;
   height: 100%;
   max-height: none;
-  padding-right: 0;
+  padding: var(--lyrics-center-pad) 0;
   text-align: center;
 }
 
@@ -2813,12 +2814,13 @@ img {
 }
 
 .lyrics-lines {
+  --lyrics-center-pad: clamp(4.5rem, 12svh, 7.5rem);
   display: grid;
   gap: 0.1rem;
   max-height: min(32svh, 20rem);
   overflow: auto;
   overscroll-behavior: contain;
-  padding-right: 0.25rem;
+  padding: var(--lyrics-center-pad) 0.25rem var(--lyrics-center-pad) 0;
   scroll-behavior: auto;
   scrollbar-width: none;
 }
@@ -4052,6 +4054,7 @@ img {
 
 .now-lyrics .lyrics-lines,
 .now-lyrics .lyrics-plain {
+  --lyrics-center-pad: clamp(3rem, 8svh, 4.75rem);
   max-height: min(28svh, 13rem);
 }
 
