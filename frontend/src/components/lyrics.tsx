@@ -28,7 +28,15 @@ export function LyricsPanel({
     const container = scrollRef.current;
     const active = activeRef.current;
     if (!container || !active || displayIndex < 0) return;
-    const top = active.offsetTop - container.clientHeight / 2 + active.clientHeight / 2;
+    // active.offsetTop is measured from the nearest *positioned* ancestor
+    // (offsetParent), which is NOT this scroll container when .lyrics-lines is
+    // position:static — so it mixes coordinate spaces and scrolls the active
+    // line out of view. Compute the delta from viewport-relative rects so the
+    // scroll target is correct regardless of CSS positioning.
+    const cRect = container.getBoundingClientRect();
+    const aRect = active.getBoundingClientRect();
+    const delta = (aRect.top - cRect.top) - container.clientHeight / 2 + aRect.height / 2;
+    const top = container.scrollTop + delta;
     if (typeof container.scrollTo === 'function') {
       container.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
     }
