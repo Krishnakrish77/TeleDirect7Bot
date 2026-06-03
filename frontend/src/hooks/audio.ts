@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { deleteContinueEntry, recordWatchHistory, saveContinueEntry } from '../api';
+import { preloadLyrics } from './lyrics';
 import type { WatchTrack } from '../types';
 
 export type RepeatMode = 'off' | 'all' | 'one';
@@ -879,6 +880,17 @@ export function useAudioPlayer() {
     persistNowPlaying(player);
     setMediaSessionMetadata(player);
   }, [player.queue, player.queueIndex, player.repeatMode, player.speed, player.track, player.volume, player.muted, setMediaSessionMetadata]);
+
+  useEffect(() => {
+    if (!player.track || !player.playing) return undefined;
+    const currentTrack = player.track;
+    const nextTrack = player.queue[player.queueIndex + 1] || null;
+    const timer = window.setTimeout(() => {
+      void preloadLyrics(currentTrack);
+      if (nextTrack) void preloadLyrics(nextTrack);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [player.playing, player.queue, player.queueIndex, player.track]);
 
   useEffect(() => {
     setMediaSessionPlaybackState(player.playing, Boolean(player.track));

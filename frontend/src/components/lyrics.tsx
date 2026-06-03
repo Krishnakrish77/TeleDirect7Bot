@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLyrics } from '../hooks/lyrics';
+import { lyricsActiveIndex, useLyrics } from '../hooks/lyrics';
 import { XIcon } from '../icons';
 import type { WatchTrack } from '../types';
 
@@ -18,13 +18,7 @@ export function LyricsPanel({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const activeIndex = useMemo(() => {
-    if (!lyrics.synced.length) return -1;
-    let active = 0;
-    for (let index = 0; index < lyrics.synced.length; index += 1) {
-      if (lyrics.synced[index].t <= currentTime) active = index;
-      else break;
-    }
-    return active;
+    return lyricsActiveIndex(lyrics.synced, currentTime);
   }, [currentTime, lyrics.synced]);
 
   useEffect(() => {
@@ -33,7 +27,7 @@ export function LyricsPanel({
     if (!container || !active || activeIndex < 0) return;
     const top = active.offsetTop - container.clientHeight / 2 + active.clientHeight / 2;
     if (typeof container.scrollTo === 'function') {
-      container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      container.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
     }
   }, [activeIndex]);
 
@@ -61,6 +55,7 @@ export function LyricsPanel({
                 ref={index === activeIndex ? activeRef : undefined}
                 type="button"
                 className={`lyric-line ${state}`}
+                aria-current={index === activeIndex ? 'true' : undefined}
                 onClick={() => seek(line.t)}
               >
                 {line.text || '\u00a0'}

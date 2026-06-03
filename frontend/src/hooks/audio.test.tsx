@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAudioPlayer } from './audio';
+import { clearLyricsCache } from './lyrics';
 import type { WatchTrack } from '../types';
 
 function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
@@ -91,9 +92,19 @@ function installMediaSession() {
   return { handlers, mediaSession };
 }
 
+beforeEach(() => {
+  clearLyricsCache();
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    ok: false,
+    json: async () => ({}),
+  }));
+});
+
 afterEach(() => {
+  clearLyricsCache();
   Reflect.deleteProperty(navigator, 'mediaSession');
   Reflect.deleteProperty(window, 'MediaMetadata');
+  vi.unstubAllGlobals();
 });
 
 describe('useAudioPlayer', () => {

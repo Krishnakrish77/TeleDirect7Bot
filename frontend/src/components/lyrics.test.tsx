@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearLyricsCache, parseLrc } from '../hooks/lyrics';
+import { clearLyricsCache, lyricsActiveIndex, parseLrc, preloadLyrics } from '../hooks/lyrics';
 import type { WatchTrack } from '../types';
 import { LyricsFlipCard, LyricsPanel } from './lyrics';
 
@@ -52,6 +52,14 @@ describe('parseLrc', () => {
       { t: 12.5, text: 'Second' },
     ]);
   });
+
+  it('selects the active line with a small display lead', () => {
+    const lines = parseLrc('[00:01.00]First\n[00:03.00]Second');
+
+    expect(lyricsActiveIndex(lines, 0.2)).toBe(-1);
+    expect(lyricsActiveIndex(lines, 0.7)).toBe(0);
+    expect(lyricsActiveIndex(lines, 2.7)).toBe(1);
+  });
 });
 
 describe('LyricsPanel', () => {
@@ -70,7 +78,9 @@ describe('LyricsPanel', () => {
     expect(await screen.findByRole('button', { name: 'Second line' })).toBeTruthy();
     expect(fetchMock.mock.calls[0][0]).toContain('https://lrclib.net/api/get?');
     expect(fetchMock.mock.calls[0][0]).toContain('track_name=Naanum');
+    expect(fetchMock.mock.calls[0][0]).toContain('album_name=Album');
     expect(screen.getByRole('button', { name: 'Second line' }).className).toContain('active');
+    expect(screen.getByRole('button', { name: 'Second line' }).getAttribute('aria-current')).toBe('true');
 
     fireEvent.click(screen.getByRole('button', { name: 'First line' }));
     expect(seek).toHaveBeenCalledWith(1);
@@ -106,6 +116,44 @@ describe('LyricsPanel', () => {
 
     expect(await screen.findAllByRole('button', { name: 'First line' })).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses preloaded lyrics without showing a loading state', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        syncedLyrics: '[00:01.00]Cached line',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const track = makeTrack({ title: 'Preloaded Song' });
+
+    await preloadLyrics(track);
+    render(<LyricsPanel track={track} currentTime={1.1} seek={vi.fn()} />);
+
+    expect(screen.queryByText('Loading lyrics...')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cached line' }).className).toContain('active');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not show stale synced lyrics while a new track is loading', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          syncedLyrics: '[00:01.00]Old line',
+        }),
+      })
+      .mockReturnValueOnce(new Promise(() => undefined));
+    vi.stubGlobal('fetch', fetchMock);
+    const view = render(<LyricsPanel track={makeTrack({ title: 'Old song' })} currentTime={1.1} seek={vi.fn()} />);
+
+    expect(await screen.findByRole('button', { name: 'Old line' })).toBeTruthy();
+
+    view.rerender(<LyricsPanel track={makeTrack({ title: 'New song' })} currentTime={0} seek={vi.fn()} />);
+
+    expect(screen.queryByRole('button', { name: 'Old line' })).toBeNull();
+    expect(screen.getByText('Loading lyrics...')).toBeTruthy();
   });
 });
 

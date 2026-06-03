@@ -2558,12 +2558,15 @@ img {
 
 .lyrics-flip-panel .lyric-line {
   min-height: 30px;
+  padding-inline: 0.35rem;
+  border-left: 0;
   font-size: 0.8rem;
   line-height: 1.35;
   text-align: center;
 }
 
 .lyrics-flip-panel .lyric-line.active {
+  background: rgba(249, 115, 22, 0.12);
   font-size: 0.94rem;
 }
 
@@ -2816,7 +2819,7 @@ img {
   overflow: auto;
   overscroll-behavior: contain;
   padding-right: 0.25rem;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   scrollbar-width: none;
 }
 
@@ -2827,8 +2830,10 @@ img {
 .lyric-line {
   width: 100%;
   min-height: 34px;
-  padding: 0.25rem 0;
+  padding: 0.28rem 0.55rem;
   border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
   background: transparent;
   color: rgba(148, 163, 184, 0.58);
   cursor: pointer;
@@ -2843,6 +2848,8 @@ img {
 }
 
 .lyric-line.active {
+  border-left-color: var(--brand);
+  background: rgba(249, 115, 22, 0.12);
   color: #fff;
   font-size: 1.06rem;
   font-weight: 850;
