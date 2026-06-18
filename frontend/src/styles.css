@@ -1809,6 +1809,76 @@ img {
   color: #fecdd3;
 }
 
+.admin-merge-tool {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.admin-merge-tool > button {
+  justify-self: start;
+}
+
+.admin-merge-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.admin-merge-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--dim);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.admin-merge-form input {
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111317;
+  color: #fff;
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.admin-merge-form button {
+  min-height: 38px;
+  padding: 0 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(11, 12, 14, 0.42);
+  color: #e2e8f0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.admin-merge-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.admin-merge-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #fca5a5;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 700px) {
+  .admin-merge-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .admin-controls {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) auto;
@@ -5183,6 +5253,41 @@ select.edit-field-input {
   display: flex;
   gap: 0.5rem;
   align-items: flex-end;
+}
+
+.edit-field-row > .edit-field-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.edit-field-row-top {
+  align-items: flex-start;
+}
+
+.edit-ai-field-btn {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 0 0.58rem;
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-radius: 6px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #c4b5fd;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.edit-ai-field-btn:hover:not(:disabled),
+.edit-ai-field-btn:focus-visible {
+  background: rgba(139, 92, 246, 0.25);
+  outline: none;
+}
+
+.edit-ai-field-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .edit-section {

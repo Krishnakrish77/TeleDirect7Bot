@@ -533,6 +533,19 @@ export interface AdminActionResponse {
   status?: AdminStatusResponse;
 }
 
+export interface AdminSeriesOption {
+  key: string;
+  title: string;
+  count: number;
+}
+
+export interface AdminMergeSeriesResponse {
+  ok: boolean;
+  merged: number;
+  target_title: string;
+  target_key: string;
+}
+
 export interface TelegramAuthUser {
   id: number;
   first_name?: string;

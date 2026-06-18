@@ -1,13 +1,22 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchAdminStatus, runAdminAction, runAdminMaintenance } from '../api';
+import { fetchAdminSeriesList, fetchAdminStatus, mergeAdminSeries, runAdminAction, runAdminMaintenance } from '../api';
 import type { AdminResponse, User } from '../types';
 import { AdminPage } from './adminPage';
 
 vi.mock('../api', () => ({
+  aiSuggestItem: vi.fn(),
+  clearAdminItemTmdb: vi.fn(),
+  fetchAdminItem: vi.fn(),
+  fetchAdminSeriesList: vi.fn(),
   fetchAdminStatus: vi.fn(),
+  fetchAiModels: vi.fn(),
+  fetchTmdbPreview: vi.fn(),
+  mergeAdminSeries: vi.fn(),
+  resolveTmdbImdb: vi.fn(),
   runAdminAction: vi.fn(),
   runAdminMaintenance: vi.fn(),
+  saveAdminItem: vi.fn(),
 }));
 
 const adminUser: User = {
@@ -150,9 +159,21 @@ function renderAdmin(props: Partial<Parameters<typeof AdminPage>[0]> = {}) {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.mocked(fetchAdminStatus).mockResolvedValue(adminData.status);
+  vi.mocked(fetchAdminSeriesList).mockResolvedValue([
+    { key: 'split-show', title: 'Split Show', count: 2 },
+    { key: 'target-show', title: 'Target Show', count: 8 },
+  ]);
+  vi.mocked(mergeAdminSeries).mockResolvedValue({
+    ok: true,
+    merged: 2,
+    target_title: 'Target Show',
+    target_key: 'target-show',
+  });
   vi.mocked(runAdminAction).mockResolvedValue({ ok: true, message: 'Done' });
   vi.mocked(runAdminMaintenance).mockResolvedValue({ ok: true, message: 'Queued' });
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 
 describe('AdminPage', () => {
@@ -219,6 +240,25 @@ describe('AdminPage', () => {
       expect(runAdminMaintenance).toHaveBeenCalledWith('reindex');
     });
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('merges series from the React admin maintenance panel', async () => {
+    const reload = vi.fn();
+    renderAdmin({ reload });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Merge series' }));
+    await waitFor(() => expect(fetchAdminSeriesList).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'Split Show' } });
+    fireEvent.change(screen.getByLabelText('Target'), { target: { value: 'Target Show' } });
+    const submit = screen.getByRole('button', { name: /^Merge$/ }) as HTMLButtonElement;
+    await waitFor(() => expect(submit.disabled).toBe(false));
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      expect(mergeAdminSeries).toHaveBeenCalledWith('split-show', 'target-show');
+    });
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect((await screen.findByRole('status')).textContent).toContain('Merged 2 episodes into Target Show');
   });
 
   it('keeps the status polling interval stable while workers keep running', () => {

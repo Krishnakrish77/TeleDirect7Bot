@@ -3,6 +3,8 @@ import type {
   AdminDashboardResponse,
   AdminItemEditPayload,
   AdminResponse,
+  AdminMergeSeriesResponse,
+  AdminSeriesOption,
   AdminStatusResponse,
   AiSuggestResponse,
   ContinueItem,
@@ -200,6 +202,18 @@ export async function runAdminMaintenance(action: string, payload: Record<string
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...payload }),
+  });
+}
+
+export async function fetchAdminSeriesList(signal?: AbortSignal): Promise<AdminSeriesOption[]> {
+  return request<AdminSeriesOption[]>('/admin/series-list', { signal });
+}
+
+export async function mergeAdminSeries(sourceKey: string, targetKey: string): Promise<AdminMergeSeriesResponse> {
+  return request<AdminMergeSeriesResponse>('/admin/merge-series', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source_key: sourceKey, target_key: targetKey }),
   });
 }
 

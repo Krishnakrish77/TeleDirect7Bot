@@ -1,11 +1,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { aiSuggestItem, clearAdminItemTmdb, fetchAdminItem, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem } from '../api';
+import { aiSuggestItem, clearAdminItemTmdb, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem } from '../api';
 
 // Module-level cache so AI models aren't re-fetched on every modal open.
 let _cachedAiModels: Array<{ id: string; name: string }> | null = null;
 import { ChartIcon, ChevronRightIcon, FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, XIcon } from '../icons';
 import { uiModeHref } from '../navigation';
-import type { AdminItem, AdminItemEditPayload, AdminResponse, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
+import type { AdminItem, AdminItemEditPayload, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 
 type Navigate = (href: string, replace?: boolean) => void;
@@ -62,6 +62,16 @@ function itemSubtitle(item: AdminItem): string {
 
 function selectedIds(selected: Set<number>): number[] {
   return Array.from(selected.values());
+}
+
+function resolveSeriesKey(value: string, series: AdminSeriesOption[]): string {
+  const input = value.trim();
+  if (!input) return '';
+  const match = series.find((item) => (
+    item.key === input ||
+    item.title.toLowerCase() === input.toLowerCase()
+  ));
+  return match?.key || input;
 }
 
 function AdminGate({
@@ -244,9 +254,11 @@ function AdminStatusPanel({ status }: { status: AdminStatusResponse }) {
 function MaintenancePanel({
   busy,
   onRun,
+  onMergeSeries,
 }: {
   busy: string;
   onRun: (action: string, confirmMessage?: string) => void;
+  onMergeSeries: (sourceKey: string, targetKey: string) => Promise<void>;
 }) {
   const actions = [
     ['enrich', 'Enrich TMDB', 'Match missing video metadata'],
@@ -286,7 +298,116 @@ function MaintenancePanel({
           );
         })}
       </div>
+      <MergeSeriesTool busy={busy} onMergeSeries={onMergeSeries} />
     </section>
+  );
+}
+
+function MergeSeriesTool({
+  busy,
+  onMergeSeries,
+}: {
+  busy: string;
+  onMergeSeries: (sourceKey: string, targetKey: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [series, setSeries] = useState<AdminSeriesOption[]>([]);
+  const [source, setSource] = useState('');
+  const [target, setTarget] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open || loaded) return undefined;
+    const controller = new AbortController();
+    setLoading(true);
+    fetchAdminSeriesList(controller.signal)
+      .then((items) => {
+        if (!controller.signal.aborted) {
+          setSeries(items);
+          setLoaded(true);
+        }
+      })
+      .catch((err: Error) => {
+        if (!controller.signal.aborted) {
+          setError(err.message || 'Unable to load series');
+          setLoaded(true);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [loaded, open]);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const sourceKey = resolveSeriesKey(source, series);
+    const targetKey = resolveSeriesKey(target, series);
+    setError('');
+    if (!sourceKey || !targetKey) {
+      setError('Choose both source and target series.');
+      return;
+    }
+    if (sourceKey === targetKey) {
+      setError('Source and target must be different.');
+      return;
+    }
+    if (!window.confirm(`Merge "${source}" into "${target}"?`)) return;
+    try {
+      await onMergeSeries(sourceKey, targetKey);
+      setSource('');
+      setTarget('');
+      setSeries([]);
+      setLoaded(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Merge failed');
+    }
+  };
+
+  return (
+    <div className="admin-merge-tool">
+      <button
+        type="button"
+        className="secondary-action compact-action"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+      >
+        Merge series
+      </button>
+      {open && (
+        <form className="admin-merge-form" onSubmit={submit}>
+          <datalist id="admin-merge-series-list">
+            {series.map((item) => (
+              <option key={item.key} value={item.title}>{`${item.key} - ${item.count}`}</option>
+            ))}
+          </datalist>
+          <label>
+            <span>Source</span>
+            <input
+              value={source}
+              onChange={(event) => setSource(event.currentTarget.value)}
+              list="admin-merge-series-list"
+              placeholder={loading ? 'Loading series...' : 'series to merge'}
+            />
+          </label>
+          <label>
+            <span>Target</span>
+            <input
+              value={target}
+              onChange={(event) => setTarget(event.currentTarget.value)}
+              list="admin-merge-series-list"
+              placeholder="series to keep"
+            />
+          </label>
+          <button type="submit" disabled={Boolean(busy) || loading}>
+            {busy === 'merge-series' ? 'Merging...' : 'Merge'}
+          </button>
+          {error && <p className="admin-merge-error">{error}</p>}
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -478,6 +599,7 @@ function EditModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiFieldLoading, setAiFieldLoading] = useState('');
   const [aiReasoning, setAiReasoning] = useState('');
   const [aiError, setAiError] = useState('');
   const [aiModels, setAiModels] = useState<Array<{ id: string; name: string }>>(_cachedAiModels || []);
@@ -606,6 +728,24 @@ function EditModal({
     }
   };
 
+  const applyAiSuggestion = useCallback((res: AiSuggestResponse) => {
+    if (res.reasoning) setAiReasoning(res.reasoning);
+    setForm((prev) => ({
+      ...prev,
+      ...(res.title       && { title: res.title }),
+      ...(res.year        && { year: res.year }),
+      ...(res.file_name   && { fileName: res.file_name }),
+      ...(res.series_title && { seriesTitle: res.series_title }),
+      ...(res.season      && { season: res.season }),
+      ...(res.episode     && { episode: res.episode }),
+      ...(res.tags        && { tags: res.tags }),
+      ...(res.description && { description: res.description }),
+      ...(res.artist      && { artist: res.artist }),
+      ...(res.album_title && { albumTitle: res.album_title }),
+      ...(res.track_number && { trackNumber: res.track_number }),
+    }));
+  }, []);
+
   const handleAiSuggest = async () => {
     setAiLoading(true);
     setAiError('');
@@ -613,27 +753,38 @@ function EditModal({
     try {
       const res: AiSuggestResponse = await aiSuggestItem(messageId, form.aiModel);
       if (res.error) { setAiError(res.error); return; }
-      if (res.reasoning) setAiReasoning(res.reasoning);
-      setForm((prev) => ({
-        ...prev,
-        ...(res.title       && { title: res.title }),
-        ...(res.year        && { year: res.year }),
-        ...(res.file_name   && { fileName: res.file_name }),
-        ...(res.series_title && { seriesTitle: res.series_title }),
-        ...(res.season      && { season: res.season }),
-        ...(res.episode     && { episode: res.episode }),
-        ...(res.tags        && { tags: res.tags }),
-        ...(res.description && { description: res.description }),
-        ...(res.artist      && { artist: res.artist }),
-        ...(res.album_title && { albumTitle: res.album_title }),
-        ...(res.track_number && { trackNumber: res.track_number }),
-      }));
+      applyAiSuggestion(res);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'AI suggest failed');
     } finally {
       setAiLoading(false);
     }
   };
+
+  const handleAiFieldSuggest = async (field: string) => {
+    setAiFieldLoading(field);
+    setAiError('');
+    try {
+      const res: AiSuggestResponse = await aiSuggestItem(messageId, form.aiModel, field);
+      if (res.error) { setAiError(res.error); return; }
+      applyAiSuggestion(res);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'AI suggest failed');
+    } finally {
+      setAiFieldLoading('');
+    }
+  };
+
+  const aiFieldButton = (field: string, label: string) => hasGemini ? (
+    <button
+      type="button"
+      className="edit-ai-field-btn"
+      onClick={() => void handleAiFieldSuggest(field)}
+      disabled={Boolean(aiFieldLoading) || aiLoading}
+    >
+      {aiFieldLoading === field ? '...' : label}
+    </button>
+  ) : null;
 
   const handleSave = async () => {
     if (!form.title.trim()) { setError('Title is required'); return; }
@@ -699,7 +850,10 @@ function EditModal({
 
               <label className="edit-field">
                 <FieldLabel name="Title" locked={form.adminLocked.includes('title')} onUnlock={() => unlockField('title')} />
-                <input className="edit-field-input" value={form.title} onChange={(e) => setField('title', e.currentTarget.value)} required />
+                <div className="edit-field-row">
+                  <input className="edit-field-input" value={form.title} onChange={(e) => setField('title', e.currentTarget.value)} required />
+                  {aiFieldButton('title', 'Title')}
+                </div>
               </label>
 
               <label className="edit-field edit-field-narrow">
@@ -709,17 +863,26 @@ function EditModal({
 
               <label className="edit-field">
                 <span className="edit-field-label">Tags</span>
-                <input className="edit-field-input" value={form.tags} onChange={(e) => setField('tags', e.currentTarget.value)} placeholder="space-separated, no # prefix" />
+                <div className="edit-field-row">
+                  <input className="edit-field-input" value={form.tags} onChange={(e) => setField('tags', e.currentTarget.value)} placeholder="space-separated, no # prefix" />
+                  {aiFieldButton('tags', 'Tags')}
+                </div>
               </label>
 
               <label className="edit-field">
                 <span className="edit-field-label">Display name <span className="edit-field-hint">(filename override)</span></span>
-                <input className="edit-field-input" value={form.fileName} onChange={(e) => setField('fileName', e.currentTarget.value)} />
+                <div className="edit-field-row">
+                  <input className="edit-field-input" value={form.fileName} onChange={(e) => setField('fileName', e.currentTarget.value)} />
+                  {aiFieldButton('file_name', 'Clean')}
+                </div>
               </label>
 
               <label className="edit-field">
                 <span className="edit-field-label">Description</span>
-                <textarea className="edit-field-input" rows={3} value={form.description} onChange={(e) => setField('description', e.currentTarget.value)} />
+                <div className="edit-field-row edit-field-row-top">
+                  <textarea className="edit-field-input" rows={3} value={form.description} onChange={(e) => setField('description', e.currentTarget.value)} />
+                  {aiFieldButton('description', 'Write')}
+                </div>
               </label>
 
               {/* Series */}
@@ -768,15 +931,24 @@ function EditModal({
                   <p className="edit-section-label">Music</p>
                   <label className="edit-field">
                     <span className="edit-field-label">Artist</span>
-                    <input className="edit-field-input" value={form.artist} onChange={(e) => setField('artist', e.currentTarget.value)} />
+                    <div className="edit-field-row">
+                      <input className="edit-field-input" value={form.artist} onChange={(e) => setField('artist', e.currentTarget.value)} />
+                      {aiFieldButton('artist', 'Artist')}
+                    </div>
                   </label>
                   <label className="edit-field">
                     <span className="edit-field-label">Album</span>
-                    <input className="edit-field-input" value={form.albumTitle} onChange={(e) => setField('albumTitle', e.currentTarget.value)} />
+                    <div className="edit-field-row">
+                      <input className="edit-field-input" value={form.albumTitle} onChange={(e) => setField('albumTitle', e.currentTarget.value)} />
+                      {aiFieldButton('album_title', 'Album')}
+                    </div>
                   </label>
                   <label className="edit-field edit-field-narrow">
                     <span className="edit-field-label">Track #</span>
-                    <input className="edit-field-input" type="number" min="1" value={form.trackNumber ?? ''} onChange={(e) => setField('trackNumber', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+                    <div className="edit-field-row">
+                      <input className="edit-field-input" type="number" min="1" value={form.trackNumber ?? ''} onChange={(e) => setField('trackNumber', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+                      {aiFieldButton('track_number', 'Track')}
+                    </div>
                   </label>
                 </div>
               )}
@@ -1038,6 +1210,21 @@ export function AdminPage({
     }
   };
 
+  const runMergeSeriesAction = async (sourceKey: string, targetKey: string) => {
+    setBusy('merge-series');
+    setNotice('');
+    try {
+      const response = await mergeAdminSeries(sourceKey, targetKey);
+      setNotice(`Merged ${response.merged} episode${response.merged === 1 ? '' : 's'} into ${response.target_title}`);
+      reload();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Merge failed');
+      throw err;
+    } finally {
+      setBusy('');
+    }
+  };
+
   return (
     <main className="admin-main">
       {loading && !data && <LoadingRows variant="detail" />}
@@ -1048,7 +1235,7 @@ export function AdminPage({
           <AdminHero data={data} />
           {notice && <p className="admin-notice" role="status">{notice}</p>}
           <AdminStatusPanel status={data.status} />
-          <MaintenancePanel busy={busy} onRun={runMaintenanceAction} />
+          <MaintenancePanel busy={busy} onRun={runMaintenanceAction} onMergeSeries={runMergeSeriesAction} />
           <AdminControls
             data={data}
             query={query}
