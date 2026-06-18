@@ -5,8 +5,8 @@ Telegram doesn't let bots call messages.getHistory or messages.search. So
 we maintain our own in-memory catalogue keyed by BIN_CHANNEL message_id,
 populated by two sources:
 
-  1. Live updates: every time a file is forwarded into BIN_CHANNEL via the
-     existing stream handlers, the auto-indexer adds it here.
+  1. Live updates: every time an admin-added file lands in BIN_CHANNEL via
+     the stream/grab handlers, the auto-indexer adds it here.
   2. Startup seed: a one-shot scan iterates message_ids backward from the
      current latest (discovered by sending a probe message), batch-fetching
      metadata via the bot-allowed get_messages([ids]) call. Probe is
@@ -385,6 +385,43 @@ _DEVICE_NAME_RE = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE,
 )
+_ATTR_USER_ID_RE = re.compile(r"\bUser ID\s*:\s*`?(-?\d+)`?", re.IGNORECASE)
+
+
+def _bin_attribution_marker(message) -> Optional[Tuple[int, bool]]:
+    """Return (source_file_message_id, is_admin_added) for BIN reply notes.
+
+    Normal upload handlers write a bot reply next to the copied file:
+    private uploads include ``User ID``, group/channel uploads include
+    ``Group ID``/``Channel ID``. Admin grab flows write ``Grabbed`` notes.
+    During startup seed we scan newest-to-oldest, so the attribution reply
+    is usually encountered before the file it replies to.
+    """
+    reply = getattr(message, "reply_to_message", None)
+    reply_id = getattr(reply, "id", None)
+    if not reply_id:
+        return None
+    text = (getattr(message, "text", None) or getattr(message, "caption", None) or "")
+    if not text:
+        return None
+
+    # /grab and /grablist are owner-only commands, so their BIN messages
+    # count as admin-added even when the original source was elsewhere.
+    if "Grabbed" in text:
+        return int(reply_id), True
+
+    m = _ATTR_USER_ID_RE.search(text)
+    if m:
+        try:
+            from main.vars import Var
+            return int(reply_id), int(m.group(1)) == int(Var.OWNER_ID)
+        except Exception:
+            return int(reply_id), False
+
+    if re.search(r"\b(Group|Channel) ID\s*:", text, re.IGNORECASE):
+        return int(reply_id), False
+
+    return None
 
 
 def _clean_file_name(name: str) -> str:
@@ -888,6 +925,8 @@ async def seed(bot, channel_id: int) -> None:
     # deletions that happened while the bot was offline (when the
     # on_deleted_messages handler can't fire).
     seen_ids: set = set()
+    source_admin_by_file_id: Dict[int, bool] = {}
+    source_pruned_ids: set = set()
     _seed_state.update(
         running=True,
         scanned=0,
@@ -922,6 +961,21 @@ async def seed(bot, channel_id: int) -> None:
                             seen_ids.add(int(m.id))
                         except (TypeError, ValueError):
                             pass
+                    marker = _bin_attribution_marker(m)
+                    if marker is not None:
+                        source_file_id, is_admin_added = marker
+                        source_admin_by_file_id[source_file_id] = is_admin_added
+                        continue
+                    try:
+                        msg_id = int(getattr(m, "id", 0) or 0)
+                    except (TypeError, ValueError):
+                        msg_id = 0
+                    if msg_id and source_admin_by_file_id.get(msg_id) is False:
+                        existing = _items.pop(msg_id, None)
+                        if existing is not None:
+                            _hash_map.pop(existing.secure_hash, None)
+                            source_pruned_ids.add(msg_id)
+                        continue
                     new_item = _item_from_message(m)
                     if new_item is None:
                         continue
@@ -1016,6 +1070,10 @@ async def seed(bot, channel_id: int) -> None:
                         _items[new_item.message_id] = new_item
                         _hash_map[new_item.secure_hash] = new_item.message_id
                 _persist_unlocked()
+            if source_pruned_ids:
+                for mid in list(source_pruned_ids):
+                    await _store_remove(mid)
+                source_pruned_ids.clear()
             _seed_state["scanned"] += len(ids)
             _seed_state["indexed"] = len(_items)
             high -= _FETCH_BATCH

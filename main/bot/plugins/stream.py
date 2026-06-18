@@ -11,6 +11,31 @@ from pyrogram.errors import FloodWait
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 
+def _from_admin(m: Message) -> bool:
+    user = getattr(m, "from_user", None)
+    try:
+        return bool(user and int(user.id) == int(Var.OWNER_ID))
+    except (TypeError, ValueError):
+        return False
+
+
+def _schedule_index_if_admin(bot: Client, source_msg: Message, bin_msg: Message) -> None:
+    """Only admin-added files belong in the public media hub.
+
+    Non-admin uploads still get stream links; they just stay out of the
+    catalogue so the hub remains an operator-curated library.
+    """
+    if _from_admin(source_msg):
+        schedule_index(bot, bin_msg)
+        return
+    logging.info(
+        "media_index: skipped non-admin upload bin:%s from chat:%s user:%s",
+        getattr(bin_msg, "id", "?"),
+        getattr(getattr(source_msg, "chat", None), "id", "?"),
+        getattr(getattr(source_msg, "from_user", None), "id", "?"),
+    )
+
+
 @StreamBot.on_deleted_messages(filters.channel)
 async def bin_message_deleted(client: Client, messages):
     """Prune the catalogue when messages are deleted from BIN_CHANNEL.
@@ -87,7 +112,7 @@ async def private_receive_handler(c: Client, m: Message):
             )
             return
 
-        schedule_index(c, log_msg)
+        _schedule_index_if_admin(c, m, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=False)
         await log_msg.reply_text(text=f"**Requested By :** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n**User ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
 
@@ -116,7 +141,7 @@ async def channel_receive_handler(bot, broadcast: Message):
         # editable. The reply-text below still carries the source
         # channel attribution, so we don't lose that context.
         log_msg = await broadcast.copy(chat_id=Var.BIN_CHANNEL)
-        schedule_index(bot, log_msg)
+        _schedule_index_if_admin(bot, broadcast, log_msg)
         file_hash = get_hash(log_msg)
         stream_link = f"{Var.URL}{file_hash}{log_msg.id}"
         await log_msg.reply_text(
@@ -175,7 +200,7 @@ async def group_receive_handler(c: Client, m: Message):
     try:
         # See private_receive_handler — copy keeps captions editable.
         log_msg = await m.copy(chat_id=Var.BIN_CHANNEL)
-        schedule_index(c, log_msg)
+        _schedule_index_if_admin(c, m, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=True)
         await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
 
