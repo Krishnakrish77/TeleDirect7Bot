@@ -80,6 +80,12 @@ describe('MediaCard', () => {
     });
   });
 
+  it('shows recommendation reason text when present', () => {
+    render(<MediaCard card={card({ recReason: 'Because you like Action' })} saved={false} onToggleSaved={vi.fn()} />);
+
+    expect(screen.getByText('Because you like Action')).toBeTruthy();
+  });
+
   it('surfaces dismiss controls for recommendation cards', () => {
     const onDismiss = vi.fn();
     const media = card();

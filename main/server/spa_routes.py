@@ -498,6 +498,10 @@ async def api_hub(request: web.Request) -> web.Response:
                     timeout=12.0,
                 )
                 if rec_items:
+                    rec_reasons = await rec_engine.get_recommendation_reasons(
+                        int(user["sub"]),
+                        rec_items,
+                    )
                     rec_meta = []
                     for card in rec_items:
                         tid = getattr(card, "tmdb_id", None)
@@ -519,6 +523,7 @@ async def api_hub(request: web.Request) -> web.Response:
                             "total": len(rec_items),
                             "dismissable": True,
                             "rec_meta": rec_meta,
+                            "rec_reasons": rec_reasons,
                         },
                     ] + list(raw_shelves)
             except asyncio.TimeoutError:
@@ -583,8 +588,16 @@ async def api_hub(request: web.Request) -> web.Response:
                 for item in (shelf.get("items") or [])
             ]
         )
-        shelves = [
-            {
+        shelves = []
+        for shelf in raw_shelves:
+            rec_reasons = shelf.get("rec_reasons") or []
+            items = []
+            for index, item in enumerate(shelf.get("items") or []):
+                payload = _card(item)
+                if index < len(rec_reasons) and rec_reasons[index]:
+                    payload["recReason"] = rec_reasons[index]
+                items.append(payload)
+            shelves.append({
                 "name": shelf["name"],
                 "href": (
                     "/app" + shelf["link"][1:]
@@ -592,12 +605,10 @@ async def api_hub(request: web.Request) -> web.Response:
                     else shelf.get("link")
                 ),
                 "total": shelf.get("total", 0),
-                "items": [_card(item) for item in shelf.get("items") or []],
+                "items": items,
                 "dismissable": bool(shelf.get("dismissable")),
                 "recMeta": shelf.get("rec_meta") or [],
-            }
-            for shelf in raw_shelves
-        ]
+            })
         return _json({
             "mode": "shelves",
             "params": params,
@@ -787,6 +798,22 @@ def _related_rows(item: HubItem, *, limit: int = 14) -> list[dict]:
                 rows.append({"name": shelf.get("name") or "More to watch", "items": row_items})
                 break
     return rows
+
+
+def _video_chapters(item: HubItem) -> list[dict]:
+    duration = float(item.duration or 0)
+    chapters: list[dict] = []
+    for chapter in item.chapters or []:
+        try:
+            start = float(chapter.get("start") or 0)
+        except (TypeError, ValueError):
+            continue
+        if start < 0 or (duration > 0 and start >= duration):
+            continue
+        title = str(chapter.get("title") or "Chapter").strip() or "Chapter"
+        chapters.append({"start": round(start, 2), "title": title[:80]})
+    chapters.sort(key=lambda chapter: chapter["start"])
+    return chapters
 
 
 def _movie_detail_payload(key: str) -> dict | None:
@@ -1469,6 +1496,9 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
         "nextEpisode": next_ep,
         "introStart": float(item.intro_start or 0),
         "introEnd": float(item.intro_end or 0),
+        "recapStart": float(item.recap_start or 0),
+        "recapEnd": float(item.recap_end or 0),
+        "chapters": _video_chapters(item),
         "duration": item.duration or 0,
         "resumeKey": f"{item.secure_hash}{item.message_id}",
         "metadata": _meta_payload(item),

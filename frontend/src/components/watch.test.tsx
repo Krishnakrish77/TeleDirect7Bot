@@ -96,6 +96,9 @@ function makeVideo(overrides: Partial<WatchVideo> = {}): WatchVideo {
     },
     introStart: 0,
     introEnd: 0,
+    recapStart: 0,
+    recapEnd: 0,
+    chapters: [],
     resumeKey: 'video-key',
     metadata: {
       title: 'Pilot',
@@ -337,6 +340,36 @@ describe('WatchPage video player', () => {
     fireEvent.click(screen.getByLabelText('Mute'));
     await waitFor(() => expect(video.muted).toBe(true));
     expect(screen.getByLabelText('Unmute')).toBeTruthy();
+  });
+
+  it('shows skip recap during the recap window and jumps to recap end', async () => {
+    const view = renderWatchPage(makeVideo({ recapStart: 30, recapEnd: 45 }));
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    video.currentTime = 32;
+    fireEvent.timeUpdate(video);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Skip recap/i }));
+
+    expect(video.currentTime).toBe(45);
+  });
+
+  it('renders chapter markers and seeks from chapter buttons', async () => {
+    const view = renderWatchPage(makeVideo({
+      chapters: [
+        { start: 0, title: 'Opening' },
+        { start: 75, title: 'First turn' },
+      ],
+    }));
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+
+    expect(view.container.querySelectorAll('.video-chapter-markers span')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: /First turn/i }));
+
+    expect(video.currentTime).toBe(75);
   });
 
   it('toggles playback when clicking the video surface', async () => {

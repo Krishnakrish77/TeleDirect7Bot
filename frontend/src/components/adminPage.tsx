@@ -613,7 +613,7 @@ function EditModal({
   const [form, setForm] = useState<FormState>({
     title: '', year: null, tags: '', description: '', fileName: '',
     seriesTitle: '', season: null, episode: null, episodeEnd: null,
-    introStart: null, introEnd: null,
+    introStart: null, introEnd: null, recapStart: null, recapEnd: null, chapters: '',
     artist: '', albumTitle: '', trackNumber: null,
     thumbUrl: '', thumbUrlInput: '', tmdbId: null, tmdbKind: 'movie',
     adminLocked: [], imdbInput: '', aiModel: 'gemini-2.5-flash-lite',
@@ -638,6 +638,9 @@ function EditModal({
           episodeEnd:   (d['episodeEnd'] as number | null) ?? null,
           introStart:   (d['introStart'] as number | null) ?? null,
           introEnd:     (d['introEnd'] as number | null) ?? null,
+          recapStart:   (d['recapStart'] as number | null) ?? null,
+          recapEnd:     (d['recapEnd'] as number | null) ?? null,
+          chapters:     String(d['chapters'] || ''),
           artist:       String(d['artist'] || ''),
           albumTitle:   String(d['albumTitle'] || ''),
           trackNumber:  (d['trackNumber'] as number | null) ?? null,
@@ -796,6 +799,7 @@ function EditModal({
         fileName: form.fileName, seriesTitle: form.seriesTitle,
         season: form.season, episode: form.episode, episodeEnd: form.episodeEnd,
         introStart: form.introStart, introEnd: form.introEnd,
+        recapStart: form.recapStart, recapEnd: form.recapEnd, chapters: form.chapters,
         artist: form.artist, albumTitle: form.albumTitle, trackNumber: form.trackNumber,
         thumbUrl: form.thumbUrlInput,
         tmdbId: form.tmdbId, tmdbKind: form.tmdbKind, adminLocked: form.adminLocked,
@@ -911,7 +915,7 @@ function EditModal({
               {/* Intro — video only */}
               {!isAudio && (
                 <div className="edit-section">
-                  <p className="edit-section-label">Skip Intro timestamps (seconds)</p>
+                  <p className="edit-section-label">Playback markers</p>
                   <div className="edit-field-row">
                     <label className="edit-field">
                       <span className="edit-field-label">Intro start</span>
@@ -922,6 +926,26 @@ function EditModal({
                       <input className="edit-field-input" type="number" min="0" step="0.5" value={form.introEnd ?? ''} onChange={(e) => setField('introEnd', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
                     </label>
                   </div>
+                  <div className="edit-field-row">
+                    <label className="edit-field">
+                      <span className="edit-field-label">Recap start</span>
+                      <input className="edit-field-input" type="number" min="0" step="0.5" value={form.recapStart ?? ''} onChange={(e) => setField('recapStart', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
+                    </label>
+                    <label className="edit-field">
+                      <span className="edit-field-label">Recap end</span>
+                      <input className="edit-field-input" type="number" min="0" step="0.5" value={form.recapEnd ?? ''} onChange={(e) => setField('recapEnd', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
+                    </label>
+                  </div>
+                  <label className="edit-field">
+                    <span className="edit-field-label">Chapters <span className="edit-field-hint">one per line: 75 Opening</span></span>
+                    <textarea
+                      className="edit-field-input"
+                      rows={4}
+                      value={form.chapters}
+                      onChange={(e) => setField('chapters', e.currentTarget.value)}
+                      placeholder={'0 Opening\n75 First turn\n180 Final scene'}
+                    />
+                  </label>
                 </div>
               )}
 

@@ -144,7 +144,8 @@ function MediaCardBase({
         <span className="card-copy">
           <span className="eyebrow">{display.eyebrow}</span>
           <strong dir="auto">{display.title}</strong>
-          {display.subtitle && <span>{display.subtitle}</span>}
+          {display.subtitle && <span className="card-subtitle">{display.subtitle}</span>}
+          {card.recReason && <em className="card-reason">{card.recReason}</em>}
         </span>
       </a>
       <button

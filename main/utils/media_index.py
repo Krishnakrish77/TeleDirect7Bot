@@ -228,6 +228,9 @@ def _to_serializable(item: HubItem) -> dict:
         "episode_end": item.episode_end,
         "intro_start": item.intro_start,
         "intro_end": item.intro_end,
+        "recap_start": item.recap_start,
+        "recap_end": item.recap_end,
+        "chapters": list(item.chapters or []),
         "movie_key": item.movie_key,
         "tmdb_id": item.tmdb_id,
         "tmdb_kind": item.tmdb_kind,
@@ -289,6 +292,9 @@ def _from_serializable(d: dict) -> HubItem:
         episode_end=d.get("episode_end"),
         intro_start=d.get("intro_start"),
         intro_end=d.get("intro_end"),
+        recap_start=d.get("recap_start"),
+        recap_end=d.get("recap_end"),
+        chapters=list(d.get("chapters") or []),
         movie_key=d.get("movie_key", "") or "",
         tmdb_id=d.get("tmdb_id"),
         tmdb_kind=d.get("tmdb_kind", "") or "",
@@ -3276,6 +3282,22 @@ def dashboard_stats() -> dict:
     series_titles: dict = {}
     recent: list = []
     largest: list = []
+    metadata_quality = {
+        "video_items": 0,
+        "missing_overview": 0,
+        "missing_year": 0,
+        "missing_cast": 0,
+        "missing_episode_metadata": 0,
+        "missing_playback_markers": 0,
+        "health_score": 100,
+    }
+
+    def _has_range(start, end) -> bool:
+        try:
+            return float(end or 0) > float(start or 0)
+        except (TypeError, ValueError):
+            return False
+
     for it in _items.values():
         size = it.file_size or 0
         q = it.quality or "unknown"
@@ -3298,6 +3320,23 @@ def dashboard_stats() -> dict:
             series_episode_counts[it.series_key] = series_episode_counts.get(it.series_key, 0) + 1
             if it.series_key not in series_titles and it.series_title:
                 series_titles[it.series_key] = it.series_title
+        if getattr(it, "media_kind", "") != "audio":
+            metadata_quality["video_items"] += 1
+            if not (it.overview or it.description):
+                metadata_quality["missing_overview"] += 1
+            if not it.year:
+                metadata_quality["missing_year"] += 1
+            if it.tmdb_id and not (it.cast or it.director):
+                metadata_quality["missing_cast"] += 1
+            if it.series_key and it.tmdb_id and not (
+                it.episode_title or it.episode_overview or it.episode_still_path
+            ):
+                metadata_quality["missing_episode_metadata"] += 1
+            if (it.duration or 0) >= 20 * 60 and not (
+                it.chapters or _has_range(it.intro_start, it.intro_end)
+                or _has_range(it.recap_start, it.recap_end)
+            ):
+                metadata_quality["missing_playback_markers"] += 1
         recent.append(it)
         largest.append(it)
 
@@ -3319,6 +3358,19 @@ def dashboard_stats() -> dict:
     # dict form of quality_buckets so the template can look up item counts
     # by quality without map(attribute=…) / selectattr gymnastics.
     quality_counts_by_q = {q: n for q, n in base["quality_buckets"]}
+    video_items = metadata_quality["video_items"]
+    if video_items:
+        issue_total = (
+            metadata_quality["missing_overview"]
+            + metadata_quality["missing_year"]
+            + metadata_quality["missing_cast"]
+            + metadata_quality["missing_episode_metadata"]
+            + metadata_quality["missing_playback_markers"]
+        )
+        metadata_quality["health_score"] = max(
+            0,
+            min(100, round(100 - (issue_total / (video_items * 5)) * 100)),
+        )
 
     return {
         **base,
@@ -3327,6 +3379,7 @@ def dashboard_stats() -> dict:
         "year_distribution": year_sorted,
         "year_distribution_max": year_max,
         "quality_counts": quality_counts_by_q,
+        "metadata_quality": metadata_quality,
         "top_series": [
             {"key": k, "title": series_titles.get(k, k), "count": n}
             for k, n in top_series

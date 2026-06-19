@@ -564,8 +564,25 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   );
   const rangeMax = Math.max(1, Math.round(duration || video.duration || 0));
   const hasIntro = video.introEnd > video.introStart;
+  const hasRecap = video.recapEnd > video.recapStart;
   const showSkipIntro = hasIntro && currentTime >= video.introStart && currentTime < video.introEnd;
+  const showSkipRecap = hasRecap && currentTime >= video.recapStart && currentTime < video.recapEnd;
   const activeSubtitle = allSubtitles.find((track) => track.id === activeSub);
+  const chapters = useMemo(() => {
+    const total = duration || video.duration || 0;
+    return (video.chapters || [])
+      .filter((chapter) => Number.isFinite(chapter.start) && chapter.start >= 0 && (!total || chapter.start < total))
+      .slice()
+      .sort((a, b) => a.start - b.start);
+  }, [duration, video.chapters, video.duration]);
+  const activeChapter = useMemo(() => {
+    let active: (typeof chapters)[number] | null = null;
+    for (const chapter of chapters) {
+      if (chapter.start <= currentTime + 0.5) active = chapter;
+      else break;
+    }
+    return active;
+  }, [chapters, currentTime]);
   const displaySubtitle = video.subtitle && video.subtitle !== video.quality ? video.subtitle : '';
   const shellClass = [
     controlsVisible || menuOpen ? 'video-shell controls-visible' : 'video-shell controls-hidden',
@@ -1263,6 +1280,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
             <span>{sourceMode === 'hls' ? 'HLS' : 'Direct'}</span>
             {video.quality && <span>{video.quality}</span>}
             {activeSubtitle && <span>{activeSubtitle.label || activeSubtitle.language || 'Captions'}</span>}
+            {activeChapter && <span>{activeChapter.title}</span>}
           </div>
         </div>
 
@@ -1283,6 +1301,13 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         {showSkipIntro && (
           <button type="button" className="skip-intro" onClick={() => seekVideo(video.introEnd)}>
             Skip intro
+            <SkipForwardIcon />
+          </button>
+        )}
+
+        {showSkipRecap && (
+          <button type="button" className="skip-intro skip-recap" onClick={() => seekVideo(video.recapEnd)}>
+            Skip recap
             <SkipForwardIcon />
           </button>
         )}
@@ -1310,14 +1335,26 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           </button>
           <div className="video-time">
             <span>{formatClock(currentTime)}</span>
-            <input
-              type="range"
-              min="0"
-              max={rangeMax}
-              value={Math.min(rangeMax, Math.round(currentTime))}
-              onChange={(event) => seekVideo(Number(event.currentTarget.value))}
-              aria-label="Playback position"
-            />
+            <div className="video-scrub-wrap">
+              <input
+                type="range"
+                min="0"
+                max={rangeMax}
+                value={Math.min(rangeMax, Math.round(currentTime))}
+                onChange={(event) => seekVideo(Number(event.currentTarget.value))}
+                aria-label="Playback position"
+              />
+              {chapters.length > 0 && (
+                <div className="video-chapter-markers" aria-hidden="true">
+                  {chapters.map((chapter) => (
+                    <span
+                      key={`${chapter.start}:${chapter.title}`}
+                      style={{ left: `${Math.max(0, Math.min(100, (chapter.start / rangeMax) * 100))}%` }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
             <span>{formatClock(duration)}</span>
           </div>
           <button type="button" className="icon-button video-step" onClick={() => seekVideoBy(10)} aria-label="Forward 10 seconds">
@@ -1453,6 +1490,33 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       </section>
 
       <VideoInfoSection video={video} />
+
+      {chapters.length > 0 && (
+        <section className="chapter-section" aria-label="Video chapters">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Scene access</p>
+              <h2>Chapters</h2>
+            </div>
+          </div>
+          <div className="chapter-list">
+            {chapters.map((chapter, index) => {
+              const active = activeChapter?.start === chapter.start;
+              return (
+                <button
+                  key={`${chapter.start}:${chapter.title}`}
+                  type="button"
+                  className={active ? 'chapter-button active' : 'chapter-button'}
+                  onClick={() => seekVideo(chapter.start)}
+                >
+                  <span>{formatClock(chapter.start)}</span>
+                  <strong>{chapter.title || `Chapter ${index + 1}`}</strong>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {video.qualityVariants.length > 0 && (
         <section className="quality-section">

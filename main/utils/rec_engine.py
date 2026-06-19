@@ -53,6 +53,11 @@ def _tmdb_for_wl_id(item_id: str) -> Tuple[Optional[int], str]:
     return None, ""
 
 
+def _genres_for_card(card) -> list[str]:
+    item = getattr(card, "poster_item", card)
+    return list(getattr(item, "tmdb_genres", None) or [])
+
+
 async def _collect_seeds(user_id: int) -> List[Tuple[int, str]]:
     """Return up to _MAX_SEEDS (tmdb_id, kind) from watch history + watchlist."""
     seeds: List[Tuple[int, str]] = []
@@ -160,3 +165,40 @@ async def get_recommendations(user_id: int) -> Optional[List]:
         return cards
 
     return None
+
+
+async def get_recommendation_reasons(user_id: int, cards: List) -> List[str]:
+    """Explain recommendation cards using the user's local seed genres.
+
+    This intentionally avoids additional TMDB calls: the recommendations have
+    already been fetched, and both seed cards + result cards should have enough
+    catalogue metadata to produce useful lightweight labels.
+    """
+    if not cards:
+        return []
+    try:
+        seeds = await _collect_seeds(user_id)
+    except Exception:
+        logging.exception("rec_engine: reason seed collection failed")
+        seeds = []
+
+    seed_genres: Counter = Counter()
+    for tid, kind in seeds:
+        seed_card = media_index.card_for_tmdb_id(tid, kind)
+        for genre in _genres_for_card(seed_card):
+            seed_genres[genre] += 1
+
+    reasons: List[str] = []
+    for card in cards:
+        card_genres = _genres_for_card(card)
+        matched = sorted(
+            (genre for genre in card_genres if seed_genres.get(genre)),
+            key=lambda genre: (-seed_genres[genre], genre),
+        )
+        if matched:
+            reasons.append(f"Because you like {matched[0]}")
+        elif card_genres:
+            reasons.append(f"Because it matches {card_genres[0]}")
+        else:
+            reasons.append("Based on your watch history")
+    return reasons

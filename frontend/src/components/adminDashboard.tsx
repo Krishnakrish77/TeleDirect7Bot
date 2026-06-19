@@ -48,6 +48,14 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
     );
   }
 
+  const metadata = data?.metadata_quality;
+  const metadataIssues = metadata ? [
+    { label: 'Missing overview', value: metadata.missing_overview, filter: 'no-overview' },
+    { label: 'Missing year', value: metadata.missing_year, filter: 'no-year' },
+    { label: 'Missing cast/crew', value: metadata.missing_cast, filter: 'no-cast' },
+    { label: 'Missing markers', value: metadata.missing_playback_markers, filter: 'no-markers' },
+  ] : [];
+
   return (
     <main className="admin-main">
       <div className="section-heading">
@@ -135,6 +143,32 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
               ))}
             </div>
           </div>
+
+          {metadata && (
+            <div className="admin-panel">
+              <div className="section-heading compact-heading">
+                <div>
+                  <p className="eyebrow">Metadata quality</p>
+                  <h2>{metadata.health_score}% complete</h2>
+                </div>
+                <span className={metadata.health_score >= 85 ? 'dash-score good' : 'dash-score warn'}>
+                  {metadata.video_items.toLocaleString()} video items
+                </span>
+              </div>
+              <div className="dash-grid-4">
+                {metadataIssues.map((item) => (
+                  <a key={item.filter} className={`dash-issue${item.value > 0 ? ' warn' : ''}`} href={`/app/admin?filter=${item.filter}`}>
+                    <span className="dash-issue-label">{item.label}</span>
+                    <span>{item.value ? item.value.toLocaleString() : 'none'}</span>
+                  </a>
+                ))}
+                <a className={`dash-issue${metadata.missing_episode_metadata > 0 ? ' warn' : ''}`} href="/app/admin?filter=series">
+                  <span className="dash-issue-label">Episode metadata</span>
+                  <span>{metadata.missing_episode_metadata ? metadata.missing_episode_metadata.toLocaleString() : 'none'}</span>
+                </a>
+              </div>
+            </div>
+          )}
 
           <div className="dash-grid-2">
             <StatCard label="Top series">

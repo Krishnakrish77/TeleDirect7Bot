@@ -20,6 +20,7 @@ import base64
 import html as _html_lib
 import json
 import logging
+import re
 import secrets
 import time
 from pathlib import Path
@@ -95,6 +96,10 @@ _ADMIN_FILTERS = [
     ("music", "Music"),
     ("no-poster", "No poster"),
     ("no-thumb", "No thumb"),
+    ("no-overview", "No overview"),
+    ("no-year", "No year"),
+    ("no-cast", "No cast/crew"),
+    ("no-markers", "No playback markers"),
     ("duplicates", "Duplicates"),
     ("hidden", "Hidden"),
 ]
@@ -144,6 +149,15 @@ def _admin_catalogue_context(request: web.Request) -> dict:
         for m in members
     }
 
+    def _is_video_item(it) -> bool:
+        return getattr(it, "media_kind", "") != "audio"
+
+    def _has_time_range(start, end) -> bool:
+        try:
+            return float(end or 0) > float(start or 0)
+        except (TypeError, ValueError):
+            return False
+
     def _passes_filter(it) -> bool:
         if filter_name == "unenriched" and it.tmdb_id:
             return False
@@ -158,6 +172,24 @@ def _admin_catalogue_context(request: web.Request) -> dict:
         if filter_name == "duplicates" and it.message_id not in duplicate_message_ids:
             return False
         if filter_name == "no-thumb" and (it.has_thumb or it.duration):
+            return False
+        if filter_name == "no-overview" and (
+            not _is_video_item(it) or it.overview or it.description
+        ):
+            return False
+        if filter_name == "no-year" and (not _is_video_item(it) or it.year):
+            return False
+        if filter_name == "no-cast" and (
+            not _is_video_item(it) or not it.tmdb_id or it.cast or it.director
+        ):
+            return False
+        if filter_name == "no-markers" and (
+            not _is_video_item(it)
+            or (it.duration or 0) < 20 * 60
+            or it.chapters
+            or _has_time_range(it.intro_start, it.intro_end)
+            or _has_time_range(it.recap_start, it.recap_end)
+        ):
             return False
         if filter_name == "music" and getattr(it, "media_kind", "") != "audio":
             return False
@@ -265,6 +297,8 @@ def _admin_item_payload(item, duplicate_message_ids: set) -> dict:
         "season": item.season,
         "episode": item.episode,
         "episodeEnd": item.episode_end,
+        "recapStart": item.recap_start,
+        "recapEnd": item.recap_end,
         "tmdbId": item.tmdb_id,
         "tmdbKind": item.tmdb_kind or ("tv" if item.series_key else "movie"),
         "imdbId": item.imdb_id or "",
@@ -330,6 +364,65 @@ def _require_api_admin(request: web.Request) -> dict:
             headers={"Cache-Control": "no-store"},
         )
     return user
+
+
+def _parse_chapter_time(raw: str) -> float | None:
+    value = (raw or "").strip()
+    if not value:
+        return None
+    try:
+        if ":" not in value:
+            seconds = float(value)
+            return seconds if seconds >= 0 else None
+        parts = [float(part) for part in value.split(":")]
+        if len(parts) == 2:
+            minutes, seconds = parts
+            total = minutes * 60 + seconds
+        elif len(parts) == 3:
+            hours, minutes, seconds = parts
+            total = hours * 3600 + minutes * 60 + seconds
+        else:
+            return None
+        return total if total >= 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_chapters_text(raw: str) -> list[dict]:
+    chapters: list[dict] = []
+    seen: set[float] = set()
+    for line in (raw or "").splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        match = re.match(r"^(\d+(?::\d{1,2}){0,2}(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?:[-|]\s*)?(.*)$", text)
+        if not match:
+            continue
+        start = _parse_chapter_time(match.group(1))
+        title = (match.group(2) or "").strip() or "Chapter"
+        if start is None:
+            continue
+        start = round(start, 2)
+        if start in seen:
+            continue
+        seen.add(start)
+        chapters.append({"start": start, "title": title[:80]})
+        if len(chapters) >= 50:
+            break
+    chapters.sort(key=lambda chapter: chapter["start"])
+    return chapters
+
+
+def _format_chapters_text(chapters: list[dict] | None) -> str:
+    lines: list[str] = []
+    for chapter in chapters or []:
+        try:
+            start = float(chapter.get("start") or 0)
+        except (TypeError, ValueError):
+            continue
+        title = str(chapter.get("title") or "Chapter").strip() or "Chapter"
+        lines.append(f"{start:g} {title}")
+    return "\n".join(lines)
 
 
 def _prefers_react_admin(request: web.Request) -> bool:
@@ -2572,6 +2665,9 @@ async def api_app_admin_item_get(request: web.Request) -> web.Response:
         {**_admin_item_payload(item, set()),
          "introStart": item.intro_start,
          "introEnd": item.intro_end,
+         "recapStart": item.recap_start,
+         "recapEnd": item.recap_end,
+         "chapters": _format_chapters_text(item.chapters),
          "trackNumber": getattr(item, "track_number", None),
          "thumbUrl": ""},
         headers={"Cache-Control": "no-store"},
@@ -2642,6 +2738,11 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
     new_intro_end    = _float_or_none(body.get("introEnd"))
     if new_intro_start is not None and new_intro_end is not None and new_intro_end <= new_intro_start:
         new_intro_end = None
+    new_recap_start  = _float_or_none(body.get("recapStart"))
+    new_recap_end    = _float_or_none(body.get("recapEnd"))
+    if new_recap_start is not None and new_recap_end is not None and new_recap_end <= new_recap_start:
+        new_recap_end = None
+    new_chapters     = _parse_chapters_text(body.get("chapters") or "")
     new_artist       = (body.get("artist") or "").strip()
     new_album_title  = (body.get("albumTitle") or "").strip()
     new_track_number = _int_or_none(body.get("trackNumber"))
@@ -2681,6 +2782,9 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
                 item.movie_key = compute_movie_key(new_title, new_year, new_file_name or item.file_name)
         item.intro_start = new_intro_start
         item.intro_end   = new_intro_end
+        item.recap_start = new_recap_start
+        item.recap_end   = new_recap_end
+        item.chapters    = list(new_chapters)
         item.artist      = new_artist
         if new_album_title != item.album_title:
             item.album_title = new_album_title

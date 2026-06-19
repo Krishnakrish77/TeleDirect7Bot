@@ -70,6 +70,7 @@ export interface HubCard {
   seasonCount?: number;
   trackCount?: number;
   recMeta?: RecommendationMeta | null;
+  recReason?: string;
 }
 
 export interface RecommendationMeta {
@@ -172,6 +173,11 @@ export interface AudioTrackOption {
   codec: string;
 }
 
+export interface VideoChapter {
+  start: number;
+  title: string;
+}
+
 export interface WatchVideo {
   key: string;
   itemId: string;
@@ -225,6 +231,9 @@ export interface WatchVideo {
   } | null;
   introStart: number;
   introEnd: number;
+  recapStart: number;
+  recapEnd: number;
+  chapters: VideoChapter[];
   resumeKey: string;
   metadata: {
     title: string;
@@ -439,6 +448,8 @@ export interface AdminItem {
   season: number | null;
   episode: number | null;
   episodeEnd: number | null;
+  recapStart: number | null;
+  recapEnd: number | null;
   tmdbId: number | null;
   tmdbKind: 'movie' | 'tv';
   imdbId: string;
@@ -686,6 +697,15 @@ export interface AdminDashboardResponse {
   missing_thumb: number;
   duplicate_groups: number;
   duplicate_extras: number;
+  metadata_quality: {
+    video_items: number;
+    missing_overview: number;
+    missing_year: number;
+    missing_cast: number;
+    missing_episode_metadata: number;
+    missing_playback_markers: number;
+    health_score: number;
+  };
   storage_by_quality: Array<{ quality: string; bytes: number; label: string }>;
   storage_by_codec: Array<{ codec: string; bytes: number; label: string }>;
   year_distribution: Array<{ decade: number; count: number }>;
@@ -724,6 +744,9 @@ export interface AdminItemEditPayload {
   episodeEnd: number | null;
   introStart: number | null;
   introEnd: number | null;
+  recapStart: number | null;
+  recapEnd: number | null;
+  chapters: string;
   artist: string;
   albumTitle: string;
   trackNumber: number | null;

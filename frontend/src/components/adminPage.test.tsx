@@ -70,6 +70,8 @@ const adminData: AdminResponse = {
       season: null,
       episode: null,
       episodeEnd: null,
+      recapStart: null,
+      recapEnd: null,
       tmdbId: 123,
       tmdbKind: 'movie',
       imdbId: '',
