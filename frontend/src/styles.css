@@ -5921,7 +5921,7 @@ select.edit-field-input {
   .dash-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-@media (max-width: 860px) {
+@media (min-width: 681px) and (max-width: 860px) {
   .dash-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -6437,6 +6437,85 @@ select.edit-field-input {
   .admin-main {
     gap: 0.85rem;
     padding-block: 0.85rem max(5.75rem, calc(4.8rem + env(safe-area-inset-bottom, 0px)));
+  }
+
+  .admin-main > .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.65rem;
+    margin-bottom: 0;
+  }
+
+  .admin-main > .section-heading h1 {
+    margin-top: 0.2rem;
+    font-size: clamp(2rem, 11vw, 2.65rem);
+    line-height: 1.02;
+  }
+
+  .admin-main > .section-heading .secondary-action {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .admin-main > .section-heading .secondary-action span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dash-grid-2,
+  .dash-grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.65rem;
+  }
+
+  .dash-grid-4 {
+    gap: 0.55rem;
+  }
+
+  .dash-card {
+    gap: 0.42rem;
+  }
+
+  .dash-stat-row {
+    align-items: start;
+    gap: 0.7rem;
+    min-width: 0;
+  }
+
+  .dash-stat-row > span:first-child,
+  .dash-stat-row a {
+    min-width: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
+  }
+
+  .dash-stat-row > span:last-child {
+    flex: 0 0 auto;
+    max-width: 45%;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  .dash-issue {
+    min-width: 0;
+    padding: 0.55rem 0.62rem;
+  }
+
+  .dash-issue > span:last-child {
+    overflow-wrap: anywhere;
+  }
+
+  .dash-score {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .dash-year-row {
+    grid-template-columns: 3rem minmax(0, 1fr) 2rem;
+    display: grid;
   }
 
   .page-title {
