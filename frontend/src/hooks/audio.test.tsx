@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAudioPlayer } from './audio';
+import { RESTORE_AUDIO_MEDIA_SESSION_EVENT, useAudioPlayer } from './audio';
 import { clearLyricsCache } from './lyrics';
 import type { WatchTrack } from '../types';
 
@@ -250,5 +250,20 @@ describe('useAudioPlayer', () => {
 
     handlers.get('previoustrack')?.({ action: 'previoustrack' });
     await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Theme'));
+  });
+
+  it('restores audio Media Session handlers after another player releases them', async () => {
+    const { handlers, mediaSession } = installMediaSession();
+    render(<AudioHarness />);
+
+    await waitFor(() => expect(handlers.get('play')).toBeTruthy());
+    mediaSession.setActionHandler('play', null);
+    mediaSession.setActionHandler('pause', null);
+    expect(handlers.get('play')).toBeUndefined();
+
+    window.dispatchEvent(new Event(RESTORE_AUDIO_MEDIA_SESSION_EVENT));
+
+    await waitFor(() => expect(handlers.get('play')).toBeTruthy());
+    expect(handlers.get('pause')).toBeTruthy();
   });
 });

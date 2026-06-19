@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteContinueEntry, fetchAudioTracks, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, setRating } from '../api';
 import type { PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, VideoChoice, WatchTrack, WatchVideo } from '../types';
@@ -200,6 +200,41 @@ function renderWatchPage(video = makeVideo()) {
   );
 }
 
+function installMediaSession() {
+  const handlers = new Map<string, MediaSessionActionHandler>();
+  const mediaSession = {
+    metadata: null as unknown,
+    playbackState: 'none',
+    setActionHandler: vi.fn((action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      if (handler) handlers.set(action, handler);
+      else handlers.delete(action);
+    }),
+    setPositionState: vi.fn(),
+  };
+  class MockMediaMetadata {
+    title: string;
+    artist: string;
+    album: string;
+    artwork: MediaImage[];
+
+    constructor(init: MediaMetadataInit) {
+      this.title = init.title || '';
+      this.artist = init.artist || '';
+      this.album = init.album || '';
+      this.artwork = init.artwork || [];
+    }
+  }
+  Object.defineProperty(navigator, 'mediaSession', {
+    configurable: true,
+    value: mediaSession,
+  });
+  Object.defineProperty(window, 'MediaMetadata', {
+    configurable: true,
+    value: MockMediaMetadata,
+  });
+  return { handlers, mediaSession };
+}
+
 beforeEach(() => {
   localStorage.clear();
   fetchSubtitlesMock.mockResolvedValue([]);
@@ -209,6 +244,11 @@ beforeEach(() => {
   deleteContinueEntryMock.mockResolvedValue(undefined);
   recordWatchHistoryMock.mockResolvedValue(undefined);
   setRatingMock.mockResolvedValue({ rating: null, counts: { up: 0, down: 0 } });
+});
+
+afterEach(() => {
+  Reflect.deleteProperty(navigator, 'mediaSession');
+  Reflect.deleteProperty(window, 'MediaMetadata');
 });
 
 describe('WatchPage video player', () => {
@@ -297,6 +337,57 @@ describe('WatchPage video player', () => {
     fireEvent.click(screen.getByLabelText('Mute'));
     await waitFor(() => expect(video.muted).toBe(true));
     expect(screen.getByLabelText('Unmute')).toBeTruthy();
+  });
+
+  it('wires Media Session controls to the video player', async () => {
+    const { handlers, mediaSession } = installMediaSession();
+    const play = vi.mocked(HTMLMediaElement.prototype.play);
+    const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    await waitFor(() => expect(handlers.get('play')).toBeTruthy());
+    expect(mediaSession.metadata).toMatchObject({ title: 'Pilot', artist: 'series', album: 'S01E01' });
+    expect(mediaSession.playbackState).toBe('paused');
+
+    handlers.get('play')?.({ action: 'play' });
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(mediaSession.playbackState).toBe('playing');
+
+    handlers.get('seekto')?.({ action: 'seekto', seekTime: 42 });
+    expect(video.currentTime).toBe(42);
+    expect(mediaSession.setPositionState).toHaveBeenLastCalledWith(expect.objectContaining({ position: 42 }));
+
+    handlers.get('seekbackward')?.({ action: 'seekbackward', seekOffset: 12 });
+    expect(video.currentTime).toBe(30);
+    handlers.get('seekforward')?.({ action: 'seekforward', seekOffset: 5 });
+    expect(video.currentTime).toBe(35);
+
+    handlers.get('pause')?.({ action: 'pause' });
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(mediaSession.playbackState).toBe('paused');
+  });
+
+  it('handles keyboard media keys in the video player', async () => {
+    const play = vi.mocked(HTMLMediaElement.prototype.play);
+    const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    video.currentTime = 20;
+
+    fireEvent.keyDown(window, { key: 'MediaPlay' });
+    expect(play).toHaveBeenCalledTimes(1);
+
+    const optionsButton = screen.getByLabelText('More video options');
+    optionsButton.focus();
+    fireEvent.keyDown(optionsButton, { key: 'MediaPause' });
+    expect(pause).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(window, { key: 'MediaTrackPrevious' });
+    expect(video.currentTime).toBe(0);
   });
 
   it('hides video controls during playback and reveals them on pointer movement', async () => {
@@ -418,6 +509,7 @@ describe('WatchPage video player', () => {
 
     await screen.findByRole('heading', { name: 'Pilot' });
     const video = view.container.querySelector('video') as HTMLVideoElement;
+    await act(async () => {});
 
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     expect(video.currentTime).toBe(10);

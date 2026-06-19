@@ -1,7 +1,7 @@
 import { DragEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { deleteContinueEntry, fetchAudioTracks, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
 import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
-import { formatClock, type PlayerState } from '../hooks/audio';
+import { formatClock, RESTORE_AUDIO_MEDIA_SESSION_EVENT, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { LyricsFlipCard, LyricsPanel } from './lyrics';
@@ -565,6 +565,39 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     video.knownUnplayable ? 'video-unplayable' : '',
   ].filter(Boolean).join(' ');
 
+  const setVideoMediaSessionAction = useCallback((action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.setActionHandler(action, handler);
+    } catch (_) {
+      // Browsers may expose only a subset of Media Session actions.
+    }
+  }, []);
+
+  const setVideoMediaSessionPlaybackState = useCallback((isPlaying: boolean) => {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.playbackState = video.knownUnplayable ? 'none' : (isPlaying ? 'playing' : 'paused');
+    } catch (_) {
+      // Media Session support is uneven; ignore per-browser failures.
+    }
+  }, [video.knownUnplayable]);
+
+  const setVideoMediaSessionPosition = useCallback((position = videoRef.current?.currentTime ?? 0) => {
+    if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState || video.knownUnplayable) return;
+    const total = videoRef.current?.duration || video.duration || 0;
+    if (!Number.isFinite(total) || total <= 0) return;
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: total,
+        playbackRate,
+        position: Math.max(0, Math.min(total, position || 0)),
+      });
+    } catch (_) {
+      // Media Session support is uneven; ignore per-browser failures.
+    }
+  }, [playbackRate, video.duration, video.knownUnplayable]);
+
   const showToast = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(''), 900);
@@ -761,15 +794,18 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     const onTime = () => {
       setCurrentTime(el.currentTime || 0);
       setDuration(el.duration || video.duration || 0);
+      setVideoMediaSessionPosition(el.currentTime || 0);
       saveResume();
     };
     const onLoaded = () => {
       setDuration(el.duration || video.duration || 0);
+      setVideoMediaSessionPosition(el.currentTime || 0);
       loadResume();
     };
     const onEnded = () => {
       saveResume(true);
       setPlaying(false);
+      setVideoMediaSessionPlaybackState(false);
       if (video.nextEpisode) setShowNext(true);
     };
     const onError = () => {
@@ -778,11 +814,20 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         setError('');
       } else {
         setPlaying(false);
+        setVideoMediaSessionPlaybackState(false);
         setError('Browser playback failed. The classic player and VLC links are available.');
       }
     };
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const onPlay = () => {
+      setPlaying(true);
+      setVideoMediaSessionPlaybackState(true);
+      setVideoMediaSessionPosition(el.currentTime || 0);
+    };
+    const onPause = () => {
+      setPlaying(false);
+      setVideoMediaSessionPlaybackState(false);
+      setVideoMediaSessionPosition(el.currentTime || 0);
+    };
     el.addEventListener('timeupdate', onTime);
     el.addEventListener('loadedmetadata', onLoaded);
     el.addEventListener('durationchange', onLoaded);
@@ -803,7 +848,12 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       window.removeEventListener('beforeunload', onBeforeUnload);
       saveResume(true);
     };
-  }, [sourceMode, sourceSrc, video]);
+  }, [setVideoMediaSessionPlaybackState, setVideoMediaSessionPosition, sourceMode, sourceSrc, video]);
+
+  const playNextEpisode = useCallback(() => {
+    const href = video.nextEpisode?.playHref || video.nextEpisode?.classicHref;
+    if (href) window.location.href = href;
+  }, [video.nextEpisode]);
 
   useEffect(() => {
     if (!showNext || !video.nextEpisode || !autoplayNext) return;
@@ -812,24 +862,44 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       setNextCountdown((current) => {
         if (current <= 1) {
           window.clearInterval(interval);
-          window.location.href = video.nextEpisode?.playHref || video.nextEpisode?.classicHref || '#';
+          playNextEpisode();
           return 0;
         }
         return current - 1;
       });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [autoplayNext, showNext, video.nextEpisode]);
+  }, [autoplayNext, playNextEpisode, showNext, video.nextEpisode]);
+
+  const playVideo = useCallback(() => {
+    const el = videoRef.current;
+    if (!el || video.knownUnplayable) return;
+    setError('');
+    setVideoMediaSessionPlaybackState(true);
+    const promise = el.play();
+    if (promise) {
+      promise.catch(() => {
+        setPlaying(false);
+        setVideoMediaSessionPlaybackState(false);
+        setError('Tap play again or open the classic player.');
+      });
+    }
+  }, [setVideoMediaSessionPlaybackState, video.knownUnplayable]);
+
+  const pauseVideo = useCallback(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.pause();
+    setPlaying(false);
+    setVideoMediaSessionPlaybackState(false);
+  }, [setVideoMediaSessionPlaybackState]);
 
   const toggleVideo = useCallback(() => {
     const el = videoRef.current;
     if (!el || video.knownUnplayable) return;
-    if (el.paused) {
-      el.play().catch(() => setError('Tap play again or open the classic player.'));
-    } else {
-      el.pause();
-    }
-  }, [video.knownUnplayable]);
+    if (el.paused) playVideo();
+    else pauseVideo();
+  }, [pauseVideo, playVideo, video.knownUnplayable]);
 
   const seekVideo = useCallback((seconds: number) => {
     const el = videoRef.current;
@@ -837,7 +907,8 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     const next = Math.max(0, Math.min(seconds, duration || video.duration || seconds));
     el.currentTime = next;
     setCurrentTime(next);
-  }, [duration, video.duration]);
+    setVideoMediaSessionPosition(next);
+  }, [duration, setVideoMediaSessionPosition, video.duration]);
 
   const seekVideoBy = useCallback((delta: number) => {
     const base = videoRef.current?.currentTime ?? currentTime;
@@ -916,7 +987,102 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   }, [showToast]);
 
   useEffect(() => {
+    if (!('mediaSession' in navigator) || video.knownUnplayable) return undefined;
+    try {
+      if ('MediaMetadata' in window) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: video.title || '',
+          artist: video.mediaKind || '',
+          album: video.subtitle || video.metadata.title || '',
+          artwork: (video.posterUrl || video.thumbUrl)
+            ? [{ src: video.posterUrl || video.thumbUrl, sizes: '512x512', type: 'image/jpeg' }]
+            : [],
+        });
+      }
+    } catch (_) {
+      // Metadata is optional; controls should still work without it.
+    }
+
+    setVideoMediaSessionAction('play', () => playVideo());
+    setVideoMediaSessionAction('pause', () => pauseVideo());
+    setVideoMediaSessionAction('seekto', (details) => {
+      if (Number.isFinite(details.seekTime)) seekVideo(details.seekTime || 0);
+    });
+    setVideoMediaSessionAction('seekbackward', (details) => seekVideoBy(-(details.seekOffset || 10)));
+    setVideoMediaSessionAction('seekforward', (details) => seekVideoBy(details.seekOffset || 10));
+    setVideoMediaSessionAction('previoustrack', () => seekVideo(0));
+    setVideoMediaSessionAction('nexttrack', video.nextEpisode ? playNextEpisode : null);
+    setVideoMediaSessionAction('stop', () => {
+      pauseVideo();
+      seekVideo(0);
+    });
+    setVideoMediaSessionPlaybackState(false);
+    setVideoMediaSessionPosition();
+
+    return () => {
+      setVideoMediaSessionAction('play', null);
+      setVideoMediaSessionAction('pause', null);
+      setVideoMediaSessionAction('seekto', null);
+      setVideoMediaSessionAction('seekbackward', null);
+      setVideoMediaSessionAction('seekforward', null);
+      setVideoMediaSessionAction('previoustrack', null);
+      setVideoMediaSessionAction('nexttrack', null);
+      setVideoMediaSessionAction('stop', null);
+      try {
+        navigator.mediaSession.playbackState = 'none';
+        navigator.mediaSession.metadata = null;
+      } catch (_) {
+        // Ignore uneven browser Media Session support.
+      }
+      window.dispatchEvent(new Event(RESTORE_AUDIO_MEDIA_SESSION_EVENT));
+    };
+  }, [
+    pauseVideo,
+    playNextEpisode,
+    playVideo,
+    seekVideo,
+    seekVideoBy,
+    setVideoMediaSessionAction,
+    setVideoMediaSessionPlaybackState,
+    setVideoMediaSessionPosition,
+    video.knownUnplayable,
+    video.mediaKind,
+    video.metadata.title,
+    video.nextEpisode,
+    video.posterUrl,
+    video.subtitle,
+    video.thumbUrl,
+    video.title,
+  ]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'MediaPlayPause') {
+        event.preventDefault();
+        toggleVideo();
+        return;
+      }
+      if (event.key === 'MediaPlay') {
+        event.preventDefault();
+        playVideo();
+        return;
+      }
+      if (event.key === 'MediaPause' || event.key === 'MediaStop') {
+        event.preventDefault();
+        pauseVideo();
+        return;
+      }
+      if (event.key === 'MediaTrackNext') {
+        event.preventDefault();
+        playNextEpisode();
+        return;
+      }
+      if (event.key === 'MediaTrackPrevious') {
+        event.preventDefault();
+        seekVideo(0);
+        return;
+      }
+
       const target = event.target as HTMLElement | null;
       const tagName = target?.tagName;
       if (target?.isContentEditable || tagName === 'INPUT' || tagName === 'SELECT' || tagName === 'TEXTAREA' || tagName === 'BUTTON') {
@@ -941,7 +1107,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [seekVideoBy, toggleFullscreen, toggleVideo]);
+  }, [pauseVideo, playNextEpisode, playVideo, seekVideo, seekVideoBy, toggleFullscreen, toggleVideo]);
 
   const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     revealVideoControls();

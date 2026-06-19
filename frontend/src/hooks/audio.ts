@@ -4,6 +4,7 @@ import { preloadLyrics } from './lyrics';
 import type { WatchTrack } from '../types';
 
 export type RepeatMode = 'off' | 'all' | 'one';
+export const RESTORE_AUDIO_MEDIA_SESSION_EVENT = 'td:restore-audio-media-session';
 
 export interface PlayerState {
   track: WatchTrack | null;
@@ -502,7 +503,18 @@ export function useAudioPlayer() {
     }));
   }, [setMediaSessionPlaybackState]);
 
-  useEffect(() => {
+  const clearAudioMediaSessionActions = useCallback(() => {
+    setMediaSessionAction('play', null);
+    setMediaSessionAction('pause', null);
+    setMediaSessionAction('nexttrack', null);
+    setMediaSessionAction('previoustrack', null);
+    setMediaSessionAction('seekto', null);
+    setMediaSessionAction('seekforward', null);
+    setMediaSessionAction('seekbackward', null);
+    setMediaSessionAction('stop', null);
+  }, [setMediaSessionAction]);
+
+  const registerAudioMediaSessionActions = useCallback(() => {
     if (!('mediaSession' in navigator)) return undefined;
     setMediaSessionAction('play', playActiveAudioFromSession);
     setMediaSessionAction('pause', pauseActiveAudioFromSession);
@@ -514,17 +526,7 @@ export function useAudioPlayer() {
     setMediaSessionAction('seekforward', (details) => seekActiveAudioBy(details.seekOffset || 10));
     setMediaSessionAction('seekbackward', (details) => seekActiveAudioBy(-(details.seekOffset || 10)));
     setMediaSessionAction('stop', dismissPlayer);
-
-    return () => {
-      setMediaSessionAction('play', null);
-      setMediaSessionAction('pause', null);
-      setMediaSessionAction('nexttrack', null);
-      setMediaSessionAction('previoustrack', null);
-      setMediaSessionAction('seekto', null);
-      setMediaSessionAction('seekforward', null);
-      setMediaSessionAction('seekbackward', null);
-      setMediaSessionAction('stop', null);
-    };
+    setMediaSessionMetadata(playerRef.current);
   }, [
     dismissPlayer,
     pauseActiveAudioFromSession,
@@ -534,6 +536,20 @@ export function useAudioPlayer() {
     seekActiveAudioBy,
     seekActiveAudioTo,
     setMediaSessionAction,
+    setMediaSessionMetadata,
+  ]);
+
+  useEffect(() => {
+    registerAudioMediaSessionActions();
+    return clearAudioMediaSessionActions;
+  }, [clearAudioMediaSessionActions, registerAudioMediaSessionActions]);
+
+  useEffect(() => {
+    const onRestore = () => registerAudioMediaSessionActions();
+    window.addEventListener(RESTORE_AUDIO_MEDIA_SESSION_EVENT, onRestore);
+    return () => window.removeEventListener(RESTORE_AUDIO_MEDIA_SESSION_EVENT, onRestore);
+  }, [
+    registerAudioMediaSessionActions,
   ]);
 
   const scheduleNext = useCallback((index: number) => {
