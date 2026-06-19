@@ -57,6 +57,7 @@ export interface HubCard {
   overview: string;
   artist: string;
   albumTitle: string;
+  trailerKey: string;
   href: string;
   playHref?: string;
   detailsHref?: string;

@@ -39,6 +39,7 @@ export function watchlistCard(item: WatchlistItem): HubCard {
     overview: '',
     artist: '',
     albumTitle: '',
+    trailerKey: '',
     href,
     playHref: href,
     detailsHref: href,

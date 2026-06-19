@@ -1,5 +1,5 @@
-import { memo, type MouseEvent } from 'react';
-import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, XIcon } from '../icons';
+import { memo, useState, type MouseEvent } from 'react';
+import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, PlayIcon, XIcon } from '../icons';
 import type { HubCard, RecommendationMeta } from '../types';
 
 function getLocalCwPct(watchKey: string): number {
@@ -102,9 +102,11 @@ function MediaCardBase({
   const height = card.aspect === 'square' ? 512 : 513;
   const display = getMediaCardDisplay(card);
   const progressPct = card.watchKey ? getLocalCwPct(card.watchKey) : 0;
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const canPreview = Boolean(card.trailerKey) && !isMusic;
 
   return (
-    <article className={`media-card ${card.aspect === 'square' ? 'square' : 'poster'}`}>
+    <article className={`media-card ${card.aspect === 'square' ? 'square' : 'poster'}${previewOpen ? ' previewing' : ''}`}>
       <a className="media-card-link" href={card.href}>
         <span className="poster-wrap">
           <span className="poster-placeholder">
@@ -148,6 +150,43 @@ function MediaCardBase({
           {card.recReason && <em className="card-reason">{card.recReason}</em>}
         </span>
       </a>
+      {canPreview && (
+        <button
+          type="button"
+          className="preview-button"
+          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setPreviewOpen(true);
+          }}
+          aria-label={`Preview ${display.title}`}
+        >
+          <PlayIcon />
+          <span>Preview</span>
+        </button>
+      )}
+      {previewOpen && card.trailerKey && (
+        <div className="card-preview-panel" role="dialog" aria-label={`${display.title} trailer preview`}>
+          <iframe
+            src={`https://www.youtube.com/embed/${encodeURIComponent(card.trailerKey)}?autoplay=1&mute=1&controls=0&rel=0&playsinline=1`}
+            title={`${display.title} trailer preview`}
+            allow="autoplay; encrypted-media; fullscreen"
+            allowFullScreen
+          />
+          <button
+            type="button"
+            className="icon-button card-preview-close"
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setPreviewOpen(false);
+            }}
+            aria-label="Close preview"
+          >
+            <XIcon />
+          </button>
+        </div>
+      )}
       <button
         type="button"
         className={saved ? 'save-button saved' : 'save-button'}

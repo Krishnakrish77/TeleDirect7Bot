@@ -1,11 +1,12 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { fetchAdminDashboard } from '../api';
+import { fetchAdminDashboard, runAdminMaintenance } from '../api';
 import type { AdminDashboardResponse, User } from '../types';
 import { AdminDashboard } from './adminDashboard';
 
 vi.mock('../api', () => ({
   fetchAdminDashboard: vi.fn(),
+  runAdminMaintenance: vi.fn(),
 }));
 
 const adminUser: User = {
@@ -73,5 +74,17 @@ describe('AdminDashboard', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: '70% complete' })).toBeTruthy());
     expect(screen.getByRole('link', { name: /Missing overview2/i }).getAttribute('href')).toBe('/app/admin?filter=no-overview');
     expect(screen.getByRole('link', { name: /Missing markers5/i }).getAttribute('href')).toBe('/app/admin?filter=no-markers');
+  });
+
+  it('queues one-click metadata cleanup from the dashboard', async () => {
+    vi.mocked(fetchAdminDashboard).mockResolvedValue(dashboard);
+    vi.mocked(runAdminMaintenance).mockResolvedValue({ ok: true, message: 'Metadata cleanup queued' });
+
+    render(<AdminDashboard user={adminUser} onSignIn={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Auto cleanup' }));
+
+    await waitFor(() => expect(runAdminMaintenance).toHaveBeenCalledWith('metadata-cleanup'));
+    expect(await screen.findByText('Metadata cleanup queued')).toBeTruthy();
   });
 });

@@ -224,6 +224,7 @@ def _item_common(item: HubItem) -> dict:
         "overview": item.overview or item.description or "",
         "artist": artist,
         "albumTitle": _clean_music_tag(item.album_title or ""),
+        "trailerKey": item.trailer_key or "",
         "href": _watch_url(item),
         "streamHref": _stream_url(item),
         "watchKey": f"{item.secure_hash}{item.message_id}",
@@ -493,8 +494,11 @@ async def api_hub(request: web.Request) -> web.Response:
         user = get_user(request)
         if user:
             try:
-                rec_items = await asyncio.wait_for(
-                    rec_engine.get_recommendations(int(user["sub"])),
+                rec_items, personal_shelves = await asyncio.wait_for(
+                    asyncio.gather(
+                        rec_engine.get_recommendations(int(user["sub"])),
+                        rec_engine.get_personal_shelves(int(user["sub"])),
+                    ),
                     timeout=12.0,
                 )
                 if rec_items:
@@ -526,6 +530,8 @@ async def api_hub(request: web.Request) -> web.Response:
                             "rec_reasons": rec_reasons,
                         },
                     ] + list(raw_shelves)
+                if personal_shelves:
+                    raw_shelves = list(raw_shelves[:1]) + personal_shelves + list(raw_shelves[1:])
             except asyncio.TimeoutError:
                 logging.warning("spa hub: rec_engine timed out, skipping shelf")
             except Exception:

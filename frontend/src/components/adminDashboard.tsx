@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { fetchAdminDashboard } from '../api';
+import { useCallback, useEffect, useState } from 'react';
+import { fetchAdminDashboard, runAdminMaintenance } from '../api';
 import { ChevronRightIcon } from '../icons';
 import type { AdminDashboardResponse, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -26,16 +26,39 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
   const [data, setData] = useState<AdminDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [cleanupBusy, setCleanupBusy] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const loadDashboard = useCallback((signal?: AbortSignal) => {
+    setLoading(true);
+    setError('');
+    fetchAdminDashboard(signal)
+      .then(setData)
+      .catch((err: Error) => { if (!signal?.aborted) setError(err.message); })
+      .finally(() => { if (!signal?.aborted) setLoading(false); });
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    fetchAdminDashboard(controller.signal)
-      .then(setData)
-      .catch((err: Error) => { if (!controller.signal.aborted) setError(err.message); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    loadDashboard(controller.signal);
     return () => controller.abort();
-  }, []);
+  }, [loadDashboard]);
+
+  const runCleanup = async (action: string) => {
+    setCleanupBusy(action);
+    setNotice('');
+    setError('');
+    try {
+      const response = await runAdminMaintenance(action);
+      setNotice(response.message);
+      await fetchAdminDashboard().then(setData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Cleanup failed');
+    } finally {
+      setCleanupBusy('');
+      setLoading(false);
+    }
+  };
 
   if (!user || !user.is_admin) {
     return (
@@ -154,6 +177,25 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
                 <span className={metadata.health_score >= 85 ? 'dash-score good' : 'dash-score warn'}>
                   {metadata.video_items.toLocaleString()} video items
                 </span>
+              </div>
+              <div className="dash-action-row">
+                <button
+                  type="button"
+                  className="primary-action compact-action"
+                  disabled={Boolean(cleanupBusy)}
+                  onClick={() => void runCleanup('metadata-cleanup')}
+                >
+                  {cleanupBusy === 'metadata-cleanup' ? 'Queuing...' : 'Auto cleanup'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-action compact-action"
+                  disabled={Boolean(cleanupBusy)}
+                  onClick={() => void runCleanup('fetch-episodes')}
+                >
+                  {cleanupBusy === 'fetch-episodes' ? 'Queuing...' : 'Fetch episodes'}
+                </button>
+                {notice && <span className="dash-notice" role="status">{notice}</span>}
               </div>
               <div className="dash-grid-4">
                 {metadataIssues.map((item) => (

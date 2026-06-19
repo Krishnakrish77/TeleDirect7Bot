@@ -26,6 +26,7 @@ function card(overrides: Partial<HubCard> = {}): HubCard {
     overview: '',
     artist: '',
     albumTitle: '',
+    trailerKey: '',
     href: '/app/watch/hash42',
     playHref: '/app/watch/hash42',
     detailsHref: '/app/watch/hash42',
@@ -102,5 +103,16 @@ describe('MediaCard', () => {
 
     fireEvent.click(screen.getByLabelText('Not for me'));
     expect(onDismiss).toHaveBeenCalledWith({ tmdbId: 123, kind: 'movie' }, media);
+  });
+
+  it('opens inline trailer previews only when a trailer key is present', () => {
+    render(<MediaCard card={card({ trailerKey: 'abc123' })} saved={false} onToggleSaved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Preview Kalki/i }));
+
+    const preview = screen.getByTitle('Kalki 2898-AD trailer preview') as HTMLIFrameElement;
+    expect(preview.getAttribute('src')).toContain('youtube.com/embed/abc123');
+    fireEvent.click(screen.getByRole('button', { name: 'Close preview' }));
+    expect(screen.queryByTitle('Kalki 2898-AD trailer preview')).toBeNull();
   });
 });

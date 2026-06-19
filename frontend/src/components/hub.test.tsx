@@ -38,6 +38,7 @@ function card(overrides: Partial<HubCard> = {}): HubCard {
     overview: '',
     artist: '',
     albumTitle: '',
+    trailerKey: '',
     href: '/app/movie/kalki',
     playHref: '/app/watch/hash1',
     detailsHref: '/app/movie/kalki',

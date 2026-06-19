@@ -106,6 +106,7 @@ function makeVideoChoice(overrides: Partial<VideoChoice> = {}): VideoChoice {
     overview: '',
     artist: '',
     albumTitle: '',
+    trailerKey: '',
     href: '/watch/kalki',
     playHref: '/app/watch/kalki',
     appHref: '/app/watch/kalki',

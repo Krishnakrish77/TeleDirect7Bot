@@ -11,7 +11,7 @@ import json
 from aiohttp import web
 
 from main.utils.user_auth import get_user
-from main.utils import ratings_store
+from main.utils import ratings_store, rec_store
 
 routes = web.RouteTableDef()
 
@@ -50,6 +50,7 @@ async def api_set(request: web.Request) -> web.Response:
         rating = None
     else:
         await ratings_store.set_rating(int(user["sub"]), mid, rating)
+    await rec_store.clear_cached(int(user["sub"]))
 
     counts = await ratings_store.get_counts(mid)
     return _json({"rating": rating, "counts": counts})
@@ -62,5 +63,6 @@ async def api_delete(request: web.Request) -> web.Response:
         return _json({"error": "unauthenticated"}, status=401)
     mid = int(request.match_info["mid"])
     await ratings_store.delete_rating(int(user["sub"]), mid)
+    await rec_store.clear_cached(int(user["sub"]))
     counts = await ratings_store.get_counts(mid)
     return _json({"rating": None, "counts": counts})

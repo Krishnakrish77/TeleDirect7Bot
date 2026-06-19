@@ -28,6 +28,7 @@ import time
 from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlencode
 
 from main.utils.file_properties import get_hash
 from main.utils.hub_query import AlbumGroup, ExternalSubtitle, HubItem, MovieGroup, SeriesGroup
@@ -1959,6 +1960,17 @@ def shelves(per_shelf: int = 25) -> List[dict]:
     def newest(items, key=lambda c: _card_message_id(c)):
         return sorted(items, key=lambda c: -key(c))[:per_shelf]
 
+    def card_item(card):
+        return getattr(card, "poster_item", card)
+
+    def card_identity(card) -> str:
+        return (
+            getattr(card, "series_key", "")
+            or getattr(card, "movie_key", "")
+            or getattr(card, "album_key", "")
+            or str(_card_message_id(card))
+        )
+
     out: List[dict] = []
 
     if all_cards:
@@ -1976,6 +1988,27 @@ def shelves(per_shelf: int = 25) -> List[dict]:
             "link": "/?view=list",
             "total": len(recent_items),
         })
+
+    new_episodes: List[HubItem] = []
+    seen_episode_keys: set = set()
+    for it in sorted(_items.values(), key=lambda item: -item.message_id):
+        if it.hidden or getattr(it, "media_kind", "") == "audio" or not it.series_key:
+            continue
+        episode_key = (it.series_key, it.season, it.episode, it.episode_end)
+        if episode_key in seen_episode_keys:
+            continue
+        seen_episode_keys.add(episode_key)
+        new_episodes.append(it)
+        if len(new_episodes) >= per_shelf:
+            break
+    if len(new_episodes) >= 3:
+        out.append({
+            "name": "New episodes",
+            "items": new_episodes,
+            "link": "/?view=series",
+            "total": len(new_episodes),
+        })
+
     if series_groups:
         series_items = newest(series_groups, key=lambda s: s.latest_message_id)
         out.append({
@@ -1987,11 +2020,38 @@ def shelves(per_shelf: int = 25) -> List[dict]:
     if all_movies:
         movie_items = newest(all_movies)
         out.append({
-            "name": "Movies",
+            "name": "Recently added movies",
             "items": movie_items,
             "link": "/?view=movies",
             "total": len(movie_items),
         })
+
+    if all_cards:
+        recent_keys = {card_identity(card) for card in newest(all_cards)}
+        hidden_gems = []
+        for card in all_cards:
+            item = card_item(card)
+            if card_identity(card) in recent_keys:
+                continue
+            if not getattr(item, "tmdb_id", None):
+                continue
+            if not ((getattr(item, "overview", "") or getattr(item, "description", "")) and getattr(item, "tmdb_genres", None)):
+                continue
+            hidden_gems.append(card)
+        hidden_gems = sorted(
+            hidden_gems,
+            key=lambda card: (
+                -(len(getattr(card_item(card), "tmdb_genres", None) or [])),
+                _card_message_id(card),
+            ),
+        )[:per_shelf]
+        if len(hidden_gems) >= 3:
+            out.append({
+                "name": "Hidden gems",
+                "items": hidden_gems,
+                "link": "/?sort=oldest",
+                "total": len(hidden_gems),
+            })
 
     # Music shelf — albums + standalone tracks
     _albums = all_albums()
@@ -2053,13 +2113,10 @@ def shelves(per_shelf: int = 25) -> List[dict]:
                 if len(row_cards) >= per_shelf:
                     break
             if row_cards:
-                # Genre shelves link into the tag-filter view so "see all
-                # Drama" lands on the existing /?tag=drama page.
-                slug = re.sub(r"[^a-z0-9]+", "-", genre.lower()).strip("-")
                 out.append({
                     "name": genre,
                     "items": row_cards,
-                    "link": f"/?tag={slug}" if slug else None,
+                    "link": "/?" + urlencode({"genre": genre}),
                     "total": len(row_cards),  # displayed count
                 })
 

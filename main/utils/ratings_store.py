@@ -108,5 +108,23 @@ async def get_counts(message_id: int) -> Dict[str, int]:
         return {"up": 0, "down": 0}
 
 
+async def get_user_ratings(user_id: int, limit: int = 200) -> list[dict]:
+    """Return recent rating signals for recommendation ranking."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        docs = await db["ratings"].find(
+            {"user_id": user_id},
+            projection={"message_id": 1, "rating": 1, "rated_at": 1, "_id": 0},
+            sort=[("rated_at", -1)],
+        ).to_list(length=limit)
+        return docs
+    except Exception:
+        logging.exception("ratings_store: get_user_ratings failed uid=%d", user_id)
+        return []
+
+
 def is_available() -> bool:
     return _get_db() is not None

@@ -603,6 +603,12 @@ def _is_htmx(request: web.Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
 
+async def _run_metadata_cleanup() -> None:
+    await media_index.enrich_all(bot=StreamBot, force=True)
+    if not media_index.episode_fill_state().get("running"):
+        await media_index.fill_episode_details(bot=StreamBot)
+
+
 @routes.post("/admin/clear-audio-tmdb")
 async def admin_clear_audio_tmdb(request: web.Request) -> web.Response:
     """Strip TMDB fields from audio items that were mis-enriched as movies/series."""
@@ -2574,6 +2580,21 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
         if not media_index.episode_fill_state().get("running"):
             asyncio.create_task(media_index.fill_episode_details(bot=StreamBot))
         return _admin_json_message("Episode details fetch queued", status=_admin_status_payload())
+
+    if action == "metadata-cleanup":
+        if (
+            media_index.enrichment_state().get("running")
+            or media_index.episode_fill_state().get("running")
+        ):
+            return _admin_json_message(
+                "Metadata cleanup is already running",
+                status=_admin_status_payload(),
+            )
+        asyncio.create_task(_run_metadata_cleanup())
+        return _admin_json_message(
+            "Metadata cleanup queued: TMDB enrichment, episode metadata",
+            status=_admin_status_payload(),
+        )
 
     if action == "clear-audio-thumbs":
         return _admin_json_message(await _admin_clear_thumb_cache(audio_only=True))
