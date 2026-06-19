@@ -1,4 +1,4 @@
-import { DragEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DragEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { deleteContinueEntry, fetchAudioTracks, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
 import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
 import { formatClock, RESTORE_AUDIO_MEDIA_SESSION_EVENT, type PlayerState } from '../hooks/audio';
@@ -31,6 +31,12 @@ function uniqueParts(parts: Array<string | number | null | undefined>): string[]
     });
 }
 
+function isVideoChromeTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(
+    'button, a, input, select, textarea, label, .video-controls, .video-options-menu, .skip-intro, .next-episode-card, .video-overlay-message',
+  ));
+}
+
 function VideoInfoSection({ video }: { video: WatchVideo }) {
   const meta = video.metadata;
   const genres = (video.genres.length ? video.genres : meta.genres).slice(0, 5);
@@ -48,11 +54,11 @@ function VideoInfoSection({ video }: { video: WatchVideo }) {
       ? [{ name: meta.director, href: `/app/person/${encodeURIComponent(meta.director.toLowerCase().replace(/\s+/g, '-'))}` }]
       : [];
   const cast = meta.cast.slice(0, 6);
-  const infoTitle = meta.title && meta.title !== video.title ? meta.title : video.title;
+  const infoTitle = (meta.title || video.title).trim();
   const kindLabel = video.episodeLabel || video.subtitle.toLowerCase().includes('s0')
     ? 'About this episode'
     : 'About this title';
-  const sectionTitle = infoTitle === video.title ? kindLabel : infoTitle;
+  const sectionTitle = infoTitle && infoTitle !== video.title ? infoTitle : 'Overview';
 
   if (!overview && !facts.length && !genres.length && !directors.length && !cast.length && !meta.imdbHref) {
     return null;
@@ -540,6 +546,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimerRef = useRef<number | null>(null);
+  const clickTimerRef = useRef<number | null>(null);
   const [autoplayNext, setAutoplayNext] = useState(() => {
     try {
       return localStorage.getItem('td:videoAutoplay') !== '0';
@@ -1109,6 +1116,10 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [pauseVideo, playNextEpisode, playVideo, seekVideo, seekVideoBy, toggleFullscreen, toggleVideo]);
 
+  useEffect(() => () => {
+    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
+  }, []);
+
   const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     revealVideoControls();
     const touch = event.touches[0];
@@ -1153,6 +1164,29 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     }
   };
 
+  const onShellClick = (event: MouseEvent<HTMLDivElement>) => {
+    revealVideoControls();
+    if (event.defaultPrevented || event.detail > 1 || isVideoChromeTarget(event.target)) return;
+    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = window.setTimeout(() => {
+      clickTimerRef.current = null;
+      toggleVideo();
+    }, 280);
+  };
+
+  const onShellDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
+    revealVideoControls();
+    if (event.defaultPrevented || isVideoChromeTarget(event.target)) return;
+    event.preventDefault();
+    if (clickTimerRef.current !== null) {
+      window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const delta = event.clientX < rect.left + rect.width / 2 ? -10 : 10;
+    seekVideoBy(delta);
+  };
+
   const onDragOver = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
   };
@@ -1182,6 +1216,8 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         ref={shellRef}
         onPointerMove={revealVideoControls}
         onFocusCapture={revealVideoControls}
+        onClick={onShellClick}
+        onDoubleClick={onShellDoubleClick}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}

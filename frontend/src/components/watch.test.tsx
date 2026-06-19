@@ -339,6 +339,50 @@ describe('WatchPage video player', () => {
     expect(screen.getByLabelText('Unmute')).toBeTruthy();
   });
 
+  it('toggles playback when clicking the video surface', async () => {
+    const play = vi.mocked(HTMLMediaElement.prototype.play);
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const shell = view.container.querySelector('.video-shell') as HTMLElement;
+    vi.useFakeTimers();
+
+    fireEvent.click(shell);
+    expect(play).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(280);
+    });
+
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it('seeks on video surface double-click without triggering the single-click toggle', async () => {
+    const play = vi.mocked(HTMLMediaElement.prototype.play);
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const shell = view.container.querySelector('.video-shell') as HTMLElement;
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(shell, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: 0, top: 0, width: 200, height: 112, right: 200, bottom: 112, x: 0, y: 0, toJSON: () => ({}) }),
+    });
+    video.currentTime = 5;
+    vi.useFakeTimers();
+
+    fireEvent.click(shell, { detail: 1, clientX: 150 });
+    fireEvent.dblClick(shell, { clientX: 150 });
+
+    expect(video.currentTime).toBe(15);
+
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+
+    expect(play).not.toHaveBeenCalled();
+  });
+
   it('wires Media Session controls to the video player', async () => {
     const { handlers, mediaSession } = installMediaSession();
     const play = vi.mocked(HTMLMediaElement.prototype.play);
@@ -482,6 +526,27 @@ describe('WatchPage video player', () => {
     expect(info.getByRole('link', { name: 'Jane Director' }).getAttribute('href')).toBe('/app/person/jane-director');
     expect(info.getByRole('link', { name: 'Lead Actor' }).getAttribute('href')).toBe('/app/person/lead-actor');
     expect(info.getByRole('link', { name: 'IMDb' }).getAttribute('href')).toBe('https://www.imdb.com/title/tt1234567/');
+  });
+
+  it('uses a neutral overview heading instead of repeating the generic about label', async () => {
+    renderWatchPage(makeVideo({
+      title: 'Chaotic Family',
+      subtitle: '480p',
+      episodeLabel: '',
+      mediaKind: 'movie',
+      metadata: {
+        ...makeVideo().metadata,
+        title: 'Chaotic Family',
+        overview: 'A dark comedy centered around a chaotic family.',
+      },
+    }));
+
+    await screen.findByRole('heading', { name: 'Chaotic Family' });
+
+    const info = within(screen.getByLabelText('Movie and series information'));
+    expect(info.getByText('About this title')).toBeTruthy();
+    expect(info.getByRole('heading', { name: 'Overview' })).toBeTruthy();
+    expect(info.queryByRole('heading', { name: 'About this title' })).toBeNull();
   });
 
   it('shows uploaded subtitle status only inside the options menu', async () => {
