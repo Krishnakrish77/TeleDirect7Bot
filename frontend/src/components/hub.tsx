@@ -291,15 +291,25 @@ export function GridView({
     params.view === 'music' ||
     (data.items.length > 0 && data.items.every((card) => card.aspect === 'square'));
   const priorityCount = 8;
+  const isLoadingMore = loading && params.offset > 0;
+  const resultCountLabel = `${data.total.toLocaleString()} result${data.total === 1 ? '' : 's'}`;
+  const resultEyebrow = loading && !isLoadingMore
+    ? 'Updating results'
+    : resultCountLabel;
 
   return (
-    <section className={loading ? 'grid-section grid-refetching' : 'grid-section'}>
+    <section className={loading ? 'grid-section grid-refetching' : 'grid-section'} aria-busy={loading}>
       <div className="section-heading">
         <div>
-          <p className="eyebrow">{data.total.toLocaleString()} results</p>
+          <p className="eyebrow">{resultEyebrow}</p>
           <h2>{params.q ? `Search: ${params.q}` : 'Browse'}</h2>
         </div>
       </div>
+      {loading && (
+        <p className="grid-refresh-note" role="status">
+          Updating results...
+        </p>
+      )}
       {data.items.length ? (
         <>
           <div className={isMusicGrid ? 'media-grid music-grid' : 'media-grid'}>
@@ -313,19 +323,20 @@ export function GridView({
               />
             ))}
           </div>
-          {data.nextOffset !== null && (
+          {data.nextOffset !== null && (!loading || isLoadingMore) && (
             <div className="load-more-wrap">
               <button
                 type="button"
                 className="secondary-action"
+                disabled={loading}
                 onClick={() => update({ offset: data.nextOffset || 0 }, true)}
               >
-                <span>More</span>
+                <span>{isLoadingMore ? 'Loading...' : 'More'}</span>
                 <ChevronRightIcon />
               </button>
             </div>
           )}
-          {data.nextOffset === null && (
+          {data.nextOffset === null && !loading && (
             <p className="result-footer">Showing all {data.total.toLocaleString()} result{data.total === 1 ? '' : 's'}</p>
           )}
         </>

@@ -65,6 +65,7 @@ export function Header({
   classicUiHref,
   onSearchSubmit,
   onSearchClear,
+  onSuggestionNavigate,
   onSignIn,
   onSignOut,
 }: {
@@ -78,12 +79,17 @@ export function Header({
   classicUiHref: string;
   onSearchSubmit: () => void;
   onSearchClear: () => void;
+  onSuggestionNavigate: (href: string) => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const accountRef = useRef<HTMLDivElement | null>(null);
+  const searchWrapRef = useRef<HTMLFormElement | null>(null);
   const suggestions = useSuggestions(query.trim());
+  const suggestionsOpen = open && suggestions.length > 0;
+  const activeSuggestionId = suggestionsOpen && activeIndex >= 0 ? `top-search-suggestion-${activeIndex}` : undefined;
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -103,19 +109,73 @@ export function Header({
     };
   }, [accountOpen, setAccountOpen]);
 
+  useEffect(() => {
+    setActiveIndex((current) => {
+      if (!suggestions.length) return -1;
+      return current >= suggestions.length ? suggestions.length - 1 : current;
+    });
+  }, [suggestions.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnPointer = (event: PointerEvent) => {
+      if (!searchWrapRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+        setActiveIndex(-1);
+      }
+    };
+    document.addEventListener('pointerdown', closeOnPointer);
+    return () => document.removeEventListener('pointerdown', closeOnPointer);
+  }, [open]);
+
+  const closeSuggestions = () => {
+    setOpen(false);
+    setActiveIndex(-1);
+  };
+
+  const suggestionHref = (item: Suggestion) => localAppHref(item.url) || item.url;
+
+  const pickSuggestion = (item: Suggestion) => {
+    closeSuggestions();
+    searchRef.current?.blur();
+    const href = suggestionHref(item);
+    if (href.startsWith('/app')) {
+      onSuggestionNavigate(href);
+    } else {
+      window.location.href = href;
+    }
+  };
+
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    setOpen(false);
+    closeSuggestions();
     onSearchSubmit();
   };
 
   const handleClear = () => {
-    setOpen(false);
+    closeSuggestions();
     onSearchClear();
   };
 
   const handleKey = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Escape') setOpen(false);
+    if (event.key === 'Escape') {
+      closeSuggestions();
+      return;
+    }
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && suggestions.length > 0) {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex((current) => {
+        if (event.key === 'ArrowDown') return current >= suggestions.length - 1 ? 0 : current + 1;
+        return current <= 0 ? suggestions.length - 1 : current - 1;
+      });
+      return;
+    }
+    if (event.key === 'Enter' && suggestionsOpen && activeIndex >= 0) {
+      event.preventDefault();
+      const item = suggestions[activeIndex];
+      if (item) pickSuggestion(item);
+    }
   };
 
   return (
@@ -127,7 +187,7 @@ export function Header({
         <span>TeleDirect</span>
       </a>
 
-      <form className="top-search" role="search" onSubmit={handleSubmit}>
+      <form className="top-search" role="search" onSubmit={handleSubmit} ref={searchWrapRef}>
         <button type="submit" className="icon-button search-leading search-submit" aria-label="Search">
           <SearchIcon />
         </button>
@@ -142,14 +202,24 @@ export function Header({
           onKeyDown={handleKey}
           placeholder="Search library"
           autoComplete="off"
+          aria-autocomplete="list"
+          aria-expanded={suggestionsOpen}
+          aria-controls="top-search-suggestions"
+          aria-activedescendant={activeSuggestionId}
         />
         {query && (
           <button type="button" className="icon-button clear-search" onClick={handleClear} aria-label="Clear search">
             <XIcon />
           </button>
         )}
-        {open && suggestions.length > 0 && (
-          <SearchMenu suggestions={suggestions} onPick={() => setOpen(false)} />
+        {suggestionsOpen && (
+          <SearchMenu
+            suggestions={suggestions}
+            activeIndex={activeIndex}
+            getHref={suggestionHref}
+            onActiveIndexChange={setActiveIndex}
+            onPick={closeSuggestions}
+          />
         )}
       </form>
 
@@ -218,11 +288,32 @@ export function Header({
   );
 }
 
-export function SearchMenu({ suggestions, onPick }: { suggestions: Suggestion[]; onPick: () => void }) {
+export function SearchMenu({
+  suggestions,
+  activeIndex,
+  getHref,
+  onActiveIndexChange,
+  onPick,
+}: {
+  suggestions: Suggestion[];
+  activeIndex: number;
+  getHref: (item: Suggestion) => string;
+  onActiveIndexChange: (index: number) => void;
+  onPick: () => void;
+}) {
   return (
-    <div className="search-menu">
-      {suggestions.map((item) => (
-        <a key={item.url} href={localAppHref(item.url) || item.url} className="suggestion" onClick={onPick}>
+    <div className="search-menu" id="top-search-suggestions" role="listbox">
+      {suggestions.map((item, index) => (
+        <a
+          key={item.url}
+          id={`top-search-suggestion-${index}`}
+          href={getHref(item)}
+          role="option"
+          aria-selected={index === activeIndex}
+          className={index === activeIndex ? 'suggestion active' : 'suggestion'}
+          onMouseEnter={() => onActiveIndexChange(index)}
+          onClick={onPick}
+        >
           <span className="suggestion-art">
             {item.poster_path ? (
               <img src={`https://image.tmdb.org/t/p/w92${item.poster_path}`} alt="" loading="lazy" decoding="async" />

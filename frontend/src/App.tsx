@@ -177,6 +177,7 @@ function App() {
         classicUiHref={classicUiHref}
         onSearchSubmit={onSearchSubmit}
         onSearchClear={onSearchClear}
+        onSuggestionNavigate={navigate}
         onSignIn={() => setSignInOpen(true)}
         onSignOut={async () => {
           try {

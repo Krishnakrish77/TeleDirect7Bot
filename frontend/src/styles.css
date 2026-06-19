@@ -194,7 +194,9 @@ img {
 }
 
 .suggestion:hover,
-.suggestion:focus-visible {
+.suggestion:focus-visible,
+.suggestion.active,
+.suggestion[aria-selected="true"] {
   background: rgba(249, 115, 22, 0.13);
   outline: none;
 }
@@ -1127,7 +1129,27 @@ img {
    large image grid promotes a huge composited layer and can produce scroll
    flicker/pixelation while the filtered grid is on screen. */
 .grid-refetching {
+  cursor: progress;
+}
+
+.grid-refetching .media-card-link,
+.grid-refetching .save-button,
+.grid-refetching .dismiss-button {
   pointer-events: none;
+}
+
+.grid-refresh-note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  margin: -0.35rem 0 0.85rem;
+  padding: 0 0.72rem;
+  border: 1px solid rgba(249, 115, 22, 0.24);
+  border-radius: 8px;
+  background: rgba(249, 115, 22, 0.12);
+  color: #fed7aa;
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .grid-section {
