@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteContinueEntry, fetchAudioTracks, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, setRating } from '../api';
 import type { PlayerState } from '../hooks/audio';
@@ -360,6 +360,37 @@ describe('WatchPage video player', () => {
     expect(titlebar.lastElementChild?.textContent).toContain('Classic player');
     expect(view.container.querySelector('.video-titlebar p:not(.eyebrow)')).toBeNull();
     expect(view.container.querySelector('.video-topbar-copy span')).toBeNull();
+  });
+
+  it('shows movie and series context below the video player', async () => {
+    renderWatchPage(makeVideo({
+      genres: ['Drama'],
+      metadata: {
+        ...makeVideo().metadata,
+        title: 'The Pilot',
+        year: 2026,
+        overview: 'A broader show overview',
+        genres: ['Sci-Fi'],
+        directors: [{ name: 'Jane Director', href: '/app/person/jane-director' }],
+        cast: [
+          { name: 'Lead Actor', href: '/app/person/lead-actor' },
+          { name: 'Supporting Actor', href: '/app/person/supporting-actor' },
+        ],
+        imdbId: 'tt1234567',
+        imdbHref: 'https://www.imdb.com/title/tt1234567/',
+      },
+    }));
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+
+    const info = within(screen.getByLabelText('Movie and series information'));
+    expect(screen.getByRole('heading', { name: 'The Pilot' })).toBeTruthy();
+    expect(info.getByText('Episode overview')).toBeTruthy();
+    expect(info.getByText('S01E01')).toBeTruthy();
+    expect(info.getByText('Drama')).toBeTruthy();
+    expect(info.getByRole('link', { name: 'Jane Director' }).getAttribute('href')).toBe('/app/person/jane-director');
+    expect(info.getByRole('link', { name: 'Lead Actor' }).getAttribute('href')).toBe('/app/person/lead-actor');
+    expect(info.getByRole('link', { name: 'IMDb' }).getAttribute('href')).toBe('https://www.imdb.com/title/tt1234567/');
   });
 
   it('shows uploaded subtitle status only inside the options menu', async () => {

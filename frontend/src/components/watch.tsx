@@ -18,6 +18,95 @@ function isWatchVideo(item: WatchResponse['item']): item is WatchVideo {
   return item.type === 'video' && 'directSrc' in item;
 }
 
+function uniqueParts(parts: Array<string | number | null | undefined>): string[] {
+  const seen = new Set<string>();
+  return parts
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .filter((part) => {
+      const key = part.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function VideoInfoSection({ video }: { video: WatchVideo }) {
+  const meta = video.metadata;
+  const genres = (video.genres.length ? video.genres : meta.genres).slice(0, 5);
+  const overview = (video.overview || meta.overview || '').trim();
+  const facts = uniqueParts([
+    video.episodeLabel,
+    video.year || meta.year,
+    video.durationLabel,
+    video.fileSizeLabel,
+    video.quality,
+  ]);
+  const directors = meta.directors.length
+    ? meta.directors
+    : meta.director
+      ? [{ name: meta.director, href: `/app/person/${encodeURIComponent(meta.director.toLowerCase().replace(/\s+/g, '-'))}` }]
+      : [];
+  const cast = meta.cast.slice(0, 6);
+  const infoTitle = meta.title && meta.title !== video.title ? meta.title : video.title;
+  const kindLabel = video.episodeLabel || video.subtitle.toLowerCase().includes('s0')
+    ? 'About this episode'
+    : 'About this title';
+  const sectionTitle = infoTitle === video.title ? kindLabel : infoTitle;
+
+  if (!overview && !facts.length && !genres.length && !directors.length && !cast.length && !meta.imdbHref) {
+    return null;
+  }
+
+  return (
+    <section className="video-info-section" aria-label="Movie and series information">
+      <div className="video-info-copy">
+        <p className="eyebrow">{kindLabel}</p>
+        <h2 dir="auto">{sectionTitle}</h2>
+        {overview && <p className="video-info-overview">{overview}</p>}
+        {(facts.length > 0 || genres.length > 0) && (
+          <div className="video-info-chips" aria-label="Media details">
+            {facts.map((fact) => <span key={fact}>{fact}</span>)}
+            {genres.map((genre) => <span key={genre}>{genre}</span>)}
+          </div>
+        )}
+      </div>
+      {(directors.length > 0 || cast.length > 0 || meta.imdbHref) && (
+        <dl className="video-info-credits">
+          {directors.length > 0 && (
+            <div>
+              <dt>{directors.length === 1 ? 'Director' : 'Directors'}</dt>
+              <dd>
+                {directors.slice(0, 3).map((person) => (
+                  <a key={person.href || person.name} href={person.href}>{person.name}</a>
+                ))}
+              </dd>
+            </div>
+          )}
+          {cast.length > 0 && (
+            <div>
+              <dt>Cast</dt>
+              <dd>
+                {cast.map((person) => (
+                  <a key={person.href || person.name} href={person.href}>{person.name}</a>
+                ))}
+              </dd>
+            </div>
+          )}
+          {meta.imdbHref && (
+            <div>
+              <dt>Links</dt>
+              <dd>
+                <a href={meta.imdbHref}>IMDb</a>
+              </dd>
+            </div>
+          )}
+        </dl>
+      )}
+    </section>
+  );
+}
+
 export function WatchPage({
   watchKey,
   player,
@@ -471,6 +560,10 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const showSkipIntro = hasIntro && currentTime >= video.introStart && currentTime < video.introEnd;
   const activeSubtitle = allSubtitles.find((track) => track.id === activeSub);
   const displaySubtitle = video.subtitle && video.subtitle !== video.quality ? video.subtitle : '';
+  const shellClass = [
+    controlsVisible || menuOpen ? 'video-shell controls-visible' : 'video-shell controls-hidden',
+    video.knownUnplayable ? 'video-unplayable' : '',
+  ].filter(Boolean).join(' ');
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -919,7 +1012,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       </section>
 
       <section
-        className={controlsVisible || menuOpen ? 'video-shell controls-visible' : 'video-shell controls-hidden'}
+        className={shellClass}
         ref={shellRef}
         onPointerMove={revealVideoControls}
         onFocusCapture={revealVideoControls}
@@ -1156,6 +1249,8 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           </div>
         )}
       </section>
+
+      <VideoInfoSection video={video} />
 
       {video.qualityVariants.length > 0 && (
         <section className="quality-section">
