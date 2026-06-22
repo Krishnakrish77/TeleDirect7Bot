@@ -30,6 +30,7 @@ from main.utils import wh_store
 from main.utils.codec_probe import _clean_music_tag
 from main.utils.hub_query import AlbumGroup, HubItem, MovieGroup, SeriesGroup
 from main.utils.human_readable import humanbytes
+from main.utils.playback import should_offer_hls_for_video
 from main.utils.user_auth import get_user
 from main.vars import Var
 
@@ -1434,6 +1435,12 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
             title = f"{title} - {item.episode_title}"
     absolute_stream = urljoin(Var.URL, f"{item.secure_hash}{item.message_id}")
     vlc_token = _vlc_tracking_token(request, item)
+    hls_src = (
+        f"/hls/{item.secure_hash}{item.message_id}/playlist.m3u8"
+        if should_offer_hls_for_video(file_name=item.file_name)
+        else ""
+    )
+    hls_base = f"/hls/{item.secure_hash}{item.message_id}" if hls_src else ""
 
     quality_variants: list[HubItem] = []
     if item.movie_key:
@@ -1487,9 +1494,9 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
         "classicHref": _watch_url(item),
         "appHref": _app_watch_url(item),
         "directSrc": _stream_url(item),
-        "hlsSrc": f"/hls/{item.secure_hash}{item.message_id}/playlist.m3u8",
+        "hlsSrc": hls_src,
         "subtitleBase": f"/sub/{item.secure_hash}{item.message_id}",
-        "audioTrackBase": f"/hls/{item.secure_hash}{item.message_id}",
+        "audioTrackBase": hls_base,
         "streamHref": _stream_url(item),
         "absoluteStreamHref": absolute_stream,
         "downloadHref": _stream_url(item),

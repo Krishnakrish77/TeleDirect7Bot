@@ -67,7 +67,11 @@ export function attachHls(
   if (canPlayNativeHls(video)) return Promise.resolve(null);
 
   return loadHlsLibrary().then((Hls) => {
-    if (!Hls?.isSupported()) return null;
+    if (!Hls?.isSupported()) {
+      if (fallbackSource) video.src = fallbackSource;
+      onFatalError();
+      return null;
+    }
     const hls = new Hls({
       enableWorker: true,
       lowLatencyMode: false,

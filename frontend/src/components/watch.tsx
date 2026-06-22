@@ -545,6 +545,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const hlsFailedRef = useRef(false);
   const controlsTimerRef = useRef<number | null>(null);
   const clickTimerRef = useRef<number | null>(null);
   const [autoplayNext, setAutoplayNext] = useState(() => {
@@ -554,10 +555,22 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       return true;
     }
   });
-  const gestureRef = useRef({ x: 0, y: 0, t: 0, moved: false, lastTap: 0 });
+  const gestureRef = useRef({
+    x: 0,
+    y: 0,
+    t: 0,
+    moved: false,
+    lastTap: 0,
+    active: false,
+    volumeStart: 1,
+    brightnessStart: 1,
+  });
 
-  const sourceSrc = sourceMode === 'hls' ? hlsUrl(video.hlsSrc, audioIndex) : video.directSrc;
+  const hasHls = Boolean(video.hlsSrc);
+  const sourceSrc = sourceMode === 'hls' && hasHls ? hlsUrl(video.hlsSrc, audioIndex) : video.directSrc;
   const allSubtitles = useMemo(() => [...subtitles, ...customSubtitles], [customSubtitles, subtitles]);
+  const defaultAudioTrack = useMemo(() => audioTracks.find((track) => track.index === 0), [audioTracks]);
+  const selectableAudioTracks = useMemo(() => audioTracks.filter((track) => track.index !== 0), [audioTracks]);
   const vlcHref = useMemo(
     () => buildVlcHref(video.absoluteStreamHref || video.streamHref || video.vlcHref.replace(/^vlc:\/\//, ''), video.vlcTrackingToken),
     [video.absoluteStreamHref, video.streamHref, video.vlcHref, video.vlcTrackingToken],
@@ -655,11 +668,23 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   }, []);
 
   useEffect(() => {
+    hlsFailedRef.current = false;
+  }, [video.hlsSrc, video.key]);
+
+  useEffect(() => {
+    if (!hasHls && sourceMode === 'hls') setSourceMode('direct');
+  }, [hasHls, sourceMode]);
+
+  useEffect(() => {
     const controller = new AbortController();
     fetchSubtitles(video.subtitleBase, controller.signal).then(setSubtitles).catch(() => setSubtitles([]));
-    fetchAudioTracks(video.audioTrackBase, controller.signal).then(setAudioTracks).catch(() => setAudioTracks([]));
+    if (hasHls) {
+      fetchAudioTracks(video.audioTrackBase, controller.signal).then(setAudioTracks).catch(() => setAudioTracks([]));
+    } else {
+      setAudioTracks([]);
+    }
     return () => controller.abort();
-  }, [video.audioTrackBase, video.subtitleBase]);
+  }, [hasHls, video.audioTrackBase, video.subtitleBase]);
 
   useEffect(() => {
     const restored = restoreCachedSubtitle(video.resumeKey);
@@ -680,9 +705,14 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     }
     const savedTime = el.currentTime || 0;
     let cancelled = false;
-    if (sourceMode === 'hls' && video.hlsSrc) {
+    if (sourceMode === 'hls' && hasHls) {
       attachHls(el, sourceSrc, video.directSrc, () => {
-        if (!cancelled) setError('HLS playback failed. Falling back to the direct stream.');
+        if (!cancelled) {
+          hlsFailedRef.current = true;
+          setSourceMode('direct');
+          setError('');
+          showToast('HLS failed. Using direct stream.');
+        }
       }).then((instance) => {
         if (cancelled) {
           instance?.destroy();
@@ -704,7 +734,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [sourceMode, sourceSrc, video.directSrc, video.hlsSrc, video.knownUnplayable]);
+  }, [hasHls, showToast, sourceMode, sourceSrc, video.directSrc, video.knownUnplayable]);
 
   useEffect(() => {
     try {
@@ -833,7 +863,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       if (video.nextEpisode) setShowNext(true);
     };
     const onError = () => {
-      if (sourceMode === 'direct' && video.hlsSrc) {
+      if (sourceMode === 'direct' && hasHls && !hlsFailedRef.current) {
         setSourceMode('hls');
         setError('');
       } else {
@@ -872,7 +902,61 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       window.removeEventListener('beforeunload', onBeforeUnload);
       saveResume(true);
     };
-  }, [setVideoMediaSessionPlaybackState, setVideoMediaSessionPosition, sourceMode, sourceSrc, video]);
+  }, [hasHls, setVideoMediaSessionPlaybackState, setVideoMediaSessionPosition, sourceMode, sourceSrc, video]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || video.knownUnplayable) return undefined;
+    let shown = false;
+    let everDecoded = false;
+    let stallTimer: number | null = null;
+    const clearStallTimer = () => {
+      if (stallTimer !== null) {
+        window.clearInterval(stallTimer);
+        stallTimer = null;
+      }
+    };
+    const markDecoded = () => {
+      if (el.videoWidth > 0) everDecoded = true;
+    };
+    const showDecodeError = () => {
+      if (shown || everDecoded) return;
+      shown = true;
+      setPlaying(false);
+      setVideoMediaSessionPlaybackState(false);
+      setError('Browser playback started but no video frames decoded. The classic player and VLC links are available.');
+    };
+    const onPlaying = () => {
+      clearStallTimer();
+      let stallTicks = 0;
+      let ticks = 0;
+      stallTimer = window.setInterval(() => {
+        if (shown || everDecoded) {
+          clearStallTimer();
+          return;
+        }
+        if (!el.paused && el.currentTime > 1 && el.videoWidth === 0) {
+          stallTicks += 1;
+          if (stallTicks >= 4) showDecodeError();
+        } else {
+          stallTicks = 0;
+        }
+        ticks += 1;
+        if (ticks > 15) clearStallTimer();
+      }, 1000);
+    };
+    ['loadedmetadata', 'loadeddata', 'playing', 'timeupdate'].forEach((eventName) => {
+      el.addEventListener(eventName, markDecoded);
+    });
+    el.addEventListener('playing', onPlaying);
+    return () => {
+      clearStallTimer();
+      ['loadedmetadata', 'loadeddata', 'playing', 'timeupdate'].forEach((eventName) => {
+        el.removeEventListener(eventName, markDecoded);
+      });
+      el.removeEventListener('playing', onPlaying);
+    };
+  }, [setVideoMediaSessionPlaybackState, sourceSrc, video.knownUnplayable]);
 
   const playNextEpisode = useCallback(() => {
     const href = video.nextEpisode?.playHref || video.nextEpisode?.classicHref;
@@ -975,6 +1059,19 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     }
     setActiveSub((current) => current ? '' : allSubtitles[0].id);
   }, [allSubtitles, showToast]);
+
+  const switchToAudioTrack = useCallback((index: number) => {
+    if (!hasHls) return;
+    hlsFailedRef.current = false;
+    setAudioIndex(index);
+    setSourceMode('hls');
+  }, [hasHls]);
+
+  const toggleSourceMode = useCallback(() => {
+    if (!hasHls) return;
+    if (sourceMode === 'direct') hlsFailedRef.current = false;
+    setSourceMode((current) => current === 'direct' ? 'hls' : 'direct');
+  }, [hasHls, sourceMode]);
 
   const shareVideo = useCallback(async () => {
     const data = { title: video.title, url: window.location.href };
@@ -1139,6 +1236,10 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
 
   const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     revealVideoControls();
+    if (isVideoChromeTarget(event.target)) {
+      gestureRef.current = { ...gestureRef.current, active: false };
+      return;
+    }
     const touch = event.touches[0];
     const now = Date.now();
     const last = gestureRef.current.lastTap;
@@ -1148,22 +1249,32 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       seekVideo((videoRef.current?.currentTime || 0) + delta);
       showToast(delta > 0 ? '+10s' : '-10s');
     }
-    gestureRef.current = { x: touch.clientX, y: touch.clientY, t: now, moved: false, lastTap: now };
+    gestureRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      t: now,
+      moved: false,
+      lastTap: now,
+      active: true,
+      volumeStart: volume,
+      brightnessStart: brightness,
+    };
   };
 
   const onTouchMove = (event: TouchEvent<HTMLDivElement>) => {
-    const touch = event.touches[0];
     const start = gestureRef.current;
+    if (!start.active) return;
+    const touch = event.touches[0];
     const dy = start.y - touch.clientY;
     const rect = event.currentTarget.getBoundingClientRect();
     if (Math.abs(dy) > 36) {
       start.moved = true;
       if (start.x > rect.left + rect.width / 2) {
-        const next = Math.max(0, Math.min(1, volume + dy / 500));
+        const next = Math.max(0, Math.min(1, start.volumeStart + dy / 500));
         changeVolume(next);
         showToast(`Volume ${Math.round(next * 100)}%`);
       } else {
-        const next = Math.max(0.45, Math.min(1, brightness + dy / 650));
+        const next = Math.max(0.45, Math.min(1, start.brightnessStart + dy / 650));
         setBrightness(next);
         showToast(`Brightness ${Math.round(next * 100)}%`);
       }
@@ -1171,8 +1282,11 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   };
 
   const onTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
-    const touch = event.changedTouches[0];
     const start = gestureRef.current;
+    if (!start.active) return;
+    start.active = false;
+    if (start.moved) return;
+    const touch = event.changedTouches[0];
     const dx = touch.clientX - start.x;
     if (Math.abs(dx) > 60) {
       const delta = Math.round(dx / 6);
@@ -1420,27 +1534,28 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
               <span>Load subtitles</span>
               <strong>SRT/VTT</strong>
             </button>
-            <label className="video-menu-row">
-              <span>Audio</span>
-              <select
-                value={audioIndex}
-                onChange={(event) => {
-                  setAudioIndex(Number(event.currentTarget.value));
-                  setSourceMode('hls');
-                }}
-                disabled={!audioTracks.length}
-                aria-label="Audio track"
-              >
-                <option value={0}>Default</option>
-                {audioTracks.map((track) => (
-                  <option key={track.index} value={track.index}>{track.label || track.language || `Track ${track.index + 1}`}</option>
-                ))}
-              </select>
-            </label>
-            <button type="button" className="video-menu-row" role="menuitem" onClick={() => setSourceMode(sourceMode === 'direct' ? 'hls' : 'direct')}>
-              <span>Source</span>
-              <strong>{sourceMode === 'direct' ? 'Direct' : 'HLS'}</strong>
-            </button>
+            {hasHls && (
+              <label className="video-menu-row">
+                <span>Audio</span>
+                <select
+                  value={audioIndex}
+                  onChange={(event) => switchToAudioTrack(Number(event.currentTarget.value))}
+                  disabled={!selectableAudioTracks.length}
+                  aria-label="Audio track"
+                >
+                  <option value={0}>{defaultAudioTrack?.label || defaultAudioTrack?.language || 'Default'}</option>
+                  {selectableAudioTracks.map((track) => (
+                    <option key={track.index} value={track.index}>{track.label || track.language || `Track ${track.index + 1}`}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {hasHls && (
+              <button type="button" className="video-menu-row" role="menuitem" onClick={toggleSourceMode}>
+                <span>Source</span>
+                <strong>{sourceMode === 'direct' ? 'Direct' : 'HLS'}</strong>
+              </button>
+            )}
             <label className="video-menu-row">
               <span>Speed</span>
               <select value={playbackRate} onChange={(event) => setPlaybackRate(Number(event.currentTarget.value))} aria-label="Playback speed">

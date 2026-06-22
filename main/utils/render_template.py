@@ -10,6 +10,7 @@ from main.bot import StreamBot
 from main.utils import media_index
 from main.utils.human_readable import humanbytes
 from main.utils.file_properties import get_file_ids
+from main.utils.playback import should_offer_hls_for_video
 from main.server.exceptions import InvalidHash
 
 
@@ -68,14 +69,6 @@ def _best_file_name(api_name: str, meta) -> str:
     return ""
 
 
-_BROWSER_NATIVE_CONTAINERS = {
-    "video/mp4",
-    "video/quicktime",   # .mov
-    "video/x-m4v",
-    "video/webm",
-}
-
-
 async def render_page(message_id, secure_hash,
                       vlc_user_id=None, vlc_token=None):
     file_data = await get_file_ids(StreamBot, int(Var.BIN_CHANNEL), int(message_id))
@@ -94,7 +87,7 @@ async def render_page(message_id, secure_hash,
         # and any DTS-monotonicity demuxer errors that can surface when
         # segmenting B-frame-heavy MP4s.
         hls_src = None
-        if mime_type == "video" and full_mime and full_mime not in _BROWSER_NATIVE_CONTAINERS:
+        if mime_type == "video" and should_offer_hls_for_video(full_mime=full_mime):
             hls_src = urllib.parse.urljoin(
                 Var.URL, f'hls/{secure_hash}{message_id}/playlist.m3u8',
             )

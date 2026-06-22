@@ -252,6 +252,7 @@ beforeEach(() => {
 afterEach(() => {
   Reflect.deleteProperty(navigator, 'mediaSession');
   Reflect.deleteProperty(window, 'MediaMetadata');
+  Reflect.deleteProperty(window, 'Hls');
 });
 
 describe('WatchPage video player', () => {
@@ -299,6 +300,93 @@ describe('WatchPage video player', () => {
 
     expect(await screen.findByText('Next episode')).toBeTruthy();
     expect(screen.getByText('Up next - 5s')).toBeTruthy();
+  });
+
+  it('hides HLS-only controls when the API omits an HLS source', async () => {
+    renderWatchPage(makeVideo({ hlsSrc: '', audioTrackBase: '' }));
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    expect(fetchAudioTracksMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText('More video options'));
+
+    expect(screen.queryByLabelText('Audio track')).toBeNull();
+    expect(screen.queryByText('Source')).toBeNull();
+  });
+
+  it('does not duplicate the default audio track option', async () => {
+    fetchAudioTracksMock.mockResolvedValue([
+      { index: 0, language: 'en', label: 'English', codec: 'aac' },
+      { index: 1, language: 'ta', label: 'Tamil', codec: 'aac' },
+    ]);
+    renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    fireEvent.click(screen.getByLabelText('More video options'));
+    const audioSelect = await screen.findByLabelText('Audio track');
+    const options = within(audioSelect).getAllByRole('option') as HTMLOptionElement[];
+
+    expect(options.map((option) => option.value)).toEqual(['0', '1']);
+    expect(options.map((option) => option.textContent)).toEqual(['English', 'Tamil']);
+  });
+
+  it('falls back to direct playback without showing the error overlay when HLS fails fatally', async () => {
+    class MockHls {
+      static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifest' };
+      static isSupported = () => true;
+      private handlers = new Map<string, (...args: unknown[]) => void>();
+
+      on(event: string, handler: (...args: unknown[]) => void) {
+        this.handlers.set(event, handler);
+      }
+
+      off() {}
+
+      loadSource() {
+        this.handlers.get(MockHls.Events.ERROR)?.(MockHls.Events.ERROR, { fatal: true });
+      }
+
+      attachMedia() {}
+
+      destroy() {}
+    }
+    Object.defineProperty(window, 'Hls', {
+      configurable: true,
+      value: MockHls,
+    });
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    fireEvent.click(screen.getByLabelText('More video options'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Source/i }));
+
+    await waitFor(() => expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/stream/video-key'));
+    expect(screen.queryByText('This video needs another player')).toBeNull();
+  });
+
+  it('shows a fallback overlay when playback advances without decoded video frames', async () => {
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    vi.useFakeTimers();
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'paused', {
+      configurable: true,
+      get: () => false,
+    });
+    Object.defineProperty(video, 'videoWidth', {
+      configurable: true,
+      get: () => 0,
+    });
+    video.currentTime = 2;
+
+    fireEvent.playing(video);
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+
+    expect(screen.getByText('This video needs another player')).toBeTruthy();
+    expect(screen.getByText(/no video frames decoded/i)).toBeTruthy();
   });
 
   it('falls back to native WebKit fullscreen when container fullscreen is rejected', async () => {
