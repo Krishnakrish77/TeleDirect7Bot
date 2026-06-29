@@ -1,4 +1,4 @@
-import { memo, useState, type MouseEvent } from 'react';
+import { memo, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, PlayIcon, XIcon } from '../icons';
 import type { HubCard, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
@@ -99,8 +99,9 @@ function MediaCardBase({
   const height = card.aspect === 'square' ? 512 : 513;
   const display = getMediaCardDisplay(card);
   const externalRating = isMusic ? '' : formatExternalRating(card.externalRating);
-  const rawProgress = card.watchKey ? getLocalCwPct(card.watchKey) : 0;
+  const rawProgress = useMemo(() => card.watchKey ? getLocalCwPct(card.watchKey) : 0, [card.watchKey]);
   const [markedWatched, setMarkedWatched] = useState(false);
+  useEffect(() => { setMarkedWatched(false); }, [card.watchKey]);
   const progressPct = markedWatched ? 0 : rawProgress;
   const [previewOpen, setPreviewOpen] = useState(false);
   const canPreview = Boolean(card.trailerKey) && !isMusic;
