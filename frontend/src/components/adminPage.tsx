@@ -1,12 +1,18 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { aiSuggestItem, clearAdminItemTmdb, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem } from '../api';
-
-// Module-level cache so AI models aren't re-fetched on every modal open.
-let _cachedAiModels: Array<{ id: string; name: string }> | null = null;
 import { ChartIcon, ChevronRightIcon, FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, XIcon } from '../icons';
 import { uiModeHref } from '../navigation';
 import type { AdminItem, AdminItemEditPayload, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
+import { tmdbImageUrl } from '../utils/tmdb';
+
+const AI_MODELS_TTL = 5 * 60 * 1000;
+let _cachedAiModels: { models: Array<{ id: string; name: string }>; ts: number } | null = null;
+
+function getCachedAiModels(): Array<{ id: string; name: string }> | null {
+  if (_cachedAiModels && Date.now() - _cachedAiModels.ts < AI_MODELS_TTL) return _cachedAiModels.models;
+  return null;
+}
 
 type Navigate = (href: string, replace?: boolean) => void;
 
@@ -608,7 +614,7 @@ function EditModal({
   const [aiFieldLoading, setAiFieldLoading] = useState('');
   const [aiReasoning, setAiReasoning] = useState('');
   const [aiError, setAiError] = useState('');
-  const [aiModels, setAiModels] = useState<Array<{ id: string; name: string }>>(_cachedAiModels || []);
+  const [aiModels, setAiModels] = useState<Array<{ id: string; name: string }>>(getCachedAiModels() || []);
   const [tmdbPreview, setTmdbPreview] = useState<TmdbPreviewResult | null>(null);
   const [tmdbPreviewLoading, setTmdbPreviewLoading] = useState(false);
   const [imdbLoading, setImdbLoading] = useState(false);
@@ -666,9 +672,9 @@ function EditModal({
   }, [messageId]);
 
   useEffect(() => {
-    if (!hasGemini || _cachedAiModels) return;
+    if (!hasGemini || getCachedAiModels()) return;
     fetchAiModels()
-      .then((models) => { _cachedAiModels = models; setAiModels(models); })
+      .then((models) => { _cachedAiModels = { models, ts: Date.now() }; setAiModels(models); })
       .catch(() => undefined);
   }, [hasGemini]);
 
@@ -1022,7 +1028,7 @@ function EditModal({
                 {tmdbPreview && !tmdbPreviewLoading && (
                   <div className="edit-tmdb-preview">
                     {tmdbPreview.poster_path && (
-                      <img src={`https://image.tmdb.org/t/p/w92${tmdbPreview.poster_path}`} alt="" />
+                      <img src={tmdbImageUrl(tmdbPreview.poster_path, 'w92')} alt="" />
                     )}
                     <div>
                       <p><strong>{tmdbPreview.title}</strong>{tmdbPreview.year ? ` (${tmdbPreview.year})` : ''}</p>

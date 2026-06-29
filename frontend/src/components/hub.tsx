@@ -3,6 +3,7 @@ import { clearAllContinue, dismissRecommendation, fetchContinueItems, fetchConti
 import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, PlayIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
+import { tmdbImageUrl } from '../utils/tmdb';
 import { MediaCard } from './mediaCard';
 
 export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
@@ -172,7 +173,7 @@ export function ContinueWatching() {
           const watchHref = entry.watch_url.replace(/^\/watch\//, '/app/watch/');
           return (
             <a key={entry.key} href={watchHref} className="continue-card">
-              <img src={entry.poster_path ? `https://image.tmdb.org/t/p/w342${entry.poster_path}` : entry.thumb_url} alt="" loading="lazy" decoding="async" />
+              <img src={entry.poster_path ? tmdbImageUrl(entry.poster_path, 'w342') : entry.thumb_url} alt="" loading="lazy" decoding="async" />
               <button
                 type="button"
                 className="forget-button"
