@@ -369,20 +369,7 @@ function App() {
       ) : (
         <WatchPage
           watchKey={watchKey}
-          player={audio.player}
-          playTrack={audio.playTrack}
-          playRelative={audio.playRelative}
-          playQueueIndex={audio.playQueueIndex}
-          addToQueue={audio.addToQueue}
-          shuffleQueue={audio.shuffleQueue}
-          togglePlayback={audio.togglePlayback}
-          seek={audio.seek}
-          setSpeed={audio.setSpeed}
-          cycleRepeatMode={audio.cycleRepeatMode}
-          setVolume={audio.setVolume}
-          toggleMute={audio.toggleMute}
-          confirmNext={audio.confirmNext}
-          cancelNext={audio.cancelNext}
+          audio={audio}
           onOpenQueue={() => setQueueOpen(true)}
           onAddToPlaylist={onAddToPlaylist}
           savedIds={saved}

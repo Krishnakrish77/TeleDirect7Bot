@@ -1,7 +1,7 @@
 import { DragEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { deleteContinueEntry, fetchAudioTracks, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
 import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
-import { formatClock, RESTORE_AUDIO_MEDIA_SESSION_EVENT, type PlayerState } from '../hooks/audio';
+import { formatClock, RESTORE_AUDIO_MEDIA_SESSION_EVENT, type AudioPlayerHandle, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { LyricsFlipCard, LyricsPanel } from './lyrics';
@@ -104,45 +104,22 @@ function VideoInfoSection({ video }: { video: WatchVideo }) {
 
 export function WatchPage({
   watchKey,
-  player,
-  playTrack,
-  playRelative,
-  playQueueIndex,
-  addToQueue,
-  shuffleQueue,
-  togglePlayback,
-  seek,
-  setSpeed,
-  cycleRepeatMode,
-  setVolume,
-  toggleMute,
-  confirmNext,
-  cancelNext,
+  audio,
   onOpenQueue,
   onAddToPlaylist,
   savedIds,
   onToggleSaved,
 }: {
   watchKey: string;
-  player: PlayerState;
-  playTrack: (track: WatchTrack, queue?: WatchTrack[]) => void;
-  playRelative: (delta: number) => void;
-  playQueueIndex: (index: number) => void;
-  addToQueue: (track: WatchTrack, playNext?: boolean) => void;
-  shuffleQueue: (queue: WatchTrack[]) => void;
-  togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
-  seek: (seconds: number) => void;
-  setSpeed: (speed: number) => void;
-  cycleRepeatMode: () => void;
-  setVolume: (volume: number) => void;
-  toggleMute: () => void;
-  confirmNext: () => void;
-  cancelNext: () => void;
+  audio: AudioPlayerHandle;
   onOpenQueue: () => void;
   onAddToPlaylist?: (track: WatchTrack) => void;
   savedIds?: Set<string>;
   onToggleSaved?: (itemId: string) => void;
 }) {
+  const { player, playTrack, playRelative, playQueueIndex, addToQueue, shuffleQueue,
+    togglePlayback, seek, setSpeed, cycleRepeatMode, setVolume, toggleMute,
+    confirmNext, cancelNext } = audio;
   const [data, setData] = useState<WatchResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

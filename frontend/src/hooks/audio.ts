@@ -957,3 +957,5 @@ export function useAudioPlayer() {
     dismissPlayer,
   };
 }
+
+export type AudioPlayerHandle = ReturnType<typeof useAudioPlayer>;
