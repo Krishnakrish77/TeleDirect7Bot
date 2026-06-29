@@ -959,6 +959,25 @@ img {
   scroll-snap-type: x proximity;
   scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.18) transparent;
+}
+.card-row::-webkit-scrollbar,
+.continue-row::-webkit-scrollbar {
+  height: 3px;
+}
+.card-row::-webkit-scrollbar-track,
+.continue-row::-webkit-scrollbar-track {
+  background: transparent;
+}
+.card-row::-webkit-scrollbar-thumb,
+.continue-row::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 99px;
+}
+.card-row::-webkit-scrollbar-thumb:hover,
+.continue-row::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.38);
 }
 
 .continue-row {
