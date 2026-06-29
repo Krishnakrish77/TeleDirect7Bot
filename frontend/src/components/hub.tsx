@@ -13,6 +13,7 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
     if (heroes.length < 2) return;
     let timer: number | undefined;
     const start = () => {
+      window.clearInterval(timer);
       timer = window.setInterval(() => {
         setActive((current) => (current + 1) % heroes.length);
       }, 7000);
