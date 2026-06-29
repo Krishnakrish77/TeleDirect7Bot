@@ -257,141 +257,147 @@ export function WatchPage({
           }}
         />
         <div className="audio-details">
-          <p className="eyebrow">{[track.format || 'Music', queue.length > 1 ? `${queue.length} tracks` : ''].filter(Boolean).join(' - ')}</p>
-          <h1 dir="auto">{track.title}</h1>
-          <p className="audio-subtitle">
-            {[track.artist, track.albumTitle].filter(Boolean).join(' - ')}
-          </p>
-          {track.qualityLabel && track.qualityLabel !== track.format && (
-            <p className="audio-quality-badge">{track.qualityLabel}</p>
-          )}
-          {track.overview && <p className="audio-overview">{track.overview}</p>}
-
-          <div className="watch-controls">
-            <button
-              type="button"
-              className="icon-button player-nav"
-              onClick={() => (current ? playRelative(-1) : data.prev && playTrack(data.prev, queue))}
-              disabled={!prevAvailable}
-              aria-label="Previous track"
-            >
-              <SkipBackIcon />
-            </button>
-            <button
-              type="button"
-              className="icon-button player-nav"
-              onClick={() => seekAudioBy(-10)}
-              disabled={!current}
-              aria-label="Rewind 10 seconds"
-            >
-              <span aria-hidden="true">-10</span>
-            </button>
-            <button
-              type="button"
-              className="player-play"
-              onClick={() => togglePlayback(track, queue)}
-              aria-label={playing ? 'Pause' : 'Play'}
-            >
-              {playing ? <PauseIcon /> : <PlayIcon />}
-            </button>
-            <button
-              type="button"
-              className="icon-button player-nav"
-              onClick={() => seekAudioBy(10)}
-              disabled={!current}
-              aria-label="Forward 10 seconds"
-            >
-              <span aria-hidden="true">+10</span>
-            </button>
-            <button
-              type="button"
-              className="icon-button player-nav"
-              onClick={() => (current ? playRelative(1) : data.next && playTrack(data.next, queue))}
-              disabled={!nextAvailable}
-              aria-label="Next track"
-            >
-              <SkipForwardIcon />
-            </button>
-            <button
-              type="button"
-              className="icon-button player-nav"
-              onClick={onOpenQueue}
-              aria-label="Open queue"
-            >
-              <ListIcon />
-            </button>
+          <div className="audio-hero-copy">
+            <p className="eyebrow">{[track.format || 'Music', queue.length > 1 ? `${queue.length} tracks` : ''].filter(Boolean).join(' - ')}</p>
+            <h1 dir="auto">{track.title}</h1>
+            <p className="audio-subtitle">
+              {[track.artist, track.albumTitle].filter(Boolean).join(' - ')}
+            </p>
+            {track.qualityLabel && track.qualityLabel !== track.format && (
+              <p className="audio-quality-badge">{track.qualityLabel}</p>
+            )}
+            {track.overview && <p className="audio-overview">{track.overview}</p>}
           </div>
 
-          <div className="watch-progress">
-            <span>{formatClock(currentTime)}</span>
-            <input
-              type="range"
-              min="0"
-              max={rangeMax}
-              value={Math.min(rangeMax, Math.round(currentTime))}
-              onChange={(event) => seek(Number(event.currentTarget.value))}
-              disabled={!current}
-              aria-label="Playback position"
-            />
-            <span>{formatClock(duration)}</span>
-          </div>
-          <div className="audio-actions">
-            {onToggleSaved && (
+          <div className="audio-player-surface">
+            <div className="watch-controls">
               <button
                 type="button"
-                className={savedIds?.has(track.itemId) ? 'secondary-action saved-action' : 'secondary-action'}
-                onClick={() => onToggleSaved(track.itemId)}
-                aria-label={savedIds?.has(track.itemId) ? 'Remove from liked songs' : 'Like this song'}
+                className="icon-button player-nav"
+                onClick={() => (current ? playRelative(-1) : data.prev && playTrack(data.prev, queue))}
+                disabled={!prevAvailable}
+                aria-label="Previous track"
               >
-                <HeartIcon filled={savedIds?.has(track.itemId)} />
-                <span>{savedIds?.has(track.itemId) ? 'Liked' : 'Like'}</span>
+                <SkipBackIcon />
               </button>
-            )}
-            <a className="secondary-action" href={track.streamHref} download>
-              <DownloadIcon />
-              <span>Download</span>
-            </a>
-            <button type="button" className="secondary-action" onClick={shareAudio}>
-              <ShareIcon />
-              <span>Share</span>
-            </button>
-            {track.albumHref && (
-              <a className="secondary-action" href={track.albumHref}>
+              <button
+                type="button"
+                className="icon-button player-nav"
+                onClick={() => seekAudioBy(-10)}
+                disabled={!current}
+                aria-label="Rewind 10 seconds"
+              >
+                <span aria-hidden="true">-10</span>
+              </button>
+              <button
+                type="button"
+                className="player-play"
+                onClick={() => togglePlayback(track, queue)}
+                aria-label={playing ? 'Pause' : 'Play'}
+              >
+                {playing ? <PauseIcon /> : <PlayIcon />}
+              </button>
+              <button
+                type="button"
+                className="icon-button player-nav"
+                onClick={() => seekAudioBy(10)}
+                disabled={!current}
+                aria-label="Forward 10 seconds"
+              >
+                <span aria-hidden="true">+10</span>
+              </button>
+              <button
+                type="button"
+                className="icon-button player-nav"
+                onClick={() => (current ? playRelative(1) : data.next && playTrack(data.next, queue))}
+                disabled={!nextAvailable}
+                aria-label="Next track"
+              >
+                <SkipForwardIcon />
+              </button>
+              <button
+                type="button"
+                className="icon-button player-nav"
+                onClick={onOpenQueue}
+                aria-label="Open queue"
+              >
                 <ListIcon />
-                <span>Album</span>
-              </a>
-            )}
-          </div>
-          <div className="player-settings audio-watch-settings" aria-label="Audio settings">
-            <div className="speed-controls" aria-label="Playback speed">
-              {[0.75, 1, 1.5, 2].map((speed) => (
-                <button
-                  key={speed}
-                  type="button"
-                  className={player.speed === speed ? 'active' : ''}
-                  onClick={() => setSpeed(speed)}
-                >
-                  {speed === 0.75 ? '3/4x' : `${speed}x`}
-                </button>
-              ))}
-            </div>
-            <button type="button" className="secondary-action compact-action" onClick={cycleRepeatMode}>
-              <span>Repeat {player.repeatMode}</span>
-            </button>
-            <label className="volume-control audio-volume-control">
-              <button type="button" className="icon-button" onClick={toggleMute} aria-label={player.muted ? 'Unmute audio' : 'Mute audio'}>
-                <VolumeIcon />
               </button>
+            </div>
+
+            <div className="watch-progress">
+              <span>{formatClock(currentTime)}</span>
               <input
                 type="range"
                 min="0"
-                max="1"
-                step="0.01"
-                value={player.muted ? 0 : player.volume}
-                onChange={(event) => setVolume(Number(event.currentTarget.value))}
-                aria-label="Audio volume"
+                max={rangeMax}
+                value={Math.min(rangeMax, Math.round(currentTime))}
+                onChange={(event) => seek(Number(event.currentTarget.value))}
+                disabled={!current}
+                aria-label="Playback position"
               />
-            </label>
+              <span>{formatClock(duration)}</span>
+            </div>
+            <div className="audio-toolbar">
+              <div className="audio-actions">
+                {onToggleSaved && (
+                  <button
+                    type="button"
+                    className={savedIds?.has(track.itemId) ? 'secondary-action saved-action' : 'secondary-action'}
+                    onClick={() => onToggleSaved(track.itemId)}
+                    aria-label={savedIds?.has(track.itemId) ? 'Remove from liked songs' : 'Like this song'}
+                  >
+                    <HeartIcon filled={savedIds?.has(track.itemId)} />
+                    <span>{savedIds?.has(track.itemId) ? 'Liked' : 'Like'}</span>
+                  </button>
+                )}
+                <a className="secondary-action" href={track.streamHref} download>
+                  <DownloadIcon />
+                  <span>Download</span>
+                </a>
+                <button type="button" className="secondary-action" onClick={shareAudio}>
+                  <ShareIcon />
+                  <span>Share</span>
+                </button>
+                {track.albumHref && (
+                  <a className="secondary-action" href={track.albumHref}>
+                    <ListIcon />
+                    <span>Album</span>
+                  </a>
+                )}
+              </div>
+              <div className="player-settings audio-watch-settings" aria-label="Audio settings">
+                <div className="speed-controls" aria-label="Playback speed">
+                  {[0.75, 1, 1.5, 2].map((speed) => (
+                    <button
+                      key={speed}
+                      type="button"
+                      className={player.speed === speed ? 'active' : ''}
+                      onClick={() => setSpeed(speed)}
+                    >
+                      {speed === 0.75 ? '3/4x' : `${speed}x`}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="secondary-action compact-action" onClick={cycleRepeatMode}>
+                  <span>Repeat {player.repeatMode}</span>
+                </button>
+                <label className="volume-control audio-volume-control">
+                  <button type="button" className="icon-button" onClick={toggleMute} aria-label={player.muted ? 'Unmute audio' : 'Mute audio'}>
+                    <VolumeIcon />
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={player.muted ? 0 : player.volume}
+                    onChange={(event) => setVolume(Number(event.currentTarget.value))}
+                    aria-label="Audio volume"
+                  />
+                </label>
+              </div>
+            </div>
           </div>
           {player.nextTrack && (
             <div className="next-track-card inline-next-track-card">
@@ -409,6 +415,7 @@ export function WatchPage({
           )}
           {player.queueToast && <p className="queue-toast" role="status">{player.queueToast}</p>}
           <LyricsPanel
+            className="audio-watch-lyrics"
             track={track}
             currentTime={currentTime}
             seek={(seconds) => {
