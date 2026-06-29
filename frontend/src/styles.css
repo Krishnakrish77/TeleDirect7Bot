@@ -3315,7 +3315,8 @@ img {
   bottom: 0;
   z-index: 70;
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) auto minmax(14rem, 0.75fr);
+  grid-template-areas: "track controls progress close";
+  grid-template-columns: minmax(12rem, 1fr) auto minmax(16rem, 0.85fr) auto;
   gap: 0.8rem;
   align-items: center;
   min-height: 72px;
@@ -3334,6 +3335,7 @@ img {
 }
 
 .mini-track {
+  grid-area: track;
   display: grid;
   grid-template-columns: 46px minmax(0, 1fr);
   gap: 0.65rem;
@@ -3366,10 +3368,13 @@ img {
 }
 
 .mini-controls {
+  grid-area: controls;
   justify-self: center;
 }
 
 .mini-dismiss {
+  grid-area: close;
+  justify-self: end;
   color: var(--muted);
 }
 
@@ -3384,7 +3389,14 @@ img {
 }
 
 .mini-progress {
+  grid-area: progress;
+  grid-template-columns: 4.25ch minmax(0, 1fr) 4.25ch;
+  justify-self: stretch;
   min-width: 0;
+}
+
+.mini-progress span:last-child {
+  text-align: right;
 }
 
 .mini-error {
@@ -6301,7 +6313,7 @@ select.edit-field-input {
 
   .mini-player {
     left: 0;
-    grid-template-columns: minmax(18rem, 1fr) auto minmax(20rem, 0.75fr);
+    grid-template-columns: minmax(18rem, 1fr) auto minmax(20rem, 0.75fr) auto;
     padding-inline: clamp(1.25rem, 2.4vw, 2.5rem);
   }
 
@@ -6442,12 +6454,15 @@ select.edit-field-input {
   }
 
   .mini-player {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "track controls close"
+      "progress progress progress";
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 0.75rem;
   }
 
   .mini-progress {
-    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .detail-hero {

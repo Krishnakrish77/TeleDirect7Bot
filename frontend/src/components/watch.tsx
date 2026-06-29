@@ -761,8 +761,15 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     // Re-apply when HLS.js or the browser adds/recreates tracks after a
     // source change — without this, tracks that appear after the initial
     // applyMode call stay in their default 'disabled' mode.
-    el.textTracks.addEventListener('addtrack', applyMode);
-    return () => el.textTracks.removeEventListener('addtrack', applyMode);
+    const textTracks = el.textTracks;
+    if (
+      typeof textTracks?.addEventListener !== 'function'
+      || typeof textTracks?.removeEventListener !== 'function'
+    ) {
+      return;
+    }
+    textTracks.addEventListener('addtrack', applyMode);
+    return () => textTracks.removeEventListener('addtrack', applyMode);
   }, [activeSub, allSubtitles, sourceSrc]);
 
   useEffect(() => {
