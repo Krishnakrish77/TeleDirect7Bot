@@ -20,6 +20,7 @@ from .wh_routes import routes as wh_routes
 from .ratings_routes import routes as ratings_routes
 from .dismiss_routes import routes as dismiss_routes
 from .stats_routes import routes as stats_routes
+from .iptv_routes import routes as iptv_routes
 from .spa_routes import routes as spa_routes
 
 
@@ -224,6 +225,7 @@ def web_server():
     web_app.add_routes(ratings_routes)
     web_app.add_routes(dismiss_routes)
     web_app.add_routes(stats_routes)
+    web_app.add_routes(iptv_routes)
     web_app.add_routes(spa_routes)
     web_app.add_routes(admin_routes)
     web_app.add_routes(hub_routes)

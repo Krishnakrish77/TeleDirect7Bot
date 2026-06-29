@@ -120,6 +120,46 @@ export interface HubResponse {
   emptyText: string;
 }
 
+export interface IptvChannel {
+  id: string;
+  name: string;
+  streamUrl: string;
+  logoUrl: string;
+  category: string;
+  enabled: boolean;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface IptvChannelPayload {
+  id?: string;
+  name: string;
+  streamUrl: string;
+  logoUrl: string;
+  category: string;
+  enabled: boolean;
+  sortOrder: number;
+}
+
+export interface LiveTvResponse {
+  channels: IptvChannel[];
+}
+
+export interface AdminIptvResponse {
+  channels: IptvChannel[];
+  mongoAvailable?: boolean;
+  parsed?: number;
+  imported?: number;
+  skipped?: number;
+}
+
+export interface AdminIptvActionResponse extends AdminIptvResponse {
+  ok: boolean;
+  channel?: IptvChannel;
+  error?: string;
+}
+
 export interface WatchTrack {
   key: string;
   itemId: string;

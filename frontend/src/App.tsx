@@ -3,7 +3,7 @@ import { deleteContinueEntry, dismissRecommendation, recordWatchHistory, signOut
 import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useArtColor } from './hooks/artColor';
-import { useAdmin, useDetail, useHub, useLikedSongs, useMe, usePlaylistDetail, usePlaylists, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
+import { useAdmin, useAdminIptv, useDetail, useHub, useLikedSongs, useLiveTv, useMe, usePlaylistDetail, usePlaylists, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
 import { Header, PrimaryNav, ScrollToTop, SignInModal } from './components/layout';
 import { FilterBar, FilterPage } from './components/filters';
 import { HeroStage, ContinueWatching, ShelfRow, GridView } from './components/hub';
@@ -17,6 +17,8 @@ import { StatsPage } from './components/statsPage';
 import { AdminPage } from './components/adminPage';
 import { AdminDashboard } from './components/adminDashboard';
 import { AdminTrendingGaps } from './components/adminTrendingGaps';
+import { AdminIptvPage } from './components/adminIptvPage';
+import { LiveTvPage } from './components/liveTvPage';
 import { MiniPlayer, NowPlayingSheet } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
 import { QueueDrawer } from './components/queueDrawer';
@@ -57,8 +59,10 @@ function App() {
   const likedSongs = useLikedSongs(user, route.kind === 'liked-songs');
   const playlistsPage = usePlaylists(user, route.kind === 'playlists');
   const playlistDetail = usePlaylistDetail(user, route.kind === 'playlist' ? route.playlistId : '', route.kind === 'playlist');
+  const liveTv = useLiveTv(route.kind === 'live-tv');
   const statsPage = useStats(user, route.kind === 'stats');
   const adminPage = useAdmin(user, route.kind === 'admin', location.search);
+  const adminIptv = useAdminIptv(user, route.kind === 'admin-iptv');
   const audio = useAudioPlayer();
   const audioRef = useRef(audio);
   audioRef.current = audio;
@@ -157,9 +161,11 @@ function App() {
     ? 'watchlist'
     : route.kind === 'liked-songs'
       ? 'liked-songs'
-      : isHubRoute
-        ? (activeView === 'movies' || activeView === 'series' || activeView === 'music' ? activeView : 'home')
-        : '';
+      : route.kind === 'live-tv'
+        ? 'live-tv'
+        : isHubRoute
+          ? (activeView === 'movies' || activeView === 'series' || activeView === 'music' ? activeView : 'home')
+          : '';
   const activeFilters = Boolean(params.q || params.tag || params.quality || params.genre || params.year || params.view);
   const expectedHubMode = activeFilters ? 'grid' : 'shelves';
   const canRenderHubData = data?.mode === expectedHubMode;
@@ -356,10 +362,26 @@ function App() {
           error={statsPage.error}
           onSignIn={() => setSignInOpen(true)}
         />
+      ) : route.kind === 'live-tv' ? (
+        <LiveTvPage
+          data={liveTv.data}
+          loading={liveTv.loading}
+          error={liveTv.error}
+        />
       ) : route.kind === 'admin-dashboard' ? (
         <AdminDashboard user={user} onSignIn={() => setSignInOpen(true)} />
       ) : route.kind === 'admin-trending' ? (
         <AdminTrendingGaps user={user} onSignIn={() => setSignInOpen(true)} />
+      ) : route.kind === 'admin-iptv' ? (
+        <AdminIptvPage
+          user={user}
+          data={adminIptv.data}
+          loading={adminIptv.loading}
+          error={adminIptv.error}
+          onSignIn={() => setSignInOpen(true)}
+          reload={adminIptv.reload}
+          setData={adminIptv.setData}
+        />
       ) : route.kind === 'admin' ? (
         <AdminPage
           user={user}

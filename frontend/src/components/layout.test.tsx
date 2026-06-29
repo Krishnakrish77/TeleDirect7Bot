@@ -79,6 +79,7 @@ describe('PrimaryNav', () => {
 
     expect(screen.queryByRole('link', { name: /Watchlist/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /Search/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /Live TV/i }).getAttribute('href')).toBe('/app/live-tv');
   });
 
   it('shows watchlist only for signed-in users', () => {

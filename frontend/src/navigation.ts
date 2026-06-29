@@ -57,6 +57,7 @@ export function localAppHref(href: string | null): string | null {
   if (href === '/liked-songs') return '/app/liked-songs';
   if (href === '/playlists') return '/app/playlists';
   if (/^\/playlist\/[a-f0-9]{32}$/.test(href)) return `/app${href}`;
+  if (href === '/live-tv') return '/app/live-tv';
   if (href === '/stats') return '/app/stats';
   if (href === '/admin') return '/app/admin';
   if (/^\/(movie|series|album|artist|person)\//.test(href)) return `/app${href}`;
@@ -74,6 +75,7 @@ export function classicPathForApp(pathname: string, search: string): string {
   if (pathname === '/app/playlists') return '/?view=music';
   const playlist = pathname.match(/^\/app\/playlist\/([a-f0-9]{32})/);
   if (playlist) return '/?view=music';
+  if (pathname === '/app/live-tv') return '/live-tv';
   if (pathname === '/app/stats') return `/stats${search}`;
   if (pathname === '/app/admin' || pathname.startsWith('/app/admin/')) return `/admin${search}`;
   if (pathname === '/app/filters') return `/${search}`;
@@ -150,8 +152,10 @@ export type AppRoute =
   | { kind: 'liked-songs' }
   | { kind: 'playlists' }
   | { kind: 'playlist'; playlistId: string }
+  | { kind: 'live-tv' }
   | { kind: 'stats' }
   | { kind: 'admin' }
+  | { kind: 'admin-iptv' }
   | { kind: 'admin-dashboard' }
   | { kind: 'admin-trending' }
   | { kind: 'watch'; key: string }
@@ -164,9 +168,11 @@ export function parseRoute(pathname: string): AppRoute {
   if (pathname === '/app/playlists') return { kind: 'playlists' };
   const playlist = pathname.match(/^\/app\/playlist\/([a-f0-9]{32})/);
   if (playlist) return { kind: 'playlist', playlistId: playlist[1] };
+  if (pathname === '/app/live-tv') return { kind: 'live-tv' };
   if (pathname === '/app/stats') return { kind: 'stats' };
   if (pathname === '/app/admin/dashboard') return { kind: 'admin-dashboard' };
   if (pathname === '/app/admin/trending') return { kind: 'admin-trending' };
+  if (pathname === '/app/admin/iptv') return { kind: 'admin-iptv' };
   if (pathname === '/app/admin') return { kind: 'admin' };
   const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);
   if (watch) return { kind: 'watch', key: decodeURIComponent(watch[1]) };

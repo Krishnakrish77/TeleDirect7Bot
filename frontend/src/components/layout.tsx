@@ -18,7 +18,7 @@ export function PrimaryNav({
 }: {
   user: User | null;
   activeView: ViewValue | '';
-  activeSection: 'home' | 'movies' | 'series' | 'music' | 'watchlist' | 'liked-songs' | '';
+  activeSection: 'home' | 'movies' | 'series' | 'music' | 'live-tv' | 'watchlist' | 'liked-songs' | '';
 }) {
   return (
     <nav className="primary-nav" aria-label="Primary">
@@ -37,6 +37,10 @@ export function PrimaryNav({
       <a className={activeView === 'music' && activeSection === 'music' ? 'active' : ''} href="/app?view=music">
         <MusicIcon />
         <span>Music</span>
+      </a>
+      <a className={activeSection === 'live-tv' ? 'active' : ''} href="/app/live-tv">
+        <TvIcon />
+        <span>Live TV</span>
       </a>
       {user && (
         <a className={activeSection === 'watchlist' ? 'active' : ''} href="/app/watchlist">

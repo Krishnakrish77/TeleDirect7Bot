@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { addWatchlist, fetchAdmin, fetchAppWatchlist, fetchDetail, fetchHub, fetchLikedSongs, fetchMe, fetchPlaylistDetail, fetchPlaylists, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
+import { addWatchlist, fetchAdmin, fetchAdminIptv, fetchAppWatchlist, fetchDetail, fetchHub, fetchLikedSongs, fetchLiveTvChannels, fetchMe, fetchPlaylistDetail, fetchPlaylists, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
 import type { AppRoute } from '../navigation';
-import type { AdminResponse, DetailResponse, HubParams, HubResponse, MeResponse, PlaylistDetailResponse, PlaylistsResponse, StatsResponse, Suggestion, User, WatchlistPageResponse } from '../types';
+import type { AdminIptvResponse, AdminResponse, DetailResponse, HubParams, HubResponse, LiveTvResponse, MeResponse, PlaylistDetailResponse, PlaylistsResponse, StatsResponse, Suggestion, User, WatchlistPageResponse } from '../types';
 
 function pageFamilyKey(params: HubParams): string {
   return hubParamsKey({ ...params, offset: 0 });
@@ -293,6 +293,38 @@ export function useStats(user: User | null | undefined, enabled = true) {
   return { data, loading, error };
 }
 
+export function useLiveTv(enabled = true) {
+  const [data, setData] = useState<LiveTvResponse | null>(null);
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState('');
+
+  const reload = useCallback(() => {
+    if (!enabled) {
+      setData(null);
+      setLoading(false);
+      setError('');
+      return undefined;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    fetchLiveTvChannels(controller.signal)
+      .then(setData)
+      .catch((err: Error) => {
+        if (controller.signal.aborted) return;
+        setError(err.message || 'Unable to load Live TV');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [enabled]);
+
+  useEffect(() => reload(), [reload]);
+
+  return { data, loading, error, reload, setData };
+}
+
 export function useAdmin(user: User | null | undefined, enabled = true, search = '') {
   const [data, setData] = useState<AdminResponse | null>(null);
   const [loading, setLoading] = useState(Boolean(user?.is_admin && enabled));
@@ -327,6 +359,38 @@ export function useAdmin(user: User | null | undefined, enabled = true, search =
   }, []);
 
   return { data, loading, error, reload, updateData };
+}
+
+export function useAdminIptv(user: User | null | undefined, enabled = true) {
+  const [data, setData] = useState<AdminIptvResponse | null>(null);
+  const [loading, setLoading] = useState(Boolean(user?.is_admin && enabled));
+  const [error, setError] = useState('');
+
+  const reload = useCallback(() => {
+    if (!enabled || !user?.is_admin) {
+      setData(null);
+      setLoading(false);
+      setError('');
+      return undefined;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    fetchAdminIptv(controller.signal)
+      .then(setData)
+      .catch((err: Error) => {
+        if (controller.signal.aborted) return;
+        setError(err.message || 'Unable to load IPTV channels');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [enabled, user?.is_admin]);
+
+  useEffect(() => reload(), [reload]);
+
+  return { data, loading, error, reload, setData };
 }
 
 export function useSuggestions(q: string) {

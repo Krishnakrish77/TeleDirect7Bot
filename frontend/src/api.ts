@@ -11,6 +11,10 @@ import type {
   DetailResponse,
   HubParams,
   HubResponse,
+  IptvChannelPayload,
+  LiveTvResponse,
+  AdminIptvResponse,
+  AdminIptvActionResponse,
   MeResponse,
   PlaylistDetailResponse,
   PlaylistsResponse,
@@ -46,7 +50,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: 'same-origin',
   });
   if (!response.ok) {
-    throw new ApiError(response.statusText || 'Request failed', response.status);
+    let message = response.statusText || 'Request failed';
+    const contentType = response.headers.get('content-type') || '';
+    try {
+      if (contentType.includes('application/json')) {
+        const data = await response.json() as { error?: string; message?: string };
+        message = data.error || data.message || message;
+      } else {
+        const text = await response.text();
+        message = text || message;
+      }
+    } catch (_) {
+      // Keep the status text when the error body is unreadable.
+    }
+    throw new ApiError(message, response.status);
   }
   return (await response.json()) as T;
 }
@@ -181,8 +198,47 @@ export async function fetchStats(signal?: AbortSignal): Promise<StatsResponse> {
   return request<StatsResponse>('/api/app/stats', { signal });
 }
 
+export async function fetchLiveTvChannels(signal?: AbortSignal): Promise<LiveTvResponse> {
+  return request<LiveTvResponse>('/api/live-tv/channels', { signal });
+}
+
 export async function fetchAdmin(search = '', signal?: AbortSignal): Promise<AdminResponse> {
   return request<AdminResponse>(`/api/app/admin${search}`, { signal });
+}
+
+export async function fetchAdminIptv(signal?: AbortSignal): Promise<AdminIptvResponse> {
+  return request<AdminIptvResponse>('/api/app/admin/iptv', { signal });
+}
+
+export async function saveAdminIptvChannel(payload: IptvChannelPayload): Promise<AdminIptvActionResponse> {
+  const id = payload.id?.trim();
+  return request<AdminIptvActionResponse>(id
+    ? `/api/app/admin/iptv/channel/${encodeURIComponent(id)}`
+    : '/api/app/admin/iptv/channel', {
+    method: id ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteAdminIptvChannel(id: string): Promise<AdminIptvActionResponse> {
+  return request<AdminIptvActionResponse>(`/api/app/admin/iptv/channel/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function importAdminIptvM3u(m3u: string): Promise<AdminIptvActionResponse> {
+  return request<AdminIptvActionResponse>('/api/app/admin/iptv/import-m3u', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ m3u }),
+  });
+}
+
+export async function testAdminIptvStream(streamUrl: string): Promise<{ ok: boolean; message: string }> {
+  return request('/api/app/admin/iptv/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ streamUrl }),
+  });
 }
 
 export async function fetchAdminStatus(signal?: AbortSignal): Promise<AdminStatusResponse> {

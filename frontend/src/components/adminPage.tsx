@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { aiSuggestItem, clearAdminItemTmdb, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem } from '../api';
-import { ChartIcon, ChevronRightIcon, FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, XIcon } from '../icons';
+import { ChartIcon, ChevronRightIcon, FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, XIcon } from '../icons';
 import { uiModeHref } from '../navigation';
 import type { AdminItem, AdminItemEditPayload, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -128,6 +128,10 @@ function AdminHero({ data }: { data: AdminResponse }) {
           <a className="secondary-action" href="/app/admin/trending">
             <ChevronRightIcon />
             <span>Trending gaps</span>
+          </a>
+          <a className="secondary-action" href="/app/admin/iptv">
+            <TvIcon />
+            <span>IPTV</span>
           </a>
         </div>
       </div>
