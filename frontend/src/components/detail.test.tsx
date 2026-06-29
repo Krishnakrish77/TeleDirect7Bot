@@ -135,6 +135,7 @@ function makeMovie(): MovieDetailResponse {
     directors: [{ name: 'Director', href: '/app/person/director' }],
     cast: [{ name: 'Actor', href: '/app/person/actor' }],
     imdbHref: '',
+    externalRating: { provider: 'TMDB', value: 8.1, label: '8.1', count: 2500 },
     trailerKey: '',
     playHref: '/app/watch/very-long-title',
     classicHref: '/watch/very-long-title',
@@ -301,6 +302,7 @@ describe('Movie detail', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'A Very Long Movie Title That Should Stay Readable On Mobile (2026)' })).toBeTruthy();
+    expect(screen.getByText('TMDB 8.1')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Play' }).getAttribute('href')).toBe('/app/watch/very-long-title');
     expect(screen.getByRole('link', { name: 'Classic player' }).getAttribute('href')).toBe('/watch/very-long-title');
     const versionLink = screen.getByRole('link', { name: 'Play Kalki 1080p' });

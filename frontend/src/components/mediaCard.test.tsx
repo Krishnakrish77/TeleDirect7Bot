@@ -87,6 +87,35 @@ describe('MediaCard', () => {
     expect(screen.getByText('Because you like Action')).toBeTruthy();
   });
 
+  it('shows external ratings for video cards', () => {
+    render(
+      <MediaCard
+        card={card({ externalRating: { provider: 'TMDB', value: 7.8, label: '7.8', count: 1200 } })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('External rating TMDB 7.8')).toBeTruthy();
+  });
+
+  it('does not show external ratings on music cards', () => {
+    render(
+      <MediaCard
+        card={card({
+          type: 'album',
+          mediaKind: 'audio',
+          aspect: 'square',
+          externalRating: { provider: 'TMDB', value: 7.8, label: '7.8', count: 1200 },
+        })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText(/External rating/i)).toBeNull();
+  });
+
   it('surfaces dismiss controls for recommendation cards', () => {
     const onDismiss = vi.fn();
     const media = card();

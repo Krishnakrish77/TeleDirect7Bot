@@ -223,12 +223,29 @@ def _item_common(item: HubItem) -> dict:
         "genres": item.tmdb_genres or [],
         "tags": item.tags or [],
         "overview": item.overview or item.description or "",
+        "tmdbId": item.tmdb_id,
+        "tmdbKind": item.tmdb_kind or "",
+        "imdbId": item.imdb_id or "",
+        "imdbHref": f"https://www.imdb.com/title/{item.imdb_id}/" if item.imdb_id else "",
+        "externalRating": _external_rating(item),
         "artist": artist,
         "albumTitle": _clean_music_tag(item.album_title or ""),
         "trailerKey": item.trailer_key or "",
         "href": _watch_url(item),
         "streamHref": _stream_url(item),
         "watchKey": f"{item.secure_hash}{item.message_id}",
+    }
+
+
+def _external_rating(item: HubItem) -> dict | None:
+    value = round(float(getattr(item, "tmdb_vote_average", 0) or 0), 1)
+    if value <= 0:
+        return None
+    return {
+        "provider": "TMDB",
+        "value": value,
+        "label": f"{value:.1f}",
+        "count": int(getattr(item, "tmdb_vote_count", 0) or 0),
     }
 
 
@@ -683,6 +700,7 @@ def _meta_payload(item: HubItem) -> dict:
         "cast": [_person_link(name) for name in (item.cast or [])[:12]],
         "imdbId": item.imdb_id or "",
         "imdbHref": f"https://www.imdb.com/title/{item.imdb_id}/" if item.imdb_id else "",
+        "externalRating": _external_rating(item),
         "trailerKey": item.trailer_key or "",
     }
 
@@ -844,6 +862,7 @@ def _movie_detail_payload(key: str) -> dict | None:
         "directors": meta["directors"],
         "cast": meta["cast"],
         "imdbHref": meta["imdbHref"],
+        "externalRating": meta["externalRating"],
         "trailerKey": meta["trailerKey"],
         "playHref": _play_url(preferred),
         "classicHref": _watch_url(preferred),
@@ -957,6 +976,7 @@ def _series_detail_payload(key: str, season_raw: str = "") -> dict | None:
         "directors": meta["directors"],
         "cast": meta["cast"],
         "imdbHref": meta["imdbHref"],
+        "externalRating": meta["externalRating"],
         "trailerKey": meta["trailerKey"],
         "playHref": first_entry["playHref"],
         "classicHref": first_entry["classicHref"],

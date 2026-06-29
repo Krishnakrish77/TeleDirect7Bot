@@ -1,6 +1,7 @@
 import { memo, useState, type MouseEvent } from 'react';
 import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, PlayIcon, XIcon } from '../icons';
 import type { HubCard, RecommendationMeta } from '../types';
+import { formatExternalRating } from '../utils/externalRating';
 
 function getLocalCwPct(watchKey: string): number {
   try {
@@ -101,6 +102,7 @@ function MediaCardBase({
   const width = card.aspect === 'square' ? 512 : 342;
   const height = card.aspect === 'square' ? 512 : 513;
   const display = getMediaCardDisplay(card);
+  const externalRating = isMusic ? '' : formatExternalRating(card.externalRating);
   const progressPct = card.watchKey ? getLocalCwPct(card.watchKey) : 0;
   const [previewOpen, setPreviewOpen] = useState(false);
   const canPreview = Boolean(card.trailerKey) && !isMusic;
@@ -140,6 +142,11 @@ function MediaCardBase({
           {progressPct > 0 && (
             <span className="card-progress" aria-hidden="true">
               <span style={{ width: `${progressPct}%` }} />
+            </span>
+          )}
+          {externalRating && (
+            <span className="card-rating-badge" aria-label={`External rating ${externalRating}`}>
+              {externalRating}
             </span>
           )}
         </span>

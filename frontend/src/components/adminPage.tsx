@@ -101,14 +101,15 @@ function AdminHero({ data }: { data: AdminResponse }) {
   const classicAdminHref = uiModeHref('classic', '/admin');
   return (
     <section className="admin-hero">
-      <div className="admin-hero-copy">
-        <p className="eyebrow">Operations</p>
-        <h1>Admin console</h1>
-        <p>
-          {data.catalogueSize.toLocaleString()} visible items.
-          {' '}
-          {data.filteredCount.toLocaleString()} in the current view.
-        </p>
+      <div className="admin-hero-top">
+        <div className="admin-hero-copy">
+          <h1>Admin console</h1>
+          <p>
+            Operations overview for {data.catalogueSize.toLocaleString()} visible items.
+            {' '}
+            {data.filteredCount.toLocaleString()} match the current view.
+          </p>
+        </div>
         <div className="admin-hero-actions">
           <a className="primary-action" href={classicAdminHref}>
             <ShieldIcon />
@@ -127,23 +128,27 @@ function AdminHero({ data }: { data: AdminResponse }) {
       <div className="admin-metrics" aria-label="Catalogue health">
         <span>
           <FilmIcon />
-          <strong>{data.stats.kinds.movies.toLocaleString()}</strong>
           <small>Movies</small>
+          <strong>{data.stats.kinds.movies.toLocaleString()}</strong>
+          <em>{data.stats.missing_poster.toLocaleString()} missing posters</em>
         </span>
         <span>
           <PlayIcon />
-          <strong>{data.stats.kinds.series_episodes.toLocaleString()}</strong>
           <small>Episodes</small>
+          <strong>{data.stats.kinds.series_episodes.toLocaleString()}</strong>
+          <em>{data.stats.missing_thumb.toLocaleString()} missing thumbs</em>
         </span>
         <span>
           <MusicIcon />
-          <strong>{data.stats.audio_count.toLocaleString()}</strong>
           <small>Tracks</small>
+          <strong>{data.stats.audio_count.toLocaleString()}</strong>
+          <em>{data.stats.album_count.toLocaleString()} albums</em>
         </span>
         <span className={issueCount ? 'warn' : ''}>
           <FilterIcon />
-          <strong>{issueCount.toLocaleString()}</strong>
           <small>Cleanup</small>
+          <strong>{issueCount.toLocaleString()}</strong>
+          <em>{issueCount ? 'needs review' : 'no open issues'}</em>
         </span>
       </div>
     </section>
@@ -274,7 +279,7 @@ function MaintenancePanel({
   ] as const;
 
   return (
-    <section className="admin-panel">
+    <section className="admin-panel admin-maintenance-panel">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Maintenance</p>
@@ -530,30 +535,31 @@ function AdminItemRow({
           aria-label={`Select ${item.title}`}
         />
       </label>
-      <a className="admin-row-art" href={item.watchHref}>
-        {item.posterUrl ? <img src={item.posterUrl} alt="" loading="lazy" decoding="async" /> : <FilmIcon />}
-      </a>
-      <div className="admin-row-copy">
-        <a href={item.watchHref}>
-          <strong>{item.title}</strong>
+      <div className="admin-row-title">
+        <a className="admin-row-art" href={item.watchHref}>
+          {item.posterUrl ? <img src={item.posterUrl} alt="" loading="lazy" decoding="async" /> : <FilmIcon />}
         </a>
-        <span>{itemSubtitle(item)}</span>
-        <small>{item.fileName || `bin:${item.messageId}`}</small>
-        <div className="admin-chip-row">
-          {item.year && <i>{item.year}</i>}
-          {item.quality && <i>{item.quality}</i>}
-          {item.mediaKind === 'audio' && <i>Music</i>}
-          {item.hidden && <i>Hidden</i>}
-          {item.duplicate && <i className="warn">Duplicate</i>}
-          {item.missingPoster && <i className="warn">No poster</i>}
-          {item.missingThumb && <i className="warn">No thumb</i>}
+        <div className="admin-row-copy">
+          <a href={item.watchHref}>
+            <strong>{item.title}</strong>
+          </a>
+          <span>{itemSubtitle(item)}</span>
+          <small>{item.fileName || `bin:${item.messageId}`}</small>
         </div>
       </div>
-      <div className="admin-row-meta">
-        <span>{item.fileSizeLabel || formatBytes(item.fileSize)}</span>
-        <span>bin:{item.messageId}</span>
-        <span>{item.tmdbId ? `TMDB ${item.tmdbId}` : 'No TMDB'}</span>
+      <div className="admin-chip-row admin-row-issues">
+        {item.year && <i>{item.year}</i>}
+        {item.quality && <i>{item.quality}</i>}
+        {item.mediaKind === 'audio' && <i>Music</i>}
+        {item.hidden && <i>Hidden</i>}
+        {item.duplicate && <i className="warn">Duplicate</i>}
+        {item.missingPoster && <i className="warn">No poster</i>}
+        {item.missingThumb && <i className="warn">No thumb</i>}
+        {!item.hidden && !item.duplicate && !item.missingPoster && !item.missingThumb && <i className="ok">No issues</i>}
       </div>
+      <span className="admin-row-size">{item.fileSizeLabel || formatBytes(item.fileSize)}</span>
+      <span className="admin-row-bin">bin:{item.messageId}</span>
+      <span className={item.tmdbId ? 'admin-row-tmdb matched' : 'admin-row-tmdb missing'}>{item.tmdbId ? `TMDB ${item.tmdbId}` : 'No TMDB'}</span>
       <div className="admin-row-actions">
         <button type="button" onClick={onToggleHidden}>{item.hidden ? 'Unhide' : 'Hide'}</button>
         <button type="button" onClick={onEdit}>Edit</button>
@@ -1078,22 +1084,38 @@ function AdminList({
         </label>
         <span>Page {data.page} of {data.totalPages}</span>
       </div>
+      <div className="admin-table-head" aria-hidden="true">
+        <span />
+        <span>Title</span>
+        <span>Details</span>
+        <span>File size</span>
+        <span>Bin ID</span>
+        <span>TMDB</span>
+        <span>Actions</span>
+      </div>
       <div className="admin-list">
-        {data.items.map((item) => (
-          <AdminItemRow
-            key={item.messageId}
-            item={item}
-            selected={selected.has(item.messageId)}
-            onSelect={(checked) => {
-              const next = new Set(selected);
-              if (checked) next.add(item.messageId);
-              else next.delete(item.messageId);
-              setSelected(next);
-            }}
-            onToggleHidden={() => onToggleHidden(item)}
-            onEdit={() => onEdit(item)}
-          />
-        ))}
+        {data.items.length ? (
+          data.items.map((item) => (
+            <AdminItemRow
+              key={item.messageId}
+              item={item}
+              selected={selected.has(item.messageId)}
+              onSelect={(checked) => {
+                const next = new Set(selected);
+                if (checked) next.add(item.messageId);
+                else next.delete(item.messageId);
+                setSelected(next);
+              }}
+              onToggleHidden={() => onToggleHidden(item)}
+              onEdit={() => onEdit(item)}
+            />
+          ))
+        ) : (
+          <div className="admin-empty-list">
+            <strong>No matching items</strong>
+            <span>Adjust the search or filters to widen the catalogue view.</span>
+          </div>
+        )}
       </div>
       <div className="admin-pagination">
         <button type="button" disabled={data.page <= 1} onClick={() => updateParam({ page: data.page - 1 })}>Prev</button>
@@ -1258,30 +1280,36 @@ export function AdminPage({
         <>
           <AdminHero data={data} />
           {notice && <p className="admin-notice" role="status">{notice}</p>}
-          <AdminStatusPanel status={data.status} />
-          <MaintenancePanel busy={busy} onRun={runMaintenanceAction} onMergeSeries={runMergeSeriesAction} />
-          <AdminControls
-            data={data}
-            query={query}
-            setQuery={setQuery}
-            onSubmit={submitSearch}
-            updateParam={updateParam}
-          />
-          <BulkBar
-            selected={selected}
-            data={data}
-            busy={busy}
-            setSelected={setSelected}
-            onAction={runSelectedAction}
-          />
-          <AdminList
-            data={data}
-            selected={selected}
-            setSelected={setSelected}
-            onToggleHidden={runSingleHiddenAction}
-            onEdit={(item) => setEditingId(item.messageId)}
-            updateParam={updateParam}
-          />
+          <div className="admin-console-layout">
+            <section className="admin-workspace" aria-label="Catalogue worklist">
+              <AdminControls
+                data={data}
+                query={query}
+                setQuery={setQuery}
+                onSubmit={submitSearch}
+                updateParam={updateParam}
+              />
+              <BulkBar
+                selected={selected}
+                data={data}
+                busy={busy}
+                setSelected={setSelected}
+                onAction={runSelectedAction}
+              />
+              <AdminList
+                data={data}
+                selected={selected}
+                setSelected={setSelected}
+                onToggleHidden={runSingleHiddenAction}
+                onEdit={(item) => setEditingId(item.messageId)}
+                updateParam={updateParam}
+              />
+            </section>
+            <aside className="admin-ops-rail" aria-label="Operations">
+              <AdminStatusPanel status={data.status} />
+              <MaintenancePanel busy={busy} onRun={runMaintenanceAction} onMergeSeries={runMergeSeriesAction} />
+            </aside>
+          </div>
         </>
       )}
       {editingId !== null && (

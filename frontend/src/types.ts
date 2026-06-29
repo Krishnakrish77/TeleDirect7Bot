@@ -35,6 +35,13 @@ export interface HubFilters {
 export type CardType = 'item' | 'track' | 'series' | 'movie' | 'album' | 'hero';
 export type CardAspect = 'poster' | 'square';
 
+export interface ExternalRating {
+  provider: string;
+  value: number;
+  label: string;
+  count: number;
+}
+
 export interface HubCard {
   type: CardType;
   itemId: string;
@@ -55,6 +62,11 @@ export interface HubCard {
   genres: string[];
   tags: string[];
   overview: string;
+  tmdbId?: number | null;
+  tmdbKind?: 'movie' | 'tv' | '';
+  imdbId?: string;
+  imdbHref?: string;
+  externalRating?: ExternalRating | null;
   artist: string;
   albumTitle: string;
   trailerKey: string;
@@ -249,6 +261,7 @@ export interface WatchVideo {
     cast: PersonLink[];
     imdbId: string;
     imdbHref: string;
+    externalRating?: ExternalRating | null;
     trailerKey: string;
   };
 }
@@ -587,6 +600,7 @@ export interface MovieDetailResponse {
   directors: PersonLink[];
   cast: PersonLink[];
   imdbHref: string;
+  externalRating?: ExternalRating | null;
   trailerKey: string;
   playHref: string;
   classicHref: string;
@@ -621,6 +635,7 @@ export interface SeriesDetailResponse {
   directors: PersonLink[];
   cast: PersonLink[];
   imdbHref: string;
+  externalRating?: ExternalRating | null;
   trailerKey: string;
   playHref: string;
   classicHref: string;

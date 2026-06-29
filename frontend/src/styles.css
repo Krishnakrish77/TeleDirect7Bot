@@ -1046,6 +1046,29 @@ img {
   z-index: 3;
 }
 
+.card-rating-badge {
+  position: absolute;
+  left: 0.45rem;
+  bottom: 0.45rem;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  max-width: calc(100% - 0.9rem);
+  min-height: 24px;
+  padding: 0.22rem 0.48rem;
+  overflow: hidden;
+  border: 1px solid rgba(251, 191, 36, 0.32);
+  border-radius: 6px;
+  background: rgba(5, 6, 7, 0.74);
+  color: #fde68a;
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(6px);
+}
+
 .save-button,
 .dismiss-button,
 .forget-button {
@@ -7626,5 +7649,730 @@ select.edit-field-input {
     border-bottom: 0;
     border-left: 0;
     border-radius: 8px 8px 0 0;
+  }
+}
+
+/* ── Admin console revamp ───────────────────────────────────────────────── */
+.admin-main {
+  gap: 0.95rem;
+  width: min(100%, 1760px);
+  padding: clamp(1rem, 2vw, 1.5rem);
+}
+
+.admin-main > .section-heading {
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(17, 19, 23, 0.74);
+}
+
+.admin-main > .section-heading h1 {
+  margin: 0.1rem 0 0;
+  font-size: clamp(1.6rem, 2.8vw, 2.25rem);
+  line-height: 1.04;
+}
+
+.admin-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: stretch;
+  padding: clamp(0.9rem, 1.6vw, 1.1rem);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(17, 19, 23, 0.72);
+}
+
+.admin-hero-top {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-hero-copy {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.admin-hero h1 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(1.65rem, 3vw, 2.4rem);
+  line-height: 1.03;
+}
+
+.admin-hero p:not(.eyebrow) {
+  max-width: 56rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.admin-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
+.admin-hero-actions .primary-action,
+.admin-hero-actions .secondary-action {
+  min-height: 38px;
+  padding: 0 0.8rem;
+  font-size: 0.82rem;
+}
+
+.admin-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.admin-metrics span {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 0.12rem 0.65rem;
+  min-height: 0;
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(8, 9, 11, 0.44);
+}
+
+.admin-metrics svg {
+  grid-row: 1 / 3;
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  color: var(--teal);
+}
+
+.admin-metrics small {
+  min-width: 0;
+  overflow: hidden;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-metrics strong {
+  grid-row: 1 / 3;
+  grid-column: 3;
+  align-self: center;
+  color: #fff;
+  font-size: clamp(1.25rem, 2vw, 1.75rem);
+  line-height: 1;
+  text-align: right;
+}
+
+.admin-metrics em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-metrics .warn svg,
+.admin-metrics .warn em,
+.admin-metrics .warn small {
+  color: #fdba74;
+}
+
+.admin-console-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  gap: 0.95rem;
+  align-items: start;
+}
+
+.admin-workspace,
+.admin-ops-rail {
+  display: grid;
+  gap: 0.8rem;
+  min-width: 0;
+}
+
+.admin-ops-rail {
+  position: sticky;
+  top: calc(128px + 0.8rem);
+}
+
+.admin-panel,
+.admin-controls,
+.admin-bulk,
+.admin-notice {
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(17, 19, 23, 0.74);
+}
+
+.admin-panel,
+.admin-controls,
+.admin-bulk {
+  padding: 0.85rem;
+}
+
+.admin-notice {
+  padding: 0.7rem 0.85rem;
+  border-color: rgba(20, 184, 166, 0.24);
+  background: rgba(20, 184, 166, 0.08);
+  color: #99f6e4;
+  font-size: 0.86rem;
+}
+
+.admin-ops-rail .section-heading {
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.admin-ops-rail .section-heading h2 {
+  font-size: 1rem;
+}
+
+.admin-ops-rail .section-heading > span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.admin-ops-rail .admin-status-grid,
+.admin-ops-rail .maintenance-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.admin-status-grid {
+  gap: 0.5rem;
+}
+
+.admin-status-grid article {
+  min-height: 64px;
+  padding: 0.65rem;
+  border-color: rgba(148, 163, 184, 0.12);
+  background: rgba(8, 9, 11, 0.4);
+}
+
+.admin-status-grid article.running {
+  border-color: rgba(20, 184, 166, 0.4);
+  background: rgba(20, 184, 166, 0.07);
+}
+
+.admin-status-grid small {
+  white-space: normal;
+}
+
+.maintenance-grid {
+  gap: 0.5rem;
+}
+
+.admin-ops-rail .maintenance-grid button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 44px;
+  padding: 0.55rem 0.65rem;
+}
+
+.admin-ops-rail .maintenance-grid button::after {
+  content: 'Run';
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.admin-ops-rail .maintenance-grid button strong,
+.admin-ops-rail .maintenance-grid button span {
+  min-width: 0;
+}
+
+.admin-ops-rail .maintenance-grid button span {
+  grid-column: 1;
+  white-space: normal;
+}
+
+.admin-ops-rail .maintenance-grid .danger-zone::after {
+  color: #fb7185;
+}
+
+.admin-merge-tool {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+}
+
+.admin-merge-form {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.admin-controls {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.admin-search {
+  min-height: 42px;
+  border-color: rgba(148, 163, 184, 0.16);
+  background: rgba(8, 9, 11, 0.45);
+}
+
+.admin-search input {
+  height: 40px;
+}
+
+.admin-search button {
+  min-height: 32px;
+  background: var(--brand);
+  color: #fff;
+}
+
+.admin-select-row {
+  gap: 0.5rem;
+}
+
+.admin-select-row label {
+  min-width: 8.8rem;
+}
+
+.admin-select-row label > span,
+.admin-bulk-fields label > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.admin-select-row select,
+.admin-bulk-fields input,
+.admin-bulk-fields select {
+  min-height: 36px;
+  border-color: rgba(148, 163, 184, 0.16);
+  background: rgba(8, 9, 11, 0.48);
+}
+
+.admin-bulk {
+  top: calc(128px + 0.8rem);
+  gap: 0.65rem;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
+}
+
+.admin-bulk.idle {
+  min-height: 44px;
+  align-content: center;
+  padding-block: 0.65rem;
+}
+
+.admin-bulk-actions,
+.admin-bulk-fields {
+  gap: 0.45rem;
+}
+
+.admin-bulk-fields label {
+  min-width: min(100%, 16rem);
+}
+
+.admin-list-panel {
+  --admin-row-grid: 34px minmax(280px, 1.6fr) minmax(160px, 0.9fr) minmax(78px, 0.34fr) minmax(94px, 0.42fr) minmax(98px, 0.44fr) minmax(96px, 0.38fr);
+  padding: 0;
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(17, 19, 23, 0.68);
+}
+
+.admin-list-head,
+.admin-pagination {
+  padding: 0.65rem 0.85rem;
+  border-color: rgba(148, 163, 184, 0.12);
+  font-size: 0.78rem;
+}
+
+.admin-table-head {
+  display: grid;
+  grid-template-columns: var(--admin-row-grid);
+  gap: 0.65rem;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 0.85rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(8, 9, 11, 0.46);
+  color: var(--dim);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.admin-row {
+  display: grid;
+  grid-template-columns: var(--admin-row-grid);
+  gap: 0.65rem;
+  align-items: center;
+  min-height: 64px;
+  padding: 0.55rem 0.85rem;
+  border-bottom-color: rgba(148, 163, 184, 0.11);
+}
+
+.admin-row:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.admin-row-title {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.admin-row-art {
+  width: 44px;
+  height: 58px;
+  border-color: rgba(148, 163, 184, 0.14);
+}
+
+.admin-row-copy {
+  gap: 0.18rem;
+}
+
+.admin-row-copy strong {
+  font-size: 0.9rem;
+}
+
+.admin-row-copy span,
+.admin-row-copy small {
+  font-size: 0.74rem;
+}
+
+.admin-row-issues {
+  gap: 0.28rem;
+}
+
+.admin-chip-row i {
+  min-height: 21px;
+  padding: 0.16rem 0.42rem;
+  border-color: rgba(148, 163, 184, 0.13);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.66rem;
+}
+
+.admin-chip-row .ok {
+  border-color: rgba(20, 184, 166, 0.24);
+  color: #5eead4;
+}
+
+.admin-row-size,
+.admin-row-bin,
+.admin-row-tmdb {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-row-size {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-row-tmdb.matched {
+  color: #5eead4;
+}
+
+.admin-row-tmdb.missing {
+  color: #fdba74;
+}
+
+.admin-row-actions {
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+}
+
+.admin-row-actions button,
+.admin-row-actions a {
+  min-height: 32px;
+  padding: 0 0.42rem;
+  border-color: transparent;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 0.76rem;
+}
+
+.admin-empty-list {
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+  padding: 2.2rem 1rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.admin-empty-list strong {
+  color: #fff;
+}
+
+.edit-modal-panel {
+  width: min(100%, 48rem);
+  border-radius: 8px;
+  background: #0d0f12;
+}
+
+.edit-modal-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem;
+}
+
+.edit-modal-header h2 {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.edit-ai-row {
+  min-width: 0;
+}
+
+.edit-modal-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.edit-modal-body > .edit-field:not(.edit-field-narrow),
+.edit-section,
+.edit-error,
+.edit-ai-reasoning {
+  grid-column: 1 / -1;
+}
+
+.edit-section {
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.admin-ops-rail .admin-status-panel,
+.admin-ops-rail .admin-maintenance-panel {
+  padding: 0.75rem;
+}
+
+.admin-ops-rail .admin-status-grid {
+  gap: 0.42rem;
+}
+
+.admin-ops-rail .admin-status-grid article {
+  gap: 0.42rem;
+  min-height: 52px;
+  padding: 0.5rem 0.6rem;
+}
+
+.admin-ops-rail .admin-status-grid strong {
+  font-size: 0.9rem;
+}
+
+.admin-ops-rail .admin-status-grid small {
+  margin-top: 0.08rem;
+  font-size: 0.7rem;
+}
+
+.admin-ops-rail .admin-status-grid i {
+  height: 4px;
+}
+
+.admin-bulk-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+}
+
+.admin-bulk-fields label {
+  min-width: 0;
+}
+
+.admin-bulk-fields label:nth-child(3) {
+  grid-template-columns: minmax(0, 1fr) 4rem auto;
+}
+
+.admin-bulk-fields label:nth-child(4) {
+  grid-template-columns: minmax(0, 1fr) 4.8rem auto;
+}
+
+@media (max-width: 1180px) {
+  .admin-console-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-ops-rail {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-ops-rail .admin-status-grid,
+  .admin-ops-rail .maintenance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 920px) {
+  .admin-hero-top,
+  .admin-controls {
+    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-hero-top {
+    display: grid;
+  }
+
+  .admin-hero-actions {
+    justify-content: start;
+  }
+
+  .admin-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-ops-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-ops-rail .admin-status-grid,
+  .admin-ops-rail .maintenance-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-select-row {
+    justify-content: start;
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-main {
+    padding: 0.85rem 0.85rem max(5.75rem, calc(4.8rem + env(safe-area-inset-bottom, 0px)));
+  }
+
+  .admin-main > .section-heading,
+  .admin-hero,
+  .admin-panel,
+  .admin-controls,
+  .admin-bulk {
+    padding: 0.75rem;
+  }
+
+  .admin-hero h1,
+  .admin-main > .section-heading h1 {
+    font-size: clamp(1.75rem, 9vw, 2.25rem);
+  }
+
+  .admin-hero-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-select-row,
+  .admin-bulk-actions,
+  .admin-bulk-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-bulk {
+    position: static;
+  }
+
+  .admin-table-head {
+    display: none;
+  }
+
+  .admin-list-panel {
+    --admin-row-grid: 28px minmax(0, 1fr);
+  }
+
+  .admin-row {
+    grid-template-columns: var(--admin-row-grid);
+    align-items: start;
+    gap: 0.5rem;
+    min-height: 0;
+    padding: 0.65rem;
+  }
+
+  .admin-row-title,
+  .admin-row-issues,
+  .admin-row-size,
+  .admin-row-bin,
+  .admin-row-tmdb,
+  .admin-row-actions {
+    grid-column: 2;
+  }
+
+  .admin-row-title {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .admin-row-art {
+    width: 48px;
+    height: 64px;
+  }
+
+  .admin-row-size,
+  .admin-row-bin,
+  .admin-row-tmdb {
+    text-align: left;
+  }
+
+  .admin-row-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-row-actions button,
+  .admin-row-actions a {
+    width: 100%;
+    border-color: rgba(148, 163, 184, 0.14);
+    background: rgba(8, 9, 11, 0.38);
+  }
+
+  .admin-pagination {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .admin-pagination button:last-child {
+    justify-self: end;
+  }
+
+  .edit-modal-panel {
+    width: min(100%, calc(100vw - 1rem));
+    max-height: calc(100svh - 1rem);
+  }
+
+  .edit-modal-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .edit-ai-row {
+    grid-column: 1 / -1;
+  }
+
+  .edit-modal-body {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

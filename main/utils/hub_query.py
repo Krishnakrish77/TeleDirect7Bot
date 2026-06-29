@@ -55,6 +55,9 @@ class HubItem:
     tmdb_id: Optional[int] = None
     tmdb_kind: str = ""            # "movie" or "tv", "" if unenriched
     imdb_id: str = ""
+    tmdb_vote_average: float = 0.0
+    tmdb_vote_count: int = 0
+    tmdb_vote_checked_at: float = 0.0
     poster_path: str = ""          # TMDB relative path; prepend image base
     backdrop_path: str = ""
     overview: str = ""

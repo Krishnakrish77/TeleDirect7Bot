@@ -236,6 +236,9 @@ def _to_serializable(item: HubItem) -> dict:
         "tmdb_id": item.tmdb_id,
         "tmdb_kind": item.tmdb_kind,
         "imdb_id": item.imdb_id,
+        "tmdb_vote_average": item.tmdb_vote_average,
+        "tmdb_vote_count": item.tmdb_vote_count,
+        "tmdb_vote_checked_at": item.tmdb_vote_checked_at,
         "poster_path": item.poster_path,
         "backdrop_path": item.backdrop_path,
         "overview": item.overview,
@@ -300,6 +303,9 @@ def _from_serializable(d: dict) -> HubItem:
         tmdb_id=d.get("tmdb_id"),
         tmdb_kind=d.get("tmdb_kind", "") or "",
         imdb_id=d.get("imdb_id", "") or "",
+        tmdb_vote_average=float(d.get("tmdb_vote_average") or 0),
+        tmdb_vote_count=int(d.get("tmdb_vote_count") or 0),
+        tmdb_vote_checked_at=float(d.get("tmdb_vote_checked_at") or 0),
         poster_path=d.get("poster_path", "") or "",
         backdrop_path=d.get("backdrop_path", "") or "",
         overview=d.get("overview", "") or "",
@@ -1032,6 +1038,9 @@ async def seed(bot, channel_id: int) -> None:
                         # fields.  Carry forward only the fields that are
                         # never in captions.
                         new_item.tmdb_genres  = existing.tmdb_genres  or new_item.tmdb_genres
+                        new_item.tmdb_vote_average = existing.tmdb_vote_average or new_item.tmdb_vote_average
+                        new_item.tmdb_vote_count = existing.tmdb_vote_count or new_item.tmdb_vote_count
+                        new_item.tmdb_vote_checked_at = existing.tmdb_vote_checked_at or new_item.tmdb_vote_checked_at
                         new_item.subtitles    = existing.subtitles    or new_item.subtitles
                         new_item.enriched_at  = existing.enriched_at  or new_item.enriched_at
                         caption_lost_enrichment = existing.tmdb_id and not new_item.tmdb_id
@@ -1041,6 +1050,9 @@ async def seed(bot, channel_id: int) -> None:
                             new_item.tmdb_id      = existing.tmdb_id
                             new_item.tmdb_kind    = existing.tmdb_kind
                             new_item.imdb_id      = existing.imdb_id      or new_item.imdb_id
+                            new_item.tmdb_vote_average = existing.tmdb_vote_average or new_item.tmdb_vote_average
+                            new_item.tmdb_vote_count = existing.tmdb_vote_count or new_item.tmdb_vote_count
+                            new_item.tmdb_vote_checked_at = existing.tmdb_vote_checked_at or new_item.tmdb_vote_checked_at
                             new_item.poster_path  = existing.poster_path  or new_item.poster_path
                             new_item.backdrop_path= existing.backdrop_path or new_item.backdrop_path
                             if existing.tmdb_kind == "tv":
@@ -2361,6 +2373,9 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
     item.tmdb_id = hit.tmdb_id
     item.tmdb_kind = hit.kind
     item.imdb_id = hit.imdb_id
+    item.tmdb_vote_average = float(hit.vote_average or 0)
+    item.tmdb_vote_count = int(hit.vote_count or 0)
+    item.tmdb_vote_checked_at = time.time()
     item.poster_path = hit.poster_path
     item.backdrop_path = hit.backdrop_path
     item.overview = hit.overview
@@ -2553,10 +2568,14 @@ async def enrich_one(message_id: int, bot=None) -> bool:
         await _store_upsert(item)
         return False
 
-    if item.series_key and item.series_title:
+    hit = None
+    if item.tmdb_id and item.tmdb_kind in ("movie", "tv"):
+        hit = await tmdb.fetch_by_id(item.tmdb_id, item.tmdb_kind)
+
+    if hit is None and item.series_key and item.series_title:
         # TV: lookup the show. series_title is already clean per series.parse.
         hit = await tmdb.lookup_series(item.series_title, item.year)
-    else:
+    elif hit is None:
         # Movie: try the cleaned title forms. The earlier 'drop leading
         # words' fallback would generate generic variants like "The
         # Movie" / "Movie" which TMDB happily matched against random
@@ -2621,6 +2640,9 @@ async def enrich_one(message_id: int, bot=None) -> bool:
                 sib.tmdb_id      = item.tmdb_id
                 sib.tmdb_kind    = item.tmdb_kind
                 sib.imdb_id      = item.imdb_id      or sib.imdb_id
+                sib.tmdb_vote_average = item.tmdb_vote_average
+                sib.tmdb_vote_count = item.tmdb_vote_count
+                sib.tmdb_vote_checked_at = item.tmdb_vote_checked_at
                 sib.poster_path  = item.poster_path  or sib.poster_path
                 sib.backdrop_path= item.backdrop_path or sib.backdrop_path
                 sib.tmdb_genres  = list(item.tmdb_genres) or sib.tmdb_genres
@@ -2706,6 +2728,9 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
                 sib.tmdb_id      = item.tmdb_id
                 sib.tmdb_kind    = item.tmdb_kind
                 sib.imdb_id      = item.imdb_id      or sib.imdb_id
+                sib.tmdb_vote_average = item.tmdb_vote_average
+                sib.tmdb_vote_count = item.tmdb_vote_count
+                sib.tmdb_vote_checked_at = item.tmdb_vote_checked_at
                 sib.poster_path  = item.poster_path  or sib.poster_path
                 sib.backdrop_path= item.backdrop_path or sib.backdrop_path
                 sib.tmdb_genres  = list(item.tmdb_genres) or sib.tmdb_genres
@@ -2918,6 +2943,10 @@ async def clear_audio_tmdb_mismatches() -> int:
             if item.media_kind == "audio" and item.tmdb_id:
                 item.tmdb_id = None
                 item.tmdb_kind = ""
+                item.imdb_id = ""
+                item.tmdb_vote_average = 0.0
+                item.tmdb_vote_count = 0
+                item.tmdb_vote_checked_at = 0.0
                 item.poster_path = ""
                 item.backdrop_path = ""
                 item.overview = ""
@@ -2930,6 +2959,14 @@ async def clear_audio_tmdb_mismatches() -> int:
     for item in to_upsert:
         await _store_upsert(item)
     return fixed
+
+
+def _needs_tmdb_vote_backfill(item: HubItem) -> bool:
+    return bool(
+        item.tmdb_id
+        and item.tmdb_kind in ("movie", "tv")
+        and not getattr(item, "tmdb_vote_checked_at", 0)
+    )
 
 
 async def enrich_all(bot=None, force: bool = False) -> dict:
@@ -2949,7 +2986,8 @@ async def enrich_all(bot=None, force: bool = False) -> dict:
 
     targets = [
         mid for mid, it in _items.items()
-        if it.media_kind != "audio" and (force or not it.tmdb_id)
+        if it.media_kind != "audio"
+        and (force or not it.tmdb_id or _needs_tmdb_vote_backfill(it))
     ]
 
     _enrich_state.update(

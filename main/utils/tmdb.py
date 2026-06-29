@@ -51,6 +51,8 @@ class TMDBHit:
     backdrop_path: str
     genres: List[str]
     imdb_id: str
+    vote_average: float = 0.0
+    vote_count: int = 0
     cast: List[str] = field(default_factory=list)
     director: str = ""
 
@@ -94,6 +96,20 @@ def _parse_year(date_str: Optional[str]) -> Optional[int]:
         return None
     m = re.match(r"(\d{4})", date_str)
     return int(m.group(1)) if m else None
+
+
+def _float_or_zero(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _int_or_zero(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def is_configured() -> bool:
@@ -227,6 +243,8 @@ async def _lookup(kind: str, title: str, year: Optional[int]) -> Optional[TMDBHi
                 backdrop_path=details.get("backdrop_path") or "",
                 genres=[g["name"] for g in (details.get("genres") or []) if g.get("name")],
                 imdb_id=(details.get("external_ids") or {}).get("imdb_id") or "",
+                vote_average=_float_or_zero(details.get("vote_average", match.get("vote_average"))),
+                vote_count=_int_or_zero(details.get("vote_count", match.get("vote_count"))),
                 cast=_cast,
                 director=_director,
             )
@@ -301,6 +319,8 @@ async def fetch_by_id(tmdb_id: int, kind: str) -> Optional[TMDBHit]:
             backdrop_path=details.get("backdrop_path") or "",
             genres=[g["name"] for g in (details.get("genres") or []) if g.get("name")],
             imdb_id=(details.get("external_ids") or {}).get("imdb_id") or "",
+            vote_average=_float_or_zero(details.get("vote_average")),
+            vote_count=_int_or_zero(details.get("vote_count")),
             cast=_cast,
             director=_director,
         )

@@ -6,6 +6,7 @@ import type { AppRoute } from '../navigation';
 import { LoadingRows, ErrorPanel } from './common';
 import { MediaCard } from './mediaCard';
 import { RatingControls } from './rating';
+import { formatExternalRating } from '../utils/externalRating';
 
 export function DetailPage({
   route,
@@ -91,6 +92,7 @@ function DetailHero({
   posterUrl,
   backdropUrl,
   genres = [],
+  externalRating,
   playHref,
   classicHref,
   imdbHref,
@@ -105,6 +107,7 @@ function DetailHero({
   posterUrl: string;
   backdropUrl: string;
   genres?: string[];
+  externalRating?: MovieDetailResponse['externalRating'];
   playHref?: string;
   classicHref?: string;
   imdbHref?: string;
@@ -114,6 +117,8 @@ function DetailHero({
   children?: ReactNode;
 }) {
   const [trailerOpen, setTrailerOpen] = useState(false);
+  const ratingLabel = formatExternalRating(externalRating);
+  const metaItems = [...(ratingLabel ? [ratingLabel] : []), ...genres.slice(0, 5)];
   return (
     <section className="detail-hero">
       {(backdropUrl || posterUrl) && <img className="detail-backdrop" src={backdropUrl || posterUrl} alt="" decoding="async" fetchPriority="high" />}
@@ -125,9 +130,9 @@ function DetailHero({
         <p className="eyebrow">{subtitle}</p>
         <h1 dir="auto">{title}</h1>
         {overview && <p className="detail-overview">{overview}</p>}
-        {genres.length > 0 && (
+        {metaItems.length > 0 && (
           <div className="hero-meta">
-            {genres.slice(0, 5).map((genre) => <span key={genre}>{genre}</span>)}
+            {metaItems.map((item) => <span key={item}>{item}</span>)}
           </div>
         )}
         <div className="hero-actions">
@@ -206,6 +211,7 @@ function MovieDetail({
         posterUrl={data.posterUrl}
         backdropUrl={data.backdropUrl}
         genres={data.genres}
+        externalRating={data.externalRating}
         playHref={data.playHref}
         classicHref={data.classicHref}
         imdbHref={data.imdbHref}
@@ -267,6 +273,7 @@ function SeriesDetail({
         posterUrl={data.posterUrl}
         backdropUrl={data.backdropUrl}
         genres={data.genres}
+        externalRating={data.externalRating}
         playHref={data.playHref}
         classicHref={data.classicHref}
         imdbHref={data.imdbHref}
