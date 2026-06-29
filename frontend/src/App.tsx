@@ -60,6 +60,8 @@ function App() {
   const statsPage = useStats(user, route.kind === 'stats');
   const adminPage = useAdmin(user, route.kind === 'admin', location.search);
   const audio = useAudioPlayer();
+  const audioRef = useRef(audio);
+  audioRef.current = audio;
   const artColor = useArtColor(audio.player.track?.posterUrl || audio.player.track?.thumbUrl);
 
   useEffect(() => {
@@ -92,6 +94,23 @@ function App() {
       if (event.key === '/' || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k')) {
         event.preventDefault();
         searchRef.current?.focus();
+        return;
+      }
+      // Audio shortcuts — skipped when the video player shell is in the DOM (it owns these keys)
+      const a = audioRef.current;
+      if (!a.player.track || document.querySelector('.video-shell')) return;
+      if (event.key === ' ' || event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        a.togglePlayback();
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        a.seek(Math.max(0, a.player.currentTime - 10));
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        a.seek(a.player.currentTime + 10);
+      } else if (event.key.toLowerCase() === 'm') {
+        event.preventDefault();
+        a.toggleMute();
       }
     };
     window.addEventListener('keydown', onKey);

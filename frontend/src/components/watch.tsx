@@ -9,6 +9,7 @@ import { RatingControls } from './rating';
 import { attachHls, hlsUrl } from '../media/hls';
 import { restoreCachedSubtitle, revokeSubtitleTrack, subtitleFileToTrack } from '../media/subtitles';
 import { buildVlcHref } from '../media/vlc';
+import { uniqueMetadataParts } from '../utils/metadata';
 
 function isWatchTrack(item: WatchResponse['item']): item is WatchTrack {
   return item.type === 'track' && 'appHref' in item;
@@ -18,18 +19,6 @@ function isWatchVideo(item: WatchResponse['item']): item is WatchVideo {
   return item.type === 'video' && 'directSrc' in item;
 }
 
-function uniqueParts(parts: Array<string | number | null | undefined>): string[] {
-  const seen = new Set<string>();
-  return parts
-    .map((part) => String(part || '').trim())
-    .filter(Boolean)
-    .filter((part) => {
-      const key = part.toLocaleLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
 
 function isVideoChromeTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest(
@@ -41,7 +30,7 @@ function VideoInfoSection({ video }: { video: WatchVideo }) {
   const meta = video.metadata;
   const genres = (video.genres.length ? video.genres : meta.genres).slice(0, 5);
   const overview = (video.overview || meta.overview || '').trim();
-  const facts = uniqueParts([
+  const facts = uniqueMetadataParts([
     video.episodeLabel,
     video.year || meta.year,
     video.durationLabel,

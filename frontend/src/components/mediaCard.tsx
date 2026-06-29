@@ -2,6 +2,7 @@ import { memo, useState, type MouseEvent } from 'react';
 import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, PlayIcon, XIcon } from '../icons';
 import type { HubCard, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
+import { joinMetadata } from '../utils/metadata';
 
 function getLocalCwPct(watchKey: string): number {
   try {
@@ -25,19 +26,6 @@ interface MediaCardProps {
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
 }
 
-function joinMetadata(parts: Array<string | number | null | undefined>) {
-  const seen = new Set<string>();
-  return parts
-    .map((part) => String(part || '').trim())
-    .filter(Boolean)
-    .filter((part) => {
-      const key = part.toLocaleLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .join(' - ');
-}
 
 function countLabel(count: number | undefined, singular: string) {
   if (!count) return '';
