@@ -4,17 +4,23 @@ import type { HubCard, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
 import { joinMetadata } from '../utils/metadata';
 
+// Parsed once per render cycle; microtask clears it so the next render reads fresh.
+let _cwCache: Record<string, { pos: number; dur: number }> | null = null;
+
+function readCwMap(): Record<string, { pos: number; dur: number }> {
+  if (_cwCache !== null) return _cwCache;
+  let parsed: Record<string, { pos: number; dur: number }> = {};
+  try { parsed = JSON.parse(localStorage.getItem('td:cw') || '{}') || {}; } catch { /* ignore */ }
+  _cwCache = parsed;
+  queueMicrotask(() => { _cwCache = null; });
+  return parsed;
+}
+
 function getLocalCwPct(watchKey: string): number {
-  try {
-    const raw = localStorage.getItem('td:cw');
-    if (!raw) return 0;
-    const entry = JSON.parse(raw)[watchKey];
-    if (!entry?.dur || !entry?.pos) return 0;
-    const pct = entry.pos / entry.dur;
-    return pct > 0.02 && pct < 0.95 ? Math.max(4, Math.min(96, Math.round(pct * 100))) : 0;
-  } catch {
-    return 0;
-  }
+  const entry = readCwMap()[watchKey];
+  if (!entry?.dur || !entry?.pos) return 0;
+  const pct = entry.pos / entry.dur;
+  return pct > 0.02 && pct < 0.95 ? Math.max(4, Math.min(96, Math.round(pct * 100))) : 0;
 }
 
 interface MediaCardProps {
