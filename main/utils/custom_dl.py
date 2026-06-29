@@ -7,7 +7,7 @@ from typing import Dict, Tuple, Union
 from main.bot import work_loads
 from pyrogram import Client, utils, raw
 from pyrogram.crypto import aes
-from pyrogram.errors import CDNFileHashMismatch, VolumeLocNotFound
+from pyrogram.errors import CDNFileHashMismatch, Timeout as TelegramTimeout, VolumeLocNotFound
 from .file_properties import get_file_ids
 from pyrogram.session import Session
 from main.server.exceptions import FIleNotFound
@@ -158,7 +158,7 @@ class ByteStreamer:
                         ),
                     )
                     break
-                except (TimeoutError, asyncio.TimeoutError) as e:
+                except (TimeoutError, asyncio.TimeoutError, TelegramTimeout) as e:
                     last_err = e
                     logging.warning(
                         "yield_file: initial GetFile timeout (attempt %d/3) "
@@ -263,7 +263,7 @@ class ByteStreamer:
                     "(media_id=%s offset=%d)",
                     type(r).__name__, getattr(file_id, "media_id", "?"), offset,
                 )
-        except (TimeoutError, asyncio.TimeoutError, AttributeError) as e:
+        except (TimeoutError, asyncio.TimeoutError, TelegramTimeout, AttributeError) as e:
             # Mid-stream timeout or detached session — log so we can tell this
             # apart from "everything finished" in the diagnostics.
             logging.warning(
