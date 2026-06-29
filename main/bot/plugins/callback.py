@@ -37,7 +37,7 @@ async def cb_data(bot, update: CallbackQuery):
     elif update.data == "msgdeleted":
         await update.answer(random.choice(deldbtnmsg), show_alert=True)
     else:
-        usr_cmd = update.data.split("_")
+        usr_cmd = update.data.split("_", 2)
         if len(usr_cmd) < 3:
             await update.answer()
             return
