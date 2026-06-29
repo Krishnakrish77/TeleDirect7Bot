@@ -11,7 +11,7 @@ from main.utils import media_index
 from main.utils.human_readable import humanbytes
 from main.utils.file_properties import get_file_ids
 from main.utils.playback import should_offer_hls_for_video
-from main.server.exceptions import InvalidHash
+from main.exceptions import InvalidHash
 
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"

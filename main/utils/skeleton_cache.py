@@ -21,13 +21,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
 import os
 import time
 from collections import OrderedDict
 from typing import Dict, Optional
 
-from main.utils import chunk_size as _chunk_size, offset_fix as _offset_fix
+from .stream_range import chunk_size as _chunk_size, offset_fix as _offset_fix
 
 
 HEAD_SIZE = 2 * 1024 * 1024     # 2 MB  — covers MKV header + SeekHead

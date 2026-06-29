@@ -1,4 +1,3 @@
-import math
 import time
 import asyncio
 import logging
@@ -9,21 +8,14 @@ from pyrogram import Client, utils, raw
 from pyrogram.crypto import aes
 from pyrogram.errors import CDNFileHashMismatch, Timeout as TelegramTimeout, VolumeLocNotFound
 from .file_properties import get_file_ids
+from .stream_range import chunk_size, offset_fix
 from pyrogram.session import Session
-from main.server.exceptions import FIleNotFound
+from main.exceptions import FIleNotFound
 from pyrogram.file_id import FileId, FileType, ThumbnailSource
 
 
 CACHE_TTL = 30 * 60
 CACHE_SWEEP_INTERVAL = 5 * 60
-
-
-def chunk_size(length):
-    return 2 ** max(min(math.ceil(math.log2(length / 1024)), 10), 2) * 1024
-
-
-def offset_fix(offset, chunksize):
-    return offset - offset % chunksize
 
 
 class ByteStreamer:

@@ -3,7 +3,7 @@ from typing import Any, Optional
 from pyrogram.types import Message
 from pyrogram.file_id import FileId
 from pyrogram.raw.types.messages import Messages
-from main.server.exceptions import FIleNotFound
+from main.exceptions import FIleNotFound
 from main.utils.Translation import Language
 from main.utils.human_readable import humanbytes
 from main.vars import Var
