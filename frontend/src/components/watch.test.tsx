@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteContinueEntry, fetchAudioTracks, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, setRating } from '../api';
-import type { PlayerState } from '../hooks/audio';
+import type { AudioPlayerHandle, PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, VideoChoice, WatchTrack, WatchVideo } from '../types';
 import { WatchPage } from './watch';
 
@@ -24,6 +24,31 @@ const saveContinueEntryMock = vi.mocked(saveContinueEntry);
 const deleteContinueEntryMock = vi.mocked(deleteContinueEntry);
 const recordWatchHistoryMock = vi.mocked(recordWatchHistory);
 const setRatingMock = vi.mocked(setRating);
+
+function makeAudio(playerOverrides?: Partial<PlayerState>): AudioPlayerHandle {
+  return {
+    audioRef: { current: null },
+    bufferRef: { current: null },
+    player: { ...emptyPlayer, ...playerOverrides },
+    playTrack: vi.fn(),
+    playRelative: vi.fn(),
+    playQueueIndex: vi.fn(),
+    addToQueue: vi.fn(),
+    removeFromQueue: vi.fn(),
+    clearQueue: vi.fn(),
+    moveQueueItem: vi.fn(),
+    shuffleQueue: vi.fn(),
+    togglePlayback: vi.fn(),
+    seek: vi.fn(),
+    setSpeed: vi.fn(),
+    cycleRepeatMode: vi.fn(),
+    setVolume: vi.fn(),
+    toggleMute: vi.fn(),
+    confirmNext: vi.fn(),
+    cancelNext: vi.fn(),
+    dismissPlayer: vi.fn(),
+  };
+}
 
 const emptyPlayer: PlayerState = {
   track: null,
@@ -184,20 +209,7 @@ function renderWatchPage(video = makeVideo()) {
   return render(
     <WatchPage
       watchKey={video.key}
-      player={emptyPlayer}
-      playTrack={vi.fn()}
-      playRelative={vi.fn()}
-      playQueueIndex={vi.fn()}
-      addToQueue={vi.fn()}
-      shuffleQueue={vi.fn()}
-      togglePlayback={vi.fn()}
-      seek={vi.fn()}
-      setSpeed={vi.fn()}
-      cycleRepeatMode={vi.fn()}
-      setVolume={vi.fn()}
-      toggleMute={vi.fn()}
-      confirmNext={vi.fn()}
-      cancelNext={vi.fn()}
+      audio={makeAudio()}
       onOpenQueue={vi.fn()}
     />,
   );
@@ -733,20 +745,7 @@ describe('WatchPage audio player', () => {
     render(
       <WatchPage
         watchKey={track.key}
-        player={{ ...emptyPlayer, track, queue: [track], queueIndex: 0 }}
-        playTrack={vi.fn()}
-        playRelative={vi.fn()}
-        playQueueIndex={vi.fn()}
-        addToQueue={vi.fn()}
-        shuffleQueue={vi.fn()}
-        togglePlayback={vi.fn()}
-        seek={vi.fn()}
-        setSpeed={vi.fn()}
-        cycleRepeatMode={vi.fn()}
-        setVolume={vi.fn()}
-        toggleMute={vi.fn()}
-        confirmNext={vi.fn()}
-        cancelNext={vi.fn()}
+        audio={makeAudio({ track, queue: [track], queueIndex: 0 })}
         onOpenQueue={onOpenQueue}
       />,
     );
