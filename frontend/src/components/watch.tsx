@@ -749,11 +749,20 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
-    // Match by TextTrack.id (= <track id="..."> attribute) so HLS.js-injected
-    // tracks at unpredictable indices don't shift our selection.
-    Array.from(el.textTracks || []).forEach((track) => {
-      track.mode = track.id === activeSub ? 'showing' : 'disabled';
-    });
+    // Match by TextTrack.id so HLS.js-injected tracks at unpredictable
+    // indices don't interfere. Guard activeSub so empty-id HLS tracks
+    // are never accidentally shown when no sub is selected.
+    const applyMode = () => {
+      Array.from(el.textTracks || []).forEach((track) => {
+        track.mode = (activeSub && track.id === activeSub) ? 'showing' : 'disabled';
+      });
+    };
+    applyMode();
+    // Re-apply when HLS.js or the browser adds/recreates tracks after a
+    // source change — without this, tracks that appear after the initial
+    // applyMode call stay in their default 'disabled' mode.
+    el.textTracks.addEventListener('addtrack', applyMode);
+    return () => el.textTracks.removeEventListener('addtrack', applyMode);
   }, [activeSub, allSubtitles, sourceSrc]);
 
   useEffect(() => {
