@@ -749,9 +749,10 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
-    Array.from(el.textTracks || []).forEach((track, index) => {
-      const id = allSubtitles[index]?.id;
-      track.mode = id && id === activeSub ? 'showing' : 'disabled';
+    // Match by TextTrack.id (= <track id="..."> attribute) so HLS.js-injected
+    // tracks at unpredictable indices don't shift our selection.
+    Array.from(el.textTracks || []).forEach((track) => {
+      track.mode = track.id === activeSub ? 'showing' : 'disabled';
     });
   }, [activeSub, allSubtitles, sourceSrc]);
 
@@ -1348,7 +1349,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
           {allSubtitles.map((track, index) => (
             <track
               key={track.id}
-              id={String(index)}
+              id={track.id}
               kind="subtitles"
               src={track.url}
               srcLang={track.language || 'und'}
