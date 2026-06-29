@@ -4,6 +4,7 @@ import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, PlayIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
 import { tmdbImageUrl } from '../utils/tmdb';
+import { formatExternalRating } from '../utils/externalRating';
 import { MediaCard } from './mediaCard';
 
 export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
@@ -42,6 +43,9 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
         {hero.overview && <p className="hero-overview">{hero.overview}</p>}
         <div className="hero-meta">
           {hero.meta.map((part) => <span key={part}>{part}</span>)}
+          {formatExternalRating(hero.externalRating) && (
+            <span className="hero-rating">{formatExternalRating(hero.externalRating)}</span>
+          )}
         </div>
         <div className="hero-actions">
           <a className="primary-action" href={hero.playHref}>
