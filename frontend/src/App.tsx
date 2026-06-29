@@ -14,7 +14,7 @@ import { LikedSongsPage } from './components/likedSongsPage';
 import { AddToPlaylistSheet } from './components/addToPlaylistSheet';
 import { PlaylistDetailPage, PlaylistsPage } from './components/playlistsPage';
 import { StatsPage } from './components/statsPage';
-import { AdminPage } from './components/adminPage';
+import { AdminNav, AdminPage } from './components/adminPage';
 import { AdminDashboard } from './components/adminDashboard';
 import { AdminTrendingGaps } from './components/adminTrendingGaps';
 import { AdminIptvPage } from './components/adminIptvPage';
@@ -369,30 +369,42 @@ function App() {
           error={liveTv.error}
         />
       ) : route.kind === 'admin-dashboard' ? (
-        <AdminDashboard user={user} onSignIn={() => setSignInOpen(true)} />
+        <>
+          <AdminNav routeKind={route.kind} locationSearch={location.search} />
+          <AdminDashboard user={user} onSignIn={() => setSignInOpen(true)} />
+        </>
       ) : route.kind === 'admin-trending' ? (
-        <AdminTrendingGaps user={user} onSignIn={() => setSignInOpen(true)} />
+        <>
+          <AdminNav routeKind={route.kind} locationSearch={location.search} />
+          <AdminTrendingGaps user={user} onSignIn={() => setSignInOpen(true)} />
+        </>
       ) : route.kind === 'admin-iptv' ? (
-        <AdminIptvPage
-          user={user}
-          data={adminIptv.data}
-          loading={adminIptv.loading}
-          error={adminIptv.error}
-          onSignIn={() => setSignInOpen(true)}
-          reload={adminIptv.reload}
-          setData={adminIptv.setData}
-        />
+        <>
+          <AdminNav routeKind={route.kind} locationSearch={location.search} />
+          <AdminIptvPage
+            user={user}
+            data={adminIptv.data}
+            loading={adminIptv.loading}
+            error={adminIptv.error}
+            onSignIn={() => setSignInOpen(true)}
+            reload={adminIptv.reload}
+            setData={adminIptv.setData}
+          />
+        </>
       ) : route.kind === 'admin' ? (
-        <AdminPage
-          user={user}
-          data={adminPage.data}
-          loading={adminPage.loading}
-          error={adminPage.error}
-          locationSearch={location.search}
-          navigate={navigate}
-          onSignIn={() => setSignInOpen(true)}
-          reload={adminPage.reload}
-          updateData={adminPage.updateData}
+        <>
+          <AdminNav routeKind={route.kind} locationSearch={location.search} />
+          <AdminPage
+            user={user}
+            data={adminPage.data}
+            loading={adminPage.loading}
+            error={adminPage.error}
+            locationSearch={location.search}
+            navigate={navigate}
+            onSignIn={() => setSignInOpen(true)}
+            reload={adminPage.reload}
+            updateData={adminPage.updateData}
+          />
         />
       ) : (
         <WatchPage

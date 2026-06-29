@@ -1,7 +1,27 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { aiSuggestItem, clearAdminItemTmdb, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem } from '../api';
-import { ChartIcon, ChevronRightIcon, FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, XIcon } from '../icons';
-import { uiModeHref } from '../navigation';
+import { FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, XIcon } from '../icons';
+
+export function AdminNav({
+  routeKind,
+  locationSearch,
+}: {
+  routeKind: string;
+  locationSearch: string;
+}) {
+  const tab = new URLSearchParams(locationSearch).get('tab');
+  const is = (kind: string, t?: string) =>
+    routeKind === kind && (t === undefined ? !tab : tab === t);
+  return (
+    <nav className="admin-nav" role="tablist" aria-label="Admin sections">
+      <a role="tab" aria-selected={is('admin')} className={is('admin') ? 'active' : ''} href="/app/admin">Catalogue</a>
+      <a role="tab" aria-selected={is('admin', 'ops')} className={is('admin', 'ops') ? 'active' : ''} href="/app/admin?tab=ops">Operations</a>
+      <a role="tab" aria-selected={routeKind === 'admin-dashboard'} className={routeKind === 'admin-dashboard' ? 'active' : ''} href="/app/admin/dashboard">Dashboard</a>
+      <a role="tab" aria-selected={routeKind === 'admin-trending'} className={routeKind === 'admin-trending' ? 'active' : ''} href="/app/admin/trending">Trending</a>
+      <a role="tab" aria-selected={routeKind === 'admin-iptv'} className={routeKind === 'admin-iptv' ? 'active' : ''} href="/app/admin/iptv">IPTV</a>
+    </nav>
+  );
+}
 import type { AdminItem, AdminItemEditPayload, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { tmdbImageUrl } from '../utils/tmdb';
@@ -104,35 +124,16 @@ function AdminGate({
 
 function AdminHero({ data }: { data: AdminResponse }) {
   const issueCount = data.stats.missing_poster + data.stats.missing_thumb + data.stats.duplicate_extras;
-  const classicAdminHref = uiModeHref('classic', '/admin');
   return (
     <section className="admin-hero">
       <div className="admin-hero-top">
         <div className="admin-hero-copy">
           <h1>Admin console</h1>
           <p>
-            Operations overview for {data.catalogueSize.toLocaleString()} visible items.
+            {data.catalogueSize.toLocaleString()} items total.
             {' '}
             {data.filteredCount.toLocaleString()} match the current view.
           </p>
-        </div>
-        <div className="admin-hero-actions">
-          <a className="primary-action" href={classicAdminHref}>
-            <ShieldIcon />
-            <span>Classic admin</span>
-          </a>
-          <a className="secondary-action" href="/app/admin/dashboard">
-            <ChartIcon />
-            <span>Dashboard</span>
-          </a>
-          <a className="secondary-action" href="/app/admin/trending">
-            <ChevronRightIcon />
-            <span>Trending gaps</span>
-          </a>
-          <a className="secondary-action" href="/app/admin/iptv">
-            <TvIcon />
-            <span>IPTV</span>
-          </a>
         </div>
       </div>
       <div className="admin-metrics" aria-label="Catalogue health">
@@ -447,13 +448,7 @@ function BulkBar({
   const [tmdbKind, setTmdbKind] = useState<'tv' | 'movie'>('tv');
   const count = selected.size;
 
-  if (!count) {
-    return (
-      <section className="admin-bulk idle">
-        <span>Select rows to enable bulk actions</span>
-      </section>
-    );
-  }
+  if (!count) return null;
 
   return (
     <section className="admin-bulk">
@@ -567,8 +562,6 @@ function AdminItemRow({
         {item.missingThumb && <i className="warn">No thumb</i>}
         {!item.hidden && !item.duplicate && !item.missingPoster && !item.missingThumb && <i className="ok">No issues</i>}
       </div>
-      <span className="admin-row-size">{item.fileSizeLabel || formatBytes(item.fileSize)}</span>
-      <span className="admin-row-bin">bin:{item.messageId}</span>
       <span className={item.tmdbId ? 'admin-row-tmdb matched' : 'admin-row-tmdb missing'}>{item.tmdbId ? `TMDB ${item.tmdbId}` : 'No TMDB'}</span>
       <div className="admin-row-actions">
         <button type="button" onClick={onToggleHidden}>{item.hidden ? 'Unhide' : 'Hide'}</button>
@@ -614,6 +607,7 @@ function EditModal({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [activeSection, setActiveSection] = useState<'identity' | 'metadata' | 'advanced'>('identity');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiFieldLoading, setAiFieldLoading] = useState('');
   const [aiReasoning, setAiReasoning] = useState('');
@@ -841,24 +835,38 @@ function EditModal({
       <button className="modal-scrim" type="button" onClick={onClose} aria-label="Close" />
       <div className="edit-modal-panel">
         <div className="edit-modal-header">
-          <h2>Edit bin:{messageId}</h2>
-          {hasGemini && (
-            <div className="edit-ai-row">
-              <select
-                className="edit-field-input"
-                value={form.aiModel}
-                onChange={(e) => setField('aiModel', e.currentTarget.value)}
-                disabled={!aiModels.length}
-              >
-                {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                {!aiModels.length && <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>}
-              </select>
-              <button type="button" className="edit-ai-btn" onClick={handleAiSuggest} disabled={aiLoading}>
-                {aiLoading ? '⏳ Searching…' : '✨ Suggest'}
-              </button>
-            </div>
-          )}
-          <button className="icon-button modal-close" type="button" onClick={onClose} aria-label="Close"><XIcon /></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <h2 style={{ flex: 1 }}>Edit bin:{messageId}</h2>
+            {hasGemini && (
+              <div className="edit-ai-row" style={{ margin: 0 }}>
+                <select
+                  className="edit-field-input"
+                  value={form.aiModel}
+                  onChange={(e) => setField('aiModel', e.currentTarget.value)}
+                  disabled={!aiModels.length}
+                >
+                  {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  {!aiModels.length && <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>}
+                </select>
+                <button type="button" className="edit-ai-btn" onClick={handleAiSuggest} disabled={aiLoading}>
+                  {aiLoading ? '⏳ Searching…' : '✨ Suggest'}
+                </button>
+              </div>
+            )}
+            <button className="icon-button modal-close" type="button" onClick={onClose} aria-label="Close"><XIcon /></button>
+          </div>
+        </div>
+        <div className="edit-modal-tabs">
+          {(['identity', 'metadata', 'advanced'] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={activeSection === s ? 'edit-modal-tab-btn active' : 'edit-modal-tab-btn'}
+              onClick={() => setActiveSection(s)}
+            >
+              {s === 'identity' ? 'Identity' : s === 'metadata' ? (isAudio ? 'Music' : 'Metadata') : 'Advanced'}
+            </button>
+          ))}
         </div>
 
         <div className="edit-modal-body">
@@ -868,180 +876,184 @@ function EditModal({
               {(error || aiError) && <p className="edit-error">{error || aiError}</p>}
               {aiReasoning && <p className="edit-ai-reasoning"><strong>AI:</strong> {aiReasoning}</p>}
 
-              <label className="edit-field">
-                <FieldLabel name="Title" locked={form.adminLocked.includes('title')} onUnlock={() => unlockField('title')} />
-                <div className="edit-field-row">
-                  <input className="edit-field-input" value={form.title} onChange={(e) => setField('title', e.currentTarget.value)} required />
-                  {aiFieldButton('title', 'Title')}
-                </div>
-              </label>
-
-              <label className="edit-field edit-field-narrow">
-                <FieldLabel name="Year" locked={form.adminLocked.includes('year')} onUnlock={() => unlockField('year')} />
-                <input className="edit-field-input" type="number" min="1900" max="2099" value={form.year ?? ''} onChange={(e) => setField('year', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
-              </label>
-
-              <label className="edit-field">
-                <span className="edit-field-label">Tags</span>
-                <div className="edit-field-row">
-                  <input className="edit-field-input" value={form.tags} onChange={(e) => setField('tags', e.currentTarget.value)} placeholder="space-separated, no # prefix" />
-                  {aiFieldButton('tags', 'Tags')}
-                </div>
-              </label>
-
-              <label className="edit-field">
-                <span className="edit-field-label">Display name <span className="edit-field-hint">(filename override)</span></span>
-                <div className="edit-field-row">
-                  <input className="edit-field-input" value={form.fileName} onChange={(e) => setField('fileName', e.currentTarget.value)} />
-                  {aiFieldButton('file_name', 'Clean')}
-                </div>
-              </label>
-
-              <label className="edit-field">
-                <span className="edit-field-label">Description</span>
-                <div className="edit-field-row edit-field-row-top">
-                  <textarea className="edit-field-input" rows={3} value={form.description} onChange={(e) => setField('description', e.currentTarget.value)} />
-                  {aiFieldButton('description', 'Write')}
-                </div>
-              </label>
-
-              {/* Series */}
-              <div className="edit-section">
-                <p className="edit-section-label">Series <span className="edit-field-hint">(groups into a /series/ page)</span></p>
-                <label className="edit-field">
-                  <FieldLabel name="Series title" locked={form.adminLocked.includes('series_title')} onUnlock={() => unlockField('series_title')} />
-                  <input className="edit-field-input" value={form.seriesTitle} onChange={(e) => setField('seriesTitle', e.currentTarget.value)} />
-                </label>
-                <div className="edit-field-row">
+              {/* ── Identity tab ── */}
+              {activeSection === 'identity' && (
+                <>
                   <label className="edit-field">
-                    <span className="edit-field-label">Season</span>
-                    <input className="edit-field-input" type="number" min="1" value={form.season ?? ''} onChange={(e) => setField('season', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
-                  </label>
-                  <label className="edit-field">
-                    <span className="edit-field-label">Ep start</span>
-                    <input className="edit-field-input" type="number" min="0" value={form.episode ?? ''} onChange={(e) => setField('episode', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
-                  </label>
-                  <label className="edit-field">
-                    <span className="edit-field-label">Ep end</span>
-                    <input className="edit-field-input" type="number" min="2" value={form.episodeEnd ?? ''} onChange={(e) => setField('episodeEnd', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
-                  </label>
-                </div>
-              </div>
-
-              {/* Intro — video only */}
-              {!isAudio && (
-                <div className="edit-section">
-                  <p className="edit-section-label">Playback markers</p>
-                  <div className="edit-field-row">
-                    <label className="edit-field">
-                      <span className="edit-field-label">Intro start</span>
-                      <input className="edit-field-input" type="number" min="0" step="0.5" value={form.introStart ?? ''} onChange={(e) => setField('introStart', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
-                    </label>
-                    <label className="edit-field">
-                      <span className="edit-field-label">Intro end</span>
-                      <input className="edit-field-input" type="number" min="0" step="0.5" value={form.introEnd ?? ''} onChange={(e) => setField('introEnd', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
-                    </label>
-                  </div>
-                  <div className="edit-field-row">
-                    <label className="edit-field">
-                      <span className="edit-field-label">Recap start</span>
-                      <input className="edit-field-input" type="number" min="0" step="0.5" value={form.recapStart ?? ''} onChange={(e) => setField('recapStart', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
-                    </label>
-                    <label className="edit-field">
-                      <span className="edit-field-label">Recap end</span>
-                      <input className="edit-field-input" type="number" min="0" step="0.5" value={form.recapEnd ?? ''} onChange={(e) => setField('recapEnd', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
-                    </label>
-                  </div>
-                  <label className="edit-field">
-                    <span className="edit-field-label">Chapters <span className="edit-field-hint">one per line: 75 Opening</span></span>
-                    <textarea
-                      className="edit-field-input"
-                      rows={4}
-                      value={form.chapters}
-                      onChange={(e) => setField('chapters', e.currentTarget.value)}
-                      placeholder={'0 Opening\n75 First turn\n180 Final scene'}
-                    />
-                  </label>
-                </div>
-              )}
-
-              {/* Music — audio only */}
-              {isAudio && (
-                <div className="edit-section">
-                  <p className="edit-section-label">Music</p>
-                  <label className="edit-field">
-                    <span className="edit-field-label">Artist</span>
+                    <FieldLabel name="Title" locked={form.adminLocked.includes('title')} onUnlock={() => unlockField('title')} />
                     <div className="edit-field-row">
-                      <input className="edit-field-input" value={form.artist} onChange={(e) => setField('artist', e.currentTarget.value)} />
-                      {aiFieldButton('artist', 'Artist')}
-                    </div>
-                  </label>
-                  <label className="edit-field">
-                    <span className="edit-field-label">Album</span>
-                    <div className="edit-field-row">
-                      <input className="edit-field-input" value={form.albumTitle} onChange={(e) => setField('albumTitle', e.currentTarget.value)} />
-                      {aiFieldButton('album_title', 'Album')}
+                      <input className="edit-field-input" value={form.title} onChange={(e) => setField('title', e.currentTarget.value)} required />
+                      {aiFieldButton('title', 'Title')}
                     </div>
                   </label>
                   <label className="edit-field edit-field-narrow">
-                    <span className="edit-field-label">Track #</span>
-                    <div className="edit-field-row">
-                      <input className="edit-field-input" type="number" min="1" value={form.trackNumber ?? ''} onChange={(e) => setField('trackNumber', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
-                      {aiFieldButton('track_number', 'Track')}
-                    </div>
-                  </label>
-                </div>
-              )}
-
-              {/* Thumbnail */}
-              <div className="edit-section">
-                <p className="edit-section-label">Thumbnail <span className="edit-field-hint">(paste image URL to override)</span></p>
-                <div className="edit-field-row">
-                  <input className="edit-field-input" style={{ flex: 1 }} value={form.thumbUrlInput} onChange={(e) => setField('thumbUrlInput', e.currentTarget.value)} placeholder="https://image.tmdb.org/t/p/w500/… or any .jpg URL" />
-                  <button type="button" className="secondary-action compact-action" onClick={() => setField('thumbUrlInput', '__clear__')}>Clear</button>
-                </div>
-              </div>
-
-              {/* TMDB */}
-              <div className="edit-section">
-                <p className="edit-section-label">TMDB override</p>
-                <label className="edit-field">
-                  <span className="edit-field-label">IMDb id or URL</span>
-                  <div className="edit-field-row">
-                    <input className="edit-field-input" style={{ flex: 1 }} value={form.imdbInput} onChange={(e) => setField('imdbInput', e.currentTarget.value)} placeholder="tt1234567 or https://imdb.com/title/tt1234567/" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleResolveImdb(); } }} />
-                    <button type="button" className="primary-action compact-action" onClick={() => void handleResolveImdb()} disabled={imdbLoading}>
-                      {imdbLoading ? 'Resolving…' : 'Resolve →'}
-                    </button>
-                  </div>
-                  {imdbError && <p className="edit-error" style={{ marginTop: '0.25rem' }}>{imdbError}</p>}
-                </label>
-                <div className="edit-field-row" style={{ marginTop: '0.5rem' }}>
-                  <label className="edit-field" style={{ flex: 1 }}>
-                    <span className="edit-field-label">TMDB id</span>
-                    <input className="edit-field-input" type="number" min="1" value={form.tmdbId ?? ''} onChange={(e) => handleTmdbIdChange(e.currentTarget.value)} placeholder="e.g. 27205" />
+                    <FieldLabel name="Year" locked={form.adminLocked.includes('year')} onUnlock={() => unlockField('year')} />
+                    <input className="edit-field-input" type="number" min="1900" max="2099" value={form.year ?? ''} onChange={(e) => setField('year', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
                   </label>
                   <label className="edit-field">
-                    <span className="edit-field-label">Kind</span>
-                    <select className="edit-field-input" value={form.tmdbKind} onChange={(e) => handleTmdbKindChange(e.currentTarget.value as 'movie' | 'tv')}>
-                      <option value="movie">Movie</option>
-                      <option value="tv">TV</option>
-                    </select>
+                    <span className="edit-field-label">Tags</span>
+                    <div className="edit-field-row">
+                      <input className="edit-field-input" value={form.tags} onChange={(e) => setField('tags', e.currentTarget.value)} placeholder="space-separated, no # prefix" />
+                      {aiFieldButton('tags', 'Tags')}
+                    </div>
                   </label>
-                </div>
-                {tmdbPreviewLoading && <p className="edit-field-hint" style={{ marginTop: '0.5rem' }}>Fetching from TMDB…</p>}
-                {tmdbPreview && !tmdbPreviewLoading && (
-                  <div className="edit-tmdb-preview">
-                    {tmdbPreview.poster_path && (
-                      <img src={tmdbImageUrl(tmdbPreview.poster_path, 'w92')} alt="" />
+                  <label className="edit-field">
+                    <span className="edit-field-label">Description</span>
+                    <div className="edit-field-row edit-field-row-top">
+                      <textarea className="edit-field-input" rows={3} value={form.description} onChange={(e) => setField('description', e.currentTarget.value)} />
+                      {aiFieldButton('description', 'Write')}
+                    </div>
+                  </label>
+                  <label className="edit-field">
+                    <span className="edit-field-label">Display name <span className="edit-field-hint">(filename override)</span></span>
+                    <div className="edit-field-row">
+                      <input className="edit-field-input" value={form.fileName} onChange={(e) => setField('fileName', e.currentTarget.value)} />
+                      {aiFieldButton('file_name', 'Clean')}
+                    </div>
+                  </label>
+                </>
+              )}
+
+              {/* ── Metadata tab ── */}
+              {activeSection === 'metadata' && (
+                <>
+                  {isAudio ? (
+                    <div className="edit-section">
+                      <p className="edit-section-label">Music</p>
+                      <label className="edit-field">
+                        <span className="edit-field-label">Artist</span>
+                        <div className="edit-field-row">
+                          <input className="edit-field-input" value={form.artist} onChange={(e) => setField('artist', e.currentTarget.value)} />
+                          {aiFieldButton('artist', 'Artist')}
+                        </div>
+                      </label>
+                      <label className="edit-field">
+                        <span className="edit-field-label">Album</span>
+                        <div className="edit-field-row">
+                          <input className="edit-field-input" value={form.albumTitle} onChange={(e) => setField('albumTitle', e.currentTarget.value)} />
+                          {aiFieldButton('album_title', 'Album')}
+                        </div>
+                      </label>
+                      <label className="edit-field edit-field-narrow">
+                        <span className="edit-field-label">Track #</span>
+                        <div className="edit-field-row">
+                          <input className="edit-field-input" type="number" min="1" value={form.trackNumber ?? ''} onChange={(e) => setField('trackNumber', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+                          {aiFieldButton('track_number', 'Track')}
+                        </div>
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="edit-section">
+                      <p className="edit-section-label">Series <span className="edit-field-hint">(groups into a /series/ page)</span></p>
+                      <label className="edit-field">
+                        <FieldLabel name="Series title" locked={form.adminLocked.includes('series_title')} onUnlock={() => unlockField('series_title')} />
+                        <input className="edit-field-input" value={form.seriesTitle} onChange={(e) => setField('seriesTitle', e.currentTarget.value)} />
+                      </label>
+                      <div className="edit-field-row">
+                        <label className="edit-field">
+                          <span className="edit-field-label">Season</span>
+                          <input className="edit-field-input" type="number" min="1" value={form.season ?? ''} onChange={(e) => setField('season', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+                        </label>
+                        <label className="edit-field">
+                          <span className="edit-field-label">Ep start</span>
+                          <input className="edit-field-input" type="number" min="0" value={form.episode ?? ''} onChange={(e) => setField('episode', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+                        </label>
+                        <label className="edit-field">
+                          <span className="edit-field-label">Ep end</span>
+                          <input className="edit-field-input" type="number" min="2" value={form.episodeEnd ?? ''} onChange={(e) => setField('episodeEnd', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)} />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                  <div className="edit-section">
+                    <p className="edit-section-label">TMDB</p>
+                    <label className="edit-field">
+                      <span className="edit-field-label">IMDb id or URL</span>
+                      <div className="edit-field-row">
+                        <input className="edit-field-input" style={{ flex: 1 }} value={form.imdbInput} onChange={(e) => setField('imdbInput', e.currentTarget.value)} placeholder="tt1234567 or https://imdb.com/title/tt1234567/" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleResolveImdb(); } }} />
+                        <button type="button" className="primary-action compact-action" onClick={() => void handleResolveImdb()} disabled={imdbLoading}>
+                          {imdbLoading ? 'Resolving…' : 'Resolve →'}
+                        </button>
+                      </div>
+                      {imdbError && <p className="edit-error" style={{ marginTop: '0.25rem' }}>{imdbError}</p>}
+                    </label>
+                    <div className="edit-field-row" style={{ marginTop: '0.5rem' }}>
+                      <label className="edit-field" style={{ flex: 1 }}>
+                        <span className="edit-field-label">TMDB id</span>
+                        <input className="edit-field-input" type="number" min="1" value={form.tmdbId ?? ''} onChange={(e) => handleTmdbIdChange(e.currentTarget.value)} placeholder="e.g. 27205" />
+                      </label>
+                      <label className="edit-field">
+                        <span className="edit-field-label">Kind</span>
+                        <select className="edit-field-input" value={form.tmdbKind} onChange={(e) => handleTmdbKindChange(e.currentTarget.value as 'movie' | 'tv')}>
+                          <option value="movie">Movie</option>
+                          <option value="tv">TV</option>
+                        </select>
+                      </label>
+                    </div>
+                    {tmdbPreviewLoading && <p className="edit-field-hint" style={{ marginTop: '0.5rem' }}>Fetching from TMDB…</p>}
+                    {tmdbPreview && !tmdbPreviewLoading && (
+                      <div className="edit-tmdb-preview">
+                        {tmdbPreview.poster_path && <img src={tmdbImageUrl(tmdbPreview.poster_path, 'w92')} alt="" />}
+                        <div>
+                          <p><strong>{tmdbPreview.title}</strong>{tmdbPreview.year ? ` (${tmdbPreview.year})` : ''}</p>
+                          <p className="edit-field-hint">{tmdbPreview.kind}{tmdbPreview.imdb_id ? ` · ${tmdbPreview.imdb_id}` : ''}</p>
+                          <p className="edit-field-hint" style={{ WebkitLineClamp: 3, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{tmdbPreview.overview}</p>
+                        </div>
+                      </div>
                     )}
-                    <div>
-                      <p><strong>{tmdbPreview.title}</strong>{tmdbPreview.year ? ` (${tmdbPreview.year})` : ''}</p>
-                      <p className="edit-field-hint">{tmdbPreview.kind}{tmdbPreview.imdb_id ? ` · ${tmdbPreview.imdb_id}` : ''}</p>
-                      <p className="edit-field-hint" style={{ WebkitLineClamp: 3, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{tmdbPreview.overview}</p>
+                  </div>
+                </>
+              )}
+
+              {/* ── Advanced tab ── */}
+              {activeSection === 'advanced' && (
+                <>
+                  <div className="edit-section">
+                    <p className="edit-section-label">Thumbnail <span className="edit-field-hint">(paste URL to override)</span></p>
+                    <div className="edit-field-row">
+                      <input className="edit-field-input" style={{ flex: 1 }} value={form.thumbUrlInput} onChange={(e) => setField('thumbUrlInput', e.currentTarget.value)} placeholder="https://image.tmdb.org/t/p/w500/… or any .jpg URL" />
+                      <button type="button" className="secondary-action compact-action" onClick={() => setField('thumbUrlInput', '__clear__')}>Clear</button>
                     </div>
                   </div>
-                )}
-              </div>
+                  {!isAudio && (
+                    <>
+                      <div className="edit-section">
+                        <p className="edit-section-label">Playback markers</p>
+                        <div className="edit-field-row">
+                          <label className="edit-field">
+                            <span className="edit-field-label">Intro start</span>
+                            <input className="edit-field-input" type="number" min="0" step="0.5" value={form.introStart ?? ''} onChange={(e) => setField('introStart', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
+                          </label>
+                          <label className="edit-field">
+                            <span className="edit-field-label">Intro end</span>
+                            <input className="edit-field-input" type="number" min="0" step="0.5" value={form.introEnd ?? ''} onChange={(e) => setField('introEnd', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
+                          </label>
+                        </div>
+                        <div className="edit-field-row">
+                          <label className="edit-field">
+                            <span className="edit-field-label">Recap start</span>
+                            <input className="edit-field-input" type="number" min="0" step="0.5" value={form.recapStart ?? ''} onChange={(e) => setField('recapStart', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
+                          </label>
+                          <label className="edit-field">
+                            <span className="edit-field-label">Recap end</span>
+                            <input className="edit-field-input" type="number" min="0" step="0.5" value={form.recapEnd ?? ''} onChange={(e) => setField('recapEnd', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
+                          </label>
+                        </div>
+                      </div>
+                      <div className="edit-section">
+                        <p className="edit-section-label">Chapters <span className="edit-field-hint">one per line: 75 Opening</span></p>
+                        <textarea
+                          className="edit-field-input"
+                          rows={5}
+                          value={form.chapters}
+                          onChange={(e) => setField('chapters', e.currentTarget.value)}
+                          placeholder={'0 Opening\n75 First turn\n180 Final scene'}
+                        />
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
             </>
           )}
         </div>
@@ -1096,11 +1108,9 @@ function AdminList({
       </div>
       <div className="admin-table-head" aria-hidden="true">
         <span />
+        <span />
         <span>Title</span>
         <span>Details</span>
-        <span>File size</span>
-        <span>Bin ID</span>
-        <span>TMDB</span>
         <span>Actions</span>
       </div>
       <div className="admin-list">
@@ -1162,6 +1172,7 @@ export function AdminPage({
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
+  const tab = new URLSearchParams(locationSearch).get('tab');
   const visibleIds = useMemo(() => new Set(data?.items.map((item) => item.messageId) || []), [data]);
   const pipelineRunning = statusRunning(data?.status);
 
@@ -1290,21 +1301,26 @@ export function AdminPage({
         <>
           <AdminHero data={data} />
           {notice && <p className="admin-notice" role="status">{notice}</p>}
-          <div className="admin-console-layout">
+          {tab === 'ops' ? (
+            <section className="admin-workspace" aria-label="Operations">
+              <AdminStatusPanel status={data.status} />
+              <MaintenancePanel busy={busy} onRun={runMaintenanceAction} onMergeSeries={runMergeSeriesAction} />
+            </section>
+          ) : (
             <section className="admin-workspace" aria-label="Catalogue worklist">
+              {pipelineRunning && (
+                <div className="admin-pipeline-banner">
+                  <span className="pipeline-dot" />
+                  Pipeline running —{' '}
+                  <a href="/app/admin?tab=ops">view status</a>
+                </div>
+              )}
               <AdminControls
                 data={data}
                 query={query}
                 setQuery={setQuery}
                 onSubmit={submitSearch}
                 updateParam={updateParam}
-              />
-              <BulkBar
-                selected={selected}
-                data={data}
-                busy={busy}
-                setSelected={setSelected}
-                onAction={runSelectedAction}
               />
               <AdminList
                 data={data}
@@ -1314,12 +1330,15 @@ export function AdminPage({
                 onEdit={(item) => setEditingId(item.messageId)}
                 updateParam={updateParam}
               />
+              <BulkBar
+                selected={selected}
+                data={data}
+                busy={busy}
+                setSelected={setSelected}
+                onAction={runSelectedAction}
+              />
             </section>
-            <aside className="admin-ops-rail" aria-label="Operations">
-              <AdminStatusPanel status={data.status} />
-              <MaintenancePanel busy={busy} onRun={runMaintenanceAction} onMergeSeries={runMergeSeriesAction} />
-            </aside>
-          </div>
+          )}
         </>
       )}
       {editingId !== null && (
