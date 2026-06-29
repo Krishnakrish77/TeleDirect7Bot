@@ -405,7 +405,7 @@ function App() {
             reload={adminPage.reload}
             updateData={adminPage.updateData}
           />
-        />
+        </>
       ) : (
         <WatchPage
           watchKey={watchKey}

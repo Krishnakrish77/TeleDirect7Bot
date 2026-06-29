@@ -17,6 +17,8 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+from .iptv_parser import parse_m3u_text
+
 
 _STORE_FILE = Path(os.environ.get("IPTV_STORE_PATH", "/tmp/iptv_channels.json"))
 _lock = asyncio.Lock()
@@ -53,6 +55,7 @@ async def _ensure_indexes() -> None:
         await coll.create_index("channel_id", unique=True)
         await coll.create_index([("enabled", 1), ("sort_order", 1), ("name", 1)])
         await coll.create_index([("stream_url", 1)], unique=True)
+        await coll.create_index("tvg_id")
         _indexed = True
     except Exception:
         logging.exception("iptv_store: ensure_indexes failed")
@@ -82,6 +85,14 @@ def _normalise_channel(raw: dict, existing: dict | None = None) -> dict:
     stream_url = _normalise_url(raw.get("stream_url") or raw.get("streamUrl"))
     logo_url = _normalise_url(raw.get("logo_url") or raw.get("logoUrl"))
     category = _clean(raw.get("category"), 80) or "Uncategorized"
+    tvg_id = _clean(raw.get("tvg_id") or raw.get("tvgId"), 180)
+    tvg_name = _clean(raw.get("tvg_name") or raw.get("tvgName"), 180)
+    duration = _clean(raw.get("duration"), 40) or "-1"
+    attrs = raw.get("attrs") if isinstance(raw.get("attrs"), dict) else {}
+    extras = raw.get("extras") if isinstance(raw.get("extras"), list) else []
+    stream_headers = raw.get("stream_headers") or raw.get("streamHeaders")
+    if not isinstance(stream_headers, dict):
+        stream_headers = {}
     try:
         sort_order = int(raw.get("sort_order") if raw.get("sort_order") is not None else raw.get("sortOrder") or 0)
     except (TypeError, ValueError):
@@ -95,6 +106,12 @@ def _normalise_channel(raw: dict, existing: dict | None = None) -> dict:
         "stream_url": stream_url,
         "logo_url": logo_url,
         "category": category,
+        "tvg_id": tvg_id,
+        "tvg_name": tvg_name,
+        "duration": duration,
+        "attrs": {str(k): _clean(v, 1000) for k, v in attrs.items()},
+        "extras": [_clean(value, 1000) for value in extras if _clean(value)],
+        "stream_headers": {str(k): _clean(v, 1000) for k, v in stream_headers.items()},
         "enabled": bool(enabled),
         "sort_order": sort_order,
         "created_at": float((existing or {}).get("created_at") or now),
@@ -109,6 +126,12 @@ def _public_channel(channel: dict) -> dict:
         "streamUrl": channel["stream_url"],
         "logoUrl": channel.get("logo_url", ""),
         "category": channel.get("category", "Uncategorized"),
+        "tvgId": channel.get("tvg_id", ""),
+        "tvgName": channel.get("tvg_name", ""),
+        "duration": channel.get("duration", "-1"),
+        "attrs": channel.get("attrs", {}),
+        "extras": channel.get("extras", []),
+        "streamHeaders": channel.get("stream_headers", {}),
         "enabled": bool(channel.get("enabled", True)),
         "sortOrder": int(channel.get("sort_order", 0) or 0),
         "createdAt": float(channel.get("created_at", 0) or 0),
@@ -217,8 +240,10 @@ async def save_channel(raw: dict) -> tuple[bool, dict | None, str]:
             existing = await db["iptv_channels"].find_one({"channel_id": channel["channel_id"]}, projection={"_id": 0})
             if existing is None:
                 existing = await db["iptv_channels"].find_one({"stream_url": channel["stream_url"]}, projection={"_id": 0})
-                if existing:
-                    raw = {**raw, "channel_id": existing["channel_id"]}
+            if existing is None and channel.get("tvg_id"):
+                existing = await db["iptv_channels"].find_one({"tvg_id": channel["tvg_id"]}, projection={"_id": 0})
+            if existing:
+                raw = {**raw, "channel_id": existing["channel_id"]}
             channel = _normalise_channel(raw, existing)
             await db["iptv_channels"].replace_one(
                 {"channel_id": channel["channel_id"]},
@@ -237,7 +262,10 @@ async def save_channel(raw: dict) -> tuple[bool, dict | None, str]:
         duplicate = next(
             (
                 item for item in _channels.values()
-                if item["stream_url"] == channel["stream_url"]
+                if (
+                    item["stream_url"] == channel["stream_url"]
+                    or (channel.get("tvg_id") and item.get("tvg_id") == channel.get("tvg_id"))
+                )
                 and item["channel_id"] != channel["channel_id"]
             ),
             None,
@@ -272,40 +300,25 @@ async def delete_channel(channel_id: str) -> bool:
         return existed
 
 
-_EXTINF_RE = re.compile(r"#EXTINF:[^,]*,(?P<name>.*)", re.IGNORECASE)
-_ATTR_RE = re.compile(r'([A-Za-z0-9_-]+)="([^"]*)"')
-
-
 def parse_m3u(text: str) -> list[dict]:
-    channels: list[dict] = []
-    pending: dict = {}
-    for raw_line in (text or "").splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if line.upper().startswith("#EXTINF"):
-            attrs = {key.lower(): value.strip() for key, value in _ATTR_RE.findall(line)}
-            match = _EXTINF_RE.match(line)
-            name = attrs.get("tvg-name") or (match.group("name").strip() if match else "")
-            pending = {
-                "name": name,
-                "logo_url": attrs.get("tvg-logo", ""),
-                "category": attrs.get("group-title", "") or "Uncategorized",
-            }
-            continue
-        if line.startswith("#"):
-            continue
-        if re.match(r"^https?://", line, re.IGNORECASE):
-            channel = {
-                **pending,
-                "stream_url": line,
-                "enabled": True,
-            }
-            if not channel.get("name"):
-                channel["name"] = line.rsplit("/", 1)[-1] or "Untitled channel"
-            channels.append(channel)
-            pending = {}
-    return channels
+    playlist = parse_m3u_text(text)
+    return [
+        {
+            "name": channel.name,
+            "stream_url": channel.stream_url,
+            "logo_url": channel.logo_url,
+            "category": channel.category,
+            "tvg_id": channel.tvg_id,
+            "tvg_name": channel.tvg_name,
+            "duration": channel.duration,
+            "attrs": channel.attrs,
+            "extras": channel.extras,
+            "stream_headers": channel.stream_headers,
+            "playlist_attrs": playlist.attrs,
+            "enabled": True,
+        }
+        for channel in playlist.channels
+    ]
 
 
 async def import_m3u(text: str) -> dict:

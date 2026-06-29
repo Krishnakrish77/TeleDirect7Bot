@@ -234,7 +234,7 @@ describe('AdminPage', () => {
 
   it('runs maintenance operations', async () => {
     const reload = vi.fn();
-    renderAdmin({ reload });
+    renderAdmin({ reload, locationSearch: '?tab=ops' });
 
     fireEvent.click(screen.getByRole('button', { name: /Re-index/ }));
 
@@ -246,7 +246,7 @@ describe('AdminPage', () => {
 
   it('merges series from the React admin maintenance panel', async () => {
     const reload = vi.fn();
-    renderAdmin({ reload });
+    renderAdmin({ reload, locationSearch: '?tab=ops' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Merge series' }));
     await waitFor(() => expect(fetchAdminSeriesList).toHaveBeenCalled());

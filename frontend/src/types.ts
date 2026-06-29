@@ -126,6 +126,12 @@ export interface IptvChannel {
   streamUrl: string;
   logoUrl: string;
   category: string;
+  tvgId?: string;
+  tvgName?: string;
+  duration?: string;
+  attrs?: Record<string, string>;
+  extras?: string[];
+  streamHeaders?: Record<string, string>;
   enabled: boolean;
   sortOrder: number;
   createdAt: number;
