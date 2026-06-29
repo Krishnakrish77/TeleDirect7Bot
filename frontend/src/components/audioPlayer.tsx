@@ -52,10 +52,10 @@ export function MiniPlayer({
         <button type="button" className="icon-button" onClick={onOpenQueue} aria-label="Open queue">
           <ListIcon />
         </button>
-        <button type="button" className="icon-button mini-dismiss" onClick={onDismiss} aria-label="Close mini player">
-          <XIcon />
-        </button>
       </div>
+      <button type="button" className="icon-button mini-dismiss" onClick={onDismiss} aria-label="Close mini player">
+        <XIcon />
+      </button>
       <div className="mini-progress">
         <span>{formatClock(player.currentTime)}</span>
         <input
