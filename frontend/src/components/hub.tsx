@@ -11,10 +11,19 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
 
   useEffect(() => {
     if (heroes.length < 2) return;
-    const timer = window.setInterval(() => {
-      setActive((current) => (current + 1) % heroes.length);
-    }, 7000);
-    return () => window.clearInterval(timer);
+    let timer: number | undefined;
+    const start = () => {
+      timer = window.setInterval(() => {
+        setActive((current) => (current + 1) % heroes.length);
+      }, 7000);
+    };
+    const onVisibility = () => document.hidden ? window.clearInterval(timer) : start();
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [heroes.length]);
 
   if (!hero) return null;
@@ -52,6 +61,7 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
               className={index === active ? 'active' : ''}
               onClick={() => setActive(index)}
               aria-label={item.title}
+              aria-current={index === active ? 'true' : undefined}
             >
               <img src={item.posterUrl} alt="" loading="lazy" decoding="async" />
             </button>
@@ -113,7 +123,10 @@ export function ContinueWatching() {
 
   useEffect(() => {
     const cleanup = load();
-    const onStorage = () => load();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key && event.key !== 'td:cw') return;
+      load();
+    };
     window.addEventListener('storage', onStorage);
     return () => {
       if (cleanup) cleanup();
@@ -137,7 +150,7 @@ export function ContinueWatching() {
   const forgetAll = () => {
     setEntries([]);
     void clearAllContinue()
-      .finally(() => { try { localStorage.removeItem('td:cw'); } catch (_) { /* ignore */ } });
+      .then(() => { try { localStorage.removeItem('td:cw'); } catch (_) { /* ignore */ } });
   };
 
   return (

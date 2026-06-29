@@ -2,7 +2,7 @@ import { FormEvent, KeyboardEvent, RefObject, useEffect, useRef, useState, type 
 import { signInTelegram } from '../api';
 import { useSuggestions } from '../hooks/data';
 import { localAppHref } from '../navigation';
-import { BookmarkIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HeartIcon, HomeIcon, ListIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, UserIcon, XIcon } from '../icons';
+import { BookmarkIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HeartIcon, HomeIcon, ListIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, UserIcon, XIcon } from '../icons';
 import type { MeResponse, Suggestion, TelegramAuthUser, User, ViewValue } from '../types';
 
 declare global {
@@ -31,7 +31,7 @@ export function PrimaryNav({
         <span>Movies</span>
       </a>
       <a className={activeView === 'series' && activeSection === 'series' ? 'active' : ''} href="/app?view=series">
-        <FilmIcon />
+        <TvIcon />
         <span>Series</span>
       </a>
       <a className={activeView === 'music' && activeSection === 'music' ? 'active' : ''} href="/app?view=music">

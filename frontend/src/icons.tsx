@@ -216,6 +216,16 @@ export function FilmIcon(props: Props) {
   );
 }
 
+export function TvIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <rect x="2" y="4" width="20" height="14" rx="2" />
+      <path d="M8 20h8" />
+      <path d="M12 18v2" />
+    </IconBase>
+  );
+}
+
 export function HomeIcon(props: Props) {
   return (
     <IconBase {...props}>
