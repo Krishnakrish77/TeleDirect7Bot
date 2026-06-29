@@ -93,6 +93,9 @@ export function ContinueWatching() {
     const hydrate = async () => {
       try {
         const server = await fetchContinueMap(controller.signal);
+        // Server is canonical: prune local entries the server has deleted,
+        // then merge in newer server values.
+        Object.keys(raw).forEach((key) => { if (!(key in server)) delete raw[key]; });
         Object.entries(server).forEach(([key, value]) => {
           if (!raw[key] || (value.t || 0) > (raw[key].t || 0)) raw[key] = value;
         });

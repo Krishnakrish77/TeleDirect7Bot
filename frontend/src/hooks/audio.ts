@@ -749,6 +749,9 @@ export function useAudioPlayer() {
     const targetSlot = activeSlotRef.current === 'primary' ? 'buffer' : 'primary';
     to.play()
       .then(() => {
+        // Capture faded-out track BEFORE setPlayer switches to the new one.
+        const fadedKey = playerRef.current.track?.key;
+        const fadedTitle = playerRef.current.track?.title || '';
         activeSlotRef.current = targetSlot;
         pendingNextIndexRef.current = null;
         setPlayer((state) => ({
@@ -777,6 +780,16 @@ export function useAudioPlayer() {
           applyOutputSettings(to);
           preloadedKeyRef.current = '';
           crossfadeRef.current = false;
+          // onEnded is skipped during crossfade — clean up CW for the faded track here.
+          if (fadedKey) {
+            void recordWatchHistory(fadedKey, fadedTitle).catch(() => undefined);
+            void deleteContinueEntry(fadedKey).catch(() => undefined);
+            try {
+              const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
+              delete cw[fadedKey];
+              localStorage.setItem('td:cw', JSON.stringify(cw));
+            } catch { /* ignore */ }
+          }
         };
         requestAnimationFrame(tick);
       })
@@ -837,6 +850,11 @@ export function useAudioPlayer() {
       if (current.track) {
         void recordWatchHistory(current.track.key, current.track.title).catch(() => undefined);
         void deleteContinueEntry(current.track.key).catch(() => undefined);
+        try {
+          const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
+          delete cw[current.track.key];
+          localStorage.setItem('td:cw', JSON.stringify(cw));
+        } catch { /* ignore quota/private-mode */ }
       }
       if (current.repeatMode === 'one' && current.track) {
         audio.currentTime = 0;
