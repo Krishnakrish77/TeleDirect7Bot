@@ -1,13 +1,14 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { importAdminIptvM3u, saveAdminIptvChannel, testAdminIptvStream } from '../api';
+import { importAdminIptvM3u, importAdminIptvM3uUrl, saveAdminIptvChannel, testAdminIptvStream } from '../api';
 import type { AdminIptvResponse, User } from '../types';
 import { AdminIptvPage } from './adminIptvPage';
 
 vi.mock('../api', () => ({
   deleteAdminIptvChannel: vi.fn(),
   importAdminIptvM3u: vi.fn(),
+  importAdminIptvM3uUrl: vi.fn(),
   saveAdminIptvChannel: vi.fn(),
   testAdminIptvStream: vi.fn(),
 }));
@@ -122,5 +123,38 @@ describe('AdminIptvPage', () => {
     await waitFor(() => expect(importAdminIptvM3u).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('Imported 1 of 1 channels')).toBeTruthy();
     expect(screen.getByText('Sports Live')).toBeTruthy();
+  });
+
+  it('imports an M3U playlist URL and refreshes the list', async () => {
+    const imported = {
+      id: 'news-in',
+      name: 'News India',
+      streamUrl: 'https://example.test/news-india.m3u8',
+      logoUrl: '',
+      category: 'News',
+      enabled: true,
+      sortOrder: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    vi.mocked(importAdminIptvM3uUrl).mockResolvedValue({
+      ok: true,
+      parsed: 1,
+      imported: 1,
+      skipped: 0,
+      sourceUrl: 'https://iptv-org.github.io/iptv/languages/hin.m3u',
+      channels: [...initialData.channels, imported],
+    });
+
+    renderAdmin();
+
+    fireEvent.change(screen.getByLabelText('Playlist URL'), {
+      target: { value: 'https://iptv-org.github.io/iptv/languages/hin.m3u' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Import URL' }));
+
+    await waitFor(() => expect(importAdminIptvM3uUrl).toHaveBeenCalledWith('https://iptv-org.github.io/iptv/languages/hin.m3u'));
+    expect(await screen.findByText('Imported 1 of 1 channels')).toBeTruthy();
+    expect(screen.getByText('News India')).toBeTruthy();
   });
 });

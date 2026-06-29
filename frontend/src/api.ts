@@ -233,6 +233,14 @@ export async function importAdminIptvM3u(m3u: string): Promise<AdminIptvActionRe
   });
 }
 
+export async function importAdminIptvM3uUrl(url: string): Promise<AdminIptvActionResponse> {
+  return request<AdminIptvActionResponse>('/api/app/admin/iptv/import-m3u-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+}
+
 export async function testAdminIptvStream(streamUrl: string): Promise<{ ok: boolean; message: string }> {
   return request('/api/app/admin/iptv/test', {
     method: 'POST',

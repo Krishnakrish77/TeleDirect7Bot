@@ -8669,6 +8669,7 @@ select.edit-field-input {
 }
 
 .iptv-channel-form label,
+.iptv-import-url,
 .iptv-toggle-field {
   display: grid;
   gap: 0.32rem;
@@ -8676,6 +8677,7 @@ select.edit-field-input {
 }
 
 .iptv-channel-form label > span,
+.iptv-import-url > span,
 .iptv-toggle-field span {
   color: var(--muted);
   font-size: 0.68rem;
@@ -8689,6 +8691,7 @@ select.edit-field-input {
 }
 
 .iptv-channel-form input,
+.iptv-import-url input,
 .iptv-import-panel textarea {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.16);
@@ -8698,12 +8701,14 @@ select.edit-field-input {
   outline: none;
 }
 
-.iptv-channel-form input {
+.iptv-channel-form input,
+.iptv-import-url input {
   min-height: 40px;
   padding: 0 0.7rem;
 }
 
 .iptv-channel-form input:focus,
+.iptv-import-url input:focus,
 .iptv-import-panel textarea:focus {
   border-color: rgba(20, 184, 166, 0.48);
 }

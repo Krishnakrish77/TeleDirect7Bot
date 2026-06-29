@@ -158,6 +158,7 @@ export interface AdminIptvResponse {
   parsed?: number;
   imported?: number;
   skipped?: number;
+  sourceUrl?: string;
 }
 
 export interface AdminIptvActionResponse extends AdminIptvResponse {

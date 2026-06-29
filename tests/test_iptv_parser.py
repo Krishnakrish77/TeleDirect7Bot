@@ -1,23 +1,11 @@
 import os
-import sys
-import types
 import unittest
-from pathlib import Path
 
 
 os.environ.setdefault("API_ID", "1")
 os.environ.setdefault("API_HASH", "test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
-
-ROOT = Path(__file__).resolve().parents[1]
-main_pkg = types.ModuleType("main")
-main_pkg.__path__ = [str(ROOT / "main")]
-utils_pkg = types.ModuleType("main.utils")
-utils_pkg.__path__ = [str(ROOT / "main" / "utils")]
-main_pkg.utils = utils_pkg
-sys.modules.setdefault("main", main_pkg)
-sys.modules.setdefault("main.utils", utils_pkg)
 
 from main.utils.iptv_parser import parse_m3u_text
 from main.utils.iptv_store import parse_m3u

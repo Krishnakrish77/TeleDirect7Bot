@@ -1,5 +1,5 @@
 import { FormEvent, type Dispatch, type SetStateAction, useMemo, useState } from 'react';
-import { deleteAdminIptvChannel, importAdminIptvM3u, saveAdminIptvChannel, testAdminIptvStream } from '../api';
+import { deleteAdminIptvChannel, importAdminIptvM3u, importAdminIptvM3uUrl, saveAdminIptvChannel, testAdminIptvStream } from '../api';
 import { CheckIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, XIcon } from '../icons';
 import { ErrorPanel, LoadingRows } from './common';
 import { AdminGate } from './adminPage';
@@ -46,6 +46,7 @@ export function AdminIptvPage({
 }) {
   const [form, setForm] = useState<IptvChannelPayload>(emptyForm);
   const [m3u, setM3u] = useState('');
+  const [m3uUrl, setM3uUrl] = useState('');
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
@@ -99,6 +100,21 @@ export function AdminIptvPage({
       setNotice(`Imported ${response.imported || 0} of ${response.parsed || 0} channels`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Unable to import M3U');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const importPlaylistUrl = async () => {
+    setBusy('import-url');
+    setNotice('');
+    try {
+      const response = await importAdminIptvM3uUrl(m3uUrl.trim());
+      applyResponse(response);
+      setM3uUrl('');
+      setNotice(`Imported ${response.imported || 0} of ${response.parsed || 0} channels`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Unable to import M3U URL');
     } finally {
       setBusy('');
     }
@@ -235,6 +251,18 @@ export function AdminIptvPage({
               <h2>M3U import</h2>
             </div>
           </div>
+          <label className="iptv-import-url">
+            <span>Playlist URL</span>
+            <input
+              value={m3uUrl}
+              onChange={(event) => setM3uUrl(event.currentTarget.value)}
+              placeholder="https://iptv-org.github.io/iptv/categories/news.m3u"
+            />
+          </label>
+          <button type="button" className="primary-action" onClick={importPlaylistUrl} disabled={busy === 'import-url' || !m3uUrl.trim()}>
+            <CheckIcon />
+            <span>{busy === 'import-url' ? 'Importing' : 'Import URL'}</span>
+          </button>
           <textarea value={m3u} onChange={(event) => setM3u(event.currentTarget.value)} placeholder="#EXTM3U" />
           <button type="button" className="primary-action" onClick={importPlaylist} disabled={busy === 'import' || !m3u.trim()}>
             <CheckIcon />
