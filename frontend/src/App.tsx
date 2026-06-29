@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { dismissRecommendation, signOut } from './api';
+import { deleteContinueEntry, dismissRecommendation, recordWatchHistory, signOut } from './api';
 import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useArtColor } from './hooks/artColor';
@@ -118,6 +118,10 @@ function App() {
   }, []);
 
   const requireAuth = useCallback(() => setSignInOpen(true), []);
+  const onMarkWatched = useCallback((card: HubCard) => {
+    void deleteContinueEntry(card.watchKey).catch(() => undefined);
+    if (user) void recordWatchHistory(card.watchKey, card.title).catch(() => undefined);
+  }, [user]);
   const onToggleSaved = useCallback((card: HubCard) => {
     if (!user) {
       requireAuth();
@@ -248,6 +252,7 @@ function App() {
                   saved={saved}
                   onToggleSaved={onToggleSaved}
                   onDismiss={onDismissRecommendation}
+                  onMarkWatched={onMarkWatched}
                 />
               ))}
             </div>
@@ -260,6 +265,7 @@ function App() {
               params={params}
               update={update}
               onToggleSaved={onToggleSaved}
+              onMarkWatched={onMarkWatched}
               loading={loading}
             />
           )}

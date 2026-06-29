@@ -186,6 +186,9 @@ export function ContinueWatching() {
                 <XIcon />
               </button>
               <span className="progress-track"><span style={{ width: `${percent}%` }} /></span>
+              <span className="continue-card-type eyebrow">
+                {entry.media_kind === 'audio' ? 'Music' : entry.kind === 'series' ? 'Series' : 'Movie'}
+              </span>
               <strong>{title}</strong>
               <span>{entry.episode_label || entry.title}</span>
             </a>
@@ -201,11 +204,13 @@ export function ShelfRow({
   saved,
   onToggleSaved,
   onDismiss,
+  onMarkWatched,
 }: {
   shelf: { name: string; href: string | null; items: HubCard[]; dismissable?: boolean; recMeta?: Array<RecommendationMeta | null> };
   saved: Set<string>;
   onToggleSaved: (card: HubCard) => void;
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
+  onMarkWatched?: (card: HubCard) => void;
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const [canScrollBack, setCanScrollBack] = useState(false);
@@ -279,6 +284,7 @@ export function ShelfRow({
                 if (onDismiss) onDismiss(meta, dismissedCard);
                 else void dismissRecommendation(meta.tmdbId, meta.kind).catch(() => undefined);
               }}
+              onMarkWatched={onMarkWatched}
             />
           );
         })}
@@ -293,6 +299,7 @@ export function GridView({
   saved,
   update,
   onToggleSaved,
+  onMarkWatched,
   loading = false,
 }: {
   data: HubResponse;
@@ -300,6 +307,7 @@ export function GridView({
   saved: Set<string>;
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
   onToggleSaved: (card: HubCard) => void;
+  onMarkWatched?: (card: HubCard) => void;
   loading?: boolean;
 }) {
   const isMusicGrid =
@@ -335,6 +343,7 @@ export function GridView({
                 saved={saved.has(card.itemId)}
                 priority={index < priorityCount}
                 onToggleSaved={onToggleSaved}
+                onMarkWatched={onMarkWatched}
               />
             ))}
           </div>

@@ -355,6 +355,8 @@ export interface ContinueItem {
   poster_path: string;
   thumb_url: string;
   watch_url: string;
+  kind: string;
+  media_kind: string;
 }
 
 export interface WatchlistItem {

@@ -30,6 +30,7 @@ interface MediaCardProps {
   onToggleSaved: (card: HubCard) => void;
   dismissMeta?: RecommendationMeta | null;
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
+  onMarkWatched?: (card: HubCard) => void;
 }
 
 
@@ -91,13 +92,16 @@ function MediaCardBase({
   onToggleSaved,
   dismissMeta,
   onDismiss,
+  onMarkWatched,
 }: MediaCardProps) {
   const isMusic = card.type === 'track' || card.type === 'album';
   const width = card.aspect === 'square' ? 512 : 342;
   const height = card.aspect === 'square' ? 512 : 513;
   const display = getMediaCardDisplay(card);
   const externalRating = isMusic ? '' : formatExternalRating(card.externalRating);
-  const progressPct = card.watchKey ? getLocalCwPct(card.watchKey) : 0;
+  const rawProgress = card.watchKey ? getLocalCwPct(card.watchKey) : 0;
+  const [markedWatched, setMarkedWatched] = useState(false);
+  const progressPct = markedWatched ? 0 : rawProgress;
   const [previewOpen, setPreviewOpen] = useState(false);
   const canPreview = Boolean(card.trailerKey) && !isMusic;
 
@@ -212,6 +216,26 @@ function MediaCardBase({
           aria-label="Not for me"
         >
           <XIcon />
+        </button>
+      )}
+      {progressPct > 0 && onMarkWatched && (
+        <button
+          type="button"
+          className="mark-watched-button"
+          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            try {
+              const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
+              delete cw[card.watchKey];
+              localStorage.setItem('td:cw', JSON.stringify(cw));
+            } catch { /* ignore */ }
+            setMarkedWatched(true);
+            onMarkWatched(card);
+          }}
+          aria-label="Mark as watched"
+        >
+          <CheckIcon />
         </button>
       )}
     </article>

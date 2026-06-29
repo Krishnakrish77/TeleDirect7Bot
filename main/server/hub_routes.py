@@ -734,6 +734,7 @@ async def api_items(request: web.Request) -> web.Response:
             "year": item.year,
             "poster_path": item.poster_path or "",
             "kind": "series" if item.series_key else ("movie" if item.movie_key else ""),
+            "media_kind": item.media_kind or "",
             "watch_url": f"/watch/{item.secure_hash}{item.message_id}",
             # Always return a /thumb/ URL — the endpoint has an ffmpeg
             # fallback for items without a native Telegram thumb. The
