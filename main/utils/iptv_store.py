@@ -151,17 +151,19 @@ async def _load_json_unlocked() -> None:
     global _loaded
     if _loaded:
         return
-    _loaded = True
     try:
         if not _STORE_FILE.exists():
+            _loaded = True
             return
         data = json.loads(_STORE_FILE.read_text(encoding="utf-8"))
         for raw in data.get("channels", []):
             channel = _normalise_channel(raw)
             if channel["name"] and channel["stream_url"]:
                 _channels[channel["channel_id"]] = channel
+        _loaded = True  # only mark loaded after successful read
     except Exception:
         logging.exception("iptv_store: failed to load JSON store")
+        # Do NOT set _loaded — next call will retry the load
 
 
 def _persist_json_unlocked() -> None:
@@ -240,8 +242,15 @@ async def save_channel(raw: dict) -> tuple[bool, dict | None, str]:
             existing = await db["iptv_channels"].find_one({"channel_id": channel["channel_id"]}, projection={"_id": 0})
             if existing is None:
                 existing = await db["iptv_channels"].find_one({"stream_url": channel["stream_url"]}, projection={"_id": 0})
-            if existing is None and channel.get("tvg_id"):
-                existing = await db["iptv_channels"].find_one({"tvg_id": channel["tvg_id"]}, projection={"_id": 0})
+            if channel.get("tvg_id"):
+                tvgid_match = await db["iptv_channels"].find_one({"tvg_id": channel["tvg_id"]}, projection={"_id": 0})
+                if tvgid_match is None:
+                    existing = existing  # no tvg_id match, keep stream_url result
+                elif existing is None:
+                    existing = tvgid_match  # only tvg_id match
+                elif existing["channel_id"] != tvgid_match["channel_id"]:
+                    # stream_url and tvg_id match different records — stream_url wins, remove the tvg_id duplicate
+                    await db["iptv_channels"].delete_one({"channel_id": tvgid_match["channel_id"]})
             if existing:
                 raw = {**raw, "channel_id": existing["channel_id"]}
             channel = _normalise_channel(raw, existing)
@@ -251,13 +260,14 @@ async def save_channel(raw: dict) -> tuple[bool, dict | None, str]:
                 upsert=True,
             )
             return True, _public_channel(channel), ""
-        except Exception as exc:
+        except Exception:
             logging.exception("iptv_store: save_channel failed")
             return False, None, "Unable to save channel"
 
     async with _lock:
         await _load_json_unlocked()
-        existing = _channels.get(channel["channel_id"])
+        original_id = channel["channel_id"]
+        existing = _channels.get(original_id)
         channel = _normalise_channel(raw, existing)
         duplicate = next(
             (
@@ -271,6 +281,8 @@ async def save_channel(raw: dict) -> tuple[bool, dict | None, str]:
             None,
         )
         if duplicate:
+            # Remove the original id entry before writing under the deduped id
+            _channels.pop(original_id, None)
             channel["channel_id"] = duplicate["channel_id"]
             channel["created_at"] = duplicate.get("created_at", channel["created_at"])
         _channels[channel["channel_id"]] = channel
@@ -326,16 +338,49 @@ async def import_m3u(text: str) -> dict:
     imported = 0
     skipped = 0
     channels: list[dict] = []
-    for raw in parsed[:1000]:
-        ok, channel, _message = await save_channel(raw)
-        if ok and channel:
+
+    db = _get_db()
+    if db is not None:
+        # MongoDB path: sequential save (each handles its own dedup)
+        for raw in parsed[:1000]:
+            ok, channel, _ = await save_channel(raw)
+            if ok and channel:
+                imported += 1
+                channels.append(channel)
+            else:
+                skipped += 1
+        return {"parsed": len(parsed), "imported": imported, "skipped": skipped, "channels": channels}
+
+    # JSON path: hold lock once, write file once at the end instead of per-channel
+    async with _lock:
+        await _load_json_unlocked()
+        for raw in parsed[:1000]:
+            channel = _normalise_channel(raw)
+            if not channel["name"] or not channel["stream_url"]:
+                skipped += 1
+                continue
+            original_id = channel["channel_id"]
+            existing = _channels.get(original_id)
+            channel = _normalise_channel(raw, existing)
+            duplicate = next(
+                (
+                    item for item in _channels.values()
+                    if (
+                        item["stream_url"] == channel["stream_url"]
+                        or (channel.get("tvg_id") and item.get("tvg_id") == channel.get("tvg_id"))
+                    )
+                    and item["channel_id"] != channel["channel_id"]
+                ),
+                None,
+            )
+            if duplicate:
+                _channels.pop(original_id, None)
+                channel["channel_id"] = duplicate["channel_id"]
+                channel["created_at"] = duplicate.get("created_at", channel["created_at"])
+            _channels[channel["channel_id"]] = channel
             imported += 1
-            channels.append(channel)
-        else:
-            skipped += 1
-    return {
-        "parsed": len(parsed),
-        "imported": imported,
-        "skipped": skipped,
-        "channels": channels,
-    }
+            channels.append(_public_channel(channel))
+        if imported:
+            _persist_json_unlocked()
+
+    return {"parsed": len(parsed), "imported": imported, "skipped": skipped, "channels": channels}

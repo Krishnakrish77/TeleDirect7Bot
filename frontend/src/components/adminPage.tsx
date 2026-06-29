@@ -100,7 +100,7 @@ function resolveSeriesKey(value: string, series: AdminSeriesOption[]): string {
   return match?.key || input;
 }
 
-function AdminGate({
+export function AdminGate({
   user,
   onSignIn,
 }: {

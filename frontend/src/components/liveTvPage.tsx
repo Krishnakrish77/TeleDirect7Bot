@@ -4,7 +4,7 @@ import { PlayIcon, SearchIcon, TvIcon, XIcon } from '../icons';
 import { ErrorPanel, LoadingRows } from './common';
 import type { IptvChannel, LiveTvResponse } from '../types';
 
-const HLS_RE = /\.m3u8(?:[?#]|$)/i;
+const HLS_RE = /\.m3u8(?:[?#]|$)|[?&](?:type|format)=m3u8/i;
 
 function channelCategory(channel: IptvChannel): string {
   return channel.category?.trim() || 'Uncategorized';
@@ -53,12 +53,9 @@ export function LiveTvPage({
       return `${channel.name} ${channel.category}`.toLowerCase().includes(needle);
     });
   }, [activeCategory, channels, query]);
-  const selected = filteredChannels.find((channel) => channel.id === selectedId) || filteredChannels[0] || channels.find((channel) => channel.id === selectedId) || channels[0] || null;
-
-  useEffect(() => {
-    if (!filteredChannels.length) return;
-    setSelectedId((current) => filteredChannels.some((channel) => channel.id === current) ? current : filteredChannels[0].id);
-  }, [filteredChannels]);
+  // Don't fall back to channels[0] when a filter is active and produces no results —
+  // that would silently stream a hidden channel while the list shows "no results".
+  const selected = filteredChannels.find((channel) => channel.id === selectedId) || filteredChannels[0] || null;
 
   useEffect(() => {
     const video = videoRef.current;

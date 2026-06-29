@@ -2,6 +2,7 @@ import { FormEvent, type Dispatch, type SetStateAction, useMemo, useState } from
 import { deleteAdminIptvChannel, importAdminIptvM3u, saveAdminIptvChannel, testAdminIptvStream } from '../api';
 import { CheckIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, XIcon } from '../icons';
 import { ErrorPanel, LoadingRows } from './common';
+import { AdminGate } from './adminPage';
 import type { AdminIptvResponse, IptvChannel, IptvChannelPayload, User } from '../types';
 
 const emptyForm: IptvChannelPayload = {
@@ -25,21 +26,6 @@ function channelToPayload(channel: IptvChannel): IptvChannelPayload {
   };
 }
 
-function AdminAccessGate({ user, onSignIn }: { user: User | null; onSignIn: () => void }) {
-  return (
-    <main className="admin-main">
-      <div className="empty-state">
-        <ShieldIcon />
-        <strong>{user ? 'Admin access required' : 'Sign in to manage IPTV'}</strong>
-        {user ? (
-          <a className="secondary-action" href="/app">Back to library</a>
-        ) : (
-          <button type="button" className="primary-action" onClick={onSignIn}>Sign in</button>
-        )}
-      </div>
-    </main>
-  );
-}
 
 export function AdminIptvPage({
   user,
@@ -71,7 +57,7 @@ export function AdminIptvPage({
     return channels.filter((channel) => `${channel.name} ${channel.category} ${channel.streamUrl}`.toLowerCase().includes(needle));
   }, [channels, query]);
 
-  if (!user?.is_admin) return <AdminAccessGate user={user} onSignIn={onSignIn} />;
+  if (!user?.is_admin) return <AdminGate user={user} onSignIn={onSignIn} />;
 
   const applyResponse = (response: AdminIptvResponse) => {
     setData((current) => ({
