@@ -1358,7 +1358,6 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         <video
           ref={videoRef}
           poster={video.backdropUrl || video.posterUrl}
-          crossOrigin="anonymous"
           playsInline
           preload="metadata"
         >
