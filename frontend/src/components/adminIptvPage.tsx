@@ -1,6 +1,6 @@
 import { FormEvent, type Dispatch, type SetStateAction, useMemo, useState } from 'react';
 import { deleteAdminIptvChannel, importAdminIptvM3u, importAdminIptvM3uUrl, saveAdminIptvChannel, testAdminIptvStream } from '../api';
-import { CheckIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, XIcon } from '../icons';
+import { BroadcastIcon, CheckIcon, PlayIcon, SearchIcon, ShieldIcon, XIcon } from '../icons';
 import { ErrorPanel, LoadingRows } from './common';
 import { AdminGate } from './adminPage';
 import type { AdminIptvResponse, IptvChannel, IptvChannelPayload, User } from '../types';
@@ -177,7 +177,7 @@ export function AdminIptvPage({
               <span>Console</span>
             </a>
             <a className="secondary-action" href="/app/live-tv">
-              <TvIcon />
+              <BroadcastIcon />
               <span>Live TV</span>
             </a>
             <button type="button" className="secondary-action" onClick={() => reload()} disabled={loading}>
@@ -291,7 +291,7 @@ export function AdminIptvPage({
           <div className="iptv-channel-admin-list">
             {filteredChannels.map((channel) => (
               <article key={channel.id} className={channel.enabled ? 'iptv-admin-row' : 'iptv-admin-row disabled'}>
-                {channel.logoUrl ? <img src={channel.logoUrl} alt="" /> : <span><TvIcon /></span>}
+                {channel.logoUrl ? <img src={channel.logoUrl} alt="" /> : <span><BroadcastIcon /></span>}
                 <div>
                   <strong>{channel.name}</strong>
                   <small>{channel.category || 'Uncategorized'}</small>
@@ -312,7 +312,7 @@ export function AdminIptvPage({
             ))}
             {!filteredChannels.length && (
               <div className="admin-empty-list">
-                <TvIcon />
+                <BroadcastIcon />
                 <strong>No channels found</strong>
               </div>
             )}

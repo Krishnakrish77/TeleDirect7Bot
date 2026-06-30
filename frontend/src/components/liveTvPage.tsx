@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { attachHls } from '../media/hls';
-import { PlayIcon, SearchIcon, TvIcon, XIcon } from '../icons';
+import { BroadcastIcon, PlayIcon, SearchIcon, XIcon } from '../icons';
 import { ErrorPanel, LoadingRows } from './common';
 import type { IptvChannel, LiveTvResponse } from '../types';
 
@@ -118,7 +118,7 @@ export function LiveTvPage({
 
       {!loading && !error && !channels.length && (
         <div className="empty-state">
-          <TvIcon />
+          <BroadcastIcon />
           <strong>No IPTV channels are available</strong>
         </div>
       )}
@@ -137,13 +137,13 @@ export function LiveTvPage({
               />
               {!selected && (
                 <div className="live-video-placeholder">
-                  <TvIcon />
+                  <BroadcastIcon />
                 </div>
               )}
             </div>
             <div className="live-now-row">
               <div className="live-now-copy">
-                {selected?.logoUrl ? <img src={selected.logoUrl} alt="" /> : <span><TvIcon /></span>}
+                {selected?.logoUrl ? <img src={selected.logoUrl} alt="" /> : <span><BroadcastIcon /></span>}
                 <div>
                   <strong>{selected?.name || 'No channel selected'}</strong>
                   <small>{selected ? channelCategory(selected) : 'Live TV'}</small>
@@ -194,7 +194,7 @@ export function LiveTvPage({
                   className={selected?.id === channel.id ? 'live-channel-row active' : 'live-channel-row'}
                   onClick={() => setSelectedId(channel.id)}
                 >
-                  {channel.logoUrl ? <img src={channel.logoUrl} alt="" /> : <span><TvIcon /></span>}
+                  {channel.logoUrl ? <img src={channel.logoUrl} alt="" /> : <span><BroadcastIcon /></span>}
                   <strong>{channel.name}</strong>
                   <small>{channelCategory(channel)}</small>
                   <PlayIcon />
