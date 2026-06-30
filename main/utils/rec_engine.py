@@ -109,9 +109,16 @@ async def _collect_signal_profile(user_id: int) -> dict:
     exclude_tmdb: set[int] = set()
     liked_tmdb: set[int] = set()
     partial_tmdb: set[int] = set()
+    # Only completed watches may feed "Because you watched ..." copy.
     recent_titles: list[str] = []
 
-    def add_seed(item, weight: float, *, exclude: bool = True) -> None:
+    def add_seed(
+        item,
+        weight: float,
+        *,
+        exclude: bool = True,
+        include_recent_title: bool = False,
+    ) -> None:
         tid, kind = _tmdb_for_item(item)
         if not tid:
             return
@@ -122,15 +129,16 @@ async def _collect_signal_profile(user_id: int) -> dict:
             seeds.append((tid, kind))
         for genre in getattr(item, "tmdb_genres", None) or []:
             seed_genres[genre] += weight
-        title = getattr(item, "series_title", "") or getattr(item, "title", "")
-        if title and len(recent_titles) < 4:
-            recent_titles.append(title)
+        if include_recent_title:
+            title = getattr(item, "series_title", "") or getattr(item, "title", "")
+            if title and len(recent_titles) < 4:
+                recent_titles.append(title)
 
     for index, entry in enumerate(history):
         item = _item_for_cw_key(entry.get("cw_key", ""))
         play_count = min(5, int(entry.get("play_count") or 1))
         recency = max(0.25, 1.0 - (index * 0.035))
-        add_seed(item, (2.2 + play_count * 0.35) * recency)
+        add_seed(item, (2.2 + play_count * 0.35) * recency, include_recent_title=True)
 
     for key, entry in list(continue_map.items())[:40]:
         item = _item_for_cw_key(key)
@@ -321,7 +329,7 @@ async def get_personal_shelves(user_id: int, limit: int = 18) -> list[dict]:
                 break
         if len(filtered) < 3:
             continue
-        name = f"Because you watched {genre}"
+        name = f"Because you like {genre}"
         if recent_label and not shelves:
             clean_title = re.sub(r"\s+", " ", recent_label).strip()
             if clean_title:
