@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { lyricsActiveIndex, useLyrics } from '../hooks/lyrics';
-import { XIcon } from '../icons';
+import { MusicIcon, XIcon } from '../icons';
 import type { WatchTrack } from '../types';
 
 export function LyricsPanel({
@@ -103,7 +103,10 @@ export function LyricsFlipCard({
     <div className={flipped ? 'lyrics-flip-card flipped' : 'lyrics-flip-card'}>
       <div className="lyrics-flip-inner">
         <div className="lyrics-flip-face lyrics-flip-front" aria-hidden={flipped || undefined}>
-          <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" />
+          <div className="audio-art-wrap">
+            <MusicIcon />
+            <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" onError={(e) => { e.currentTarget.hidden = true; }} />
+          </div>
           <button
             type="button"
             className="lyrics-flip-toggle"

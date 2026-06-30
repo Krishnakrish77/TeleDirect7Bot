@@ -1867,17 +1867,34 @@ img {
   color: inherit;
 }
 
-.stats-history-poster {
-  aspect-ratio: 2/3;
+/* Shared fallback wrapper: icon shows when img fails or is absent */
+.audio-art-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
-  border-radius: 6px;
-  background: var(--panel);
+  background: var(--panel-strong);
+  border-radius: inherit;
+  flex-shrink: 0;
 }
-.stats-history-poster img {
+.audio-art-wrap svg {
+  opacity: 0.28;
+  color: var(--muted);
+  width: 36%;
+  height: 36%;
+}
+.audio-art-wrap img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.18s;
+}
+
+.stats-history-poster {
+  aspect-ratio: 2/3;
+  border-radius: 6px;
 }
 .stats-history-card:hover .stats-history-poster img { transform: scale(1.04); }
 
@@ -3823,12 +3840,10 @@ img {
   min-width: 0;
 }
 
-.mini-track img {
+.mini-track .audio-art-wrap {
   width: 46px;
   height: 46px;
   border-radius: 8px;
-  object-fit: cover;
-  background: var(--panel-strong);
 }
 
 .mini-track > span {
@@ -4846,12 +4861,10 @@ img {
   display: none;
 }
 
-.now-art {
+.now-art-wrap {
   width: min(64vw, 240px);
   aspect-ratio: 1 / 1;
   border-radius: 8px;
-  object-fit: cover;
-  background: var(--panel-strong);
 }
 
 .now-copy {

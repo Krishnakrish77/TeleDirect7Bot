@@ -1,4 +1,4 @@
-import { ChartIcon, FilmIcon, MusicIcon, PlayIcon, UserIcon } from '../icons';
+import { ChartIcon, FilmIcon, MusicIcon, PlayIcon, TvIcon, UserIcon } from '../icons';
 import { localAppHref } from '../navigation';
 import type { StatsHistoryItem, StatsResponse, StatsTitle, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -142,8 +142,9 @@ export function StatsPage({
           <div className="stats-history-row">
             {data.recent_history.map((item: StatsHistoryItem, i) => (
               <a key={i} className="stats-history-card" href={appHref(item.url)}>
-                <div className="stats-history-poster">
-                  <img src={item.poster} alt="" loading="lazy" decoding="async" />
+                <div className="stats-history-poster audio-art-wrap">
+                  {item.media_kind === 'audio' ? <MusicIcon /> : <TvIcon />}
+                  <img src={item.poster} alt="" loading="lazy" decoding="async" onError={(e) => { e.currentTarget.hidden = true; }} />
                 </div>
                 <span className="stats-history-title">{item.title}</span>
                 {item.watched_at && <small>{item.watched_at}</small>}

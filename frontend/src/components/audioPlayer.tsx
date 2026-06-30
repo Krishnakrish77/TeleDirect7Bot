@@ -1,4 +1,4 @@
-import { ChevronRightIcon, ListIcon, PauseIcon, PlayIcon, RepeatIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
+import { ChevronRightIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, RepeatIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 import { LyricsPanel } from './lyrics';
@@ -33,7 +33,10 @@ export function MiniPlayer({
   return (
     <aside className="mini-player" aria-label="Audio player">
       <button type="button" className="mini-track mini-track-button" onClick={onExpand}>
-        <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" />
+        <span className="audio-art-wrap">
+          <MusicIcon />
+          <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" onError={(e) => { e.currentTarget.hidden = true; }} />
+        </span>
         <span>
           <strong>{track.title}</strong>
           <span>{[track.artist, track.albumTitle].filter(Boolean).join(' - ')}</span>
@@ -117,7 +120,10 @@ export function NowPlayingSheet({
         <button type="button" className="icon-button modal-close" onClick={onClose} aria-label="Close">
           <XIcon />
         </button>
-        <img className="now-art" src={track.posterUrl || track.thumbUrl} alt="" decoding="async" />
+        <div className="audio-art-wrap now-art-wrap">
+          <MusicIcon />
+          <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" onError={(e) => { e.currentTarget.hidden = true; }} />
+        </div>
         <div className="now-copy">
           <p className="eyebrow">{track.qualityLabel || track.format || 'Now playing'}</p>
           <h2>{track.title}</h2>
