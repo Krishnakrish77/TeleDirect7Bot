@@ -136,7 +136,7 @@ export function StatsPage({
           <div className="section-heading">
             <div>
               <p className="eyebrow">History</p>
-              <h2>Recently watched</h2>
+              <h2>Recently played</h2>
             </div>
           </div>
           <div className="stats-history-row">
