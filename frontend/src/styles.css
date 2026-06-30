@@ -1338,6 +1338,14 @@ img {
   contain: layout paint style;
 }
 
+.up-next-card {
+  border-color: rgba(20, 184, 166, 0.35);
+}
+
+.up-next-label {
+  color: #5eead4 !important;
+}
+
 .continue-card img {
   width: 100%;
   aspect-ratio: 16 / 9;

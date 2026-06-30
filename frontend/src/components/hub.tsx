@@ -175,12 +175,23 @@ export function ContinueWatching() {
       </div>
       <div className="continue-row">
         {entries.map((entry) => {
-          const percent = Math.max(4, Math.min(94, Math.round((entry.pos / entry.dur) * 100)));
+          const pct = entry.dur > 0 ? entry.pos / entry.dur : 0;
+          const percent = Math.max(4, Math.min(94, Math.round(pct * 100)));
           const title = entry.series_title || entry.title;
-          const watchHref = entry.watch_url.replace(/^\/watch\//, '/app/watch/');
+
+          // ≥85% through a series episode → pivot to next-episode card
+          const showNext = pct >= 0.85 && Boolean(entry.next_episode);
+          const next = entry.next_episode;
+          const displayUrl = showNext && next
+            ? next.watch_url.replace(/^\/watch\//, '/app/watch/')
+            : entry.watch_url.replace(/^\/watch\//, '/app/watch/');
+          const displayPoster = showNext && next
+            ? (next.poster_path ? tmdbImageUrl(next.poster_path, 'w342') : next.thumb_url)
+            : (entry.poster_path ? tmdbImageUrl(entry.poster_path, 'w342') : entry.thumb_url);
+
           return (
-            <a key={entry.key} href={watchHref} className="continue-card">
-              <img src={entry.poster_path ? tmdbImageUrl(entry.poster_path, 'w342') : entry.thumb_url} alt="" loading="lazy" decoding="async" />
+            <a key={entry.key} href={displayUrl} className={showNext ? 'continue-card up-next-card' : 'continue-card'}>
+              <img src={displayPoster} alt="" loading="lazy" decoding="async" />
               <button
                 type="button"
                 className="forget-button"
@@ -192,12 +203,23 @@ export function ContinueWatching() {
               >
                 <XIcon />
               </button>
-              <span className="progress-track"><span style={{ width: `${percent}%` }} /></span>
-              <span className="continue-card-type eyebrow">
-                {entry.media_kind === 'audio' ? 'Music' : entry.kind === 'series' ? 'Series' : 'Movie'}
-              </span>
-              <strong>{title}</strong>
-              <span>{entry.episode_label || entry.title}</span>
+              {showNext ? (
+                <>
+                  <span className="progress-track"><span style={{ width: '0%' }} /></span>
+                  <span className="continue-card-type eyebrow up-next-label">Up next</span>
+                  <strong>{title}</strong>
+                  <span>{next!.episode_label}</span>
+                </>
+              ) : (
+                <>
+                  <span className="progress-track"><span style={{ width: `${percent}%` }} /></span>
+                  <span className="continue-card-type eyebrow">
+                    {entry.media_kind === 'audio' ? 'Music' : entry.kind === 'series' ? 'Series' : 'Movie'}
+                  </span>
+                  <strong>{title}</strong>
+                  <span>{entry.episode_label || entry.title}</span>
+                </>
+              )}
             </a>
           );
         })}

@@ -724,6 +724,33 @@ async def api_items(request: web.Request) -> web.Response:
         ep_label = ""
         if item.series_key and item.season is not None and item.episode is not None:
             ep_label = f"S{item.season:02d}E{item.episode:02d}"
+        # Next-episode recommendation for series items — shown when the
+        # current episode is near completion (≥85%) so the CW shelf can
+        # seamlessly pivot to "Up Next: S01E02" without waiting for the
+        # user to finish and re-visit the series page.
+        next_ep = None
+        if item.series_key and item.season is not None and item.episode is not None:
+            eps = media_index.episodes_for_series(item.series_key)
+            curr_idx = next(
+                (i for i, e in enumerate(eps)
+                 if e.season == item.season and e.episode == item.episode),
+                None,
+            )
+            if curr_idx is not None and curr_idx + 1 < len(eps):
+                nxt = eps[curr_idx + 1]
+                nxt_ep_label = (
+                    f"S{nxt.season:02d}E{nxt.episode:02d}"
+                    if nxt.season is not None and nxt.episode is not None
+                    else ""
+                )
+                next_ep = {
+                    "key": f"{nxt.secure_hash}{nxt.message_id}",
+                    "episode_label": nxt_ep_label,
+                    "title": nxt.title,
+                    "watch_url": f"/watch/{nxt.secure_hash}{nxt.message_id}",
+                    "thumb_url": f"/thumb/{nxt.secure_hash}{nxt.message_id}.jpg",
+                    "poster_path": nxt.poster_path or "",
+                }
         out.append({
             "key": k,
             "message_id": item.message_id,
@@ -741,6 +768,7 @@ async def api_items(request: web.Request) -> web.Response:
             # <img onerror> in the consumer will hide the image if even
             # the fallback fails (truly broken file).
             "thumb_url": f"/thumb/{item.secure_hash}{item.message_id}.jpg",
+            "next_episode": next_ep,
         })
     return web.json_response(out, headers={"Cache-Control": "no-store"})
 

@@ -393,6 +393,15 @@ export interface RatingResponse {
   counts: RatingCounts;
 }
 
+export interface ContinueNextEpisode {
+  key: string;
+  episode_label: string;
+  title: string;
+  watch_url: string;
+  thumb_url: string;
+  poster_path: string;
+}
+
 export interface ContinueItem {
   key: string;
   title: string;
@@ -404,6 +413,7 @@ export interface ContinueItem {
   watch_url: string;
   kind: string;
   media_kind: string;
+  next_episode: ContinueNextEpisode | null;
 }
 
 export interface WatchlistItem {
