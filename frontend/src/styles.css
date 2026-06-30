@@ -1835,6 +1835,108 @@ img {
   line-height: 1.5;
 }
 
+.stats-equiv {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.stats-history-section {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.stats-history-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: clamp(100px, 14vw, 148px);
+  gap: 0.65rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.18) transparent;
+}
+.stats-history-row::-webkit-scrollbar { height: 3px; }
+.stats-history-row::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 99px; }
+
+.stats-history-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.stats-history-poster {
+  aspect-ratio: 2/3;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--panel);
+}
+.stats-history-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.18s;
+}
+.stats-history-card:hover .stats-history-poster img { transform: scale(1.04); }
+
+.stats-history-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #fff;
+}
+
+.stats-history-card small {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.stats-panel-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  align-self: center;
+}
+
+.stats-taste-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+
+.stats-taste-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.stats-taste-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.4rem;
+}
+
+.stats-taste-facts > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.stats-taste-facts > span small { font-size: 0.72rem; color: var(--muted); }
+.stats-taste-facts > span strong { font-size: 0.9rem; color: #fff; }
+
 .stats-hero-actions {
   display: flex;
   flex-wrap: wrap;

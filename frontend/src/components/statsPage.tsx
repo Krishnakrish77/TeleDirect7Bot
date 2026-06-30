@@ -1,6 +1,6 @@
 import { ChartIcon, FilmIcon, MusicIcon, PlayIcon, UserIcon } from '../icons';
 import { localAppHref } from '../navigation';
-import type { StatsResponse, StatsTitle, User } from '../types';
+import type { StatsHistoryItem, StatsResponse, StatsTitle, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 
 function appHref(url: string): string {
@@ -26,7 +26,7 @@ function titlePoster(title: StatsTitle | null, label: string) {
       <img src={title.poster} alt="" loading="lazy" decoding="async" />
       <span>{label}</span>
       <strong>{title.title}</strong>
-      <small>{[title.year, title.media_kind].filter(Boolean).join(' - ')}</small>
+      <small>{[title.year, title.media_kind].filter(Boolean).join(' · ')}</small>
     </a>
   );
 }
@@ -78,13 +78,22 @@ export function StatsPage({
   const audioPct = data.n_audio + data.n_video ? Math.round((data.n_audio / (data.n_audio + data.n_video)) * 100) : 0;
   const videoPct = data.n_audio + data.n_video ? 100 - audioPct : 0;
 
+  const equivParts = [
+    data.equiv_movies > 0 ? `≈ ${data.equiv_movies} movies` : null,
+    data.equiv_flights > 0 ? `${data.equiv_flights} flights` : null,
+  ].filter(Boolean);
+
   return (
     <main className="stats-main">
+      {/* ── Hero ── */}
       <section className="stats-hero">
         <div className="stats-hero-copy">
           <p className="eyebrow">{data.personality || 'Stats'}</p>
           <h1>{durationLabel(data.total_hours, data.total_mins)}</h1>
           <p>{data.total_plays.toLocaleString()} plays across {data.total_titles.toLocaleString()} titles</p>
+          {equivParts.length > 0 && (
+            <p className="stats-equiv">{equivParts.join(' · ')}</p>
+          )}
           <div className="stats-hero-actions">
             <span><PlayIcon /> {data.completion}% completion</span>
             <span><ChartIcon /> {data.active_days} active days</span>
@@ -93,6 +102,7 @@ export function StatsPage({
         {titlePoster(data.top_title, 'Most played')}
       </section>
 
+      {/* ── Summary cards ── */}
       <section className="stats-grid" aria-label="Summary">
         <article className="stat-card">
           <FilmIcon />
@@ -109,24 +119,49 @@ export function StatsPage({
         <article className="stat-card">
           <UserIcon />
           <span>Current streak</span>
-          <strong>{data.current_streak}</strong>
+          <strong>{data.current_streak} days</strong>
           <small>Longest {data.longest_streak}</small>
         </article>
         <article className="stat-card">
           <ChartIcon />
-          <span>Best time</span>
-          <strong>{data.tod_emoji} {data.tod_label}</strong>
-          <small>{data.best_day}</small>
+          <span>Finished</span>
+          <strong>{data.finished}</strong>
+          <small>of {data.started} started</small>
         </article>
       </section>
 
+      {/* ── Watch history ── */}
+      {(data.recent_history?.length ?? 0) > 0 && (
+        <section className="stats-history-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">History</p>
+              <h2>Recently watched</h2>
+            </div>
+          </div>
+          <div className="stats-history-row">
+            {data.recent_history.map((item: StatsHistoryItem, i) => (
+              <a key={i} className="stats-history-card" href={appHref(item.url)}>
+                <div className="stats-history-poster">
+                  <img src={item.poster} alt="" loading="lazy" decoding="async" />
+                </div>
+                <span className="stats-history-title">{item.title}</span>
+                {item.watched_at && <small>{item.watched_at}</small>}
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="stats-panels">
+        {/* ── Weekly rhythm ── */}
         <article className="stats-panel">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Rhythm</p>
               <h2>Weekly activity</h2>
             </div>
+            <span className="stats-panel-hint">Best day: {data.best_day}</span>
           </div>
           <div className="dow-bars">
             {data.dow_bars.map((bar) => (
@@ -139,56 +174,96 @@ export function StatsPage({
           </div>
         </article>
 
+        {/* ── Heatmap ── */}
         <article className="stats-panel">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Last 12 weeks</p>
               <h2>Activity map</h2>
             </div>
+            <span className="stats-panel-hint">{data.tod_emoji} {data.tod_label} person</span>
           </div>
-          <div className="heatmap" aria-label="Activity heatmap">
+          <div className="heatmap" role="img" aria-label="Activity heatmap" aria-description={`${data.active_days} active days in the last 12 weeks`}>
             {data.heatmap.map((cell) => (
               <span
                 key={cell.date}
                 className={`heat-${heatLevel(cell.count, maxHeat)}`}
-                title={`${cell.date}: ${cell.count}`}
+                title={cell.count ? `${cell.date}: ${cell.count} play${cell.count === 1 ? '' : 's'}` : cell.date}
+                aria-label={cell.count ? `${cell.date}: ${cell.count}` : undefined}
               />
             ))}
           </div>
         </article>
 
-        <article className="stats-panel stats-list-panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Replay</p>
-              <h2>Most replayed</h2>
+        {/* ── Most replayed ── */}
+        {data.most_replayed.length > 0 && (
+          <article className="stats-panel stats-list-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Replay</p>
+                <h2>Most replayed</h2>
+              </div>
             </div>
-          </div>
-          <div className="stats-title-list">
-            {data.most_replayed.length ? data.most_replayed.map((title) => (
-              <a key={`${title.url}:${title.count}`} href={appHref(title.url)}>
-                <img src={title.poster} alt="" loading="lazy" decoding="async" />
-                <span>
-                  <strong>{title.title}</strong>
-                  <small>{title.count || 0} plays</small>
-                </span>
-              </a>
-            )) : <small>No replay data yet</small>}
-          </div>
-        </article>
+            <div className="stats-title-list">
+              {data.most_replayed.map((title) => (
+                <a key={`${title.url}:${title.count}`} href={appHref(title.url)}>
+                  <img src={title.poster} alt="" loading="lazy" decoding="async" />
+                  <span>
+                    <strong>{title.title}</strong>
+                    <small>{title.count || 0} plays</small>
+                  </span>
+                </a>
+              ))}
+            </div>
+          </article>
+        )}
 
-        <article className="stats-panel stats-list-panel">
+        {/* ── Taste ── */}
+        <article className="stats-panel">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Taste</p>
               <h2>Top picks</h2>
             </div>
           </div>
-          <div className="stats-tags">
-            {data.top_genres.map(([name, count]) => <span key={name}>{name}<small>{count}</small></span>)}
-            {data.top_artists.map(([name, count]) => <span key={name}>{name}<small>{count}</small></span>)}
-            {data.top_director && <span>{data.top_director[0]}<small>{data.top_director[1]}</small></span>}
-            {data.best_month && <span>{data.best_month[0]}<small>{data.best_month[1]}</small></span>}
+
+          {data.top_genres.length > 0 && (
+            <div className="stats-taste-row">
+              <span className="stats-taste-label">Genres</span>
+              <div className="stats-tags">
+                {data.top_genres.map(([name, count]) => (
+                  <span key={name}>{name}<small>{count}</small></span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.top_artists.length > 0 && (
+            <div className="stats-taste-row">
+              <span className="stats-taste-label">Artists</span>
+              <div className="stats-tags">
+                {data.top_artists.map(([name, count]) => (
+                  <span key={name}>{name}<small>{count}</small></span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="stats-taste-facts">
+            {data.top_director && (
+              <span>
+                <small>Director</small>
+                <strong>{data.top_director[0]}</strong>
+                <small>{data.top_director[1]} films</small>
+              </span>
+            )}
+            {data.best_month && (
+              <span>
+                <small>Best month</small>
+                <strong>{data.best_month[0]}</strong>
+                <small>{data.best_month[1]} plays</small>
+              </span>
+            )}
           </div>
         </article>
       </section>

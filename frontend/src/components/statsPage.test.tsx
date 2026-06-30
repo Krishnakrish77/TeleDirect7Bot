@@ -72,6 +72,7 @@ const stats: StatsResponse = {
   ],
   current_streak: 2,
   longest_streak: 5,
+  recent_history: [],
 };
 
 describe('StatsPage', () => {

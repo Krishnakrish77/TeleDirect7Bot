@@ -444,6 +444,15 @@ export interface StatsHeatmapCell {
   dow: number;
 }
 
+export interface StatsHistoryItem {
+  title: string;
+  poster: string;
+  url: string;
+  media_kind: string;
+  year: number | string | null;
+  watched_at: string;
+}
+
 export interface StatsResponse {
   total_seconds: number;
   video_seconds: number;
@@ -480,6 +489,7 @@ export interface StatsResponse {
   heatmap: StatsHeatmapCell[];
   current_streak: number;
   longest_streak: number;
+  recent_history: StatsHistoryItem[];
 }
 
 export interface AdminFilterOption {

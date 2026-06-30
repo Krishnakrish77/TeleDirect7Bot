@@ -374,6 +374,56 @@ async def _stats_payload(user_id: int) -> dict:
             month_counts[_mwa.strftime("%b %Y")] += 1
     best_month = month_counts.most_common(1)[0] if month_counts else None
 
+    # ── Recent watch history (last 20 distinct titles) ────────────────────
+    recent_history: list[dict] = []
+    _seen_groups: set = set()
+    for h in history:
+        if len(recent_history) >= 20:
+            break
+        ck = h.get("cw_key", "")
+        m = _CW_KEY_RE.match(ck)
+        if not m:
+            continue
+        item = media_index.get_item(int(m.group(1)))
+        if not item:
+            continue
+        group = item.series_key or item.album_key or item.movie_key or ck
+        if group in _seen_groups:
+            continue
+        _seen_groups.add(group)
+        if item.series_key:
+            rh_title = item.series_title or item.title
+            rh_url = f"/series/{item.series_key}"
+        elif item.album_key:
+            rh_title = item.album_title or item.title
+            rh_url = f"/album/{item.album_key}"
+        elif item.movie_key:
+            rh_title = item.title
+            rh_url = f"/movie/{item.movie_key}"
+        else:
+            rh_title = item.title
+            rh_url = f"/watch/{item.secure_hash}{item.message_id}"
+        rh_poster = (
+            f"https://image.tmdb.org/t/p/w342{item.poster_path}"
+            if item.poster_path
+            else f"/thumb/{item.secure_hash}{item.message_id}.jpg"
+        )
+        wa = h.get("watched_at")
+        if wa:
+            if hasattr(wa, "tzinfo") and wa.tzinfo:
+                wa = wa.replace(tzinfo=None)
+            rh_date = wa.strftime("%b %d")
+        else:
+            rh_date = ""
+        recent_history.append({
+            "title": rh_title or h.get("title", ""),
+            "poster": rh_poster,
+            "url": rh_url,
+            "media_kind": item.media_kind or "video",
+            "year": item.year or "",
+            "watched_at": rh_date,
+        })
+
     # ── Personality — require meaningful activity before labelling ────────
     # Threshold: 10+ plays OR 3+ hours (avoids both the "1 episode = label"
     # problem for episodic content AND the "9 films = no label" problem for
@@ -419,6 +469,7 @@ async def _stats_payload(user_id: int) -> dict:
         "heatmap": heatmap,
         "current_streak": current_streak,
         "longest_streak": longest_streak,
+        "recent_history": recent_history,
     }
 
 
