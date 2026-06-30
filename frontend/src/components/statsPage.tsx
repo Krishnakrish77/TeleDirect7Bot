@@ -140,8 +140,8 @@ export function StatsPage({
             </div>
           </div>
           <div className="stats-history-row">
-            {data.recent_history.map((item: StatsHistoryItem, i) => (
-              <a key={i} className="stats-history-card" href={appHref(item.url)}>
+            {data.recent_history.map((item: StatsHistoryItem) => (
+              <a key={`${item.url}:${item.watched_at}`} className="stats-history-card" href={appHref(item.url)}>
                 <div className="stats-history-poster audio-art-wrap">
                   {item.media_kind === 'audio' ? <MusicIcon /> : <TvIcon />}
                   <img src={item.poster} alt="" loading="lazy" decoding="async" onError={(e) => { e.currentTarget.hidden = true; }} />

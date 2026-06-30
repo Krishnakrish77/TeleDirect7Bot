@@ -19,6 +19,11 @@ routes = web.RouteTableDef()
 _IMPORT_MAX_BYTES = int(os.environ.get("IPTV_IMPORT_MAX_BYTES", str(25 * 1024 * 1024)))
 _IMPORT_TIMEOUT = aiohttp.ClientTimeout(total=30, sock_connect=10, sock_read=20)
 _REDIRECT_LIMIT = 4
+# Well-known wildcard DNS services that map embedded IPs to hostnames
+# (e.g. 10.0.0.1.nip.io → 10.0.0.1) — used as SSRF pivots.
+# NOTE: full SSRF protection requires DNS resolution at validation time;
+# this blocklist only covers the most common rebinding services.
+_REBINDING_DOMAINS = frozenset({"nip.io", "sslip.io", "xip.io", "traefik.me"})
 
 
 def _json(data, *, status: int = 200) -> web.Response:
@@ -73,6 +78,9 @@ def _normalise_import_url(value: object) -> str:
     hostname = (parsed.hostname or "").lower()
     if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".local"):
         raise ValueError("Local playlist URLs are not allowed")
+    for _rd in _REBINDING_DOMAINS:
+        if hostname == _rd or hostname.endswith("." + _rd):
+            raise ValueError("Playlist URL uses a DNS rebinding service — use a direct address")
     try:
         host_ip = ip_address(hostname)
     except ValueError:
@@ -89,8 +97,12 @@ def _normalise_import_url(value: object) -> str:
 
 
 def _looks_like_m3u(text: str) -> bool:
-    preview = text.lstrip("\ufeff\r\n\t ")[:4096].upper()
-    return preview.startswith("#EXTM3U") or "#EXTINF" in preview
+    # Valid Extended M3U must begin with #EXTM3U (after stripping BOM/whitespace).
+    # The #EXTINF fallback is intentionally removed \u2014 it matched any response
+    # body that happened to contain that string in the first 4 KB (e.g. HTML
+    # playlist-index pages), causing confusing false-positive import attempts.
+    preview = text.lstrip("\ufeff\r\n\t ")[:256]
+    return preview.upper().startswith("#EXTM3U")
 
 
 async def _fetch_m3u_url(url: str) -> tuple[str, str]:

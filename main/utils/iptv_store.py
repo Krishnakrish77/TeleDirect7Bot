@@ -355,12 +355,16 @@ async def import_m3u(text: str) -> dict:
     async with _lock:
         await _load_json_unlocked()
         for raw in parsed[:1000]:
-            channel = _normalise_channel(raw)
-            if not channel["name"] or not channel["stream_url"]:
+            # Pre-validate before normalising so we don't generate a throwaway
+            # UUID on the first call only to discard it when calling again with
+            # the resolved `existing` record.
+            _name = _clean(raw.get("name"), 160)
+            _url = _normalise_url(raw.get("stream_url") or raw.get("streamUrl") or "")
+            if not _name or not _url:
                 skipped += 1
                 continue
-            original_id = channel["channel_id"]
-            existing = _channels.get(original_id)
+            _raw_id = _clean(raw.get("channel_id") or raw.get("id") or "", 64)
+            existing = _channels.get(_raw_id) or None
             channel = _normalise_channel(raw, existing)
             duplicate = next(
                 (
@@ -374,7 +378,6 @@ async def import_m3u(text: str) -> dict:
                 None,
             )
             if duplicate:
-                _channels.pop(original_id, None)
                 channel["channel_id"] = duplicate["channel_id"]
                 channel["created_at"] = duplicate.get("created_at", channel["created_at"])
             _channels[channel["channel_id"]] = channel

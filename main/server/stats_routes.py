@@ -28,6 +28,13 @@ _env.filters["artist_slug"] = lambda s: _re.sub(r"[^a-z0-9]+", "-", (s or "").lo
 from main.utils.media_index import _person_slug as _mpslug
 _env.filters["person_slug"] = lambda s: _mpslug(s or "")
 
+def _tmdb_poster(item) -> str:
+    """Return a displayable poster URL for a catalogue item."""
+    if item.poster_path:
+        return f"https://image.tmdb.org/t/p/w342{item.poster_path}"
+    return f"/thumb/{item.secure_hash}{item.message_id}.jpg"
+
+
 def _json(data: dict, *, status: int = 200) -> web.Response:
     return web.Response(
         text=json.dumps(data, separators=(",", ":")),
@@ -199,9 +206,7 @@ async def _stats_payload(user_id: int) -> dict:
             else:
                 title = item.title
                 url   = f"/watch/{item.secure_hash}{item.message_id}"
-            poster = (f"https://image.tmdb.org/t/p/w342{item.poster_path}"
-                      if item.poster_path
-                      else f"/thumb/{item.secure_hash}{item.message_id}.jpg")
+            poster = _tmdb_poster(item)
             title_meta[group] = {
                 "title":      title or h.get("title", ""),
                 "poster":     poster,
@@ -403,11 +408,7 @@ async def _stats_payload(user_id: int) -> dict:
         else:
             rh_title = item.title
             rh_url = f"/watch/{item.secure_hash}{item.message_id}"
-        rh_poster = (
-            f"https://image.tmdb.org/t/p/w342{item.poster_path}"
-            if item.poster_path
-            else f"/thumb/{item.secure_hash}{item.message_id}.jpg"
-        )
+        rh_poster = _tmdb_poster(item)
         wa = h.get("watched_at")
         if wa:
             if hasattr(wa, "tzinfo") and wa.tzinfo:

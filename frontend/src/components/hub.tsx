@@ -208,7 +208,7 @@ export function ContinueWatching() {
                   <span className="progress-track"><span style={{ width: '0%' }} /></span>
                   <span className="continue-card-type eyebrow up-next-label">Up next</span>
                   <strong>{title}</strong>
-                  <span>{next!.episode_label}</span>
+                  <span>{next!.episode_label || next!.title}</span>
                 </>
               ) : (
                 <>
