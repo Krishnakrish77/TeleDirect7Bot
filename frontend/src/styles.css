@@ -1119,30 +1119,32 @@ img {
 
 .preview-button {
   position: absolute;
-  top: 0.45rem;
+  top: 50%;
   left: 50%;
   z-index: 4;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.32rem;
-  min-height: 34px;
-  max-width: calc(100% - 5.8rem);
-  padding: 0 0.58rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.66);
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.72);
   color: #fff;
   cursor: pointer;
-  font-size: 0.75rem;
-  font-weight: 850;
   opacity: 0;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
+  transition: opacity 0.12s, background 0.12s, transform 0.12s;
+}
+
+.preview-button:hover {
+  background: rgba(0, 0, 0, 0.88);
+  transform: translate(-50%, -50%) scale(1.08);
 }
 
 .preview-button svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .save-button.saved,

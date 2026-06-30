@@ -160,6 +160,7 @@ function MediaCardBase({
         <button
           type="button"
           className="preview-button"
+          title={`Preview ${display.title}`}
           onClick={(event: MouseEvent<HTMLButtonElement>) => {
             event.preventDefault();
             event.stopPropagation();
@@ -168,7 +169,6 @@ function MediaCardBase({
           aria-label={`Preview ${display.title}`}
         >
           <PlayIcon />
-          <span>Preview</span>
         </button>
       )}
       {previewOpen && card.trailerKey && (
