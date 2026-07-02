@@ -19,10 +19,11 @@ function isWatchVideo(item: WatchResponse['item']): item is WatchVideo {
   return item.type === 'video' && 'directSrc' in item;
 }
 
+export const STILL_WATCHING_TIMEOUT_MS = 45 * 60 * 1000;
 
 function isVideoChromeTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest(
-    'button, a, input, select, textarea, label, .video-controls, .video-options-menu, .skip-intro, .next-episode-card, .video-overlay-message',
+    'button, a, input, select, textarea, label, .video-controls, .video-options-menu, .skip-intro, .next-episode-card, .video-overlay-message, .still-watching-overlay',
   ));
 }
 
@@ -518,9 +519,13 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [stillWatchingPrompt, setStillWatchingPrompt] = useState(false);
+  const [stillWatchingActivity, setStillWatchingActivity] = useState(0);
   const hlsFailedRef = useRef(false);
   const controlsTimerRef = useRef<number | null>(null);
   const clickTimerRef = useRef<number | null>(null);
+  const stillWatchingTimerRef = useRef<number | null>(null);
+  const lastStillWatchingActivityRef = useRef<number | null>(null);
   const [autoplayNext, setAutoplayNext] = useState(() => {
     try {
       return localStorage.getItem('td:videoAutoplay') !== '0';
@@ -571,7 +576,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   }, [chapters, currentTime]);
   const displaySubtitle = video.subtitle && video.subtitle !== video.quality ? video.subtitle : '';
   const shellClass = [
-    controlsVisible || menuOpen ? 'video-shell controls-visible' : 'video-shell controls-hidden',
+    controlsVisible || menuOpen || stillWatchingPrompt ? 'video-shell controls-visible' : 'video-shell controls-hidden',
     video.knownUnplayable ? 'video-unplayable' : '',
   ].filter(Boolean).join(' ');
 
@@ -620,25 +625,42 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     }
   }, []);
 
+  const clearStillWatchingTimer = useCallback(() => {
+    if (stillWatchingTimerRef.current !== null) {
+      window.clearTimeout(stillWatchingTimerRef.current);
+      stillWatchingTimerRef.current = null;
+    }
+  }, []);
+
+  const noteStillWatchingActivity = useCallback(() => {
+    const now = Date.now();
+    const last = lastStillWatchingActivityRef.current;
+    if (last !== null && now - last < 1000) return;
+    lastStillWatchingActivityRef.current = now;
+    setStillWatchingActivity((activity) => activity + 1);
+  }, []);
+
   const scheduleControlsHide = useCallback(() => {
     clearControlsTimer();
-    if (!playing || menuOpen || error || showNext) return;
+    if (!playing || menuOpen || error || showNext || stillWatchingPrompt) return;
     controlsTimerRef.current = window.setTimeout(() => {
       setControlsVisible(false);
       controlsTimerRef.current = null;
     }, 2200);
-  }, [clearControlsTimer, error, menuOpen, playing, showNext]);
+  }, [clearControlsTimer, error, menuOpen, playing, showNext, stillWatchingPrompt]);
 
   const revealVideoControls = useCallback(() => {
+    if (playing) noteStillWatchingActivity();
     setControlsVisible(true);
     scheduleControlsHide();
-  }, [scheduleControlsHide]);
+  }, [noteStillWatchingActivity, playing, scheduleControlsHide]);
 
   const changeVolume = useCallback((nextVolume: number) => {
+    noteStillWatchingActivity();
     const next = Math.max(0, Math.min(1, nextVolume));
     setVolume(next);
     setMuted(next <= 0);
-  }, []);
+  }, [noteStillWatchingActivity]);
 
   useEffect(() => {
     hlsFailedRef.current = false;
@@ -724,14 +746,43 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   }, []);
 
   useEffect(() => {
-    if (!playing || menuOpen || error || showNext) {
+    if (!playing || menuOpen || error || showNext || stillWatchingPrompt) {
       clearControlsTimer();
       setControlsVisible(true);
       return undefined;
     }
     scheduleControlsHide();
     return clearControlsTimer;
-  }, [clearControlsTimer, error, menuOpen, playing, scheduleControlsHide, showNext]);
+  }, [clearControlsTimer, error, menuOpen, playing, scheduleControlsHide, showNext, stillWatchingPrompt]);
+
+  useEffect(() => {
+    clearStillWatchingTimer();
+    if (!playing || error || showNext || stillWatchingPrompt || video.knownUnplayable) {
+      return undefined;
+    }
+    stillWatchingTimerRef.current = window.setTimeout(() => {
+      const el = videoRef.current;
+      if (!el || el.ended || video.knownUnplayable) return;
+      el.pause();
+      setPlaying(false);
+      setMenuOpen(false);
+      setStillWatchingPrompt(true);
+      setControlsVisible(true);
+      setVideoMediaSessionPlaybackState(false);
+      stillWatchingTimerRef.current = null;
+    }, STILL_WATCHING_TIMEOUT_MS);
+    return clearStillWatchingTimer;
+  }, [
+    clearStillWatchingTimer,
+    error,
+    menuOpen,
+    playing,
+    setVideoMediaSessionPlaybackState,
+    showNext,
+    stillWatchingActivity,
+    stillWatchingPrompt,
+    video.knownUnplayable,
+  ]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -972,6 +1023,8 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const playVideo = useCallback(() => {
     const el = videoRef.current;
     if (!el || video.knownUnplayable) return;
+    setStillWatchingPrompt(false);
+    noteStillWatchingActivity();
     setError('');
     setVideoMediaSessionPlaybackState(true);
     const promise = el.play();
@@ -982,15 +1035,16 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         setError('Tap play again or open the classic player.');
       });
     }
-  }, [setVideoMediaSessionPlaybackState, video.knownUnplayable]);
+  }, [noteStillWatchingActivity, setVideoMediaSessionPlaybackState, video.knownUnplayable]);
 
   const pauseVideo = useCallback(() => {
     const el = videoRef.current;
     if (!el) return;
+    clearStillWatchingTimer();
     el.pause();
     setPlaying(false);
     setVideoMediaSessionPlaybackState(false);
-  }, [setVideoMediaSessionPlaybackState]);
+  }, [clearStillWatchingTimer, setVideoMediaSessionPlaybackState]);
 
   const toggleVideo = useCallback(() => {
     const el = videoRef.current;
@@ -1002,11 +1056,12 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const seekVideo = useCallback((seconds: number) => {
     const el = videoRef.current;
     if (!el) return;
+    noteStillWatchingActivity();
     const next = Math.max(0, Math.min(seconds, duration || video.duration || seconds));
     el.currentTime = next;
     setCurrentTime(next);
     setVideoMediaSessionPosition(next);
-  }, [duration, setVideoMediaSessionPosition, video.duration]);
+  }, [duration, noteStillWatchingActivity, setVideoMediaSessionPosition, video.duration]);
 
   const seekVideoBy = useCallback((delta: number) => {
     const base = videoRef.current?.currentTime ?? currentTime;
@@ -1096,6 +1151,18 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     }
     showToast('AirPlay unavailable');
   }, [showToast]);
+
+  const keepWatching = useCallback(() => {
+    setStillWatchingPrompt(false);
+    setControlsVisible(true);
+    noteStillWatchingActivity();
+    playVideo();
+  }, [noteStillWatchingActivity, playVideo]);
+
+  const stayPaused = useCallback(() => {
+    setStillWatchingPrompt(false);
+    setControlsVisible(true);
+  }, []);
 
   useEffect(() => {
     if (!('mediaSession' in navigator) || video.knownUnplayable) return undefined;
@@ -1199,6 +1266,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       if (target?.isContentEditable || tagName === 'INPUT' || tagName === 'SELECT' || tagName === 'TEXTAREA' || tagName === 'BUTTON') {
         return;
       }
+      noteStillWatchingActivity();
       if (event.key === ' ' || event.key.toLowerCase() === 'k') {
         event.preventDefault();
         toggleVideo();
@@ -1218,7 +1286,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [pauseVideo, playNextEpisode, playVideo, seekVideo, seekVideoBy, toggleFullscreen, toggleVideo]);
+  }, [noteStillWatchingActivity, pauseVideo, playNextEpisode, playVideo, seekVideo, seekVideoBy, toggleFullscreen, toggleVideo]);
 
   useEffect(() => () => {
     if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
@@ -1388,6 +1456,26 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         </div>
 
         {toast && <div className="gesture-toast">{toast}</div>}
+
+        {stillWatchingPrompt && (
+          <div className="still-watching-overlay" role="dialog" aria-modal="true" aria-labelledby="still-watching-title">
+            <div className="still-watching-panel">
+              <p className="eyebrow">Playback paused</p>
+              <h2 id="still-watching-title">Still watching?</h2>
+              <p>We paused the stream to save bandwidth.</p>
+              <div className="still-watching-actions">
+                <button type="button" className="primary-action" onClick={keepWatching}>
+                  <PlayIcon />
+                  <span>Keep watching</span>
+                </button>
+                <button type="button" className="secondary-action" onClick={stayPaused}>
+                  <PauseIcon />
+                  <span>Stay paused</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {(error || video.knownUnplayable) && (
           <div className="video-overlay-message">

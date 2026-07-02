@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteContinueEntry, fetchAudioTracks, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, setRating } from '../api';
 import type { AudioPlayerHandle, PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, VideoChoice, WatchTrack, WatchVideo } from '../types';
-import { WatchPage } from './watch';
+import { STILL_WATCHING_TIMEOUT_MS, WatchPage } from './watch';
 
 vi.mock('../api', () => ({
   fetchAudioTracks: vi.fn(),
@@ -586,6 +586,31 @@ describe('WatchPage video player', () => {
     fireEvent.pointerMove(shell);
 
     expect(shell.className).toContain('controls-visible');
+  });
+
+  it('pauses unattended playback and prompts to keep watching', async () => {
+    const play = vi.mocked(HTMLMediaElement.prototype.play);
+    const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    vi.useFakeTimers();
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+
+    fireEvent.play(video);
+    await act(async () => {});
+    act(() => {
+      vi.advanceTimersByTime(STILL_WATCHING_TIMEOUT_MS);
+    });
+
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog', { name: /Still watching/i })).toBeTruthy();
+    expect(screen.getByText('We paused the stream to save bandwidth.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Keep watching/i }));
+
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog', { name: /Still watching/i })).toBeNull();
   });
 
   it('toggles captions from the visible fullscreen-safe controls', async () => {

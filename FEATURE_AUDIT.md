@@ -45,14 +45,14 @@ _Evidence: Webwright runs `outputs/perf_audit_live/final_runs/run_3`, `run_4`, `
 | Next episode auto-play + countdown | 🟢 All | ✅ 5s countdown card | — |
 | Subtitles / CC | 🟢 All | ✅ Auto-inject + manual upload | — |
 | Multiple audio tracks | 🟢 All | ✅ HLS audio track switcher | — |
-| Picture-in-Picture | 🟢 All | ✅ Plyr native PiP | — |
-| Playback speed | 🟡 Netflix, YouTube, Prime | ✅ Plyr speed on video | — |
+| Picture-in-Picture | 🟢 All | ✅ React player PiP control | — |
+| Playback speed | 🟡 Netflix, YouTube, Prime | ✅ React player speed selector | — |
 | Skip intro button | 🟢 All SVOD | ✅ Admin sets timestamps; button appears only within intro window | — |
-| Skip recap button | 🟡 Netflix, Disney+, JioHotstar | ❌ | Medium |
-| "Are you still watching?" prompt | 🟢 All | ❌ | Medium — simple JS timer, saves Telegram quota |
-| Video chapters / timestamps | 🟡 YouTube | ❌ | Medium — Plyr supports chapter markers natively; admin annotates |
+| Skip recap button | 🟡 Netflix, Disney+, JioHotstar | ✅ Admin sets timestamps; button appears only within recap window | — |
+| "Are you still watching?" prompt | 🟢 All | ✅ React player pauses unattended playback after 45 minutes and offers a resume action | — |
+| Video chapters / timestamps | 🟡 YouTube | ✅ Admin line-entry chapters with React progress markers and chapter list | — |
 | Per-title thumbs / rating | 🟡 Prime Video, YouTube | ✅ Up/down, toggle-off, auth-gated, feeds recommendations | — |
-| Keyboard shortcuts | 🟢 All web apps | ✅ Plyr global keys | — |
+| Keyboard shortcuts | 🟢 All web apps | ✅ React player global keys | — |
 | Adaptive quality selector | 🟢 All | ⚠️ Manual variant picker (not truly adaptive) | Low — architecture limitation |
 | X-Ray style cast overlay during playback | 🔵 Prime Video exclusive | ⚠️ TMDB info section below player | Low — partial coverage adequate |
 
@@ -210,8 +210,8 @@ Large batch shipped since the last audit. Validated against the live deployment 
 |---|---------|--------|----------------|
 | 7 | ~~**Gapless playback + crossfade**~~ | ✅ Done | Dual-buffer bgAudio/bgAudio2, 3s crossfade, pre-loads 30s before end. |
 | 8 | ~~**Manual queue ("Play next")**~~ | ✅ Done | Play next + Add to queue on track rows; toast feedback. |
-| 9 | **"Are you still watching?" prompt** | Low | Saves Telegram API quota and bandwidth. Simple: if paused > 45 min, show prompt and pause stream. |
-| 10 | **Video chapters** | Medium | Plyr supports chapter markers via a WebVTT chapters track. Admin annotates timestamps; displayed as seekable chapter marks in the progress bar. |
+| 9 | ~~**"Are you still watching?" prompt**~~ | ✅ Done | React player pauses unattended playback after 45 minutes, shows a fullscreen-safe prompt, and resumes through the normal video play path. |
+| 10 | ~~**Video chapters**~~ | ✅ Done | Admin line-entry chapters render as progress markers and a seekable chapter list in the React player. |
 | 11 | ~~**Viewing / listening stats page**~~ | ✅ Done | Streaks, video/audio time split, day-of-week heatmap, top artists/genres, play counts, "personality" card. Auth-gated `/stats`. |
 | 12 | **Watchlist remove on mobile** | Low | Currently hover-only. A long-press or visible X on touch devices fixes this. |
 | 13 | **Recommendations discoverability** | Low | Show a teaser shelf ("Sign in to see recommendations") for signed-out users. Currently invisible. |
