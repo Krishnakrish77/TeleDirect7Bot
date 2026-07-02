@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import socket
+import time
 from ipaddress import ip_address
 from urllib.parse import quote, urljoin, urlparse
 
@@ -21,7 +23,11 @@ routes = web.RouteTableDef()
 _IMPORT_MAX_BYTES = int(os.environ.get("IPTV_IMPORT_MAX_BYTES", str(25 * 1024 * 1024)))
 _IMPORT_TIMEOUT = aiohttp.ClientTimeout(total=30, sock_connect=10, sock_read=20)
 _STREAM_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=60)
+_LOGO_TIMEOUT = aiohttp.ClientTimeout(total=10, sock_connect=5, sock_read=8)
 _HLS_MANIFEST_MAX_BYTES = int(os.environ.get("IPTV_HLS_MANIFEST_MAX_BYTES", str(2 * 1024 * 1024)))
+_LOGO_MAX_BYTES = int(os.environ.get("IPTV_LOGO_MAX_BYTES", str(512 * 1024)))
+_LOGO_CACHE_TTL_SECONDS = int(os.environ.get("IPTV_LOGO_CACHE_TTL_SECONDS", str(24 * 60 * 60)))
+_LOGO_CACHE_MAX_ITEMS = int(os.environ.get("IPTV_LOGO_CACHE_MAX_ITEMS", "256"))
 _REDIRECT_LIMIT = 4
 # Well-known wildcard DNS services that map embedded IPs to hostnames
 # (e.g. 10.0.0.1.nip.io → 10.0.0.1) — used as SSRF pivots.
@@ -29,6 +35,18 @@ _REBINDING_DOMAINS = frozenset({"nip.io", "sslip.io", "xip.io", "traefik.me"})
 _FORBIDDEN_STREAM_HEADER_KEYS = {"host", "connection", "content-length", "transfer-encoding"}
 _HLS_RE = re.compile(r"\.m3u8(?:[?#]|$)|[?&](?:type|format)=m3u8", re.IGNORECASE)
 _URI_ATTR_RE = re.compile(r'URI="([^"]+)"')
+_LOGO_EXTENSION_CONTENT_TYPES = {
+    ".avif": "image/avif",
+    ".gif": "image/gif",
+    ".ico": "image/x-icon",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".svgz": "image/svg+xml",
+    ".webp": "image/webp",
+}
+_LOGO_CACHE: dict[str, tuple[float, str, bytes]] = {}
 
 
 def _json(data, *, status: int = 200) -> web.Response:
@@ -79,6 +97,122 @@ def _channel_payload(data: dict, *, channel_id: str = "") -> dict:
                 payload[keys[0]] = data[key]
                 break
     return payload
+
+
+def _logo_cache_key(channel_id: str, logo_url: str) -> str:
+    digest = hashlib.sha256(logo_url.encode("utf-8")).hexdigest()[:16]
+    return f"{channel_id}:{digest}"
+
+
+def _logo_proxy_url(channel: dict) -> str:
+    logo_url = str(channel.get("logoUrl") or "").strip()
+    channel_id = str(channel.get("id") or "").strip()
+    if not logo_url or not channel_id:
+        return ""
+    digest = hashlib.sha256(logo_url.encode("utf-8")).hexdigest()[:16]
+    return f"/api/live-tv/logo/{quote(channel_id, safe='')}?v={digest}"
+
+
+def _with_proxied_logo(channel: dict) -> dict:
+    logo_url = _logo_proxy_url(channel)
+    if not logo_url:
+        return channel
+    return {**channel, "logoUrl": logo_url}
+
+
+def _normalise_logo_url(value: object) -> str:
+    url = str(value or "").strip()
+    if not url:
+        raise ValueError("Logo URL is required")
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("A valid http(s) logo URL is required")
+    hostname = (parsed.hostname or "").lower()
+    if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".local"):
+        raise ValueError("Local logo URLs are not allowed")
+    for _rd in _REBINDING_DOMAINS:
+        if hostname == _rd or hostname.endswith("." + _rd):
+            raise ValueError("Logo URL uses a DNS rebinding service — use a direct address")
+    try:
+        host_ip = ip_address(hostname)
+    except ValueError:
+        return url
+    if not _is_public_import_ip(host_ip):
+        raise ValueError("Private logo URLs are not allowed")
+    return url
+
+
+def _logo_content_type(raw_content_type: str, source_url: str) -> str:
+    content_type = raw_content_type.split(";", 1)[0].strip().lower()
+    path = urlparse(source_url).path.lower()
+    extension = os.path.splitext(path)[1]
+    guessed = _LOGO_EXTENSION_CONTENT_TYPES.get(extension, "")
+    if content_type.startswith("image/"):
+        return "image/svg+xml" if content_type == "image/svg" else content_type
+    if guessed and content_type in {"", "application/octet-stream", "binary/octet-stream", "text/plain"}:
+        return guessed
+    raise ValueError("Logo URL did not return image content")
+
+
+def _prune_logo_cache(now: float) -> None:
+    for key, (expires_at, _, _) in list(_LOGO_CACHE.items()):
+        if expires_at <= now:
+            _LOGO_CACHE.pop(key, None)
+    while _LOGO_CACHE_MAX_ITEMS > 0 and len(_LOGO_CACHE) >= _LOGO_CACHE_MAX_ITEMS:
+        oldest_key = min(_LOGO_CACHE.items(), key=lambda item: item[1][0])[0]
+        _LOGO_CACHE.pop(oldest_key, None)
+
+
+async def _fetch_logo(channel_id: str, logo_url: str) -> tuple[str, bytes]:
+    cache_key = _logo_cache_key(channel_id, logo_url)
+    now = time.time()
+    cached = _LOGO_CACHE.get(cache_key)
+    if cached and cached[0] > now:
+        return cached[1], cached[2]
+
+    current = _normalise_logo_url(logo_url)
+    resolver = _SafePublicResolver(message="Private logo URLs are not allowed")
+    connector = aiohttp.TCPConnector(resolver=resolver, ttl_dns_cache=0)
+    try:
+        async with aiohttp.ClientSession(timeout=_LOGO_TIMEOUT, connector=connector) as session:
+            for _attempt in range(_REDIRECT_LIMIT + 1):
+                async with session.get(
+                    current,
+                    allow_redirects=False,
+                    headers={"Accept": "image/avif,image/webp,image/svg+xml,image/*,*/*;q=0.8"},
+                ) as response:
+                    if 300 <= response.status < 400:
+                        location = response.headers.get("Location")
+                        if not location:
+                            raise ValueError("Logo URL redirected without a location")
+                        current = _normalise_logo_url(urljoin(current, location))
+                        continue
+                    if response.status >= 400:
+                        raise ValueError(f"Logo URL returned HTTP {response.status}")
+                    content_type = _logo_content_type(response.headers.get("Content-Type", ""), str(response.url))
+                    content_length = response.headers.get("Content-Length")
+                    if content_length:
+                        try:
+                            declared_length = int(content_length)
+                        except ValueError:
+                            declared_length = 0
+                        if declared_length > _LOGO_MAX_BYTES:
+                            raise ValueError("Logo image is too large")
+                    chunks: list[bytes] = []
+                    total = 0
+                    async for chunk in response.content.iter_chunked(32 * 1024):
+                        total += len(chunk)
+                        if total > _LOGO_MAX_BYTES:
+                            raise ValueError("Logo image is too large")
+                        chunks.append(chunk)
+                    body = b"".join(chunks)
+                    _prune_logo_cache(now)
+                    if _LOGO_CACHE_TTL_SECONDS > 0 and _LOGO_CACHE_MAX_ITEMS > 0:
+                        _LOGO_CACHE[cache_key] = (time.time() + _LOGO_CACHE_TTL_SECONDS, content_type, body)
+                    return content_type, body
+    finally:
+        await resolver.close()
+    raise ValueError("Logo URL redirected too many times")
 
 
 def _is_public_import_ip(value) -> bool:
@@ -303,7 +437,7 @@ async def _proxy_channel_stream(request: web.Request, channel: dict, target_url:
 @routes.get("/api/live-tv/channels")
 async def live_tv_channels(_: web.Request) -> web.Response:
     channels = await iptv_store.list_channels(include_disabled=False)
-    return _json({"channels": channels})
+    return _json({"channels": [_with_proxied_logo(channel) for channel in channels]})
 
 
 @routes.get("/api/live-tv/channel/{channel_id}")
@@ -311,7 +445,33 @@ async def live_tv_channel(request: web.Request) -> web.Response:
     channel = await iptv_store.get_channel(request.match_info["channel_id"], include_disabled=False)
     if not channel:
         raise web.HTTPNotFound(text="Channel not found")
-    return _json({"channel": channel})
+    return _json({"channel": _with_proxied_logo(channel)})
+
+
+@routes.get("/api/live-tv/logo/{channel_id}")
+async def live_tv_logo(request: web.Request) -> web.Response:
+    channel = await iptv_store.get_channel(request.match_info["channel_id"], include_disabled=False)
+    if not channel:
+        raise web.HTTPNotFound(text="Channel not found")
+    logo_url = str(channel.get("logoUrl") or "").strip()
+    if not logo_url:
+        raise web.HTTPNotFound(text="Logo not found")
+    try:
+        content_type, body = await _fetch_logo(channel["id"], logo_url)
+    except ValueError as exc:
+        return web.Response(text=str(exc), status=400)
+    except (aiohttp.ClientError, TimeoutError) as exc:
+        return web.Response(text=f"Unable to fetch logo: {type(exc).__name__}", status=502)
+    cache_control = f"public, max-age={_LOGO_CACHE_TTL_SECONDS}" if _LOGO_CACHE_TTL_SECONDS > 0 else "no-store"
+    return web.Response(
+        body=body,
+        content_type=content_type,
+        headers={
+            "Cache-Control": cache_control,
+            "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @routes.get("/api/live-tv/stream/{channel_id}")

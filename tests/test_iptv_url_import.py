@@ -10,9 +10,12 @@ os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 from main.server.iptv_routes import (
     _is_public_import_ip,
+    _logo_content_type,
     _looks_like_m3u,
+    _normalise_logo_url,
     _normalise_import_url,
     _rewrite_m3u_proxy_urls,
+    _with_proxied_logo,
 )
 
 
@@ -27,10 +30,38 @@ class IptvUrlImportTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             _normalise_import_url("http://127.0.0.1/private.m3u")
 
+    def test_rejects_private_logo_url(self):
+        with self.assertRaises(ValueError):
+            _normalise_logo_url("http://127.0.0.1/logo.png")
+
     def test_rejects_non_public_resolved_addresses(self):
         self.assertFalse(_is_public_import_ip(ip_address("10.0.0.1")))
         self.assertFalse(_is_public_import_ip(ip_address("169.254.169.254")))
         self.assertTrue(_is_public_import_ip(ip_address("8.8.8.8")))
+
+    def test_public_live_tv_logo_url_is_proxied(self):
+        channel = {
+            "id": "news",
+            "name": "News",
+            "logoUrl": "https://cdn.example.test/logos/news.png",
+        }
+
+        proxied = _with_proxied_logo(channel)
+
+        self.assertEqual(channel["logoUrl"], "https://cdn.example.test/logos/news.png")
+        self.assertRegex(proxied["logoUrl"], r"^/api/live-tv/logo/news\?v=[a-f0-9]{16}$")
+
+    def test_logo_content_type_falls_back_by_image_extension(self):
+        self.assertEqual(
+            _logo_content_type("application/octet-stream", "https://cdn.example.test/logos/news.webp"),
+            "image/webp",
+        )
+        self.assertEqual(
+            _logo_content_type("text/plain", "https://cdn.example.test/logos/news.svg"),
+            "image/svg+xml",
+        )
+        with self.assertRaises(ValueError):
+            _logo_content_type("text/html", "https://cdn.example.test/not-a-logo")
 
     def test_detects_m3u_content(self):
         self.assertTrue(_looks_like_m3u("#EXTM3U\n#EXTINF:-1,News\nhttps://example.test/stream.m3u8"))
