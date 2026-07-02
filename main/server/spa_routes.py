@@ -13,6 +13,7 @@ import hmac
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode, urljoin
@@ -53,6 +54,10 @@ _SORT_OPTIONS = [
 _VALID_VIEWS = {"", "list", "movies", "series", "music"}
 _APP_ROUTE_RE = re.compile(r"^/app(?:/.*)?$")
 _UI_COOKIE = "td_ui"
+_API_CACHE_TTL = 30.0
+_SLOW_HUB_LOG_MS = 1000.0
+_api_response_cache: dict[str, tuple[str, float]] = {}
+_filter_cache: tuple[dict, float] | None = None
 
 
 @routes.get("/robots.txt")
@@ -64,12 +69,98 @@ async def robots_txt(_: web.Request) -> web.Response:
     )
 
 
-def _json(data, *, status: int = 200) -> web.Response:
+def _json_dumps(data) -> str:
+    return json.dumps(data, separators=(",", ":"))
+
+
+def _json_text(text: str, *, status: int = 200) -> web.Response:
     return web.Response(
-        text=json.dumps(data, separators=(",", ":")),
+        text=text,
         content_type="application/json",
         status=status,
         headers={"Cache-Control": "no-store"},
+    )
+
+
+def _json(data, *, status: int = 200) -> web.Response:
+    return _json_text(_json_dumps(data), status=status)
+
+
+def _cache_get(key: str) -> str | None:
+    entry = _api_response_cache.get(key)
+    if entry and entry[1] > time.monotonic():
+        return entry[0]
+    if entry:
+        _api_response_cache.pop(key, None)
+    return None
+
+
+def _cache_set(key: str, text: str) -> None:
+    _api_response_cache[key] = (text, time.monotonic() + _API_CACHE_TTL)
+
+
+def invalidate_api_cache() -> None:
+    """Clear cached SPA API payloads after catalogue mutations."""
+    global _filter_cache
+    _api_response_cache.clear()
+    _filter_cache = None
+
+
+def _base_filters() -> dict:
+    global _filter_cache
+    now = time.monotonic()
+    if _filter_cache and _filter_cache[1] > now:
+        return _filter_cache[0]
+    filters = {
+        "years": media_index.distinct_years(),
+        "qualities": media_index.distinct_qualities(),
+        "genres": media_index.distinct_genres(),
+        "tags": [
+            {"name": name, "count": count}
+            for name, count in media_index.tag_cloud()
+        ],
+        "sortOptions": [
+            {"value": value, "label": label}
+            for value, label in _SORT_OPTIONS
+        ],
+        "views": [
+            {"value": "", "label": "All"},
+            {"value": "movies", "label": "Movies"},
+            {"value": "series", "label": "Series"},
+            {"value": "music", "label": "Music"},
+        ],
+    }
+    _filter_cache = (filters, now + _API_CACHE_TTL)
+    return filters
+
+
+def _landing_cache_key(params: dict) -> str:
+    return "hub:landing:" + repr(sorted(params.items()))
+
+
+def _log_hub_timing(
+    started: float,
+    *,
+    mode: str,
+    cache: str,
+    user: bool,
+    params: dict,
+    timings: dict[str, float],
+) -> None:
+    elapsed_ms = (time.monotonic() - started) * 1000
+    if elapsed_ms < _SLOW_HUB_LOG_MS:
+        return
+    logging.info(
+        "spa hub: mode=%s cache=%s user=%s elapsed=%.1fms timings=%s params=%s",
+        mode,
+        cache,
+        user,
+        elapsed_ms,
+        timings,
+        {
+            key: params.get(key)
+            for key in ("q", "tag", "quality", "genre", "year", "sort", "view", "offset", "limit")
+        },
     )
 
 
@@ -485,33 +576,36 @@ async def api_me(request: web.Request) -> web.Response:
 
 @routes.get("/api/hub")
 async def api_hub(request: web.Request) -> web.Response:
+    started = time.monotonic()
+    timings: dict[str, float] = {}
     params = _parse_hub_params(request)
-    base_filters = {
-        "years": media_index.distinct_years(),
-        "qualities": media_index.distinct_qualities(),
-        "genres": media_index.distinct_genres(),
-        "tags": [
-            {"name": name, "count": count}
-            for name, count in media_index.tag_cloud()
-        ],
-        "sortOptions": [
-            {"value": value, "label": label}
-            for value, label in _SORT_OPTIONS
-        ],
-        "views": [
-            {"value": "", "label": "All"},
-            {"value": "movies", "label": "Movies"},
-            {"value": "series", "label": "Series"},
-            {"value": "music", "label": "Music"},
-        ],
-    }
+    user = get_user(request) if _is_landing(params) else None
+    cache_key = _landing_cache_key(params) if _is_landing(params) and not user else ""
+    if cache_key:
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            _log_hub_timing(
+                started,
+                mode="shelves",
+                cache="hit",
+                user=False,
+                params=params,
+                timings=timings,
+            )
+            return _json_text(cached)
+
+    mark = time.monotonic()
+    base_filters = _base_filters()
+    timings["filters_ms"] = round((time.monotonic() - mark) * 1000, 1)
 
     if _is_landing(params):
+        mark = time.monotonic()
         raw_shelves = media_index.shelves()
         hero_items = media_index.pick_heroes()
-        user = get_user(request)
+        timings["shelves_ms"] = round((time.monotonic() - mark) * 1000, 1)
         if user:
             try:
+                mark = time.monotonic()
                 rec_items, personal_shelves = await asyncio.wait_for(
                     asyncio.gather(
                         rec_engine.get_recommendations(int(user["sub"])),
@@ -519,6 +613,7 @@ async def api_hub(request: web.Request) -> web.Response:
                     ),
                     timeout=12.0,
                 )
+                timings["recommendations_ms"] = round((time.monotonic() - mark) * 1000, 1)
                 if rec_items:
                     rec_reasons = await rec_engine.get_recommendation_reasons(
                         int(user["sub"]),
@@ -551,12 +646,16 @@ async def api_hub(request: web.Request) -> web.Response:
                 if personal_shelves:
                     raw_shelves = list(raw_shelves[:1]) + personal_shelves + list(raw_shelves[1:])
             except asyncio.TimeoutError:
+                timings["recommendations_ms"] = round((time.monotonic() - mark) * 1000, 1)
                 logging.warning("spa hub: rec_engine timed out, skipping shelf")
             except Exception:
+                timings["recommendations_ms"] = round((time.monotonic() - mark) * 1000, 1)
                 logging.exception("spa hub: rec_engine failed, skipping shelf")
 
         try:
+            mark = time.monotonic()
             tr = await asyncio.wait_for(trending.get_trending(), timeout=10.0)
+            timings["trending_ms"] = round((time.monotonic() - mark) * 1000, 1)
             tr_items = tr.get("in_library", [])
             if len(tr_items) >= trending._MIN_SHELF_ITEMS:
                 raw_shelves = list(raw_shelves) + [
@@ -568,12 +667,16 @@ async def api_hub(request: web.Request) -> web.Response:
                     },
                 ]
         except asyncio.TimeoutError:
+            timings["trending_ms"] = round((time.monotonic() - mark) * 1000, 1)
             logging.warning("spa hub: trending timed out, skipping shelf")
         except Exception:
+            timings["trending_ms"] = round((time.monotonic() - mark) * 1000, 1)
             logging.exception("spa hub: trending failed, skipping shelf")
 
         try:
+            mark = time.monotonic()
             top_plays = await asyncio.wait_for(wh_store.get_top_plays(40), timeout=5.0)
+            timings["top_plays_ms"] = round((time.monotonic() - mark) * 1000, 1)
             top_cards: list[dict] = []
             seen_groups: set[str] = set()
             for entry in top_plays:
@@ -600,10 +703,13 @@ async def api_hub(request: web.Request) -> web.Response:
                     },
                 ]
         except asyncio.TimeoutError:
+            timings["top_plays_ms"] = round((time.monotonic() - mark) * 1000, 1)
             logging.warning("spa hub: top_plays timed out, skipping shelf")
         except Exception:
+            timings["top_plays_ms"] = round((time.monotonic() - mark) * 1000, 1)
             logging.exception("spa hub: top_plays failed, skipping shelf")
 
+        mark = time.monotonic()
         _prewarm_card_thumbs(
             hero_items
             + [
@@ -612,6 +718,8 @@ async def api_hub(request: web.Request) -> web.Response:
                 for item in (shelf.get("items") or [])
             ]
         )
+        timings["thumb_prewarm_ms"] = round((time.monotonic() - mark) * 1000, 1)
+        mark = time.monotonic()
         shelves = []
         for shelf in raw_shelves:
             rec_reasons = shelf.get("rec_reasons") or []
@@ -633,7 +741,7 @@ async def api_hub(request: web.Request) -> web.Response:
                 "dismissable": bool(shelf.get("dismissable")),
                 "recMeta": shelf.get("rec_meta") or [],
             })
-        return _json({
+        payload = {
             "mode": "shelves",
             "params": params,
             "filters": base_filters,
@@ -645,8 +753,33 @@ async def api_hub(request: web.Request) -> web.Response:
             "nextOffset": None,
             "nextHref": None,
             "emptyText": _empty_text(params),
-        })
+        }
+        timings["serialize_ms"] = round((time.monotonic() - mark) * 1000, 1)
+        if cache_key:
+            mark = time.monotonic()
+            text = _json_dumps(payload)
+            timings["json_ms"] = round((time.monotonic() - mark) * 1000, 1)
+            _cache_set(cache_key, text)
+            _log_hub_timing(
+                started,
+                mode="shelves",
+                cache="miss",
+                user=False,
+                params=params,
+                timings=timings,
+            )
+            return _json_text(text)
+        _log_hub_timing(
+            started,
+            mode="shelves",
+            cache="bypass",
+            user=bool(user),
+            params=params,
+            timings=timings,
+        )
+        return _json(payload)
 
+    mark = time.monotonic()
     items, total = media_index.query_grouped(
         q=params["q"],
         year=params["year"],
@@ -658,13 +791,17 @@ async def api_hub(request: web.Request) -> web.Response:
         offset=params["offset"],
         limit=params["limit"],
     )
+    timings["query_ms"] = round((time.monotonic() - mark) * 1000, 1)
     next_offset = params["offset"] + params["limit"]
     if next_offset >= total:
         next_offset = None
 
+    mark = time.monotonic()
     _prewarm_card_thumbs(items)
+    timings["thumb_prewarm_ms"] = round((time.monotonic() - mark) * 1000, 1)
 
-    return _json({
+    mark = time.monotonic()
+    payload = {
         "mode": "grid",
         "params": params,
         "filters": base_filters,
@@ -676,7 +813,17 @@ async def api_hub(request: web.Request) -> web.Response:
         "nextOffset": next_offset,
         "nextHref": _app_query(params, offset=next_offset) if next_offset is not None else None,
         "emptyText": _empty_text(params),
-    })
+    }
+    timings["serialize_ms"] = round((time.monotonic() - mark) * 1000, 1)
+    _log_hub_timing(
+        started,
+        mode="grid",
+        cache="bypass",
+        user=False,
+        params=params,
+        timings=timings,
+    )
+    return _json(payload)
 
 
 def _person_link(name: str) -> dict:

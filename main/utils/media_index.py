@@ -114,6 +114,8 @@ async def _store_upsert(item: HubItem) -> None:
     except Exception:
         logging.exception("media_index: store.upsert failed for bin:%d",
                           item.message_id)
+    finally:
+        _invalidate_hub_caches()
 
 
 async def _store_remove(message_id: int) -> None:
@@ -741,15 +743,23 @@ async def persist_now() -> None:
     """
     async with _lock:
         _persist_unlocked()
-    # Bust the hub render cache so the next page load reflects changes.
+
+
+def _invalidate_hub_caches() -> None:
     try:
         from main.server.hub_routes import invalidate_render_cache
         invalidate_render_cache()
     except Exception:
         pass
+    try:
+        from main.server.spa_routes import invalidate_api_cache
+        invalidate_api_cache()
+    except Exception:
+        pass
 
 
 def _persist_unlocked() -> None:
+    _invalidate_hub_caches()
     # When MongoDB is the durable store every mutation is already written
     # through there. Writing to /tmp JSON is redundant — Koyeb wipes /tmp
     # on restart and the bot re-seeds from Mongo anyway.
@@ -1816,11 +1826,6 @@ async def set_hidden(message_id: int, hidden: bool) -> bool:
         item.hidden = hidden
         _persist_unlocked()
     await _store_upsert(item)
-    from main.server.hub_routes import invalidate_render_cache
-    try:
-        invalidate_render_cache()
-    except Exception:
-        pass
     return True
 
 
