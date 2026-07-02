@@ -241,11 +241,11 @@ export async function importAdminIptvM3uUrl(url: string): Promise<AdminIptvActio
   });
 }
 
-export async function testAdminIptvStream(streamUrl: string): Promise<{ ok: boolean; message: string }> {
+export async function testAdminIptvStream(streamUrl: string, streamHeaders: Record<string, string> = {}): Promise<{ ok: boolean; message: string }> {
   return request('/api/app/admin/iptv/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ streamUrl }),
+    body: JSON.stringify({ streamUrl, streamHeaders }),
   });
 }
 

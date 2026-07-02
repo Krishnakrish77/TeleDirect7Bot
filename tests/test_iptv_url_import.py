@@ -1,4 +1,6 @@
 import os
+import asyncio
+import importlib
 import unittest
 from ipaddress import ip_address
 
@@ -11,6 +13,7 @@ os.environ.setdefault("BIN_CHANNEL", "-1001")
 from main.server.iptv_routes import (
     _LOGO_CACHE,
     _LOGO_PLACEHOLDER_SVG,
+    _cache_logo_result,
     _is_public_import_ip,
     _logo_content_type,
     _logo_cache_key,
@@ -18,9 +21,11 @@ from main.server.iptv_routes import (
     _normalise_logo_url,
     _normalise_import_url,
     _placeholder_logo_result,
+    _probe_stream_url,
     _rewrite_m3u_proxy_urls,
     _with_proxied_logo,
 )
+iptv_routes_module = importlib.import_module("main.server.iptv_routes")
 
 
 class IptvUrlImportTest(unittest.TestCase):
@@ -69,6 +74,7 @@ class IptvUrlImportTest(unittest.TestCase):
 
     def test_placeholder_logo_result_is_negative_cached(self):
         _LOGO_CACHE.clear()
+        iptv_routes_module._LOGO_CACHE_BYTES = 0
         logo_url = "https://cdn.example.test/missing-logo.png"
 
         content_type, body = _placeholder_logo_result("news", logo_url)
@@ -76,6 +82,27 @@ class IptvUrlImportTest(unittest.TestCase):
         self.assertEqual(content_type, "image/svg+xml")
         self.assertEqual(body, _LOGO_PLACEHOLDER_SVG)
         self.assertIn(_logo_cache_key("news", logo_url), _LOGO_CACHE)
+
+    def test_logo_cache_respects_total_byte_cap(self):
+        old_max = iptv_routes_module._LOGO_CACHE_MAX_BYTES
+        try:
+            _LOGO_CACHE.clear()
+            iptv_routes_module._LOGO_CACHE_BYTES = 0
+            iptv_routes_module._LOGO_CACHE_MAX_BYTES = 10
+
+            _cache_logo_result("one", "https://cdn.example.test/one.png", "image/png", b"123456", 60)
+            _cache_logo_result("two", "https://cdn.example.test/two.png", "image/png", b"abcdef", 60)
+
+            self.assertLessEqual(iptv_routes_module._LOGO_CACHE_BYTES, 10)
+            self.assertEqual(len(_LOGO_CACHE), 1)
+        finally:
+            iptv_routes_module._LOGO_CACHE_MAX_BYTES = old_max
+            _LOGO_CACHE.clear()
+            iptv_routes_module._LOGO_CACHE_BYTES = 0
+
+    def test_stream_probe_rejects_private_url_before_fetch(self):
+        with self.assertRaises(ValueError):
+            asyncio.run(_probe_stream_url("http://127.0.0.1/live.m3u8"))
 
     def test_detects_m3u_content(self):
         self.assertTrue(_looks_like_m3u("#EXTM3U\n#EXTINF:-1,News\nhttps://example.test/stream.m3u8"))

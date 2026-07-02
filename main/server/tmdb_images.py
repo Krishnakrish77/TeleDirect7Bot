@@ -16,7 +16,9 @@ _TMDB_IMAGE_CACHE_TTL = int(os.environ.get("TMDB_IMAGE_CACHE_TTL_SECONDS", str(2
 _TMDB_IMAGE_ERROR_CACHE_TTL = int(os.environ.get("TMDB_IMAGE_ERROR_CACHE_TTL_SECONDS", str(6 * 60 * 60)))
 _TMDB_IMAGE_CACHE_MAX_ITEMS = int(os.environ.get("TMDB_IMAGE_CACHE_MAX_ITEMS", "256"))
 _TMDB_IMAGE_MAX_BYTES = int(os.environ.get("TMDB_IMAGE_MAX_BYTES", str(2 * 1024 * 1024)))
+_TMDB_IMAGE_CACHE_MAX_BYTES = int(os.environ.get("TMDB_IMAGE_CACHE_MAX_BYTES", str(64 * 1024 * 1024)))
 _tmdb_image_cache: dict[tuple[str, str], tuple[float, str, bytes]] = {}
+_tmdb_image_cache_bytes = 0
 _TMDB_IMAGE_SIZES = frozenset({"w92", "w154", "w185", "w300", "w342", "w500", "w780", "w1280", "original"})
 _TMDB_IMAGE_PATH_RE = re.compile(r"^[A-Za-z0-9._/-]+\.(?:avif|gif|jpe?g|png|webp)$", re.IGNORECASE)
 _TMDB_IMAGE_EXTENSION_CONTENT_TYPES = {
@@ -54,24 +56,43 @@ def _tmdb_image_cache_key(size: str, tail: str) -> tuple[str, str]:
 
 
 def _prune_tmdb_image_cache(now: float) -> None:
+    global _tmdb_image_cache_bytes
     for key, (expires_at, _, _) in list(_tmdb_image_cache.items()):
         if expires_at <= now:
-            _tmdb_image_cache.pop(key, None)
-    while _TMDB_IMAGE_CACHE_MAX_ITEMS > 0 and len(_tmdb_image_cache) >= _TMDB_IMAGE_CACHE_MAX_ITEMS:
+            entry = _tmdb_image_cache.pop(key, None)
+            if entry:
+                _tmdb_image_cache_bytes = max(0, _tmdb_image_cache_bytes - len(entry[2]))
+    while _TMDB_IMAGE_CACHE_MAX_ITEMS > 0 and len(_tmdb_image_cache) > _TMDB_IMAGE_CACHE_MAX_ITEMS:
         oldest_key = min(_tmdb_image_cache.items(), key=lambda item: item[1][0])[0]
-        _tmdb_image_cache.pop(oldest_key, None)
+        entry = _tmdb_image_cache.pop(oldest_key, None)
+        if entry:
+            _tmdb_image_cache_bytes = max(0, _tmdb_image_cache_bytes - len(entry[2]))
+    while _TMDB_IMAGE_CACHE_MAX_BYTES > 0 and _tmdb_image_cache_bytes > _TMDB_IMAGE_CACHE_MAX_BYTES and _tmdb_image_cache:
+        oldest_key = min(_tmdb_image_cache.items(), key=lambda item: item[1][0])[0]
+        entry = _tmdb_image_cache.pop(oldest_key, None)
+        if entry:
+            _tmdb_image_cache_bytes = max(0, _tmdb_image_cache_bytes - len(entry[2]))
 
 
 def _cache_tmdb_image(size: str, tail: str, content_type: str, body: bytes, ttl_seconds: int) -> None:
     if ttl_seconds <= 0 or _TMDB_IMAGE_CACHE_MAX_ITEMS <= 0:
         return
+    if _TMDB_IMAGE_CACHE_MAX_BYTES > 0 and len(body) > _TMDB_IMAGE_CACHE_MAX_BYTES:
+        return
+    global _tmdb_image_cache_bytes
     now = time.monotonic()
     _prune_tmdb_image_cache(now)
+    cache_key = _tmdb_image_cache_key(size, tail)
+    existing = _tmdb_image_cache.pop(cache_key, None)
+    if existing:
+        _tmdb_image_cache_bytes = max(0, _tmdb_image_cache_bytes - len(existing[2]))
     _tmdb_image_cache[_tmdb_image_cache_key(size, tail)] = (
         now + ttl_seconds,
         content_type,
         body,
     )
+    _tmdb_image_cache_bytes += len(body)
+    _prune_tmdb_image_cache(now)
 
 
 def _tmdb_image_content_type(raw_content_type: str, tail: str) -> str:

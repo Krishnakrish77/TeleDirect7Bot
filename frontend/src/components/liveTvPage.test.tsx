@@ -57,11 +57,11 @@ describe('LiveTvPage', () => {
     expect(video?.getAttribute('src')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Play channel' }));
-    await waitFor(() => expect(video?.getAttribute('src')).toBe('https://example.test/news.ts'));
+    await waitFor(() => expect(video?.getAttribute('src')).toBe('/api/live-tv/stream/news'));
 
     fireEvent.click(screen.getByRole('button', { name: /Movie One/i }));
     expect(screen.getByRole('heading', { name: 'Movie One' })).toBeTruthy();
-    await waitFor(() => expect(video?.getAttribute('src')).toBe('https://example.test/movies.ts'));
+    await waitFor(() => expect(video?.getAttribute('src')).toBe('/api/live-tv/stream/movies'));
 
     fireEvent.click(screen.getByRole('button', { name: /News\s*1/i }));
     expect(screen.getByRole('heading', { name: 'News 24' })).toBeTruthy();
@@ -73,7 +73,7 @@ describe('LiveTvPage', () => {
     expect(within(rail).queryByRole('button', { name: /Movie One/i })).toBeNull();
 
     fireEvent.click(within(rail).getByRole('button', { name: /News 24/i }));
-    await waitFor(() => expect(video?.getAttribute('src')).toBe('https://example.test/news.ts'));
+    await waitFor(() => expect(video?.getAttribute('src')).toBe('/api/live-tv/stream/news'));
   });
 
   it('stores favorite channels and exposes favorites and recent filters', async () => {

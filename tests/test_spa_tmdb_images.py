@@ -1,4 +1,5 @@
 import os
+import importlib
 import unittest
 
 
@@ -9,6 +10,7 @@ os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 from main.server.tmdb_images import (
     _TMDB_IMAGE_PLACEHOLDER_SVG,
+    _cache_tmdb_image,
     _normalise_tmdb_image,
     _tmdb_image_cache,
     _tmdb_image_cache_key,
@@ -16,6 +18,7 @@ from main.server.tmdb_images import (
     _tmdb_placeholder_result,
     tmdb_image_url,
 )
+tmdb_images_module = importlib.import_module("main.server.tmdb_images")
 
 
 class SpaTmdbImageTest(unittest.TestCase):
@@ -48,12 +51,30 @@ class SpaTmdbImageTest(unittest.TestCase):
 
     def test_placeholder_result_is_cached(self):
         _tmdb_image_cache.clear()
+        tmdb_images_module._tmdb_image_cache_bytes = 0
 
         content_type, body = _tmdb_placeholder_result("w342", "missing.jpg")
 
         self.assertEqual(content_type, "image/svg+xml")
         self.assertEqual(body, _TMDB_IMAGE_PLACEHOLDER_SVG)
         self.assertIn(_tmdb_image_cache_key("w342", "missing.jpg"), _tmdb_image_cache)
+
+    def test_tmdb_image_cache_respects_total_byte_cap(self):
+        old_max = tmdb_images_module._TMDB_IMAGE_CACHE_MAX_BYTES
+        try:
+            _tmdb_image_cache.clear()
+            tmdb_images_module._tmdb_image_cache_bytes = 0
+            tmdb_images_module._TMDB_IMAGE_CACHE_MAX_BYTES = 10
+
+            _cache_tmdb_image("w342", "one.jpg", "image/jpeg", b"123456", 60)
+            _cache_tmdb_image("w342", "two.jpg", "image/jpeg", b"abcdef", 60)
+
+            self.assertLessEqual(tmdb_images_module._tmdb_image_cache_bytes, 10)
+            self.assertEqual(len(_tmdb_image_cache), 1)
+        finally:
+            tmdb_images_module._TMDB_IMAGE_CACHE_MAX_BYTES = old_max
+            _tmdb_image_cache.clear()
+            tmdb_images_module._tmdb_image_cache_bytes = 0
 
 
 if __name__ == "__main__":

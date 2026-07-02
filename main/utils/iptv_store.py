@@ -264,13 +264,20 @@ async def save_channel(raw: dict) -> tuple[bool, dict | None, str]:
     db = _get_db()
     if db is not None:
         try:
-            existing = await db["iptv_channels"].find_one({"channel_id": channel["channel_id"]}, projection={"_id": 0})
-            if existing is None:
-                existing = await db["iptv_channels"].find_one({"stream_url": channel["stream_url"]}, projection={"_id": 0})
+            existing_by_id = await db["iptv_channels"].find_one({"channel_id": channel["channel_id"]}, projection={"_id": 0})
+            stream_match = await db["iptv_channels"].find_one({"stream_url": channel["stream_url"]}, projection={"_id": 0})
+            existing = existing_by_id or stream_match
+            if (
+                existing_by_id
+                and stream_match
+                and existing_by_id["channel_id"] != stream_match["channel_id"]
+            ):
+                await db["iptv_channels"].delete_one({"channel_id": existing_by_id["channel_id"]})
+                existing = stream_match
             if channel.get("tvg_id"):
                 tvgid_match = await db["iptv_channels"].find_one({"tvg_id": channel["tvg_id"]}, projection={"_id": 0})
                 if tvgid_match is None:
-                    existing = existing  # no tvg_id match, keep stream_url result
+                    pass  # no tvg_id match, keep channel_id/stream_url result
                 elif existing is None:
                     existing = tvgid_match  # only tvg_id match
                 elif existing["channel_id"] != tvgid_match["channel_id"]:

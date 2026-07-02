@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -24,11 +25,14 @@ _IMPORT_MAX_BYTES = int(os.environ.get("IPTV_IMPORT_MAX_BYTES", str(25 * 1024 * 
 _IMPORT_TIMEOUT = aiohttp.ClientTimeout(total=30, sock_connect=10, sock_read=20)
 _STREAM_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=60)
 _LOGO_TIMEOUT = aiohttp.ClientTimeout(total=10, sock_connect=5, sock_read=8)
+_STREAM_PROBE_TIMEOUT = aiohttp.ClientTimeout(total=12, sock_connect=5, sock_read=8)
 _HLS_MANIFEST_MAX_BYTES = int(os.environ.get("IPTV_HLS_MANIFEST_MAX_BYTES", str(2 * 1024 * 1024)))
+_STREAM_PROBE_MAX_BYTES = int(os.environ.get("IPTV_STREAM_PROBE_MAX_BYTES", str(8 * 1024)))
 _LOGO_MAX_BYTES = int(os.environ.get("IPTV_LOGO_MAX_BYTES", str(512 * 1024)))
 _LOGO_CACHE_TTL_SECONDS = int(os.environ.get("IPTV_LOGO_CACHE_TTL_SECONDS", str(24 * 60 * 60)))
 _LOGO_ERROR_CACHE_TTL_SECONDS = int(os.environ.get("IPTV_LOGO_ERROR_CACHE_TTL_SECONDS", str(6 * 60 * 60)))
 _LOGO_CACHE_MAX_ITEMS = int(os.environ.get("IPTV_LOGO_CACHE_MAX_ITEMS", "256"))
+_LOGO_CACHE_MAX_BYTES = int(os.environ.get("IPTV_LOGO_CACHE_MAX_BYTES", str(32 * 1024 * 1024)))
 _REDIRECT_LIMIT = 4
 # Well-known wildcard DNS services that map embedded IPs to hostnames
 # (e.g. 10.0.0.1.nip.io → 10.0.0.1) — used as SSRF pivots.
@@ -55,6 +59,7 @@ _LOGO_PLACEHOLDER_SVG = (
     b'<circle cx="48" cy="48" r="5" fill="#14b8a6"/></svg>'
 )
 _LOGO_CACHE: dict[str, tuple[float, str, bytes]] = {}
+_LOGO_CACHE_BYTES = 0
 
 
 def _json(data, *, status: int = 200) -> web.Response:
@@ -163,20 +168,39 @@ def _logo_content_type(raw_content_type: str, source_url: str) -> str:
 
 
 def _prune_logo_cache(now: float) -> None:
+    global _LOGO_CACHE_BYTES
     for key, (expires_at, _, _) in list(_LOGO_CACHE.items()):
         if expires_at <= now:
-            _LOGO_CACHE.pop(key, None)
-    while _LOGO_CACHE_MAX_ITEMS > 0 and len(_LOGO_CACHE) >= _LOGO_CACHE_MAX_ITEMS:
+            entry = _LOGO_CACHE.pop(key, None)
+            if entry:
+                _LOGO_CACHE_BYTES = max(0, _LOGO_CACHE_BYTES - len(entry[2]))
+    while _LOGO_CACHE_MAX_ITEMS > 0 and len(_LOGO_CACHE) > _LOGO_CACHE_MAX_ITEMS:
         oldest_key = min(_LOGO_CACHE.items(), key=lambda item: item[1][0])[0]
-        _LOGO_CACHE.pop(oldest_key, None)
+        entry = _LOGO_CACHE.pop(oldest_key, None)
+        if entry:
+            _LOGO_CACHE_BYTES = max(0, _LOGO_CACHE_BYTES - len(entry[2]))
+    while _LOGO_CACHE_MAX_BYTES > 0 and _LOGO_CACHE_BYTES > _LOGO_CACHE_MAX_BYTES and _LOGO_CACHE:
+        oldest_key = min(_LOGO_CACHE.items(), key=lambda item: item[1][0])[0]
+        entry = _LOGO_CACHE.pop(oldest_key, None)
+        if entry:
+            _LOGO_CACHE_BYTES = max(0, _LOGO_CACHE_BYTES - len(entry[2]))
 
 
 def _cache_logo_result(channel_id: str, logo_url: str, content_type: str, body: bytes, ttl_seconds: int) -> None:
     if ttl_seconds <= 0 or _LOGO_CACHE_MAX_ITEMS <= 0:
         return
+    if _LOGO_CACHE_MAX_BYTES > 0 and len(body) > _LOGO_CACHE_MAX_BYTES:
+        return
+    global _LOGO_CACHE_BYTES
     now = time.time()
     _prune_logo_cache(now)
-    _LOGO_CACHE[_logo_cache_key(channel_id, logo_url)] = (now + ttl_seconds, content_type, body)
+    cache_key = _logo_cache_key(channel_id, logo_url)
+    existing = _LOGO_CACHE.pop(cache_key, None)
+    if existing:
+        _LOGO_CACHE_BYTES = max(0, _LOGO_CACHE_BYTES - len(existing[2]))
+    _LOGO_CACHE[cache_key] = (now + ttl_seconds, content_type, body)
+    _LOGO_CACHE_BYTES += len(body)
+    _prune_logo_cache(now)
 
 
 def _placeholder_logo_result(channel_id: str, logo_url: str) -> tuple[str, bytes]:
@@ -412,6 +436,60 @@ async def _read_limited_text(response, max_bytes: int) -> str:
     return b"".join(chunks).decode(response.charset or "utf-8", errors="replace")
 
 
+async def _read_probe_bytes(response, max_bytes: int = _STREAM_PROBE_MAX_BYTES) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    limit = max(1, max_bytes)
+    async for chunk in response.content.iter_chunked(min(16 * 1024, limit)):
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            chunks.append(chunk[:max(0, len(chunk) - (total - limit))])
+            break
+        chunks.append(chunk)
+        if total >= limit:
+            break
+    return b"".join(chunks)
+
+
+async def _probe_stream_url(stream_url: str, raw_headers: dict | None = None) -> str:
+    current = _normalise_import_url(stream_url)
+    resolver = _SafePublicResolver(message="Private stream URLs are not allowed")
+    connector = aiohttp.TCPConnector(resolver=resolver, ttl_dns_cache=0)
+    headers = _stream_request_headers(raw_headers)
+    headers.setdefault("Accept", "application/vnd.apple.mpegurl,video/*,*/*;q=0.8")
+    try:
+        async with aiohttp.ClientSession(timeout=_STREAM_PROBE_TIMEOUT, connector=connector) as session:
+            for _attempt in range(_REDIRECT_LIMIT + 1):
+                async with session.get(
+                    current,
+                    allow_redirects=False,
+                    headers={**headers, "Range": "bytes=0-8191"},
+                ) as response:
+                    if 300 <= response.status < 400:
+                        location = response.headers.get("Location")
+                        if not location:
+                            raise ValueError("Stream URL redirected without a location")
+                        current = _normalise_import_url(urljoin(current, location))
+                        continue
+                    if response.status >= 400:
+                        raise ValueError(f"Stream returned HTTP {response.status}")
+                    body = await _read_probe_bytes(response)
+                    content_type = response.headers.get("Content-Type", "").lower()
+                    if "mpegurl" in content_type or _HLS_RE.search(current):
+                        text = body.decode(response.charset or "utf-8", errors="replace")
+                        if not _looks_like_m3u(text):
+                            raise ValueError("Stream URL did not return an HLS playlist")
+                        return "HLS playlist reachable"
+                    if not body and response.status != 204:
+                        raise ValueError("Stream returned no data")
+                    return "Stream reachable"
+    finally:
+        await resolver.close()
+    raise ValueError("Stream URL redirected too many times")
+
+
 async def _proxy_channel_stream(request: web.Request, channel: dict, target_url: str) -> web.StreamResponse:
     resolver = _SafePublicResolver(message="Private stream URLs are not allowed")
     connector = aiohttp.TCPConnector(resolver=resolver, ttl_dns_cache=0)
@@ -587,5 +665,11 @@ async def admin_iptv_test(request: web.Request) -> web.Response:
     _require_admin(request)
     data = await _body(request)
     stream_url = str(data.get("streamUrl") or data.get("stream_url") or "").strip()
-    ok = bool(re.match(r"^https?://", stream_url, re.IGNORECASE))
-    return _json({"ok": ok, "message": "URL accepted" if ok else "A valid http(s) stream URL is required"}, status=200 if ok else 400)
+    stream_headers = data.get("streamHeaders") or data.get("stream_headers") or {}
+    try:
+        message = await _probe_stream_url(stream_url, stream_headers if isinstance(stream_headers, dict) else {})
+    except ValueError as exc:
+        return _json({"ok": False, "message": str(exc)}, status=400)
+    except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError) as exc:
+        return _json({"ok": False, "message": f"Unable to reach stream: {type(exc).__name__}"}, status=400)
+    return _json({"ok": True, "message": message})

@@ -159,7 +159,7 @@ export function AdminIptvPage({
     setBusy('test');
     setNotice('');
     try {
-      const response = await testAdminIptvStream(form.streamUrl);
+      const response = await testAdminIptvStream(form.streamUrl, form.streamHeaders || {});
       setNotice(response.message);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Unable to validate URL');

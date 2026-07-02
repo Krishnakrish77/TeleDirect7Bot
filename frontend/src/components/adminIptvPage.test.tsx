@@ -170,10 +170,17 @@ describe('AdminIptvPage', () => {
       channel: initialData.channels[0],
       channels: initialData.channels,
     });
+    vi.mocked(testAdminIptvStream).mockResolvedValue({ ok: true, message: 'Stream reachable' });
 
     renderAdmin();
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Validate' }));
+    await waitFor(() => expect(testAdminIptvStream).toHaveBeenCalledWith(
+      'https://example.test/news.m3u8',
+      { userAgent: 'TeleDirect Test' },
+    ));
+
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(saveAdminIptvChannel).toHaveBeenCalledWith(expect.objectContaining({
