@@ -2345,6 +2345,148 @@ img {
   gap: 0.65rem;
 }
 
+.admin-job-center {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-job-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.admin-job-card {
+  display: grid;
+  gap: 0.62rem;
+  min-width: 0;
+  min-height: 168px;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(11, 12, 14, 0.46);
+}
+
+.admin-job-card.running {
+  border-color: rgba(20, 184, 166, 0.42);
+  background: rgba(20, 184, 166, 0.07);
+}
+
+.admin-job-card.failed {
+  border-color: rgba(251, 113, 133, 0.36);
+  background: rgba(251, 113, 133, 0.07);
+}
+
+.admin-job-card.complete {
+  border-color: rgba(34, 197, 94, 0.22);
+}
+
+.admin-job-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: start;
+}
+
+.admin-job-card strong {
+  display: block;
+  color: #fff;
+  font-size: 0.94rem;
+}
+
+.admin-job-card small,
+.admin-job-card p,
+.admin-job-progress em {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.admin-job-card small {
+  display: block;
+  margin-top: 0.15rem;
+}
+
+.admin-job-card p {
+  min-height: 2.6em;
+  margin: 0;
+}
+
+.admin-job-card-head > span {
+  min-width: 72px;
+  padding: 0.24rem 0.44rem;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 999px;
+  color: #cbd5e1;
+  font-size: 0.66rem;
+  font-weight: 950;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.admin-job-card.running .admin-job-card-head > span {
+  border-color: rgba(20, 184, 166, 0.42);
+  color: #5eead4;
+}
+
+.admin-job-card.failed .admin-job-card-head > span {
+  border-color: rgba(251, 113, 133, 0.46);
+  color: #fda4af;
+}
+
+.admin-job-progress {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.admin-job-progress i {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.admin-job-progress b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--teal);
+}
+
+.admin-job-card.failed .admin-job-progress b {
+  background: #fb7185;
+}
+
+.admin-job-card.complete .admin-job-progress b {
+  background: #22c55e;
+}
+
+.admin-job-card button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(11, 12, 14, 0.42);
+  color: #e2e8f0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.admin-job-card button:hover,
+.admin-job-card button:focus-visible {
+  border-color: rgba(20, 184, 166, 0.52);
+  background: rgba(20, 184, 166, 0.14);
+  color: #fff;
+  outline: none;
+}
+
+.admin-job-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .admin-status-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -8386,6 +8528,11 @@ select.edit-field-input {
   margin-bottom: 0.6rem;
 }
 
+.admin-ops-rail {
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  align-items: start;
+}
+
 .admin-ops-rail .section-heading h2 {
   font-size: 1rem;
 }
@@ -8396,6 +8543,7 @@ select.edit-field-input {
   font-weight: 850;
 }
 
+.admin-ops-rail .admin-job-grid,
 .admin-ops-rail .admin-status-grid,
 .admin-ops-rail .maintenance-grid {
   grid-template-columns: minmax(0, 1fr);
@@ -8715,9 +8863,19 @@ select.edit-field-input {
   background: rgba(255, 255, 255, 0.018);
 }
 
+.admin-ops-rail .admin-job-center,
 .admin-ops-rail .admin-status-panel,
 .admin-ops-rail .admin-maintenance-panel {
   padding: 0.75rem;
+}
+
+.admin-ops-rail .admin-job-grid {
+  gap: 0.5rem;
+}
+
+.admin-ops-rail .admin-job-card {
+  min-height: 154px;
+  padding: 0.65rem;
 }
 
 .admin-ops-rail .admin-status-grid {
@@ -9030,6 +9188,7 @@ select.edit-field-input {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .admin-ops-rail .admin-job-grid,
   .admin-ops-rail .admin-status-grid,
   .admin-ops-rail .maintenance-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9080,6 +9239,7 @@ select.edit-field-input {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .admin-ops-rail .admin-job-grid,
   .admin-ops-rail .admin-status-grid,
   .admin-ops-rail .maintenance-grid {
     grid-template-columns: minmax(0, 1fr);

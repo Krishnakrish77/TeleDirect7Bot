@@ -22,7 +22,7 @@ export function AdminNav({
     </nav>
   );
 }
-import type { AdminItem, AdminItemEditPayload, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
+import type { AdminItem, AdminItemEditPayload, AdminProgressState, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { tmdbImageUrl } from '../utils/tmdb';
 
@@ -71,6 +71,86 @@ function progressPct(state: { total?: number; done?: number; scanned?: number } 
   if (!state?.total) return 0;
   const done = state.done ?? state.scanned ?? 0;
   return Math.max(0, Math.min(100, Math.round((done / state.total) * 100)));
+}
+
+type AdminJobKey = 'seed' | 'enrich' | 'reindex' | 'probe' | 'episode_fill' | 'migrate';
+
+type AdminJobDefinition = {
+  key: AdminJobKey;
+  label: string;
+  description: string;
+  action?: string;
+  actionLabel?: string;
+  confirmMessage?: string;
+  detail: (state: AdminProgressState) => string;
+};
+
+const ADMIN_JOBS: AdminJobDefinition[] = [
+  {
+    key: 'seed',
+    label: 'Catalogue seed',
+    description: 'Scans BIN history and loads the in-app catalogue.',
+    detail: (state) => state.running ? `${state.scanned ?? 0}/${state.total ?? 0} scanned` : 'Automatic on startup',
+  },
+  {
+    key: 'enrich',
+    label: 'TMDB enrichment',
+    description: 'Matches movies and series against metadata providers.',
+    action: 'enrich',
+    actionLabel: 'Run enrichment',
+    detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} checked - ${state.enriched ?? 0} matched` : 'Ready to fill missing metadata',
+  },
+  {
+    key: 'reindex',
+    label: 'Re-index catalogue',
+    description: 'Rebuilds grouping, quality buckets, and search metadata.',
+    action: 'reindex',
+    actionLabel: 'Run Re-index',
+    detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} processed` : 'Ready to rebuild catalogue indexes',
+  },
+  {
+    key: 'probe',
+    label: 'Codec probe',
+    description: 'Checks browser playback compatibility for unprobed videos.',
+    action: 'probe-codecs',
+    actionLabel: 'Run codec probe',
+    detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} probed - ${state.found_incompatible ?? 0} flagged` : 'Ready to inspect playback health',
+  },
+  {
+    key: 'episode_fill',
+    label: 'Episode metadata',
+    description: 'Fetches missing season and episode details for series.',
+    action: 'fetch-episodes',
+    actionLabel: 'Run episode fetch',
+    detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} checked - ${state.filled ?? 0} filled` : 'Ready to fill series gaps',
+  },
+  {
+    key: 'migrate',
+    label: 'Mongo migration',
+    description: 'Copies catalogue state to MongoDB storage when configured.',
+    action: 'migrate-to-mongo',
+    actionLabel: 'Run Mongo migration',
+    confirmMessage: 'Run Mongo migration?',
+    detail: (state) => state.running || state.phase ? `${state.phase || 'running'} - ${state.done ?? 0}/${state.total ?? 0}` : 'Requires Mongo configuration',
+  },
+];
+
+function jobStateLabel(state: AdminProgressState): string {
+  if (state.error || state.phase === 'failed') return 'Failed';
+  if (state.running) return 'Running';
+  if (state.total && progressPct(state) >= 100) return 'Complete';
+  return 'Idle';
+}
+
+function jobStateClass(state: AdminProgressState): string {
+  if (state.error || state.phase === 'failed') return 'failed';
+  if (state.running) return 'running';
+  if (state.total && progressPct(state) >= 100) return 'complete';
+  return 'idle';
+}
+
+function activeJobCount(status: AdminStatusResponse): number {
+  return ADMIN_JOBS.filter((job) => status[job.key]?.running).length;
 }
 
 function itemSubtitle(item: AdminItem): string {
@@ -230,35 +310,58 @@ function AdminControls({
   );
 }
 
-function AdminStatusPanel({ status }: { status: AdminStatusResponse }) {
-  const rows = [
-    ['Seed', status.seed, status.seed?.running ? `${status.seed.scanned ?? 0}/${status.seed.total ?? 0} scanned` : 'Idle'],
-    ['Enrich', status.enrich, status.enrich?.running ? `${status.enrich.done ?? 0}/${status.enrich.total ?? 0} - ${status.enrich.enriched ?? 0} matched` : 'Idle'],
-    ['Re-index', status.reindex, status.reindex?.running ? `${status.reindex.done ?? 0}/${status.reindex.total ?? 0} processed` : 'Idle'],
-    ['Codecs', status.probe, status.probe?.running ? `${status.probe.done ?? 0}/${status.probe.total ?? 0} - ${status.probe.found_incompatible ?? 0} flagged` : 'Idle'],
-    ['Episodes', status.episode_fill, status.episode_fill?.running ? `${status.episode_fill.done ?? 0}/${status.episode_fill.total ?? 0} - ${status.episode_fill.filled ?? 0} filled` : 'Idle'],
-    ['Mongo', status.migrate, status.migrate?.running || status.migrate?.phase === 'failed' ? `${status.migrate.phase || 'running'} - ${status.migrate.done ?? 0}/${status.migrate.total ?? 0}` : 'Idle'],
-  ] as const;
+function AdminJobCenter({
+  status,
+  busy,
+  onRun,
+}: {
+  status: AdminStatusResponse;
+  busy: string;
+  onRun: (action: string, confirmMessage?: string) => void;
+}) {
+  const runningCount = activeJobCount(status);
 
   return (
-    <section className="admin-panel admin-status-panel">
+    <section className="admin-panel admin-job-center">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Live work</p>
-          <h2>Pipeline status</h2>
+          <h2>Job center</h2>
         </div>
-        <span>{status.catalogue_size.toLocaleString()} indexed</span>
+        <span>{runningCount ? `${runningCount} running` : `${status.catalogue_size.toLocaleString()} indexed`}</span>
       </div>
-      <div className="admin-status-grid">
-        {rows.map(([label, state, detail]) => {
-          const running = Boolean(state?.running || state?.phase === 'failed');
+      <div className="admin-job-grid">
+        {ADMIN_JOBS.map((job) => {
+          const state = status[job.key] || {};
+          const pct = progressPct(state);
+          const stateClass = jobStateClass(state);
+          const running = Boolean(state.running);
+          const disabled = Boolean(busy) || running || !job.action;
           return (
-            <article key={label} className={running ? 'running' : ''}>
-              <div>
-                <strong>{label}</strong>
-                <small>{detail}</small>
+            <article key={job.key} className={`admin-job-card ${stateClass}`}>
+              <div className="admin-job-card-head">
+                <div>
+                  <strong>{job.label}</strong>
+                  <small>{job.description}</small>
+                </div>
+                <span>{jobStateLabel(state)}</span>
               </div>
-              <i><b style={{ width: `${progressPct(state)}%` }} /></i>
+              <div className="admin-job-progress" aria-label={`${job.label} progress`}>
+                <i><b style={{ width: `${running && pct === 0 ? 12 : pct}%` }} /></i>
+                <em>{pct ? `${pct}%` : running ? 'Starting' : 'No active run'}</em>
+              </div>
+              <p>{state.error || state.last_title || job.detail(state)}</p>
+              {job.action ? (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onRun(job.action!, job.confirmMessage)}
+                >
+                  {busy === job.action ? 'Queueing...' : job.actionLabel || 'Run'}
+                </button>
+              ) : (
+                <button type="button" disabled>Automatic</button>
+              )}
             </article>
           );
         })}
@@ -277,10 +380,7 @@ function MaintenancePanel({
   onMergeSeries: (sourceKey: string, targetKey: string) => Promise<void>;
 }) {
   const actions = [
-    ['enrich', 'Enrich TMDB', 'Match missing video metadata'],
-    ['reindex', 'Re-index', 'Rebuild grouping and quality'],
-    ['probe-codecs', 'Probe codecs', 'Flag browser playback issues'],
-    ['fetch-episodes', 'Episodes', 'Fetch TV episode metadata'],
+    ['metadata-cleanup', 'Metadata cleanup', 'Queue enrichment and episode fill'],
     ['clear-audio-tmdb', 'Fix audio', 'Clear bad TMDB matches'],
     ['clear-audio-thumbs', 'Audio thumbs', 'Refresh music artwork'],
     ['clear-all-thumbs', 'All thumbs', 'Refresh every thumbnail'],
@@ -293,8 +393,8 @@ function MaintenancePanel({
     <section className="admin-panel admin-maintenance-panel">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Maintenance</p>
-          <h2>Run operations</h2>
+          <p className="eyebrow">Quick operations</p>
+          <h2>Cleanup tools</h2>
         </div>
       </div>
       <div className="maintenance-grid">
@@ -1302,8 +1402,8 @@ export function AdminPage({
           <AdminHero data={data} />
           {notice && <p className="admin-notice" role="status">{notice}</p>}
           {tab === 'ops' ? (
-            <section className="admin-workspace" aria-label="Operations">
-              <AdminStatusPanel status={data.status} />
+            <section className="admin-workspace admin-ops-rail" aria-label="Operations">
+              <AdminJobCenter status={data.status} busy={busy} onRun={runMaintenanceAction} />
               <MaintenancePanel busy={busy} onRun={runMaintenanceAction} onMergeSeries={runMergeSeriesAction} />
             </section>
           ) : (

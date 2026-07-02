@@ -244,6 +244,26 @@ describe('AdminPage', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it('renders the operations job center with running progress', () => {
+    renderAdmin({
+      locationSearch: '?tab=ops',
+      data: {
+        ...adminData,
+        status: {
+          ...adminData.status,
+          enrich: { running: true, done: 3, total: 10, enriched: 2, last_title: 'Kalki' },
+        },
+      },
+    });
+
+    expect(screen.getByRole('heading', { name: 'Job center' })).toBeTruthy();
+    expect(screen.getByText('TMDB enrichment')).toBeTruthy();
+    expect(screen.getByText('Running')).toBeTruthy();
+    expect(screen.getByText('Kalki')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Run enrichment' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('heading', { name: 'Cleanup tools' })).toBeTruthy();
+  });
+
   it('merges series from the React admin maintenance panel', async () => {
     const reload = vi.fn();
     renderAdmin({ reload, locationSearch: '?tab=ops' });
