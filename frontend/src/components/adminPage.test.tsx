@@ -244,6 +244,19 @@ describe('AdminPage', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it('surfaces the metadata backfill maintenance action', async () => {
+    const reload = vi.fn();
+    renderAdmin({ reload, locationSearch: '?tab=ops' });
+
+    fireEvent.click(screen.getByRole('button', { name: /Backfill metadata/ }));
+
+    await waitFor(() => {
+      expect(runAdminMaintenance).toHaveBeenCalledWith('metadata-cleanup');
+    });
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('metadata backfill'));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   it('renders the operations job center with running progress', () => {
     renderAdmin({
       locationSearch: '?tab=ops',

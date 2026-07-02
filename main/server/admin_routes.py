@@ -2587,12 +2587,12 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
             or media_index.episode_fill_state().get("running")
         ):
             return _admin_json_message(
-                "Metadata cleanup is already running",
+                "Metadata backfill is already running",
                 status=_admin_status_payload(),
             )
         asyncio.create_task(_run_metadata_cleanup())
         return _admin_json_message(
-            "Metadata cleanup queued: TMDB enrichment, episode metadata",
+            "Metadata backfill queued: TMDB credits, ratings, posters, and episode metadata",
             status=_admin_status_payload(),
         )
 

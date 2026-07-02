@@ -380,7 +380,7 @@ function MaintenancePanel({
   onMergeSeries: (sourceKey: string, targetKey: string) => Promise<void>;
 }) {
   const actions = [
-    ['metadata-cleanup', 'Metadata cleanup', 'Queue enrichment and episode fill'],
+    ['metadata-cleanup', 'Backfill metadata', 'Force-refresh TMDB credits and episode details', 'Run metadata backfill? This refreshes TMDB-owned fields for video items.'],
     ['clear-audio-tmdb', 'Fix audio', 'Clear bad TMDB matches'],
     ['clear-audio-thumbs', 'Audio thumbs', 'Refresh music artwork'],
     ['clear-all-thumbs', 'All thumbs', 'Refresh every thumbnail'],
@@ -398,7 +398,7 @@ function MaintenancePanel({
         </div>
       </div>
       <div className="maintenance-grid">
-        {actions.map(([action, label, description]) => {
+        {actions.map(([action, label, description, confirmMessage]) => {
           const dangerous = action === 'dedupe' || action === 'prune-stale' || action === 'clear-all-thumbs' || action === 'migrate-to-mongo';
           return (
             <button
@@ -406,7 +406,7 @@ function MaintenancePanel({
               type="button"
               className={dangerous ? 'danger-zone' : ''}
               disabled={Boolean(busy)}
-              onClick={() => onRun(action, dangerous ? `Run ${label}?` : undefined)}
+              onClick={() => onRun(action, confirmMessage || (dangerous ? `Run ${label}?` : undefined))}
             >
               <strong>{busy === action ? 'Running...' : label}</strong>
               <span>{description}</span>

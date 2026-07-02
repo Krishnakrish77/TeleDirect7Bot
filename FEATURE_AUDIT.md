@@ -36,7 +36,7 @@ _Evidence: Webwright runs `outputs/perf_audit_live/final_runs/run_3`, `run_4`, `
 | Genre / tag filtering | 🟢 All | ✅ Year / quality / genre dropdowns | — |
 | Trending / Top content charts | 🟡 Netflix, YouTube, JioHotstar | ✅ Trending + Most Played Home shelves | — |
 | Trailer auto-play on browse | 🟢 All | ⚠️ Trailers on movie/series page only, not on cards | Medium |
-| Search by cast / crew name | 🟡 Most | ❌ Cast data exists in meta, not searchable | **High** — data already there, just needs search index |
+| Search by cast / crew name | 🟡 Most | ⚠️ Built, dormant until credits backfill | **Ops** — run Admin → Ops → Backfill metadata, then validate live cast/director searches |
 
 ### Playback
 
@@ -78,8 +78,8 @@ _Evidence: Webwright runs `outputs/perf_audit_live/final_runs/run_3`, `run_4`, `
 
 | Feature | Industry | TeleDirect | Priority |
 |---------|----------|------------|----------|
-| New episode / content push notification | 🟢 All | ❌ | **High** — service worker already registered; one push per new upload |
-| Recommendation push notification | 🟢 All | ❌ | Medium — weekly digest via service worker |
+| New episode / content push notification | 🟢 All | ❌ | Medium — product decision; needs Push API, VAPID keys, subscription storage, opt-in UX, and a server sender |
+| Recommendation push notification | 🟢 All | ❌ | Low — only after opt-in notification infrastructure exists |
 
 ### Profiles & Access
 
@@ -197,12 +197,12 @@ Large batch shipped since the last audit. Validated against the live deployment 
 
 | # | Feature | Effort | Why it matters |
 |---|---------|--------|----------------|
-| 1 | **Push notifications for new content** | Low | Service worker already registered; one VAPID push per upload. Users currently have no way to know when new content arrives. |
+| 1 | **TMDB credits backfill + validation** | Ops | Admin → Ops → Backfill metadata force-refreshes TMDB credits and episode details. Run after deploy, then verify cast search and person pages with real catalogue names. |
 | 2 | ~~**Skip intro button**~~ | ✅ Done | Admin timestamps + timeupdate JS; button appears only within intro window. |
 | 3 | ~~**Per-title thumbs up/down**~~ | ✅ Done | Up/down toggle, auth-gated, aggregate counts shown, feeds recommendation engine. |
 | 4 | ~~**Artist page**~~ | ✅ Done | `/artist/{slug}` with multi-credit splitting; primary artist linked from player. |
 | 5 | ~~**Trending / Top charts shelf**~~ | ✅ Done | Trending and Most Played Home shelves now cover active discovery from watch/listen signals. |
-| 6 | ⚠️ **Searchable cast / crew** | Code done, **data blocked** | Search index extended for `cast[]`/`director` — but live searches for "nolan"/"arnold"/"dicaprio" return 0 results because existing catalogue items were never enriched with cast/crew. Same blocker as person pages. **Needs a TMDB credits backfill pass.** |
+| 6 | ⚠️ **Searchable cast / crew** | Code done, **backfill-dependent** | Search index and person pages are implemented. They become useful once existing catalogue items have `cast[]`/`director` from the metadata backfill. |
 
 ### 🟡 Medium — Clear user value, moderate effort
 
@@ -213,8 +213,9 @@ Large batch shipped since the last audit. Validated against the live deployment 
 | 9 | ~~**"Are you still watching?" prompt**~~ | ✅ Done | React player pauses unattended playback after 45 minutes, shows a fullscreen-safe prompt, and resumes through the normal video play path. |
 | 10 | ~~**Video chapters**~~ | ✅ Done | Admin line-entry chapters render as progress markers and a seekable chapter list in the React player. |
 | 11 | ~~**Viewing / listening stats page**~~ | ✅ Done | Streaks, video/audio time split, day-of-week heatmap, top artists/genres, play counts, "personality" card. Auth-gated `/stats`. |
-| 12 | **Watchlist remove on mobile** | Low | Currently hover-only. A long-press or visible X on touch devices fixes this. |
+| 12 | ~~**Watchlist remove on mobile**~~ | ✅ Done | Saved cards expose a visible tick/check button with `Remove from watchlist`; mobile CSS keeps card actions visible. |
 | 13 | ~~**Recommendations discoverability**~~ | ✅ Done | Signed-out Home users now see a personalized recommendations teaser that opens sign-in. |
+| 14 | **Push notifications for new content** | Product decision | Not a quick gap: service worker exists for caching/navigation only. Push requires VAPID config, PushManager subscription UI, persistence, opt-out, and server-side delivery. |
 
 ### ⚪ Low — Nice-to-have or constrained by architecture
 
@@ -289,11 +290,11 @@ _Tool: Chrome DevTools MCP — live screenshots + DOM inspection_
 
 | # | Issue | Detail |
 |---|---|---|
-| 1 | **RTL text collision in hero** | Hero h1 shows `"سریال Her Private Life محصول سال 2019"` — bidi Farsi+English mixed in one string creates visual mess. API should surface the user-facing `series_title` only, not the raw filename with Persian tags. Add `dir="auto"` as a stop-gap. |
-| 2 | **9 shelf containers overflow without visible affordance** | `scrollWidth > clientWidth` on 9 shelves at desktop width. The scroll indicator is a ~1px barely-visible bar. Need arrow buttons on desktop or a significantly more visible scroll affordance. |
-| 3 | **Duplicate navigation (desktop)** | Sidebar has Home/Search/Movies/Series/Watchlist/Music AND the top header has Movies/Series. Two nav systems for the same destinations. Remove the sidebar on desktop (keep top nav); sidebar wastes 85px of content width. |
-| 4 | **Hero shows raw episode identifier** | Mobile hero displayed "Ultimate Spiderman S01E02" — episode-level IDs should never appear in hero carousels. Show the series title only. |
-| 5 | **Album thumbnails show watermarks** | Saivam and Nerrukku Ner albums show "MASSTAMILAN.COM/DEV" watermarks baked into cover art. Ensure TMDB poster always takes precedence; fall back to file thumbnail only when no TMDB art exists. |
+| 1 | ⚠️ **Hero title hygiene is data-dependent** | React hero now uses `series_title` for series and `dir="auto"` on the heading. Validate production after metadata backfill; fix catalogue data if dirty `series_title` values remain. |
+| 2 | ✅ **Shelf overflow affordance fixed** | Desktop shelf rows now render rail controls; old scrollbar-only observation is stale. |
+| 3 | ✅ **Duplicate desktop sidebar removed** | Current React shell has one primary nav, not the old left sidebar + top-nav duplication. |
+| 4 | ✅ **Episode identifier removed from hero code path** | Hero payload uses series title for series items; any remaining raw `SxxEyy` display should be treated as dirty indexed data, not missing UI logic. |
+| 5 | ⚠️ **Album thumbnail watermarks are fallback/data-dependent** | TMDB poster URLs already take precedence over file thumbnails. Watermarks can still appear when no clean remote artwork exists. |
 
 ---
 
@@ -301,12 +302,12 @@ _Tool: Chrome DevTools MCP — live screenshots + DOM inspection_
 
 | # | Issue | Detail |
 |---|---|---|
-| 6 | **Eyebrow labels too small (11.68px)** | "SERIES", "720P", "LIBRARY" labels render at 11.68px — below comfortable reading size, especially at arm's length on mobile. Increase to 13px min; switch to mixed-case ("Series", "720p"). |
-| 7 | **Sparse search results leave blank space** | 5 results on 1440px leave ~60% of vertical space empty with no empty-state treatment. Add "That's all X results" footer or a suggested-browse prompt. |
-| 8 | **Card info hierarchy: file sizes shown to users** | Movies show file size (`1.7 GiB`, `893.77 MiB`) as primary subtitle — this is admin/developer metadata, not user-facing. Replace with year, duration, or content rating. |
-| 9 | **Badge overlay inconsistency** | Episode count (`99 ep`) and quality (`720p`) badges have different radii, opacity, and positioning across card types. Standardise to one badge spec. |
-| 10 | **"Classic" button unclear** | Movie detail has Play / Save / **Classic** — no explanation of what "Classic" does. Rename to "Classic player" or "Open in original view"; add tooltip. |
-| 11 | **"2 ep" badge gives wrong impression** | Series with 2 episodes indexed show "2 ep" badge making them look like mini-series when they may be 137 episodes with only 2 downloaded. Show "2/137 ep" or omit for partial catalogues. |
+| 6 | ✅ **Eyebrow labels fixed** | Current `.eyebrow` text is 13px, mixed-case, and muted instead of all-caps orange. |
+| 7 | ✅ **Sparse search footer fixed** | Grid views now show a result footer such as "Showing all X results" when pagination is exhausted. |
+| 8 | ✅ **Card file-size hierarchy fixed** | Home/grid cards derive display metadata from genre/year/duration/quality/rating. File size remains only where it is useful, such as version/detail rows. |
+| 9 | 🟢 **Badge overlay consistency** | Polish-only. No current evidence that this blocks usability. |
+| 10 | ✅ **Classic button label fixed** | React detail/watch surfaces now say "Classic player" and the detail action has an explanatory title. |
+| 11 | 🟢 **Partial episode count badge** | Not actionable without a reliable total-episode source. Current badge reflects indexed episodes, not the complete show catalogue. |
 
 ---
 
@@ -314,11 +315,11 @@ _Tool: Chrome DevTools MCP — live screenshots + DOM inspection_
 
 | # | Issue | Detail |
 |---|---|---|
-| 12 | **Sidebar active state too heavy** | Active item has solid orange block; a left-border indicator or lighter tint would look more refined. |
-| 13 | **Desktop search bar unnecessarily wide** | `min(44rem, 100%)` at 1440px creates a very long empty bar. Cap at ~480px centered in the header. |
-| 14 | **Tablet: category tabs require scrolling past hero** | At 768px the All/Movies/Series/Music tabs are buried below the full-height hero. Pin them below the header. |
-| 15 | **No skeleton loading states** | Page either shows nothing or shows complete content — no placeholders/skeletons. Visible "pop" on every navigation. |
-| 16 | **Orange overused — dilutes CTA meaning** | `var(--brand)` orange is used for eyebrow labels, quality badges, AND primary CTAs simultaneously. Limit orange to interactive elements only. |
+| 12 | ✅ **Sidebar active-state note stale** | The React shell no longer has the old desktop sidebar. |
+| 13 | ✅ **Desktop search width capped** | Header search is capped around 30rem instead of the older oversized 44rem width. |
+| 14 | 🟢 **Tablet category/nav placement** | Keep as visual QA only; current hero height is reduced and primary nav remains separate from shelf content. |
+| 15 | ✅ **Skeleton loading states shipped** | Shared loading skeletons cover hub/admin/list-style transitions. |
+| 16 | ✅ **Orange overuse reduced** | Eyebrows and passive labels are muted; orange is less overloaded as decorative metadata. |
 
 ---
 
