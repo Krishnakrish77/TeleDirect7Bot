@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { LiveTvResponse } from '../types';
 import { LiveTvPage } from './liveTvPage';
 
@@ -31,6 +31,10 @@ const liveTvData: LiveTvResponse = {
 };
 
 describe('LiveTvPage', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it('renders channels, filters them, and switches the video source', () => {
     const view = render(<LiveTvPage data={liveTvData} loading={false} error="" />);
 
@@ -46,8 +50,31 @@ describe('LiveTvPage', () => {
     expect(view.container.querySelector('video')?.getAttribute('src')).toBe('https://example.test/news.ts');
 
     fireEvent.change(screen.getByPlaceholderText('Search channels'), { target: { value: 'news' } });
-    expect(screen.getByRole('button', { name: /News 24/i })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Movie One/i })).toBeNull();
+    const rail = screen.getByLabelText('Channels');
+    expect(within(rail).getByRole('button', { name: /News 24/i })).toBeTruthy();
+    expect(within(rail).queryByRole('button', { name: /Movie One/i })).toBeNull();
+  });
+
+  it('stores favorite channels and exposes favorites and recent filters', async () => {
+    render(<LiveTvPage data={liveTvData} loading={false} error="" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add News 24 to favorites' }));
+    expect(JSON.parse(localStorage.getItem('td:live-tv:favorites') || '[]')).toEqual(['news']);
+
+    fireEvent.click(screen.getByRole('button', { name: /Movie One/i }));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('td:live-tv:recent') || '[]')).toEqual(['movies', 'news']));
+
+    const tabs = screen.getByRole('tablist', { name: 'Channel categories' });
+    const rail = screen.getByLabelText('Channels');
+
+    fireEvent.click(within(tabs).getByRole('button', { name: /Favorites/i }));
+    expect(screen.getByRole('heading', { name: 'News 24' })).toBeTruthy();
+    expect(within(rail).queryByRole('button', { name: /Movie One/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Remove News 24 from favorites' })).toBeTruthy();
+
+    fireEvent.click(within(tabs).getByRole('button', { name: /Recent/i }));
+    expect(within(rail).getByRole('button', { name: /News 24/i })).toBeTruthy();
+    expect(within(rail).getByRole('button', { name: /Movie One/i })).toBeTruthy();
   });
 
   it('shows an empty state when no channels are configured', () => {
