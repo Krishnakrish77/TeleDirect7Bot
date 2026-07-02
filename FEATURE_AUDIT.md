@@ -6,6 +6,18 @@ Legend: 🟢 Table stakes · 🟡 Differentiator · 🔵 Innovative · ✅ Have 
 
 ---
 
+## PERFORMANCE OBSERVATIONS — 2026-07-02
+
+_Evidence: Webwright run `outputs/perf_audit_live/final_runs/run_3`, local Vite/Playwright smoke checks, and production Vite build output._
+
+| Area | Before | After | Observed improvement |
+|------|--------|-------|----------------------|
+| React initial JS | `425.67 KB` raw / `119.15 KB` gzip main bundle | `290.82 KB` raw / `87.67 KB` gzip main bundle after route-level lazy chunks | `-134.85 KB` raw (`31.7%` smaller), `-31.48 KB` gzip (`26.4%` smaller). Heavy routes now split into watch, detail, Live TV, admin, playlists, stats, watchlist, liked songs, and add-to-playlist chunks. |
+| Live TV initial load | Deployed direct `/app/live-tv`: `15.461s` to network idle, `250` resources, `245` image requests, `9` warnings/failed requests; first channel stream/autoplay started on route load. | Local rendered check after fix: initial route renders `80` channel rows, no video `src`, controls hidden, no autoplay/HLS stream request, no console warnings/errors. | Initial Live TV page no longer pays for the first stream and no longer renders/loads all `1,000` channels at once. Third-party logo failures can still happen in visible rows. |
+| SPA Home `/api/hub` | Webwright deployed Home: `4.196s` to network idle on stable run; earlier cold run observed `14.773s`. `/api/hub` response was a top resource at ~`68 KB` encoded and was rebuilt per request. | Backend now caches anonymous default Home JSON for `30s`, caches filter metadata for `30s`, logs slow `/api/hub` section timings, and invalidates on media-index persist/store changes. | Repeated anonymous Home requests now skip shelf construction, trending/top-play waits, card serialization, and JSON encoding during the TTL. In-process verification: second anonymous request reused cached JSON; media-index invalidation forced rebuild. Post-deploy live timing still needs a follow-up Webwright run. |
+
+---
+
 ## VIDEO / OTT
 
 ### Discovery & Browse
