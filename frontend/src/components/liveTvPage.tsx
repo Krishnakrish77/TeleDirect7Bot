@@ -8,6 +8,8 @@ const HLS_RE = /\.m3u8(?:[?#]|$)|[?&](?:type|format)=m3u8/i;
 const FAVORITES_KEY = 'td:live-tv:favorites';
 const RECENTS_KEY = 'td:live-tv:recent';
 const MAX_RECENTS = 8;
+const INITIAL_CHANNEL_RENDER_COUNT = 80;
+const CHANNEL_RENDER_INCREMENT = 80;
 const ALL_CHANNELS = 'All';
 const FAVORITE_CHANNELS = '__favorites';
 const RECENT_CHANNELS = '__recent';
@@ -70,6 +72,8 @@ export function LiveTvPage({
   const [activeCategory, setActiveCategory] = useState(ALL_CHANNELS);
   const [query, setQuery] = useState('');
   const [playbackError, setPlaybackError] = useState('');
+  const [playbackId, setPlaybackId] = useState('');
+  const [visibleChannelCount, setVisibleChannelCount] = useState(INITIAL_CHANNEL_RENDER_COUNT);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => new Set(readStoredIds(FAVORITES_KEY)));
   const [recentIds, setRecentIds] = useState<string[]>(() => readStoredIds(RECENTS_KEY));
 
@@ -80,6 +84,10 @@ export function LiveTvPage({
     }
     setSelectedId((current) => channels.some((channel) => channel.id === current) ? current : channels[0].id);
   }, [channels]);
+
+  useEffect(() => {
+    setVisibleChannelCount(INITIAL_CHANNEL_RENDER_COUNT);
+  }, [activeCategory, query]);
 
   const channelById = useMemo(() => new Map(channels.map((channel) => [channel.id, channel])), [channels]);
   const categories = useMemo(() => categoryCounts(channels), [channels]);
@@ -108,10 +116,17 @@ export function LiveTvPage({
   // Don't fall back to channels[0] when a filter is active and produces no results —
   // that would silently stream a hidden channel while the list shows "no results".
   const selected = filteredChannels.find((channel) => channel.id === selectedId) || filteredChannels[0] || null;
+  const playbackChannel = selected?.id === playbackId ? selected : null;
   const selectedFavorite = Boolean(selected && favoriteIds.has(selected.id));
+  const visibleChannels = useMemo(
+    () => filteredChannels.slice(0, visibleChannelCount),
+    [filteredChannels, visibleChannelCount],
+  );
+  const remainingChannelCount = Math.max(0, filteredChannels.length - visibleChannels.length);
 
   useEffect(() => {
     const validIds = new Set(channels.map((channel) => channel.id));
+    setPlaybackId((current) => validIds.has(current) ? current : '');
     setFavoriteIds((current) => {
       const nextIds = [...current].filter((id) => validIds.has(id));
       if (nextIds.length === current.size) return current;
@@ -127,14 +142,14 @@ export function LiveTvPage({
   }, [channels]);
 
   useEffect(() => {
-    if (!selected?.id) return;
+    if (!playbackChannel?.id) return;
     setRecentIds((current) => {
-      const nextIds = [selected.id, ...current.filter((id) => id !== selected.id)].slice(0, MAX_RECENTS);
+      const nextIds = [playbackChannel.id, ...current.filter((id) => id !== playbackChannel.id)].slice(0, MAX_RECENTS);
       if (sameIds(current, nextIds)) return current;
       writeStoredIds(RECENTS_KEY, nextIds);
       return nextIds;
     });
-  }, [selected?.id]);
+  }, [playbackChannel?.id]);
 
   const toggleSelectedFavorite = () => {
     if (!selected) return;
@@ -147,20 +162,31 @@ export function LiveTvPage({
     });
   };
 
+  const playSelected = () => {
+    if (!selected) return;
+    setPlaybackId(selected.id);
+  };
+
+  const selectAndPlay = (channelId: string) => {
+    setSelectedId(channelId);
+    setPlaybackId(channelId);
+  };
+
   useEffect(() => {
     const video = videoRef.current;
     hlsRef.current?.destroy();
     hlsRef.current = null;
     setPlaybackError('');
-    if (!video || !selected?.streamUrl) return undefined;
+    if (!video) return undefined;
 
-    let cancelled = false;
     video.pause();
     video.removeAttribute('src');
     video.load();
+    if (!playbackChannel?.streamUrl) return undefined;
 
-    const sourceUrl = selected.streamUrl;
-    const streamUrl = hasStreamHeaders(selected) ? liveTvStreamUrl(selected) : sourceUrl;
+    let cancelled = false;
+    const sourceUrl = playbackChannel.streamUrl;
+    const streamUrl = hasStreamHeaders(playbackChannel) ? liveTvStreamUrl(playbackChannel) : sourceUrl;
     const play = () => {
       if (cancelled) return;
       void video.play().catch(() => undefined);
@@ -188,7 +214,7 @@ export function LiveTvPage({
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [selected?.id, selected?.streamHeaders, selected?.streamUrl]);
+  }, [playbackChannel?.id, playbackChannel?.streamHeaders, playbackChannel?.streamUrl]);
 
   return (
     <main className="live-tv-main">
@@ -220,21 +246,27 @@ export function LiveTvPage({
             <div className="live-video-frame">
               <video
                 ref={videoRef}
-                controls
-                autoPlay
+                controls={Boolean(playbackChannel)}
                 playsInline
-                poster={selected?.logoUrl || undefined}
+                preload={playbackChannel ? 'auto' : 'none'}
+                poster={playbackChannel?.logoUrl || undefined}
                 onError={() => setPlaybackError('Unable to play this channel')}
               />
-              {!selected && (
+              {!playbackChannel && (
                 <div className="live-video-placeholder">
                   <BroadcastIcon />
+                  {selected && (
+                    <button type="button" className="primary-action live-play-button" onClick={playSelected}>
+                      <PlayIcon />
+                      <span>Play channel</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
             <div className="live-now-row">
               <div className="live-now-copy">
-                {selected?.logoUrl ? <img src={selected.logoUrl} alt="" /> : <span><BroadcastIcon /></span>}
+                {selected?.logoUrl ? <img src={selected.logoUrl} alt="" loading="lazy" decoding="async" /> : <span><BroadcastIcon /></span>}
                 <div>
                   <strong>{selected?.name || 'No channel selected'}</strong>
                   <small>{selected ? channelCategory(selected) : 'Live TV'}</small>
@@ -298,14 +330,14 @@ export function LiveTvPage({
               </div>
             </div>
             <div className="live-channel-list">
-              {filteredChannels.map((channel) => (
+              {visibleChannels.map((channel) => (
                 <button
                   key={channel.id}
                   type="button"
                   className={selected?.id === channel.id ? 'live-channel-row active' : 'live-channel-row'}
-                  onClick={() => setSelectedId(channel.id)}
+                  onClick={() => selectAndPlay(channel.id)}
                 >
-                  {channel.logoUrl ? <img src={channel.logoUrl} alt="" /> : <span><BroadcastIcon /></span>}
+                  {channel.logoUrl ? <img src={channel.logoUrl} alt="" loading="lazy" decoding="async" /> : <span><BroadcastIcon /></span>}
                   <strong>{channel.name}</strong>
                   <small>{channelCategory(channel)}</small>
                   <em className="live-channel-icons">
@@ -314,6 +346,16 @@ export function LiveTvPage({
                   </em>
                 </button>
               ))}
+              {remainingChannelCount > 0 && (
+                <button
+                  type="button"
+                  className="live-channel-more"
+                  onClick={() => setVisibleChannelCount((current) => Math.min(filteredChannels.length, current + CHANNEL_RENDER_INCREMENT))}
+                >
+                  Show more
+                  <span>{remainingChannelCount.toLocaleString()} hidden</span>
+                </button>
+              )}
               {!filteredChannels.length && (
                 <div className="live-channel-empty">No channels match this view</div>
               )}

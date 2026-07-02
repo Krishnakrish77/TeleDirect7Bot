@@ -30,29 +30,50 @@ const liveTvData: LiveTvResponse = {
   ],
 };
 
+function makeChannel(index: number) {
+  return {
+    id: `channel-${index}`,
+    name: `Channel ${String(index).padStart(3, '0')}`,
+    streamUrl: `https://example.test/channel-${index}.ts`,
+    logoUrl: `/logo-${index}.png`,
+    category: 'General',
+    enabled: true,
+    sortOrder: index,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
 describe('LiveTvPage', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('renders channels, filters them, and switches the video source', () => {
+  it('renders channels, filters them, and starts playback only after user intent', async () => {
     const view = render(<LiveTvPage data={liveTvData} loading={false} error="" />);
+    const video = view.container.querySelector('video');
 
     expect(screen.getByRole('heading', { name: 'News 24' })).toBeTruthy();
-    expect(view.container.querySelector('video')?.getAttribute('src')).toBe('https://example.test/news.ts');
+    expect(video?.getAttribute('src')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play channel' }));
+    await waitFor(() => expect(video?.getAttribute('src')).toBe('https://example.test/news.ts'));
 
     fireEvent.click(screen.getByRole('button', { name: /Movie One/i }));
     expect(screen.getByRole('heading', { name: 'Movie One' })).toBeTruthy();
-    expect(view.container.querySelector('video')?.getAttribute('src')).toBe('https://example.test/movies.ts');
+    await waitFor(() => expect(video?.getAttribute('src')).toBe('https://example.test/movies.ts'));
 
-    fireEvent.click(screen.getByRole('button', { name: /News1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /News\s*1/i }));
     expect(screen.getByRole('heading', { name: 'News 24' })).toBeTruthy();
-    expect(view.container.querySelector('video')?.getAttribute('src')).toBe('https://example.test/news.ts');
+    expect(video?.getAttribute('src')).toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText('Search channels'), { target: { value: 'news' } });
     const rail = screen.getByLabelText('Channels');
     expect(within(rail).getByRole('button', { name: /News 24/i })).toBeTruthy();
     expect(within(rail).queryByRole('button', { name: /Movie One/i })).toBeNull();
+
+    fireEvent.click(within(rail).getByRole('button', { name: /News 24/i }));
+    await waitFor(() => expect(video?.getAttribute('src')).toBe('https://example.test/news.ts'));
   });
 
   it('stores favorite channels and exposes favorites and recent filters', async () => {
@@ -60,6 +81,9 @@ describe('LiveTvPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add News 24 to favorites' }));
     expect(JSON.parse(localStorage.getItem('td:live-tv:favorites') || '[]')).toEqual(['news']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play channel' }));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('td:live-tv:recent') || '[]')).toEqual(['news']));
 
     fireEvent.click(screen.getByRole('button', { name: /Movie One/i }));
     await waitFor(() => expect(JSON.parse(localStorage.getItem('td:live-tv:recent') || '[]')).toEqual(['movies', 'news']));
@@ -81,5 +105,20 @@ describe('LiveTvPage', () => {
     render(<LiveTvPage data={{ channels: [] }} loading={false} error="" />);
 
     expect(screen.getByText('No IPTV channels are available')).toBeTruthy();
+  });
+
+  it('renders large channel lists in batches', () => {
+    const manyChannels: LiveTvResponse = {
+      channels: Array.from({ length: 95 }, (_, index) => makeChannel(index + 1)),
+    };
+    const view = render(<LiveTvPage data={manyChannels} loading={false} error="" />);
+
+    expect(view.container.querySelectorAll('.live-channel-row')).toHaveLength(80);
+    expect(screen.queryByRole('button', { name: /Channel 081/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Show more/i }));
+
+    expect(view.container.querySelectorAll('.live-channel-row')).toHaveLength(95);
+    expect(screen.getByRole('button', { name: /Channel 095/i })).toBeTruthy();
   });
 });
