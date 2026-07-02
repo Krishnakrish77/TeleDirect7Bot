@@ -60,7 +60,6 @@ export function getMediaCardDisplay(card: HubCard): { eyebrow: string; title: st
   }
   if (card.type === 'series') {
     const subtitle = joinMetadata([
-      card.year,
       countLabel(card.episodeCount, 'episode') || card.subtitle,
       countLabel(card.seasonCount, 'season'),
     ]);
@@ -68,12 +67,10 @@ export function getMediaCardDisplay(card: HubCard): { eyebrow: string; title: st
   }
   if (card.type === 'movie') {
     const subtitle = joinMetadata([
-      card.year,
-      countLabel(card.variantCount, 'version') || card.subtitle,
-      card.durationLabel,
-      card.variantCount && card.variantCount > 1 ? '' : card.quality,
+      card.genres[0],
+      card.variantCount && card.variantCount > 1 ? countLabel(card.variantCount, 'version') : '',
     ]);
-    return { eyebrow: 'Movie', title, subtitle };
+    return { eyebrow: 'Movie', title, subtitle: subtitle || card.subtitle };
   }
   if (card.mediaKind === 'audio') {
     return { eyebrow: 'Song', title, subtitle: joinMetadata([card.artist, card.albumTitle]) };
@@ -81,8 +78,20 @@ export function getMediaCardDisplay(card: HubCard): { eyebrow: string; title: st
   return {
     eyebrow: 'Video',
     title,
-    subtitle: card.subtitle || joinMetadata([card.year, card.durationLabel, card.quality, card.genres[0]]),
+    subtitle: joinMetadata([card.genres[0], card.subtitle && (!card.year || !String(card.subtitle).includes(String(card.year))) ? card.subtitle : ''])
+      || card.subtitle
+      || joinMetadata([card.durationLabel, card.quality]),
   };
+}
+
+export function getMediaCardMetaItems(card: HubCard, ratingLabel = ''): string[] {
+  if (card.type === 'track' || card.type === 'album' || card.mediaKind === 'audio') return [];
+  return [
+    ratingLabel,
+    card.year ? String(card.year) : '',
+    card.durationLabel,
+    card.quality,
+  ].filter((value, index, items) => Boolean(value) && items.indexOf(value) === index);
 }
 
 function MediaCardBase({
@@ -99,6 +108,7 @@ function MediaCardBase({
   const height = card.aspect === 'square' ? 512 : 513;
   const display = getMediaCardDisplay(card);
   const externalRating = isMusic ? '' : formatExternalRating(card.externalRating);
+  const metaItems = getMediaCardMetaItems(card, externalRating);
   const rawProgress = useMemo(() => card.watchKey ? getLocalCwPct(card.watchKey) : 0, [card.watchKey]);
   const [markedWatched, setMarkedWatched] = useState(false);
   useEffect(() => { setMarkedWatched(false); }, [card.watchKey]);
@@ -152,6 +162,11 @@ function MediaCardBase({
         <span className="card-copy">
           <span className="eyebrow">{display.eyebrow}</span>
           <strong dir="auto">{display.title}</strong>
+          {metaItems.length > 0 && (
+            <span className="card-meta-strip" aria-label={`${display.title} metadata`}>
+              {metaItems.map((item) => <span key={item} className={item === externalRating ? 'rating' : undefined}>{item}</span>)}
+            </span>
+          )}
           {display.subtitle && <span className="card-subtitle">{display.subtitle}</span>}
           {card.recReason && <em className="card-reason">{card.recReason}</em>}
         </span>

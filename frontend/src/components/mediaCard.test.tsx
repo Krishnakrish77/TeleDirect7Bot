@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { HubCard } from '../types';
-import { getMediaCardDisplay, MediaCard } from './mediaCard';
+import { getMediaCardDisplay, getMediaCardMetaItems, MediaCard } from './mediaCard';
 
 function card(overrides: Partial<HubCard> = {}): HubCard {
   return {
@@ -40,14 +40,16 @@ function card(overrides: Partial<HubCard> = {}): HubCard {
 }
 
 describe('MediaCard', () => {
-  it('shows year and quality once in the video subtitle', () => {
+  it('shows content context and a compact video metadata strip', () => {
     render(<MediaCard card={card()} saved={false} onToggleSaved={vi.fn()} />);
 
     expect(screen.getByText('Video')).toBeTruthy();
     expect(screen.getByText('Kalki 2898-AD')).toBeTruthy();
-    expect(screen.getByText('2024 - 2h 55m - 720p')).toBeTruthy();
+    expect(screen.getByText('Action')).toBeTruthy();
+    expect(screen.getByLabelText('Kalki 2898-AD metadata')).toBeTruthy();
     expect(screen.getAllByText(/2024/)).toHaveLength(1);
     expect(screen.getAllByText(/720p/)).toHaveLength(1);
+    expect(screen.getByText('2h 55m')).toBeTruthy();
   });
 
   it('shows album artist and track count once in the subtitle', () => {
@@ -75,6 +77,7 @@ describe('MediaCard', () => {
 
   it('normalizes card display data independently from API metadata', () => {
     expect(getMediaCardDisplay(card()).eyebrow).toBe('Video');
+    expect(getMediaCardMetaItems(card())).toEqual(['2024', '2h 55m', '720p']);
     expect(getMediaCardDisplay(card({ type: 'track', mediaKind: 'audio', artist: 'Anirudh' }))).toMatchObject({
       eyebrow: 'Song',
       subtitle: 'Anirudh',
@@ -97,6 +100,7 @@ describe('MediaCard', () => {
     );
 
     expect(screen.getByLabelText('External rating TMDB 7.8')).toBeTruthy();
+    expect(screen.getByLabelText('Kalki 2898-AD metadata').textContent).toContain('TMDB 7.8');
   });
 
   it('does not show external ratings on music cards', () => {

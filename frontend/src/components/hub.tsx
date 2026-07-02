@@ -7,6 +7,41 @@ import { tmdbImageUrl } from '../utils/tmdb';
 import { formatExternalRating } from '../utils/externalRating';
 import { MediaCard } from './mediaCard';
 
+type HubShelf = { name: string; href: string | null; items: HubCard[]; dismissable?: boolean; recMeta?: Array<RecommendationMeta | null> };
+
+const SHELF_PRIORITY: Array<[RegExp, number]> = [
+  [/recommended/i, 0],
+  [/recently added$/i, 1],
+  [/new episodes/i, 2],
+  [/trending/i, 3],
+  [/recently added movies/i, 4],
+  [/series/i, 5],
+  [/music/i, 6],
+  [/hidden gems/i, 7],
+];
+
+export function shelfPresentation(name: string): { title: string; eyebrow: string } {
+  const normalised = name.trim().toLowerCase();
+  if (normalised === 'recommended for you') return { title: name, eyebrow: 'For you' };
+  if (normalised === 'recently added') return { title: 'New in your library', eyebrow: 'Latest' };
+  if (normalised === 'new episodes') return { title: name, eyebrow: 'Series updates' };
+  if (normalised === 'trending') return { title: 'Trending now', eyebrow: 'In demand' };
+  if (normalised === 'recently added movies') return { title: 'New movies', eyebrow: 'Movies' };
+  if (normalised === 'series') return { title: 'Series', eyebrow: 'Shows' };
+  if (normalised === 'music') return { title: 'Music', eyebrow: 'Audio' };
+  if (normalised === 'hidden gems') return { title: 'Worth a look', eyebrow: 'Discovery' };
+  return { title: name, eyebrow: 'Browse' };
+}
+
+export function sortHomeShelves(shelves: HubShelf[]): HubShelf[] {
+  const rank = (name: string) => SHELF_PRIORITY.find(([pattern]) => pattern.test(name))?.[1] ?? 20;
+  return [...shelves].sort((a, b) => {
+    const byRank = rank(a.name) - rank(b.name);
+    if (byRank !== 0) return byRank;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
   const [active, setActive] = useState(0);
   const hero = heroes[active] || heroes[0];
@@ -235,7 +270,7 @@ export function ShelfRow({
   onDismiss,
   onMarkWatched,
 }: {
-  shelf: { name: string; href: string | null; items: HubCard[]; dismissable?: boolean; recMeta?: Array<RecommendationMeta | null> };
+  shelf: HubShelf;
   saved: Set<string>;
   onToggleSaved: (card: HubCard) => void;
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
@@ -274,11 +309,13 @@ export function ShelfRow({
   };
 
   if (!shelf.items.length) return null;
+  const presentation = shelfPresentation(shelf.name);
   return (
     <section className="shelf-section">
       <div className="section-heading">
         <div>
-          <h2>{shelf.name}</h2>
+          <p className="eyebrow">{presentation.eyebrow}</p>
+          <h2>{presentation.title}</h2>
         </div>
         <div className="section-actions">
           {shelf.href && (
@@ -397,6 +434,7 @@ export function GridView({
         <div className="empty-state">
           <FilmIcon />
           <strong>{data.emptyText}</strong>
+          <span>Try a broader search or clear a filter to see more titles.</span>
         </div>
       )}
     </section>

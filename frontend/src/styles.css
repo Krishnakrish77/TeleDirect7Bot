@@ -1230,6 +1230,36 @@ img {
   -webkit-line-clamp: 2;
 }
 
+.card-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin-top: 0.34rem;
+  min-width: 0;
+}
+
+.card-meta-strip span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 21px;
+  max-width: 100%;
+  padding: 0 0.38rem;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #cbd5e1;
+  font-size: 0.68rem;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-meta-strip .rating {
+  border-color: rgba(251, 191, 36, 0.28);
+  color: #fde68a;
+}
+
 .card-subtitle {
   margin-top: 0.22rem;
   color: var(--muted);
@@ -1430,6 +1460,13 @@ img {
 .empty-state strong {
   color: #fff;
   font-size: 1rem;
+}
+
+.empty-state span {
+  max-width: 28rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 
 .error-state svg {

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { HubCard, HubParams, HubResponse } from '../types';
-import { GridView } from './hub';
+import { GridView, shelfPresentation, sortHomeShelves } from './hub';
 
 const params: HubParams = {
   q: '',
@@ -121,5 +121,28 @@ describe('GridView', () => {
     );
 
     expect((screen.getByRole('button', { name: /Loading/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('home shelf helpers', () => {
+  it('promotes high-signal shelves before generic rows', () => {
+    const shelves = [
+      { name: 'Action', href: null, items: [card()] },
+      { name: 'Trending', href: null, items: [card({ itemId: 'movie:2' })] },
+      { name: 'Recently added movies', href: null, items: [card({ itemId: 'movie:3' })] },
+      { name: 'Recommended for you', href: null, items: [card({ itemId: 'movie:4' })] },
+    ];
+
+    expect(sortHomeShelves(shelves).map((shelf) => shelf.name)).toEqual([
+      'Recommended for you',
+      'Trending',
+      'Recently added movies',
+      'Action',
+    ]);
+  });
+
+  it('renames key shelves for clearer home presentation', () => {
+    expect(shelfPresentation('Recently added')).toEqual({ title: 'New in your library', eyebrow: 'Latest' });
+    expect(shelfPresentation('Hidden gems')).toEqual({ title: 'Worth a look', eyebrow: 'Discovery' });
   });
 });
