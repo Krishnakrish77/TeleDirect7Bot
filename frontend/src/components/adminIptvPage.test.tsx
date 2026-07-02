@@ -31,6 +31,12 @@ const initialData: AdminIptvResponse = {
       streamUrl: 'https://example.test/news.m3u8',
       logoUrl: '',
       category: 'News',
+      tvgId: 'news.us',
+      tvgName: 'News 24',
+      duration: '-1',
+      attrs: { 'tvg-id': 'news.us' },
+      extras: ['#EXTVLCOPT:http-user-agent=TeleDirect Test'],
+      streamHeaders: { userAgent: 'TeleDirect Test' },
       enabled: true,
       sortOrder: 1,
       createdAt: 1,
@@ -156,5 +162,26 @@ describe('AdminIptvPage', () => {
     await waitFor(() => expect(importAdminIptvM3uUrl).toHaveBeenCalledWith('https://iptv-org.github.io/iptv/languages/hin.m3u'));
     expect(await screen.findByText('Imported 1 of 1 channels')).toBeTruthy();
     expect(screen.getByText('News India')).toBeTruthy();
+  });
+
+  it('round-trips imported IPTV metadata when editing a channel', async () => {
+    vi.mocked(saveAdminIptvChannel).mockResolvedValue({
+      ok: true,
+      channel: initialData.channels[0],
+      channels: initialData.channels,
+    });
+
+    renderAdmin();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(saveAdminIptvChannel).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'news',
+      tvgId: 'news.us',
+      attrs: { 'tvg-id': 'news.us' },
+      extras: ['#EXTVLCOPT:http-user-agent=TeleDirect Test'],
+      streamHeaders: { userAgent: 'TeleDirect Test' },
+    })));
   });
 });

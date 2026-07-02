@@ -146,6 +146,12 @@ export interface IptvChannelPayload {
   category: string;
   enabled: boolean;
   sortOrder: number;
+  tvgId?: string;
+  tvgName?: string;
+  duration?: string;
+  attrs?: Record<string, string>;
+  extras?: string[];
+  streamHeaders?: Record<string, string>;
 }
 
 export interface LiveTvResponse {

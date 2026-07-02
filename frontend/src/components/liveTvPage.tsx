@@ -19,6 +19,14 @@ function categoryCounts(channels: IptvChannel[]): Array<[string, number]> {
   return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
 
+function hasStreamHeaders(channel: IptvChannel | null): boolean {
+  return Object.values(channel?.streamHeaders || {}).some((value) => Boolean(String(value || '').trim()));
+}
+
+function liveTvStreamUrl(channel: IptvChannel): string {
+  return `/api/live-tv/stream/${encodeURIComponent(channel.id)}`;
+}
+
 export function LiveTvPage({
   data,
   loading,
@@ -69,13 +77,14 @@ export function LiveTvPage({
     video.removeAttribute('src');
     video.load();
 
-    const streamUrl = selected.streamUrl;
+    const sourceUrl = selected.streamUrl;
+    const streamUrl = hasStreamHeaders(selected) ? liveTvStreamUrl(selected) : sourceUrl;
     const play = () => {
       if (cancelled) return;
       void video.play().catch(() => undefined);
     };
 
-    if (HLS_RE.test(streamUrl)) {
+    if (HLS_RE.test(sourceUrl)) {
       attachHls(video, streamUrl, '', () => {
         if (!cancelled) setPlaybackError('Unable to play this channel');
       }).then((instance) => {
@@ -97,7 +106,7 @@ export function LiveTvPage({
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [selected?.id, selected?.streamUrl]);
+  }, [selected?.id, selected?.streamHeaders, selected?.streamUrl]);
 
   return (
     <main className="live-tv-main">

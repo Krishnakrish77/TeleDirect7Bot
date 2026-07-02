@@ -76,6 +76,16 @@ def _normalise_url(value: object) -> str:
     return url
 
 
+_MISSING = object()
+
+
+def _first_present(raw: dict, *keys: str, default: object = _MISSING) -> object:
+    for key in keys:
+        if key in raw:
+            return raw[key]
+    return default
+
+
 def _normalise_channel(raw: dict, existing: dict | None = None) -> dict:
     now = _now()
     channel_id = _clean(raw.get("channel_id") or raw.get("id") or (existing or {}).get("channel_id"), 64)
@@ -85,12 +95,27 @@ def _normalise_channel(raw: dict, existing: dict | None = None) -> dict:
     stream_url = _normalise_url(raw.get("stream_url") or raw.get("streamUrl"))
     logo_url = _normalise_url(raw.get("logo_url") or raw.get("logoUrl"))
     category = _clean(raw.get("category"), 80) or "Uncategorized"
-    tvg_id = _clean(raw.get("tvg_id") or raw.get("tvgId"), 180)
-    tvg_name = _clean(raw.get("tvg_name") or raw.get("tvgName"), 180)
-    duration = _clean(raw.get("duration"), 40) or "-1"
-    attrs = raw.get("attrs") if isinstance(raw.get("attrs"), dict) else {}
-    extras = raw.get("extras") if isinstance(raw.get("extras"), list) else []
-    stream_headers = raw.get("stream_headers") or raw.get("streamHeaders")
+    tvg_id = _clean(
+        _first_present(raw, "tvg_id", "tvgId", default=(existing or {}).get("tvg_id", "")),
+        180,
+    )
+    tvg_name = _clean(
+        _first_present(raw, "tvg_name", "tvgName", default=(existing or {}).get("tvg_name", "")),
+        180,
+    )
+    duration = _clean(_first_present(raw, "duration", default=(existing or {}).get("duration", "-1")), 40) or "-1"
+    attrs = _first_present(raw, "attrs", default=(existing or {}).get("attrs", {}))
+    if not isinstance(attrs, dict):
+        attrs = {}
+    extras = _first_present(raw, "extras", default=(existing or {}).get("extras", []))
+    if not isinstance(extras, list):
+        extras = []
+    stream_headers = _first_present(
+        raw,
+        "stream_headers",
+        "streamHeaders",
+        default=(existing or {}).get("stream_headers", {}),
+    )
     if not isinstance(stream_headers, dict):
         stream_headers = {}
     try:
@@ -281,10 +306,11 @@ async def save_channel(raw: dict) -> tuple[bool, dict | None, str]:
             None,
         )
         if duplicate:
-            # Remove the original id entry before writing under the deduped id
+            # Remove the original id entry before writing under the deduped id.
+            # Preserve rich metadata already imported for the duplicate unless
+            # the caller explicitly replaces those fields.
             _channels.pop(original_id, None)
-            channel["channel_id"] = duplicate["channel_id"]
-            channel["created_at"] = duplicate.get("created_at", channel["created_at"])
+            channel = _normalise_channel({**raw, "channel_id": duplicate["channel_id"]}, duplicate)
         _channels[channel["channel_id"]] = channel
         _persist_json_unlocked()
         return True, _public_channel(channel), ""

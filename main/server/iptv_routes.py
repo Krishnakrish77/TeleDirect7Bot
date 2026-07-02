@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 from ipaddress import ip_address
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import aiohttp
 from aiohttp import web
+from aiohttp.abc import AbstractResolver
 
 from main.utils import iptv_store
 from main.utils.user_auth import get_user
@@ -18,12 +20,15 @@ from main.utils.user_auth import get_user
 routes = web.RouteTableDef()
 _IMPORT_MAX_BYTES = int(os.environ.get("IPTV_IMPORT_MAX_BYTES", str(25 * 1024 * 1024)))
 _IMPORT_TIMEOUT = aiohttp.ClientTimeout(total=30, sock_connect=10, sock_read=20)
+_STREAM_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=60)
+_HLS_MANIFEST_MAX_BYTES = int(os.environ.get("IPTV_HLS_MANIFEST_MAX_BYTES", str(2 * 1024 * 1024)))
 _REDIRECT_LIMIT = 4
 # Well-known wildcard DNS services that map embedded IPs to hostnames
 # (e.g. 10.0.0.1.nip.io → 10.0.0.1) — used as SSRF pivots.
-# NOTE: full SSRF protection requires DNS resolution at validation time;
-# this blocklist only covers the most common rebinding services.
 _REBINDING_DOMAINS = frozenset({"nip.io", "sslip.io", "xip.io", "traefik.me"})
+_FORBIDDEN_STREAM_HEADER_KEYS = {"host", "connection", "content-length", "transfer-encoding"}
+_HLS_RE = re.compile(r"\.m3u8(?:[?#]|$)|[?&](?:type|format)=m3u8", re.IGNORECASE)
+_URI_ATTR_RE = re.compile(r'URI="([^"]+)"')
 
 
 def _json(data, *, status: int = 200) -> web.Response:
@@ -51,7 +56,7 @@ async def _body(request: web.Request) -> dict:
 
 
 def _channel_payload(data: dict, *, channel_id: str = "") -> dict:
-    return {
+    payload = {
         "channel_id": channel_id or data.get("id") or data.get("channel_id") or "",
         "name": data.get("name", ""),
         "stream_url": data.get("streamUrl") or data.get("stream_url") or "",
@@ -60,6 +65,68 @@ def _channel_payload(data: dict, *, channel_id: str = "") -> dict:
         "enabled": data.get("enabled", True),
         "sort_order": data.get("sortOrder") if data.get("sortOrder") is not None else data.get("sort_order", 0),
     }
+    passthrough = (
+        ("tvg_id", "tvgId"),
+        ("tvg_name", "tvgName"),
+        ("duration",),
+        ("attrs",),
+        ("extras",),
+        ("stream_headers", "streamHeaders"),
+    )
+    for keys in passthrough:
+        for key in keys:
+            if key in data:
+                payload[keys[0]] = data[key]
+                break
+    return payload
+
+
+def _is_public_import_ip(value) -> bool:
+    return bool(value.is_global and not value.is_multicast and not value.is_unspecified)
+
+
+def _reject_non_public_ip(value: str, *, message: str = "Private playlist URLs are not allowed") -> None:
+    try:
+        host_ip = ip_address(value)
+    except ValueError:
+        raise ValueError("Unable to verify playlist host")
+    if not _is_public_import_ip(host_ip):
+        raise ValueError(message)
+
+
+def _default_port(parsed) -> int:
+    if parsed.port:
+        return parsed.port
+    return 443 if parsed.scheme == "https" else 80
+
+
+def _origin_tuple(value: str) -> tuple[str, str, int]:
+    parsed = urlparse(value)
+    return (parsed.scheme.lower(), (parsed.hostname or "").lower(), _default_port(parsed))
+
+
+def _same_origin_url(base_url: str, candidate_url: str) -> bool:
+    try:
+        return _origin_tuple(base_url) == _origin_tuple(candidate_url)
+    except ValueError:
+        return False
+
+
+class _SafePublicResolver(AbstractResolver):
+    def __init__(self, *, message: str = "Private playlist URLs are not allowed"):
+        self._resolver = aiohttp.resolver.DefaultResolver()
+        self._message = message
+
+    async def resolve(self, host, port=0, family=socket.AF_INET):
+        records = await self._resolver.resolve(host, port, family)
+        if not records:
+            raise ValueError("Unable to resolve playlist host")
+        for record in records:
+            _reject_non_public_ip(str(record.get("host") or ""), message=self._message)
+        return records
+
+    async def close(self):
+        await self._resolver.close()
 
 
 def _normalise_import_url(value: object) -> str:
@@ -85,13 +152,7 @@ def _normalise_import_url(value: object) -> str:
         host_ip = ip_address(hostname)
     except ValueError:
         return url
-    if (
-        host_ip.is_private
-        or host_ip.is_loopback
-        or host_ip.is_link_local
-        or host_ip.is_multicast
-        or host_ip.is_unspecified
-    ):
+    if not _is_public_import_ip(host_ip):
         raise ValueError("Private playlist URLs are not allowed")
     return url
 
@@ -107,31 +168,136 @@ def _looks_like_m3u(text: str) -> bool:
 
 async def _fetch_m3u_url(url: str) -> tuple[str, str]:
     current = _normalise_import_url(url)
-    async with aiohttp.ClientSession(timeout=_IMPORT_TIMEOUT) as session:
-        for _attempt in range(_REDIRECT_LIMIT + 1):
-            async with session.get(current, allow_redirects=False) as response:
-                if 300 <= response.status < 400:
-                    location = response.headers.get("Location")
-                    if not location:
-                        raise ValueError("Playlist URL redirected without a location")
-                    current = _normalise_import_url(urljoin(current, location))
-                    continue
-                if response.status >= 400:
-                    raise ValueError(f"Playlist URL returned HTTP {response.status}")
-                chunks: list[bytes] = []
-                total = 0
-                async for chunk in response.content.iter_chunked(64 * 1024):
-                    total += len(chunk)
-                    if total > _IMPORT_MAX_BYTES:
-                        raise ValueError("Playlist is too large to import")
-                    chunks.append(chunk)
-                text = b"".join(chunks).decode(response.charset or "utf-8", errors="replace")
-                if not _looks_like_m3u(text):
-                    if ".m3u" in text.lower():
-                        raise ValueError("That URL looks like a playlist index. Import a specific .m3u URL from it.")
-                    raise ValueError("URL did not return M3U playlist content")
-                return text, str(response.url)
+    resolver = _SafePublicResolver()
+    connector = aiohttp.TCPConnector(resolver=resolver, ttl_dns_cache=0)
+    try:
+        async with aiohttp.ClientSession(timeout=_IMPORT_TIMEOUT, connector=connector) as session:
+            for _attempt in range(_REDIRECT_LIMIT + 1):
+                async with session.get(current, allow_redirects=False) as response:
+                    if 300 <= response.status < 400:
+                        location = response.headers.get("Location")
+                        if not location:
+                            raise ValueError("Playlist URL redirected without a location")
+                        current = _normalise_import_url(urljoin(current, location))
+                        continue
+                    if response.status >= 400:
+                        raise ValueError(f"Playlist URL returned HTTP {response.status}")
+                    chunks: list[bytes] = []
+                    total = 0
+                    async for chunk in response.content.iter_chunked(64 * 1024):
+                        total += len(chunk)
+                        if total > _IMPORT_MAX_BYTES:
+                            raise ValueError("Playlist is too large to import")
+                        chunks.append(chunk)
+                    text = b"".join(chunks).decode(response.charset or "utf-8", errors="replace")
+                    if not _looks_like_m3u(text):
+                        if ".m3u" in text.lower():
+                            raise ValueError("That URL looks like a playlist index. Import a specific .m3u URL from it.")
+                        raise ValueError("URL did not return M3U playlist content")
+                    return text, str(response.url)
+    finally:
+        await resolver.close()
     raise ValueError("Playlist URL redirected too many times")
+
+
+def _stream_request_headers(raw_headers: dict | None) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for raw_key, raw_value in (raw_headers or {}).items():
+        key = str(raw_key or "").strip()
+        value = str(raw_value or "").strip()
+        if not key or not value:
+            continue
+        lower = key.lower()
+        if lower in _FORBIDDEN_STREAM_HEADER_KEYS:
+            continue
+        if lower == "useragent":
+            headers["User-Agent"] = value
+        elif lower == "referrer":
+            headers["Referer"] = value
+        else:
+            headers[key] = value
+    return headers
+
+
+def _proxied_hls_uri(channel_id: str, playlist_url: str, source_url: str, uri: str) -> str:
+    if uri.startswith(("data:", "blob:")):
+        return uri
+    absolute = urljoin(playlist_url, uri)
+    if not _same_origin_url(source_url, absolute):
+        return uri
+    return f"/api/live-tv/stream/{quote(channel_id, safe='')}?url={quote(absolute, safe='')}"
+
+
+def _rewrite_m3u_proxy_urls(text: str, *, channel_id: str, playlist_url: str, source_url: str) -> str:
+    rows: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            rows.append(line)
+            continue
+        if stripped.startswith("#"):
+            rows.append(
+                _URI_ATTR_RE.sub(
+                    lambda match: f'URI="{_proxied_hls_uri(channel_id, playlist_url, source_url, match.group(1))}"',
+                    line,
+                )
+            )
+            continue
+        rows.append(_proxied_hls_uri(channel_id, playlist_url, source_url, stripped))
+    return "\n".join(rows) + ("\n" if text.endswith("\n") else "")
+
+
+async def _read_limited_text(response, max_bytes: int) -> str:
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.content.iter_chunked(64 * 1024):
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError("Playlist manifest is too large")
+        chunks.append(chunk)
+    return b"".join(chunks).decode(response.charset or "utf-8", errors="replace")
+
+
+async def _proxy_channel_stream(request: web.Request, channel: dict, target_url: str) -> web.StreamResponse:
+    resolver = _SafePublicResolver(message="Private stream URLs are not allowed")
+    connector = aiohttp.TCPConnector(resolver=resolver, ttl_dns_cache=0)
+    headers = _stream_request_headers(channel.get("streamHeaders") or {})
+    try:
+        async with aiohttp.ClientSession(timeout=_STREAM_TIMEOUT, connector=connector) as session:
+            async with session.get(target_url, headers=headers) as response:
+                if response.status >= 400:
+                    return web.Response(text=f"Stream returned HTTP {response.status}", status=response.status)
+
+                content_type = response.headers.get("Content-Type", "")
+                if "mpegurl" in content_type.lower() or _HLS_RE.search(target_url):
+                    text = await _read_limited_text(response, _HLS_MANIFEST_MAX_BYTES)
+                    if _looks_like_m3u(text):
+                        text = _rewrite_m3u_proxy_urls(
+                            text,
+                            channel_id=channel["id"],
+                            playlist_url=str(response.url),
+                            source_url=channel["streamUrl"],
+                        )
+                    return web.Response(
+                        text=text,
+                        content_type="application/vnd.apple.mpegurl",
+                        headers={"Cache-Control": "no-store"},
+                    )
+
+                stream = web.StreamResponse(
+                    status=response.status,
+                    headers={
+                        "Cache-Control": "no-store",
+                        "Content-Type": content_type or "application/octet-stream",
+                    },
+                )
+                await stream.prepare(request)
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    await stream.write(chunk)
+                await stream.write_eof()
+                return stream
+    finally:
+        await resolver.close()
 
 
 @routes.get("/api/live-tv/channels")
@@ -146,6 +312,27 @@ async def live_tv_channel(request: web.Request) -> web.Response:
     if not channel:
         raise web.HTTPNotFound(text="Channel not found")
     return _json({"channel": channel})
+
+
+@routes.get("/api/live-tv/stream/{channel_id}")
+async def live_tv_stream(request: web.Request) -> web.StreamResponse:
+    channel = await iptv_store.get_channel(request.match_info["channel_id"], include_disabled=False)
+    if not channel:
+        raise web.HTTPNotFound(text="Channel not found")
+    source_url = channel.get("streamUrl", "")
+    requested_url = str(request.query.get("url") or source_url)
+    try:
+        target_url = _normalise_import_url(requested_url)
+    except ValueError as exc:
+        return web.Response(text=str(exc), status=400)
+    if requested_url != source_url and not _same_origin_url(source_url, target_url):
+        return web.Response(text="Stream subresources must stay on the configured channel origin", status=400)
+    try:
+        return await _proxy_channel_stream(request, channel, target_url)
+    except ValueError as exc:
+        return web.Response(text=str(exc), status=400)
+    except (aiohttp.ClientError, TimeoutError) as exc:
+        return web.Response(text=f"Unable to fetch stream: {type(exc).__name__}", status=502)
 
 
 @routes.get("/api/app/admin/iptv")

@@ -23,6 +23,12 @@ function channelToPayload(channel: IptvChannel): IptvChannelPayload {
     category: channel.category,
     enabled: channel.enabled,
     sortOrder: channel.sortOrder,
+    tvgId: channel.tvgId,
+    tvgName: channel.tvgName,
+    duration: channel.duration,
+    attrs: channel.attrs,
+    extras: channel.extras,
+    streamHeaders: channel.streamHeaders,
   };
 }
 

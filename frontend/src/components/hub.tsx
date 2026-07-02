@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { clearAllContinue, dismissRecommendation, fetchContinueItems, fetchContinueMap } from '../api';
+import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, fetchContinueMap } from '../api';
 import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, PlayIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
@@ -188,6 +188,7 @@ export function ContinueWatching() {
     } catch (_) {
       // local-only convenience state; ignore storage failures.
     }
+    void deleteContinueEntry(key).catch(() => undefined);
     setEntries((current) => current.filter((entry) => entry.key !== key));
   };
 

@@ -8,7 +8,7 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 from main.utils.iptv_parser import parse_m3u_text
-from main.utils.iptv_store import parse_m3u
+from main.utils.iptv_store import _normalise_channel, parse_m3u
 
 
 SAMPLE = """#EXTM3U x-tvg-url="https://example.test/guide.xml"
@@ -51,6 +51,27 @@ class IptvParserTest(unittest.TestCase):
         self.assertEqual(channels[0]["tvg_name"], "ABC News")
         self.assertEqual(channels[0]["stream_headers"]["userAgent"], "TeleDirect Test")
         self.assertEqual(channels[0]["playlist_attrs"]["x-tvg-url"], "https://example.test/guide.xml")
+
+    def test_channel_update_preserves_imported_metadata_when_omitted(self):
+        existing = _normalise_channel(parse_m3u(SAMPLE)[0])
+
+        updated = _normalise_channel(
+            {
+                "channel_id": existing["channel_id"],
+                "name": "ABC News HD",
+                "stream_url": existing["stream_url"],
+                "logo_url": existing["logo_url"],
+                "category": "News",
+                "enabled": False,
+            },
+            existing,
+        )
+
+        self.assertEqual(updated["name"], "ABC News HD")
+        self.assertFalse(updated["enabled"])
+        self.assertEqual(updated["tvg_id"], "abc.us")
+        self.assertEqual(updated["stream_headers"]["userAgent"], "TeleDirect Test")
+        self.assertIn("#EXTVLCOPT:http-referrer=https://ref.example/", updated["extras"])
 
 
 if __name__ == "__main__":

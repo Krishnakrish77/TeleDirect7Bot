@@ -59,6 +59,15 @@ def _time_label(hour: int) -> tuple:
             return label
     return ("Night", "🌙")
 
+
+def _play_count(entry: dict) -> int:
+    try:
+        count = int(entry.get("play_count") or 1)
+    except (TypeError, ValueError):
+        count = 1
+    return max(1, min(count, 500))
+
+
 def _personality(top_genre: str, night_pct: int, weekend_pct: int,
                   completion: int, audio_pct: int) -> str:
     if audio_pct >= 60:
@@ -124,11 +133,12 @@ async def _stats_payload(user_id: int) -> dict:
         if m:
             item = media_index.get_item(int(m.group(1)))
             if item and item.duration:
-                total_seconds += item.duration
+                plays = _play_count(h)
+                total_seconds += item.duration * plays
                 if item.media_kind == "audio":
-                    audio_seconds += item.duration
+                    audio_seconds += item.duration * plays
                 else:
-                    video_seconds += item.duration
+                    video_seconds += item.duration * plays
 
     total_hours = int(total_seconds // 3600)
     total_mins  = int((total_seconds % 3600) // 60)
@@ -162,6 +172,7 @@ async def _stats_payload(user_id: int) -> dict:
         if not item:
             # Pruned — skip; can't group or tally without metadata.
             continue
+        plays = _play_count(h)
 
         # Tallies
         # Genre: for audio items without TMDB genres, fall back to ID3 tags
@@ -172,27 +183,22 @@ async def _stats_payload(user_id: int) -> dict:
             genres = [_rx.sub(r"^#", "", t).strip().title()
                       for t in item.tags if t and not t.startswith("@")]
         for g in genres:
-            genre_counts[g] += 1
-        kind_counts[item.media_kind or "video"] += 1
+            genre_counts[g] += plays
+        kind_counts[item.media_kind or "video"] += plays
         if item.director:
             for d in item.director.split(","):
                 d = d.strip()
                 if d:
-                    director_counts[d] += 1
+                    director_counts[d] += plays
         if item.artist:
             for a in item.artist.split(","):
                 a = a.strip()
                 if a:
-                    artist_counts[a] += 1
+                    artist_counts[a] += plays
 
         # Title grouping — album_key groups music (movie_key is "" for audio).
-        # For audio tracks use play_count (how many times the song was played).
-        # For movies/series use 1 per history entry: VLC's repeated tail-seeks
-        # can inflate play_count to nonsensical values (e.g. 47 for one movie),
-        # so the raw wh_store play_count is only trustworthy for music.
         group = item.series_key or item.album_key or item.movie_key or ck
-        increment = h.get("play_count", 1) if item.media_kind == "audio" else 1
-        title_counts[group] += increment
+        title_counts[group] += plays
         if group not in title_meta:
             if item.series_key:
                 title = item.series_title or item.title
@@ -253,10 +259,11 @@ async def _stats_payload(user_id: int) -> dict:
             continue
         if hasattr(wa, 'tzinfo') and wa.tzinfo:
             wa = wa.replace(tzinfo=None)
-        dow_counts[wa.weekday()] += 1
-        hour_counts[wa.hour]     += 1
+        plays = _play_count(h)
+        dow_counts[wa.weekday()] += plays
+        hour_counts[wa.hour]     += plays
         if wa >= week_start:
-            daily_counts[wa.strftime("%Y-%m-%d")] += 1
+            daily_counts[wa.strftime("%Y-%m-%d")] += plays
 
     # Also count days with in-progress CW activity (t = epoch-ms of last save).
     # Skip entries already in history_cw_keys to avoid double-counting the same
@@ -301,11 +308,8 @@ async def _stats_payload(user_id: int) -> dict:
     best_day_name = _DAYS[best_dow_idx] if best_dow_idx >= 0 else "—"
 
     # Weekend vs weekday split
-    # Use timed_plays (entries with a watched_at date) as the denominator —
-    # total_plays counts all history rows, some of which may lack a timestamp,
-    # which would make the percentages slightly low.
     weekend_plays = dow_counts[5] + dow_counts[6]
-    total_plays   = len(history)
+    total_plays   = sum(_play_count(h) for h in history)
     timed_plays   = sum(dow_counts.values())
     weekend_pct   = int(weekend_plays / timed_plays * 100) if timed_plays else 0
 
@@ -376,7 +380,7 @@ async def _stats_payload(user_id: int) -> dict:
         if _mwa:
             if hasattr(_mwa, 'tzinfo') and _mwa.tzinfo:
                 _mwa = _mwa.replace(tzinfo=None)
-            month_counts[_mwa.strftime("%b %Y")] += 1
+            month_counts[_mwa.strftime("%b %Y")] += _play_count(h)
     best_month = month_counts.most_common(1)[0] if month_counts else None
 
     # ── Recent watch history (last 20 distinct titles) ────────────────────

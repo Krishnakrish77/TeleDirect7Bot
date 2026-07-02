@@ -1,7 +1,16 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { deleteContinueEntry, fetchContinueItems, fetchContinueMap } from '../api';
 import type { HubCard, HubParams, HubResponse } from '../types';
-import { GridView, shelfPresentation, sortHomeShelves } from './hub';
+import { ContinueWatching, GridView, shelfPresentation, sortHomeShelves } from './hub';
+
+vi.mock('../api', () => ({
+  clearAllContinue: vi.fn(),
+  deleteContinueEntry: vi.fn(),
+  dismissRecommendation: vi.fn(),
+  fetchContinueItems: vi.fn(),
+  fetchContinueMap: vi.fn(),
+}));
 
 const params: HubParams = {
   q: '',
@@ -14,6 +23,11 @@ const params: HubParams = {
   offset: 0,
   limit: 24,
 };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  localStorage.clear();
+});
 
 function card(overrides: Partial<HubCard> = {}): HubCard {
   return {
@@ -144,5 +158,40 @@ describe('home shelf helpers', () => {
   it('renames key shelves for clearer home presentation', () => {
     expect(shelfPresentation('Recently added')).toEqual({ title: 'New in your library', eyebrow: 'Latest' });
     expect(shelfPresentation('Hidden gems')).toEqual({ title: 'Worth a look', eyebrow: 'Discovery' });
+  });
+});
+
+describe('ContinueWatching', () => {
+  it('removes continue entries from server sync when dismissed', async () => {
+    localStorage.setItem('td:cw', JSON.stringify({
+      hash1: { pos: 120, dur: 1200, t: 10, title: 'Kalki' },
+    }));
+    vi.mocked(fetchContinueMap).mockResolvedValue({
+      hash1: { pos: 120, dur: 1200, t: 10, title: 'Kalki' },
+    });
+    vi.mocked(fetchContinueItems).mockResolvedValue([
+      {
+        key: 'hash1',
+        title: 'Kalki',
+        series_title: '',
+        episode_label: '',
+        year: 2024,
+        poster_path: '',
+        thumb_url: '/thumb/hash1.jpg',
+        watch_url: '/watch/hash1',
+        kind: 'movie',
+        media_kind: 'video',
+        next_episode: null,
+      },
+    ]);
+    vi.mocked(deleteContinueEntry).mockResolvedValue(undefined);
+
+    render(<ContinueWatching />);
+
+    expect(await screen.findAllByText('Kalki')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => expect(deleteContinueEntry).toHaveBeenCalledWith('hash1'));
+    expect(screen.queryAllByText('Kalki')).toHaveLength(0);
   });
 });
