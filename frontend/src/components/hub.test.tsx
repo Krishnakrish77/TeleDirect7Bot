@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAllContinue, deleteContinueEntry, fetchContinueItems, fetchContinueMap } from '../api';
 import type { HubCard, HubParams, HubResponse } from '../types';
-import { ContinueWatching, GridView, shelfPresentation, sortHomeShelves } from './hub';
+import { ContinueWatching, GridView, RecommendationTeaser, shelfPresentation, sortHomeShelves } from './hub';
 
 vi.mock('../api', () => ({
   clearAllContinue: vi.fn(),
@@ -158,6 +158,18 @@ describe('home shelf helpers', () => {
   it('renames key shelves for clearer home presentation', () => {
     expect(shelfPresentation('Recently added')).toEqual({ title: 'New in your library', eyebrow: 'Latest' });
     expect(shelfPresentation('Hidden gems')).toEqual({ title: 'Worth a look', eyebrow: 'Discovery' });
+  });
+});
+
+describe('RecommendationTeaser', () => {
+  it('opens sign in when the teaser action is clicked', () => {
+    const onSignIn = vi.fn();
+
+    render(<RecommendationTeaser onSignIn={onSignIn} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(screen.getByText('Personal picks unlock after sign-in')).toBeTruthy();
+    expect(onSignIn).toHaveBeenCalledTimes(1);
   });
 });
 

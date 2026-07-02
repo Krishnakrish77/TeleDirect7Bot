@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, fetchContinueMap } from '../api';
 import { localAppHref } from '../navigation';
-import { ChevronRightIcon, FilmIcon, PlayIcon, XIcon } from '../icons';
+import { ChevronRightIcon, FilmIcon, PlayIcon, UserIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
 import { tmdbImageUrl } from '../utils/tmdb';
 import { formatExternalRating } from '../utils/externalRating';
@@ -266,6 +266,22 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
           );
         })}
       </div>
+    </section>
+  );
+}
+
+export function RecommendationTeaser({ onSignIn }: { onSignIn: () => void }) {
+  return (
+    <section className="recommendation-teaser" aria-label="Personalized recommendations">
+      <div className="recommendation-teaser-copy">
+        <p className="eyebrow">For you</p>
+        <h2>Personal picks unlock after sign-in</h2>
+        <p>Ratings, saves, and play history tune the rows on this Home screen.</p>
+      </div>
+      <button type="button" className="primary-action compact-action" onClick={onSignIn}>
+        <UserIcon />
+        <span>Sign in</span>
+      </button>
     </section>
   );
 }

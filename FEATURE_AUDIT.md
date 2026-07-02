@@ -34,7 +34,7 @@ _Evidence: Webwright runs `outputs/perf_audit_live/final_runs/run_3`, `run_4`, `
 | Continue Watching row | 🟢 All | ✅ Cross-device CW | — |
 | Search with autocomplete | 🟢 All | ✅ Live suggest, keyboard shortcuts | — |
 | Genre / tag filtering | 🟢 All | ✅ Year / quality / genre dropdowns | — |
-| Trending / Top content charts | 🟡 Netflix, YouTube, JioHotstar | ❌ | **High** — easy win; count CW or play events in MongoDB |
+| Trending / Top content charts | 🟡 Netflix, YouTube, JioHotstar | ✅ Trending + Most Played Home shelves | — |
 | Trailer auto-play on browse | 🟢 All | ⚠️ Trailers on movie/series page only, not on cards | Medium |
 | Search by cast / crew name | 🟡 Most | ❌ Cast data exists in meta, not searchable | **High** — data already there, just needs search index |
 
@@ -201,7 +201,7 @@ Large batch shipped since the last audit. Validated against the live deployment 
 | 2 | ~~**Skip intro button**~~ | ✅ Done | Admin timestamps + timeupdate JS; button appears only within intro window. |
 | 3 | ~~**Per-title thumbs up/down**~~ | ✅ Done | Up/down toggle, auth-gated, aggregate counts shown, feeds recommendation engine. |
 | 4 | ~~**Artist page**~~ | ✅ Done | `/artist/{slug}` with multi-credit splitting; primary artist linked from player. |
-| 5 | **Trending / Top charts shelf** | Low | Count play-start events in CW store or a `plays` collection. A "Most watched this week" shelf costs one MongoDB aggregation query. **← only remaining High item.** |
+| 5 | ~~**Trending / Top charts shelf**~~ | ✅ Done | Trending and Most Played Home shelves now cover active discovery from watch/listen signals. |
 | 6 | ⚠️ **Searchable cast / crew** | Code done, **data blocked** | Search index extended for `cast[]`/`director` — but live searches for "nolan"/"arnold"/"dicaprio" return 0 results because existing catalogue items were never enriched with cast/crew. Same blocker as person pages. **Needs a TMDB credits backfill pass.** |
 
 ### 🟡 Medium — Clear user value, moderate effort
@@ -214,7 +214,7 @@ Large batch shipped since the last audit. Validated against the live deployment 
 | 10 | ~~**Video chapters**~~ | ✅ Done | Admin line-entry chapters render as progress markers and a seekable chapter list in the React player. |
 | 11 | ~~**Viewing / listening stats page**~~ | ✅ Done | Streaks, video/audio time split, day-of-week heatmap, top artists/genres, play counts, "personality" card. Auth-gated `/stats`. |
 | 12 | **Watchlist remove on mobile** | Low | Currently hover-only. A long-press or visible X on touch devices fixes this. |
-| 13 | **Recommendations discoverability** | Low | Show a teaser shelf ("Sign in to see recommendations") for signed-out users. Currently invisible. |
+| 13 | ~~**Recommendations discoverability**~~ | ✅ Done | Signed-out Home users now see a personalized recommendations teaser that opens sign-in. |
 
 ### ⚪ Low — Nice-to-have or constrained by architecture
 
@@ -236,7 +236,7 @@ Large batch shipped since the last audit. Validated against the live deployment 
 | Dimension | vs Netflix/Disney+ | vs Spotify/Apple Music |
 |-----------|-------------------|----------------------|
 | Core playback | ★★★★★ — Skip intro + PiP + captions + speed | ★★★★★ — Gapless + crossfade + queue + lyrics |
-| Discovery | ★★★★☆ — Cast search built but data-blocked; missing trending | ★★★★☆ — Artist page shipped; missing radio/charts |
+| Discovery | ★★★★☆ — Trending shipped; cast search built but data-blocked | ★★★★☆ — Artist page shipped; missing radio/charts |
 | Personal library | ★★★★★ — CW + watchlist + playlists + stats + FLAC quality badge | ★★★★★ — Playlists + stats + listening insights shipped |
 | Notifications | ★★☆☆☆ — Zero push notifications | ★★☆☆☆ — Same gap |
 | Social | ★★★☆☆ — Share works, nothing else | ★★★☆☆ — Share works, nothing else |

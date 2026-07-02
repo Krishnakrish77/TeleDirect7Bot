@@ -7,7 +7,7 @@ import { useArtColor } from './hooks/artColor';
 import { useAdmin, useAdminIptv, useDetail, useHub, useLikedSongs, useLiveTv, useMe, usePlaylistDetail, usePlaylists, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
 import { Header, PrimaryNav, ScrollToTop, SignInModal } from './components/layout';
 import { FilterBar, FilterPage } from './components/filters';
-import { HeroStage, ContinueWatching, ShelfRow, GridView, sortHomeShelves } from './components/hub';
+import { HeroStage, ContinueWatching, RecommendationTeaser, ShelfRow, GridView, sortHomeShelves } from './components/hub';
 import { MiniPlayer, NowPlayingSheet } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
 import { QueueDrawer } from './components/queueDrawer';
@@ -334,6 +334,10 @@ function App() {
 
             {currentHubData?.mode === 'shelves' && !activeFilters && (
               <ContinueWatching serverSyncEnabled={Boolean(user)} />
+            )}
+
+            {currentHubData?.mode === 'shelves' && !activeFilters && me !== null && !user && (
+              <RecommendationTeaser onSignIn={requireAuth} />
             )}
 
             {hubLoading && <LoadingRows />}
