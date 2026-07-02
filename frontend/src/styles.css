@@ -1482,6 +1482,106 @@ img {
   padding: clamp(1rem, 3vw, 2rem);
 }
 
+.watchlist-tools {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(0, auto) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+  background: rgba(17, 19, 23, 0.62);
+}
+
+.watchlist-search {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 42px;
+  padding: 0 0.45rem 0 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 11, 0.46);
+}
+
+.watchlist-search svg {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+
+.watchlist-search input {
+  min-width: 0;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  outline: none;
+}
+
+.watchlist-filter-row {
+  display: flex;
+  gap: 0.42rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.watchlist-filter-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-height: 38px;
+  padding: 0 0.62rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.watchlist-filter-row button.active {
+  border-color: rgba(249, 115, 22, 0.42);
+  background: rgba(249, 115, 22, 0.13);
+  color: #fed7aa;
+}
+
+.watchlist-filter-row span {
+  color: var(--dim);
+  font-size: 0.72rem;
+}
+
+.watchlist-sort {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 42px;
+}
+
+.watchlist-sort span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.watchlist-sort select {
+  min-height: 38px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 9, 11, 0.65);
+  color: #fff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  outline: none;
+}
+
 /* ── Live TV ─────────────────────────────────────────────────────────────── */
 .live-tv-main {
   display: grid;
@@ -8383,6 +8483,19 @@ select.edit-field-input {
   .playlist-sort select {
     min-width: 0;
     flex: 1 1 auto;
+  }
+
+  .watchlist-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .watchlist-sort {
+    grid-template-columns: minmax(0, 1fr) minmax(9rem, auto);
+  }
+
+  .watchlist-filter-row {
+    margin-inline: -0.15rem;
+    padding-bottom: 0.1rem;
   }
 
   .playlist-grid {
