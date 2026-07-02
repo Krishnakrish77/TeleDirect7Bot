@@ -27,6 +27,7 @@ _LOGO_TIMEOUT = aiohttp.ClientTimeout(total=10, sock_connect=5, sock_read=8)
 _HLS_MANIFEST_MAX_BYTES = int(os.environ.get("IPTV_HLS_MANIFEST_MAX_BYTES", str(2 * 1024 * 1024)))
 _LOGO_MAX_BYTES = int(os.environ.get("IPTV_LOGO_MAX_BYTES", str(512 * 1024)))
 _LOGO_CACHE_TTL_SECONDS = int(os.environ.get("IPTV_LOGO_CACHE_TTL_SECONDS", str(24 * 60 * 60)))
+_LOGO_ERROR_CACHE_TTL_SECONDS = int(os.environ.get("IPTV_LOGO_ERROR_CACHE_TTL_SECONDS", str(6 * 60 * 60)))
 _LOGO_CACHE_MAX_ITEMS = int(os.environ.get("IPTV_LOGO_CACHE_MAX_ITEMS", "256"))
 _REDIRECT_LIMIT = 4
 # Well-known wildcard DNS services that map embedded IPs to hostnames
@@ -46,6 +47,13 @@ _LOGO_EXTENSION_CONTENT_TYPES = {
     ".svgz": "image/svg+xml",
     ".webp": "image/webp",
 }
+_LOGO_PLACEHOLDER_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" '
+    b'role="img" aria-label="Channel"><rect width="96" height="96" rx="18" fill="#0b0f14"/>'
+    b'<path d="M38 58a14 14 0 1 1 20 0M30 66a26 26 0 1 1 36 0M47 51h2v20h-2zM38 72h20" '
+    b'fill="none" stroke="#94a3b8" stroke-width="6" stroke-linecap="round"/>'
+    b'<circle cx="48" cy="48" r="5" fill="#14b8a6"/></svg>'
+)
 _LOGO_CACHE: dict[str, tuple[float, str, bytes]] = {}
 
 
@@ -163,6 +171,20 @@ def _prune_logo_cache(now: float) -> None:
         _LOGO_CACHE.pop(oldest_key, None)
 
 
+def _cache_logo_result(channel_id: str, logo_url: str, content_type: str, body: bytes, ttl_seconds: int) -> None:
+    if ttl_seconds <= 0 or _LOGO_CACHE_MAX_ITEMS <= 0:
+        return
+    now = time.time()
+    _prune_logo_cache(now)
+    _LOGO_CACHE[_logo_cache_key(channel_id, logo_url)] = (now + ttl_seconds, content_type, body)
+
+
+def _placeholder_logo_result(channel_id: str, logo_url: str) -> tuple[str, bytes]:
+    content_type = "image/svg+xml"
+    _cache_logo_result(channel_id, logo_url, content_type, _LOGO_PLACEHOLDER_SVG, _LOGO_ERROR_CACHE_TTL_SECONDS)
+    return content_type, _LOGO_PLACEHOLDER_SVG
+
+
 async def _fetch_logo(channel_id: str, logo_url: str) -> tuple[str, bytes]:
     cache_key = _logo_cache_key(channel_id, logo_url)
     now = time.time()
@@ -206,9 +228,7 @@ async def _fetch_logo(channel_id: str, logo_url: str) -> tuple[str, bytes]:
                             raise ValueError("Logo image is too large")
                         chunks.append(chunk)
                     body = b"".join(chunks)
-                    _prune_logo_cache(now)
-                    if _LOGO_CACHE_TTL_SECONDS > 0 and _LOGO_CACHE_MAX_ITEMS > 0:
-                        _LOGO_CACHE[cache_key] = (time.time() + _LOGO_CACHE_TTL_SECONDS, content_type, body)
+                    _cache_logo_result(channel_id, logo_url, content_type, body, _LOGO_CACHE_TTL_SECONDS)
                     return content_type, body
     finally:
         await resolver.close()
@@ -458,11 +478,11 @@ async def live_tv_logo(request: web.Request) -> web.Response:
         raise web.HTTPNotFound(text="Logo not found")
     try:
         content_type, body = await _fetch_logo(channel["id"], logo_url)
-    except ValueError as exc:
-        return web.Response(text=str(exc), status=400)
-    except (aiohttp.ClientError, TimeoutError) as exc:
-        return web.Response(text=f"Unable to fetch logo: {type(exc).__name__}", status=502)
-    cache_control = f"public, max-age={_LOGO_CACHE_TTL_SECONDS}" if _LOGO_CACHE_TTL_SECONDS > 0 else "no-store"
+        ttl_seconds = _LOGO_CACHE_TTL_SECONDS
+    except (ValueError, aiohttp.ClientError, TimeoutError):
+        content_type, body = _placeholder_logo_result(channel["id"], logo_url)
+        ttl_seconds = _LOGO_ERROR_CACHE_TTL_SECONDS
+    cache_control = f"public, max-age={ttl_seconds}" if ttl_seconds > 0 else "no-store"
     return web.Response(
         body=body,
         content_type=content_type,

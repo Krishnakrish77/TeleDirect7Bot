@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { attachHls } from '../media/hls';
 import { BroadcastIcon, HeartIcon, PlayIcon, SearchIcon, XIcon } from '../icons';
 import { ErrorPanel, LoadingRows } from './common';
@@ -13,6 +13,40 @@ const CHANNEL_RENDER_INCREMENT = 80;
 const ALL_CHANNELS = 'All';
 const FAVORITE_CHANNELS = '__favorites';
 const RECENT_CHANNELS = '__recent';
+const failedLiveLogoKeys = new Set<string>();
+
+function channelLogoKey(channel: IptvChannel): string {
+  return `${channel.id}:${channel.logoUrl}`;
+}
+
+function hasUsableLogo(channel: IptvChannel | null | undefined, failedLogoKeys: Set<string>): channel is IptvChannel {
+  if (!channel?.logoUrl) return false;
+  return !failedLogoKeys.has(channelLogoKey(channel));
+}
+
+function ChannelLogo({
+  channel,
+  failedLogoKeys,
+  onLogoError,
+}: {
+  channel: IptvChannel | null | undefined;
+  failedLogoKeys: Set<string>;
+  onLogoError: (channel: IptvChannel) => void;
+}) {
+  if (!hasUsableLogo(channel, failedLogoKeys)) {
+    return <span><BroadcastIcon /></span>;
+  }
+  return (
+    <img
+      key={channelLogoKey(channel)}
+      src={channel.logoUrl}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => onLogoError(channel)}
+    />
+  );
+}
 
 function readStoredIds(key: string): string[] {
   try {
@@ -76,6 +110,7 @@ export function LiveTvPage({
   const [visibleChannelCount, setVisibleChannelCount] = useState(INITIAL_CHANNEL_RENDER_COUNT);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => new Set(readStoredIds(FAVORITES_KEY)));
   const [recentIds, setRecentIds] = useState<string[]>(() => readStoredIds(RECENTS_KEY));
+  const [failedLogoKeys, setFailedLogoKeys] = useState<Set<string>>(() => new Set(failedLiveLogoKeys));
 
   useEffect(() => {
     if (!channels.length) {
@@ -172,6 +207,15 @@ export function LiveTvPage({
     setPlaybackId(channelId);
   };
 
+  const markLogoFailed = useCallback((channel: IptvChannel) => {
+    const key = channelLogoKey(channel);
+    failedLiveLogoKeys.add(key);
+    setFailedLogoKeys((current) => {
+      if (current.has(key)) return current;
+      return new Set([...current, key]);
+    });
+  }, []);
+
   useEffect(() => {
     const video = videoRef.current;
     hlsRef.current?.destroy();
@@ -249,7 +293,7 @@ export function LiveTvPage({
                 controls={Boolean(playbackChannel)}
                 playsInline
                 preload={playbackChannel ? 'auto' : 'none'}
-                poster={playbackChannel?.logoUrl || undefined}
+                poster={hasUsableLogo(playbackChannel, failedLogoKeys) ? playbackChannel.logoUrl : undefined}
                 onError={() => setPlaybackError('Unable to play this channel')}
               />
               {!playbackChannel && (
@@ -266,7 +310,7 @@ export function LiveTvPage({
             </div>
             <div className="live-now-row">
               <div className="live-now-copy">
-                {selected?.logoUrl ? <img src={selected.logoUrl} alt="" loading="lazy" decoding="async" /> : <span><BroadcastIcon /></span>}
+                <ChannelLogo channel={selected} failedLogoKeys={failedLogoKeys} onLogoError={markLogoFailed} />
                 <div>
                   <strong>{selected?.name || 'No channel selected'}</strong>
                   <small>{selected ? channelCategory(selected) : 'Live TV'}</small>
@@ -337,7 +381,7 @@ export function LiveTvPage({
                   className={selected?.id === channel.id ? 'live-channel-row active' : 'live-channel-row'}
                   onClick={() => selectAndPlay(channel.id)}
                 >
-                  {channel.logoUrl ? <img src={channel.logoUrl} alt="" loading="lazy" decoding="async" /> : <span><BroadcastIcon /></span>}
+                  <ChannelLogo channel={channel} failedLogoKeys={failedLogoKeys} onLogoError={markLogoFailed} />
                   <strong>{channel.name}</strong>
                   <small>{channelCategory(channel)}</small>
                   <em className="live-channel-icons">

@@ -107,6 +107,31 @@ describe('LiveTvPage', () => {
     expect(screen.getByText('No IPTV channels are available')).toBeTruthy();
   });
 
+  it('falls back to the broadcast icon when a channel logo fails', async () => {
+    const brokenLogoData: LiveTvResponse = {
+      channels: [{
+        ...liveTvData.channels[0],
+        id: 'broken-logo',
+        name: 'Broken Logo',
+        logoUrl: '/missing-logo.png',
+      }],
+    };
+    const view = render(<LiveTvPage data={brokenLogoData} loading={false} error="" />);
+
+    const nowLogo = view.container.querySelector('.live-now-copy img');
+    expect(nowLogo).toBeTruthy();
+
+    fireEvent.error(nowLogo as Element);
+
+    await waitFor(() => {
+      expect(view.container.querySelector('.live-now-copy img')).toBeNull();
+      const row = view.container.querySelector('.live-channel-row') as HTMLElement;
+      expect(row).toBeTruthy();
+      expect(row.querySelector('img')).toBeNull();
+      expect(Array.from(row.children).some((child) => child.tagName === 'SPAN')).toBe(true);
+    });
+  });
+
   it('renders large channel lists in batches', () => {
     const manyChannels: LiveTvResponse = {
       channels: Array.from({ length: 95 }, (_, index) => makeChannel(index + 1)),

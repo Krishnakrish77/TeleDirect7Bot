@@ -9,11 +9,15 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 from main.server.iptv_routes import (
+    _LOGO_CACHE,
+    _LOGO_PLACEHOLDER_SVG,
     _is_public_import_ip,
     _logo_content_type,
+    _logo_cache_key,
     _looks_like_m3u,
     _normalise_logo_url,
     _normalise_import_url,
+    _placeholder_logo_result,
     _rewrite_m3u_proxy_urls,
     _with_proxied_logo,
 )
@@ -62,6 +66,16 @@ class IptvUrlImportTest(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             _logo_content_type("text/html", "https://cdn.example.test/not-a-logo")
+
+    def test_placeholder_logo_result_is_negative_cached(self):
+        _LOGO_CACHE.clear()
+        logo_url = "https://cdn.example.test/missing-logo.png"
+
+        content_type, body = _placeholder_logo_result("news", logo_url)
+
+        self.assertEqual(content_type, "image/svg+xml")
+        self.assertEqual(body, _LOGO_PLACEHOLDER_SVG)
+        self.assertIn(_logo_cache_key("news", logo_url), _LOGO_CACHE)
 
     def test_detects_m3u_content(self):
         self.assertTrue(_looks_like_m3u("#EXTM3U\n#EXTINF:-1,News\nhttps://example.test/stream.m3u8"))
