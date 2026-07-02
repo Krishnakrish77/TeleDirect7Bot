@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { FocusEvent, MouseEvent } from 'react';
 import { deleteContinueEntry, dismissRecommendation, recordWatchHistory, signOut } from './api';
 import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
@@ -7,22 +8,89 @@ import { useAdmin, useAdminIptv, useDetail, useHub, useLikedSongs, useLiveTv, us
 import { Header, PrimaryNav, ScrollToTop, SignInModal } from './components/layout';
 import { FilterBar, FilterPage } from './components/filters';
 import { HeroStage, ContinueWatching, ShelfRow, GridView, sortHomeShelves } from './components/hub';
-import { DetailPage } from './components/detail';
-import { WatchPage } from './components/watch';
-import { WatchlistPage } from './components/watchlistPage';
-import { LikedSongsPage } from './components/likedSongsPage';
-import { AddToPlaylistSheet } from './components/addToPlaylistSheet';
-import { PlaylistDetailPage, PlaylistsPage } from './components/playlistsPage';
-import { StatsPage } from './components/statsPage';
-import { AdminNav, AdminPage } from './components/adminPage';
-import { AdminDashboard } from './components/adminDashboard';
-import { AdminTrendingGaps } from './components/adminTrendingGaps';
-import { AdminIptvPage } from './components/adminIptvPage';
-import { LiveTvPage } from './components/liveTvPage';
 import { MiniPlayer, NowPlayingSheet } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
 import { QueueDrawer } from './components/queueDrawer';
 import type { HubCard, HubFilters, RecommendationMeta, WatchTrack } from './types';
+
+const loadDetailPage = () => import('./components/detail');
+const loadWatchPage = () => import('./components/watch');
+const loadWatchlistPage = () => import('./components/watchlistPage');
+const loadLikedSongsPage = () => import('./components/likedSongsPage');
+const loadAddToPlaylistSheet = () => import('./components/addToPlaylistSheet');
+const loadPlaylistsPage = () => import('./components/playlistsPage');
+const loadStatsPage = () => import('./components/statsPage');
+const loadAdminPage = () => import('./components/adminPage');
+const loadAdminDashboard = () => import('./components/adminDashboard');
+const loadAdminTrendingGaps = () => import('./components/adminTrendingGaps');
+const loadAdminIptvPage = () => import('./components/adminIptvPage');
+const loadLiveTvPage = () => import('./components/liveTvPage');
+
+const DetailPage = lazy(() => loadDetailPage().then((module) => ({ default: module.DetailPage })));
+const WatchPage = lazy(() => loadWatchPage().then((module) => ({ default: module.WatchPage })));
+const WatchlistPage = lazy(() => loadWatchlistPage().then((module) => ({ default: module.WatchlistPage })));
+const LikedSongsPage = lazy(() => loadLikedSongsPage().then((module) => ({ default: module.LikedSongsPage })));
+const AddToPlaylistSheet = lazy(() => loadAddToPlaylistSheet().then((module) => ({ default: module.AddToPlaylistSheet })));
+const PlaylistDetailPage = lazy(() => loadPlaylistsPage().then((module) => ({ default: module.PlaylistDetailPage })));
+const PlaylistsPage = lazy(() => loadPlaylistsPage().then((module) => ({ default: module.PlaylistsPage })));
+const StatsPage = lazy(() => loadStatsPage().then((module) => ({ default: module.StatsPage })));
+const AdminNav = lazy(() => loadAdminPage().then((module) => ({ default: module.AdminNav })));
+const AdminPage = lazy(() => loadAdminPage().then((module) => ({ default: module.AdminPage })));
+const AdminDashboard = lazy(() => loadAdminDashboard().then((module) => ({ default: module.AdminDashboard })));
+const AdminTrendingGaps = lazy(() => loadAdminTrendingGaps().then((module) => ({ default: module.AdminTrendingGaps })));
+const AdminIptvPage = lazy(() => loadAdminIptvPage().then((module) => ({ default: module.AdminIptvPage })));
+const LiveTvPage = lazy(() => loadLiveTvPage().then((module) => ({ default: module.LiveTvPage })));
+
+const preloadedRouteChunks = new Set<string>();
+
+function preloadAppRoute(pathname: string) {
+  const route = parseRoute(pathname);
+  const key = route.kind;
+  if (preloadedRouteChunks.has(key)) return;
+  preloadedRouteChunks.add(key);
+
+  switch (route.kind) {
+    case 'detail':
+      void loadDetailPage();
+      break;
+    case 'watch':
+      void loadWatchPage();
+      break;
+    case 'watchlist':
+      void loadWatchlistPage();
+      break;
+    case 'liked-songs':
+      void loadLikedSongsPage();
+      break;
+    case 'playlists':
+    case 'playlist':
+      void loadPlaylistsPage();
+      break;
+    case 'stats':
+      void loadStatsPage();
+      break;
+    case 'live-tv':
+      void loadLiveTvPage();
+      break;
+    case 'admin':
+      void loadAdminPage();
+      break;
+    case 'admin-dashboard':
+      void loadAdminPage();
+      void loadAdminDashboard();
+      break;
+    case 'admin-trending':
+      void loadAdminPage();
+      void loadAdminTrendingGaps();
+      break;
+    case 'admin-iptv':
+      void loadAdminPage();
+      void loadAdminIptvPage();
+      break;
+    default:
+      break;
+  }
+}
 
 const DEFAULT_FILTERS: HubFilters = {
   years: [],
@@ -43,6 +111,14 @@ const DEFAULT_FILTERS: HubFilters = {
     { value: 'music', label: 'Music' },
   ],
 };
+
+function RouteFallback() {
+  return (
+    <main className="hub-main route-fallback">
+      <LoadingRows variant="detail" />
+    </main>
+  );
+}
 
 function App() {
   const { location, navigate, onLinkClick } = useAppNavigation();
@@ -197,8 +273,17 @@ function App() {
     navigate(appUrl(nextParams, isFilterRoute ? '/filters' : ''), true);
   }, [isFilterRoute, navigate, params]);
 
+  const onRoutePreload = useCallback((event: MouseEvent<HTMLDivElement> | FocusEvent<HTMLDivElement>) => {
+    const target = event.target as Element | null;
+    const anchor = target?.closest<HTMLAnchorElement>('a[href]');
+    if (!anchor) return;
+    const url = new URL(anchor.href);
+    if (url.origin !== window.location.origin || !url.pathname.startsWith('/app')) return;
+    preloadAppRoute(url.pathname);
+  }, []);
+
   return (
-    <div className={shellClass} onClick={onLinkClick}>
+    <div className={shellClass} onClick={onLinkClick} onMouseOver={onRoutePreload} onFocusCapture={onRoutePreload}>
       <Header
         me={me}
         user={user}
@@ -227,202 +312,204 @@ function App() {
         activeSection={activeSection}
       />
 
-      {isHubRoute ? (
-        <main className="hub-main">
-          {currentHubData?.mode === 'shelves' && !activeFilters && currentHubData.heroes.length > 0 && (
-            <HeroStage heroes={currentHubData.heroes} />
-          )}
+      <Suspense fallback={<RouteFallback />}>
+        {isHubRoute ? (
+          <main className="hub-main">
+            {currentHubData?.mode === 'shelves' && !activeFilters && currentHubData.heroes.length > 0 && (
+              <HeroStage heroes={currentHubData.heroes} />
+            )}
 
-          <div className="hub-toolbar">
-            {currentHubData?.mode === 'grid' && (
-              <FilterBar
-                filters={filters}
-                catalogueSize={data?.catalogueSize ?? 0}
+            <div className="hub-toolbar">
+              {currentHubData?.mode === 'grid' && (
+                <FilterBar
+                  filters={filters}
+                  catalogueSize={data?.catalogueSize ?? 0}
+                  params={params}
+                  query={params.q}
+                  setQuery={setQuery}
+                  update={update}
+                />
+              )}
+            </div>
+
+            {currentHubData?.mode === 'shelves' && !activeFilters && (
+              <ContinueWatching />
+            )}
+
+            {hubLoading && <LoadingRows />}
+            {error && <ErrorPanel message={error} />}
+
+            {!hubLoading && !error && currentHubData?.mode === 'shelves' && !activeFilters && (
+              <div className="shelf-stack">
+                {sortedHomeShelves.map((shelf) => (
+                  <ShelfRow
+                    key={shelf.name}
+                    shelf={shelf}
+                    saved={saved}
+                    onToggleSaved={onToggleSaved}
+                    onDismiss={onDismissRecommendation}
+                    onMarkWatched={onMarkWatched}
+                  />
+                ))}
+              </div>
+            )}
+
+            {!hubLoading && !error && currentHubData?.mode === 'grid' && (
+              <GridView
+                data={currentHubData}
+                saved={saved}
                 params={params}
-                query={params.q}
-                setQuery={setQuery}
                 update={update}
+                onToggleSaved={onToggleSaved}
+                onMarkWatched={onMarkWatched}
+                loading={loading}
               />
             )}
-          </div>
-
-          {currentHubData?.mode === 'shelves' && !activeFilters && (
-            <ContinueWatching />
-          )}
-
-          {hubLoading && <LoadingRows />}
-          {error && <ErrorPanel message={error} />}
-
-          {!hubLoading && !error && currentHubData?.mode === 'shelves' && !activeFilters && (
-            <div className="shelf-stack">
-              {sortedHomeShelves.map((shelf) => (
-                <ShelfRow
-                  key={shelf.name}
-                  shelf={shelf}
-                  saved={saved}
-                  onToggleSaved={onToggleSaved}
-                  onDismiss={onDismissRecommendation}
-                  onMarkWatched={onMarkWatched}
-                />
-              ))}
-            </div>
-          )}
-
-          {!hubLoading && !error && currentHubData?.mode === 'grid' && (
-            <GridView
-              data={currentHubData}
-              saved={saved}
-              params={params}
-              update={update}
-              onToggleSaved={onToggleSaved}
-              onMarkWatched={onMarkWatched}
-              loading={loading}
-            />
-          )}
-        </main>
-      ) : isFilterRoute ? (
-        <FilterPage
-          filters={filters}
-          catalogueSize={data?.catalogueSize ?? 0}
-          params={params}
-          query={params.q}
-          setQuery={setQuery}
-          navigate={navigate}
-        />
-      ) : route.kind === 'detail' ? (
-        <DetailPage
-          route={route}
-          data={detail.data}
-          loading={detail.loading}
-          error={detail.error}
-          saved={saved}
-          onToggleSaved={(itemId) => {
-            if (!user) {
-              requireAuth();
-              return;
-            }
-            void toggle(itemId);
-          }}
-          navigate={navigate}
-          playTrack={audio.playTrack}
-          togglePlayback={audio.togglePlayback}
-          addToQueue={audio.addToQueue}
-          shuffleQueue={audio.shuffleQueue}
-          player={audio.player}
-          onAddToPlaylist={onAddToPlaylist}
-        />
-      ) : route.kind === 'watchlist' ? (
-        <WatchlistPage
-          user={user}
-          data={watchlistPage.data}
-          loading={watchlistPage.loading}
-          error={watchlistPage.error}
-          onToggleSaved={onRemoveFromWatchlistPage}
-          onSignIn={() => setSignInOpen(true)}
-        />
-      ) : route.kind === 'liked-songs' ? (
-        <LikedSongsPage
-          user={user}
-          data={likedSongs.data}
-          loading={likedSongs.loading}
-          error={likedSongs.error}
-          onToggleSaved={(card) => {
-            if (!user) { requireAuth(); return; }
-            likedSongs.removeItem(card.itemId);
-            void removeSaved(card.itemId);
-          }}
-          onSignIn={() => setSignInOpen(true)}
-        />
-      ) : route.kind === 'playlists' ? (
-        <PlaylistsPage
-          user={user}
-          data={playlistsPage.data}
-          loading={playlistsPage.loading}
-          error={playlistsPage.error}
-          navigate={navigate}
-          onSignIn={() => setSignInOpen(true)}
-        />
-      ) : route.kind === 'playlist' ? (
-        <PlaylistDetailPage
-          user={user}
-          data={playlistDetail.data}
-          loading={playlistDetail.loading}
-          error={playlistDetail.error}
-          setData={playlistDetail.setData}
-          navigate={navigate}
-          onSignIn={() => setSignInOpen(true)}
-          player={audio.player}
-          playTrack={audio.playTrack}
-          togglePlayback={audio.togglePlayback}
-          addToQueue={audio.addToQueue}
-          shuffleQueue={audio.shuffleQueue}
-          onAddToPlaylist={onAddToPlaylist}
-        />
-      ) : route.kind === 'stats' ? (
-        <StatsPage
-          user={user}
-          data={statsPage.data}
-          loading={statsPage.loading}
-          error={statsPage.error}
-          onSignIn={() => setSignInOpen(true)}
-        />
-      ) : route.kind === 'live-tv' ? (
-        <LiveTvPage
-          data={liveTv.data}
-          loading={liveTv.loading}
-          error={liveTv.error}
-        />
-      ) : route.kind === 'admin-dashboard' ? (
-        <>
-          <AdminNav routeKind={route.kind} locationSearch={location.search} />
-          <AdminDashboard user={user} onSignIn={() => setSignInOpen(true)} />
-        </>
-      ) : route.kind === 'admin-trending' ? (
-        <>
-          <AdminNav routeKind={route.kind} locationSearch={location.search} />
-          <AdminTrendingGaps user={user} onSignIn={() => setSignInOpen(true)} />
-        </>
-      ) : route.kind === 'admin-iptv' ? (
-        <>
-          <AdminNav routeKind={route.kind} locationSearch={location.search} />
-          <AdminIptvPage
-            user={user}
-            data={adminIptv.data}
-            loading={adminIptv.loading}
-            error={adminIptv.error}
-            onSignIn={() => setSignInOpen(true)}
-            reload={adminIptv.reload}
-            setData={adminIptv.setData}
+          </main>
+        ) : isFilterRoute ? (
+          <FilterPage
+            filters={filters}
+            catalogueSize={data?.catalogueSize ?? 0}
+            params={params}
+            query={params.q}
+            setQuery={setQuery}
+            navigate={navigate}
           />
-        </>
-      ) : route.kind === 'admin' ? (
-        <>
-          <AdminNav routeKind={route.kind} locationSearch={location.search} />
-          <AdminPage
+        ) : route.kind === 'detail' ? (
+          <DetailPage
+            route={route}
+            data={detail.data}
+            loading={detail.loading}
+            error={detail.error}
+            saved={saved}
+            onToggleSaved={(itemId) => {
+              if (!user) {
+                requireAuth();
+                return;
+              }
+              void toggle(itemId);
+            }}
+            navigate={navigate}
+            playTrack={audio.playTrack}
+            togglePlayback={audio.togglePlayback}
+            addToQueue={audio.addToQueue}
+            shuffleQueue={audio.shuffleQueue}
+            player={audio.player}
+            onAddToPlaylist={onAddToPlaylist}
+          />
+        ) : route.kind === 'watchlist' ? (
+          <WatchlistPage
             user={user}
-            data={adminPage.data}
-            loading={adminPage.loading}
-            error={adminPage.error}
-            locationSearch={location.search}
+            data={watchlistPage.data}
+            loading={watchlistPage.loading}
+            error={watchlistPage.error}
+            onToggleSaved={onRemoveFromWatchlistPage}
+            onSignIn={() => setSignInOpen(true)}
+          />
+        ) : route.kind === 'liked-songs' ? (
+          <LikedSongsPage
+            user={user}
+            data={likedSongs.data}
+            loading={likedSongs.loading}
+            error={likedSongs.error}
+            onToggleSaved={(card) => {
+              if (!user) { requireAuth(); return; }
+              likedSongs.removeItem(card.itemId);
+              void removeSaved(card.itemId);
+            }}
+            onSignIn={() => setSignInOpen(true)}
+          />
+        ) : route.kind === 'playlists' ? (
+          <PlaylistsPage
+            user={user}
+            data={playlistsPage.data}
+            loading={playlistsPage.loading}
+            error={playlistsPage.error}
             navigate={navigate}
             onSignIn={() => setSignInOpen(true)}
-            reload={adminPage.reload}
-            updateData={adminPage.updateData}
           />
-        </>
-      ) : (
-        <WatchPage
-          watchKey={watchKey}
-          audio={audio}
-          onOpenQueue={() => setQueueOpen(true)}
-          onAddToPlaylist={onAddToPlaylist}
-          savedIds={saved}
-          onToggleSaved={(itemId) => {
-            if (!user) { requireAuth(); return; }
-            void toggle(itemId);
-          }}
-        />
-      )}
+        ) : route.kind === 'playlist' ? (
+          <PlaylistDetailPage
+            user={user}
+            data={playlistDetail.data}
+            loading={playlistDetail.loading}
+            error={playlistDetail.error}
+            setData={playlistDetail.setData}
+            navigate={navigate}
+            onSignIn={() => setSignInOpen(true)}
+            player={audio.player}
+            playTrack={audio.playTrack}
+            togglePlayback={audio.togglePlayback}
+            addToQueue={audio.addToQueue}
+            shuffleQueue={audio.shuffleQueue}
+            onAddToPlaylist={onAddToPlaylist}
+          />
+        ) : route.kind === 'stats' ? (
+          <StatsPage
+            user={user}
+            data={statsPage.data}
+            loading={statsPage.loading}
+            error={statsPage.error}
+            onSignIn={() => setSignInOpen(true)}
+          />
+        ) : route.kind === 'live-tv' ? (
+          <LiveTvPage
+            data={liveTv.data}
+            loading={liveTv.loading}
+            error={liveTv.error}
+          />
+        ) : route.kind === 'admin-dashboard' ? (
+          <>
+            <AdminNav routeKind={route.kind} locationSearch={location.search} />
+            <AdminDashboard user={user} onSignIn={() => setSignInOpen(true)} />
+          </>
+        ) : route.kind === 'admin-trending' ? (
+          <>
+            <AdminNav routeKind={route.kind} locationSearch={location.search} />
+            <AdminTrendingGaps user={user} onSignIn={() => setSignInOpen(true)} />
+          </>
+        ) : route.kind === 'admin-iptv' ? (
+          <>
+            <AdminNav routeKind={route.kind} locationSearch={location.search} />
+            <AdminIptvPage
+              user={user}
+              data={adminIptv.data}
+              loading={adminIptv.loading}
+              error={adminIptv.error}
+              onSignIn={() => setSignInOpen(true)}
+              reload={adminIptv.reload}
+              setData={adminIptv.setData}
+            />
+          </>
+        ) : route.kind === 'admin' ? (
+          <>
+            <AdminNav routeKind={route.kind} locationSearch={location.search} />
+            <AdminPage
+              user={user}
+              data={adminPage.data}
+              loading={adminPage.loading}
+              error={adminPage.error}
+              locationSearch={location.search}
+              navigate={navigate}
+              onSignIn={() => setSignInOpen(true)}
+              reload={adminPage.reload}
+              updateData={adminPage.updateData}
+            />
+          </>
+        ) : (
+          <WatchPage
+            watchKey={watchKey}
+            audio={audio}
+            onOpenQueue={() => setQueueOpen(true)}
+            onAddToPlaylist={onAddToPlaylist}
+            savedIds={saved}
+            onToggleSaved={(itemId) => {
+              if (!user) { requireAuth(); return; }
+              void toggle(itemId);
+            }}
+          />
+        )}
+      </Suspense>
 
       <SignInModal
         open={signInOpen}
@@ -466,13 +553,17 @@ function App() {
         moveQueueItem={audio.moveQueueItem}
         onClose={() => setQueueOpen(false)}
       />
-      <AddToPlaylistSheet
-        open={Boolean(playlistTrack)}
-        track={playlistTrack}
-        user={user}
-        onClose={() => setPlaylistTrack(null)}
-        onSignIn={() => setSignInOpen(true)}
-      />
+      {playlistTrack && (
+        <Suspense fallback={null}>
+          <AddToPlaylistSheet
+            open={Boolean(playlistTrack)}
+            track={playlistTrack}
+            user={user}
+            onClose={() => setPlaylistTrack(null)}
+            onSignIn={() => setSignInOpen(true)}
+          />
+        </Suspense>
+      )}
       <ScrollToTop />
     </div>
   );
