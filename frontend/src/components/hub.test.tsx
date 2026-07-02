@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { deleteContinueEntry, fetchContinueItems, fetchContinueMap } from '../api';
+import { clearAllContinue, deleteContinueEntry, fetchContinueItems, fetchContinueMap } from '../api';
 import type { HubCard, HubParams, HubResponse } from '../types';
 import { ContinueWatching, GridView, shelfPresentation, sortHomeShelves } from './hub';
 
@@ -186,12 +186,45 @@ describe('ContinueWatching', () => {
     ]);
     vi.mocked(deleteContinueEntry).mockResolvedValue(undefined);
 
-    render(<ContinueWatching />);
+    render(<ContinueWatching serverSyncEnabled />);
 
     expect(await screen.findAllByText('Kalki')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
 
     await waitFor(() => expect(deleteContinueEntry).toHaveBeenCalledWith('hash1'));
+    expect(screen.queryAllByText('Kalki')).toHaveLength(0);
+  });
+
+  it('uses local continue data without server sync for anonymous users', async () => {
+    localStorage.setItem('td:cw', JSON.stringify({
+      hash1: { pos: 120, dur: 1200, t: 10, title: 'Kalki' },
+    }));
+    vi.mocked(fetchContinueItems).mockResolvedValue([
+      {
+        key: 'hash1',
+        title: 'Kalki',
+        series_title: '',
+        episode_label: '',
+        year: 2024,
+        poster_path: '',
+        thumb_url: '/thumb/hash1.jpg',
+        watch_url: '/watch/hash1',
+        kind: 'movie',
+        media_kind: 'video',
+        next_episode: null,
+      },
+    ]);
+
+    render(<ContinueWatching />);
+
+    expect(await screen.findAllByText('Kalki')).toHaveLength(2);
+    expect(fetchContinueMap).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+
+    expect(clearAllContinue).not.toHaveBeenCalled();
+    expect(deleteContinueEntry).not.toHaveBeenCalled();
+    expect(localStorage.getItem('td:cw')).toBeNull();
     expect(screen.queryAllByText('Kalki')).toHaveLength(0);
   });
 });

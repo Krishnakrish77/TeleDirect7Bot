@@ -113,7 +113,7 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
   );
 }
 
-export function ContinueWatching() {
+export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnabled?: boolean }) {
   const [entries, setEntries] = useState<Array<ContinueEntry & ContinueItem>>([]);
 
   const load = useCallback(() => {
@@ -126,17 +126,19 @@ export function ContinueWatching() {
     }
 
     const hydrate = async () => {
-      try {
-        const server = await fetchContinueMap(controller.signal);
-        // Server is canonical: prune local entries the server has deleted,
-        // then merge in newer server values.
-        Object.keys(raw).forEach((key) => { if (!(key in server)) delete raw[key]; });
-        Object.entries(server).forEach(([key, value]) => {
-          if (!raw[key] || (value.t || 0) > (raw[key].t || 0)) raw[key] = value;
-        });
-        localStorage.setItem('td:cw', JSON.stringify(raw));
-      } catch (_) {
-        // Signed-out users and offline sessions use local resume data.
+      if (serverSyncEnabled) {
+        try {
+          const server = await fetchContinueMap(controller.signal);
+          // Server is canonical: prune local entries the server has deleted,
+          // then merge in newer server values.
+          Object.keys(raw).forEach((key) => { if (!(key in server)) delete raw[key]; });
+          Object.entries(server).forEach(([key, value]) => {
+            if (!raw[key] || (value.t || 0) > (raw[key].t || 0)) raw[key] = value;
+          });
+          localStorage.setItem('td:cw', JSON.stringify(raw));
+        } catch (_) {
+          // Offline signed-in sessions use local resume data.
+        }
       }
 
       const local = Object.entries(raw)
@@ -163,7 +165,7 @@ export function ContinueWatching() {
     };
     void hydrate();
     return () => controller.abort();
-  }, []);
+  }, [serverSyncEnabled]);
 
   useEffect(() => {
     const cleanup = load();
@@ -188,14 +190,18 @@ export function ContinueWatching() {
     } catch (_) {
       // local-only convenience state; ignore storage failures.
     }
-    void deleteContinueEntry(key).catch(() => undefined);
+    if (serverSyncEnabled) void deleteContinueEntry(key).catch(() => undefined);
     setEntries((current) => current.filter((entry) => entry.key !== key));
   };
 
   const forgetAll = () => {
     setEntries([]);
-    void clearAllContinue()
-      .then(() => { try { localStorage.removeItem('td:cw'); } catch (_) { /* ignore */ } });
+    try {
+      localStorage.removeItem('td:cw');
+    } catch (_) {
+      // local-only convenience state; ignore storage failures.
+    }
+    if (serverSyncEnabled) void clearAllContinue().catch(() => undefined);
   };
 
   return (

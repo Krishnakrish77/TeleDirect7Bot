@@ -333,7 +333,7 @@ function App() {
             </div>
 
             {currentHubData?.mode === 'shelves' && !activeFilters && (
-              <ContinueWatching />
+              <ContinueWatching serverSyncEnabled={Boolean(user)} />
             )}
 
             {hubLoading && <LoadingRows />}
