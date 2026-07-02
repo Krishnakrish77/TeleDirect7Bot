@@ -17,6 +17,7 @@ from typing import Optional
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from main.server.tmdb_images import tmdb_image_url
 from main.utils.user_auth import get_user
 from main.utils import watchlist_store, cw_store, rec_store
 from main.utils import media_index
@@ -54,7 +55,7 @@ def _resolve_item(item_id: str) -> Optional[dict]:
                 "url": f"/movie/{key}",
                 "title": p.title or "",
                 "year": p.year,
-                "poster": (f"https://image.tmdb.org/t/p/w342{p.poster_path}"
+                "poster": (tmdb_image_url(p.poster_path, "w342")
                            if p.poster_path
                            else f"/thumb/{p.secure_hash}{p.message_id}.jpg"),
                 "kind": "movie",
@@ -72,7 +73,7 @@ def _resolve_item(item_id: str) -> Optional[dict]:
                 "url": f"/series/{key}",
                 "title": title,
                 "year": p.year,
-                "poster": (f"https://image.tmdb.org/t/p/w342{p.poster_path}"
+                "poster": (tmdb_image_url(p.poster_path, "w342")
                            if p.poster_path
                            else f"/thumb/{p.secure_hash}{p.message_id}.jpg"),
                 "kind": "series",
@@ -102,7 +103,7 @@ def _resolve_item(item_id: str) -> Optional[dict]:
             "url": f"/watch/{item.secure_hash}{item.message_id}",
             "title": item.title or item.file_name or "",
             "year": item.year,
-            "poster": (f"https://image.tmdb.org/t/p/w342{item.poster_path}"
+            "poster": (tmdb_image_url(item.poster_path, "w342")
                        if item.poster_path
                        else f"/thumb/{item.secure_hash}{item.message_id}.jpg"),
             "kind": item.media_kind or "video",

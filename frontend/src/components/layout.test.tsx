@@ -54,7 +54,7 @@ const suggestions: Suggestion[] = [
     year: 2024,
     kind: 'movie',
     url: '/movie/kalki',
-    poster_path: '',
+    poster_path: '/abc_DEF-123.jpg',
     secure_hash: 'hash',
     message_id: 42,
   },
@@ -132,6 +132,17 @@ describe('Header search', () => {
 
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onSuggestionNavigate).toHaveBeenCalledWith('/app/movie/kaithi');
+  });
+
+  it('uses the same-origin TMDB image proxy for search suggestions', () => {
+    vi.mocked(useSuggestions).mockReturnValue(suggestions);
+    const view = renderHeader({ query: 'ka' });
+
+    fireEvent.focus(screen.getByPlaceholderText('Search library'));
+
+    const images = view.container.querySelectorAll('.suggestion-art img');
+    expect(images[0].getAttribute('src')).toBe('/api/tmdb-image/w92/abc_DEF-123.jpg');
+    expect(images[1].getAttribute('src')).toBe('/thumb/hash243.jpg');
   });
 
   it('closes search suggestions when clicking outside', () => {

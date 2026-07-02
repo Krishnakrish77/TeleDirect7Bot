@@ -4,6 +4,7 @@ import { useSuggestions } from '../hooks/data';
 import { localAppHref } from '../navigation';
 import { BookmarkIcon, BroadcastIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HeartIcon, HomeIcon, ListIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, UserIcon, XIcon } from '../icons';
 import type { MeResponse, Suggestion, TelegramAuthUser, User, ViewValue } from '../types';
+import { tmdbImageUrl } from '../utils/tmdb';
 
 declare global {
   interface Window {
@@ -320,7 +321,7 @@ export function SearchMenu({
         >
           <span className="suggestion-art">
             {item.poster_path ? (
-              <img src={`https://image.tmdb.org/t/p/w92${item.poster_path}`} alt="" loading="lazy" decoding="async" />
+              <img src={tmdbImageUrl(item.poster_path, 'w92')} alt="" loading="lazy" decoding="async" />
             ) : (
               <img src={`/thumb/${item.secure_hash}${item.message_id}.jpg`} alt="" loading="lazy" decoding="async" />
             )}

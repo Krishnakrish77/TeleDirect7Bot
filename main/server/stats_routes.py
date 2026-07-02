@@ -11,6 +11,7 @@ from pathlib import Path
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from main.server.tmdb_images import tmdb_image_url
 from main.utils.user_auth import get_user
 from main.utils import cw_store, wh_store, media_index
 
@@ -31,7 +32,7 @@ _env.filters["person_slug"] = lambda s: _mpslug(s or "")
 def _tmdb_poster(item) -> str:
     """Return a displayable poster URL for a catalogue item."""
     if item.poster_path:
-        return f"https://image.tmdb.org/t/p/w342{item.poster_path}"
+        return tmdb_image_url(item.poster_path, "w342")
     return f"/thumb/{item.secure_hash}{item.message_id}.jpg"
 
 

@@ -7,24 +7,24 @@ os.environ.setdefault("API_HASH", "test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
-from main.server.spa_routes import (
+from main.server.tmdb_images import (
     _TMDB_IMAGE_PLACEHOLDER_SVG,
     _normalise_tmdb_image,
-    _tmdb_image,
     _tmdb_image_cache,
     _tmdb_image_cache_key,
     _tmdb_image_content_type,
     _tmdb_placeholder_result,
+    tmdb_image_url,
 )
 
 
 class SpaTmdbImageTest(unittest.TestCase):
     def test_tmdb_image_uses_same_origin_proxy(self):
         self.assertEqual(
-            _tmdb_image("/abc_DEF-123.jpg", "w342"),
+            tmdb_image_url("/abc_DEF-123.jpg", "w342"),
             "/api/tmdb-image/w342/abc_DEF-123.jpg",
         )
-        self.assertEqual(_tmdb_image("", "w342"), "")
+        self.assertEqual(tmdb_image_url("", "w342"), "")
 
     def test_rejects_invalid_tmdb_image_input(self):
         with self.assertRaises(ValueError):
