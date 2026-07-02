@@ -59,6 +59,31 @@ _API_CACHE_TTL = 30.0
 _SLOW_HUB_LOG_MS = 1000.0
 _api_response_cache: dict[str, tuple[str, float]] = {}
 _filter_cache: tuple[dict, float] | None = None
+_HUB_CARD_PAYLOAD_KEYS = (
+    "type",
+    "itemId",
+    "title",
+    "subtitle",
+    "year",
+    "mediaKind",
+    "posterUrl",
+    "durationLabel",
+    "quality",
+    "genres",
+    "externalRating",
+    "artist",
+    "albumTitle",
+    "trailerKey",
+    "href",
+    "playHref",
+    "detailsHref",
+    "watchKey",
+    "aspect",
+    "variantCount",
+    "episodeCount",
+    "seasonCount",
+    "trackCount",
+)
 
 
 @routes.get("/robots.txt")
@@ -455,6 +480,18 @@ def _card(card) -> dict:
     return _card_from_item(card)
 
 
+def _compact_hub_card_payload(payload: dict) -> dict:
+    return {
+        key: payload[key]
+        for key in _HUB_CARD_PAYLOAD_KEYS
+        if key in payload
+    }
+
+
+def _hub_card(card) -> dict:
+    return _compact_hub_card_payload(_card(card))
+
+
 def _hero(item: HubItem) -> dict:
     common = _item_common(item)
     details_href = _detail_url(item)
@@ -731,7 +768,7 @@ async def api_hub(request: web.Request) -> web.Response:
             rec_reasons = shelf.get("rec_reasons") or []
             items = []
             for index, item in enumerate(shelf.get("items") or []):
-                payload = _card(item)
+                payload = _hub_card(item)
                 if index < len(rec_reasons) and rec_reasons[index]:
                     payload["recReason"] = rec_reasons[index]
                 items.append(payload)
@@ -814,7 +851,7 @@ async def api_hub(request: web.Request) -> web.Response:
         "catalogueSize": media_index.size(),
         "heroes": [],
         "shelves": [],
-        "items": [_card(item) for item in items],
+        "items": [_hub_card(item) for item in items],
         "total": total,
         "nextOffset": next_offset,
         "nextHref": _app_query(params, offset=next_offset) if next_offset is not None else None,
