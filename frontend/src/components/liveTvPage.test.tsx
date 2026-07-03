@@ -63,7 +63,7 @@ describe('LiveTvPage', () => {
     expect(screen.getByRole('heading', { name: 'Movie One' })).toBeTruthy();
     await waitFor(() => expect(video?.getAttribute('src')).toBe('/api/live-tv/stream/movies'));
 
-    fireEvent.click(screen.getByRole('button', { name: /News\s*1/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /News\s*1/i }));
     expect(screen.getByRole('heading', { name: 'News 24' })).toBeTruthy();
     expect(video?.getAttribute('src')).toBeNull();
 
@@ -91,14 +91,41 @@ describe('LiveTvPage', () => {
     const tabs = screen.getByRole('tablist', { name: 'Channel categories' });
     const rail = screen.getByLabelText('Channels');
 
-    fireEvent.click(within(tabs).getByRole('button', { name: /Favorites/i }));
+    fireEvent.click(within(tabs).getByRole('tab', { name: /Favorites/i }));
     expect(screen.getByRole('heading', { name: 'News 24' })).toBeTruthy();
     expect(within(rail).queryByRole('button', { name: /Movie One/i })).toBeNull();
     expect(screen.getByRole('button', { name: 'Remove News 24 from favorites' })).toBeTruthy();
 
-    fireEvent.click(within(tabs).getByRole('button', { name: /Recent/i }));
+    fireEvent.click(within(tabs).getByRole('tab', { name: /Recent/i }));
     expect(within(rail).getByRole('button', { name: /News 24/i })).toBeTruthy();
     expect(within(rail).getByRole('button', { name: /Movie One/i })).toBeTruthy();
+  });
+
+  it('summarizes the active channel view and clears empty filters', () => {
+    render(<LiveTvPage data={liveTvData} loading={false} error="" />);
+
+    expect(screen.getByText('channels in All channels')).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText('Search channels'), { target: { value: 'zzz' } });
+
+    expect(screen.getByText('No matches for "zzz" in All channels.')).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]);
+
+    const rail = screen.getByLabelText('Channels');
+    expect(within(rail).getByRole('button', { name: /News 24/i })).toBeTruthy();
+    expect(within(rail).getByRole('button', { name: /Movie One/i })).toBeTruthy();
+    expect(screen.getByText('channels in All channels')).toBeTruthy();
+  });
+
+  it('shows helpful empty copy for favorites and recent views', () => {
+    render(<LiveTvPage data={liveTvData} loading={false} error="" />);
+    const tabs = screen.getByRole('tablist', { name: 'Channel categories' });
+
+    fireEvent.click(within(tabs).getByRole('tab', { name: /Favorites/i }));
+    expect(screen.getByText('No favorites yet. Use the heart on a channel to save it here.')).toBeTruthy();
+
+    fireEvent.click(within(tabs).getByRole('tab', { name: /Recent/i }));
+    expect(screen.getByText('No recent channels yet. Play a channel and it will appear here.')).toBeTruthy();
   });
 
   it('shows an empty state when no channels are configured', () => {

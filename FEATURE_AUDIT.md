@@ -23,6 +23,18 @@ _Evidence: Webwright runs `outputs/perf_audit_live/final_runs/run_3`, `run_4`, `
 
 ---
 
+## LIVE TV UX OBSERVATIONS — 2026-07-03
+
+_Evidence: Live TV code audit plus frontend tests for channel category, favorite, recent, and search states._
+
+| Area | Audit finding | UX improvement |
+|------|---------------|----------------|
+| Channel rail orientation | The optimized Live TV page was fast, but the channel rail did not summarize the active category/search view. Empty favorite, recent, and no-match states all collapsed into generic copy. | The rail now shows the current result count and active view, gives a one-click clear-filter recovery path, and uses specific empty-state copy for search misses, favorites, and recents. |
+| Category navigation semantics | Category controls were visually tab-like inside a tablist but exposed as generic buttons. | Category controls now expose `role="tab"` with `aria-selected`, making the current channel view easier to understand for assistive tech. |
+| Playback state clarity | The now-playing header did not distinguish a selected channel from an actively playing channel. | The current channel row now shows a compact `Selected` or `Playing` state chip. |
+
+---
+
 ## VIDEO / OTT
 
 ### Discovery & Browse

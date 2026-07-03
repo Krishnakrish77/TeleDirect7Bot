@@ -86,6 +86,13 @@ function liveTvStreamUrl(channel: IptvChannel): string {
   return `/api/live-tv/stream/${encodeURIComponent(channel.id)}`;
 }
 
+function activeCategoryLabel(activeCategory: string): string {
+  if (activeCategory === ALL_CHANNELS) return 'All channels';
+  if (activeCategory === FAVORITE_CHANNELS) return 'Favorites';
+  if (activeCategory === RECENT_CHANNELS) return 'Recent';
+  return activeCategory;
+}
+
 export function LiveTvPage({
   data,
   loading,
@@ -154,6 +161,19 @@ export function LiveTvPage({
     [filteredChannels, visibleChannelCount],
   );
   const remainingChannelCount = Math.max(0, filteredChannels.length - visibleChannels.length);
+  const activeViewLabel = activeCategoryLabel(activeCategory);
+  const filterActive = activeCategory !== ALL_CHANNELS || Boolean(query.trim());
+  const emptyMessage = query.trim()
+    ? `No matches for "${query.trim()}" in ${activeViewLabel}.`
+    : activeCategory === FAVORITE_CHANNELS
+      ? 'No favorites yet. Use the heart on a channel to save it here.'
+      : activeCategory === RECENT_CHANNELS
+        ? 'No recent channels yet. Play a channel and it will appear here.'
+        : 'No channels match this view.';
+  const clearChannelFilters = () => {
+    setQuery('');
+    setActiveCategory(ALL_CHANNELS);
+  };
 
   useEffect(() => {
     const validIds = new Set(channels.map((channel) => channel.id));
@@ -309,7 +329,10 @@ export function LiveTvPage({
                 <ChannelLogo channel={selected} failedLogoKeys={failedLogoKeys} onLogoError={markLogoFailed} />
                 <div>
                   <strong>{selected?.name || 'No channel selected'}</strong>
-                  <small>{selected ? channelCategory(selected) : 'Live TV'}</small>
+                  <small>
+                    {selected ? channelCategory(selected) : 'Live TV'}
+                    {selected && <span>{playbackChannel ? 'Playing' : 'Selected'}</span>}
+                  </small>
                 </div>
               </div>
               <div className="live-now-actions">
@@ -330,6 +353,17 @@ export function LiveTvPage({
 
           <aside className="live-channel-rail" aria-label="Channels">
             <div className="live-channel-tools">
+              <div className="live-channel-summary">
+                <div>
+                  <strong>{filteredChannels.length.toLocaleString()}</strong>
+                  <span>{filteredChannels.length === 1 ? 'channel' : 'channels'} in {activeViewLabel}</span>
+                </div>
+                {filterActive && filteredChannels.length > 0 && (
+                  <button type="button" className="text-button live-clear-filters" onClick={clearChannelFilters}>
+                    Clear filters
+                  </button>
+                )}
+              </div>
               <label className="live-search">
                 <SearchIcon />
                 <input
@@ -344,15 +378,15 @@ export function LiveTvPage({
                 )}
               </label>
               <div className="live-category-tabs" role="tablist" aria-label="Channel categories">
-                <button type="button" className={activeCategory === ALL_CHANNELS ? 'active' : ''} onClick={() => setActiveCategory(ALL_CHANNELS)}>
+                <button type="button" role="tab" aria-selected={activeCategory === ALL_CHANNELS} className={activeCategory === ALL_CHANNELS ? 'active' : ''} onClick={() => setActiveCategory(ALL_CHANNELS)}>
                   All
                   <span>{channels.length}</span>
                 </button>
-                <button type="button" className={activeCategory === FAVORITE_CHANNELS ? 'active' : ''} onClick={() => setActiveCategory(FAVORITE_CHANNELS)}>
+                <button type="button" role="tab" aria-selected={activeCategory === FAVORITE_CHANNELS} className={activeCategory === FAVORITE_CHANNELS ? 'active' : ''} onClick={() => setActiveCategory(FAVORITE_CHANNELS)}>
                   Favorites
                   <span>{favoriteChannels.length}</span>
                 </button>
-                <button type="button" className={activeCategory === RECENT_CHANNELS ? 'active' : ''} onClick={() => setActiveCategory(RECENT_CHANNELS)}>
+                <button type="button" role="tab" aria-selected={activeCategory === RECENT_CHANNELS} className={activeCategory === RECENT_CHANNELS ? 'active' : ''} onClick={() => setActiveCategory(RECENT_CHANNELS)}>
                   Recent
                   <span>{recentChannels.length}</span>
                 </button>
@@ -360,6 +394,8 @@ export function LiveTvPage({
                   <button
                     key={category}
                     type="button"
+                    role="tab"
+                    aria-selected={activeCategory === category}
                     className={activeCategory === category ? 'active' : ''}
                     onClick={() => setActiveCategory(category)}
                   >
@@ -397,7 +433,14 @@ export function LiveTvPage({
                 </button>
               )}
               {!filteredChannels.length && (
-                <div className="live-channel-empty">No channels match this view</div>
+                <div className="live-channel-empty">
+                  <strong>{emptyMessage}</strong>
+                  {filterActive && (
+                    <button type="button" className="secondary-action compact-action" onClick={clearChannelFilters}>
+                      Clear filters
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </aside>
