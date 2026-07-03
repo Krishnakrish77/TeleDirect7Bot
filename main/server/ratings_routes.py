@@ -20,6 +20,14 @@ def _json(data: dict, *, status: int = 200) -> web.Response:
     return web.Response(text=json.dumps(data), content_type="application/json", status=status)
 
 
+def _invalidate_spa_cache() -> None:
+    try:
+        from main.server import spa_routes
+        spa_routes.invalidate_api_cache()
+    except Exception:
+        pass
+
+
 @routes.get("/api/rate/{mid:\\d+}")
 async def api_get(request: web.Request) -> web.Response:
     user = get_user(request)
@@ -51,6 +59,7 @@ async def api_set(request: web.Request) -> web.Response:
     else:
         await ratings_store.set_rating(int(user["sub"]), mid, rating)
     await rec_store.clear_cached(int(user["sub"]))
+    _invalidate_spa_cache()
 
     counts = await ratings_store.get_counts(mid)
     return _json({"rating": rating, "counts": counts})
@@ -64,5 +73,6 @@ async def api_delete(request: web.Request) -> web.Response:
     mid = int(request.match_info["mid"])
     await ratings_store.delete_rating(int(user["sub"]), mid)
     await rec_store.clear_cached(int(user["sub"]))
+    _invalidate_spa_cache()
     counts = await ratings_store.get_counts(mid)
     return _json({"rating": None, "counts": counts})

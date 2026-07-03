@@ -37,6 +37,7 @@ class SpaHubPayloadTest(unittest.TestCase):
             "imdbId": "tt1234567",
             "imdbHref": "https://www.imdb.com/title/tt1234567/",
             "externalRating": {"provider": "TMDB", "value": 8.1, "label": "8.1", "count": 1000},
+            "ratingCounts": {"up": 3, "down": 1},
             "artist": "",
             "albumTitle": "",
             "trailerKey": "abc123",
@@ -56,6 +57,7 @@ class SpaHubPayloadTest(unittest.TestCase):
         self.assertEqual(compact["title"], "Kalki")
         self.assertEqual(compact["posterUrl"], "/thumb/hash101.jpg")
         self.assertEqual(compact["externalRating"]["label"], "8.1")
+        self.assertEqual(compact["ratingCounts"], {"up": 3, "down": 1})
         self.assertEqual(compact["watchKey"], "hash101")
         self.assertEqual(compact["variantCount"], 1)
         for unused in (

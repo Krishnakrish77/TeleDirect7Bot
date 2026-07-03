@@ -1297,6 +1297,42 @@ img {
   color: #fde68a;
 }
 
+.card-community-rating {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  align-items: center;
+  margin-top: 0.35rem;
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  font-weight: 820;
+  line-height: 1;
+}
+
+.card-community-rating span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  min-height: 22px;
+  padding: 0 0.42rem;
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  border-radius: 6px;
+  background: rgba(34, 197, 94, 0.1);
+  color: #bbf7d0;
+}
+
+.card-community-rating .down {
+  border-color: rgba(251, 113, 133, 0.24);
+  background: rgba(251, 113, 133, 0.09);
+  color: #fecdd3;
+}
+
+.card-community-rating svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
 .card-subtitle {
   margin-top: 0.22rem;
   color: var(--muted);

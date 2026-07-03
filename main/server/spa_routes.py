@@ -25,6 +25,7 @@ from main.utils import codec_probe
 from main.utils import cw_store
 from main.utils import media_index
 from main.utils import playlist_store
+from main.utils import ratings_store
 from main.utils import rec_engine
 from main.utils import thumb_cache
 from main.utils import trending
@@ -71,6 +72,7 @@ _HUB_CARD_PAYLOAD_KEYS = (
     "quality",
     "genres",
     "externalRating",
+    "ratingCounts",
     "artist",
     "albumTitle",
     "trailerKey",
@@ -230,6 +232,50 @@ def _thumb_source_id(card) -> Optional[int]:
         message_id,
         audio=(getattr(card, "media_kind", "") or "") == "audio",
     )
+
+
+def _rating_source_id(card) -> Optional[int]:
+    poster = getattr(card, "poster_item", None)
+    item = poster if poster is not None else card
+    if (getattr(item, "media_kind", "") or "") == "audio":
+        return None
+    message_id = getattr(item, "message_id", None)
+    return int(message_id) if message_id else None
+
+
+async def _rating_counts_for_cards(cards) -> dict[int, dict]:
+    ids = []
+    seen = set()
+    for card in cards:
+        message_id = _rating_source_id(card)
+        if message_id and message_id not in seen:
+            seen.add(message_id)
+            ids.append(message_id)
+    if not ids:
+        return {}
+    try:
+        return await asyncio.wait_for(ratings_store.get_counts_bulk(ids), timeout=2.0)
+    except asyncio.TimeoutError:
+        logging.warning("spa hub: rating count aggregation timed out")
+        return {}
+    except Exception:
+        logging.exception("spa hub: rating count aggregation failed")
+        return {}
+
+
+def _with_rating_counts(payload: dict, card, counts_by_id: dict[int, dict]) -> dict:
+    message_id = _rating_source_id(card)
+    if not message_id:
+        return payload
+    counts = counts_by_id.get(message_id)
+    if not counts:
+        return payload
+    up = int(counts.get("up") or 0)
+    down = int(counts.get("down") or 0)
+    if up + down <= 0:
+        return payload
+    payload["ratingCounts"] = {"up": up, "down": down}
+    return payload
 
 
 def _prewarm_card_thumbs(cards) -> None:
@@ -488,8 +534,11 @@ def _compact_hub_card_payload(payload: dict) -> dict:
     }
 
 
-def _hub_card(card) -> dict:
-    return _compact_hub_card_payload(_card(card))
+def _hub_card(card, rating_counts: dict[int, dict] | None = None) -> dict:
+    payload = _card(card)
+    if rating_counts:
+        payload = _with_rating_counts(payload, card, rating_counts)
+    return _compact_hub_card_payload(payload)
 
 
 def _hero(item: HubItem) -> dict:
@@ -762,13 +811,23 @@ async def api_hub(request: web.Request) -> web.Response:
             ]
         )
         timings["thumb_prewarm_ms"] = round((time.monotonic() - mark) * 1000, 1)
+
+        mark = time.monotonic()
+        shelf_source_items = [
+            item
+            for shelf in raw_shelves
+            for item in (shelf.get("items") or [])
+        ]
+        rating_counts = await _rating_counts_for_cards(shelf_source_items)
+        timings["ratings_ms"] = round((time.monotonic() - mark) * 1000, 1)
+
         mark = time.monotonic()
         shelves = []
         for shelf in raw_shelves:
             rec_reasons = shelf.get("rec_reasons") or []
             items = []
             for index, item in enumerate(shelf.get("items") or []):
-                payload = _hub_card(item)
+                payload = _hub_card(item, rating_counts)
                 if index < len(rec_reasons) and rec_reasons[index]:
                     payload["recReason"] = rec_reasons[index]
                 items.append(payload)
@@ -844,6 +903,10 @@ async def api_hub(request: web.Request) -> web.Response:
     timings["thumb_prewarm_ms"] = round((time.monotonic() - mark) * 1000, 1)
 
     mark = time.monotonic()
+    rating_counts = await _rating_counts_for_cards(items)
+    timings["ratings_ms"] = round((time.monotonic() - mark) * 1000, 1)
+
+    mark = time.monotonic()
     payload = {
         "mode": "grid",
         "params": params,
@@ -851,7 +914,7 @@ async def api_hub(request: web.Request) -> web.Response:
         "catalogueSize": media_index.size(),
         "heroes": [],
         "shelves": [],
-        "items": [_hub_card(item) for item in items],
+        "items": [_hub_card(item, rating_counts) for item in items],
         "total": total,
         "nextOffset": next_offset,
         "nextHref": _app_query(params, offset=next_offset) if next_offset is not None else None,

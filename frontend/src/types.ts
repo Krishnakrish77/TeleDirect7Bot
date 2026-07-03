@@ -67,6 +67,7 @@ export interface HubCard {
   imdbId?: string;
   imdbHref?: string;
   externalRating?: ExternalRating | null;
+  ratingCounts?: RatingCounts | null;
   artist: string;
   albumTitle: string;
   trailerKey: string;

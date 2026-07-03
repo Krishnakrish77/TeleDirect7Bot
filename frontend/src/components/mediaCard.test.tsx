@@ -120,6 +120,37 @@ describe('MediaCard', () => {
     expect(screen.queryByLabelText(/External rating/i)).toBeNull();
   });
 
+  it('shows aggregate community ratings for video cards', () => {
+    render(
+      <MediaCard
+        card={card({ ratingCounts: { up: 4, down: 1 } })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Community rating: 4 up, 1 down')).toBeTruthy();
+    expect(screen.getByText('4')).toBeTruthy();
+    expect(screen.getByText('1')).toBeTruthy();
+  });
+
+  it('does not show aggregate community ratings on music cards', () => {
+    render(
+      <MediaCard
+        card={card({
+          type: 'track',
+          mediaKind: 'audio',
+          aspect: 'square',
+          ratingCounts: { up: 4, down: 1 },
+        })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText(/Community rating/i)).toBeNull();
+  });
+
   it('surfaces dismiss controls for recommendation cards', () => {
     const onDismiss = vi.fn();
     const media = card();

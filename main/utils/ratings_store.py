@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 _indexed = False
 
@@ -106,6 +106,40 @@ async def get_counts(message_id: int) -> Dict[str, int]:
     except Exception:
         logging.exception("ratings_store: get_counts failed for mid=%d", message_id)
         return {"up": 0, "down": 0}
+
+
+async def get_counts_bulk(message_ids: Iterable[int]) -> Dict[int, Dict[str, int]]:
+    """Return non-zero aggregate rating counts keyed by message_id."""
+    ids = sorted({int(mid) for mid in message_ids if mid})
+    if not ids:
+        return {}
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return {}
+    try:
+        pipeline = [
+            {"$match": {"message_id": {"$in": ids}}},
+            {"$group": {"_id": {"message_id": "$message_id", "rating": "$rating"}, "n": {"$sum": 1}}},
+        ]
+        docs = await db["ratings"].aggregate(pipeline).to_list(length=len(ids) * 2 + 5)
+        result: Dict[int, Dict[str, int]] = {}
+        for d in docs:
+            group = d.get("_id") or {}
+            rating = group.get("rating")
+            if rating not in ("up", "down"):
+                continue
+            mid = int(group.get("message_id") or 0)
+            if not mid:
+                continue
+            result.setdefault(mid, {"up": 0, "down": 0})[rating] = int(d.get("n") or 0)
+        return {
+            mid: counts for mid, counts in result.items()
+            if (counts.get("up", 0) + counts.get("down", 0)) > 0
+        }
+    except Exception:
+        logging.exception("ratings_store: get_counts_bulk failed")
+        return {}
 
 
 async def get_user_ratings(user_id: int, limit: int = 200) -> list[dict]:

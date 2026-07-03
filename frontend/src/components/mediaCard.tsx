@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState, type MouseEvent } from 'react';
-import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, PlayIcon, XIcon } from '../icons';
-import type { HubCard, RecommendationMeta } from '../types';
+import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, PlayIcon, ThumbDownIcon, ThumbUpIcon, XIcon } from '../icons';
+import type { HubCard, RatingCounts, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
 import { joinMetadata } from '../utils/metadata';
 
@@ -94,6 +94,16 @@ export function getMediaCardMetaItems(card: HubCard, ratingLabel = ''): string[]
   ].filter((value, index, items) => Boolean(value) && items.indexOf(value) === index);
 }
 
+function communityRatingLabel(counts?: RatingCounts | null) {
+  const up = Number(counts?.up || 0);
+  const down = Number(counts?.down || 0);
+  if (up + down <= 0) return '';
+  return [
+    up ? `${up} up` : '',
+    down ? `${down} down` : '',
+  ].filter(Boolean).join(', ');
+}
+
 function MediaCardBase({
   card,
   saved,
@@ -109,6 +119,7 @@ function MediaCardBase({
   const display = getMediaCardDisplay(card);
   const externalRating = isMusic ? '' : formatExternalRating(card.externalRating);
   const metaItems = getMediaCardMetaItems(card, externalRating);
+  const communityRating = isMusic ? '' : communityRatingLabel(card.ratingCounts);
   const rawProgress = useMemo(() => card.watchKey ? getLocalCwPct(card.watchKey) : 0, [card.watchKey]);
   const [markedWatched, setMarkedWatched] = useState(false);
   useEffect(() => { setMarkedWatched(false); }, [card.watchKey]);
@@ -165,6 +176,22 @@ function MediaCardBase({
           {metaItems.length > 0 && (
             <span className="card-meta-strip" aria-label={`${display.title} metadata`}>
               {metaItems.map((item) => <span key={item} className={item === externalRating ? 'rating' : undefined}>{item}</span>)}
+            </span>
+          )}
+          {communityRating && (
+            <span className="card-community-rating" aria-label={`Community rating: ${communityRating}`}>
+              {card.ratingCounts?.up ? (
+                <span>
+                  <ThumbUpIcon />
+                  <strong>{card.ratingCounts.up}</strong>
+                </span>
+              ) : null}
+              {card.ratingCounts?.down ? (
+                <span className="down">
+                  <ThumbDownIcon />
+                  <strong>{card.ratingCounts.down}</strong>
+                </span>
+              ) : null}
             </span>
           )}
           {display.subtitle && <span className="card-subtitle">{display.subtitle}</span>}

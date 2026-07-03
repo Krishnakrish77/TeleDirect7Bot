@@ -64,7 +64,7 @@ _Evidence: Webwright runs `outputs/perf_audit_live/final_runs/run_3`, `run_4`, `
 | Watch history | 🟢 All | ✅ Used as recommendation signal | — |
 | Cross-device sync | 🟢 All | ✅ MongoDB for signed-in users | — |
 | Viewing stats / activity page | 🟡 Netflix, YouTube | ✅ `/stats` — hours watched, heatmap, streaks, top titles | — |
-| Per-title ratings visible on library | 🟡 Most | ❌ | Medium — needed to make ratings useful |
+| Per-title ratings visible on library | 🟡 Most | ✅ Aggregate thumbs-up/down counts now appear on rated React library cards | — |
 
 ### Social / Sharing
 
