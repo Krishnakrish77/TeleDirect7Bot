@@ -60,6 +60,7 @@ function statusRunning(status: AdminStatusResponse | null | undefined): boolean 
   return Boolean(
     status.seed?.running ||
     status.enrich?.running ||
+    status.credits?.running ||
     status.reindex?.running ||
     status.probe?.running ||
     status.episode_fill?.running ||
@@ -73,7 +74,7 @@ function progressPct(state: { total?: number; done?: number; scanned?: number } 
   return Math.max(0, Math.min(100, Math.round((done / state.total) * 100)));
 }
 
-type AdminJobKey = 'seed' | 'enrich' | 'reindex' | 'probe' | 'episode_fill' | 'migrate';
+type AdminJobKey = 'seed' | 'enrich' | 'credits' | 'reindex' | 'probe' | 'episode_fill' | 'migrate';
 
 type AdminJobDefinition = {
   key: AdminJobKey;
@@ -99,6 +100,15 @@ const ADMIN_JOBS: AdminJobDefinition[] = [
     action: 'enrich',
     actionLabel: 'Run enrichment',
     detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} checked - ${state.enriched ?? 0} matched` : 'Ready to fill missing metadata',
+  },
+  {
+    key: 'credits',
+    label: 'TMDB credits',
+    description: 'Fills missing cast and director from existing TMDB IDs.',
+    action: 'backfill-credits',
+    actionLabel: 'Backfill credits',
+    confirmMessage: 'Backfill missing cast/director credits from existing TMDB IDs?',
+    detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} checked - ${state.updated ?? 0} updated` : 'Safe backfill for cast search',
   },
   {
     key: 'reindex',
@@ -336,7 +346,7 @@ function AdminJobCenter({
           const pct = progressPct(state);
           const stateClass = jobStateClass(state);
           const running = Boolean(state.running);
-          const disabled = Boolean(busy) || running || !job.action;
+          const disabled = Boolean(busy) || running || Boolean(job.action && statusRunning(status)) || !job.action;
           return (
             <article key={job.key} className={`admin-job-card ${stateClass}`}>
               <div className="admin-job-card-head">
@@ -380,6 +390,7 @@ function MaintenancePanel({
   onMergeSeries: (sourceKey: string, targetKey: string) => Promise<void>;
 }) {
   const actions = [
+    ['backfill-credits', 'Backfill credits', 'Fill missing cast/director from existing TMDB IDs', 'Backfill missing cast/director credits from existing TMDB IDs?'],
     ['metadata-cleanup', 'Backfill metadata', 'Force-refresh TMDB credits and episode details', 'Run metadata backfill? This refreshes TMDB-owned fields for video items.'],
     ['clear-audio-tmdb', 'Fix audio', 'Clear bad TMDB matches'],
     ['clear-audio-thumbs', 'Audio thumbs', 'Refresh music artwork'],

@@ -558,6 +558,7 @@ export interface AdminProgressState {
   total?: number;
   indexed?: number;
   enriched?: number;
+  updated?: number;
   failed?: number;
   found_incompatible?: number;
   filled?: number;
@@ -569,6 +570,7 @@ export interface AdminProgressState {
 export interface AdminStatusResponse {
   seed: AdminProgressState;
   enrich: AdminProgressState;
+  credits: AdminProgressState;
   reindex: AdminProgressState;
   probe: AdminProgressState;
   episode_fill: AdminProgressState;

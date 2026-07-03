@@ -135,6 +135,7 @@ const adminData: AdminResponse = {
   status: {
     seed: {},
     enrich: {},
+    credits: {},
     reindex: {},
     probe: {},
     episode_fill: {},
@@ -254,6 +255,19 @@ describe('AdminPage', () => {
       expect(runAdminMaintenance).toHaveBeenCalledWith('metadata-cleanup');
     });
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('metadata backfill'));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces the safer credits-only backfill action', async () => {
+    const reload = vi.fn();
+    renderAdmin({ reload, locationSearch: '?tab=ops' });
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Backfill credits/ })[0]);
+
+    await waitFor(() => {
+      expect(runAdminMaintenance).toHaveBeenCalledWith('backfill-credits');
+    });
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('cast/director'));
     expect(reload).toHaveBeenCalledTimes(1);
   });
 

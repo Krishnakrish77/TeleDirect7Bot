@@ -89,6 +89,10 @@ _enrich_state: dict = {"running": False, "done": 0, "total": 0,
                        "enriched": 0, "failed": 0,
                        "started_at": 0.0, "finished_at": 0.0,
                        "last_title": ""}
+_credits_state: dict = {"running": False, "done": 0, "total": 0,
+                        "updated": 0, "failed": 0,
+                        "started_at": 0.0, "finished_at": 0.0,
+                        "last_title": ""}
 _reindex_state: dict = {"running": False, "done": 0, "total": 0,
                         "series_changed": 0, "movie_changed": 0,
                         "quality_changed": 0,
@@ -205,6 +209,10 @@ def seed_state() -> dict:
 
 def enrichment_state() -> dict:
     return dict(_enrich_state)
+
+
+def credits_backfill_state() -> dict:
+    return dict(_credits_state)
 
 
 def reindex_state() -> dict:
@@ -3040,6 +3048,117 @@ async def enrich_all(bot=None, force: bool = False) -> dict:
         "total": len(targets),
         "enriched": _enrich_state["enriched"],
         "failed": _enrich_state["failed"],
+    }
+
+
+def _needs_credits_backfill(item: HubItem) -> bool:
+    if (item.media_kind or "") == "audio":
+        return False
+    if not item.tmdb_id or item.tmdb_kind not in ("movie", "tv"):
+        return False
+    missing_cast = not bool(item.cast)
+    # Show-level TV directors are often absent in TMDB. Do not keep
+    # retrying every TV record just because director is blank.
+    missing_director = item.tmdb_kind == "movie" and not bool(item.director)
+    return missing_cast or missing_director
+
+
+def _apply_credits_backfill(item: HubItem, hit: "tmdb.TMDBHit") -> bool:
+    changed = False
+    if not item.cast and hit.cast:
+        item.cast = list(hit.cast)
+        changed = True
+    if not item.director and hit.director:
+        item.director = hit.director
+        changed = True
+    if not item.imdb_id and hit.imdb_id:
+        item.imdb_id = hit.imdb_id
+        changed = True
+    if (
+        not item.tmdb_vote_checked_at
+        and (hit.vote_average or hit.vote_count)
+    ):
+        item.tmdb_vote_average = float(hit.vote_average or 0)
+        item.tmdb_vote_count = int(hit.vote_count or 0)
+        item.tmdb_vote_checked_at = time.time()
+        changed = True
+    return changed
+
+
+async def backfill_missing_credits(bot=None) -> dict:
+    """Fill missing cast/director data from existing TMDB IDs only.
+
+    Unlike ``enrich_all(force=True)``, this never searches by title and
+    never updates titles, years, grouping keys, posters, backdrops,
+    overview, or genres. It is intended as the low-risk operational pass
+    that unlocks cast search and person pages on already-enriched items.
+    """
+    if _credits_state["running"]:
+        return {"already_running": True, "total": len(_items)}
+    if _enrich_state["running"]:
+        return {"already_running": True, "blocked_by_enrichment": True}
+    if not tmdb.is_configured():
+        return {"total": 0, "updated": 0, "skipped_no_api_key": True}
+
+    targets = [
+        mid for mid, item in list(_items.items())
+        if _needs_credits_backfill(item)
+    ]
+    _credits_state.update(
+        running=True,
+        done=0,
+        total=len(targets),
+        updated=0,
+        failed=0,
+        started_at=time.time(),
+        finished_at=0.0,
+        last_title="",
+    )
+
+    try:
+        for mid in targets:
+            item = _items.get(mid)
+            if item is None:
+                _credits_state["done"] += 1
+                continue
+            _credits_state["last_title"] = item.title or item.file_name or f"bin:{mid}"
+            try:
+                hit = await tmdb.fetch_by_id(int(item.tmdb_id), item.tmdb_kind)
+                if (
+                    hit is None
+                    or int(hit.tmdb_id) != int(item.tmdb_id)
+                    or hit.kind != item.tmdb_kind
+                ):
+                    _credits_state["failed"] += 1
+                    continue
+                changed = False
+                updated_item = None
+                async with _lock:
+                    current = _items.get(mid)
+                    if current is not None:
+                        changed = _apply_credits_backfill(current, hit)
+                        updated_item = current
+                        if changed:
+                            _persist_unlocked()
+                if changed and updated_item is not None:
+                    await _store_upsert(updated_item)
+                    _credits_state["updated"] += 1
+            except Exception:
+                logging.exception("credits backfill failed for bin:%d", mid)
+                _credits_state["failed"] += 1
+            finally:
+                _credits_state["done"] += 1
+    finally:
+        _credits_state["running"] = False
+        _credits_state["finished_at"] = time.time()
+
+    if bot is not None and _credits_state["updated"]:
+        schedule_snapshot(bot)
+
+    return {
+        "total": len(targets),
+        "updated": _credits_state["updated"],
+        "failed": _credits_state["failed"],
     }
 
 

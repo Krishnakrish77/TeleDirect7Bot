@@ -36,7 +36,7 @@ _Evidence: Webwright runs `outputs/perf_audit_live/final_runs/run_3`, `run_4`, `
 | Genre / tag filtering | 🟢 All | ✅ Year / quality / genre dropdowns | — |
 | Trending / Top content charts | 🟡 Netflix, YouTube, JioHotstar | ✅ Trending + Most Played Home shelves | — |
 | Trailer auto-play on browse | 🟢 All | ⚠️ Trailers on movie/series page only, not on cards | Medium |
-| Search by cast / crew name | 🟡 Most | ⚠️ Built, dormant until credits backfill | **Ops** — run Admin → Ops → Backfill metadata, then validate live cast/director searches |
+| Search by cast / crew name | 🟡 Most | ⚠️ Built, dormant until credits backfill | **Ops** — run Admin → Ops → Backfill credits, then validate live cast/director searches |
 
 ### Playback
 
@@ -197,7 +197,7 @@ Large batch shipped since the last audit. Validated against the live deployment 
 
 | # | Feature | Effort | Why it matters |
 |---|---------|--------|----------------|
-| 1 | **TMDB credits backfill + validation** | Ops | Admin → Ops → Backfill metadata force-refreshes TMDB credits and episode details. Run after deploy, then verify cast search and person pages with real catalogue names. |
+| 1 | **TMDB credits backfill + validation** | Ops | Admin → Ops → Backfill credits fills missing cast/director from existing TMDB IDs without title rematching. Run after deploy, then verify cast search and person pages with real catalogue names. |
 | 2 | ~~**Skip intro button**~~ | ✅ Done | Admin timestamps + timeupdate JS; button appears only within intro window. |
 | 3 | ~~**Per-title thumbs up/down**~~ | ✅ Done | Up/down toggle, auth-gated, aggregate counts shown, feeds recommendation engine. |
 | 4 | ~~**Artist page**~~ | ✅ Done | `/artist/{slug}` with multi-credit splitting; primary artist linked from player. |

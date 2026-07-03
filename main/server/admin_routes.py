@@ -347,6 +347,7 @@ def _admin_status_payload() -> dict:
     return {
         "seed": media_index.seed_state(),
         "enrich": media_index.enrichment_state(),
+        "credits": media_index.credits_backfill_state(),
         "reindex": media_index.reindex_state(),
         "probe": codec_probe.state(),
         "episode_fill": media_index.episode_fill_state(),
@@ -2564,6 +2565,21 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
             return _admin_json_message("Enrichment started", status=_admin_status_payload())
         return _admin_json_message("Enrichment already running", status=_admin_status_payload())
 
+    if action == "backfill-credits":
+        if (
+            media_index.enrichment_state().get("running")
+            or media_index.credits_backfill_state().get("running")
+        ):
+            return _admin_json_message(
+                "Credits backfill is already running",
+                status=_admin_status_payload(),
+            )
+        asyncio.create_task(media_index.backfill_missing_credits(bot=StreamBot))
+        return _admin_json_message(
+            "Credits backfill queued: missing cast and director fields",
+            status=_admin_status_payload(),
+        )
+
     if action == "reindex":
         state = media_index.reindex_state()
         if not state.get("running"):
@@ -2584,6 +2600,7 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
     if action == "metadata-cleanup":
         if (
             media_index.enrichment_state().get("running")
+            or media_index.credits_backfill_state().get("running")
             or media_index.episode_fill_state().get("running")
         ):
             return _admin_json_message(
