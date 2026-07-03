@@ -48,12 +48,23 @@ const dashboard: AdminDashboardResponse = {
   duplicate_extras: 1,
   metadata_quality: {
     video_items: 10,
+    tmdb_enriched_video_items: 8,
+    missing_credits: 3,
+    missing_tmdb_id: 2,
     missing_overview: 2,
     missing_year: 1,
     missing_cast: 3,
     missing_episode_metadata: 4,
     missing_playback_markers: 5,
     health_score: 70,
+  },
+  credits_backfill: {
+    running: false,
+    done: 4,
+    total: 4,
+    updated: 3,
+    failed: 1,
+    finished_at: 1710000000,
   },
   storage_by_quality: [{ quality: '1080p', bytes: 1024, label: '1 KiB' }],
   storage_by_codec: [{ codec: 'h264', bytes: 1024, label: '1 KiB' }],
@@ -76,6 +87,18 @@ describe('AdminDashboard', () => {
     expect(screen.getByRole('link', { name: /Missing markers5/i }).getAttribute('href')).toBe('/app/admin?filter=no-markers');
   });
 
+  it('shows credits coverage with quick filters', async () => {
+    vi.mocked(fetchAdminDashboard).mockResolvedValue(dashboard);
+
+    render(<AdminDashboard user={adminUser} onSignIn={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('Credits coverage')).toBeTruthy());
+    expect(screen.getByText('8 / 10')).toBeTruthy();
+    expect(screen.getByText('3 updated · 4 checked · 1 failed')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Missing credits 3/i }).getAttribute('href')).toBe('/app/admin?filter=no-cast');
+    expect(screen.getByRole('link', { name: /No TMDB ID 2/i }).getAttribute('href')).toBe('/app/admin?filter=unenriched');
+  });
+
   it('queues one-click metadata cleanup from the dashboard', async () => {
     vi.mocked(fetchAdminDashboard).mockResolvedValue(dashboard);
     vi.mocked(runAdminMaintenance).mockResolvedValue({ ok: true, message: 'Metadata cleanup queued' });
@@ -86,5 +109,17 @@ describe('AdminDashboard', () => {
 
     await waitFor(() => expect(runAdminMaintenance).toHaveBeenCalledWith('metadata-cleanup'));
     expect(await screen.findByText('Metadata cleanup queued')).toBeTruthy();
+  });
+
+  it('queues credits backfill from the coverage card', async () => {
+    vi.mocked(fetchAdminDashboard).mockResolvedValue(dashboard);
+    vi.mocked(runAdminMaintenance).mockResolvedValue({ ok: true, message: 'Credits backfill queued' });
+
+    render(<AdminDashboard user={adminUser} onSignIn={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Backfill credits' }));
+
+    await waitFor(() => expect(runAdminMaintenance).toHaveBeenCalledWith('backfill-credits'));
+    expect(await screen.findByText('Credits backfill queued')).toBeTruthy();
   });
 });

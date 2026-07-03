@@ -179,9 +179,7 @@ def _admin_catalogue_context(request: web.Request) -> dict:
             return False
         if filter_name == "no-year" and (not _is_video_item(it) or it.year):
             return False
-        if filter_name == "no-cast" and (
-            not _is_video_item(it) or not it.tmdb_id or it.cast or it.director
-        ):
+        if filter_name == "no-cast" and not media_index.needs_credits_backfill(it):
             return False
         if filter_name == "no-markers" and (
             not _is_video_item(it)
@@ -2665,6 +2663,7 @@ async def api_app_admin_dashboard(request: web.Request) -> web.Response:
         "storage_by_codec":   [{"codec": c,   "bytes": b, "label": humanbytes(b)} for c, b in s["storage_by_codec"]],
         "year_distribution":  [{"decade": d,  "count": n} for d, n in s["year_distribution"]],
         "total_size_label":   humanbytes(s.get("total_size_bytes") or 0),
+        "credits_backfill":    media_index.credits_backfill_state(),
         "recent_additions":   [{**it, "watchHref": f"/app/watch/{it['secure_hash']}{it['message_id']}", "fileSizeLabel": humanbytes(it.get("file_size") or 0)} for it in s["recent_additions"]],
         "largest_items":      [{**it, "watchHref": f"/app/watch/{it['secure_hash']}{it['message_id']}", "fileSizeLabel": humanbytes(it.get("file_size") or 0)} for it in s["largest_items"]],
     }, headers={"Cache-Control": "no-store"})

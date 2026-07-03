@@ -3063,6 +3063,10 @@ def _needs_credits_backfill(item: HubItem) -> bool:
     return missing_cast or missing_director
 
 
+def needs_credits_backfill(item: HubItem) -> bool:
+    return _needs_credits_backfill(item)
+
+
 def _apply_credits_backfill(item: HubItem, hit: "tmdb.TMDBHit") -> bool:
     changed = False
     if not item.cast and hit.cast:
@@ -3503,6 +3507,9 @@ def dashboard_stats() -> dict:
     largest: list = []
     metadata_quality = {
         "video_items": 0,
+        "tmdb_enriched_video_items": 0,
+        "missing_credits": 0,
+        "missing_tmdb_id": 0,
         "missing_overview": 0,
         "missing_year": 0,
         "missing_cast": 0,
@@ -3541,6 +3548,12 @@ def dashboard_stats() -> dict:
                 series_titles[it.series_key] = it.series_title
         if getattr(it, "media_kind", "") != "audio":
             metadata_quality["video_items"] += 1
+            if it.tmdb_id:
+                metadata_quality["tmdb_enriched_video_items"] += 1
+                if _needs_credits_backfill(it):
+                    metadata_quality["missing_credits"] += 1
+            else:
+                metadata_quality["missing_tmdb_id"] += 1
             if not (it.overview or it.description):
                 metadata_quality["missing_overview"] += 1
             if not it.year:
@@ -3582,7 +3595,7 @@ def dashboard_stats() -> dict:
         issue_total = (
             metadata_quality["missing_overview"]
             + metadata_quality["missing_year"]
-            + metadata_quality["missing_cast"]
+            + metadata_quality["missing_credits"]
             + metadata_quality["missing_episode_metadata"]
             + metadata_quality["missing_playback_markers"]
         )

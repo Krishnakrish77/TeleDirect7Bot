@@ -560,6 +560,8 @@ export interface AdminProgressState {
   enriched?: number;
   updated?: number;
   failed?: number;
+  started_at?: number;
+  finished_at?: number;
   found_incompatible?: number;
   filled?: number;
   phase?: string;
@@ -792,6 +794,9 @@ export interface AdminDashboardResponse {
   duplicate_extras: number;
   metadata_quality: {
     video_items: number;
+    tmdb_enriched_video_items: number;
+    missing_credits: number;
+    missing_tmdb_id: number;
     missing_overview: number;
     missing_year: number;
     missing_cast: number;
@@ -799,6 +804,7 @@ export interface AdminDashboardResponse {
     missing_playback_markers: number;
     health_score: number;
   };
+  credits_backfill: AdminProgressState;
   storage_by_quality: Array<{ quality: string; bytes: number; label: string }>;
   storage_by_codec: Array<{ codec: string; bytes: number; label: string }>;
   year_distribution: Array<{ decade: number; count: number }>;

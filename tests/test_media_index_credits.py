@@ -119,6 +119,42 @@ class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["total"], 0)
         self.assertEqual(result["updated"], 0)
 
+    def test_dashboard_reports_credits_coverage(self):
+        movie_missing_credits = video_item(
+            message_id=201,
+            media_kind="video",
+            tmdb_id=12345,
+            tmdb_kind="movie",
+            cast=[],
+            director="",
+        )
+        tv_with_cast = video_item(
+            message_id=202,
+            media_kind="video",
+            tmdb_id=67890,
+            tmdb_kind="tv",
+            cast=["Actor One"],
+            director="",
+        )
+        no_tmdb = video_item(
+            message_id=203,
+            media_kind="video",
+            tmdb_id=None,
+            tmdb_kind="",
+        )
+        media_index._items.update({
+            movie_missing_credits.message_id: movie_missing_credits,
+            tv_with_cast.message_id: tv_with_cast,
+            no_tmdb.message_id: no_tmdb,
+        })
+
+        quality = media_index.dashboard_stats()["metadata_quality"]
+
+        self.assertEqual(quality["video_items"], 3)
+        self.assertEqual(quality["tmdb_enriched_video_items"], 2)
+        self.assertEqual(quality["missing_credits"], 1)
+        self.assertEqual(quality["missing_tmdb_id"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

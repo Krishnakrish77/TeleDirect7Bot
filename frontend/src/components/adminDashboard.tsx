@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchAdminDashboard, runAdminMaintenance } from '../api';
 import { ChevronRightIcon } from '../icons';
-import type { AdminDashboardResponse, User } from '../types';
+import type { AdminDashboardResponse, AdminProgressState, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 
 function StatCard({ label, children }: { label: string; children: React.ReactNode }) {
@@ -20,6 +20,31 @@ function StatRow({ label, value, warn }: { label: string; value: string | number
       <span>{value}</span>
     </div>
   );
+}
+
+function formatRunTime(timestamp?: number) {
+  if (!timestamp) return 'Not run yet';
+  return new Date(timestamp * 1000).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatCreditsResult(state?: AdminProgressState) {
+  if (!state?.finished_at && !state?.running) return 'No run recorded';
+  const total = state.total ?? state.done ?? 0;
+  const updated = state.updated ?? 0;
+  const failed = state.failed ?? 0;
+  if (state.running) {
+    return `${(state.done ?? 0).toLocaleString()} / ${total.toLocaleString()} checked`;
+  }
+  return [
+    `${updated.toLocaleString()} updated`,
+    total ? `${total.toLocaleString()} checked` : '',
+    failed ? `${failed.toLocaleString()} failed` : '',
+  ].filter(Boolean).join(' · ');
 }
 
 export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn: () => void }) {
@@ -72,10 +97,11 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
   }
 
   const metadata = data?.metadata_quality;
+  const creditsBackfill = data?.credits_backfill;
   const metadataIssues = metadata ? [
     { label: 'Missing overview', value: metadata.missing_overview, filter: 'no-overview' },
     { label: 'Missing year', value: metadata.missing_year, filter: 'no-year' },
-    { label: 'Missing cast/crew', value: metadata.missing_cast, filter: 'no-cast' },
+    { label: 'Missing cast/crew', value: metadata.missing_credits, filter: 'no-cast' },
     { label: 'Missing markers', value: metadata.missing_playback_markers, filter: 'no-markers' },
   ] : [];
 
@@ -95,6 +121,7 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
 
       {loading && !data && <LoadingRows variant="detail" />}
       {error && <ErrorPanel message={error} />}
+      {notice && <p className="dash-notice" role="status">{notice}</p>}
 
       {data && (
         <>
@@ -133,6 +160,32 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
               <StatRow label="Attempted, no match" value={data.enrichment.attempted_no_match} warn={data.enrichment.attempted_no_match > 0} />
               <StatRow label="Never attempted" value={data.enrichment.never_attempted} warn={data.enrichment.never_attempted > 0} />
             </StatCard>
+
+            {metadata && (
+              <StatCard label="Credits coverage">
+                <StatRow label="TMDB video items" value={`${metadata.tmdb_enriched_video_items.toLocaleString()} / ${metadata.video_items.toLocaleString()}`} />
+                <StatRow label="Backfillable now" value={metadata.missing_credits ? metadata.missing_credits.toLocaleString() : 'none'} warn={metadata.missing_credits > 0} />
+                <StatRow label="Skipped: no TMDB ID" value={metadata.missing_tmdb_id ? metadata.missing_tmdb_id.toLocaleString() : 'none'} warn={metadata.missing_tmdb_id > 0} />
+                <StatRow label="Last run" value={formatRunTime(creditsBackfill?.finished_at)} />
+                <StatRow label="Last result" value={formatCreditsResult(creditsBackfill)} warn={(creditsBackfill?.failed ?? 0) > 0} />
+                <div className="dash-action-row">
+                  <a className="secondary-action compact-action" href="/app/admin?filter=no-cast">
+                    Missing credits {metadata.missing_credits.toLocaleString()}
+                  </a>
+                  <a className="secondary-action compact-action" href="/app/admin?filter=unenriched">
+                    No TMDB ID {metadata.missing_tmdb_id.toLocaleString()}
+                  </a>
+                  <button
+                    type="button"
+                    className="primary-action compact-action"
+                    disabled={Boolean(cleanupBusy)}
+                    onClick={() => void runCleanup('backfill-credits')}
+                  >
+                    {cleanupBusy === 'backfill-credits' ? 'Queuing...' : 'Backfill credits'}
+                  </button>
+                </div>
+              </StatCard>
+            )}
 
             <StatCard label="Codec compatibility">
               <StatRow label="Browser-playable" value={data.codec_health.probed_playable} />
@@ -195,7 +248,6 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
                 >
                   {cleanupBusy === 'fetch-episodes' ? 'Queuing...' : 'Fetch episodes'}
                 </button>
-                {notice && <span className="dash-notice" role="status">{notice}</span>}
               </div>
               <div className="dash-grid-4">
                 {metadataIssues.map((item) => (
