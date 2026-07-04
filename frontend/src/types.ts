@@ -114,6 +114,7 @@ export interface HubResponse {
   catalogueSize: number;
   heroes: HeroItem[];
   shelves: Shelf[];
+  homeShelfLimit?: number;
   items: HubCard[];
   total: number;
   nextOffset: number | null;

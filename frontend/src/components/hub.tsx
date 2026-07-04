@@ -46,8 +46,9 @@ export function sortHomeShelves(shelves: HubShelf[]): HubShelf[] {
   });
 }
 
-export function budgetHomeShelves(shelves: HubShelf[]): HubShelf[] {
-  return sortHomeShelves(shelves.filter((shelf) => shelf.items.length > 0)).slice(0, HOME_SHELF_LIMIT);
+export function budgetHomeShelves(shelves: HubShelf[], limit = HOME_SHELF_LIMIT): HubShelf[] {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : HOME_SHELF_LIMIT;
+  return sortHomeShelves(shelves.filter((shelf) => shelf.items.length > 0)).slice(0, safeLimit);
 }
 
 export function HeroStage({ heroes }: { heroes: HeroItem[] }) {

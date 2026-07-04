@@ -41,7 +41,7 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 
 | Area | Audit finding | UX decision |
 |------|---------------|-------------|
-| Shelf sprawl | Home could stack base shelves, personalized shelves, Trending, Most Played, Music, and up to three genre rows, creating 10+ horizontal rails before users reached lower content. | React Home is now capped to seven non-empty shelves, ranked by intent: recommendations, personal "Because you..." rows, fresh content, new episodes, trending, most played, and one music entry point. |
+| Shelf sprawl | Home could stack base shelves, personalized shelves, Trending, Most Played, Music, and up to three genre rows, creating 10+ horizontal rails before users reached lower content. | React Home is now capped by `HUB_HOME_SHELVES` (`7` by default) and ranked by intent: recommendations, personal "Because you..." rows, fresh content, new episodes, trending, most played, and one music entry point. |
 | Music discovery rows | Recently played music and top tracks are useful, but adding them as more global Home shelves would compete with existing Continue Watching, Most Played, Music, and Stats surfaces. | Keep music-specific discovery inside Music/Stats flows instead of expanding global Home shelf count. |
 
 ---

@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -58,7 +59,7 @@ _APP_ROUTE_RE = re.compile(r"^/app(?:/.*)?$")
 _UI_COOKIE = "td_ui"
 _API_CACHE_TTL = 30.0
 _SLOW_HUB_LOG_MS = 1000.0
-_HOME_SHELF_LIMIT = 7
+_HOME_SHELF_LIMIT_DEFAULT = 7
 _api_response_cache: dict[str, tuple[str, float]] = {}
 _filter_cache: tuple[dict, float] | None = None
 _HUB_CARD_PAYLOAD_KEYS = (
@@ -115,6 +116,21 @@ def _json(data, *, status: int = 200) -> web.Response:
     return _json_text(_json_dumps(data), status=status)
 
 
+def _int_env(name: str, default: int, *, lo: int, hi: int) -> int:
+    raw = (os.environ.get(name, "") or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(lo, min(value, hi))
+
+
+def _home_shelf_limit() -> int:
+    return _int_env("HUB_HOME_SHELVES", _HOME_SHELF_LIMIT_DEFAULT, lo=1, hi=12)
+
+
 def _home_shelf_rank(name: str) -> int:
     normalised = (name or "").strip().lower()
     if normalised == "recommended for you":
@@ -140,7 +156,9 @@ def _home_shelf_rank(name: str) -> int:
     return 10
 
 
-def _budget_home_shelves(shelves: list[dict], limit: int = _HOME_SHELF_LIMIT) -> list[dict]:
+def _budget_home_shelves(shelves: list[dict], limit: int | None = None) -> list[dict]:
+    if limit is None:
+        limit = _home_shelf_limit()
     if limit <= 0:
         return []
     non_empty = [shelf for shelf in shelves if shelf.get("items")]
@@ -889,6 +907,7 @@ async def api_hub(request: web.Request) -> web.Response:
             "catalogueSize": media_index.size(),
             "heroes": [_hero(item) for item in hero_items],
             "shelves": shelves,
+            "homeShelfLimit": _home_shelf_limit(),
             "items": [],
             "total": 0,
             "nextOffset": None,
@@ -953,6 +972,7 @@ async def api_hub(request: web.Request) -> web.Response:
         "catalogueSize": media_index.size(),
         "heroes": [],
         "shelves": [],
+        "homeShelfLimit": _home_shelf_limit(),
         "items": [_hub_card(item, rating_counts) for item in items],
         "total": total,
         "nextOffset": next_offset,

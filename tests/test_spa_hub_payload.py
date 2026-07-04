@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 
 os.environ.setdefault("API_ID", "1")
@@ -7,7 +8,7 @@ os.environ.setdefault("API_HASH", "test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
-from main.server.spa_routes import _budget_home_shelves, _compact_hub_card_payload
+from main.server.spa_routes import _budget_home_shelves, _compact_hub_card_payload, _home_shelf_limit
 
 
 class SpaHubPayloadTest(unittest.TestCase):
@@ -126,6 +127,14 @@ class SpaHubPayloadTest(unittest.TestCase):
             [shelf["name"] for shelf in budgeted],
             ["Series", "Hidden gems", "Action"],
         )
+
+    def test_home_shelf_limit_reads_env_with_bounds(self):
+        with patch.dict(os.environ, {"HUB_HOME_SHELVES": "10"}):
+            self.assertEqual(_home_shelf_limit(), 10)
+        with patch.dict(os.environ, {"HUB_HOME_SHELVES": "99"}):
+            self.assertEqual(_home_shelf_limit(), 12)
+        with patch.dict(os.environ, {"HUB_HOME_SHELVES": "bad"}):
+            self.assertEqual(_home_shelf_limit(), 7)
 
 
 if __name__ == "__main__":

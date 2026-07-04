@@ -197,6 +197,11 @@ describe('home shelf helpers', () => {
       'Most Played',
       'Music',
     ]);
+    expect(budgetHomeShelves(shelves, 3).map((shelf) => shelf.name)).toEqual([
+      'Recommended for you',
+      'Because you like Mystery',
+      'Recently added',
+    ]);
   });
 });
 

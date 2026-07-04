@@ -247,7 +247,7 @@ function App() {
   const canRenderHubData = data?.mode === expectedHubMode;
   const currentHubData = data;
   const sortedHomeShelves = useMemo(
-    () => currentHubData?.mode === 'shelves' ? budgetHomeShelves(currentHubData.shelves) : [],
+    () => currentHubData?.mode === 'shelves' ? budgetHomeShelves(currentHubData.shelves, currentHubData.homeShelfLimit) : [],
     [currentHubData],
   );
   const hubLoading = loading && !canRenderHubData;

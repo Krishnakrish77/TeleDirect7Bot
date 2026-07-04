@@ -156,7 +156,9 @@ you may also add as many as bots you want. (max limit is not tested yet)
 
 `CODEC_PROBE_CONCURRENCY` : Max parallel ffprobe subprocesses across both per-upload and the bulk `/admin/probe-codecs` pass. Defaults to `3`. Each probe holds a Telegram range stream + an ffprobe process, so keep this modest unless your container is generously sized.
 
-`HUB_GENRE_SHELVES` : How many TMDB-genre rows to surface on the hub landing page in addition to the Recently added / Series / Movies rows. Defaults to `3`. Clamped to `[1, 20]`.
+`HUB_HOME_SHELVES` : Max number of non-empty shelves to render on the React Home page after priority sorting. Defaults to `7`. Clamped to `[1, 12]`.
+
+`HUB_GENRE_SHELVES` : How many TMDB-genre rows to make eligible for the hub landing page in addition to the core rows. Defaults to `3`. Clamped to `[1, 20]`. The final React Home page still respects `HUB_HOME_SHELVES`, so genre rows fill remaining shelf budget after higher-priority rows.
 
 ### MongoDB (optional — recommended once the catalogue passes a few thousand items)
 
