@@ -84,10 +84,9 @@ export function getMediaCardDisplay(card: HubCard): { eyebrow: string; title: st
   };
 }
 
-export function getMediaCardMetaItems(card: HubCard, ratingLabel = ''): string[] {
+export function getMediaCardMetaItems(card: HubCard): string[] {
   if (card.type === 'track' || card.type === 'album' || card.mediaKind === 'audio') return [];
   return [
-    ratingLabel,
     card.year ? String(card.year) : '',
     card.durationLabel,
     card.quality,
@@ -118,7 +117,7 @@ function MediaCardBase({
   const height = card.aspect === 'square' ? 512 : 513;
   const display = getMediaCardDisplay(card);
   const externalRating = isMusic ? '' : formatExternalRating(card.externalRating);
-  const metaItems = getMediaCardMetaItems(card, externalRating);
+  const metaItems = getMediaCardMetaItems(card);
   const communityRating = isMusic ? '' : communityRatingLabel(card.ratingCounts);
   const rawProgress = useMemo(() => card.watchKey ? getLocalCwPct(card.watchKey) : 0, [card.watchKey]);
   const [markedWatched, setMarkedWatched] = useState(false);
