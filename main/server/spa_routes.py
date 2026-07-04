@@ -58,6 +58,7 @@ _APP_ROUTE_RE = re.compile(r"^/app(?:/.*)?$")
 _UI_COOKIE = "td_ui"
 _API_CACHE_TTL = 30.0
 _SLOW_HUB_LOG_MS = 1000.0
+_HOME_SHELF_LIMIT = 7
 _api_response_cache: dict[str, tuple[str, float]] = {}
 _filter_cache: tuple[dict, float] | None = None
 _HUB_CARD_PAYLOAD_KEYS = (
@@ -112,6 +113,42 @@ def _json_text(text: str, *, status: int = 200) -> web.Response:
 
 def _json(data, *, status: int = 200) -> web.Response:
     return _json_text(_json_dumps(data), status=status)
+
+
+def _home_shelf_rank(name: str) -> int:
+    normalised = (name or "").strip().lower()
+    if normalised == "recommended for you":
+        return 0
+    if normalised.startswith("because you "):
+        return 1
+    if normalised == "recently added":
+        return 2
+    if normalised == "new episodes":
+        return 3
+    if normalised == "trending":
+        return 4
+    if normalised == "most played":
+        return 5
+    if normalised == "music":
+        return 6
+    if normalised == "series":
+        return 7
+    if normalised == "recently added movies":
+        return 8
+    if normalised == "hidden gems":
+        return 9
+    return 10
+
+
+def _budget_home_shelves(shelves: list[dict], limit: int = _HOME_SHELF_LIMIT) -> list[dict]:
+    if limit <= 0:
+        return []
+    non_empty = [shelf for shelf in shelves if shelf.get("items")]
+    ranked = sorted(
+        enumerate(non_empty),
+        key=lambda item: (_home_shelf_rank(str(item[1].get("name") or "")), item[0]),
+    )
+    return [shelf for _, shelf in ranked[:limit]]
 
 
 @routes.get(r"/api/tmdb-image/{size}/{tail:.*}")
@@ -800,6 +837,8 @@ async def api_hub(request: web.Request) -> web.Response:
         except Exception:
             timings["top_plays_ms"] = round((time.monotonic() - mark) * 1000, 1)
             logging.exception("spa hub: top_plays failed, skipping shelf")
+
+        raw_shelves = _budget_home_shelves(raw_shelves)
 
         mark = time.monotonic()
         _prewarm_card_thumbs(

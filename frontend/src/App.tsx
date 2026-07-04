@@ -7,7 +7,7 @@ import { useArtColor } from './hooks/artColor';
 import { useAdmin, useAdminIptv, useDetail, useHub, useLikedSongs, useLiveTv, useMe, usePlaylistDetail, usePlaylists, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
 import { Header, PrimaryNav, ScrollToTop, SignInModal } from './components/layout';
 import { FilterBar, FilterPage } from './components/filters';
-import { HeroStage, ContinueWatching, RecommendationTeaser, ShelfRow, GridView, sortHomeShelves } from './components/hub';
+import { HeroStage, ContinueWatching, RecommendationTeaser, ShelfRow, GridView, budgetHomeShelves } from './components/hub';
 import { MiniPlayer, NowPlayingSheet } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
 import { QueueDrawer } from './components/queueDrawer';
@@ -247,7 +247,7 @@ function App() {
   const canRenderHubData = data?.mode === expectedHubMode;
   const currentHubData = data;
   const sortedHomeShelves = useMemo(
-    () => currentHubData?.mode === 'shelves' ? sortHomeShelves(currentHubData.shelves) : [],
+    () => currentHubData?.mode === 'shelves' ? budgetHomeShelves(currentHubData.shelves) : [],
     [currentHubData],
   );
   const hubLoading = loading && !canRenderHubData;

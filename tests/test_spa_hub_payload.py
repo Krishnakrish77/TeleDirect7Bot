@@ -7,7 +7,7 @@ os.environ.setdefault("API_HASH", "test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
-from main.server.spa_routes import _compact_hub_card_payload
+from main.server.spa_routes import _budget_home_shelves, _compact_hub_card_payload
 
 
 class SpaHubPayloadTest(unittest.TestCase):
@@ -79,6 +79,53 @@ class SpaHubPayloadTest(unittest.TestCase):
             "badge",
         ):
             self.assertNotIn(unused, compact)
+
+    def test_home_shelf_budget_keeps_high_signal_rows(self):
+        shelves = [
+            {"name": "Recently added", "items": [1]},
+            {"name": "Series", "items": [1]},
+            {"name": "Recently added movies", "items": [1]},
+            {"name": "Hidden gems", "items": [1]},
+            {"name": "Action", "items": [1]},
+            {"name": "Drama", "items": [1]},
+            {"name": "Music", "items": [1]},
+            {"name": "Recommended for you", "items": [1]},
+            {"name": "Because you like Mystery", "items": [1]},
+            {"name": "Trending", "items": [1]},
+            {"name": "Most Played", "items": [1]},
+            {"name": "New episodes", "items": [1]},
+        ]
+
+        budgeted = _budget_home_shelves(shelves, limit=7)
+
+        self.assertEqual(
+            [shelf["name"] for shelf in budgeted],
+            [
+                "Recommended for you",
+                "Because you like Mystery",
+                "Recently added",
+                "New episodes",
+                "Trending",
+                "Most Played",
+                "Music",
+            ],
+        )
+
+    def test_home_shelf_budget_uses_fallback_rows_when_priority_rows_are_missing(self):
+        shelves = [
+            {"name": "Action", "items": [1]},
+            {"name": "Drama", "items": [1]},
+            {"name": "Hidden gems", "items": [1]},
+            {"name": "Series", "items": [1]},
+            {"name": "Music", "items": []},
+        ]
+
+        budgeted = _budget_home_shelves(shelves, limit=3)
+
+        self.assertEqual(
+            [shelf["name"] for shelf in budgeted],
+            ["Series", "Hidden gems", "Action"],
+        )
 
 
 if __name__ == "__main__":

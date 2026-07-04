@@ -8,16 +8,19 @@ import { formatExternalRating } from '../utils/externalRating';
 import { MediaCard } from './mediaCard';
 
 type HubShelf = { name: string; href: string | null; items: HubCard[]; dismissable?: boolean; recMeta?: Array<RecommendationMeta | null> };
+export const HOME_SHELF_LIMIT = 7;
 
 const SHELF_PRIORITY: Array<[RegExp, number]> = [
-  [/recommended/i, 0],
-  [/recently added$/i, 1],
-  [/new episodes/i, 2],
-  [/trending/i, 3],
-  [/recently added movies/i, 4],
-  [/series/i, 5],
-  [/music/i, 6],
-  [/hidden gems/i, 7],
+  [/^recommended for you$/i, 0],
+  [/^because you /i, 1],
+  [/^recently added$/i, 2],
+  [/^new episodes$/i, 3],
+  [/^trending$/i, 4],
+  [/^most played$/i, 5],
+  [/^music$/i, 6],
+  [/^series$/i, 7],
+  [/^recently added movies$/i, 8],
+  [/^hidden gems$/i, 9],
 ];
 
 export function shelfPresentation(name: string): { title: string; eyebrow: string } {
@@ -26,6 +29,7 @@ export function shelfPresentation(name: string): { title: string; eyebrow: strin
   if (normalised === 'recently added') return { title: 'New in your library', eyebrow: 'Latest' };
   if (normalised === 'new episodes') return { title: name, eyebrow: 'Series updates' };
   if (normalised === 'trending') return { title: 'Trending now', eyebrow: 'In demand' };
+  if (normalised === 'most played') return { title: 'Most played', eyebrow: 'Replay value' };
   if (normalised === 'recently added movies') return { title: 'New movies', eyebrow: 'Movies' };
   if (normalised === 'series') return { title: 'Series', eyebrow: 'Shows' };
   if (normalised === 'music') return { title: 'Music', eyebrow: 'Audio' };
@@ -40,6 +44,10 @@ export function sortHomeShelves(shelves: HubShelf[]): HubShelf[] {
     if (byRank !== 0) return byRank;
     return a.name.localeCompare(b.name);
   });
+}
+
+export function budgetHomeShelves(shelves: HubShelf[]): HubShelf[] {
+  return sortHomeShelves(shelves.filter((shelf) => shelf.items.length > 0)).slice(0, HOME_SHELF_LIMIT);
 }
 
 export function HeroStage({ heroes }: { heroes: HeroItem[] }) {

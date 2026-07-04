@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAllContinue, deleteContinueEntry, fetchContinueItems, fetchContinueMap } from '../api';
 import type { HubCard, HubParams, HubResponse } from '../types';
-import { ContinueWatching, GridView, RecommendationTeaser, shelfPresentation, sortHomeShelves } from './hub';
+import { budgetHomeShelves, ContinueWatching, GridView, HOME_SHELF_LIMIT, RecommendationTeaser, shelfPresentation, sortHomeShelves } from './hub';
 
 vi.mock('../api', () => ({
   clearAllContinue: vi.fn(),
@@ -145,11 +145,15 @@ describe('home shelf helpers', () => {
       { name: 'Trending', href: null, items: [card({ itemId: 'movie:2' })] },
       { name: 'Recently added movies', href: null, items: [card({ itemId: 'movie:3' })] },
       { name: 'Recommended for you', href: null, items: [card({ itemId: 'movie:4' })] },
+      { name: 'Most Played', href: null, items: [card({ itemId: 'movie:5' })] },
+      { name: 'Because you like Mystery', href: null, items: [card({ itemId: 'movie:6' })] },
     ];
 
     expect(sortHomeShelves(shelves).map((shelf) => shelf.name)).toEqual([
       'Recommended for you',
+      'Because you like Mystery',
       'Trending',
+      'Most Played',
       'Recently added movies',
       'Action',
     ]);
@@ -157,7 +161,42 @@ describe('home shelf helpers', () => {
 
   it('renames key shelves for clearer home presentation', () => {
     expect(shelfPresentation('Recently added')).toEqual({ title: 'New in your library', eyebrow: 'Latest' });
+    expect(shelfPresentation('Most Played')).toEqual({ title: 'Most played', eyebrow: 'Replay value' });
     expect(shelfPresentation('Hidden gems')).toEqual({ title: 'Worth a look', eyebrow: 'Discovery' });
+  });
+
+  it('caps rendered home shelves to the governance budget', () => {
+    const shelves = [
+      'Recommended for you',
+      'Because you like Mystery',
+      'Recently added',
+      'New episodes',
+      'Trending',
+      'Most Played',
+      'Music',
+      'Series',
+      'Recently added movies',
+      'Hidden gems',
+      'Action',
+      'Empty editorial row',
+    ].map((name, index) => ({
+      name,
+      href: null,
+      items: name === 'Empty editorial row' ? [] : [card({ itemId: `movie:${index}` })],
+    }));
+
+    const budgeted = budgetHomeShelves(shelves);
+
+    expect(budgeted).toHaveLength(HOME_SHELF_LIMIT);
+    expect(budgeted.map((shelf) => shelf.name)).toEqual([
+      'Recommended for you',
+      'Because you like Mystery',
+      'Recently added',
+      'New episodes',
+      'Trending',
+      'Most Played',
+      'Music',
+    ]);
   });
 });
 
