@@ -12,6 +12,7 @@ import logging
 import secrets
 import mimetypes
 import weakref
+from urllib.parse import quote
 from aiohttp import web
 from aiohttp.http_exceptions import BadStatusLine
 from main.bot import multi_clients, work_loads
@@ -34,6 +35,68 @@ _ip_active: dict = {}   # ip → concurrent stream count
 
 
 _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+
+
+def _range_not_satisfiable(file_size: int) -> web.HTTPRequestRangeNotSatisfiable:
+    return web.HTTPRequestRangeNotSatisfiable(
+        headers={"Content-Range": f"bytes */{max(0, int(file_size or 0))}"}
+    )
+
+
+def _normalise_http_range(
+    http_range: slice,
+    file_size: int,
+    *,
+    range_header: bool,
+) -> tuple[int, int]:
+    if file_size <= 0:
+        if range_header:
+            raise _range_not_satisfiable(file_size)
+        return 0, -1
+    if not range_header:
+        return 0, file_size - 1
+
+    start = http_range.start
+    stop = http_range.stop
+    if start is not None and start < 0:
+        suffix_length = min(-start, file_size)
+        if suffix_length <= 0:
+            raise _range_not_satisfiable(file_size)
+        return file_size - suffix_length, file_size - 1
+
+    start = start or 0
+    stop = stop if stop is not None else file_size
+    if start < 0 or start >= file_size or stop <= start:
+        raise _range_not_satisfiable(file_size)
+    return start, min(stop, file_size) - 1
+
+
+def _content_disposition(disposition: str, file_name: str) -> str:
+    fallback = "".join(
+        ch if 32 <= ord(ch) < 127 and ch not in {'"', "\\", ";"} else "_"
+        for ch in (file_name or "")
+    ).strip(" .")
+    if not fallback:
+        fallback = "download"
+    return (
+        f'{disposition}; filename="{fallback}"; '
+        f"filename*=UTF-8''{quote(file_name or fallback, safe='')}"
+    )
+
+
+def _should_serve_probe_head(
+    *,
+    download_request: bool,
+    range_header: bool,
+    from_bytes: int,
+    file_size: int,
+) -> bool:
+    return (
+        not download_request
+        and not range_header
+        and from_bytes == 0
+        and file_size > skeleton_cache.HEAD_SIZE
+    )
 
 # ── VLC playback tracking ─────────────────────────────────────────────────
 # Debounce CW updates: at most one MongoDB write per 30s per (user, message).
@@ -318,9 +381,16 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
 
     file_size = file_id.file_size
 
-    from_bytes = request.http_range.start or 0
-    until_bytes = (request.http_range.stop or file_size) - 1
     range_header = "Range" in request.headers
+    try:
+        http_range = request.http_range
+    except ValueError:
+        raise _range_not_satisfiable(file_size)
+    from_bytes, until_bytes = _normalise_http_range(
+        http_range,
+        file_size,
+        range_header=range_header,
+    )
     download_request = is_download_query(request.rel_url.query)
 
     # VLC tracking — verify token from ?vt= and fire async CW/WH updates.
@@ -357,7 +427,7 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
 
     common_headers = {
         "Content-Type": f"{mime_type}",
-        "Content-Disposition": f'{disposition}; filename="{file_name}"',
+        "Content-Disposition": _content_disposition(disposition, file_name),
         "Accept-Ranges": "bytes",
     }
 
@@ -378,6 +448,13 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         return web.Response(
             status=206 if range_header else 200,
             headers=headers,
+        )
+
+    if file_size <= 0:
+        return web.Response(
+            status=200,
+            body=b"",
+            headers={**common_headers, "Content-Length": "0"},
         )
 
     # Fast path: if the requested range fits entirely inside the cached file
@@ -427,11 +504,11 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     # bytes to identify the container format. They will then make targeted
     # Range requests for the MOOV/Cues block (served from the tail cache) and
     # the actual seek position — no full-file stream required.
-    if (
-        not download_request
-        and not range_header
-        and from_bytes == 0
-        and file_size > skeleton_cache.HEAD_SIZE
+    if _should_serve_probe_head(
+        download_request=download_request,
+        range_header=range_header,
+        from_bytes=from_bytes,
+        file_size=file_size,
     ):
         try:
             head = await skeleton_cache.get_or_fetch_head(
