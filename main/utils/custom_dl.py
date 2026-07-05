@@ -6,7 +6,12 @@ from typing import Dict, Tuple, Union
 from main.bot import work_loads
 from pyrogram import Client, utils, raw
 from pyrogram.crypto import aes
-from pyrogram.errors import CDNFileHashMismatch, Timeout as TelegramTimeout, VolumeLocNotFound
+from pyrogram.errors import (
+    AuthBytesInvalid,
+    CDNFileHashMismatch,
+    Timeout as TelegramTimeout,
+    VolumeLocNotFound,
+)
 from .file_properties import get_file_ids
 from .stream_range import chunk_size, offset_fix
 from pyrogram.session import Session
@@ -16,6 +21,10 @@ from pyrogram.file_id import FileId, FileType, ThumbnailSource
 
 CACHE_TTL = 30 * 60
 CACHE_SWEEP_INTERVAL = 5 * 60
+
+
+class MediaSessionUnavailable(RuntimeError):
+    pass
 
 
 class ByteStreamer:
@@ -60,7 +69,37 @@ class ByteStreamer:
         full cross-DC auth handshake + media-session cache to kurigram's
         Client.get_session helper.
         """
-        return await client.get_session(file_id.dc_id, is_media=True)
+        dc_id = file_id.dc_id
+        last_err: AuthBytesInvalid | None = None
+        for attempt in range(2):
+            try:
+                return await client.get_session(dc_id, is_media=True)
+            except AuthBytesInvalid as exc:
+                last_err = exc
+                logging.warning(
+                    "media session auth failed for dc=%s media_id=%s attempt=%d/2; "
+                    "clearing cached sessions",
+                    dc_id,
+                    getattr(file_id, "media_id", "?"),
+                    attempt + 1,
+                )
+                await self._drop_cached_session(client, dc_id)
+                await asyncio.sleep(0.25 * (attempt + 1))
+        raise MediaSessionUnavailable(f"media session auth failed for dc={dc_id}") from last_err
+
+    @staticmethod
+    async def _drop_cached_session(client: Client, dc_id: int) -> None:
+        for cache_name in ("media_sessions", "sessions"):
+            cache = getattr(client, cache_name, None)
+            if not isinstance(cache, dict):
+                continue
+            session = cache.pop(dc_id, None)
+            if session is None:
+                continue
+            try:
+                await session.stop()
+            except Exception:
+                logging.debug("failed to stop stale %s session for dc=%s", cache_name, dc_id)
 
 
     @staticmethod
@@ -126,14 +165,22 @@ class ByteStreamer:
         client = self.client
         work_loads[index] += 1
         logging.debug(f"Starting to yielding file with client {index}.")
-        media_session = await self.generate_media_session(client, file_id)
-
         current_part = 1
-
-        location = await self.get_location(file_id)
-
         cdn_session: Union[Session, None] = None
         try:
+            try:
+                media_session = await self.generate_media_session(client, file_id)
+            except MediaSessionUnavailable as exc:
+                logging.warning(
+                    "yield_file: media session unavailable media_id=%s dc=%s (%s)",
+                    getattr(file_id, "media_id", "?"),
+                    getattr(file_id, "dc_id", "?"),
+                    exc,
+                )
+                return
+
+            location = await self.get_location(file_id)
+
             async def _send_get_file(current_offset: int):
                 last_err: Union[BaseException, None] = None
                 for attempt in range(3):

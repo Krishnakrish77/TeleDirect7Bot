@@ -12,6 +12,8 @@ os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 from aiohttp import web
 
+from main.utils.custom_dl import MediaSessionUnavailable
+
 stream_routes = importlib.import_module("main.server.stream_routes")
 
 
@@ -29,6 +31,18 @@ class _FakeFileId:
 class _FakeStreamer:
     async def get_file_properties(self, message_id):
         return _FakeFileId()
+
+
+class _LargeFakeFileId(_FakeFileId):
+    file_size = stream_routes.skeleton_cache.HEAD_SIZE + 100
+
+
+class _UnavailableStreamer:
+    async def get_file_properties(self, message_id):
+        return _LargeFakeFileId()
+
+    async def generate_media_session(self, client, file_id):
+        raise MediaSessionUnavailable("auth failed")
 
 
 class _FakeRequest:
@@ -62,6 +76,27 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
             patch.object(stream_routes, "class_cache", {client: _FakeStreamer()}),
         ):
             return await stream_routes.media_streamer(request, 42, "abc")
+
+    async def test_media_session_auth_failure_returns_retryable_503(self):
+        client = _FakeClient()
+        with (
+            patch.object(stream_routes, "multi_clients", {0: client}),
+            patch.object(stream_routes, "work_loads", {0: 0}),
+            patch.object(stream_routes, "class_cache", {client: _UnavailableStreamer()}),
+            patch.object(stream_routes, "_total_active", 0),
+            patch.object(stream_routes, "_ip_active", {}),
+        ):
+            with self.assertRaises(web.HTTPServiceUnavailable) as ctx:
+                await stream_routes.media_streamer(
+                    _FakeRequest(method="GET", query={"download": "1"}),
+                    42,
+                    "abc",
+                )
+
+        self.assertEqual(ctx.exception.status, 503)
+        self.assertEqual(ctx.exception.headers["Retry-After"], "5")
+        self.assertEqual(stream_routes._total_active, 0)
+        self.assertEqual(stream_routes._ip_active, {})
 
     async def test_download_head_forces_attachment_and_escapes_filename(self):
         response = await self._call_media_streamer(

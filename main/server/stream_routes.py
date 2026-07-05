@@ -18,6 +18,7 @@ from aiohttp.http_exceptions import BadStatusLine
 from main.bot import multi_clients, work_loads
 from main.server.exceptions import FIleNotFound, InvalidHash
 from main import Var, utils, StartTime, __version__, StreamBot
+from main.utils.custom_dl import MediaSessionUnavailable
 from main.utils.download_urls import is_download_query
 from main.utils import skeleton_cache
 from main.utils.render_template import render_page
@@ -212,11 +213,15 @@ async def _rate_limited_body(gen, ip: str):
         async for chunk in gen:
             yield chunk
     finally:
-        global _total_active
-        _total_active = max(0, _total_active - 1)
-        _ip_active[ip] = max(0, _ip_active.get(ip, 1) - 1)
-        if not _ip_active.get(ip):
-            _ip_active.pop(ip, None)
+        _release_stream_slot(ip)
+
+
+def _release_stream_slot(ip: str) -> None:
+    global _total_active
+    _total_active = max(0, _total_active - 1)
+    _ip_active[ip] = max(0, _ip_active.get(ip, 1) - 1)
+    if not _ip_active.get(ip):
+        _ip_active.pop(ip, None)
 
 @routes.get("/healthz", allow_head=True)
 async def healthz(_):
@@ -548,6 +553,19 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     _total_active += 1
     if not is_loopback:
         _ip_active[client_ip] = _ip_active.get(client_ip, 0) + 1
+    try:
+        await tg_connect.generate_media_session(faster_client, file_id)
+    except MediaSessionUnavailable as exc:
+        _release_stream_slot(client_ip)
+        logging.warning(
+            "media session unavailable before streaming msg %d: %s",
+            message_id,
+            exc,
+        )
+        raise web.HTTPServiceUnavailable(
+            text="media session unavailable; retry",
+            headers={"Retry-After": "5"},
+        )
 
     req_length = until_bytes - from_bytes + 1
     new_chunk_size = utils.chunk_size(req_length)
