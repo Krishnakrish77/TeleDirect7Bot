@@ -134,38 +134,70 @@ class ByteStreamer:
 
         cdn_session: Union[Session, None] = None
         try:
-            # Retry the *initial* GetFile a few times. Under thumbnail batch
-            # load, the first call for a given (file, offset) sometimes
-            # times out — the silent ``except TimeoutError: pass`` below
-            # then yields zero bytes, and the skeleton cache truncation
-            # guard surfaces it as a 503. A short retry loop here gives
-            # the media session a second chance before we give up.
-            r = None
-            last_err: Union[BaseException, None] = None
-            for attempt in range(3):
-                try:
-                    r = await media_session.send(
-                        raw.functions.upload.GetFile(
-                            location=location, offset=offset, limit=chunk_size
-                        ),
-                    )
-                    break
-                except (TimeoutError, asyncio.TimeoutError, TelegramTimeout) as e:
-                    last_err = e
-                    logging.warning(
-                        "yield_file: initial GetFile timeout (attempt %d/3) "
-                        "media_id=%s offset=%d limit=%d",
-                        attempt + 1,
-                        getattr(file_id, "media_id", "?"),
-                        offset, chunk_size,
-                    )
-                    await asyncio.sleep(0.5 * (attempt + 1))
-            if r is None:
+            async def _send_get_file(current_offset: int):
+                last_err: Union[BaseException, None] = None
+                for attempt in range(3):
+                    try:
+                        return await media_session.send(
+                            raw.functions.upload.GetFile(
+                                location=location,
+                                offset=current_offset,
+                                limit=chunk_size,
+                            ),
+                        )
+                    except (TimeoutError, asyncio.TimeoutError, TelegramTimeout) as e:
+                        last_err = e
+                        logging.warning(
+                            "yield_file: GetFile timeout (attempt %d/3) "
+                            "media_id=%s offset=%d limit=%d",
+                            attempt + 1,
+                            getattr(file_id, "media_id", "?"),
+                            current_offset,
+                            chunk_size,
+                        )
+                        await asyncio.sleep(0.5 * (attempt + 1))
                 logging.warning(
-                    "yield_file: giving up after initial GetFile timeouts "
+                    "yield_file: giving up after GetFile timeouts "
                     "media_id=%s offset=%d (last error: %r)",
-                    getattr(file_id, "media_id", "?"), offset, last_err,
+                    getattr(file_id, "media_id", "?"),
+                    current_offset,
+                    last_err,
                 )
+                return None
+
+            async def _send_get_cdn_file(current_offset: int):
+                last_err: Union[BaseException, None] = None
+                for attempt in range(3):
+                    try:
+                        return await cdn_session.send(
+                            raw.functions.upload.GetCdnFile(
+                                file_token=r.file_token,
+                                offset=current_offset,
+                                limit=chunk_size,
+                            )
+                        )
+                    except (TimeoutError, asyncio.TimeoutError, TelegramTimeout) as e:
+                        last_err = e
+                        logging.warning(
+                            "yield_file: GetCdnFile timeout (attempt %d/3) "
+                            "media_id=%s offset=%d limit=%d",
+                            attempt + 1,
+                            getattr(file_id, "media_id", "?"),
+                            current_offset,
+                            chunk_size,
+                        )
+                        await asyncio.sleep(0.5 * (attempt + 1))
+                logging.warning(
+                    "yield_file: giving up after GetCdnFile timeouts "
+                    "media_id=%s offset=%d (last error: %r)",
+                    getattr(file_id, "media_id", "?"),
+                    current_offset,
+                    last_err,
+                )
+                return None
+
+            r = await _send_get_file(offset)
+            if r is None:
                 return
             if isinstance(r, raw.types.upload.File):
                 while current_part <= part_count:
@@ -186,12 +218,10 @@ class ByteStreamer:
                     else:
                         yield chunk
 
-                    r = await media_session.send(
-                        raw.functions.upload.GetFile(
-                            location=location, offset=offset, limit=chunk_size
-                        ),
-                    )
-
+                    if current_part < part_count:
+                        r = await _send_get_file(offset)
+                        if r is None:
+                            return
                     current_part += 1
             elif isinstance(r, raw.types.upload.FileCdnRedirect):
                 # Telegram serves popular/large files from edge CDNs. The
@@ -204,13 +234,9 @@ class ByteStreamer:
                     r.dc_id, is_cdn=True, temporary=True
                 )
                 while current_part <= part_count:
-                    r2 = await cdn_session.send(
-                        raw.functions.upload.GetCdnFile(
-                            file_token=r.file_token,
-                            offset=offset,
-                            limit=chunk_size,
-                        )
-                    )
+                    r2 = await _send_get_cdn_file(offset)
+                    if r2 is None:
+                        return
                     if isinstance(r2, raw.types.upload.CdnFileReuploadNeeded):
                         # CDN node hasn't been primed yet — ask the home DC
                         # to push the file, then retry the same offset.

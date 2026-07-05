@@ -32,6 +32,7 @@ from main.utils import thumb_cache
 from main.utils import trending
 from main.utils import wh_store
 from main.utils.codec_probe import _clean_music_tag
+from main.utils.download_urls import as_download_url
 from main.utils.hub_query import AlbumGroup, HubItem, MovieGroup, SeriesGroup
 from main.utils.human_readable import humanbytes
 from main.utils.playback import should_offer_hls_for_video
@@ -411,6 +412,10 @@ def _stream_url(item: HubItem) -> str:
     return f"/{item.secure_hash}{item.message_id}"
 
 
+def _download_url(item: HubItem) -> str:
+    return as_download_url(_stream_url(item))
+
+
 def _vlc_tracking_token(request: web.Request, item: HubItem) -> str:
     user = get_user(request)
     if not user:
@@ -456,6 +461,7 @@ def _item_common(item: HubItem) -> dict:
         "trailerKey": item.trailer_key or "",
         "href": _watch_url(item),
         "streamHref": _stream_url(item),
+        "downloadHref": _download_url(item),
         "watchKey": f"{item.secure_hash}{item.message_id}",
     }
 
@@ -1509,6 +1515,7 @@ def _track_payload(item: HubItem) -> dict:
         "appHref": _app_watch_url(item),
         "classicHref": _watch_url(item),
         "streamHref": _stream_url(item),
+        "downloadHref": _download_url(item),
         "albumHref": f"/app/album/{item.album_key}" if item.album_key else "",
     }
 
@@ -1831,7 +1838,7 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
         "audioTrackBase": hls_base,
         "streamHref": _stream_url(item),
         "absoluteStreamHref": absolute_stream,
-        "downloadHref": _stream_url(item),
+        "downloadHref": _download_url(item),
         "vlcHref": f"vlc://{absolute_stream}",
         "vlcTrackingToken": vlc_token,
         "knownUnplayable": codec_probe.known_unplayable(item),

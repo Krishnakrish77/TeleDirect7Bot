@@ -2,6 +2,7 @@ import asyncio
 import logging
 from main.bot import StreamBot
 from main.utils import media_index
+from main.utils.download_urls import as_download_url
 from main.utils.file_properties import gen_link, get_hash
 from main.utils.indexer import schedule_index, schedule_subtitle_pairing
 from main.utils.subtitles import is_subtitle_filename, is_subtitle_mime
@@ -143,7 +144,7 @@ async def channel_receive_handler(bot, broadcast: Message):
         log_msg = await broadcast.copy(chat_id=Var.BIN_CHANNEL)
         _schedule_index_if_admin(bot, broadcast, log_msg)
         file_hash = get_hash(log_msg)
-        stream_link = f"{Var.URL}{file_hash}{log_msg.id}"
+        stream_link = as_download_url(f"{Var.URL}{file_hash}{log_msg.id}")
         await log_msg.reply_text(
             text=f"**Channel Name:** `{broadcast.chat.title}`\n**Channel ID:** `{broadcast.chat.id}`\n**Request URL:** https://t.me/{(await bot.get_me()).username}?start=msgid_{str(log_msg.id)}",
             quote=True,

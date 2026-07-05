@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from main.vars import Var
 from main.bot import StreamBot
 from main.utils import media_index
+from main.utils.download_urls import as_download_url
 from main.utils.human_readable import humanbytes
 from main.utils.file_properties import get_file_ids
 from main.utils.playback import should_offer_hls_for_video
@@ -77,6 +78,7 @@ async def render_page(message_id, secure_hash,
         logging.debug(f"Invalid hash for message with - ID {message_id}")
         raise InvalidHash
     src = urllib.parse.urljoin(Var.URL, f'{secure_hash}{message_id}')
+    download_src = as_download_url(src)
     full_mime = (file_data.mime_type or "").lower().strip()
     mime_type = full_mime.split('/')[0]
     if mime_type in ("video", "audio"):
@@ -203,6 +205,7 @@ async def render_page(message_id, secure_hash,
             audio_sample_rate=getattr(meta, "audio_sample_rate", 0) if meta else 0,
             heading=_build_heading(meta, mime_type, file_name),
             src=src,
+            download_src=download_src,
             hls_src=hls_src,
             sub_path=sub_path,
             file_name=file_name,
@@ -225,5 +228,5 @@ async def render_page(message_id, secure_hash,
         heading=heading,
         file_name=file_name,
         file_size=humanbytes(file_data.file_size),
-        src=src,
+        download_src=download_src,
     )

@@ -318,7 +318,7 @@ export function WatchPage({
                     <span>{savedIds?.has(track.itemId) ? 'Liked' : 'Like'}</span>
                   </button>
                 )}
-                <a className="secondary-action" href={track.streamHref} download>
+                <a className="secondary-action" href={track.downloadHref || track.streamHref} download>
                   <DownloadIcon />
                   <span>Download</span>
                 </a>

@@ -245,7 +245,7 @@
           if (!active) tracks[0].mode = "showing";
         }
       }));
-      menu.appendChild(menuItem(dlIcon, "Download", () => { window.open("{{ src }}", "_blank"); }));
+      menu.appendChild(menuItem(dlIcon, "Download", () => { window.open("{{ download_src }}", "_blank"); }));
       menu.appendChild(menuItem(shrIcon, "Share", () => {
         var data = { title: document.title, url: location.href };
         if (navigator.share) { navigator.share(data).catch(function() {}); }

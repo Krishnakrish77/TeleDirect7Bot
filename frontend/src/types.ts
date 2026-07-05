@@ -199,6 +199,7 @@ export interface WatchTrack {
   albumTitle: string;
   href: string;
   streamHref: string;
+  downloadHref?: string;
   watchKey: string;
   trackNumber: number | null;
   format: string;

@@ -17,6 +17,7 @@ from aiohttp.http_exceptions import BadStatusLine
 from main.bot import multi_clients, work_loads
 from main.server.exceptions import FIleNotFound, InvalidHash
 from main import Var, utils, StartTime, __version__, StreamBot
+from main.utils.download_urls import is_download_query
 from main.utils import skeleton_cache
 from main.utils.render_template import render_page
 
@@ -320,6 +321,7 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     from_bytes = request.http_range.start or 0
     until_bytes = (request.http_range.stop or file_size) - 1
     range_header = "Range" in request.headers
+    download_request = is_download_query(request.rel_url.query)
 
     # VLC tracking — verify token from ?vt= and fire async CW/WH updates.
     # Debounce check runs BEFORE create_task to avoid spawning tasks that
@@ -350,25 +352,32 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         else:
             mime_type = "application/octet-stream"
             file_name = f"{secrets.token_hex(2)}.unknown"
-    if "video/" in mime_type or "audio/" in mime_type:
+    if not download_request and ("video/" in mime_type or "audio/" in mime_type):
         disposition = "inline"
 
     common_headers = {
         "Content-Type": f"{mime_type}",
-        "Range": f"bytes={from_bytes}-{until_bytes}",
-        "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
         "Content-Disposition": f'{disposition}; filename="{file_name}"',
         "Accept-Ranges": "bytes",
     }
 
+    def _range_headers(start: int = from_bytes, end: int = until_bytes) -> dict[str, str]:
+        return {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Content-Length": str(max(0, end - start + 1)),
+        }
+
     if request.method == "HEAD":
         content_length = max(0, until_bytes - from_bytes + 1)
+        headers = {
+            **common_headers,
+            "Content-Length": str(content_length),
+        }
+        if range_header:
+            headers["Content-Range"] = f"bytes {from_bytes}-{until_bytes}/{file_size}"
         return web.Response(
             status=206 if range_header else 200,
-            headers={
-                **common_headers,
-                "Content-Length": str(content_length),
-            },
+            headers=headers,
         )
 
     # Fast path: if the requested range fits entirely inside the cached file
@@ -401,10 +410,14 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         raise web.HTTPServiceUnavailable(text="skeleton fetch incomplete; retry")
 
     if cached_body is not None:
+        status = 206 if range_header else 200
+        headers = {**common_headers, "Content-Length": str(len(cached_body))}
+        if status == 206:
+            headers["Content-Range"] = f"bytes {from_bytes}-{until_bytes}/{file_size}"
         return web.Response(
-            status=206 if range_header else 200,
+            status=status,
             body=cached_body,
-            headers={**common_headers, "Content-Length": str(len(cached_body))},
+            headers=headers,
         )
 
     # For a full-file GET (no Range header, from_bytes=0): serve only the
@@ -414,7 +427,12 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     # bytes to identify the container format. They will then make targeted
     # Range requests for the MOOV/Cues block (served from the tail cache) and
     # the actual seek position — no full-file stream required.
-    if not range_header and from_bytes == 0 and file_size > skeleton_cache.HEAD_SIZE:
+    if (
+        not download_request
+        and not range_header
+        and from_bytes == 0
+        and file_size > skeleton_cache.HEAD_SIZE
+    ):
         try:
             head = await skeleton_cache.get_or_fetch_head(
                 message_id, file_size, tg_connect, file_id, index
@@ -428,8 +446,7 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
             body=head,
             headers={
                 **common_headers,
-                "Content-Range": f"bytes 0-{head_end}/{file_size}",
-                "Content-Length": str(len(head)),
+                **_range_headers(0, head_end),
             },
         )
 
@@ -455,7 +472,7 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     if not is_loopback:
         _ip_active[client_ip] = _ip_active.get(client_ip, 0) + 1
 
-    req_length = until_bytes - from_bytes
+    req_length = until_bytes - from_bytes + 1
     new_chunk_size = utils.chunk_size(req_length)
     offset = utils.offset_fix(from_bytes, new_chunk_size)
     first_part_cut = from_bytes - offset
@@ -475,13 +492,17 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         client_ip,
     )
 
-    return_resp = web.Response(
-        status=206 if range_header else 200,
-        body=body,
-        headers=common_headers,
-    )
+    status = 206 if range_header else 200
+    response_headers = dict(common_headers)
+    if status == 206:
+        response_headers.update(_range_headers())
+    else:
+        response_headers["Content-Length"] = str(file_size)
 
-    if return_resp.status == 200:
-        return_resp.headers.add("Content-Length", str(file_size))
+    return_resp = web.Response(
+        status=status,
+        body=body,
+        headers=response_headers,
+    )
 
     return return_resp

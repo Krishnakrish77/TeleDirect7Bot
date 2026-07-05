@@ -5,6 +5,7 @@ from pyrogram.file_id import FileId
 from pyrogram.raw.types.messages import Messages
 from main.exceptions import FIleNotFound
 from main.utils.Translation import Language
+from main.utils.download_urls import as_download_url
 from main.utils.human_readable import humanbytes
 from main.vars import Var
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -89,10 +90,11 @@ async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
 
     page_link = f"{Var.URL}watch/{file_hash}{log_msg.id}"
     stream_link = f"{Var.URL}{file_hash}{log_msg.id}"
-    Stream_Text = lang.stream_msg_text.format(file_name, file_size, stream_link, page_link)
+    download_link = as_download_url(stream_link)
+    Stream_Text = lang.stream_msg_text.format(file_name, file_size, download_link, page_link)
 
     buttons = [[InlineKeyboardButton("🖥STREAM", url=page_link),
-                InlineKeyboardButton("Dᴏᴡɴʟᴏᴀᴅ 📥", url=stream_link)]]
+                InlineKeyboardButton("Dᴏᴡɴʟᴏᴀᴅ 📥", url=download_link)]]
     if not from_channel:
         buttons.append([InlineKeyboardButton(
             "❌ Delete Link",
@@ -100,4 +102,4 @@ async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
         )])
     reply_markup = InlineKeyboardMarkup(buttons)
 
-    return reply_markup, Stream_Text, stream_link
+    return reply_markup, Stream_Text, download_link
