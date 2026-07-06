@@ -1,7 +1,7 @@
-import { ReactNode, useState } from 'react';
-import { BookmarkIcon, CheckIcon, ChevronRightIcon, ListIcon, ListPlusIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { BookmarkIcon, CheckIcon, ChevronRightIcon, DownloadIcon, ListIcon, ListPlusIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
 import type { PlayerState } from '../hooks/audio';
-import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, SeriesDetailResponse, WatchTrack } from '../types';
+import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
 import type { AppRoute } from '../navigation';
 import { LoadingRows, ErrorPanel } from './common';
 import { MediaCard } from './mediaCard';
@@ -264,6 +264,50 @@ function SeriesDetail({
   navigate: (href: string, replace?: boolean) => void;
 }) {
   const ratingId = data.seasonBlocks[0]?.entries[0]?.rep.itemId || null;
+  const [downloadBatch, setDownloadBatch] = useState<{ current: number; total: number } | null>(null);
+  const downloadTimers = useRef<number[]>([]);
+  const downloadTargets = useMemo(() => {
+    const seen = new Set<string>();
+    return data.seasonBlocks.flatMap((block) => (
+      block.entries.flatMap((entry) => {
+        const href = entry.rep.downloadHref;
+        if (!href || seen.has(href)) return [];
+        seen.add(href);
+        return [href];
+      })
+    ));
+  }, [data.seasonBlocks]);
+
+  useEffect(() => () => {
+    downloadTimers.current.forEach((timer) => window.clearTimeout(timer));
+  }, []);
+
+  const handleDownloadAll = () => {
+    if (!downloadTargets.length || downloadBatch) return;
+    downloadTimers.current.forEach((timer) => window.clearTimeout(timer));
+    downloadTimers.current = [];
+    const total = downloadTargets.length;
+    setDownloadBatch({ current: 0, total });
+    downloadTargets.forEach((href, index) => {
+      const start = () => {
+        triggerBrowserDownload(href);
+        setDownloadBatch({ current: index + 1, total });
+        if (index === total - 1) {
+          const doneTimer = window.setTimeout(() => setDownloadBatch(null), 1600);
+          downloadTimers.current.push(doneTimer);
+        }
+      };
+      if (index === 0) {
+        start();
+      } else {
+        const timer = window.setTimeout(start, index * 900);
+        downloadTimers.current.push(timer);
+      }
+    });
+  };
+  const downloadButtonLabel = downloadBatch
+    ? `Starting ${downloadBatch.current}/${downloadBatch.total}`
+    : 'Download all';
   return (
     <main className="detail-main">
       <DetailHero
@@ -291,18 +335,32 @@ function SeriesDetail({
             <p className="eyebrow">{data.episodeCount} shown</p>
             <h2>Episodes</h2>
           </div>
-          {data.showSelector && (
-            <select
-              className="season-select"
-              value={data.selectedSeason}
-              onChange={(event) => navigate(`/app/series/${data.key}?season=${event.currentTarget.value}`)}
-              aria-label="Season"
-            >
-              {data.seasonOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          )}
+          <div className="section-actions">
+            {data.showSelector && (
+              <select
+                className="season-select"
+                value={data.selectedSeason}
+                onChange={(event) => navigate(`/app/series/${data.key}?season=${event.currentTarget.value}`)}
+                aria-label="Season"
+              >
+                {data.seasonOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            )}
+            {downloadTargets.length > 0 && (
+              <button
+                type="button"
+                className="secondary-action season-download-all"
+                onClick={handleDownloadAll}
+                disabled={Boolean(downloadBatch)}
+                aria-label="Download all shown episodes"
+              >
+                <DownloadIcon />
+                <span>{downloadButtonLabel}</span>
+              </button>
+            )}
+          </div>
         </div>
         <div className="episode-stack">
           {data.seasonBlocks.map((block) => (
@@ -334,6 +392,19 @@ function SeriesDetail({
                           ))}
                         </div>
                       )}
+                      {entry.rep.downloadHref && (
+                        <div className="episode-card-actions">
+                          <a
+                            className="episode-download-action"
+                            href={entry.rep.downloadHref}
+                            download
+                            aria-label={`Download ${episodeDownloadTitle(entry.rep)}`}
+                          >
+                            <DownloadIcon />
+                            <span>Download</span>
+                          </a>
+                        </div>
+                      )}
                     </div>
                   </article>
                 ))}
@@ -345,6 +416,21 @@ function SeriesDetail({
       <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
     </main>
   );
+}
+
+function episodeDownloadTitle(choice: VideoChoice): string {
+  return [choice.episodeLabel, choice.title].filter(Boolean).join(' ') || 'episode';
+}
+
+function triggerBrowserDownload(href: string) {
+  const anchor = document.createElement('a');
+  anchor.href = href;
+  anchor.download = '';
+  anchor.rel = 'noopener';
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 function EpisodePlaybackState({ progressPct, watched }: { progressPct: number; watched: boolean }) {

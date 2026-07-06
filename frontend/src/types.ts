@@ -220,6 +220,7 @@ export interface VideoChoice extends HubCard {
   playHref: string;
   appHref: string;
   classicHref: string;
+  downloadHref?: string;
   episodeLabel?: string;
   episodeOverview?: string;
   episodeStillUrl?: string;

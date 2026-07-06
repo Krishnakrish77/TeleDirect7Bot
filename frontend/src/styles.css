@@ -905,6 +905,26 @@ img {
   line-height: 1.1;
 }
 
+.section-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.season-download-all {
+  min-height: 38px;
+  padding-inline: 0.8rem;
+  white-space: nowrap;
+}
+
+.season-download-all:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .section-link {
   display: inline-flex;
   align-items: center;
@@ -4914,6 +4934,41 @@ img {
   font-weight: 800;
 }
 
+.episode-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+}
+
+.episode-download-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 30px;
+  padding: 0 0.6rem;
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  border-radius: 6px;
+  background: rgba(20, 184, 166, 0.1);
+  color: #99f6e4;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.episode-download-action:hover,
+.episode-download-action:focus-visible {
+  border-color: rgba(20, 184, 166, 0.62);
+  background: rgba(20, 184, 166, 0.18);
+  color: #fff;
+  outline: none;
+}
+
+.episode-download-action svg {
+  width: 15px;
+  height: 15px;
+}
+
 .track-duration {
   color: var(--dim);
   font-size: 0.78rem;
@@ -8228,6 +8283,21 @@ select.edit-field-input {
   .detail-copy .hero-meta,
   .credit-links {
     display: none;
+  }
+
+  .detail-section .section-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .section-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .section-actions .season-select,
+  .section-actions .season-download-all {
+    flex: 1 1 auto;
   }
 
   .episode-grid {

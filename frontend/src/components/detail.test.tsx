@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, MovieDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
@@ -112,6 +112,7 @@ function makeVideoChoice(overrides: Partial<VideoChoice> = {}): VideoChoice {
     appHref: '/app/watch/kalki',
     classicHref: '/watch/kalki',
     streamHref: '/stream/kalki',
+    downloadHref: '/stream/kalki?download=1',
     watchKey: 'kalki',
     eyebrow: 'Movie',
     badge: '1080p',
@@ -155,6 +156,7 @@ function makeSeries(): SeriesDetailResponse {
     episodeStillUrl: '/thumb/episode-1.jpg',
     playHref: '/app/watch/hash101',
     classicHref: '/watch/hash101',
+    downloadHref: '/hash101?download=1',
   });
   const watched = makeVideoChoice({
     type: 'item',
@@ -166,6 +168,7 @@ function makeSeries(): SeriesDetailResponse {
     episodeStillUrl: '/thumb/episode-2.jpg',
     playHref: '/app/watch/hash102',
     classicHref: '/watch/hash102',
+    downloadHref: '/hash102?download=1',
   });
   return {
     kind: 'series',
@@ -276,6 +279,48 @@ describe('Series detail', () => {
     expect(screen.getByLabelText('Watched')).toBeTruthy();
     expect(screen.getByText('Training Day')).toBeTruthy();
     expect(screen.getByText('Team Up')).toBeTruthy();
+  });
+
+  it('starts visible episode downloads in a staggered batch', () => {
+    vi.useFakeTimers();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    try {
+      render(
+        <DetailPage
+          route={{ kind: 'detail', detailKind: 'series', key: 'ultimate-spiderman' }}
+          data={makeSeries()}
+          loading={false}
+          error=""
+          saved={new Set()}
+          onToggleSaved={vi.fn()}
+          navigate={vi.fn()}
+          playTrack={vi.fn()}
+          togglePlayback={vi.fn()}
+          addToQueue={vi.fn()}
+          shuffleQueue={vi.fn()}
+          player={makePlayer()}
+        />,
+      );
+
+      expect(screen.getByRole('link', { name: 'Download S01E01 Training Day' }).getAttribute('href')).toBe('/hash101?download=1');
+      fireEvent.click(screen.getByRole('button', { name: 'Download all shown episodes' }));
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Download all shown episodes' }).textContent).toBe('Starting 1/2');
+
+      act(() => {
+        vi.advanceTimersByTime(900);
+      });
+      expect(clickSpy).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('button', { name: 'Download all shown episodes' }).textContent).toBe('Starting 2/2');
+
+      act(() => {
+        vi.advanceTimersByTime(1600);
+      });
+      expect(screen.getByRole('button', { name: 'Download all shown episodes' }).textContent).toBe('Download all');
+    } finally {
+      clickSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 
