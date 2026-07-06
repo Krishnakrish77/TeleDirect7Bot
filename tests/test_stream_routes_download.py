@@ -18,7 +18,8 @@ stream_routes = importlib.import_module("main.server.stream_routes")
 
 
 class _FakeClient:
-    pass
+    def __init__(self, name="client"):
+        self.name = name
 
 
 class _FakeFileId:
@@ -31,6 +32,14 @@ class _FakeFileId:
 class _FakeStreamer:
     async def get_file_properties(self, message_id):
         return _FakeFileId()
+
+    async def generate_media_session(self, client, file_id):
+        return object()
+
+
+class _BadSessionStreamer(_FakeStreamer):
+    async def generate_media_session(self, client, file_id):
+        raise MediaSessionUnavailable("auth failed")
 
 
 class _LargeFakeFileId(_FakeFileId):
@@ -74,6 +83,7 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
             patch.object(stream_routes, "multi_clients", {0: client}),
             patch.object(stream_routes, "work_loads", {0: 0}),
             patch.object(stream_routes, "class_cache", {client: _FakeStreamer()}),
+            patch.object(stream_routes, "_client_cooldowns", {}),
         ):
             return await stream_routes.media_streamer(request, 42, "abc")
 
@@ -85,6 +95,7 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
             patch.object(stream_routes, "class_cache", {client: _UnavailableStreamer()}),
             patch.object(stream_routes, "_total_active", 0),
             patch.object(stream_routes, "_ip_active", {}),
+            patch.object(stream_routes, "_client_cooldowns", {}),
         ):
             with self.assertRaises(web.HTTPServiceUnavailable) as ctx:
                 await stream_routes.media_streamer(
@@ -97,6 +108,88 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.headers["Retry-After"], "5")
         self.assertEqual(stream_routes._total_active, 0)
         self.assertEqual(stream_routes._ip_active, {})
+
+    async def test_direct_stream_falls_back_to_second_client(self):
+        bad_client = _FakeClient("bad")
+        good_client = _FakeClient("good")
+        large_file = _LargeFakeFileId()
+        large_file.file_size = (
+            stream_routes.skeleton_cache.HEAD_SIZE
+            + stream_routes.skeleton_cache.TAIL_SIZE
+            + 4096
+        )
+
+        class GoodStreamer(_FakeStreamer):
+            async def get_file_properties(self, message_id):
+                return large_file
+
+            async def yield_file(self, *args):
+                yield b"x"
+
+        class BadStreamer(_BadSessionStreamer):
+            async def get_file_properties(self, message_id):
+                return large_file
+
+        request = _FakeRequest(
+            method="GET",
+            headers={"Range": "bytes=2100000-2100000"},
+            http_range=slice(2100000, 2100001, 1),
+            query={"download": "1"},
+        )
+        cooldowns = {}
+        with (
+            patch.object(stream_routes, "multi_clients", {0: bad_client, 1: good_client}),
+            patch.object(stream_routes, "work_loads", {0: 0, 1: 1}),
+            patch.object(
+                stream_routes,
+                "class_cache",
+                {bad_client: BadStreamer(), good_client: GoodStreamer()},
+            ),
+            patch.object(stream_routes, "_total_active", 0),
+            patch.object(stream_routes, "_ip_active", {}),
+            patch.object(stream_routes, "_client_cooldowns", cooldowns),
+        ):
+            response = await stream_routes.media_streamer(request, 42, "abc")
+
+        self.assertEqual(response.status, 206)
+        self.assertIn(0, cooldowns)
+        self.assertNotIn(1, cooldowns)
+
+    async def test_skeleton_fetch_falls_back_to_second_client(self):
+        bad_client = _FakeClient("bad")
+        good_client = _FakeClient("good")
+        calls = []
+        cooldowns = {}
+
+        async def fake_tail(message_id, file_size, tg_connect, file_id, index):
+            calls.append(index)
+            if index == 0:
+                raise stream_routes.skeleton_cache.SkeletonFetchError("bad client")
+            return b"abcdef"
+
+        with (
+            patch.object(stream_routes, "multi_clients", {0: bad_client, 1: good_client}),
+            patch.object(stream_routes, "work_loads", {0: 0, 1: 0}),
+            patch.object(
+                stream_routes,
+                "class_cache",
+                {bad_client: _FakeStreamer(), good_client: _FakeStreamer()},
+            ),
+            patch.object(stream_routes, "_client_cooldowns", cooldowns),
+            patch.object(stream_routes.skeleton_cache, "get_or_fetch_tail", fake_tail),
+        ):
+            body = await stream_routes._fetch_skeleton_with_fallback(
+                "tail",
+                42,
+                "abc",
+                1000,
+                0,
+            )
+
+        self.assertEqual(body, b"abcdef")
+        self.assertEqual(calls, [0, 1])
+        self.assertIn(0, cooldowns)
+        self.assertNotIn(1, cooldowns)
 
     async def test_download_head_forces_attachment_and_escapes_filename(self):
         response = await self._call_media_streamer(

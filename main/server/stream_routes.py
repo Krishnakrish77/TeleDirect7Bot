@@ -31,8 +31,10 @@ routes = web.RouteTableDef()
 # (served from memory) are free and not subject to these limits.
 _MAX_STREAMS_TOTAL = int(os.environ.get("MAX_STREAMS_TOTAL", "25"))
 _MAX_STREAMS_PER_IP = int(os.environ.get("MAX_STREAMS_PER_IP", "8"))
+_CLIENT_COOLDOWN_SECONDS = float(os.environ.get("STREAM_CLIENT_COOLDOWN_SECONDS", "30"))
 _total_active: int = 0
 _ip_active: dict = {}   # ip → concurrent stream count
+_client_cooldowns: dict[int, float] = {}
 
 
 _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
@@ -361,28 +363,148 @@ async def stream_handler(request: web.Request):
 
 class_cache = weakref.WeakKeyDictionary()
 
-async def media_streamer(request: web.Request, message_id: int, secure_hash: str):
-    global _total_active   # declared here so it's valid for the increment below
-    index = min(work_loads, key=work_loads.get)
-    faster_client = multi_clients[index]
 
-    if Var.MULTI_CLIENT:
-        logging.info(f"Client {index} is now serving {request.remote}")
+def _client_indexes(preferred: int | None = None) -> list[int]:
+    now = time.time()
+    active = []
+    cooled = []
+    for index in sorted(multi_clients):
+        until = _client_cooldowns.get(index, 0)
+        if until <= now:
+            _client_cooldowns.pop(index, None)
+            active.append(index)
+        else:
+            cooled.append(index)
+    pool = active or cooled
+    pool.sort(key=lambda idx: (work_loads.get(idx, 0), idx))
+    if preferred in pool:
+        pool.remove(preferred)
+        pool.insert(0, preferred)
+    return pool
 
-    if faster_client in class_cache:
-        tg_connect = class_cache[faster_client]
+
+def _mark_client_cooldown(index: int, reason: str) -> None:
+    if _CLIENT_COOLDOWN_SECONDS <= 0:
+        return
+    _client_cooldowns[index] = time.time() + _CLIENT_COOLDOWN_SECONDS
+    logging.warning(
+        "stream client %s on cooldown for %.1fs: %s",
+        index,
+        _CLIENT_COOLDOWN_SECONDS,
+        reason,
+    )
+
+
+def _streamer_for_index(index: int):
+    client = multi_clients[index]
+    if client in class_cache:
+        tg_connect = class_cache[client]
         logging.debug(f"Using cached ByteStreamer object for client {index}")
     else:
         logging.debug(f"Creating new ByteStreamer object for client {index}")
-        tg_connect = utils.ByteStreamer(faster_client)
-        class_cache[faster_client] = tg_connect
-    file_id = await tg_connect.get_file_properties(message_id)
+        tg_connect = utils.ByteStreamer(client)
+        class_cache[client] = tg_connect
+    return client, tg_connect
 
+
+async def _file_for_index(index: int, message_id: int, secure_hash: str):
+    client, tg_connect = _streamer_for_index(index)
+    file_id = await tg_connect.get_file_properties(message_id)
     if not secure_hash or not _hmac.compare_digest(
         file_id.unique_id[:len(secure_hash)], secure_hash
     ):
         logging.debug(f"Invalid hash for message with ID {message_id}")
         raise InvalidHash
+    return client, tg_connect, file_id
+
+
+async def _resolve_file(message_id: int, secure_hash: str):
+    last_missing = None
+    for index in _client_indexes():
+        try:
+            client, tg_connect, file_id = await _file_for_index(index, message_id, secure_hash)
+            return index, client, tg_connect, file_id
+        except FIleNotFound as exc:
+            last_missing = exc
+            logging.warning("client %s cannot resolve msg %d", index, message_id)
+    if last_missing is not None:
+        raise last_missing
+    raise FIleNotFound
+
+
+async def _choose_stream_client(
+    message_id: int,
+    secure_hash: str,
+    *,
+    preferred_index: int,
+):
+    last_exc = None
+    for candidate_index in _client_indexes(preferred_index):
+        try:
+            client, tg_connect, file_id = await _file_for_index(
+                candidate_index,
+                message_id,
+                secure_hash,
+            )
+            await tg_connect.generate_media_session(client, file_id)
+            if candidate_index != preferred_index:
+                logging.info(
+                    "stream fallback selected client %s for msg %d after client %s",
+                    candidate_index,
+                    message_id,
+                    preferred_index,
+                )
+            return candidate_index, client, tg_connect, file_id
+        except MediaSessionUnavailable as exc:
+            last_exc = exc
+            _mark_client_cooldown(candidate_index, str(exc))
+        except FIleNotFound:
+            logging.warning("fallback client %s cannot resolve msg %d", candidate_index, message_id)
+    raise MediaSessionUnavailable("all stream clients failed") from last_exc
+
+
+async def _fetch_skeleton_with_fallback(
+    kind: str,
+    message_id: int,
+    secure_hash: str,
+    file_size: int,
+    preferred_index: int,
+):
+    last_exc = None
+    for candidate_index in _client_indexes(preferred_index):
+        try:
+            _, tg_connect, file_id = await _file_for_index(
+                candidate_index,
+                message_id,
+                secure_hash,
+            )
+            if kind == "head":
+                return await skeleton_cache.get_or_fetch_head(
+                    message_id, file_size, tg_connect, file_id, candidate_index
+                )
+            return await skeleton_cache.get_or_fetch_tail(
+                message_id, file_size, tg_connect, file_id, candidate_index
+            )
+        except (MediaSessionUnavailable, skeleton_cache.SkeletonFetchError) as exc:
+            last_exc = exc
+            _mark_client_cooldown(candidate_index, f"skeleton {kind}: {exc}")
+        except FIleNotFound:
+            logging.warning(
+                "fallback client %s cannot resolve msg %d for skeleton %s",
+                candidate_index,
+                message_id,
+                kind,
+            )
+    if isinstance(last_exc, skeleton_cache.SkeletonFetchError):
+        raise last_exc
+    raise MediaSessionUnavailable(f"all stream clients failed fetching skeleton {kind}") from last_exc
+
+async def media_streamer(request: web.Request, message_id: int, secure_hash: str):
+    global _total_active   # declared here so it's valid for the increment below
+    index, faster_client, tg_connect, file_id = await _resolve_file(message_id, secure_hash)
+
+    if Var.MULTI_CLIENT:
+        logging.info(f"Client {index} is now serving {request.remote}")
 
     file_size = file_id.file_size
 
@@ -475,21 +597,35 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         if until_bytes <= skeleton_cache.head_limit(file_size):
             cached_body = skeleton_cache.serve_head(message_id, from_bytes, until_bytes)
             if cached_body is None:
-                head = await skeleton_cache.get_or_fetch_head(
-                    message_id, file_size, tg_connect, file_id, index
+                head = await _fetch_skeleton_with_fallback(
+                    "head",
+                    message_id,
+                    secure_hash,
+                    file_size,
+                    index,
                 )
                 cached_body = head[from_bytes : until_bytes + 1]
         elif from_bytes >= skeleton_cache.tail_floor(file_size):
             cached_body = skeleton_cache.serve_tail(message_id, from_bytes, until_bytes)
             if cached_body is None:
-                tail = await skeleton_cache.get_or_fetch_tail(
-                    message_id, file_size, tg_connect, file_id, index
+                tail = await _fetch_skeleton_with_fallback(
+                    "tail",
+                    message_id,
+                    secure_hash,
+                    file_size,
+                    index,
                 )
                 t_start = file_size - len(tail)
                 cached_body = tail[from_bytes - t_start : until_bytes - t_start + 1]
     except skeleton_cache.SkeletonFetchError as exc:
         logging.warning("skeleton fetch failed for msg %d: %s", message_id, exc)
         raise web.HTTPServiceUnavailable(text="skeleton fetch incomplete; retry")
+    except MediaSessionUnavailable as exc:
+        logging.warning("skeleton fetch has no available client for msg %d: %s", message_id, exc)
+        raise web.HTTPServiceUnavailable(
+            text="media session unavailable; retry",
+            headers={"Retry-After": "5"},
+        )
 
     if cached_body is not None:
         status = 206 if range_header else 200
@@ -516,12 +652,22 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         file_size=file_size,
     ):
         try:
-            head = await skeleton_cache.get_or_fetch_head(
-                message_id, file_size, tg_connect, file_id, index
+            head = await _fetch_skeleton_with_fallback(
+                "head",
+                message_id,
+                secure_hash,
+                file_size,
+                index,
             )
         except skeleton_cache.SkeletonFetchError as exc:
             logging.warning("skeleton head fetch failed for msg %d: %s", message_id, exc)
             raise web.HTTPServiceUnavailable(text="skeleton fetch incomplete; retry")
+        except MediaSessionUnavailable as exc:
+            logging.warning("skeleton head has no available client for msg %d: %s", message_id, exc)
+            raise web.HTTPServiceUnavailable(
+                text="media session unavailable; retry",
+                headers={"Retry-After": "5"},
+            )
         head_end = len(head) - 1
         return web.Response(
             status=206,
@@ -554,7 +700,11 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     if not is_loopback:
         _ip_active[client_ip] = _ip_active.get(client_ip, 0) + 1
     try:
-        await tg_connect.generate_media_session(faster_client, file_id)
+        index, faster_client, tg_connect, file_id = await _choose_stream_client(
+            message_id,
+            secure_hash,
+            preferred_index=index,
+        )
     except MediaSessionUnavailable as exc:
         _release_stream_slot(client_ip)
         logging.warning(
