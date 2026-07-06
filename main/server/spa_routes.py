@@ -32,7 +32,7 @@ from main.utils import thumb_cache
 from main.utils import trending
 from main.utils import wh_store
 from main.utils.codec_probe import _clean_music_tag
-from main.utils.download_urls import as_download_url
+from main.utils.download_urls import as_download_url, is_download_query
 from main.utils.hub_query import AlbumGroup, HubItem, MovieGroup, SeriesGroup
 from main.utils.human_readable import humanbytes
 from main.utils.playback import should_offer_hls_for_video
@@ -1924,6 +1924,20 @@ def _app_index_response() -> web.Response:
     )
 
 
+def _app_download_redirect(request: web.Request) -> web.HTTPFound | None:
+    if not is_download_query(request.rel_url.query):
+        return None
+    tail = request.match_info.get("tail", "")
+    if not tail.startswith("watch/"):
+        return None
+    key = tail.removeprefix("watch/").split("/", 1)[0]
+    if _parse_watch_key(key) is None:
+        return None
+    query = dict(request.rel_url.query)
+    query["download"] = "1"
+    return web.HTTPFound(f"/{key}?{urlencode(query)}")
+
+
 @routes.get("/app")
 async def spa_app(_request: web.Request) -> web.Response:
     return _app_index_response()
@@ -1933,4 +1947,7 @@ async def spa_app(_request: web.Request) -> web.Response:
 async def spa_app_fallback(request: web.Request) -> web.Response:
     if not _APP_ROUTE_RE.match(request.path):
         raise web.HTTPNotFound()
+    download_redirect = _app_download_redirect(request)
+    if download_redirect is not None:
+        return download_redirect
     return _app_index_response()

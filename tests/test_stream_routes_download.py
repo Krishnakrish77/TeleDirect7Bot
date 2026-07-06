@@ -62,12 +62,15 @@ class _FakeRequest:
         headers=None,
         http_range=slice(None, None, 1),
         query=None,
+        path="abc42",
     ):
         self.method = method
         self.headers = headers or {}
         self._http_range = http_range
         self.rel_url = SimpleNamespace(query=query or {})
         self.remote = "127.0.0.1"
+        self.match_info = {"path": path}
+        self.cookies = {}
 
     @property
     def http_range(self):
@@ -212,6 +215,22 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status, 200)
         self.assertTrue(response.headers["Content-Disposition"].startswith("inline;"))
+
+    async def test_classic_watch_download_query_streams_attachment(self):
+        client = _FakeClient()
+        with (
+            patch.object(stream_routes, "multi_clients", {0: client}),
+            patch.object(stream_routes, "work_loads", {0: 0}),
+            patch.object(stream_routes, "class_cache", {client: _FakeStreamer()}),
+            patch.object(stream_routes, "_client_cooldowns", {}),
+        ):
+            response = await stream_routes.watch_handler(
+                _FakeRequest(query={"download": "1"}, path="abc42")
+            )
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers["Content-Length"], "1000")
+        self.assertTrue(response.headers["Content-Disposition"].startswith("attachment;"))
 
     async def test_suffix_range_is_normalised_before_headers(self):
         response = await self._call_media_streamer(

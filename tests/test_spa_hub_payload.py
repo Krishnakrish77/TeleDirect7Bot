@@ -1,5 +1,6 @@
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -8,10 +9,51 @@ os.environ.setdefault("API_HASH", "test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
-from main.server.spa_routes import _budget_home_shelves, _compact_hub_card_payload, _home_shelf_limit
+from main.server.spa_routes import (
+    _app_download_redirect,
+    _budget_home_shelves,
+    _compact_hub_card_payload,
+    _home_shelf_limit,
+)
 
 
 class SpaHubPayloadTest(unittest.TestCase):
+    def test_app_watch_download_redirects_to_raw_stream(self):
+        request = SimpleNamespace(
+            rel_url=SimpleNamespace(query={"download": "1"}),
+            match_info={"tail": "watch/AgADPSEAAoYXqFU2930"},
+        )
+
+        redirect = _app_download_redirect(request)
+
+        self.assertIsNotNone(redirect)
+        self.assertEqual(redirect.status, 302)
+        self.assertEqual(
+            redirect.headers["Location"],
+            "/AgADPSEAAoYXqFU2930?download=1",
+        )
+
+    def test_app_watch_download_redirect_preserves_query_params(self):
+        request = SimpleNamespace(
+            rel_url=SimpleNamespace(query={"download": "yes", "vt": "abc"}),
+            match_info={"tail": "watch/AgADPSEAAoYXqFU2930"},
+        )
+
+        redirect = _app_download_redirect(request)
+
+        self.assertIsNotNone(redirect)
+        self.assertIn("/AgADPSEAAoYXqFU2930?", redirect.headers["Location"])
+        self.assertIn("download=1", redirect.headers["Location"])
+        self.assertIn("vt=abc", redirect.headers["Location"])
+
+    def test_app_download_redirect_ignores_non_watch_paths(self):
+        request = SimpleNamespace(
+            rel_url=SimpleNamespace(query={"download": "1"}),
+            match_info={"tail": "series/castle"},
+        )
+
+        self.assertIsNone(_app_download_redirect(request))
+
     def test_compact_hub_card_keeps_renderer_fields_only(self):
         payload = {
             "type": "movie",
