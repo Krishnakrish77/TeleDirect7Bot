@@ -310,8 +310,34 @@ describe('WatchPage video player', () => {
 
     fireEvent.ended(view.container.querySelector('video') as HTMLVideoElement);
 
-    expect(await screen.findByText('Next episode')).toBeTruthy();
-    expect(screen.getByText('Up next - 5s')).toBeTruthy();
+    const panel = await screen.findByRole('dialog', { name: 'Next episode' });
+    expect(within(panel).getByText('Playing next in 8s')).toBeTruthy();
+    expect(within(panel).getAllByText('S01E02')).toHaveLength(2);
+    expect(within(panel).getByRole('timer', { name: '8 seconds until next episode' })).toBeTruthy();
+    expect(within(panel).getByRole('button', { name: 'Play now' })).toBeTruthy();
+  });
+
+  it('lets users pause autoplay and replay from the next episode panel', async () => {
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    video.currentTime = 120;
+
+    fireEvent.ended(video);
+    const panel = await screen.findByRole('dialog', { name: 'Next episode' });
+
+    fireEvent.click(within(panel).getByRole('checkbox', { name: 'Autoplay' }));
+
+    await waitFor(() => expect(localStorage.getItem('td:videoAutoplay')).toBe('0'));
+    expect(within(panel).getByText('Up next')).toBeTruthy();
+    expect(within(panel).getByRole('timer', { name: 'Autoplay paused' })).toBeTruthy();
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Replay' }));
+
+    expect(video.currentTime).toBe(0);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: 'Next episode' })).toBeNull();
   });
 
   it('hides HLS-only controls when the API omits an HLS source', async () => {

@@ -1,4 +1,4 @@
-import { DragEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, DragEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { deleteContinueEntry, fetchAudioTracks, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
 import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
 import { formatClock, RESTORE_AUDIO_MEDIA_SESSION_EVENT, type AudioPlayerHandle, type PlayerState } from '../hooks/audio';
@@ -20,6 +20,9 @@ function isWatchVideo(item: WatchResponse['item']): item is WatchVideo {
 }
 
 export const STILL_WATCHING_TIMEOUT_MS = 45 * 60 * 1000;
+const NEXT_EPISODE_COUNTDOWN_SECONDS = 8;
+
+type NextEpisode = NonNullable<WatchVideo['nextEpisode']>;
 
 function isVideoChromeTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest(
@@ -100,6 +103,74 @@ function VideoInfoSection({ video }: { video: WatchVideo }) {
         </dl>
       )}
     </section>
+  );
+}
+
+function nextEpisodeLabel(nextEpisode: NextEpisode): string {
+  if (typeof nextEpisode.season === 'number' && typeof nextEpisode.episode === 'number') {
+    return `S${String(nextEpisode.season).padStart(2, '0')}E${String(nextEpisode.episode).padStart(2, '0')}`;
+  }
+  if (typeof nextEpisode.episode === 'number') return `Episode ${nextEpisode.episode}`;
+  return '';
+}
+
+function NextEpisodePanel({
+  nextEpisode,
+  autoplay,
+  countdown,
+  onPlay,
+  onReplay,
+  onDismiss,
+  onToggleAutoplay,
+}: {
+  nextEpisode: NextEpisode;
+  autoplay: boolean;
+  countdown: number;
+  onPlay: () => void;
+  onReplay: () => void;
+  onDismiss: () => void;
+  onToggleAutoplay: () => void;
+}) {
+  const label = nextEpisodeLabel(nextEpisode);
+  const safeCountdown = Math.max(0, Math.min(NEXT_EPISODE_COUNTDOWN_SECONDS, countdown));
+  const progress = autoplay ? Math.round((safeCountdown / NEXT_EPISODE_COUNTDOWN_SECONDS) * 100) : 0;
+  return (
+    <div className="next-episode-card" role="dialog" aria-labelledby="next-episode-title">
+      <div className="next-episode-art">
+        <img src={nextEpisode.posterUrl} alt="" decoding="async" />
+        {label && <span>{label}</span>}
+      </div>
+      <div className="next-episode-copy">
+        <p className="eyebrow">{autoplay ? `Playing next in ${safeCountdown}s` : 'Up next'}</p>
+        <strong id="next-episode-title" dir="auto">{nextEpisode.title}</strong>
+        {label && <span>{label}</span>}
+        <div className="next-episode-actions">
+          <button type="button" className="primary-action" onClick={onPlay}>
+            <PlayIcon />
+            <span>Play now</span>
+          </button>
+          <button type="button" className="secondary-action" onClick={onReplay}>
+            <SkipBackIcon />
+            <span>Replay</span>
+          </button>
+          <button type="button" className="secondary-action" onClick={onDismiss}>Stay here</button>
+        </div>
+      </div>
+      <div className="next-episode-side">
+        <div
+          className={autoplay ? 'next-countdown active' : 'next-countdown'}
+          role="timer"
+          aria-label={autoplay ? `${safeCountdown} seconds until next episode` : 'Autoplay paused'}
+          style={{ '--next-progress': `${progress}%` } as CSSProperties}
+        >
+          {autoplay ? <span>{safeCountdown}</span> : <PlayIcon />}
+        </div>
+        <label className="next-autoplay-toggle">
+          <input type="checkbox" checked={autoplay} onChange={onToggleAutoplay} />
+          <span>Autoplay</span>
+        </label>
+      </div>
+    </div>
   );
 }
 
@@ -1006,7 +1077,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
 
   useEffect(() => {
     if (!showNext || !video.nextEpisode || !autoplayNext) return;
-    setNextCountdown(5);
+    setNextCountdown(NEXT_EPISODE_COUNTDOWN_SECONDS);
     const interval = window.setInterval(() => {
       setNextCountdown((current) => {
         if (current <= 1) {
@@ -1068,6 +1139,12 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     seekVideo(base + delta);
     showToast(delta > 0 ? '+10s' : '-10s');
   }, [currentTime, seekVideo, showToast]);
+
+  const replayCurrentVideo = useCallback(() => {
+    setShowNext(false);
+    seekVideo(0);
+    playVideo();
+  }, [playVideo, seekVideo]);
 
   const togglePip = useCallback(() => {
     const el = videoRef.current as (HTMLVideoElement & {
@@ -1504,17 +1581,15 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         )}
 
         {showNext && video.nextEpisode && (
-          <div className="next-episode-card">
-            <p className="eyebrow">{autoplayNext ? `Up next - ${nextCountdown}s` : 'Up next'}</p>
-            <strong>{video.nextEpisode.title}</strong>
-            <div>
-              <a className="primary-action" href={video.nextEpisode.playHref}>
-                <PlayIcon />
-                <span>Play</span>
-              </a>
-              <button type="button" className="secondary-action" onClick={() => setShowNext(false)}>Cancel</button>
-            </div>
-          </div>
+          <NextEpisodePanel
+            nextEpisode={video.nextEpisode}
+            autoplay={autoplayNext}
+            countdown={nextCountdown}
+            onPlay={playNextEpisode}
+            onReplay={replayCurrentVideo}
+            onDismiss={() => setShowNext(false)}
+            onToggleAutoplay={() => setAutoplayNext((enabled) => !enabled)}
+          />
         )}
 
         <div className="video-controls">

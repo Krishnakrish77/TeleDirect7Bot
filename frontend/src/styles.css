@@ -6391,21 +6391,124 @@ img {
   bottom: 5.3rem;
   z-index: 7;
   display: grid;
-  gap: 0.7rem;
-  width: min(20rem, calc(100% - 2rem));
-  padding: 1rem;
+  grid-template-columns: 118px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+  width: min(39rem, calc(100% - 2rem));
+  min-height: 150px;
+  padding: 0.85rem;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
-  background: rgba(17, 19, 23, 0.96);
+  background: rgba(10, 12, 15, 0.96);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.42);
+}
+
+.next-episode-art {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border-radius: 7px;
+  background: var(--panel-strong);
+}
+
+.next-episode-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.next-episode-art span {
+  position: absolute;
+  left: 0.45rem;
+  bottom: 0.45rem;
+  display: inline-flex;
+  min-height: 22px;
+  padding: 0.25rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.next-episode-copy {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
 }
 
 .next-episode-card strong {
+  display: -webkit-box;
+  overflow: hidden;
   color: #fff;
+  font-size: 1.05rem;
+  line-height: 1.18;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.next-episode-card div {
+.next-episode-copy > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.next-episode-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.55rem;
+  margin-top: 0.35rem;
+}
+
+.next-episode-actions .primary-action,
+.next-episode-actions .secondary-action {
+  min-height: 38px;
+  padding-inline: 0.8rem;
+}
+
+.next-episode-side {
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+}
+
+.next-countdown {
+  --next-progress: 0%;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, #0b0c0e 0%, #0b0c0e 58%, transparent 60%),
+    conic-gradient(#fdba74 var(--next-progress), rgba(255, 255, 255, 0.16) 0);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.next-countdown svg {
+  width: 19px;
+  height: 19px;
+  color: #fdba74;
+}
+
+.next-autoplay-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-height: 30px;
+  color: #cbd5e1;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.next-autoplay-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand);
 }
 
 .gesture-toast {
@@ -8657,8 +8760,34 @@ select.edit-field-input {
   }
 
   .next-episode-card {
-    width: min(18rem, calc(100% - 1.1rem));
+    grid-template-columns: 84px minmax(0, 1fr);
+    width: min(26rem, calc(100% - 1.1rem));
+    min-height: 0;
     padding: 0.75rem;
+  }
+
+  .next-episode-side {
+    grid-column: 1 / -1;
+    grid-template-columns: auto minmax(0, 1fr);
+    justify-items: start;
+    width: 100%;
+  }
+
+  .next-countdown {
+    width: 44px;
+    height: 44px;
+    font-size: 0.86rem;
+  }
+
+  .next-episode-actions {
+    gap: 0.38rem;
+  }
+
+  .next-episode-actions .primary-action,
+  .next-episode-actions .secondary-action {
+    min-height: 34px;
+    padding-inline: 0.58rem;
+    font-size: 0.8rem;
   }
 
   .audio-watch {
