@@ -529,25 +529,6 @@ img {
   outline: none;
 }
 
-.install-ios-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-height: 40px;
-  padding: 0 0.78rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: #fdba74;
-  font-size: 0.84rem;
-  font-weight: 850;
-  white-space: nowrap;
-}
-
-.install-ios-hint svg {
-  width: 16px;
-  height: 16px;
-}
-
 .hero-stage {
   position: relative;
   height: clamp(500px, 64svh, 680px);
@@ -1303,6 +1284,7 @@ img {
 .preview-button svg {
   width: 16px;
   height: 16px;
+  transform: translateX(1px);
 }
 
 .save-button.saved,
@@ -7778,8 +7760,7 @@ select.edit-field-input {
     width: 100%;
   }
 
-  .install-prompt-primary,
-  .install-ios-hint {
+  .install-prompt-primary {
     flex: 1 1 auto;
   }
 

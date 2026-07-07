@@ -522,7 +522,7 @@ _MANIFEST_JSON = json.dumps({
     "name": "TeleDirect",
     "short_name": "TeleDirect",
     "description": "Your personal media streaming hub",
-    "id": "/app",
+    "id": "/",
     "start_url": "/app",
     "scope": "/",
     "display": "standalone",
@@ -593,11 +593,65 @@ async def favicon(_request: web.Request) -> web.Response:
     )
 
 
+def _load_react_app_shell_assets(manifest_path: Path | None = None) -> list[str]:
+    manifest_path = manifest_path or Path(__file__).resolve().parent / "static" / "app" / ".vite" / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (OSError, ValueError, TypeError):
+        return []
+
+    entry = manifest.get("index.html")
+    if not isinstance(entry, dict):
+        return []
+
+    assets: list[str] = []
+
+    def add_asset(value: object) -> None:
+        if not isinstance(value, str) or not value:
+            return
+        asset = value if value.startswith("/") else f"/static/app/{value.lstrip('/')}"
+        if asset not in assets:
+            assets.append(asset)
+
+    visited: set[str] = set()
+
+    def add_chunk(chunk_key: str) -> None:
+        if chunk_key in visited:
+            return
+        visited.add(chunk_key)
+        chunk = manifest.get(chunk_key)
+        if not isinstance(chunk, dict):
+            return
+        add_asset(chunk.get("file"))
+        css_assets = chunk.get("css")
+        if isinstance(css_assets, list):
+            for asset in css_assets:
+                add_asset(asset)
+        for relation in ("imports", "dynamicImports"):
+            related = chunk.get(relation)
+            if isinstance(related, list):
+                for related_key in related:
+                    if isinstance(related_key, str):
+                        add_chunk(related_key)
+
+    add_chunk("index.html")
+    return assets
+
+
+_SW_SHELL = [
+    "/",
+    "/app",
+    "/static/tailwind.css",
+    "/favicon.svg",
+    *_load_react_app_shell_assets(),
+]
+
+
 _SW_JS = """\
 /* TeleDirect service worker — network-first for navigation,
    cache-first for static assets, network-only for streams/API. */
 const CACHE = 'td-v4';
-const SHELL = ['/', '/app', '/static/tailwind.css', '/favicon.svg'];
+const SHELL = __SHELL__;
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -657,11 +711,14 @@ self.addEventListener('fetch', e => {
   // Navigation — network-first, cached shell fallback
   if (e.request.mode === 'navigate') {
     e.respondWith(
-      fetch(e.request).catch(() => caches.match('/').then(r => r || fetch(e.request)))
+      fetch(e.request).catch(() => {
+        const shell = url.pathname === '/app' || url.pathname.startsWith('/app/') ? '/app' : '/';
+        return caches.match(shell).then(r => r || fetch(e.request));
+      })
     );
   }
 });
-"""
+""".replace("__SHELL__", json.dumps(_SW_SHELL, separators=(",", ":")))
 
 
 @routes.get("/sw.js")

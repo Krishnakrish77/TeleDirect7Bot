@@ -146,12 +146,7 @@ export function InstallPrompt() {
             <DownloadIcon />
             Install
           </button>
-        ) : (
-          <span className="install-ios-hint">
-            <ShareIcon />
-            Add to Home Screen
-          </span>
-        )}
+        ) : null}
         <button type="button" className="icon-button" aria-label="Dismiss install prompt" onClick={dismiss}>
           <XIcon />
         </button>
