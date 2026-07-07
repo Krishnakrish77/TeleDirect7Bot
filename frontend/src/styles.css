@@ -447,6 +447,107 @@ img {
   padding: 0 clamp(1rem, 3vw, 2rem);
 }
 
+.install-prompt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  width: min(100% - 2rem, 980px);
+  margin: 0.85rem auto 0;
+  padding: 0.75rem;
+  border: 1px solid rgba(249, 115, 22, 0.28);
+  border-radius: 8px;
+  background: rgba(21, 23, 26, 0.96);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.26);
+}
+
+.install-prompt-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: rgba(249, 115, 22, 0.16);
+  color: #fdba74;
+}
+
+.install-prompt-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.install-prompt-copy {
+  min-width: 0;
+}
+
+.install-prompt-copy strong,
+.install-prompt-copy span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.install-prompt-copy strong {
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.install-prompt-copy span {
+  margin-top: 0.12rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.install-prompt-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.install-prompt-primary {
+  min-height: 40px;
+  padding: 0 0.85rem;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.install-prompt-primary svg {
+  width: 17px;
+  height: 17px;
+}
+
+.install-prompt-primary:hover,
+.install-prompt-primary:focus-visible {
+  background: #fb923c;
+  outline: none;
+}
+
+.install-ios-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0 0.78rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #fdba74;
+  font-size: 0.84rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.install-ios-hint svg {
+  width: 16px;
+  height: 16px;
+}
+
 .hero-stage {
   position: relative;
   height: clamp(500px, 64svh, 680px);
@@ -7612,6 +7713,17 @@ select.edit-field-input {
     outline: none;
   }
 
+  .install-prompt {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    width: calc(100% - 1.5rem);
+    margin-top: 0.75rem;
+    padding: 0.65rem;
+  }
+
+  .install-prompt-copy strong {
+    white-space: normal;
+  }
+
 }
 
 @media (max-width: 860px) {
@@ -7655,6 +7767,20 @@ select.edit-field-input {
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
     align-items: start;
+  }
+
+  .install-prompt {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .install-prompt-actions {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .install-prompt-primary,
+  .install-ios-hint {
+    flex: 1 1 auto;
   }
 
   .audio-art,

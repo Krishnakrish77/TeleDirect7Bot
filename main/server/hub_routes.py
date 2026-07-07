@@ -521,9 +521,9 @@ _ICON_VER = _hashlib.md5(_ICON_192).hexdigest()[:8]
 _MANIFEST_JSON = json.dumps({
     "name": "TeleDirect",
     "short_name": "TeleDirect",
-    "description": "Your personal media streaming library",
-    "id": "/",
-    "start_url": "/",
+    "description": "Your personal media streaming hub",
+    "id": "/app",
+    "start_url": "/app",
     "scope": "/",
     "display": "standalone",
     # orientation intentionally omitted: "any" ignores system portrait lock
@@ -596,8 +596,8 @@ async def favicon(_request: web.Request) -> web.Response:
 _SW_JS = """\
 /* TeleDirect service worker — network-first for navigation,
    cache-first for static assets, network-only for streams/API. */
-const CACHE = 'td-v3';
-const SHELL = ['/', '/static/tailwind.css', '/favicon.svg'];
+const CACHE = 'td-v4';
+const SHELL = ['/', '/app', '/static/tailwind.css', '/favicon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -620,12 +620,11 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
-  // Never cache: stream URLs, API, auth, admin, watch pages
+  // Never cache: stream URLs, API, auth, admin, classic watch pages.
+  // React app routes and hashed Vite assets remain cache candidates so the
+  // installed app has a shell fallback without caching media responses.
   if (
     /^\\/[A-Za-z0-9_-]*[A-Za-z_-]\\d+$/.test(url.pathname) ||
-    url.pathname === '/app' ||
-    url.pathname.startsWith('/app/') ||
-    url.pathname.startsWith('/static/app/') ||
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/auth/') ||
     url.pathname.startsWith('/admin') ||

@@ -11,6 +11,7 @@ import { HeroStage, ContinueWatching, RecommendationTeaser, ShelfRow, GridView, 
 import { MiniPlayer, NowPlayingSheet } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
 import { QueueDrawer } from './components/queueDrawer';
+import { InstallPrompt } from './components/installPrompt';
 import type { HubCard, HubFilters, RecommendationMeta, WatchTrack } from './types';
 
 const loadDetailPage = () => import('./components/detail');
@@ -311,6 +312,7 @@ function App() {
         activeView={activeView}
         activeSection={activeSection}
       />
+      <InstallPrompt />
 
       <Suspense fallback={<RouteFallback />}>
         {isHubRoute ? (
