@@ -281,7 +281,7 @@ describe('Series detail', () => {
     expect(screen.getByText('Team Up')).toBeTruthy();
   });
 
-  it('starts visible episode downloads in a staggered batch', () => {
+  it('starts visible episode downloads in one user-triggered batch', () => {
     vi.useFakeTimers();
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     try {
@@ -304,12 +304,6 @@ describe('Series detail', () => {
 
       expect(screen.getByRole('link', { name: 'Download S01E01 Training Day' }).getAttribute('href')).toBe('/hash101?download=1');
       fireEvent.click(screen.getByRole('button', { name: 'Download all shown episodes' }));
-      expect(clickSpy).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole('button', { name: 'Download all shown episodes' }).textContent).toBe('Starting 1/2');
-
-      act(() => {
-        vi.advanceTimersByTime(900);
-      });
       expect(clickSpy).toHaveBeenCalledTimes(2);
       expect(screen.getByRole('button', { name: 'Download all shown episodes' }).textContent).toBe('Starting 2/2');
 

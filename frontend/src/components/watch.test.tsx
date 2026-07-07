@@ -314,7 +314,7 @@ describe('WatchPage video player', () => {
     expect(within(panel).getByText('Playing next in 8s')).toBeTruthy();
     expect(within(panel).getAllByText('S01E02')).toHaveLength(2);
     expect(within(panel).getByRole('timer', { name: '8 seconds until next episode' })).toBeTruthy();
-    expect(within(panel).getByRole('button', { name: 'Play now' })).toBeTruthy();
+    expect(within(panel).getByRole('link', { name: 'Play now' }).getAttribute('href')).toBe('/app/watch/video-key-2');
   });
 
   it('lets users pause autoplay and replay from the next episode panel', async () => {

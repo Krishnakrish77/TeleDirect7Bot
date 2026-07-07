@@ -265,7 +265,7 @@ function SeriesDetail({
 }) {
   const ratingId = data.seasonBlocks[0]?.entries[0]?.rep.itemId || null;
   const [downloadBatch, setDownloadBatch] = useState<{ current: number; total: number } | null>(null);
-  const downloadTimers = useRef<number[]>([]);
+  const downloadStatusTimer = useRef<number | null>(null);
   const downloadTargets = useMemo(() => {
     const seen = new Set<string>();
     return data.seasonBlocks.flatMap((block) => (
@@ -278,32 +278,32 @@ function SeriesDetail({
     ));
   }, [data.seasonBlocks]);
 
-  useEffect(() => () => {
-    downloadTimers.current.forEach((timer) => window.clearTimeout(timer));
-  }, []);
+  const clearDownloadStatusTimer = () => {
+    if (downloadStatusTimer.current !== null) {
+      window.clearTimeout(downloadStatusTimer.current);
+      downloadStatusTimer.current = null;
+    }
+  };
+
+  useEffect(() => () => clearDownloadStatusTimer(), []);
+
+  useEffect(() => {
+    clearDownloadStatusTimer();
+    setDownloadBatch(null);
+  }, [data.key, data.selectedSeason]);
 
   const handleDownloadAll = () => {
     if (!downloadTargets.length || downloadBatch) return;
-    downloadTimers.current.forEach((timer) => window.clearTimeout(timer));
-    downloadTimers.current = [];
+    clearDownloadStatusTimer();
     const total = downloadTargets.length;
-    setDownloadBatch({ current: 0, total });
-    downloadTargets.forEach((href, index) => {
-      const start = () => {
-        triggerBrowserDownload(href);
-        setDownloadBatch({ current: index + 1, total });
-        if (index === total - 1) {
-          const doneTimer = window.setTimeout(() => setDownloadBatch(null), 1600);
-          downloadTimers.current.push(doneTimer);
-        }
-      };
-      if (index === 0) {
-        start();
-      } else {
-        const timer = window.setTimeout(start, index * 900);
-        downloadTimers.current.push(timer);
-      }
+    downloadTargets.forEach((href) => {
+      triggerBrowserDownload(href);
     });
+    setDownloadBatch({ current: total, total });
+    downloadStatusTimer.current = window.setTimeout(() => {
+      setDownloadBatch(null);
+      downloadStatusTimer.current = null;
+    }, 1600);
   };
   const downloadButtonLabel = downloadBatch
     ? `Starting ${downloadBatch.current}/${downloadBatch.total}`

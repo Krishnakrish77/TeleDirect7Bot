@@ -8445,6 +8445,57 @@ select.edit-field-input {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
+  .next-episode-card {
+    left: 0.55rem;
+    right: 0.55rem;
+    bottom: 4.1rem;
+    grid-template-columns: 72px minmax(0, 1fr);
+    width: auto;
+    min-height: 0;
+    max-height: calc(100% - 4.8rem);
+    overflow: auto;
+    gap: 0.55rem;
+    padding: 0.6rem;
+  }
+
+  .next-episode-card strong {
+    font-size: 0.92rem;
+    -webkit-line-clamp: 1;
+  }
+
+  .next-episode-copy {
+    gap: 0.2rem;
+  }
+
+  .next-episode-copy > span {
+    display: none;
+  }
+
+  .next-episode-side {
+    grid-column: 1 / -1;
+    grid-template-columns: auto minmax(0, 1fr);
+    justify-items: start;
+    width: 100%;
+  }
+
+  .next-countdown {
+    width: 40px;
+    height: 40px;
+    font-size: 0.82rem;
+  }
+
+  .next-episode-actions {
+    gap: 0.35rem;
+    margin-top: 0.2rem;
+  }
+
+  .next-episode-actions .primary-action,
+  .next-episode-actions .secondary-action {
+    min-height: 32px;
+    padding-inline: 0.55rem;
+    font-size: 0.78rem;
+  }
+
   .track-row {
     grid-template-columns: 2.3rem minmax(0, 1fr) auto auto auto;
     gap: 0.55rem;
@@ -8760,34 +8811,46 @@ select.edit-field-input {
   }
 
   .next-episode-card {
-    grid-template-columns: 84px minmax(0, 1fr);
-    width: min(26rem, calc(100% - 1.1rem));
+    left: auto;
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    width: min(34rem, calc(100% - 1.1rem));
     min-height: 0;
-    padding: 0.75rem;
+    max-height: calc(100% - 4.8rem);
+    overflow: hidden;
+    gap: 0.55rem;
+    padding: 0.5rem;
   }
 
   .next-episode-side {
-    grid-column: 1 / -1;
-    grid-template-columns: auto minmax(0, 1fr);
-    justify-items: start;
-    width: 100%;
+    grid-column: auto;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    width: auto;
   }
 
   .next-countdown {
-    width: 44px;
-    height: 44px;
-    font-size: 0.86rem;
+    width: 38px;
+    height: 38px;
+    font-size: 0.78rem;
   }
 
   .next-episode-actions {
-    gap: 0.38rem;
+    gap: 0.3rem;
+  }
+
+  .next-episode-card strong {
+    font-size: 0.84rem;
+  }
+
+  .next-autoplay-toggle {
+    font-size: 0.7rem;
   }
 
   .next-episode-actions .primary-action,
   .next-episode-actions .secondary-action {
-    min-height: 34px;
-    padding-inline: 0.58rem;
-    font-size: 0.8rem;
+    min-height: 30px;
+    padding-inline: 0.5rem;
+    font-size: 0.74rem;
   }
 
   .audio-watch {

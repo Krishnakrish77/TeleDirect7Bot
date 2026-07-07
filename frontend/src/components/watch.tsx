@@ -118,7 +118,7 @@ function NextEpisodePanel({
   nextEpisode,
   autoplay,
   countdown,
-  onPlay,
+  playHref,
   onReplay,
   onDismiss,
   onToggleAutoplay,
@@ -126,7 +126,7 @@ function NextEpisodePanel({
   nextEpisode: NextEpisode;
   autoplay: boolean;
   countdown: number;
-  onPlay: () => void;
+  playHref: string;
   onReplay: () => void;
   onDismiss: () => void;
   onToggleAutoplay: () => void;
@@ -145,10 +145,10 @@ function NextEpisodePanel({
         <strong id="next-episode-title" dir="auto">{nextEpisode.title}</strong>
         {label && <span>{label}</span>}
         <div className="next-episode-actions">
-          <button type="button" className="primary-action" onClick={onPlay}>
+          <a className="primary-action" href={playHref}>
             <PlayIcon />
             <span>Play now</span>
-          </button>
+          </a>
           <button type="button" className="secondary-action" onClick={onReplay}>
             <SkipBackIcon />
             <span>Replay</span>
@@ -1585,7 +1585,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
             nextEpisode={video.nextEpisode}
             autoplay={autoplayNext}
             countdown={nextCountdown}
-            onPlay={playNextEpisode}
+            playHref={video.nextEpisode.playHref || video.nextEpisode.classicHref}
             onReplay={replayCurrentVideo}
             onDismiss={() => setShowNext(false)}
             onToggleAutoplay={() => setAutoplayNext((enabled) => !enabled)}
