@@ -355,6 +355,7 @@ function App() {
                     onToggleSaved={onToggleSaved}
                     onDismiss={onDismissRecommendation}
                     onMarkWatched={onMarkWatched}
+                    allowMarkWatchedWithoutProgress={Boolean(user)}
                   />
                 ))}
               </div>
@@ -368,6 +369,7 @@ function App() {
                 update={update}
                 onToggleSaved={onToggleSaved}
                 onMarkWatched={onMarkWatched}
+                allowMarkWatchedWithoutProgress={Boolean(user)}
                 loading={loading}
               />
             )}

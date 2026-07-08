@@ -31,6 +31,7 @@ interface MediaCardProps {
   dismissMeta?: RecommendationMeta | null;
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
   onMarkWatched?: (card: HubCard) => void;
+  allowMarkWatchedWithoutProgress?: boolean;
 }
 
 
@@ -111,6 +112,7 @@ function MediaCardBase({
   dismissMeta,
   onDismiss,
   onMarkWatched,
+  allowMarkWatchedWithoutProgress = false,
 }: MediaCardProps) {
   const isMusic = card.type === 'track' || card.type === 'album';
   const width = card.aspect === 'square' ? 512 : 342;
@@ -125,6 +127,12 @@ function MediaCardBase({
   const progressPct = markedWatched ? 0 : rawProgress;
   const [previewOpen, setPreviewOpen] = useState(false);
   const canPreview = Boolean(card.trailerKey) && !isMusic;
+  const isSinglePlayableVideo = !isMusic && card.type !== 'series' && Boolean(card.playHref || card.streamHref || card.watchKey);
+  const canMarkWatched = isSinglePlayableVideo
+    && Boolean(card.watchKey)
+    && Boolean(onMarkWatched)
+    && !markedWatched
+    && (progressPct > 0 || allowMarkWatchedWithoutProgress);
 
   return (
     <article className={`media-card ${card.aspect === 'square' ? 'square' : 'poster'}${previewOpen ? ' previewing' : ''}`}>
@@ -260,7 +268,7 @@ function MediaCardBase({
           <XIcon />
         </button>
       )}
-      {progressPct > 0 && onMarkWatched && (
+      {canMarkWatched && (
         <button
           type="button"
           className="mark-watched-button"
@@ -273,9 +281,9 @@ function MediaCardBase({
               localStorage.setItem('td:cw', JSON.stringify(cw));
             } catch { /* ignore */ }
             setMarkedWatched(true);
-            onMarkWatched(card);
+            onMarkWatched?.(card);
           }}
-          aria-label="Mark as watched"
+          aria-label={`Mark ${display.title} as watched`}
         >
           <CheckIcon />
         </button>

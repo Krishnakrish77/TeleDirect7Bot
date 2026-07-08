@@ -180,4 +180,79 @@ describe('MediaCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close preview' }));
     expect(screen.queryByTitle('Kalki 2898-AD trailer preview')).toBeNull();
   });
+
+  it('surfaces mark watched when a card has local progress', () => {
+    const onMarkWatched = vi.fn();
+    const media = card({ watchKey: 'hash42' });
+    localStorage.setItem('td:cw', JSON.stringify({ hash42: { pos: 120, dur: 240 } }));
+
+    render(
+      <MediaCard
+        card={media}
+        saved={false}
+        onToggleSaved={vi.fn()}
+        onMarkWatched={onMarkWatched}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Mark Kalki 2898-AD as watched'));
+
+    expect(onMarkWatched).toHaveBeenCalledWith(media);
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')).toEqual({});
+  });
+
+  it('allows signed-in video cards to be marked watched without existing progress', () => {
+    const onMarkWatched = vi.fn();
+    const media = card({ watchKey: 'hash42' });
+
+    render(
+      <MediaCard
+        card={media}
+        saved={false}
+        onToggleSaved={vi.fn()}
+        onMarkWatched={onMarkWatched}
+        allowMarkWatchedWithoutProgress
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Mark Kalki 2898-AD as watched'));
+
+    expect(onMarkWatched).toHaveBeenCalledWith(media);
+    expect(screen.queryByLabelText('Mark Kalki 2898-AD as watched')).toBeNull();
+  });
+
+  it('does not show mark watched from scratch when progress-free cards are not allowed', () => {
+    render(
+      <MediaCard
+        card={card({ watchKey: 'hash42' })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+        onMarkWatched={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText('Mark Kalki 2898-AD as watched')).toBeNull();
+  });
+
+  it('does not show mark watched from scratch for grouped series cards', () => {
+    render(
+      <MediaCard
+        card={card({
+          type: 'series',
+          itemId: 'series:kalki',
+          href: '/app/series/kalki',
+          playHref: '',
+          streamHref: '',
+          watchKey: 'hash42',
+          episodeCount: 6,
+        })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+        onMarkWatched={vi.fn()}
+        allowMarkWatchedWithoutProgress
+      />,
+    );
+
+    expect(screen.queryByLabelText('Mark Kalki 2898-AD as watched')).toBeNull();
+  });
 });
