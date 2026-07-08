@@ -32,6 +32,7 @@ interface MediaCardProps {
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
   onMarkWatched?: (card: HubCard) => void;
   allowMarkWatchedWithoutProgress?: boolean;
+  interactionDisabled?: boolean;
 }
 
 
@@ -113,6 +114,7 @@ function MediaCardBase({
   onDismiss,
   onMarkWatched,
   allowMarkWatchedWithoutProgress = false,
+  interactionDisabled = false,
 }: MediaCardProps) {
   const isMusic = card.type === 'track' || card.type === 'album';
   const width = card.aspect === 'square' ? 512 : 342;
@@ -133,50 +135,111 @@ function MediaCardBase({
     && Boolean(onMarkWatched)
     && !markedWatched
     && (progressPct > 0 || allowMarkWatchedWithoutProgress);
+  const preventDisabledNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!interactionDisabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   return (
     <article className={`media-card ${card.aspect === 'square' ? 'square' : 'poster'}${previewOpen ? ' previewing' : ''}`}>
-      <a className="media-card-link" href={card.href}>
-        <span className="poster-wrap">
-          <span className="poster-placeholder">
-            {isMusic ? <MusicIcon /> : <FilmIcon />}
+      <span className="poster-frame">
+        <a
+          className="media-card-poster-link"
+          href={card.href}
+          aria-label={`Open ${display.title} from poster`}
+          aria-disabled={interactionDisabled || undefined}
+          tabIndex={interactionDisabled ? -1 : undefined}
+          onClick={preventDisabledNavigation}
+        >
+          <span className="poster-wrap">
+            <span className="poster-placeholder">
+              {isMusic ? <MusicIcon /> : <FilmIcon />}
+            </span>
+            <img
+              className="poster-image"
+              src={card.posterUrl}
+              alt=""
+              width={width}
+              height={height}
+              loading={priority ? 'eager' : 'lazy'}
+              decoding="async"
+              fetchPriority={priority ? 'high' : undefined}
+              draggable={false}
+              onLoad={(event) => {
+                const image = event.currentTarget;
+                const decode = image.decode?.();
+                if (decode) {
+                  void decode
+                    .catch(() => undefined)
+                    .finally(() => image.classList.add('ready'));
+                  return;
+                }
+                image.classList.add('ready');
+              }}
+              onError={(event) => {
+                event.currentTarget.hidden = true;
+              }}
+            />
+            {progressPct > 0 && (
+              <span className="card-progress" aria-hidden="true">
+                <span style={{ width: `${progressPct}%` }} />
+              </span>
+            )}
+            {externalRating && (
+              <span className="card-rating-badge" aria-label={`External rating ${externalRating}`}>
+                {externalRating}
+              </span>
+            )}
           </span>
-          <img
-            className="poster-image"
-            src={card.posterUrl}
-            alt=""
-            width={width}
-            height={height}
-            loading={priority ? 'eager' : 'lazy'}
-            decoding="async"
-            fetchPriority={priority ? 'high' : undefined}
-            draggable={false}
-            onLoad={(event) => {
-              const image = event.currentTarget;
-              const decode = image.decode?.();
-              if (decode) {
-                void decode
-                  .catch(() => undefined)
-                  .finally(() => image.classList.add('ready'));
-                return;
-              }
-              image.classList.add('ready');
+        </a>
+        {canPreview && (
+          <button
+            type="button"
+            className="preview-button"
+            title={`Preview ${display.title}`}
+            disabled={interactionDisabled}
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (interactionDisabled) return;
+              setPreviewOpen(true);
             }}
-            onError={(event) => {
-              event.currentTarget.hidden = true;
-            }}
-          />
-          {progressPct > 0 && (
-            <span className="card-progress" aria-hidden="true">
-              <span style={{ width: `${progressPct}%` }} />
-            </span>
-          )}
-          {externalRating && (
-            <span className="card-rating-badge" aria-label={`External rating ${externalRating}`}>
-              {externalRating}
-            </span>
-          )}
-        </span>
+            aria-label={`Preview ${display.title}`}
+          >
+            <PlayIcon />
+          </button>
+        )}
+        {previewOpen && card.trailerKey && (
+          <div className="card-preview-panel" role="dialog" aria-label={`${display.title} trailer preview`}>
+            <iframe
+              src={`https://www.youtube.com/embed/${encodeURIComponent(card.trailerKey)}?autoplay=1&mute=1&controls=0&rel=0&playsinline=1`}
+              title={`${display.title} trailer preview`}
+              allow="autoplay; encrypted-media; fullscreen"
+              allowFullScreen
+            />
+            <button
+              type="button"
+              className="icon-button card-preview-close"
+              onClick={(event: MouseEvent<HTMLButtonElement>) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setPreviewOpen(false);
+              }}
+              aria-label="Close preview"
+            >
+              <XIcon />
+            </button>
+          </div>
+        )}
+      </span>
+      <a
+        className="media-card-link"
+        href={card.href}
+        aria-disabled={interactionDisabled || undefined}
+        tabIndex={interactionDisabled ? -1 : undefined}
+        onClick={preventDisabledNavigation}
+      >
         <span className="card-copy">
           <span className="eyebrow">{display.eyebrow}</span>
           <strong dir="auto">{display.title}</strong>
@@ -205,49 +268,18 @@ function MediaCardBase({
           {card.recReason && <em className="card-reason">{card.recReason}</em>}
         </span>
       </a>
-      {canPreview && (
-        <button
-          type="button"
-          className="preview-button"
-          title={`Preview ${display.title}`}
-          onClick={(event: MouseEvent<HTMLButtonElement>) => {
-            event.preventDefault();
-            event.stopPropagation();
-            setPreviewOpen(true);
-          }}
-          aria-label={`Preview ${display.title}`}
-        >
-          <PlayIcon />
-        </button>
-      )}
-      {previewOpen && card.trailerKey && (
-        <div className="card-preview-panel" role="dialog" aria-label={`${display.title} trailer preview`}>
-          <iframe
-            src={`https://www.youtube.com/embed/${encodeURIComponent(card.trailerKey)}?autoplay=1&mute=1&controls=0&rel=0&playsinline=1`}
-            title={`${display.title} trailer preview`}
-            allow="autoplay; encrypted-media; fullscreen"
-            allowFullScreen
-          />
-          <button
-            type="button"
-            className="icon-button card-preview-close"
-            onClick={(event: MouseEvent<HTMLButtonElement>) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setPreviewOpen(false);
-            }}
-            aria-label="Close preview"
-          >
-            <XIcon />
-          </button>
-        </div>
-      )}
+      {/*
+        Save/dismiss/watched controls stay as article-level siblings so they are not nested
+        inside card links, but remain anchored to the poster's top edge.
+      */}
       <button
         type="button"
         className={saved ? 'save-button saved' : 'save-button'}
+        disabled={interactionDisabled}
         onClick={(event: MouseEvent<HTMLButtonElement>) => {
           event.preventDefault();
           event.stopPropagation();
+          if (interactionDisabled) return;
           onToggleSaved(card);
         }}
         aria-label={saved ? 'Remove from watchlist' : 'Add to watchlist'}
@@ -258,9 +290,11 @@ function MediaCardBase({
         <button
           type="button"
           className="dismiss-button"
+          disabled={interactionDisabled}
           onClick={(event: MouseEvent<HTMLButtonElement>) => {
             event.preventDefault();
             event.stopPropagation();
+            if (interactionDisabled) return;
             onDismiss(dismissMeta, card);
           }}
           aria-label="Not for me"
@@ -272,9 +306,11 @@ function MediaCardBase({
         <button
           type="button"
           className="mark-watched-button"
+          disabled={interactionDisabled}
           onClick={(event: MouseEvent<HTMLButtonElement>) => {
             event.preventDefault();
             event.stopPropagation();
+            if (interactionDisabled) return;
             try {
               const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
               delete cw[card.watchKey];

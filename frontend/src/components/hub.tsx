@@ -448,6 +448,7 @@ export function GridView({
                 onToggleSaved={onToggleSaved}
                 onMarkWatched={onMarkWatched}
                 allowMarkWatchedWithoutProgress={allowMarkWatchedWithoutProgress}
+                interactionDisabled={loading}
               />
             ))}
           </div>

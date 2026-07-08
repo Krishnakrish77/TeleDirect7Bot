@@ -448,17 +448,22 @@ img {
 }
 
 .install-prompt {
+  position: fixed;
+  right: clamp(1rem, 2vw, 1.5rem);
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  z-index: 90;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.85rem;
-  width: min(100% - 2rem, 980px);
-  margin: 0.85rem auto 0;
+  width: min(28rem, calc(100% - 2rem));
+  margin: 0;
   padding: 0.75rem;
   border: 1px solid rgba(249, 115, 22, 0.28);
   border-radius: 8px;
-  background: rgba(21, 23, 26, 0.96);
+  background: rgba(21, 23, 26, 0.98);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(16px);
 }
 
 .install-prompt-icon {
@@ -527,6 +532,10 @@ img {
 .install-prompt-primary:focus-visible {
   background: #fb923c;
   outline: none;
+}
+
+.app-shell.has-player .install-prompt {
+  bottom: max(5.75rem, calc(5rem + env(safe-area-inset-bottom, 0px)));
 }
 
 .hero-stage {
@@ -1131,13 +1140,20 @@ img {
 
 .media-card {
   position: relative;
-  display: block;
+  display: grid;
+  gap: 0.65rem;
   min-width: 0;
 }
 
-.media-card-link {
+.media-card-link,
+.media-card-poster-link {
   display: grid;
-  gap: 0.65rem;
+  min-width: 0;
+}
+
+.poster-frame {
+  position: relative;
+  display: block;
   min-width: 0;
 }
 
@@ -1192,7 +1208,8 @@ img {
   height: 38px;
 }
 
-.media-card-link:focus-visible {
+.media-card-link:focus-visible,
+.media-card-poster-link:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 4px;
   border-radius: 8px;
@@ -1271,6 +1288,14 @@ img {
   pointer-events: auto;
 }
 
+.save-button:disabled,
+.dismiss-button:disabled,
+.mark-watched-button:disabled,
+.preview-button:disabled {
+  cursor: progress;
+  opacity: 0.48;
+}
+
 .preview-button {
   position: absolute;
   top: 50%;
@@ -1337,19 +1362,13 @@ img {
 
 .card-preview-panel {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  inset: 0;
   z-index: 6;
   overflow: hidden;
   border: 1px solid rgba(20, 184, 166, 0.42);
   border-radius: 8px;
   background: #050607;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.36);
-}
-
-.media-card.poster .card-preview-panel {
-  aspect-ratio: 2 / 3;
 }
 
 .card-preview-panel iframe {
@@ -1489,8 +1508,11 @@ img {
 }
 
 .grid-refetching .media-card-link,
+.grid-refetching .media-card-poster-link,
+.grid-refetching .preview-button,
 .grid-refetching .save-button,
-.grid-refetching .dismiss-button {
+.grid-refetching .dismiss-button,
+.grid-refetching .mark-watched-button {
   pointer-events: none;
 }
 
@@ -7607,8 +7629,8 @@ select.edit-field-input {
     grid-template-columns: repeat(auto-fill, minmax(170px, 190px));
   }
 
-  .media-card-link:hover .poster-wrap,
-  .media-card-link:focus-visible .poster-wrap {
+  .media-card-poster-link:hover .poster-wrap,
+  .media-card-poster-link:focus-visible .poster-wrap {
     border-color: rgba(249, 115, 22, 0.44);
   }
 
@@ -7723,10 +7745,18 @@ select.edit-field-input {
   }
 
   .install-prompt {
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
     grid-template-columns: auto minmax(0, 1fr) auto;
-    width: calc(100% - 1.5rem);
-    margin-top: 0.75rem;
+    width: auto;
+    max-width: 32rem;
+    margin: 0 auto;
     padding: 0.65rem;
+  }
+
+  .app-shell.has-player .install-prompt {
+    bottom: calc(154px + env(safe-area-inset-bottom, 0px));
   }
 
   .install-prompt-copy strong {

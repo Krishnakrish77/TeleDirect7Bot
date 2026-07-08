@@ -47,6 +47,14 @@ const response: WatchlistPageResponse = {
   mongoAvailable: true,
 };
 
+function primaryCardLinks() {
+  return Array.from(document.querySelectorAll<HTMLAnchorElement>('.media-card-link'));
+}
+
+function primaryCardLink(title: string) {
+  return primaryCardLinks().find((link) => link.textContent?.includes(title)) || null;
+}
+
 describe('WatchlistPage', () => {
   it('prompts guests to sign in', () => {
     const onSignIn = vi.fn();
@@ -79,7 +87,7 @@ describe('WatchlistPage', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Watchlist' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: /Kalki/ }).getAttribute('href')).toBe('/app/movie/kalki');
+    expect(primaryCardLink('Kalki')?.getAttribute('href')).toBe('/app/movie/kalki');
 
     fireEvent.click(screen.getByLabelText('Remove from watchlist'));
     expect(onToggleSaved).toHaveBeenCalledWith(expect.objectContaining({ itemId: 'movie:kalki' }));
@@ -98,17 +106,17 @@ describe('WatchlistPage', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Music/i }));
-    expect(screen.getByRole('link', { name: /Theme/i })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: /Kalki/i })).toBeNull();
+    expect(primaryCardLink('Theme')).toBeTruthy();
+    expect(primaryCardLink('Kalki')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /All/i }));
     fireEvent.change(screen.getByPlaceholderText('Search saved titles'), { target: { value: 'dark' } });
-    expect(screen.getByRole('link', { name: /Dark/i })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: /Theme/i })).toBeNull();
+    expect(primaryCardLink('Dark')).toBeTruthy();
+    expect(primaryCardLink('Theme')).toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText('Search saved titles'), { target: { value: '' } });
     fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'title' } });
-    const titles = screen.getAllByRole('link').map((link) => link.textContent || '');
+    const titles = primaryCardLinks().map((link) => link.textContent || '');
     expect(titles[0]).toContain('Dark');
     expect(titles[1]).toContain('Kalki');
     expect(titles[2]).toContain('Theme');

@@ -173,12 +173,45 @@ describe('MediaCard', () => {
   it('opens inline trailer previews only when a trailer key is present', () => {
     render(<MediaCard card={card({ trailerKey: 'abc123' })} saved={false} onToggleSaved={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Preview Kalki/i }));
+    const posterLink = screen.getByRole('link', { name: 'Open Kalki 2898-AD from poster' });
+    expect(posterLink.getAttribute('aria-hidden')).toBeNull();
+
+    const previewButton = screen.getByRole('button', { name: /Preview Kalki/i });
+    expect(previewButton.closest('.poster-frame')).toBeTruthy();
+    expect(previewButton.closest('a')).toBeNull();
+
+    fireEvent.click(previewButton);
 
     const preview = screen.getByTitle('Kalki 2898-AD trailer preview') as HTMLIFrameElement;
     expect(preview.getAttribute('src')).toContain('youtube.com/embed/abc123');
     fireEvent.click(screen.getByRole('button', { name: 'Close preview' }));
     expect(screen.queryByTitle('Kalki 2898-AD trailer preview')).toBeNull();
+  });
+
+  it('removes card interactions from keyboard flow while disabled', () => {
+    const onToggleSaved = vi.fn();
+    render(
+      <MediaCard
+        card={card({ trailerKey: 'abc123' })}
+        saved={false}
+        onToggleSaved={onToggleSaved}
+        interactionDisabled
+      />,
+    );
+
+    const posterLink = screen.getByRole('link', { name: 'Open Kalki 2898-AD from poster' });
+    const textLink = Array.from(document.querySelectorAll<HTMLAnchorElement>('.media-card-link'))[0];
+    expect(posterLink.getAttribute('aria-disabled')).toBe('true');
+    expect(posterLink.getAttribute('tabindex')).toBe('-1');
+    expect(textLink.getAttribute('aria-disabled')).toBe('true');
+    expect(textLink.getAttribute('tabindex')).toBe('-1');
+    expect(fireEvent.click(textLink)).toBe(false);
+
+    expect((screen.getByRole('button', { name: /Preview Kalki/i }) as HTMLButtonElement).disabled).toBe(true);
+    const saveButton = screen.getByRole('button', { name: 'Add to watchlist' }) as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(true);
+    fireEvent.click(saveButton);
+    expect(onToggleSaved).not.toHaveBeenCalled();
   });
 
   it('surfaces mark watched when a card has local progress', () => {
