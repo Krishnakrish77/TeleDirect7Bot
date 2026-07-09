@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, MovieDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
@@ -274,7 +274,12 @@ describe('Series detail', () => {
       />,
     );
 
-    expect(screen.getByRole('heading', { name: 'Ultimate Spiderman' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Ultimate Spiderman' })).toBeTruthy();
+    const info = within(screen.getByLabelText('Movie and series information'));
+    expect(info.getByText('About this series')).toBeTruthy();
+    expect(info.getByRole('heading', { name: 'Ultimate Spiderman' })).toBeTruthy();
+    expect(info.getByText('A series overview.')).toBeTruthy();
+    expect(info.getByText('2 episodes')).toBeTruthy();
     expect(screen.getByLabelText('42% watched')).toBeTruthy();
     expect(screen.getByLabelText('Watched')).toBeTruthy();
     expect(screen.getByText('Training Day')).toBeTruthy();
@@ -342,6 +347,12 @@ describe('Movie detail', () => {
 
     expect(screen.getByRole('heading', { name: 'A Very Long Movie Title That Should Stay Readable On Mobile (2026)' })).toBeTruthy();
     expect(screen.getByText('TMDB 8.1')).toBeTruthy();
+    const info = within(screen.getByLabelText('Movie and series information'));
+    expect(info.getByText('About this title')).toBeTruthy();
+    expect(info.getByRole('heading', { name: movie.title })).toBeTruthy();
+    expect(info.getByText('A long overview that should remain secondary to the primary actions.')).toBeTruthy();
+    expect(info.getByText('Director', { selector: 'dt' })).toBeTruthy();
+    expect(info.getByRole('link', { name: 'Actor' }).getAttribute('href')).toBe('/app/person/actor');
     expect(screen.getByRole('link', { name: 'Play' }).getAttribute('href')).toBe('/app/watch/very-long-title');
     expect(screen.getByRole('link', { name: 'Classic player' }).getAttribute('href')).toBe('/watch/very-long-title');
     const versionLink = screen.getByRole('link', { name: 'Play Kalki 1080p' });

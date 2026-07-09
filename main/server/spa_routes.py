@@ -88,6 +88,7 @@ _HUB_CARD_PAYLOAD_KEYS = (
     "episodeCount",
     "seasonCount",
     "trackCount",
+    "watched",
 )
 
 
@@ -319,6 +320,40 @@ async def _rating_counts_for_cards(cards) -> dict[int, dict]:
         return {}
 
 
+async def _watched_keys_for_user(user: dict | None) -> set[str]:
+    if not user:
+        return set()
+    try:
+        history = await asyncio.wait_for(
+            wh_store.get_recent(int(user["sub"]), limit=500),
+            timeout=2.0,
+        )
+    except asyncio.TimeoutError:
+        logging.warning("spa hub: watch history aggregation timed out")
+        return set()
+    except Exception:
+        logging.exception("spa hub: watch history aggregation failed")
+        return set()
+    watched_keys: set[str] = set()
+    for item in history:
+        key = str(item.get("cw_key") or "")
+        if key:
+            watched_keys.add(key)
+    return watched_keys
+
+
+def _watched_movie_keys_for_keys(watched_keys: set[str]) -> set[str]:
+    movie_keys: set[str] = set()
+    for key in watched_keys:
+        match = _CW_KEY_RE.match(key)
+        if not match:
+            continue
+        item = media_index.get_item(int(match.group(1)))
+        if item and item.movie_key:
+            movie_keys.add(item.movie_key)
+    return movie_keys
+
+
 def _with_rating_counts(payload: dict, card, counts_by_id: dict[int, dict]) -> dict:
     message_id = _rating_source_id(card)
     if not message_id:
@@ -332,6 +367,24 @@ def _with_rating_counts(payload: dict, card, counts_by_id: dict[int, dict]) -> d
         return payload
     payload["ratingCounts"] = {"up": up, "down": down}
     return payload
+
+
+def _is_card_watched(
+    card,
+    watched_keys: set[str],
+    watched_movie_keys: set[str] | None = None,
+) -> bool:
+    if not watched_keys:
+        return False
+    if isinstance(card, SeriesGroup):
+        return False
+    if isinstance(card, MovieGroup):
+        return bool(watched_movie_keys and card.movie_key in watched_movie_keys)
+    if isinstance(card, AlbumGroup):
+        return False
+    if isinstance(card, HubItem) and (card.media_kind or "") != "audio":
+        return f"{card.secure_hash}{card.message_id}" in watched_keys
+    return False
 
 
 def _prewarm_card_thumbs(cards) -> None:
@@ -595,10 +648,17 @@ def _compact_hub_card_payload(payload: dict) -> dict:
     }
 
 
-def _hub_card(card, rating_counts: dict[int, dict] | None = None) -> dict:
+def _hub_card(
+    card,
+    rating_counts: dict[int, dict] | None = None,
+    watched_keys: set[str] | None = None,
+    watched_movie_keys: set[str] | None = None,
+) -> dict:
     payload = _card(card)
     if rating_counts:
         payload = _with_rating_counts(payload, card, rating_counts)
+    if watched_keys and _is_card_watched(card, watched_keys, watched_movie_keys):
+        payload["watched"] = True
     return _compact_hub_card_payload(payload)
 
 
@@ -732,7 +792,7 @@ async def api_hub(request: web.Request) -> web.Response:
     started = time.monotonic()
     timings: dict[str, float] = {}
     params = _parse_hub_params(request)
-    user = get_user(request) if _is_landing(params) else None
+    user = get_user(request)
     cache_key = _landing_cache_key(params) if _is_landing(params) and not user else ""
     if cache_key:
         cached = _cache_get(cache_key)
@@ -885,12 +945,17 @@ async def api_hub(request: web.Request) -> web.Response:
         timings["ratings_ms"] = round((time.monotonic() - mark) * 1000, 1)
 
         mark = time.monotonic()
+        watched_keys = await _watched_keys_for_user(user)
+        watched_movie_keys = _watched_movie_keys_for_keys(watched_keys)
+        timings["watched_ms"] = round((time.monotonic() - mark) * 1000, 1)
+
+        mark = time.monotonic()
         shelves = []
         for shelf in raw_shelves:
             rec_reasons = shelf.get("rec_reasons") or []
             items = []
             for index, item in enumerate(shelf.get("items") or []):
-                payload = _hub_card(item, rating_counts)
+                payload = _hub_card(item, rating_counts, watched_keys, watched_movie_keys)
                 if index < len(rec_reasons) and rec_reasons[index]:
                     payload["recReason"] = rec_reasons[index]
                 items.append(payload)
@@ -971,6 +1036,11 @@ async def api_hub(request: web.Request) -> web.Response:
     timings["ratings_ms"] = round((time.monotonic() - mark) * 1000, 1)
 
     mark = time.monotonic()
+    watched_keys = await _watched_keys_for_user(user)
+    watched_movie_keys = _watched_movie_keys_for_keys(watched_keys)
+    timings["watched_ms"] = round((time.monotonic() - mark) * 1000, 1)
+
+    mark = time.monotonic()
     payload = {
         "mode": "grid",
         "params": params,
@@ -979,7 +1049,7 @@ async def api_hub(request: web.Request) -> web.Response:
         "heroes": [],
         "shelves": [],
         "homeShelfLimit": _home_shelf_limit(),
-        "items": [_hub_card(item, rating_counts) for item in items],
+        "items": [_hub_card(item, rating_counts, watched_keys, watched_movie_keys) for item in items],
         "total": total,
         "nextOffset": next_offset,
         "nextHref": _app_query(params, offset=next_offset) if next_offset is not None else None,
@@ -990,7 +1060,7 @@ async def api_hub(request: web.Request) -> web.Response:
         started,
         mode="grid",
         cache="bypass",
-        user=False,
+        user=bool(user),
         params=params,
         timings=timings,
     )
@@ -1071,14 +1141,21 @@ def _cw_progress_pct(entry: dict | None) -> int:
     return max(1, min(94, round(pct * 100)))
 
 
-async def _attach_series_playback_state(payload: dict, user_id: int | None) -> None:
+async def _attach_series_playback_state(
+    payload: dict,
+    user_id: int | None,
+    watched_keys: set[str] | None = None,
+) -> None:
     if not user_id:
         return
-    cw_data, history = await asyncio.gather(
-        cw_store.get_all(user_id),
-        wh_store.get_recent(user_id, limit=500),
-    )
-    watched_keys = {str(item.get("cw_key") or "") for item in history}
+    if watched_keys is None:
+        cw_data, history = await asyncio.gather(
+            cw_store.get_all(user_id),
+            wh_store.get_recent(user_id, limit=500),
+        )
+        watched_keys = {str(item.get("cw_key") or "") for item in history}
+    else:
+        cw_data = await cw_store.get_all(user_id)
     for block in payload.get("seasonBlocks") or []:
         for entry in block.get("entries") or []:
             keys = [
@@ -1090,7 +1167,13 @@ async def _attach_series_playback_state(payload: dict, user_id: int | None) -> N
             entry["progressPct"] = max((_cw_progress_pct(cw_data.get(key)) for key in keys), default=0)
 
 
-def _related_rows(item: HubItem, *, limit: int = 14) -> list[dict]:
+def _related_rows(
+    item: HubItem,
+    *,
+    limit: int = 14,
+    watched_keys: set[str] | None = None,
+    watched_movie_keys: set[str] | None = None,
+) -> list[dict]:
     rows: list[dict] = []
     exclude = {
         f"movie:{item.movie_key}" if item.movie_key else "",
@@ -1108,7 +1191,7 @@ def _related_rows(item: HubItem, *, limit: int = 14) -> list[dict]:
         )
         row_items = []
         for card in cards:
-            payload = _card(card)
+            payload = _hub_card(card, watched_keys=watched_keys, watched_movie_keys=watched_movie_keys)
             if payload.get("itemId") not in exclude:
                 row_items.append(payload)
             if len(row_items) >= limit:
@@ -1125,14 +1208,17 @@ def _related_rows(item: HubItem, *, limit: int = 14) -> list[dict]:
         if artist_tracks:
             rows.append({
                 "name": f"More by {_clean_music_tag(media_index.artist_display_name(artist_slug))}",
-                "items": [_card_from_item(track) for track in artist_tracks],
+                "items": [
+                    _hub_card(track, watched_keys=watched_keys, watched_movie_keys=watched_movie_keys)
+                    for track in artist_tracks
+                ],
             })
 
     if not rows:
         for shelf in media_index.shelves(per_shelf=limit):
             row_items = []
             for card in shelf.get("items") or []:
-                payload = _card(card)
+                payload = _hub_card(card, watched_keys=watched_keys, watched_movie_keys=watched_movie_keys)
                 if payload.get("itemId") not in exclude:
                     row_items.append(payload)
                 if len(row_items) >= limit:
@@ -1159,7 +1245,12 @@ def _video_chapters(item: HubItem) -> list[dict]:
     return chapters
 
 
-def _movie_detail_payload(key: str) -> dict | None:
+def _movie_detail_payload(
+    key: str,
+    *,
+    watched_keys: set[str] | None = None,
+    watched_movie_keys: set[str] | None = None,
+) -> dict | None:
     variants = media_index.variants_for_movie(key)
     if not variants:
         return None
@@ -1185,7 +1276,11 @@ def _movie_detail_payload(key: str) -> dict | None:
         "playHref": _play_url(preferred),
         "classicHref": _watch_url(preferred),
         "variants": [_video_choice_payload(v) for v in variants],
-        "related": _related_rows(enriched),
+        "related": _related_rows(
+            enriched,
+            watched_keys=watched_keys,
+            watched_movie_keys=watched_movie_keys,
+        ),
     }
 
 
@@ -1257,7 +1352,13 @@ def _series_blocks(episodes: list[HubItem]) -> tuple[list[dict], list[dict], boo
     return season_blocks, season_options, show_selector, default_selected, total_episode_count, season_count
 
 
-def _series_detail_payload(key: str, season_raw: str = "") -> dict | None:
+def _series_detail_payload(
+    key: str,
+    season_raw: str = "",
+    *,
+    watched_keys: set[str] | None = None,
+    watched_movie_keys: set[str] | None = None,
+) -> dict | None:
     episodes = media_index.episodes_for_series(key)
     if not episodes:
         return None
@@ -1305,11 +1406,20 @@ def _series_detail_payload(key: str, season_raw: str = "") -> dict | None:
         "totalEpisodeCount": total_count,
         "seasonCount": season_count,
         "seasonBlocks": visible,
-        "related": _related_rows(enriched),
+        "related": _related_rows(
+            enriched,
+            watched_keys=watched_keys,
+            watched_movie_keys=watched_movie_keys,
+        ),
     }
 
 
-def _album_detail_payload(key: str) -> dict | None:
+def _album_detail_payload(
+    key: str,
+    *,
+    watched_keys: set[str] | None = None,
+    watched_movie_keys: set[str] | None = None,
+) -> dict | None:
     tracks = media_index.tracks_for_album(key)
     if not tracks:
         return None
@@ -1340,7 +1450,11 @@ def _album_detail_payload(key: str) -> dict | None:
         "trackCount": len(tracks),
         "playHref": _app_watch_url(tracks[0]),
         "tracks": [_track_payload(track) for track in tracks],
-        "related": _related_rows(rep),
+        "related": _related_rows(
+            rep,
+            watched_keys=watched_keys,
+            watched_movie_keys=watched_movie_keys,
+        ),
     }
 
 
@@ -1413,7 +1527,14 @@ def _person_detail_payload(slug: str) -> dict | None:
 
 @routes.get(r"/api/app/movie/{key:[a-z0-9][a-z0-9:\-]*}")
 async def api_app_movie(request: web.Request) -> web.Response:
-    payload = _movie_detail_payload(request.match_info["key"])
+    user = get_user(request)
+    watched_keys = await _watched_keys_for_user(user)
+    watched_movie_keys = _watched_movie_keys_for_keys(watched_keys)
+    payload = _movie_detail_payload(
+        request.match_info["key"],
+        watched_keys=watched_keys,
+        watched_movie_keys=watched_movie_keys,
+    )
     if payload is None:
         return _json({"error": "Movie not found"}, status=404)
     return _json(payload)
@@ -1421,20 +1542,35 @@ async def api_app_movie(request: web.Request) -> web.Response:
 
 @routes.get(r"/api/app/series/{key:[a-z0-9][a-z0-9\-]*}")
 async def api_app_series(request: web.Request) -> web.Response:
+    user = get_user(request)
+    watched_keys = await _watched_keys_for_user(user)
+    watched_movie_keys = _watched_movie_keys_for_keys(watched_keys)
     payload = _series_detail_payload(
         request.match_info["key"],
         (request.query.get("season") or "").strip().lower(),
+        watched_keys=watched_keys,
+        watched_movie_keys=watched_movie_keys,
     )
     if payload is None:
         return _json({"error": "Series not found"}, status=404)
-    user = get_user(request)
-    await _attach_series_playback_state(payload, int(user["sub"]) if user else None)
+    await _attach_series_playback_state(
+        payload,
+        int(user["sub"]) if user else None,
+        watched_keys=watched_keys,
+    )
     return _json(payload)
 
 
 @routes.get(r"/api/app/album/{key:[a-z0-9][a-z0-9\-]*}")
 async def api_app_album(request: web.Request) -> web.Response:
-    payload = _album_detail_payload(request.match_info["key"])
+    user = get_user(request)
+    watched_keys = await _watched_keys_for_user(user)
+    watched_movie_keys = _watched_movie_keys_for_keys(watched_keys)
+    payload = _album_detail_payload(
+        request.match_info["key"],
+        watched_keys=watched_keys,
+        watched_movie_keys=watched_movie_keys,
+    )
     if payload is None:
         return _json({"error": "Album not found"}, status=404)
     return _json(payload)

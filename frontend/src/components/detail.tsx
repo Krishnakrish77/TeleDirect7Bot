@@ -7,6 +7,7 @@ import { LoadingRows, ErrorPanel } from './common';
 import { MediaCard } from './mediaCard';
 import { RatingControls } from './rating';
 import { formatExternalRating } from '../utils/externalRating';
+import { uniqueMetadataParts } from '../utils/metadata';
 
 export function DetailPage({
   route,
@@ -192,6 +193,85 @@ function DetailHero({
   );
 }
 
+function detailCountLabel(count: number, singular: string) {
+  return `${count} ${singular}${count === 1 ? '' : 's'}`;
+}
+
+function DetailInfoSection({
+  label,
+  title,
+  overview,
+  facts,
+  genres,
+  directors,
+  cast,
+  imdbHref,
+}: {
+  label: string;
+  title: string;
+  overview: string;
+  facts: string[];
+  genres: string[];
+  directors: Array<{ name: string; href: string }>;
+  cast: Array<{ name: string; href: string }>;
+  imdbHref: string;
+}) {
+  const visibleGenres = genres.slice(0, 5);
+  const visibleDirectors = directors.slice(0, 3);
+  const visibleCast = cast.slice(0, 6);
+  if (!overview && !facts.length && !visibleGenres.length && !visibleDirectors.length && !visibleCast.length && !imdbHref) {
+    return null;
+  }
+
+  return (
+    <section className="video-info-section detail-info-section" aria-label="Movie and series information">
+      <div className="video-info-copy">
+        <p className="eyebrow">{label}</p>
+        <h2 dir="auto">{title}</h2>
+        {overview && <p className="video-info-overview">{overview}</p>}
+        {(facts.length > 0 || visibleGenres.length > 0) && (
+          <div className="video-info-chips" aria-label="Media details">
+            {facts.map((fact) => <span key={fact}>{fact}</span>)}
+            {visibleGenres.map((genre) => <span key={genre}>{genre}</span>)}
+          </div>
+        )}
+      </div>
+      {(visibleDirectors.length > 0 || visibleCast.length > 0 || imdbHref) && (
+        <dl className="video-info-credits">
+          {visibleDirectors.length > 0 && (
+            <div>
+              <dt>{visibleDirectors.length === 1 ? 'Director' : 'Directors'}</dt>
+              <dd>
+                {visibleDirectors.map((person) => (
+                  <a key={person.href || person.name} href={person.href}>{person.name}</a>
+                ))}
+              </dd>
+            </div>
+          )}
+          {visibleCast.length > 0 && (
+            <div>
+              <dt>Cast</dt>
+              <dd>
+                {visibleCast.map((person) => (
+                  <a key={person.href || person.name} href={person.href}>{person.name}</a>
+                ))}
+              </dd>
+            </div>
+          )}
+          {imdbHref && (
+            <div>
+              <dt>Links</dt>
+              <dd>
+                <a href={imdbHref} target="_blank" rel="noopener noreferrer">IMDb</a>
+              </dd>
+            </div>
+          )}
+        </dl>
+      )}
+    </section>
+  );
+}
+
 function MovieDetail({
   data,
   saved,
@@ -202,12 +282,20 @@ function MovieDetail({
   onToggleSaved: (itemId: string) => void;
 }) {
   const ratingId = data.variants[0]?.itemId || null;
+  const firstVariant = data.variants[0];
+  const movieFacts = uniqueMetadataParts([
+    data.year,
+    detailCountLabel(data.variants.length, 'version'),
+    firstVariant?.durationLabel,
+    firstVariant?.fileSizeLabel,
+    firstVariant?.quality,
+  ]);
   return (
     <main className="detail-main">
       <DetailHero
         title={`${data.title}${data.year ? ` (${data.year})` : ''}`}
         subtitle={`${data.variants.length} version${data.variants.length === 1 ? '' : 's'}`}
-        overview={data.overview}
+        overview=""
         posterUrl={data.posterUrl}
         backdropUrl={data.backdropUrl}
         genres={data.genres}
@@ -219,10 +307,19 @@ function MovieDetail({
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
       >
-        <CreditLinks label="Director" items={data.directors} />
-        <CreditLinks label="Cast" items={data.cast} />
         <RatingControls messageId={ratingId} />
       </DetailHero>
+
+      <DetailInfoSection
+        label="About this title"
+        title={data.title}
+        overview={data.overview}
+        facts={movieFacts}
+        genres={data.genres}
+        directors={data.directors}
+        cast={data.cast}
+        imdbHref={data.imdbHref}
+      />
 
       <section className="detail-section">
         <div className="section-heading">
@@ -264,6 +361,11 @@ function SeriesDetail({
   navigate: (href: string, replace?: boolean) => void;
 }) {
   const ratingId = data.seasonBlocks[0]?.entries[0]?.rep.itemId || null;
+  const seriesFacts = uniqueMetadataParts([
+    data.year,
+    detailCountLabel(data.seasonCount, 'season'),
+    detailCountLabel(data.totalEpisodeCount, 'episode'),
+  ]);
   const [downloadBatch, setDownloadBatch] = useState<{ current: number; total: number } | null>(null);
   const downloadStatusTimer = useRef<number | null>(null);
   const downloadTargets = useMemo(() => {
@@ -313,7 +415,7 @@ function SeriesDetail({
       <DetailHero
         title={data.title}
         subtitle={`${data.seasonCount} season${data.seasonCount === 1 ? '' : 's'} - ${data.totalEpisodeCount} episodes`}
-        overview={data.overview}
+        overview=""
         posterUrl={data.posterUrl}
         backdropUrl={data.backdropUrl}
         genres={data.genres}
@@ -325,9 +427,19 @@ function SeriesDetail({
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
       >
-        <CreditLinks label="Cast" items={data.cast} />
         <RatingControls messageId={ratingId} />
       </DetailHero>
+
+      <DetailInfoSection
+        label="About this series"
+        title={data.title}
+        overview={data.overview}
+        facts={seriesFacts}
+        genres={data.genres}
+        directors={data.directors}
+        cast={data.cast}
+        imdbHref={data.imdbHref}
+      />
 
       <section className="detail-section">
         <div className="section-heading">
@@ -661,18 +773,6 @@ function PersonDetail({
         <CardGridSection title="As Director" items={data.directedItems} saved={saved} onToggleSaved={onToggleSaved} />
       )}
     </main>
-  );
-}
-
-function CreditLinks({ label, items }: { label: string; items: Array<{ name: string; href: string }> }) {
-  if (!items.length) return null;
-  return (
-    <p className="credit-links">
-      <span>{label}</span>
-      {items.slice(0, 8).map((item) => (
-        <a key={item.href} href={item.href}>{item.name}</a>
-      ))}
-    </p>
   );
 }
 

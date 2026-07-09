@@ -13,8 +13,39 @@ from main.server.spa_routes import (
     _app_download_redirect,
     _budget_home_shelves,
     _compact_hub_card_payload,
+    _hub_card,
     _home_shelf_limit,
+    _related_rows,
+    _watched_movie_keys_for_keys,
 )
+from main.utils import media_index
+from main.utils.hub_query import HubItem, MovieGroup
+
+
+def _video_item(
+    message_id: int = 101,
+    *,
+    secure_hash: str = "hash",
+    title: str = "Kalki",
+    movie_key: str = "",
+    genres: list[str] | None = None,
+) -> HubItem:
+    return HubItem(
+        message_id=message_id,
+        secure_hash=secure_hash,
+        title=title,
+        year=2024,
+        description="",
+        tags=[],
+        duration=7200,
+        file_size=1024,
+        has_thumb=True,
+        quality="1080p",
+        file_name=f"{title}.mkv",
+        movie_key=movie_key,
+        tmdb_genres=genres or ["Action"],
+        media_kind="video",
+    )
 
 
 class SpaHubPayloadTest(unittest.TestCase):
@@ -93,6 +124,7 @@ class SpaHubPayloadTest(unittest.TestCase):
             "badge": "1 version",
             "aspect": "poster",
             "variantCount": 1,
+            "watched": True,
         }
 
         compact = _compact_hub_card_payload(payload)
@@ -103,6 +135,7 @@ class SpaHubPayloadTest(unittest.TestCase):
         self.assertEqual(compact["ratingCounts"], {"up": 3, "down": 1})
         self.assertEqual(compact["watchKey"], "hash101")
         self.assertEqual(compact["variantCount"], 1)
+        self.assertTrue(compact["watched"])
         for unused in (
             "messageId",
             "secureHash",
@@ -122,6 +155,64 @@ class SpaHubPayloadTest(unittest.TestCase):
             "badge",
         ):
             self.assertNotIn(unused, compact)
+
+    def test_hub_card_marks_direct_video_as_watched(self):
+        item = _video_item(message_id=101, secure_hash="hash")
+
+        payload = _hub_card(item, watched_keys={"hash101"}, watched_movie_keys=set())
+
+        self.assertTrue(payload["watched"])
+
+    def test_hub_card_marks_movie_group_as_watched_without_variant_scan(self):
+        variant = _video_item(
+            message_id=202,
+            secure_hash="moviehash",
+            movie_key="kalki::2024",
+        )
+        group = MovieGroup(
+            movie_key="kalki::2024",
+            title="Kalki",
+            year=2024,
+            variant_count=2,
+            latest_message_id=202,
+            poster_item=variant,
+        )
+
+        with patch.object(media_index, "get_item", return_value=variant) as get_item:
+            watched_movie_keys = _watched_movie_keys_for_keys({"moviehash202"})
+
+        payload = _hub_card(group, watched_keys={"moviehash202"}, watched_movie_keys=watched_movie_keys)
+
+        get_item.assert_called_once_with(202)
+        self.assertEqual(watched_movie_keys, {"kalki::2024"})
+        self.assertTrue(payload["watched"])
+
+    def test_related_rows_preserve_watched_status(self):
+        source = _video_item(message_id=300, secure_hash="source", movie_key="source::2024")
+        related = _video_item(
+            message_id=301,
+            secure_hash="related",
+            title="Related Movie",
+            movie_key="related::2024",
+        )
+        group = MovieGroup(
+            movie_key="related::2024",
+            title="Related Movie",
+            year=2024,
+            variant_count=1,
+            latest_message_id=301,
+            poster_item=related,
+        )
+
+        with patch.object(media_index, "query_grouped", return_value=([group], 1)):
+            rows = _related_rows(
+                source,
+                watched_keys={"related301"},
+                watched_movie_keys={"related::2024"},
+            )
+
+        self.assertEqual(rows[0]["items"][0]["itemId"], "movie:related::2024")
+        self.assertTrue(rows[0]["items"][0]["watched"])
 
     def test_home_shelf_budget_keeps_high_signal_rows(self):
         shelves = [

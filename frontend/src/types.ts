@@ -83,6 +83,7 @@ export interface HubCard {
   episodeCount?: number;
   seasonCount?: number;
   trackCount?: number;
+  watched?: boolean;
   recMeta?: RecommendationMeta | null;
   recReason?: string;
 }

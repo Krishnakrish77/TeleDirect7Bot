@@ -9,6 +9,7 @@ import { RatingControls } from './rating';
 import { attachHls, hlsUrl } from '../media/hls';
 import { restoreCachedSubtitle, revokeSubtitleTrack, subtitleFileToTrack } from '../media/subtitles';
 import { buildVlcHref } from '../media/vlc';
+import { markLocallyWatched } from '../utils/localWatched';
 import { uniqueMetadataParts } from '../utils/metadata';
 
 function isWatchTrack(item: WatchResponse['item']): item is WatchTrack {
@@ -939,6 +940,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       if (pct >= 0.95) {
         if (!completed) {
           completed = true;
+          markLocallyWatched(video.resumeKey);
           void deleteContinueEntry(video.resumeKey).catch(() => undefined);
           void recordWatchHistory(video.resumeKey, video.title).catch(() => undefined);
         }

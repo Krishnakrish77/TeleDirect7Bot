@@ -1277,14 +1277,16 @@ img {
 .mark-watched-button {
   top: 2.95rem;
   right: 0.45rem;
-  background: rgba(20, 184, 166, 0.78);
+  background: rgba(15, 17, 21, 0.78);
   opacity: 0;
   pointer-events: none;
 }
 
 .mark-watched-button:hover,
 .mark-watched-button:focus-visible {
-  background: rgba(20, 184, 166, 0.94);
+  border-color: rgba(20, 184, 166, 0.42);
+  background: rgba(20, 184, 166, 0.22);
+  color: #99f6e4;
   pointer-events: auto;
 }
 
@@ -1353,13 +1355,6 @@ img {
   }
 }
 
-@media (hover: none), (pointer: coarse) {
-  .mark-watched-button {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-
 .card-preview-panel {
   position: absolute;
   inset: 0;
@@ -1398,6 +1393,38 @@ img {
   display: block;
   min-height: 3.65rem;
   min-width: 0;
+}
+
+.card-eyebrow-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.card-eyebrow-row .eyebrow {
+  min-width: 0;
+}
+
+.card-watched-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.18rem;
+  min-height: 19px;
+  padding: 0 0.34rem;
+  border: 1px solid rgba(20, 184, 166, 0.28);
+  border-radius: 5px;
+  background: rgba(20, 184, 166, 0.1);
+  color: #99f6e4;
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.card-watched-status svg {
+  width: 12px;
+  height: 12px;
 }
 
 .card-copy strong,
@@ -6302,6 +6329,10 @@ img {
   border-bottom: 1px solid var(--line);
 }
 
+.detail-info-section {
+  margin-top: clamp(1rem, 2vw, 1.35rem);
+}
+
 .video-info-copy {
   min-width: 0;
 }
@@ -8481,7 +8512,6 @@ select.edit-field-input {
 
   .save-button,
   .dismiss-button,
-  .mark-watched-button,
   .preview-button {
     opacity: 1;
   }

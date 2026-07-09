@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HubCard } from '../types';
 import { getMediaCardDisplay, getMediaCardMetaItems, MediaCard } from './mediaCard';
 
@@ -40,6 +40,10 @@ function card(overrides: Partial<HubCard> = {}): HubCard {
 }
 
 describe('MediaCard', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it('shows content context and a compact video metadata strip', () => {
     render(<MediaCard card={card()} saved={false} onToggleSaved={vi.fn()} />);
 
@@ -232,6 +236,8 @@ describe('MediaCard', () => {
 
     expect(onMarkWatched).toHaveBeenCalledWith(media);
     expect(JSON.parse(localStorage.getItem('td:cw') || '{}')).toEqual({});
+    expect(screen.getByLabelText('Kalki 2898-AD watched')).toBeTruthy();
+    expect(screen.getByText('Watched')).toBeTruthy();
   });
 
   it('allows signed-in video cards to be marked watched without existing progress', () => {
@@ -251,6 +257,39 @@ describe('MediaCard', () => {
     fireEvent.click(screen.getByLabelText('Mark Kalki 2898-AD as watched'));
 
     expect(onMarkWatched).toHaveBeenCalledWith(media);
+    expect(screen.queryByLabelText('Mark Kalki 2898-AD as watched')).toBeNull();
+    expect(screen.getByLabelText('Kalki 2898-AD watched')).toBeTruthy();
+  });
+
+  it('shows watched status from API without showing the action', () => {
+    render(
+      <MediaCard
+        card={card({ watched: true, watchKey: 'hash42' })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+        onMarkWatched={vi.fn()}
+        allowMarkWatchedWithoutProgress
+      />,
+    );
+
+    expect(screen.getByLabelText('Kalki 2898-AD watched')).toBeTruthy();
+    expect(screen.queryByLabelText('Mark Kalki 2898-AD as watched')).toBeNull();
+  });
+
+  it('shows watched status from local completion storage', () => {
+    localStorage.setItem('td:watched:v1', JSON.stringify({ hash42: Date.now() }));
+
+    render(
+      <MediaCard
+        card={card({ watchKey: 'hash42' })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+        onMarkWatched={vi.fn()}
+        allowMarkWatchedWithoutProgress
+      />,
+    );
+
+    expect(screen.getByLabelText('Kalki 2898-AD watched')).toBeTruthy();
     expect(screen.queryByLabelText('Mark Kalki 2898-AD as watched')).toBeNull();
   });
 

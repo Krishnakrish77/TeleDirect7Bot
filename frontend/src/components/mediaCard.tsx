@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, PlayIcon, ThumbDownIcon, ThumbUpIcon, XIcon } from '../icons';
 import type { HubCard, RatingCounts, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
+import { isLocallyWatched, markLocallyWatched } from '../utils/localWatched';
 import { joinMetadata } from '../utils/metadata';
 
 // Parsed once per render cycle; microtask clears it so the next render reads fresh.
@@ -126,14 +127,15 @@ function MediaCardBase({
   const rawProgress = useMemo(() => card.watchKey ? getLocalCwPct(card.watchKey) : 0, [card.watchKey]);
   const [markedWatched, setMarkedWatched] = useState(false);
   useEffect(() => { setMarkedWatched(false); }, [card.watchKey]);
-  const progressPct = markedWatched ? 0 : rawProgress;
+  const watched = !isMusic && card.type !== 'series' && (markedWatched || Boolean(card.watched) || isLocallyWatched(card.watchKey));
+  const progressPct = watched ? 0 : rawProgress;
   const [previewOpen, setPreviewOpen] = useState(false);
   const canPreview = Boolean(card.trailerKey) && !isMusic;
   const isSinglePlayableVideo = !isMusic && card.type !== 'series' && Boolean(card.playHref || card.streamHref || card.watchKey);
   const canMarkWatched = isSinglePlayableVideo
     && Boolean(card.watchKey)
     && Boolean(onMarkWatched)
-    && !markedWatched
+    && !watched
     && (progressPct > 0 || allowMarkWatchedWithoutProgress);
   const preventDisabledNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
     if (!interactionDisabled) return;
@@ -241,7 +243,15 @@ function MediaCardBase({
         onClick={preventDisabledNavigation}
       >
         <span className="card-copy">
-          <span className="eyebrow">{display.eyebrow}</span>
+          <span className="card-eyebrow-row">
+            <span className="eyebrow">{display.eyebrow}</span>
+            {watched && (
+              <span className="card-watched-status" aria-label={`${display.title} watched`}>
+                <CheckIcon />
+                <span>Watched</span>
+              </span>
+            )}
+          </span>
           <strong dir="auto">{display.title}</strong>
           {metaItems.length > 0 && (
             <span className="card-meta-strip" aria-label={`${display.title} metadata`}>
@@ -316,6 +326,7 @@ function MediaCardBase({
               delete cw[card.watchKey];
               localStorage.setItem('td:cw', JSON.stringify(cw));
             } catch { /* ignore */ }
+            markLocallyWatched(card.watchKey);
             setMarkedWatched(true);
             onMarkWatched?.(card);
           }}
