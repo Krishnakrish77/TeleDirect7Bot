@@ -199,9 +199,14 @@ function App() {
   }, []);
 
   const requireAuth = useCallback(() => setSignInOpen(true), []);
-  const onMarkWatched = useCallback((card: HubCard) => {
-    void deleteContinueEntry(card.watchKey).catch(() => undefined);
-    if (user) void recordWatchHistory(card.watchKey, card.title).catch(() => undefined);
+  const onMarkWatched = useCallback((keys: string[], title: string) => {
+    const uniqueKeys = [...new Set(keys.filter(Boolean))];
+    uniqueKeys.forEach((key) => {
+      void deleteContinueEntry(key).catch(() => undefined);
+    });
+    if (user) {
+      void Promise.allSettled(uniqueKeys.map((key) => recordWatchHistory(key, title)));
+    }
   }, [user]);
   const onToggleSaved = useCallback((card: HubCard) => {
     if (!user) {
@@ -354,8 +359,6 @@ function App() {
                     saved={saved}
                     onToggleSaved={onToggleSaved}
                     onDismiss={onDismissRecommendation}
-                    onMarkWatched={onMarkWatched}
-                    allowMarkWatchedWithoutProgress={Boolean(user)}
                   />
                 ))}
               </div>
@@ -368,8 +371,6 @@ function App() {
                 params={params}
                 update={update}
                 onToggleSaved={onToggleSaved}
-                onMarkWatched={onMarkWatched}
-                allowMarkWatchedWithoutProgress={Boolean(user)}
                 loading={loading}
               />
             )}
@@ -404,6 +405,7 @@ function App() {
             shuffleQueue={audio.shuffleQueue}
             player={audio.player}
             onAddToPlaylist={onAddToPlaylist}
+            onMarkWatched={onMarkWatched}
           />
         ) : route.kind === 'watchlist' ? (
           <WatchlistPage

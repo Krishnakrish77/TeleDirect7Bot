@@ -16,6 +16,7 @@ from main.server.spa_routes import (
     _hub_card,
     _home_shelf_limit,
     _related_rows,
+    _video_choice_payload,
     _watched_movie_keys_for_keys,
 )
 from main.utils import media_index
@@ -160,6 +161,13 @@ class SpaHubPayloadTest(unittest.TestCase):
         item = _video_item(message_id=101, secure_hash="hash")
 
         payload = _hub_card(item, watched_keys={"hash101"}, watched_movie_keys=set())
+
+        self.assertTrue(payload["watched"])
+
+    def test_video_choice_payload_marks_detail_variant_as_watched(self):
+        item = _video_item(message_id=101, secure_hash="hash")
+
+        payload = _video_choice_payload(item, watched_keys={"hash101"})
 
         self.assertTrue(payload["watched"])
 

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, MovieDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
 import { DetailPage } from './detail';
@@ -150,6 +150,7 @@ function makeSeries(): SeriesDetailResponse {
     type: 'item',
     itemId: '101',
     key: 'hash101',
+    watchKey: 'hash101',
     title: 'Training Day',
     episodeLabel: 'S01E01',
     episodeOverview: 'Peter starts training.',
@@ -162,6 +163,7 @@ function makeSeries(): SeriesDetailResponse {
     type: 'item',
     itemId: '102',
     key: 'hash102',
+    watchKey: 'hash102',
     title: 'Team Up',
     episodeLabel: 'S01E02',
     episodeOverview: 'The team comes together.',
@@ -205,6 +207,10 @@ function makeSeries(): SeriesDetailResponse {
     related: [],
   };
 }
+
+beforeEach(() => {
+  localStorage.clear();
+});
 
 describe('Album detail', () => {
   it('renders a dense album summary with tracks and playback actions', () => {
@@ -321,6 +327,41 @@ describe('Series detail', () => {
       vi.useRealTimers();
     }
   });
+
+  it('marks the shown episodes watched from the detail page', () => {
+    const series = makeSeries();
+    const onMarkWatched = vi.fn();
+    localStorage.setItem('td:cw', JSON.stringify({
+      hash101: { pos: 120, dur: 240 },
+      hash102: { pos: 20, dur: 240 },
+    }));
+
+    render(
+      <DetailPage
+        route={{ kind: 'detail', detailKind: 'series', key: 'ultimate-spiderman' }}
+        data={series}
+        loading={false}
+        error=""
+        saved={new Set()}
+        onToggleSaved={vi.fn()}
+        navigate={vi.fn()}
+        playTrack={vi.fn()}
+        togglePlayback={vi.fn()}
+        addToQueue={vi.fn()}
+        shuffleQueue={vi.fn()}
+        player={makePlayer()}
+        onMarkWatched={onMarkWatched}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: `Mark ${series.title} as watched` }));
+
+    expect(onMarkWatched).toHaveBeenCalledWith(['hash101', 'hash102'], series.title);
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')).toEqual({});
+    expect(screen.getByRole('button', { name: `${series.title} watched` }).textContent).toContain('Shown watched');
+    expect(screen.queryByLabelText('42% watched')).toBeNull();
+    expect(screen.getAllByLabelText('Watched')).toHaveLength(2);
+  });
 });
 
 describe('Movie detail', () => {
@@ -363,5 +404,35 @@ describe('Movie detail', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(onToggleSaved).toHaveBeenCalledWith('movie:very-long-title');
+  });
+
+  it('marks a movie watched from the detail page', () => {
+    const movie = makeMovie();
+    const onMarkWatched = vi.fn();
+    localStorage.setItem('td:cw', JSON.stringify({ kalki: { pos: 120, dur: 240 } }));
+
+    render(
+      <DetailPage
+        route={{ kind: 'detail', detailKind: 'movie', key: 'very-long-title' }}
+        data={movie}
+        loading={false}
+        error=""
+        saved={new Set()}
+        onToggleSaved={vi.fn()}
+        navigate={vi.fn()}
+        playTrack={vi.fn()}
+        togglePlayback={vi.fn()}
+        addToQueue={vi.fn()}
+        shuffleQueue={vi.fn()}
+        player={makePlayer()}
+        onMarkWatched={onMarkWatched}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: `Mark ${movie.title} as watched` }));
+
+    expect(onMarkWatched).toHaveBeenCalledWith(['kalki'], movie.title);
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')).toEqual({});
+    expect(screen.getByRole('button', { name: `${movie.title} watched` }).textContent).toContain('Watched');
   });
 });

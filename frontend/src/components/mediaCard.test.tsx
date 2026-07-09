@@ -220,51 +220,20 @@ describe('MediaCard', () => {
     expect(onToggleSaved).not.toHaveBeenCalled();
   });
 
-  it('surfaces mark watched when a card has local progress', () => {
-    const onMarkWatched = vi.fn();
+  it('shows local progress without exposing a card-level mark watched action', () => {
     const media = card({ watchKey: 'hash42' });
     localStorage.setItem('td:cw', JSON.stringify({ hash42: { pos: 120, dur: 240 } }));
 
-    render(
+    const { container } = render(
       <MediaCard
         card={media}
         saved={false}
         onToggleSaved={vi.fn()}
-        onMarkWatched={onMarkWatched}
       />,
     );
 
-    const markButton = screen.getByLabelText('Mark Kalki 2898-AD as watched');
-    expect(markButton.getAttribute('title')).toBe('Mark Kalki 2898-AD as watched');
-    expect(markButton.textContent).toContain('Mark watched');
-
-    fireEvent.click(markButton);
-
-    expect(onMarkWatched).toHaveBeenCalledWith(media);
-    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')).toEqual({});
-    expect(screen.getByLabelText('Kalki 2898-AD watched')).toBeTruthy();
-    expect(screen.getByText('Watched')).toBeTruthy();
-  });
-
-  it('allows signed-in video cards to be marked watched without existing progress', () => {
-    const onMarkWatched = vi.fn();
-    const media = card({ watchKey: 'hash42' });
-
-    render(
-      <MediaCard
-        card={media}
-        saved={false}
-        onToggleSaved={vi.fn()}
-        onMarkWatched={onMarkWatched}
-        allowMarkWatchedWithoutProgress
-      />,
-    );
-
-    fireEvent.click(screen.getByLabelText('Mark Kalki 2898-AD as watched'));
-
-    expect(onMarkWatched).toHaveBeenCalledWith(media);
     expect(screen.queryByLabelText('Mark Kalki 2898-AD as watched')).toBeNull();
-    expect(screen.getByLabelText('Kalki 2898-AD watched')).toBeTruthy();
+    expect(container.querySelector('.card-progress span')?.getAttribute('style')).toContain('width: 50%');
   });
 
   it('shows watched status from API without showing the action', () => {
@@ -273,8 +242,6 @@ describe('MediaCard', () => {
         card={card({ watched: true, watchKey: 'hash42' })}
         saved={false}
         onToggleSaved={vi.fn()}
-        onMarkWatched={vi.fn()}
-        allowMarkWatchedWithoutProgress
       />,
     );
 
@@ -290,8 +257,6 @@ describe('MediaCard', () => {
         card={card({ watchKey: 'hash42' })}
         saved={false}
         onToggleSaved={vi.fn()}
-        onMarkWatched={vi.fn()}
-        allowMarkWatchedWithoutProgress
       />,
     );
 
@@ -299,13 +264,12 @@ describe('MediaCard', () => {
     expect(screen.queryByLabelText('Mark Kalki 2898-AD as watched')).toBeNull();
   });
 
-  it('does not show mark watched from scratch when progress-free cards are not allowed', () => {
+  it('does not show mark watched from scratch on cards', () => {
     render(
       <MediaCard
         card={card({ watchKey: 'hash42' })}
         saved={false}
         onToggleSaved={vi.fn()}
-        onMarkWatched={vi.fn()}
       />,
     );
 
@@ -326,8 +290,6 @@ describe('MediaCard', () => {
         })}
         saved={false}
         onToggleSaved={vi.fn()}
-        onMarkWatched={vi.fn()}
-        allowMarkWatchedWithoutProgress
       />,
     );
 

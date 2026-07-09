@@ -300,15 +300,11 @@ export function ShelfRow({
   saved,
   onToggleSaved,
   onDismiss,
-  onMarkWatched,
-  allowMarkWatchedWithoutProgress = false,
 }: {
   shelf: HubShelf;
   saved: Set<string>;
   onToggleSaved: (card: HubCard) => void;
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
-  onMarkWatched?: (card: HubCard) => void;
-  allowMarkWatchedWithoutProgress?: boolean;
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const [canScrollBack, setCanScrollBack] = useState(false);
@@ -384,8 +380,6 @@ export function ShelfRow({
                 if (onDismiss) onDismiss(meta, dismissedCard);
                 else void dismissRecommendation(meta.tmdbId, meta.kind).catch(() => undefined);
               }}
-              onMarkWatched={onMarkWatched}
-              allowMarkWatchedWithoutProgress={allowMarkWatchedWithoutProgress}
             />
           );
         })}
@@ -400,8 +394,6 @@ export function GridView({
   saved,
   update,
   onToggleSaved,
-  onMarkWatched,
-  allowMarkWatchedWithoutProgress = false,
   loading = false,
 }: {
   data: HubResponse;
@@ -409,8 +401,6 @@ export function GridView({
   saved: Set<string>;
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
   onToggleSaved: (card: HubCard) => void;
-  onMarkWatched?: (card: HubCard) => void;
-  allowMarkWatchedWithoutProgress?: boolean;
   loading?: boolean;
 }) {
   const isMusicGrid =
@@ -446,8 +436,6 @@ export function GridView({
                 saved={saved.has(card.itemId)}
                 priority={index < priorityCount}
                 onToggleSaved={onToggleSaved}
-                onMarkWatched={onMarkWatched}
-                allowMarkWatchedWithoutProgress={allowMarkWatchedWithoutProgress}
                 interactionDisabled={loading}
               />
             ))}

@@ -1,8 +1,8 @@
-import { memo, useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { memo, useMemo, useState, type MouseEvent } from 'react';
 import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, PlayIcon, ThumbDownIcon, ThumbUpIcon, XIcon } from '../icons';
 import type { HubCard, RatingCounts, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
-import { isLocallyWatched, markLocallyWatched } from '../utils/localWatched';
+import { isLocallyWatched } from '../utils/localWatched';
 import { joinMetadata } from '../utils/metadata';
 
 // Parsed once per render cycle; microtask clears it so the next render reads fresh.
@@ -31,8 +31,6 @@ interface MediaCardProps {
   onToggleSaved: (card: HubCard) => void;
   dismissMeta?: RecommendationMeta | null;
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
-  onMarkWatched?: (card: HubCard) => void;
-  allowMarkWatchedWithoutProgress?: boolean;
   interactionDisabled?: boolean;
 }
 
@@ -113,8 +111,6 @@ function MediaCardBase({
   onToggleSaved,
   dismissMeta,
   onDismiss,
-  onMarkWatched,
-  allowMarkWatchedWithoutProgress = false,
   interactionDisabled = false,
 }: MediaCardProps) {
   const isMusic = card.type === 'track' || card.type === 'album';
@@ -125,18 +121,10 @@ function MediaCardBase({
   const metaItems = getMediaCardMetaItems(card);
   const communityRating = isMusic ? '' : communityRatingLabel(card.ratingCounts);
   const rawProgress = useMemo(() => card.watchKey ? getLocalCwPct(card.watchKey) : 0, [card.watchKey]);
-  const [markedWatched, setMarkedWatched] = useState(false);
-  useEffect(() => { setMarkedWatched(false); }, [card.watchKey]);
-  const watched = !isMusic && card.type !== 'series' && (markedWatched || Boolean(card.watched) || isLocallyWatched(card.watchKey));
+  const watched = !isMusic && card.type !== 'series' && (Boolean(card.watched) || isLocallyWatched(card.watchKey));
   const progressPct = watched ? 0 : rawProgress;
   const [previewOpen, setPreviewOpen] = useState(false);
   const canPreview = Boolean(card.trailerKey) && !isMusic;
-  const isSinglePlayableVideo = !isMusic && card.type !== 'series' && Boolean(card.playHref || card.streamHref || card.watchKey);
-  const canMarkWatched = isSinglePlayableVideo
-    && Boolean(card.watchKey)
-    && Boolean(onMarkWatched)
-    && !watched
-    && (progressPct > 0 || allowMarkWatchedWithoutProgress);
   const preventDisabledNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
     if (!interactionDisabled) return;
     event.preventDefault();
@@ -280,7 +268,7 @@ function MediaCardBase({
         </span>
       </a>
       {/*
-        Save/dismiss/watched controls stay as article-level siblings so they are not nested
+        Save and dismiss controls stay as article-level siblings so they are not nested
         inside card links, but remain anchored to the poster's top edge.
       */}
       <button
@@ -313,31 +301,6 @@ function MediaCardBase({
           aria-label="Not for me"
         >
           <XIcon />
-        </button>
-      )}
-      {canMarkWatched && (
-        <button
-          type="button"
-          className="mark-watched-button"
-          disabled={interactionDisabled}
-          title={`Mark ${display.title} as watched`}
-          onClick={(event: MouseEvent<HTMLButtonElement>) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (interactionDisabled) return;
-            try {
-              const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
-              delete cw[card.watchKey];
-              localStorage.setItem('td:cw', JSON.stringify(cw));
-            } catch { /* ignore */ }
-            markLocallyWatched(card.watchKey);
-            setMarkedWatched(true);
-            onMarkWatched?.(card);
-          }}
-          aria-label={`Mark ${display.title} as watched`}
-        >
-          <CheckIcon />
-          <span>Mark watched</span>
         </button>
       )}
     </article>

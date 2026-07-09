@@ -1103,12 +1103,13 @@ def _episode_label(item: HubItem) -> str:
     return ""
 
 
-def _video_choice_payload(item: HubItem) -> dict:
+def _video_choice_payload(item: HubItem, watched_keys: set[str] | None = None) -> dict:
     common = _item_common(item)
+    key = f"{item.secure_hash}{item.message_id}"
     label_bits = [item.quality or "", common["durationLabel"]]
-    return {
+    payload = {
         **common,
-        "key": f"{item.secure_hash}{item.message_id}",
+        "key": key,
         "itemId": str(item.message_id),
         "type": "item",
         "title": item.episode_title or common["title"],
@@ -1123,6 +1124,9 @@ def _video_choice_payload(item: HubItem) -> dict:
         "classicHref": _watch_url(item),
         "href": _play_url(item),
     }
+    if watched_keys and key in watched_keys:
+        payload["watched"] = True
+    return payload
 
 
 def _cw_progress_pct(entry: dict | None) -> int:
@@ -1275,7 +1279,7 @@ def _movie_detail_payload(
         "trailerKey": meta["trailerKey"],
         "playHref": _play_url(preferred),
         "classicHref": _watch_url(preferred),
-        "variants": [_video_choice_payload(v) for v in variants],
+        "variants": [_video_choice_payload(v, watched_keys=watched_keys) for v in variants],
         "related": _related_rows(
             enriched,
             watched_keys=watched_keys,

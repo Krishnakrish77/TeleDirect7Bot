@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookmarkIcon, CheckIcon, ChevronRightIcon, DownloadIcon, ListIcon, ListPlusIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
 import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
@@ -7,6 +7,7 @@ import { LoadingRows, ErrorPanel } from './common';
 import { MediaCard } from './mediaCard';
 import { RatingControls } from './rating';
 import { formatExternalRating } from '../utils/externalRating';
+import { isLocallyWatched, markLocallyWatched } from '../utils/localWatched';
 import { uniqueMetadataParts } from '../utils/metadata';
 
 export function DetailPage({
@@ -23,6 +24,7 @@ export function DetailPage({
   shuffleQueue,
   player,
   onAddToPlaylist,
+  onMarkWatched,
 }: {
   route: Extract<AppRoute, { kind: 'detail' }>;
   data: DetailResponse | null;
@@ -37,6 +39,7 @@ export function DetailPage({
   shuffleQueue: (queue: WatchTrack[]) => void;
   player: PlayerState;
   onAddToPlaylist?: (track: WatchTrack) => void;
+  onMarkWatched?: (keys: string[], title: string) => void;
 }) {
   if (loading) {
     return <main className="detail-main"><LoadingRows /></main>;
@@ -49,9 +52,9 @@ export function DetailPage({
   }
   switch (data.kind) {
     case 'movie':
-      return <MovieDetail data={data} saved={saved} onToggleSaved={onToggleSaved} />;
+      return <MovieDetail data={data} saved={saved} onToggleSaved={onToggleSaved} onMarkWatched={onMarkWatched} />;
     case 'series':
-      return <SeriesDetail data={data} saved={saved} onToggleSaved={onToggleSaved} navigate={navigate} />;
+      return <SeriesDetail data={data} saved={saved} onToggleSaved={onToggleSaved} navigate={navigate} onMarkWatched={onMarkWatched} />;
     case 'album':
       return (
         <AlbumDetail
@@ -100,6 +103,7 @@ function DetailHero({
   trailerKey,
   saved,
   onToggleSaved,
+  extraActions,
   children,
 }: {
   title: string;
@@ -115,6 +119,7 @@ function DetailHero({
   trailerKey?: string;
   saved?: boolean;
   onToggleSaved?: () => void;
+  extraActions?: ReactNode;
   children?: ReactNode;
 }) {
   const [trailerOpen, setTrailerOpen] = useState(false);
@@ -155,6 +160,7 @@ function DetailHero({
               <span>{saved ? 'Saved' : 'Save'}</span>
             </button>
           )}
+          {extraActions}
           {imdbHref && (
             <a className="secondary-action" href={imdbHref} target="_blank" rel="noopener noreferrer">
               <span>IMDb</span>
@@ -195,6 +201,79 @@ function DetailHero({
 
 function detailCountLabel(count: number, singular: string) {
   return `${count} ${singular}${count === 1 ? '' : 's'}`;
+}
+
+function choiceWatchKey(choice: VideoChoice): string {
+  return choice.watchKey || choice.key;
+}
+
+function uniqueChoiceKeys(choices: VideoChoice[]): string[] {
+  const keys = new Set<string>();
+  choices.forEach((choice) => {
+    const key = choiceWatchKey(choice);
+    if (key) keys.add(key);
+  });
+  return [...keys];
+}
+
+function removeLocalContinue(keys: string[]) {
+  try {
+    const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
+    keys.forEach((key) => {
+      delete cw[key];
+    });
+    localStorage.setItem('td:cw', JSON.stringify(cw));
+  } catch {
+    // Local resume state is best-effort only.
+  }
+}
+
+function MarkWatchedAction({
+  keys,
+  title,
+  initiallyWatched,
+  onMarkWatched,
+  onMarked,
+  label = 'Mark watched',
+  watchedLabel = 'Watched',
+}: {
+  keys: string[];
+  title: string;
+  initiallyWatched: boolean;
+  onMarkWatched?: (keys: string[], title: string) => void;
+  onMarked?: (keys: string[]) => void;
+  label?: string;
+  watchedLabel?: string;
+}) {
+  const keySignature = keys.join('|');
+  const [marked, setMarked] = useState(false);
+  useEffect(() => {
+    setMarked(false);
+  }, [keySignature]);
+  const watched = keys.length > 0 && (marked || initiallyWatched);
+  const handleMarkWatched = useCallback(() => {
+    if (!keys.length || watched) return;
+    removeLocalContinue(keys);
+    keys.forEach(markLocallyWatched);
+    setMarked(true);
+    onMarked?.(keys);
+    onMarkWatched?.(keys, title);
+  }, [keys, onMarkWatched, onMarked, title, watched]);
+
+  if (!keys.length) return null;
+  return (
+    <button
+      type="button"
+      className={watched ? 'secondary-action detail-watched-action watched' : 'secondary-action detail-watched-action'}
+      onClick={handleMarkWatched}
+      disabled={watched}
+      title={watched ? watchedLabel : label}
+      aria-label={watched ? `${title} watched` : `Mark ${title} as watched`}
+    >
+      <CheckIcon />
+      <span>{watched ? watchedLabel : label}</span>
+    </button>
+  );
 }
 
 function DetailInfoSection({
@@ -276,13 +355,17 @@ function MovieDetail({
   data,
   saved,
   onToggleSaved,
+  onMarkWatched,
 }: {
   data: MovieDetailResponse;
   saved: Set<string>;
   onToggleSaved: (itemId: string) => void;
+  onMarkWatched?: (keys: string[], title: string) => void;
 }) {
   const ratingId = data.variants[0]?.itemId || null;
   const firstVariant = data.variants[0];
+  const movieWatchKeys = useMemo(() => uniqueChoiceKeys(data.variants), [data.variants]);
+  const movieWatched = data.variants.some((variant) => Boolean(variant.watched) || isLocallyWatched(choiceWatchKey(variant)));
   const movieFacts = uniqueMetadataParts([
     data.year,
     detailCountLabel(data.variants.length, 'version'),
@@ -306,6 +389,14 @@ function MovieDetail({
         trailerKey={data.trailerKey}
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
+        extraActions={(
+          <MarkWatchedAction
+            keys={movieWatchKeys}
+            title={data.title}
+            initiallyWatched={movieWatched}
+            onMarkWatched={onMarkWatched}
+          />
+        )}
       >
         <RatingControls messageId={ratingId} />
       </DetailHero>
@@ -354,13 +445,32 @@ function SeriesDetail({
   saved,
   onToggleSaved,
   navigate,
+  onMarkWatched,
 }: {
   data: SeriesDetailResponse;
   saved: Set<string>;
   onToggleSaved: (itemId: string) => void;
   navigate: (href: string, replace?: boolean) => void;
+  onMarkWatched?: (keys: string[], title: string) => void;
 }) {
   const ratingId = data.seasonBlocks[0]?.entries[0]?.rep.itemId || null;
+  const [, refreshSeriesWatchedState] = useState(0);
+  const visibleEntries = useMemo(
+    () => data.seasonBlocks.flatMap((block) => block.entries),
+    [data.seasonBlocks],
+  );
+  const visibleChoices = useMemo(
+    () => visibleEntries.flatMap((entry) => entry.variants.length ? entry.variants : [entry.rep]),
+    [visibleEntries],
+  );
+  const seriesWatchKeys = useMemo(() => uniqueChoiceKeys(visibleChoices), [visibleChoices]);
+  const visibleEntriesWatched = visibleEntries.length > 0 && visibleEntries.every((entry) => {
+    const choices = entry.variants.length ? entry.variants : [entry.rep];
+    return entry.watched || choices.some((choice) => isLocallyWatched(choiceWatchKey(choice)));
+  });
+  const handleShownMarked = useCallback(() => {
+    refreshSeriesWatchedState((value) => value + 1);
+  }, []);
   const seriesFacts = uniqueMetadataParts([
     data.year,
     detailCountLabel(data.seasonCount, 'season'),
@@ -426,6 +536,17 @@ function SeriesDetail({
         trailerKey={data.trailerKey}
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
+        extraActions={(
+          <MarkWatchedAction
+            keys={seriesWatchKeys}
+            title={data.title}
+            initiallyWatched={visibleEntriesWatched}
+            onMarkWatched={onMarkWatched}
+            onMarked={handleShownMarked}
+            label="Mark shown watched"
+            watchedLabel="Shown watched"
+          />
+        )}
       >
         <RatingControls messageId={ratingId} />
       </DetailHero>
@@ -479,47 +600,52 @@ function SeriesDetail({
             <section key={block.season ?? 'misc'} className="episode-block">
               <h3>{block.season !== null ? `Season ${block.season}` : 'Episodes'}</h3>
               <div className="episode-grid">
-                {block.entries.map((entry) => (
-                  <article key={entry.rep.key} className="episode-card">
-                    <a className="episode-thumb" href={entry.rep.playHref}>
-                      <img src={entry.rep.episodeStillUrl || entry.rep.thumbUrl} alt="" loading="lazy" decoding="async" />
-                      <EpisodePlaybackState progressPct={entry.progressPct} watched={entry.watched} />
-                      {entry.rep.durationLabel && <span className="card-badge">{entry.rep.durationLabel}</span>}
-                    </a>
-                    <div>
-                      <p className="eyebrow">
-                        {entry.rep.episodeLabel || 'Episode'}
-                        {entry.rep.firstAired && (
-                          <time className="episode-airdate" dateTime={entry.rep.firstAired}>
-                            {entry.rep.firstAired.slice(0, 4)}
-                          </time>
+                {block.entries.map((entry) => {
+                  const choices = entry.variants.length ? entry.variants : [entry.rep];
+                  const entryWatched = entry.watched || choices.some((choice) => isLocallyWatched(choiceWatchKey(choice)));
+                  const entryProgressPct = entryWatched ? 0 : entry.progressPct;
+                  return (
+                    <article key={entry.rep.key} className="episode-card">
+                      <a className="episode-thumb" href={entry.rep.playHref}>
+                        <img src={entry.rep.episodeStillUrl || entry.rep.thumbUrl} alt="" loading="lazy" decoding="async" />
+                        <EpisodePlaybackState progressPct={entryProgressPct} watched={entryWatched} />
+                        {entry.rep.durationLabel && <span className="card-badge">{entry.rep.durationLabel}</span>}
+                      </a>
+                      <div>
+                        <p className="eyebrow">
+                          {entry.rep.episodeLabel || 'Episode'}
+                          {entry.rep.firstAired && (
+                            <time className="episode-airdate" dateTime={entry.rep.firstAired}>
+                              {entry.rep.firstAired.slice(0, 4)}
+                            </time>
+                          )}
+                        </p>
+                        <h4><a href={entry.rep.playHref}>{entry.rep.title}</a></h4>
+                        {entry.rep.episodeOverview && <p>{entry.rep.episodeOverview}</p>}
+                        {entry.variants.length > 1 && (
+                          <div className="variant-chips">
+                            {entry.variants.map((variant) => (
+                              <a key={variant.key} href={variant.playHref}>{variant.quality || variant.durationLabel || 'Version'}</a>
+                            ))}
+                          </div>
                         )}
-                      </p>
-                      <h4><a href={entry.rep.playHref}>{entry.rep.title}</a></h4>
-                      {entry.rep.episodeOverview && <p>{entry.rep.episodeOverview}</p>}
-                      {entry.variants.length > 1 && (
-                        <div className="variant-chips">
-                          {entry.variants.map((variant) => (
-                            <a key={variant.key} href={variant.playHref}>{variant.quality || variant.durationLabel || 'Version'}</a>
-                          ))}
-                        </div>
-                      )}
-                      {entry.rep.downloadHref && (
-                        <div className="episode-card-actions">
-                          <a
-                            className="episode-download-action"
-                            href={entry.rep.downloadHref}
-                            download
-                            aria-label={`Download ${episodeDownloadTitle(entry.rep)}`}
-                          >
-                            <DownloadIcon />
-                            <span>Download</span>
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </article>
-                ))}
+                        {entry.rep.downloadHref && (
+                          <div className="episode-card-actions">
+                            <a
+                              className="episode-download-action"
+                              href={entry.rep.downloadHref}
+                              download
+                              aria-label={`Download ${episodeDownloadTitle(entry.rep)}`}
+                            >
+                              <DownloadIcon />
+                              <span>Download</span>
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             </section>
           ))}

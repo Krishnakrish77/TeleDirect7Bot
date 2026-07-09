@@ -675,6 +675,28 @@ img {
   outline: none;
 }
 
+.detail-watched-action {
+  border-color: rgba(20, 184, 166, 0.34);
+  background: rgba(20, 184, 166, 0.12);
+  color: #ccfbf1;
+}
+
+.detail-watched-action:hover,
+.detail-watched-action:focus-visible {
+  border-color: rgba(20, 184, 166, 0.68);
+  background: rgba(20, 184, 166, 0.22);
+  color: #f8fafc;
+}
+
+.detail-watched-action.watched,
+.detail-watched-action:disabled {
+  border-color: rgba(20, 184, 166, 0.24);
+  background: rgba(20, 184, 166, 0.1);
+  color: #99f6e4;
+  cursor: default;
+  opacity: 1;
+}
+
 .primary-action svg,
 .secondary-action svg {
   width: 18px;
@@ -1247,7 +1269,6 @@ img {
 
 .save-button,
 .dismiss-button,
-.mark-watched-button,
 .forget-button {
   position: absolute;
   z-index: 4;
@@ -1274,31 +1295,6 @@ img {
   opacity: 0;
 }
 
-.mark-watched-button {
-  top: 2.95rem;
-  right: 0.45rem;
-  background: rgba(15, 17, 21, 0.78);
-  opacity: 0;
-  pointer-events: none;
-}
-
-.mark-watched-button span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
-.mark-watched-button:hover,
-.mark-watched-button:focus-visible {
-  border-color: rgba(255, 255, 255, 0.82);
-  background: rgba(248, 250, 252, 0.96);
-  color: #0f172a;
-  pointer-events: auto;
-}
-
 .save-button:hover,
 .dismiss-button:hover {
   border-color: rgba(255, 255, 255, 0.72);
@@ -1314,7 +1310,6 @@ img {
 
 .save-button:disabled,
 .dismiss-button:disabled,
-.mark-watched-button:disabled,
 .preview-button:disabled {
   cursor: progress;
   opacity: 0.48;
@@ -1354,7 +1349,6 @@ img {
 .save-button.saved,
 .save-button:focus-visible,
 .dismiss-button:focus-visible,
-.mark-watched-button:focus-visible,
 .preview-button:focus-visible {
   opacity: 1;
 }
@@ -1368,19 +1362,10 @@ img {
   .media-card:focus-within .save-button,
   .media-card:hover .dismiss-button,
   .media-card:focus-within .dismiss-button,
-  .media-card:hover .mark-watched-button,
-  .media-card:focus-within .mark-watched-button,
   .media-card:hover .preview-button,
   .media-card:focus-within .preview-button {
     opacity: 1;
     pointer-events: auto;
-  }
-
-  .media-card:hover .mark-watched-button,
-  .media-card:focus-within .mark-watched-button {
-    border-color: rgba(255, 255, 255, 0.82);
-    background: rgba(248, 250, 252, 0.96);
-    color: #0f172a;
   }
 }
 
@@ -1412,51 +1397,9 @@ img {
 
 .save-button svg,
 .dismiss-button svg,
-.mark-watched-button svg,
 .forget-button svg {
   width: 16px;
   height: 16px;
-}
-
-@media (hover: none), (pointer: coarse) {
-  .mark-watched-button {
-    position: static;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    justify-self: start;
-    gap: 0.34rem;
-    width: auto;
-    height: 32px;
-    margin-top: -0.2rem;
-    padding: 0 0.65rem;
-    border-color: rgba(20, 184, 166, 0.32);
-    background: rgba(20, 184, 166, 0.12);
-    color: #99f6e4;
-    font-size: 0.72rem;
-    font-weight: 900;
-    line-height: 1;
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .mark-watched-button span {
-    position: static;
-    width: auto;
-    height: auto;
-    overflow: visible;
-    clip: auto;
-    white-space: nowrap;
-  }
-
-  .mark-watched-button:disabled {
-    border-color: rgba(148, 163, 184, 0.22);
-    background: rgba(15, 23, 42, 0.34);
-    color: rgba(203, 213, 225, 0.72);
-    cursor: progress;
-    opacity: 0.5;
-    pointer-events: none;
-  }
 }
 
 .card-copy {
@@ -1608,8 +1551,7 @@ img {
 .grid-refetching .media-card-poster-link,
 .grid-refetching .preview-button,
 .grid-refetching .save-button,
-.grid-refetching .dismiss-button,
-.grid-refetching .mark-watched-button {
+.grid-refetching .dismiss-button {
   pointer-events: none;
 }
 
