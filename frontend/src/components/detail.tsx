@@ -9,6 +9,7 @@ import { RatingControls } from './rating';
 import { formatExternalRating } from '../utils/externalRating';
 import { isLocallyWatched, markLocallyWatched } from '../utils/localWatched';
 import { uniqueMetadataParts } from '../utils/metadata';
+import { YOUTUBE_TRAILER_ALLOW, youtubeTrailerEmbedSrc } from '../utils/youtubeTrailer';
 
 export function DetailPage({
   route,
@@ -174,7 +175,7 @@ function DetailHero({
         </div>
         {children}
       </div>
-      {trailerOpen && (
+      {trailerOpen && trailerKey && (
         <div
           className="trailer-overlay"
           role="dialog"
@@ -187,9 +188,9 @@ function DetailHero({
               <XIcon />
             </button>
             <iframe
-              src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0`}
+              src={youtubeTrailerEmbedSrc(trailerKey)}
               title="Trailer"
-              allow="autoplay; fullscreen"
+              allow={YOUTUBE_TRAILER_ALLOW}
               allowFullScreen
             />
           </div>

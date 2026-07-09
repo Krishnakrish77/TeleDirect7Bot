@@ -255,13 +255,13 @@ describe('AdminPage', () => {
         items: [{
           ...adminData.items[0],
           duplicate: true,
-          duplicateReason: 'Same title/year',
+          duplicateReason: 'Same title/year/quality',
           duplicateGroupSize: 2,
         }],
       },
     });
 
-    expect(screen.getByText('Same title/year (2)')).toBeTruthy();
+    expect(screen.getByText('Same title/year/quality (2)')).toBeTruthy();
   });
 
   it('runs maintenance operations', async () => {

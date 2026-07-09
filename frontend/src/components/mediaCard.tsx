@@ -4,6 +4,7 @@ import type { HubCard, RatingCounts, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
 import { isLocallyWatched } from '../utils/localWatched';
 import { joinMetadata } from '../utils/metadata';
+import { YOUTUBE_TRAILER_ALLOW, youtubeTrailerEmbedSrc } from '../utils/youtubeTrailer';
 
 // Parsed once per render cycle; microtask clears it so the next render reads fresh.
 let _cwCache: Record<string, { pos: number; dur: number }> | null = null;
@@ -203,9 +204,9 @@ function MediaCardBase({
         {previewOpen && card.trailerKey && (
           <div className="card-preview-panel" role="dialog" aria-label={`${display.title} trailer preview`}>
             <iframe
-              src={`https://www.youtube.com/embed/${encodeURIComponent(card.trailerKey)}?autoplay=1&mute=1&controls=0&rel=0&playsinline=1`}
+              src={youtubeTrailerEmbedSrc(card.trailerKey)}
               title={`${display.title} trailer preview`}
-              allow="autoplay; encrypted-media; fullscreen"
+              allow={YOUTUBE_TRAILER_ALLOW}
               allowFullScreen
             />
             <button

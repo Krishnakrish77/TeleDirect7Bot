@@ -188,7 +188,13 @@ describe('MediaCard', () => {
     fireEvent.click(previewButton);
 
     const preview = screen.getByTitle('Kalki 2898-AD trailer preview') as HTMLIFrameElement;
-    expect(preview.getAttribute('src')).toContain('youtube.com/embed/abc123');
+    const previewSrc = preview.getAttribute('src') || '';
+    expect(previewSrc).toContain('youtube.com/embed/abc123');
+    expect(previewSrc).toContain('controls=1');
+    expect(previewSrc).not.toContain('mute=1');
+    expect(preview.getAttribute('allow')).toContain('fullscreen');
+    expect(preview.getAttribute('allow')).toContain('encrypted-media');
+    expect(preview.hasAttribute('allowfullscreen')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Close preview' }));
     expect(screen.queryByTitle('Kalki 2898-AD trailer preview')).toBeNull();
   });
