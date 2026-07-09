@@ -1282,12 +1282,34 @@ img {
   pointer-events: none;
 }
 
+.mark-watched-button span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .mark-watched-button:hover,
 .mark-watched-button:focus-visible {
-  border-color: rgba(20, 184, 166, 0.42);
-  background: rgba(20, 184, 166, 0.22);
-  color: #99f6e4;
+  border-color: rgba(255, 255, 255, 0.82);
+  background: rgba(248, 250, 252, 0.96);
+  color: #0f172a;
   pointer-events: auto;
+}
+
+.save-button:hover,
+.dismiss-button:hover {
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(248, 250, 252, 0.94);
+  color: #0f172a;
+}
+
+.save-button.saved:hover {
+  border-color: rgba(251, 146, 60, 0.92);
+  background: rgba(251, 146, 60, 0.96);
+  color: #111827;
 }
 
 .save-button:disabled,
@@ -1353,6 +1375,13 @@ img {
     opacity: 1;
     pointer-events: auto;
   }
+
+  .media-card:hover .mark-watched-button,
+  .media-card:focus-within .mark-watched-button {
+    border-color: rgba(255, 255, 255, 0.82);
+    background: rgba(248, 250, 252, 0.96);
+    color: #0f172a;
+  }
 }
 
 .card-preview-panel {
@@ -1387,6 +1416,47 @@ img {
 .forget-button svg {
   width: 16px;
   height: 16px;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .mark-watched-button {
+    position: static;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: start;
+    gap: 0.34rem;
+    width: auto;
+    height: 32px;
+    margin-top: -0.2rem;
+    padding: 0 0.65rem;
+    border-color: rgba(20, 184, 166, 0.32);
+    background: rgba(20, 184, 166, 0.12);
+    color: #99f6e4;
+    font-size: 0.72rem;
+    font-weight: 900;
+    line-height: 1;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .mark-watched-button span {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    white-space: nowrap;
+  }
+
+  .mark-watched-button:disabled {
+    border-color: rgba(148, 163, 184, 0.22);
+    background: rgba(15, 23, 42, 0.34);
+    color: rgba(203, 213, 225, 0.72);
+    cursor: progress;
+    opacity: 0.5;
+    pointer-events: none;
+  }
 }
 
 .card-copy {

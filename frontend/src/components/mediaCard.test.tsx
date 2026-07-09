@@ -170,6 +170,7 @@ describe('MediaCard', () => {
       />,
     );
 
+    expect(screen.getByLabelText('Not for me').getAttribute('title')).toBe('Not for me');
     fireEvent.click(screen.getByLabelText('Not for me'));
     expect(onDismiss).toHaveBeenCalledWith({ tmdbId: 123, kind: 'movie' }, media);
   });
@@ -214,6 +215,7 @@ describe('MediaCard', () => {
     expect((screen.getByRole('button', { name: /Preview Kalki/i }) as HTMLButtonElement).disabled).toBe(true);
     const saveButton = screen.getByRole('button', { name: 'Add to watchlist' }) as HTMLButtonElement;
     expect(saveButton.disabled).toBe(true);
+    expect(saveButton.getAttribute('title')).toBe('Add to watchlist');
     fireEvent.click(saveButton);
     expect(onToggleSaved).not.toHaveBeenCalled();
   });
@@ -232,7 +234,11 @@ describe('MediaCard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText('Mark Kalki 2898-AD as watched'));
+    const markButton = screen.getByLabelText('Mark Kalki 2898-AD as watched');
+    expect(markButton.getAttribute('title')).toBe('Mark Kalki 2898-AD as watched');
+    expect(markButton.textContent).toContain('Mark watched');
+
+    fireEvent.click(markButton);
 
     expect(onMarkWatched).toHaveBeenCalledWith(media);
     expect(JSON.parse(localStorage.getItem('td:cw') || '{}')).toEqual({});

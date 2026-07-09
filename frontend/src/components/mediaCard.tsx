@@ -223,6 +223,7 @@ function MediaCardBase({
             <button
               type="button"
               className="icon-button card-preview-close"
+              title="Close preview"
               onClick={(event: MouseEvent<HTMLButtonElement>) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -286,6 +287,7 @@ function MediaCardBase({
         type="button"
         className={saved ? 'save-button saved' : 'save-button'}
         disabled={interactionDisabled}
+        title={saved ? 'Remove from watchlist' : 'Add to watchlist'}
         onClick={(event: MouseEvent<HTMLButtonElement>) => {
           event.preventDefault();
           event.stopPropagation();
@@ -301,6 +303,7 @@ function MediaCardBase({
           type="button"
           className="dismiss-button"
           disabled={interactionDisabled}
+          title="Not for me"
           onClick={(event: MouseEvent<HTMLButtonElement>) => {
             event.preventDefault();
             event.stopPropagation();
@@ -317,6 +320,7 @@ function MediaCardBase({
           type="button"
           className="mark-watched-button"
           disabled={interactionDisabled}
+          title={`Mark ${display.title} as watched`}
           onClick={(event: MouseEvent<HTMLButtonElement>) => {
             event.preventDefault();
             event.stopPropagation();
@@ -333,6 +337,7 @@ function MediaCardBase({
           aria-label={`Mark ${display.title} as watched`}
         >
           <CheckIcon />
+          <span>Mark watched</span>
         </button>
       )}
     </article>
