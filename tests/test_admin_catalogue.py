@@ -54,21 +54,30 @@ def _item(
 
 
 class AdminCatalogueTest(unittest.TestCase):
-    def test_duplicate_candidates_flag_same_title_year_movies(self):
+    def test_duplicate_candidates_do_not_flag_same_title_year_movies(self):
         details, groups, extras = _admin_duplicate_candidates([
             _item(101, secure_hash="a", file_size=1000),
             _item(102, secure_hash="b", file_size=2000),
         ])
 
-        self.assertEqual(groups, 1)
-        self.assertEqual(extras, 1)
-        self.assertEqual(details[101]["reason"], "Same title/year/quality")
-        self.assertEqual(details[102]["size"], 2)
+        self.assertEqual(details, {})
+        self.assertEqual(groups, 0)
+        self.assertEqual(extras, 0)
 
     def test_duplicate_candidates_do_not_flag_quality_variants(self):
         details, groups, extras = _admin_duplicate_candidates([
             _item(101, secure_hash="a", file_size=1000, quality="720p", movie_key="santhosh-subramaniam", tmdb_id=123),
             _item(102, secure_hash="b", file_size=2000, quality="1080p", movie_key="santhosh-subramaniam", tmdb_id=123),
+        ])
+
+        self.assertEqual(details, {})
+        self.assertEqual(groups, 0)
+        self.assertEqual(extras, 0)
+
+    def test_duplicate_candidates_do_not_flag_same_tmdb_quality_variants(self):
+        details, groups, extras = _admin_duplicate_candidates([
+            _item(101, secure_hash="a", file_size=1000, title="Youth", year=2026, quality="480p", tmdb_id=1542352),
+            _item(102, secure_hash="b", file_size=2000, title="Youth", year=2026, quality="480p", tmdb_id=1542352),
         ])
 
         self.assertEqual(details, {})
@@ -86,17 +95,17 @@ class AdminCatalogueTest(unittest.TestCase):
         self.assertEqual(details[101]["reason"], "Exact file")
         self.assertEqual(details[102]["reason"], "Exact file")
 
-    def test_duplicate_counts_include_overlapping_review_candidates(self):
+    def test_duplicate_counts_ignore_same_title_review_candidates(self):
         details, groups, extras = _admin_duplicate_candidates([
             _item(101, secure_hash="same", file_size=1000),
             _item(102, secure_hash="same", file_size=1000),
             _item(103, secure_hash="other", file_size=2000),
         ])
 
-        self.assertEqual(groups, 2)
-        self.assertEqual(extras, 2)
+        self.assertEqual(groups, 1)
+        self.assertEqual(extras, 1)
         self.assertEqual(details[101]["reason"], "Exact file")
-        self.assertEqual(details[103]["reason"], "Same title/year/quality")
+        self.assertNotIn(103, details)
 
     def test_duplicate_candidates_do_not_flag_different_series_episodes_by_tmdb_id(self):
         details, groups, extras = _admin_duplicate_candidates([

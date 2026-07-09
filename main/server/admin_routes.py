@@ -32,7 +32,6 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
 from main.utils import media_index, thumb_cache, trending as _trending
-from main.utils.dedup import clean_for_search
 from main.utils.human_readable import humanbytes
 from main.utils.index_entry import IndexEntry, render
 from main.utils import series as series_parse
@@ -108,30 +107,12 @@ _ADMIN_SORT_COLUMNS = {"date", "title", "size", "quality"}
 _ADMIN_QUALITY_ORDER = {"4K": 4, "2160p": 4, "1080p": 3, "720p": 2, "480p": 1, "": 0}
 
 
-def _duplicate_candidate_key(item) -> str:
-    if getattr(item, "media_kind", "") == "audio":
-        return ""
-    quality = (getattr(item, "quality", "") or "unknown").strip().lower()
-    if getattr(item, "series_key", ""):
-        if item.season is None or item.episode is None:
-            return ""
-        return f"episode:{item.series_key}:{item.season}:{item.episode}:{item.episode_end or ''}:{quality}"
-    title = clean_for_search(item.title or item.file_name or "").strip().lower()
-    if len(title) < 3:
-        return ""
-    return f"title:{title}:{item.year or ''}:{quality}"
-
-
-def _duplicate_quality_key(item) -> str:
-    return (getattr(item, "quality", "") or "unknown").strip().lower()
-
-
 def _admin_duplicate_candidates(items: list) -> tuple[dict[int, dict], int, int]:
     """Return admin duplicate diagnostics keyed by BIN message id.
 
-    Exact secure_hash+size matches are safe automatic dedupe candidates.
-    Same TMDB/movie/title groups are review candidates; admins decide
-    whether to hide, edit, or delete those rows.
+    Only exact secure_hash+size matches are duplicate candidates. Same
+    title/TMDB/movie rows can be valid release or quality variants and
+    should stay out of the destructive duplicate cleanup flow.
     """
     buckets: list[tuple[str, str, list]] = []
 
@@ -141,24 +122,11 @@ def _admin_duplicate_candidates(items: list) -> tuple[dict[int, dict], int, int]
                 buckets.append((reason, str(key), members))
 
     exact: dict = {}
-    same_tmdb: dict = {}
-    same_movie: dict = {}
-    same_title: dict = {}
     for item in items:
         if item.secure_hash and item.file_size:
             exact.setdefault((item.secure_hash, item.file_size), []).append(item)
-        if item.tmdb_id and (item.tmdb_kind == "movie" or not item.series_key):
-            same_tmdb.setdefault((item.tmdb_kind or "movie", item.tmdb_id, _duplicate_quality_key(item)), []).append(item)
-        if item.movie_key:
-            same_movie.setdefault((item.movie_key, _duplicate_quality_key(item)), []).append(item)
-        candidate_key = _duplicate_candidate_key(item)
-        if candidate_key:
-            same_title.setdefault(candidate_key, []).append(item)
 
     add_buckets("Exact file", exact)
-    add_buckets("Same TMDB title/quality", same_tmdb)
-    add_buckets("Same movie/quality", same_movie)
-    add_buckets("Same title/year/quality", same_title)
 
     details: dict[int, dict] = {}
     extra_ids: set[int] = set()
