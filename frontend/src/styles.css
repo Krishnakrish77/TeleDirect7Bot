@@ -9928,6 +9928,29 @@ select.edit-field-input {
   font-size: 0.76rem;
 }
 
+.admin-row-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+}
+
+.admin-row-actions button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.admin-row-actions .admin-row-delete {
+  color: #fca5a5;
+}
+
+.admin-row-actions .admin-row-delete:hover,
+.admin-row-actions .admin-row-delete:focus-visible {
+  border-color: rgba(248, 113, 113, 0.36);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+}
+
 .admin-empty-list {
   display: grid;
   justify-items: center;
@@ -10504,7 +10527,7 @@ select.edit-field-input {
 
   .admin-row-actions {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .admin-row-actions button,

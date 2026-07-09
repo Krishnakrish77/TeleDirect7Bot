@@ -533,6 +533,8 @@ export interface AdminItem {
   description: string;
   hidden: boolean;
   duplicate: boolean;
+  duplicateReason?: string;
+  duplicateGroupSize?: number;
   hasThumb: boolean;
   missingThumb: boolean;
   missingPoster: boolean;

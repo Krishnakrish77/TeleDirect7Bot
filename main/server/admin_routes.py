@@ -32,6 +32,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
 from main.utils import media_index, thumb_cache, trending as _trending
+from main.utils.dedup import clean_for_search
 from main.utils.human_readable import humanbytes
 from main.utils.index_entry import IndexEntry, render
 from main.utils import series as series_parse
@@ -107,6 +108,74 @@ _ADMIN_SORT_COLUMNS = {"date", "title", "size", "quality"}
 _ADMIN_QUALITY_ORDER = {"4K": 4, "2160p": 4, "1080p": 3, "720p": 2, "480p": 1, "": 0}
 
 
+def _duplicate_candidate_key(item) -> str:
+    if getattr(item, "media_kind", "") == "audio":
+        return ""
+    if getattr(item, "series_key", ""):
+        if item.season is None or item.episode is None:
+            return ""
+        return f"episode:{item.series_key}:{item.season}:{item.episode}:{item.episode_end or ''}"
+    title = clean_for_search(item.title or item.file_name or "").strip().lower()
+    if len(title) < 3:
+        return ""
+    return f"title:{title}:{item.year or ''}"
+
+
+def _admin_duplicate_candidates(items: list) -> tuple[dict[int, dict], int, int]:
+    """Return admin duplicate diagnostics keyed by BIN message id.
+
+    Exact secure_hash+size matches are safe automatic dedupe candidates.
+    Same TMDB/movie/title groups are review candidates; admins decide
+    whether to hide, edit, or delete those rows.
+    """
+    buckets: list[tuple[str, str, list]] = []
+
+    def add_buckets(reason: str, grouped: dict) -> None:
+        for key, members in grouped.items():
+            if key and len(members) > 1:
+                buckets.append((reason, str(key), members))
+
+    exact: dict = {}
+    same_tmdb: dict = {}
+    same_movie: dict = {}
+    same_title: dict = {}
+    for item in items:
+        if item.secure_hash and item.file_size:
+            exact.setdefault((item.secure_hash, item.file_size), []).append(item)
+        if item.tmdb_id and (item.tmdb_kind == "movie" or not item.series_key):
+            same_tmdb.setdefault((item.tmdb_kind or "movie", item.tmdb_id), []).append(item)
+        if item.movie_key:
+            same_movie.setdefault(item.movie_key, []).append(item)
+        candidate_key = _duplicate_candidate_key(item)
+        if candidate_key:
+            same_title.setdefault(candidate_key, []).append(item)
+
+    add_buckets("Exact file", exact)
+    add_buckets("Same TMDB title", same_tmdb)
+    add_buckets("Same movie", same_movie)
+    add_buckets("Same title/year", same_title)
+
+    details: dict[int, dict] = {}
+    extra_ids: set[int] = set()
+    duplicate_groups = 0
+    for reason, key, members in buckets:
+        sorted_members = sorted(members, key=lambda item: item.message_id)
+        group_id = f"{reason}:{key}"
+        bucket_extra_ids = {item.message_id for item in sorted_members[1:]}
+        if bucket_extra_ids - extra_ids:
+            duplicate_groups += 1
+        extra_ids.update(bucket_extra_ids)
+        for item in sorted_members:
+            details.setdefault(item.message_id, {
+                "reason": reason,
+                "group": group_id,
+                "size": len(sorted_members),
+            })
+
+    duplicate_extras = len(extra_ids)
+    return details, duplicate_groups, duplicate_extras
+
+
 def _admin_catalogue_context(request: web.Request) -> dict:
     try:
         page = max(1, int(request.query.get("page", "1") or "1"))
@@ -139,15 +208,10 @@ def _admin_catalogue_context(request: web.Request) -> dict:
     )
     catalogue_size = sum(1 for it in items_all if not it.hidden)
 
-    by_key: dict = {}
-    for it in items_all:
-        if it.secure_hash and it.file_size:
-            by_key.setdefault((it.secure_hash, it.file_size), []).append(it)
-    duplicate_message_ids: set = {
-        m.message_id
-        for members in by_key.values() if len(members) > 1
-        for m in members
-    }
+    duplicate_details, duplicate_groups, duplicate_extras = _admin_duplicate_candidates(
+        [it for it in items_all if not it.hidden],
+    )
+    duplicate_message_ids = set(duplicate_details)
 
     def _is_video_item(it) -> bool:
         return getattr(it, "media_kind", "") != "audio"
@@ -254,8 +318,13 @@ def _admin_catalogue_context(request: web.Request) -> dict:
         "search_q": request.query.get("q") or "",
         "sort_col": sort_col,
         "sort_dir": sort_dir,
-        "stats": media_index.stats(),
+        "stats": {
+            **media_index.stats(),
+            "duplicate_groups": duplicate_groups,
+            "duplicate_extras": duplicate_extras,
+        },
         "duplicate_message_ids": duplicate_message_ids,
+        "duplicate_details": duplicate_details,
         "known_series": known_series,
         "flash": flash,
         "raw_flash": raw,
@@ -269,8 +338,13 @@ def _admin_thumb_url(item) -> str:
     return f"/thumb/{item.secure_hash}{item.message_id}.jpg{suffix}"
 
 
-def _admin_item_payload(item, duplicate_message_ids: set) -> dict:
+def _admin_item_payload(item, duplicate_details) -> dict:
     watch_key = f"{item.secure_hash}{item.message_id}" if item.secure_hash else str(item.message_id)
+    duplicate_info = (
+        {"reason": "Duplicate", "size": 0}
+        if isinstance(duplicate_details, set) and item.message_id in duplicate_details
+        else (duplicate_details or {}).get(item.message_id)
+    )
     return {
         "messageId": item.message_id,
         "secureHash": item.secure_hash or "",
@@ -285,7 +359,9 @@ def _admin_item_payload(item, duplicate_message_ids: set) -> dict:
         "duration": item.duration or 0,
         "description": item.description or "",
         "hidden": bool(item.hidden),
-        "duplicate": item.message_id in duplicate_message_ids,
+        "duplicate": bool(duplicate_info),
+        "duplicateReason": (duplicate_info or {}).get("reason", ""),
+        "duplicateGroupSize": (duplicate_info or {}).get("size", 0),
         "hasThumb": bool(item.has_thumb),
         "missingThumb": not item.has_thumb and not item.duration,
         "missingPoster": bool(item.tmdb_id and not item.poster_path),
@@ -313,7 +389,7 @@ def _admin_item_payload(item, duplicate_message_ids: set) -> dict:
 def _admin_context_payload(ctx: dict) -> dict:
     return {
         "items": [
-            _admin_item_payload(item, ctx["duplicate_message_ids"])
+            _admin_item_payload(item, ctx["duplicate_details"])
             for item in ctx["items"]
         ],
         "catalogueSize": ctx["catalogue_size"],
@@ -2628,6 +2704,12 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
     if action == "dedupe":
         return _admin_json_message(await _admin_dedupe_uploads())
 
+    if action == "prune-non-admin":
+        removed = await media_index.prune_non_admin_uploads(StreamBot, int(Var.BIN_CHANNEL))
+        return _admin_json_message(
+            f"Removed {removed} known non-admin upload{'' if removed == 1 else 's'} from the catalogue"
+        )
+
     if action == "prune-stale":
         return _admin_json_message(await _admin_prune_stale_entries())
 
@@ -2657,8 +2739,13 @@ async def api_app_admin_dashboard(request: web.Request) -> web.Response:
     """Catalogue insights for the React admin dashboard."""
     _require_api_admin(request)
     s = media_index.dashboard_stats()
+    _duplicate_details, duplicate_groups, duplicate_extras = _admin_duplicate_candidates(
+        [it for it in media_index._items.values() if not it.hidden],
+    )
     return web.json_response({
         **s,
+        "duplicate_groups": duplicate_groups,
+        "duplicate_extras": duplicate_extras,
         "storage_by_quality": [{"quality": q, "bytes": b, "label": humanbytes(b)} for q, b in s["storage_by_quality"]],
         "storage_by_codec":   [{"codec": c,   "bytes": b, "label": humanbytes(b)} for c, b in s["storage_by_codec"]],
         "year_distribution":  [{"decade": d,  "count": n} for d, n in s["year_distribution"]],

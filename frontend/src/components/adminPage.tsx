@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { aiSuggestItem, clearAdminItemTmdb, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem } from '../api';
-import { FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, XIcon } from '../icons';
+import { FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TrashIcon, XIcon } from '../icons';
 
 export function AdminNav({
   routeKind,
@@ -396,6 +396,7 @@ function MaintenancePanel({
     ['clear-audio-thumbs', 'Audio thumbs', 'Refresh music artwork'],
     ['clear-all-thumbs', 'All thumbs', 'Refresh every thumbnail'],
     ['dedupe', 'De-dupe', 'Delete duplicate uploads'],
+    ['prune-non-admin', 'Prune non-admin', 'Remove known non-admin uploads from the public catalogue', 'Remove known non-admin uploads from the catalogue? This keeps their private stream files in BIN.'],
     ['prune-stale', 'Prune stale', 'Remove missing BIN rows'],
     ['migrate-to-mongo', 'Mongo', 'Start migration'],
   ] as const;
@@ -410,7 +411,7 @@ function MaintenancePanel({
       </div>
       <div className="maintenance-grid">
         {actions.map(([action, label, description, confirmMessage]) => {
-          const dangerous = action === 'dedupe' || action === 'prune-stale' || action === 'clear-all-thumbs' || action === 'migrate-to-mongo';
+          const dangerous = action === 'dedupe' || action === 'prune-non-admin' || action === 'prune-stale' || action === 'clear-all-thumbs' || action === 'migrate-to-mongo';
           return (
             <button
               key={action}
@@ -633,14 +634,19 @@ function AdminItemRow({
   selected,
   onSelect,
   onToggleHidden,
+  onDelete,
   onEdit,
 }: {
   item: AdminItem;
   selected: boolean;
   onSelect: (checked: boolean) => void;
   onToggleHidden: () => void;
+  onDelete: () => void;
   onEdit: () => void;
 }) {
+  const duplicateLabel = item.duplicateReason
+    ? `${item.duplicateReason}${item.duplicateGroupSize ? ` (${item.duplicateGroupSize})` : ''}`
+    : 'Duplicate';
   return (
     <article className={['admin-row', item.hidden ? 'hidden-row' : '', item.duplicate ? 'duplicate-row' : ''].filter(Boolean).join(' ')}>
       <label className="admin-row-check">
@@ -668,7 +674,7 @@ function AdminItemRow({
         {item.quality && <i>{item.quality}</i>}
         {item.mediaKind === 'audio' && <i>Music</i>}
         {item.hidden && <i>Hidden</i>}
-        {item.duplicate && <i className="warn">Duplicate</i>}
+        {item.duplicate && <i className="warn">{duplicateLabel}</i>}
         {item.missingPoster && <i className="warn">No poster</i>}
         {item.missingThumb && <i className="warn">No thumb</i>}
         {!item.hidden && !item.duplicate && !item.missingPoster && !item.missingThumb && <i className="ok">No issues</i>}
@@ -677,6 +683,16 @@ function AdminItemRow({
       <div className="admin-row-actions">
         <button type="button" onClick={onToggleHidden}>{item.hidden ? 'Unhide' : 'Hide'}</button>
         <button type="button" onClick={onEdit}>Edit</button>
+        <button
+          type="button"
+          className="admin-row-delete"
+          onClick={onDelete}
+          title={`Delete ${item.title}`}
+          aria-label={`Delete ${item.title}`}
+        >
+          <TrashIcon />
+          <span>Delete</span>
+        </button>
       </div>
     </article>
   );
@@ -1188,6 +1204,7 @@ function AdminList({
   selected,
   setSelected,
   onToggleHidden,
+  onDelete,
   onEdit,
   updateParam,
 }: {
@@ -1195,6 +1212,7 @@ function AdminList({
   selected: Set<number>;
   setSelected: (next: Set<number>) => void;
   onToggleHidden: (item: AdminItem) => void;
+  onDelete: (item: AdminItem) => void;
   onEdit: (item: AdminItem) => void;
   updateParam: (patch: Record<string, string | number | null>) => void;
 }) {
@@ -1238,6 +1256,7 @@ function AdminList({
                 setSelected(next);
               }}
               onToggleHidden={() => onToggleHidden(item)}
+              onDelete={() => onDelete(item)}
               onEdit={() => onEdit(item)}
             />
           ))
@@ -1370,6 +1389,26 @@ export function AdminPage({
     }
   };
 
+  const runSingleDeleteAction = async (item: AdminItem) => {
+    if (!window.confirm(`Delete "${item.title}" from BIN and the catalogue? This cannot be undone.`)) return;
+    setBusy(`delete:${item.messageId}`);
+    setNotice('');
+    try {
+      const response = await runAdminAction({ action: 'delete', ids: [item.messageId] });
+      setNotice(response.message);
+      setSelected((current) => {
+        const next = new Set(current);
+        next.delete(item.messageId);
+        return next;
+      });
+      reload();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setBusy('');
+    }
+  };
+
   const runMaintenanceAction = async (action: string, confirmMessage?: string) => {
     if (confirmMessage && !window.confirm(confirmMessage)) return;
     setBusy(action);
@@ -1438,6 +1477,7 @@ export function AdminPage({
                 selected={selected}
                 setSelected={setSelected}
                 onToggleHidden={runSingleHiddenAction}
+                onDelete={runSingleDeleteAction}
                 onEdit={(item) => setEditingId(item.messageId)}
                 updateParam={updateParam}
               />

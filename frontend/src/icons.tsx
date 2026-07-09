@@ -356,6 +356,18 @@ export function XIcon(props: Props) {
   );
 }
 
+export function TrashIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M6 6l1 15h10l1-15" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </IconBase>
+  );
+}
+
 export function HeartIcon(props: Props & { filled?: boolean }) {
   const { filled, ...rest } = props;
   return (

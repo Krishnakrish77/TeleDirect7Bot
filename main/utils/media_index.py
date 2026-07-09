@@ -408,7 +408,7 @@ _DEVICE_NAME_RE = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE,
 )
-_ATTR_USER_ID_RE = re.compile(r"\bUser ID\s*:\s*`?(-?\d+)`?", re.IGNORECASE)
+_ATTR_USER_ID_RE = re.compile(r"\bUser\s+ID\s*:\s*\**\s*`?(-?\d+)`?", re.IGNORECASE)
 
 
 def _bin_attribution_marker(message) -> Optional[Tuple[int, bool]]:
@@ -740,6 +740,60 @@ async def prune_stale(bot, channel_id: int, batch_size: int = 100) -> int:
                 removed += 1
     if removed:
         logging.info("media_index.prune_stale: removed %d stale entries", removed)
+    return removed
+
+
+async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH_BATCH) -> int:
+    """Remove catalogue rows whose BIN attribution proves non-admin origin.
+
+    This does not delete BIN messages. Non-admin uploads may still back
+    private stream links; they just should not appear in the curated hub.
+    """
+    ids = list(_items.keys())
+    if not ids:
+        return 0
+
+    floor = min(ids)
+    latest = max(_latest_seen_id, max(ids))
+    try:
+        probe = await bot.send_message(channel_id, ".")
+        latest = max(latest, int(getattr(probe, "id", 0) or 0))
+        await _delete_probe(bot, channel_id, probe.id)
+    except Exception:
+        logging.debug("media_index: prune_non_admin probe failed", exc_info=True)
+
+    non_admin_ids: set[int] = set()
+    high = latest
+    while high >= floor:
+        batch_ids = list(range(high, max(floor - 1, high - batch_size), -1))
+        try:
+            batch = await bot.get_messages(channel_id, batch_ids)
+        except Exception:
+            logging.exception(
+                "media_index: prune_non_admin get_messages failed for %d..%d",
+                batch_ids[-1], batch_ids[0],
+            )
+            break
+        if not isinstance(batch, list):
+            batch = [batch]
+        for message in batch:
+            marker = _bin_attribution_marker(message)
+            if marker is None:
+                continue
+            source_file_id, is_admin_added = marker
+            if not is_admin_added and source_file_id in _items:
+                non_admin_ids.add(source_file_id)
+        high -= batch_size
+        await asyncio.sleep(0)
+
+    removed = 0
+    for mid in sorted(non_admin_ids):
+        if mid in _items:
+            await remove(mid)
+            removed += 1
+    if removed:
+        schedule_snapshot(bot)
+        logging.info("media_index: pruned %d non-admin catalogue rows", removed)
     return removed
 
 

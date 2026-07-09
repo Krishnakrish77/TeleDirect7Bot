@@ -61,6 +61,8 @@ const adminData: AdminResponse = {
       description: '',
       hidden: false,
       duplicate: false,
+      duplicateReason: '',
+      duplicateGroupSize: 0,
       hasThumb: true,
       missingThumb: false,
       missingPoster: false,
@@ -233,6 +235,35 @@ describe('AdminPage', () => {
     expect((await screen.findByRole('status')).textContent).toContain('Done');
   });
 
+  it('deletes a single row from the row actions', async () => {
+    const reload = vi.fn();
+    renderAdmin({ reload });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Kalki' }));
+
+    await waitFor(() => {
+      expect(runAdminAction).toHaveBeenCalledWith({ action: 'delete', ids: [101] });
+    });
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Delete "Kalki"'));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows duplicate candidate reasons on catalogue rows', () => {
+    renderAdmin({
+      data: {
+        ...adminData,
+        items: [{
+          ...adminData.items[0],
+          duplicate: true,
+          duplicateReason: 'Same title/year',
+          duplicateGroupSize: 2,
+        }],
+      },
+    });
+
+    expect(screen.getByText('Same title/year (2)')).toBeTruthy();
+  });
+
   it('runs maintenance operations', async () => {
     const reload = vi.fn();
     renderAdmin({ reload, locationSearch: '?tab=ops' });
@@ -255,6 +286,19 @@ describe('AdminPage', () => {
       expect(runAdminMaintenance).toHaveBeenCalledWith('metadata-cleanup');
     });
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('metadata backfill'));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces the non-admin catalogue prune action', async () => {
+    const reload = vi.fn();
+    renderAdmin({ reload, locationSearch: '?tab=ops' });
+
+    fireEvent.click(screen.getByRole('button', { name: /Prune non-admin/ }));
+
+    await waitFor(() => {
+      expect(runAdminMaintenance).toHaveBeenCalledWith('prune-non-admin');
+    });
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('non-admin uploads'));
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
