@@ -1085,8 +1085,8 @@ async def admin_action(request: web.Request) -> web.Response:
         raise _redirect_with_flash("Nothing selected", target=_target)
 
     if action == "delete":
-        n = await _bulk_delete(ids)
-        raise _redirect_with_flash(f"Deleted {n} entries", target=_target)
+        result = await _bulk_delete(ids)
+        raise _redirect_with_flash(_bulk_delete_message(result), target=_target)
 
     if action in ("hide", "unhide"):
         hidden = action == "hide"
@@ -2137,17 +2137,58 @@ def _normalise_tags(raw: str) -> List[str]:
     return [p for p in parts if p]
 
 
-async def _bulk_delete(ids: List[int]) -> int:
-    deleted = 0
+def _bulk_delete_message(result: dict[str, int]) -> str:
+    deleted = result.get("deleted", 0)
+    removed = result.get("removed", 0)
+    hidden = result.get("hidden", 0)
+    failed = result.get("failed", 0)
+    if deleted and not removed and not hidden and not failed:
+        return f"Deleted {deleted} entr{'y' if deleted == 1 else 'ies'}"
+    parts = []
+    if deleted:
+        parts.append(f"Deleted {deleted} from BIN")
+    if removed:
+        parts.append(f"Removed {removed} stale catalogue row{'s' if removed != 1 else ''}")
+    if hidden:
+        parts.append(
+            f"Hidden {hidden} catalogue row{'s' if hidden != 1 else ''} because BIN delete failed; grant bot delete/admin rights to remove BIN messages"
+        )
+    if failed:
+        parts.append(f"Failed {failed} entr{'y' if failed == 1 else 'ies'}")
+    return "; ".join(parts) if parts else "Deleted 0 entries"
+
+
+async def _bulk_delete_fallback(mid: int, result: dict[str, int]) -> None:
+    try:
+        msg = await StreamBot.get_messages(Var.BIN_CHANNEL, mid)
+        if msg is None or getattr(msg, "empty", False):
+            await media_index.remove(mid, bot=StreamBot)
+            result["removed"] += 1
+            return
+    except Exception:
+        logging.debug("admin: delete fallback probe failed for bin:%d", mid, exc_info=True)
+    if await media_index.set_hidden(mid, True):
+        result["hidden"] += 1
+    else:
+        result["failed"] += 1
+
+
+async def _bulk_delete(ids: List[int]) -> dict[str, int]:
+    result = {"deleted": 0, "removed": 0, "hidden": 0, "failed": 0}
     for mid in ids:
         try:
-            await StreamBot.delete_messages(Var.BIN_CHANNEL, mid)
+            deleted_count = await StreamBot.delete_messages(Var.BIN_CHANNEL, mid)
         except Exception:
             logging.exception("admin: delete failed for bin:%d", mid)
+            await _bulk_delete_fallback(mid, result)
+            continue
+        if int(deleted_count or 0) <= 0:
+            logging.warning("admin: delete returned 0 for bin:%d", mid)
+            await _bulk_delete_fallback(mid, result)
             continue
         await media_index.remove(mid, bot=StreamBot)
-        deleted += 1
-    return deleted
+        result["deleted"] += 1
+    return result
 
 
 async def _rewrite_caption(message_id: int, mutate) -> Tuple[str, str]:
@@ -2557,8 +2598,8 @@ async def api_app_admin_action(request: web.Request) -> web.Response:
         return web.json_response({"error": "Nothing selected"}, status=400)
 
     if action == "delete":
-        n = await _bulk_delete(ids)
-        return _admin_json_message(f"Deleted {n} entries")
+        result = await _bulk_delete(ids)
+        return _admin_json_message(_bulk_delete_message(result))
 
     if action in ("hide", "unhide"):
         hidden = action == "hide"
