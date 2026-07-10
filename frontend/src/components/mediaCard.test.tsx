@@ -191,6 +191,7 @@ describe('MediaCard', () => {
     const previewSrc = preview.getAttribute('src') || '';
     expect(previewSrc).toContain('youtube.com/embed/abc123');
     expect(previewSrc).toContain('controls=1');
+    expect(previewSrc).not.toContain('autoplay=1');
     expect(previewSrc).not.toContain('mute=1');
     expect(preview.getAttribute('allow')).toContain('fullscreen');
     expect(preview.getAttribute('allow')).toContain('encrypted-media');

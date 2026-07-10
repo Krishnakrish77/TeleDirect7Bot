@@ -6887,23 +6887,83 @@ img {
   backdrop-filter: blur(6px);
 }
 
-.trailer-frame {
+.trailer-shell {
   position: relative;
-  width: min(100%, 960px);
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 1100px);
+  max-height: calc(100svh - 2rem);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: #050608;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.48);
+}
+
+.trailer-shell:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.trailer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 52px;
+  padding: 0.55rem 0.7rem 0.55rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 14, 18, 0.96);
+}
+
+.trailer-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trailer-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.trailer-action {
+  min-height: 36px;
+  padding-inline: 0.7rem;
+  font-size: 0.85rem;
+}
+
+.trailer-action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.trailer-frame {
+  width: 100%;
   aspect-ratio: 16 / 9;
+}
+
+.trailer-shell:fullscreen .trailer-frame {
+  flex: 1;
+  min-height: 0;
+  aspect-ratio: auto;
 }
 
 .trailer-frame iframe {
   width: 100%;
   height: 100%;
   border: 0;
-  border-radius: 8px;
 }
 
 .trailer-close {
-  position: absolute;
-  top: -2.75rem;
-  right: 0;
   color: #fff;
 }
 
@@ -9138,6 +9198,34 @@ select.edit-field-input {
   .detail-copy .secondary-action {
     min-height: 36px;
     padding-inline: 0.75rem;
+  }
+
+  .trailer-overlay {
+    padding: 0;
+  }
+
+  .trailer-shell {
+    width: 100vw;
+    max-height: 100svh;
+    border-width: 0;
+    border-radius: 0;
+  }
+
+  .trailer-toolbar {
+    padding-inline: 0.75rem;
+  }
+
+  .trailer-title {
+    max-width: 42vw;
+  }
+
+  .trailer-action {
+    min-width: 36px;
+    padding-inline: 0.55rem;
+  }
+
+  .trailer-action span {
+    display: none;
   }
 
   .detail-overview,

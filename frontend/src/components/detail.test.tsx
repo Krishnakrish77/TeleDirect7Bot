@@ -1,8 +1,10 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, MovieDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
 import { DetailPage } from './detail';
+
+const originalRequestFullscreen = HTMLElement.prototype.requestFullscreen;
 
 function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
   return {
@@ -210,6 +212,10 @@ function makeSeries(): SeriesDetailResponse {
 
 beforeEach(() => {
   localStorage.clear();
+  Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+    configurable: true,
+    value: originalRequestFullscreen,
+  });
 });
 
 describe('Album detail', () => {
@@ -406,7 +412,72 @@ describe('Movie detail', () => {
     expect(onToggleSaved).toHaveBeenCalledWith('movie:very-long-title');
   });
 
-  it('opens trailers with visible controls, audio enabled, and fullscreen permissions', () => {
+  it('opens trailers with visible controls, audio enabled, and fullscreen permissions', async () => {
+    const movie = { ...makeMovie(), trailerKey: 'abc123' };
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      configurable: true,
+      value: requestFullscreen,
+    });
+
+    render(
+      <DetailPage
+        route={{ kind: 'detail', detailKind: 'movie', key: 'very-long-title' }}
+        data={movie}
+        loading={false}
+        error=""
+        saved={new Set()}
+        onToggleSaved={vi.fn()}
+        navigate={vi.fn()}
+        playTrack={vi.fn()}
+        togglePlayback={vi.fn()}
+        addToQueue={vi.fn()}
+        shuffleQueue={vi.fn()}
+        player={makePlayer()}
+      />,
+    );
+
+    const trailerButton = screen.getByRole('button', { name: 'Trailer' });
+    fireEvent.click(trailerButton);
+
+    const trailer = screen.getByTitle('Trailer') as HTMLIFrameElement;
+    const trailerSrc = trailer.getAttribute('src') || '';
+    expect(trailerSrc).toContain('youtube.com/embed/abc123');
+    expect(trailerSrc).toContain('controls=1');
+    expect(trailerSrc).toContain('playsinline=1');
+    expect(trailerSrc).not.toContain('autoplay=1');
+    expect(trailerSrc).not.toContain('mute=1');
+    expect(trailer.getAttribute('allow')).toContain('fullscreen');
+    expect(trailer.getAttribute('allow')).toContain('encrypted-media');
+    expect(trailer.hasAttribute('allowfullscreen')).toBe(true);
+    expect(screen.getByRole('dialog', { name: `${movie.title} (${movie.year}) trailer` })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'YouTube' }).getAttribute('href')).toBe('https://www.youtube.com/watch?v=abc123');
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open trailer fullscreen' })));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open trailer fullscreen' }));
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+
+    const closeButton = screen.getByRole('button', { name: 'Close trailer' });
+    closeButton.focus();
+    fireEvent.keyDown(window, { key: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open trailer fullscreen' }));
+
+    const fullscreenButton = screen.getByRole('button', { name: 'Open trailer fullscreen' });
+    fullscreenButton.focus();
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(closeButton);
+    expect(trailer.getAttribute('tabindex')).toBe('-1');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTitle('Trailer')).toBeNull());
+    expect(document.activeElement).toBe(trailerButton);
+  });
+
+  it('falls back to a YouTube fullscreen link when browser fullscreen is unavailable', () => {
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      configurable: true,
+      value: undefined,
+    });
     const movie = { ...makeMovie(), trailerKey: 'abc123' };
 
     render(
@@ -428,15 +499,8 @@ describe('Movie detail', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Trailer' }));
 
-    const trailer = screen.getByTitle('Trailer') as HTMLIFrameElement;
-    const trailerSrc = trailer.getAttribute('src') || '';
-    expect(trailerSrc).toContain('youtube.com/embed/abc123');
-    expect(trailerSrc).toContain('controls=1');
-    expect(trailerSrc).toContain('playsinline=1');
-    expect(trailerSrc).not.toContain('mute=1');
-    expect(trailer.getAttribute('allow')).toContain('fullscreen');
-    expect(trailer.getAttribute('allow')).toContain('encrypted-media');
-    expect(trailer.hasAttribute('allowfullscreen')).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Open trailer fullscreen' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open trailer on YouTube for fullscreen' }).getAttribute('href')).toBe('https://www.youtube.com/watch?v=abc123');
   });
 
   it('marks a movie watched from the detail page', () => {

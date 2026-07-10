@@ -83,9 +83,9 @@
               <div class="w-full max-w-3xl">
                 <div class="aspect-video relative rounded-xl overflow-hidden shadow-2xl">
                   <iframe x-show="trailerOpen" style="display:none"
-                          :src="trailerOpen ? 'https://www.youtube-nocookie.com/embed/{{ meta.trailer_key }}?autoplay=1&rel=0&modestbranding=1' : ''"
+                          :src="trailerOpen ? 'https://www.youtube-nocookie.com/embed/{{ meta.trailer_key }}?rel=0&modestbranding=1&playsinline=1' : ''"
                           class="w-full h-full" frameborder="0"
-                          allow="autoplay; fullscreen; picture-in-picture"
+                          allow="encrypted-media; fullscreen; picture-in-picture"
                           allowfullscreen></iframe>
                 </div>
                 <button @click="trailerOpen = false"
