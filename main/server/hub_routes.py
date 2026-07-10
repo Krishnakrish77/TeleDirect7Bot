@@ -27,7 +27,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import hls, hub_query, media_index, thumb_cache, rec_engine, trending
+from main.utils import hls, hub_query, media_index, thumb_cache, rec_engine, trending, share_meta
 from main.utils.user_auth import get_user
 from main.utils.hub_query import HubItem
 from main.utils.human_readable import humanbytes
@@ -861,6 +861,15 @@ async def hub_movie(request: web.Request) -> web.Response:
             variant_count=len(variants),
             variants=variants,
             meta=enriched,
+            share_title=f"{enriched.title}{f' ({enriched.year})' if enriched.year else ''}",
+            share_description=share_meta.compact_description(
+                enriched.overview,
+                enriched.description,
+                fallback=f"{len(variants)} version{'' if len(variants) == 1 else 's'} available on TeleDirect",
+            ),
+            share_image=share_meta.item_image_url(enriched),
+            share_url=share_meta.absolute_url(f"movie/{key}"),
+            share_type="video.movie",
         )
         _cache_set(cache_key, body)
     return _html(body)
@@ -1034,9 +1043,11 @@ async def hub_series(request: web.Request) -> web.Response:
     cache_key = f"series:{key}:{selected}"
     body = _cache_get(cache_key)
     if not body:
+        series_title = episodes[0].series_title or key
+        season_count = max(1, len(numbered_seasons))
         body = await tpl.render_async(
             meta=enriched,
-            series_title=episodes[0].series_title or key,
+            series_title=series_title,
             series_key=key,
             season_blocks=visible_blocks,
             season_options=season_options,
@@ -1044,7 +1055,19 @@ async def hub_series(request: web.Request) -> web.Response:
             selected_season=selected,
             episode_count=visible_episode_count,
             total_episode_count=total_episode_count,
-            season_count=max(1, len(numbered_seasons)),
+            season_count=season_count,
+            share_title=series_title,
+            share_description=share_meta.compact_description(
+                enriched.overview,
+                enriched.description,
+                fallback=(
+                    f"{season_count} season{'' if season_count == 1 else 's'} · "
+                    f"{total_episode_count} episode{'' if total_episode_count == 1 else 's'} on TeleDirect"
+                ),
+            ),
+            share_image=share_meta.item_image_url(enriched),
+            share_url=share_meta.absolute_url(f"series/{key}"),
+            share_type="video.tv_show",
         )
         _cache_set(cache_key, body)
     return _html(body)

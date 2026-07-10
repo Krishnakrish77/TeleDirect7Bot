@@ -13,8 +13,10 @@ os.environ.setdefault("BIN_CHANNEL", "-1001")
 from aiohttp import web
 
 from main.utils.custom_dl import MediaSessionUnavailable
+from main.utils.hub_query import HubItem
 
 stream_routes = importlib.import_module("main.server.stream_routes")
+render_template = importlib.import_module("main.utils.render_template")
 
 
 class _FakeClient:
@@ -52,6 +54,25 @@ class _UnavailableStreamer:
 
     async def generate_media_session(self, client, file_id):
         raise MediaSessionUnavailable("auth failed")
+
+
+def _video_item(**overrides) -> HubItem:
+    data = {
+        "message_id": 42,
+        "secure_hash": "abc",
+        "title": "Bad Santa",
+        "year": 2014,
+        "description": "",
+        "tags": [],
+        "duration": 2580,
+        "file_size": 1000,
+        "has_thumb": True,
+        "quality": "720p",
+        "file_name": "Castle.S06E14.720p.mkv",
+        "media_kind": "video",
+    }
+    data.update(overrides)
+    return HubItem(**data)
 
 
 class _FakeRequest:
@@ -231,6 +252,64 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(response.headers["Content-Length"], "1000")
         self.assertTrue(response.headers["Content-Disposition"].startswith("attachment;"))
+
+    async def test_watch_page_share_metadata_uses_series_episode(self):
+        item = _video_item(
+            title="Castle",
+            series_key="castle",
+            series_title="Castle",
+            season=6,
+            episode=14,
+            episode_title="Bad Santa",
+            episode_overview="Castle and Beckett investigate a case tied to a TV star.",
+            poster_path="/castle-poster.jpg",
+        )
+
+        async def fake_get_file_ids(*_args):
+            return _FakeFileId()
+
+        with (
+            patch.object(render_template, "get_file_ids", fake_get_file_ids),
+            patch.object(render_template.media_index, "get_item", return_value=item),
+            patch.object(render_template.media_index, "next_episode", return_value=None),
+            patch.object(render_template.media_index, "episodes_for_series", return_value=[item]),
+            patch.object(render_template.Var, "URL", "https://media.example/"),
+            patch.object(render_template.share_meta.Var, "URL", "https://media.example/"),
+        ):
+            html = await render_template.render_page(42, "abc")
+
+        self.assertIn('<title>Castle S06E14 · Bad Santa</title>', html)
+        self.assertIn('property="og:title" content="Castle S06E14 · Bad Santa"', html)
+        self.assertIn('property="og:description" content="Castle and Beckett investigate a case tied to a TV star."', html)
+        self.assertIn('property="og:type" content="video.episode"', html)
+        self.assertIn('property="og:url" content="https://media.example/watch/abc42"', html)
+        self.assertIn('property="og:image" content="https://image.tmdb.org/t/p/w780/castle-poster.jpg"', html)
+        self.assertIn('name="twitter:card" content="summary_large_image"', html)
+
+    async def test_watch_page_share_metadata_ignores_hidden_catalogue_item(self):
+        item = _video_item(
+            title="Hidden Movie",
+            overview="This should not leak into social previews.",
+            poster_path="/hidden-poster.jpg",
+            hidden=True,
+        )
+
+        async def fake_get_file_ids(*_args):
+            return _FakeFileId()
+
+        with (
+            patch.object(render_template, "get_file_ids", fake_get_file_ids),
+            patch.object(render_template.media_index, "get_item", return_value=item),
+            patch.object(render_template.media_index, "next_episode", return_value=None),
+            patch.object(render_template.Var, "URL", "https://media.example/"),
+            patch.object(render_template.share_meta.Var, "URL", "https://media.example/"),
+        ):
+            html = await render_template.render_page(42, "abc")
+
+        self.assertIn("<title>Hidden Movie</title>", html)
+        self.assertNotIn('property="og:title" content="Hidden Movie"', html)
+        self.assertNotIn("This should not leak into social previews.", html)
+        self.assertNotIn("hidden-poster.jpg", html)
 
     async def test_suffix_range_is_normalised_before_headers(self):
         response = await self._call_media_streamer(

@@ -12,6 +12,7 @@ from main.utils.download_urls import as_download_url
 from main.utils.human_readable import humanbytes
 from main.utils.file_properties import get_file_ids
 from main.utils.playback import should_offer_hls_for_video
+from main.utils import share_meta
 from main.exceptions import InvalidHash
 
 
@@ -169,10 +170,38 @@ async def render_page(message_id, secure_hash,
             # Video
             if meta.series_title and meta.season is not None and meta.episode is not None:
                 ep = f"S{meta.season:02d}E{meta.episode:02d}"
-                title = meta.title or ""
+                title = meta.episode_title or meta.title or ""
                 base = f"{meta.series_title} {ep}"
                 return f"{base} · {title}" if title else base
             return meta.title or file_name
+        heading = _build_heading(meta, mime_type, file_name)
+        share_title = ""
+        share_description = ""
+        share_image = ""
+        share_url = ""
+        share_type = "website"
+        if not (meta and getattr(meta, "hidden", False)):
+            share_title = heading
+            share_description = share_meta.compact_description(
+                getattr(meta, "episode_overview", "") if meta else "",
+                getattr(meta, "overview", "") if meta else "",
+                getattr(meta, "description", "") if meta else "",
+                file_name,
+                fallback=f"Watch {heading} on TeleDirect" if heading else "Watch on TeleDirect",
+            )
+            share_image = share_meta.item_image_url(meta)
+            if not share_image:
+                share_image = share_meta.absolute_url(f"thumb/{secure_hash}{message_id}.jpg")
+            share_url = share_meta.absolute_url(f"watch/{secure_hash}{message_id}")
+            if mime_type == "audio":
+                share_type = "music.song"
+            elif meta and getattr(meta, "series_key", ""):
+                share_type = "video.episode"
+            elif meta and (getattr(meta, "movie_key", "") or getattr(meta, "tmdb_kind", "") == "movie"):
+                share_type = "video.movie"
+            elif mime_type == "video":
+                share_type = "video.other"
+
         from main.utils import codec_probe
         known_unplayable = (
             mime_type == "video"
@@ -203,7 +232,12 @@ async def render_page(message_id, secure_hash,
             audio_format=audio_format,
             audio_bit_depth=getattr(meta, "audio_bit_depth", 0) if meta else 0,
             audio_sample_rate=getattr(meta, "audio_sample_rate", 0) if meta else 0,
-            heading=_build_heading(meta, mime_type, file_name),
+            heading=heading,
+            share_title=share_title,
+            share_description=share_description,
+            share_image=share_image,
+            share_url=share_url,
+            share_type=share_type,
             src=src,
             download_src=download_src,
             hls_src=hls_src,

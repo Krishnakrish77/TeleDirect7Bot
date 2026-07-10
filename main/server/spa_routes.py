@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import html as html_lib
 import json
 import logging
 import os
@@ -28,6 +29,7 @@ from main.utils import media_index
 from main.utils import playlist_store
 from main.utils import ratings_store
 from main.utils import rec_engine
+from main.utils import share_meta
 from main.utils import thumb_cache
 from main.utils import trending
 from main.utils import wh_store
@@ -2036,7 +2038,169 @@ async def api_watch(request: web.Request) -> web.Response:
     })
 
 
-def _app_index_response() -> web.Response:
+def _app_watch_share_metadata(key: str) -> dict | None:
+    parsed = _parse_watch_key(key)
+    if parsed is None:
+        return None
+    secure_hash, message_id = parsed
+    item = media_index.get_item(message_id)
+    if item is None or item.hidden or item.secure_hash != secure_hash:
+        return None
+
+    if (item.media_kind or "") == "audio":
+        parts = [
+            _clean_music_tag(item.album_title or ""),
+            _clean_music_tag(item.title or item.file_name or ""),
+        ]
+        title = " · ".join(part for part in parts if part) or "Track"
+        share_type = "music.song"
+    elif item.series_key:
+        base = item.series_title or item.title or "Series"
+        episode = _episode_label(item)
+        if episode:
+            base = f"{base} {episode}"
+        episode_title = item.episode_title or item.title or ""
+        title = f"{base} · {episode_title}" if episode_title else base
+        share_type = "video.episode"
+    else:
+        title = item.title or item.file_name or "Video"
+        share_type = "video.movie" if item.movie_key or item.tmdb_kind == "movie" else "video.other"
+
+    image = share_meta.item_image_url(item)
+    if not image:
+        image = share_meta.absolute_url(f"thumb/{item.secure_hash}{item.message_id}.jpg")
+    return {
+        "title": title,
+        "description": share_meta.compact_description(
+            item.episode_overview,
+            item.overview,
+            item.description,
+            item.file_name,
+            fallback=f"Watch {title} on TeleDirect",
+        ),
+        "image": image,
+        "url": share_meta.absolute_url(f"app/watch/{item.secure_hash}{item.message_id}"),
+        "type": share_type,
+    }
+
+
+def _app_movie_share_metadata(key: str) -> dict | None:
+    variants = media_index.variants_for_movie(key)
+    if not variants:
+        return None
+    enriched = next((item for item in variants if item.tmdb_id), variants[0])
+    title = enriched.title or key
+    if enriched.year:
+        title = f"{title} ({enriched.year})"
+    return {
+        "title": title,
+        "description": share_meta.compact_description(
+            enriched.overview,
+            enriched.description,
+            fallback=f"Watch {title} on TeleDirect",
+        ),
+        "image": share_meta.item_image_url(enriched),
+        "url": share_meta.absolute_url(f"app/movie/{key}"),
+        "type": "video.movie",
+    }
+
+
+def _app_series_share_metadata(key: str) -> dict | None:
+    episodes = media_index.episodes_for_series(key)
+    if not episodes:
+        return None
+    enriched = next((item for item in episodes if item.tmdb_id), episodes[0])
+    title = episodes[0].series_title or enriched.title or key
+    season_count = len({episode.season for episode in episodes if episode.season is not None}) or 1
+    return {
+        "title": title,
+        "description": share_meta.compact_description(
+            enriched.overview,
+            enriched.description,
+            fallback=f"{season_count} season{'s' if season_count != 1 else ''} on TeleDirect",
+        ),
+        "image": share_meta.item_image_url(enriched),
+        "url": share_meta.absolute_url(f"app/series/{key}"),
+        "type": "video.tv_show",
+    }
+
+
+def _app_share_metadata(path: str) -> dict | None:
+    match = re.match(r"^/app/(watch|movie|series)/([^/?#]+)", path or "")
+    if not match:
+        return None
+    kind, key = match.groups()
+    if kind == "watch":
+        return _app_watch_share_metadata(key)
+    if kind == "movie":
+        return _app_movie_share_metadata(key)
+    if kind == "series":
+        return _app_series_share_metadata(key)
+    return None
+
+
+def _meta_attr(value: str) -> str:
+    return html_lib.escape(value or "", quote=True)
+
+
+def _app_share_meta_tags(meta: dict) -> str:
+    title = _meta_attr(meta.get("title") or "TeleDirect")
+    description = _meta_attr(meta.get("description") or meta.get("title") or "TeleDirect")
+    share_type = _meta_attr(meta.get("type") or "website")
+    share_url = _meta_attr(meta.get("url") or "")
+    share_image = _meta_attr(meta.get("image") or "")
+    tags = [
+        f'<meta name="description" content="{description}" />',
+        '<meta property="og:site_name" content="TeleDirect" />',
+        f'<meta property="og:type" content="{share_type}" />',
+        f'<meta property="og:title" content="{title}" />',
+        f'<meta property="og:description" content="{description}" />',
+    ]
+    if share_url:
+        tags.extend([
+            f'<link rel="canonical" href="{share_url}" />',
+            f'<meta property="og:url" content="{share_url}" />',
+            f'<meta name="twitter:url" content="{share_url}" />',
+        ])
+    if share_image:
+        tags.extend([
+            f'<meta property="og:image" content="{share_image}" itemprop="thumbnailUrl" />',
+            f'<meta property="og:image:secure_url" content="{share_image}" />',
+            '<meta name="twitter:card" content="summary_large_image" />',
+            f'<meta name="twitter:image" content="{share_image}" />',
+        ])
+    else:
+        tags.append('<meta name="twitter:card" content="summary" />')
+    tags.extend([
+        f'<meta name="twitter:title" content="{title}" />',
+        f'<meta name="twitter:description" content="{description}" />',
+    ])
+    return "\n    ".join(tags)
+
+
+def _inject_app_share_meta(index_html: str, meta: dict) -> str:
+    title = _meta_attr(meta.get("title") or "TeleDirect")
+    html = re.sub(
+        r"\s*<meta\s+name=[\"']description[\"'][^>]*>\s*",
+        "\n    ",
+        index_html,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    html = re.sub(
+        r"<title>.*?</title>",
+        f"<title>{title}</title>",
+        html,
+        count=1,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    tags = _app_share_meta_tags(meta)
+    if "</head>" in html:
+        return html.replace("</head>", f"    {tags}\n  </head>", 1)
+    return f"{tags}\n{html}"
+
+
+def _app_index_response(request: web.Request | None = None) -> web.Response:
     if not _APP_INDEX.exists():
         text = """<!doctype html>
 <html lang="en">
@@ -2058,6 +2222,18 @@ def _app_index_response() -> web.Response:
   </body>
 </html>"""
         return web.Response(text=text, content_type="text/html", status=503)
+    meta = _app_share_metadata(request.path) if request is not None else None
+    if meta:
+        try:
+            html = _APP_INDEX.read_text(encoding="utf-8")
+        except OSError:
+            logging.exception("app: failed to read SPA index for share metadata")
+        else:
+            return web.Response(
+                text=_inject_app_share_meta(html, meta),
+                content_type="text/html",
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
     return web.FileResponse(
         _APP_INDEX,
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
@@ -2079,8 +2255,8 @@ def _app_download_redirect(request: web.Request) -> web.HTTPFound | None:
 
 
 @routes.get("/app")
-async def spa_app(_request: web.Request) -> web.Response:
-    return _app_index_response()
+async def spa_app(request: web.Request) -> web.Response:
+    return _app_index_response(request)
 
 
 @routes.get(r"/app/{tail:.*}")
@@ -2090,4 +2266,4 @@ async def spa_app_fallback(request: web.Request) -> web.Response:
     download_redirect = _app_download_redirect(request)
     if download_redirect is not None:
         return download_redirect
-    return _app_index_response()
+    return _app_index_response(request)

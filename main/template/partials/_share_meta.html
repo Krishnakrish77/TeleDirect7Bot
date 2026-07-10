@@ -1,0 +1,22 @@
+{% if share_title %}
+  <meta name="description" content="{{ share_description or share_title }}" />
+  <meta property="og:site_name" content="TeleDirect" />
+  <meta property="og:type" content="{{ share_type or 'website' }}" />
+  <meta property="og:title" content="{{ share_title }}" />
+  <meta property="og:description" content="{{ share_description or share_title }}" />
+  {% if share_url %}
+    <link rel="canonical" href="{{ share_url }}" />
+    <meta property="og:url" content="{{ share_url }}" />
+    <meta name="twitter:url" content="{{ share_url }}" />
+  {% endif %}
+  {% if share_image %}
+    <meta property="og:image" content="{{ share_image }}" itemprop="thumbnailUrl" />
+    <meta property="og:image:secure_url" content="{{ share_image }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="{{ share_image }}" />
+  {% else %}
+    <meta name="twitter:card" content="summary" />
+  {% endif %}
+  <meta name="twitter:title" content="{{ share_title }}" />
+  <meta name="twitter:description" content="{{ share_description or share_title }}" />
+{% endif %}

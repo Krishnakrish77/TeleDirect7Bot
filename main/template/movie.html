@@ -2,6 +2,8 @@
 
 {% block title %}{{ title }}{% endblock %}
 
+{% block head_extra %}{% include "partials/_share_meta.html" %}{% endblock %}
+
 {% block content %}
   <div class="w-full max-w-4xl lg:max-w-5xl">
     <header class="mb-8">
