@@ -307,7 +307,7 @@ def _admin_catalogue_context(request: web.Request) -> dict:
 def _admin_thumb_url(item) -> str:
     if not item.secure_hash:
         return ""
-    suffix = "?v=audio2" if getattr(item, "media_kind", "") == "audio" else ""
+    suffix = "?v=audio3" if getattr(item, "media_kind", "") == "audio" else ""
     return f"/thumb/{item.secure_hash}{item.message_id}.jpg{suffix}"
 
 

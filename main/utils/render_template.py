@@ -137,7 +137,7 @@ async def render_page(message_id, secure_hash,
                             "stream_url": urllib.parse.urljoin(Var.URL, f"{_nxt.secure_hash}{_nxt.message_id}"),
                             "title": _nxt.title or _nxt.file_name or f"Track {_nxt.track_number or _i + 2}",
                             "artist": _nxt.artist or "",
-                            "art": f"/thumb/{_nxt.secure_hash}{_nxt.message_id}.jpg",
+                            "art": f"/thumb/{_nxt.secure_hash}{_nxt.message_id}.jpg?v=audio3",
                             "track_number": _nxt.track_number,
                             "secure_hash": _nxt.secure_hash,
                             "message_id": _nxt.message_id,
@@ -150,7 +150,7 @@ async def render_page(message_id, secure_hash,
                             "stream_url": urllib.parse.urljoin(Var.URL, f"{_prv.secure_hash}{_prv.message_id}"),
                             "title": _prv.title or _prv.file_name or f"Track {_prv.track_number or _i}",
                             "artist": _prv.artist or "",
-                            "art": f"/thumb/{_prv.secure_hash}{_prv.message_id}.jpg",
+                            "art": f"/thumb/{_prv.secure_hash}{_prv.message_id}.jpg?v=audio3",
                             "track_number": _prv.track_number,
                         }
                     break
@@ -191,7 +191,11 @@ async def render_page(message_id, secure_hash,
             )
             share_image = share_meta.item_image_url(meta)
             if not share_image:
-                share_image = share_meta.absolute_url(f"thumb/{secure_hash}{message_id}.jpg")
+                share_image = share_meta.fallback_thumb_url(
+                    secure_hash,
+                    message_id,
+                    is_audio=(mime_type == "audio"),
+                )
             share_url = share_meta.absolute_url(f"watch/{secure_hash}{message_id}")
             if mime_type == "audio":
                 share_type = "music.song"

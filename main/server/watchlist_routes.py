@@ -41,6 +41,11 @@ _VALID_IID = re.compile(r'^(?:(?:movie|series|album):[a-z0-9_-]{1,120}|\d{1,15})
 _get_user = get_user  # shared auth helper
 
 
+def _thumb_url(item) -> str:
+    suffix = "?v=audio3" if getattr(item, "media_kind", "") == "audio" else ""
+    return f"/thumb/{item.secure_hash}{item.message_id}.jpg{suffix}"
+
+
 def _resolve_item(item_id: str) -> Optional[dict]:
     """Turn a stored item_id into a dict suitable for the watchlist page."""
     try:
@@ -90,7 +95,7 @@ def _resolve_item(item_id: str) -> Optional[dict]:
                 "url": f"/album/{key}",
                 "title": p.album_title or p.artist or "Unknown Album",
                 "year": p.year,
-                "poster": f"/thumb/{p.secure_hash}{p.message_id}.jpg",
+                "poster": _thumb_url(p),
                 "kind": "album",
                 "subtitle": f"{len(tracks)} track{'s' if len(tracks) != 1 else ''}",
             }
@@ -105,7 +110,7 @@ def _resolve_item(item_id: str) -> Optional[dict]:
             "year": item.year,
             "poster": (tmdb_image_url(item.poster_path, "w342")
                        if item.poster_path
-                       else f"/thumb/{item.secure_hash}{item.message_id}.jpg"),
+                       else _thumb_url(item)),
             "kind": item.media_kind or "video",
             "subtitle": item.artist if item.media_kind == "audio" else "",
         }

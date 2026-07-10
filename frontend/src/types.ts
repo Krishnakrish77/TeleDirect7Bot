@@ -382,6 +382,7 @@ export interface Suggestion {
   poster_path: string;
   secure_hash: string;
   message_id: number;
+  media_kind?: string;
 }
 
 export interface ContinueEntry {

@@ -17,7 +17,7 @@
         {# Album art #}
         <div class="w-32 h-32 sm:w-40 sm:h-40 rounded-xl overflow-hidden flex-shrink-0
                     mx-auto sm:mx-0 bg-ink-800 shadow-xl ring-1 ring-white/10">
-          <img src="/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"
+          <img src="/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg?v=audio3"
                alt="" loading="lazy" onerror="this.style.display='none'"
                class="w-full h-full object-cover" />
         </div>
@@ -73,7 +73,7 @@
             </span>
             {# Thumb #}
             <div class="w-10 h-10 rounded bg-ink-800 flex-shrink-0 overflow-hidden relative">
-              <img src="/thumb/{{ track.secure_hash }}{{ track.message_id }}.jpg"
+              <img src="/thumb/{{ track.secure_hash }}{{ track.message_id }}.jpg?v=audio3"
                    alt="" loading="lazy" onerror="this.style.display='none'"
                    class="absolute inset-0 w-full h-full object-cover" />
               <div class="absolute inset-0 flex items-center justify-center">
@@ -167,7 +167,7 @@ var _albumTrackData = [
     streamUrl: '/{{ t.secure_hash }}{{ t.message_id }}',
     title: {{ (t.title or t.file_name) | clean_music_tag | tojson }},
     artist: {{ (t.artist or artist or '') | clean_music_tag | tojson }},
-    art: '/thumb/{{ t.secure_hash }}{{ t.message_id }}.jpg',
+    art: '/thumb/{{ t.secure_hash }}{{ t.message_id }}.jpg?v=audio3',
   }{% if not loop.last %},{% endif %}
   {% endfor %}
 ];

@@ -63,6 +63,15 @@ _UI_COOKIE = "td_ui"
 _API_CACHE_TTL = 30.0
 _SLOW_HUB_LOG_MS = 1000.0
 _HOME_SHELF_LIMIT_DEFAULT = 7
+_HOME_RECOMMENDATIONS_TIMEOUT = 2.5
+_HOME_TRENDING_TIMEOUT = 1.5
+_HOME_TOP_PLAYS_TIMEOUT = 1.0
+_HOME_OPTIONAL_SHELVES_TIMEOUT = max(
+    _HOME_RECOMMENDATIONS_TIMEOUT,
+    _HOME_TRENDING_TIMEOUT,
+    _HOME_TOP_PLAYS_TIMEOUT,
+)
+_HOME_REC_REASONS_TIMEOUT = 0.6
 _api_response_cache: dict[str, tuple[str, float]] = {}
 _filter_cache: tuple[dict, float] | None = None
 _HUB_CARD_PAYLOAD_KEYS = (
@@ -133,6 +142,44 @@ def _int_env(name: str, default: int, *, lo: int, hi: int) -> int:
 
 def _home_shelf_limit() -> int:
     return _int_env("HUB_HOME_SHELVES", _HOME_SHELF_LIMIT_DEFAULT, lo=1, hi=12)
+
+
+async def _home_recommendation_shelf(user_id: int) -> tuple[list, list, list]:
+    mark = time.monotonic()
+    rec_items, personal_shelves = await asyncio.wait_for(
+        asyncio.gather(
+            rec_engine.get_recommendations(user_id),
+            rec_engine.get_personal_shelves(user_id),
+        ),
+        timeout=_HOME_RECOMMENDATIONS_TIMEOUT,
+    )
+    rec_reasons = []
+    remaining = _HOME_RECOMMENDATIONS_TIMEOUT - (time.monotonic() - mark)
+    if rec_items and remaining > 0.05:
+        try:
+            rec_reasons = await asyncio.wait_for(
+                rec_engine.get_recommendation_reasons(user_id, rec_items),
+                timeout=min(_HOME_REC_REASONS_TIMEOUT, remaining),
+            )
+        except asyncio.TimeoutError:
+            logging.warning("spa hub: recommendation reasons timed out")
+        except Exception:
+            logging.exception("spa hub: recommendation reasons failed")
+    return rec_items, personal_shelves, rec_reasons
+
+
+async def _home_trending_shelf() -> dict:
+    return await asyncio.wait_for(
+        trending.get_trending(),
+        timeout=_HOME_TRENDING_TIMEOUT,
+    )
+
+
+async def _home_top_plays() -> list:
+    return await asyncio.wait_for(
+        wh_store.get_top_plays(40),
+        timeout=_HOME_TOP_PLAYS_TIMEOUT,
+    )
 
 
 def _home_shelf_rank(name: str) -> int:
@@ -273,7 +320,7 @@ def _tmdb_image(path: str, size: str = "w342") -> str:
 
 
 def _thumb(item: HubItem) -> str:
-    suffix = "?v=audio2" if (item.media_kind or "") == "audio" else ""
+    suffix = "?v=audio3" if (item.media_kind or "") == "audio" else ""
     return f"/thumb/{item.secure_hash}{item.message_id}.jpg{suffix}"
 
 
@@ -843,111 +890,134 @@ async def api_hub(request: web.Request) -> web.Response:
         raw_shelves = media_index.shelves()
         hero_items = media_index.pick_heroes()
         timings["shelves_ms"] = round((time.monotonic() - mark) * 1000, 1)
+        optional_started = time.monotonic()
+        optional_tasks: dict[str, asyncio.Future] = {
+            "trending": asyncio.create_task(_home_trending_shelf()),
+            "top_plays": asyncio.create_task(_home_top_plays()),
+        }
+        task_started = {name: optional_started for name in optional_tasks}
         if user:
-            try:
-                mark = time.monotonic()
-                rec_items, personal_shelves = await asyncio.wait_for(
-                    asyncio.gather(
-                        rec_engine.get_recommendations(int(user["sub"])),
-                        rec_engine.get_personal_shelves(int(user["sub"])),
-                    ),
-                    timeout=12.0,
-                )
-                timings["recommendations_ms"] = round((time.monotonic() - mark) * 1000, 1)
-                if rec_items:
-                    rec_reasons = await rec_engine.get_recommendation_reasons(
-                        int(user["sub"]),
-                        rec_items,
-                    )
-                    rec_meta = []
-                    for card in rec_items:
-                        tid = getattr(card, "tmdb_id", None)
-                        skey = getattr(card, "series_key", "")
-                        if tid is None:
-                            poster = getattr(card, "poster_item", None)
-                            if poster:
-                                tid = getattr(poster, "tmdb_id", None)
-                                skey = getattr(poster, "series_key", "")
-                        rec_meta.append(
-                            {"tmdbId": tid, "kind": "tv" if skey else "movie"}
-                            if tid else None
-                        )
-                    raw_shelves = [
-                        {
-                            "name": "Recommended for you",
-                            "items": rec_items,
-                            "link": None,
-                            "total": len(rec_items),
-                            "dismissable": True,
-                            "rec_meta": rec_meta,
-                            "rec_reasons": rec_reasons,
-                        },
-                    ] + list(raw_shelves)
-                if personal_shelves:
-                    raw_shelves = list(raw_shelves[:1]) + personal_shelves + list(raw_shelves[1:])
-            except asyncio.TimeoutError:
-                timings["recommendations_ms"] = round((time.monotonic() - mark) * 1000, 1)
+            optional_tasks["recommendations"] = asyncio.create_task(
+                _home_recommendation_shelf(int(user["sub"]))
+            )
+            task_started["recommendations"] = optional_started
+
+        done, pending = await asyncio.wait(
+            optional_tasks.values(),
+            timeout=_HOME_OPTIONAL_SHELVES_TIMEOUT,
+        )
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        timings["optional_shelves_ms"] = round((time.monotonic() - optional_started) * 1000, 1)
+
+        rec_items = []
+        personal_shelves = []
+        rec_reasons = []
+        rec_task = optional_tasks.get("recommendations")
+        if rec_task is not None:
+            timings["recommendations_ms"] = round(
+                (time.monotonic() - task_started["recommendations"]) * 1000,
+                1,
+            )
+            if rec_task in done:
+                try:
+                    rec_items, personal_shelves, rec_reasons = rec_task.result()
+                except asyncio.TimeoutError:
+                    logging.warning("spa hub: rec_engine timed out, skipping shelf")
+                except Exception:
+                    logging.exception("spa hub: rec_engine failed, skipping shelf")
+                    rec_items, personal_shelves, rec_reasons = [], [], []
+            else:
                 logging.warning("spa hub: rec_engine timed out, skipping shelf")
+
+        if rec_items:
+            rec_meta = []
+            for card in rec_items:
+                tid = getattr(card, "tmdb_id", None)
+                skey = getattr(card, "series_key", "")
+                if tid is None:
+                    poster = getattr(card, "poster_item", None)
+                    if poster:
+                        tid = getattr(poster, "tmdb_id", None)
+                        skey = getattr(poster, "series_key", "")
+                rec_meta.append(
+                    {"tmdbId": tid, "kind": "tv" if skey else "movie"}
+                    if tid else None
+                )
+            raw_shelves = [
+                {
+                    "name": "Recommended for you",
+                    "items": rec_items,
+                    "link": None,
+                    "total": len(rec_items),
+                    "dismissable": True,
+                    "rec_meta": rec_meta,
+                    "rec_reasons": rec_reasons,
+                },
+            ] + list(raw_shelves)
+        if personal_shelves:
+            raw_shelves = list(raw_shelves[:1]) + personal_shelves + list(raw_shelves[1:])
+
+        trend_task = optional_tasks["trending"]
+        timings["trending_ms"] = round((time.monotonic() - task_started["trending"]) * 1000, 1)
+        if trend_task in done:
+            try:
+                tr = trend_task.result()
+                tr_items = tr.get("in_library", [])
+                if len(tr_items) >= trending._MIN_SHELF_ITEMS:
+                    raw_shelves = list(raw_shelves) + [
+                        {
+                            "name": "Trending",
+                            "items": tr_items,
+                            "link": None,
+                            "total": len(tr_items),
+                        },
+                    ]
+            except asyncio.TimeoutError:
+                logging.warning("spa hub: trending timed out, skipping shelf")
             except Exception:
-                timings["recommendations_ms"] = round((time.monotonic() - mark) * 1000, 1)
-                logging.exception("spa hub: rec_engine failed, skipping shelf")
-
-        try:
-            mark = time.monotonic()
-            tr = await asyncio.wait_for(trending.get_trending(), timeout=10.0)
-            timings["trending_ms"] = round((time.monotonic() - mark) * 1000, 1)
-            tr_items = tr.get("in_library", [])
-            if len(tr_items) >= trending._MIN_SHELF_ITEMS:
-                raw_shelves = list(raw_shelves) + [
-                    {
-                        "name": "Trending",
-                        "items": tr_items,
-                        "link": None,
-                        "total": len(tr_items),
-                    },
-                ]
-        except asyncio.TimeoutError:
-            timings["trending_ms"] = round((time.monotonic() - mark) * 1000, 1)
+                logging.exception("spa hub: trending failed, skipping shelf")
+        else:
             logging.warning("spa hub: trending timed out, skipping shelf")
-        except Exception:
-            timings["trending_ms"] = round((time.monotonic() - mark) * 1000, 1)
-            logging.exception("spa hub: trending failed, skipping shelf")
 
-        try:
-            mark = time.monotonic()
-            top_plays = await asyncio.wait_for(wh_store.get_top_plays(40), timeout=5.0)
-            timings["top_plays_ms"] = round((time.monotonic() - mark) * 1000, 1)
-            top_cards: list[dict] = []
-            seen_groups: set[str] = set()
-            for entry in top_plays:
-                m = _CW_KEY_RE.match(entry.get("cw_key", ""))
-                if not m:
-                    continue
-                item = media_index.get_item(int(m.group(1)))
-                if item is None:
-                    continue
-                group_key = item.series_key or item.movie_key or item.album_key or str(item.message_id)
-                if group_key in seen_groups:
-                    continue
-                seen_groups.add(group_key)
-                top_cards.append(item)  # store HubItem; api_hub calls _card() later
-                if len(top_cards) >= 20:
-                    break
-            if len(top_cards) >= 3:
-                raw_shelves = list(raw_shelves) + [
-                    {
-                        "name": "Most Played",
-                        "items": top_cards,
-                        "link": None,
-                        "total": len(top_cards),
-                    },
-                ]
-        except asyncio.TimeoutError:
-            timings["top_plays_ms"] = round((time.monotonic() - mark) * 1000, 1)
+        top_task = optional_tasks["top_plays"]
+        timings["top_plays_ms"] = round((time.monotonic() - task_started["top_plays"]) * 1000, 1)
+        if top_task in done:
+            try:
+                top_plays = top_task.result()
+                top_cards: list[HubItem] = []
+                seen_groups: set[str] = set()
+                for entry in top_plays:
+                    m = _CW_KEY_RE.match(entry.get("cw_key", ""))
+                    if not m:
+                        continue
+                    item = media_index.get_item(int(m.group(1)))
+                    if item is None:
+                        continue
+                    group_key = item.series_key or item.movie_key or item.album_key or str(item.message_id)
+                    if group_key in seen_groups:
+                        continue
+                    seen_groups.add(group_key)
+                    top_cards.append(item)
+                    if len(top_cards) >= 20:
+                        break
+                if len(top_cards) >= 3:
+                    raw_shelves = list(raw_shelves) + [
+                        {
+                            "name": "Most Played",
+                            "items": top_cards,
+                            "link": None,
+                            "total": len(top_cards),
+                        },
+                    ]
+            except asyncio.TimeoutError:
+                logging.warning("spa hub: top_plays timed out, skipping shelf")
+            except Exception:
+                logging.exception("spa hub: top_plays failed, skipping shelf")
+        else:
             logging.warning("spa hub: top_plays timed out, skipping shelf")
-        except Exception:
-            timings["top_plays_ms"] = round((time.monotonic() - mark) * 1000, 1)
-            logging.exception("spa hub: top_plays failed, skipping shelf")
 
         raw_shelves = _budget_home_shelves(raw_shelves)
 

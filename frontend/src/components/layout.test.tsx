@@ -145,6 +145,27 @@ describe('Header search', () => {
     expect(images[1].getAttribute('src')).toBe('/thumb/hash243.jpg');
   });
 
+  it('cache-busts audio fallback art in search suggestions', () => {
+    vi.mocked(useSuggestions).mockReturnValue([
+      {
+        title: 'Indra',
+        year: null,
+        kind: 'album',
+        url: '/album/indra',
+        poster_path: '',
+        secure_hash: 'songhash',
+        message_id: 99,
+        media_kind: 'audio',
+      },
+    ]);
+    const view = renderHeader({ query: 'indra' });
+
+    fireEvent.focus(screen.getByPlaceholderText('Search library'));
+
+    const image = view.container.querySelector('.suggestion-art img');
+    expect(image?.getAttribute('src')).toBe('/thumb/songhash99.jpg?v=audio3');
+  });
+
   it('closes search suggestions when clicking outside', () => {
     vi.mocked(useSuggestions).mockReturnValue(suggestions);
     renderHeader({ query: 'ka' });

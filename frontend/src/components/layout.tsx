@@ -308,30 +308,34 @@ export function SearchMenu({
 }) {
   return (
     <div className="search-menu" id="top-search-suggestions" role="listbox">
-      {suggestions.map((item, index) => (
-        <a
-          key={item.url}
-          id={`top-search-suggestion-${index}`}
-          href={getHref(item)}
-          role="option"
-          aria-selected={index === activeIndex}
-          className={index === activeIndex ? 'suggestion active' : 'suggestion'}
-          onMouseEnter={() => onActiveIndexChange(index)}
-          onClick={onPick}
-        >
-          <span className="suggestion-art">
-            {item.poster_path ? (
-              <img src={tmdbImageUrl(item.poster_path, 'w92')} alt="" loading="lazy" decoding="async" />
-            ) : (
-              <img src={`/thumb/${item.secure_hash}${item.message_id}.jpg`} alt="" loading="lazy" decoding="async" />
-            )}
-          </span>
-          <span className="suggestion-copy">
-            <strong>{item.title}</strong>
-            <span>{[item.year, item.kind].filter(Boolean).join(' - ')}</span>
-          </span>
-        </a>
-      ))}
+      {suggestions.map((item, index) => {
+        const isAudio = item.media_kind === 'audio' || item.kind === 'audio' || item.kind === 'album';
+        const fallbackArt = `/thumb/${item.secure_hash}${item.message_id}.jpg${isAudio ? '?v=audio3' : ''}`;
+        return (
+          <a
+            key={item.url}
+            id={`top-search-suggestion-${index}`}
+            href={getHref(item)}
+            role="option"
+            aria-selected={index === activeIndex}
+            className={index === activeIndex ? 'suggestion active' : 'suggestion'}
+            onMouseEnter={() => onActiveIndexChange(index)}
+            onClick={onPick}
+          >
+            <span className="suggestion-art">
+              {item.poster_path ? (
+                <img src={tmdbImageUrl(item.poster_path, 'w92')} alt="" loading="lazy" decoding="async" />
+              ) : (
+                <img src={fallbackArt} alt="" loading="lazy" decoding="async" />
+              )}
+            </span>
+            <span className="suggestion-copy">
+              <strong>{item.title}</strong>
+              <span>{[item.year, item.kind].filter(Boolean).join(' - ')}</span>
+            </span>
+          </a>
+        );
+      })}
     </div>
   );
 }

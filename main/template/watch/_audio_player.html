@@ -19,7 +19,7 @@
           {# Front: album art #}
           <div class="flip-card-front w-full h-full rounded-2xl overflow-hidden shadow-2xl bg-ink-800 ring-1 ring-white/10">
             {% if meta and meta.secure_hash %}
-              <img src="/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"
+              <img src="/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg?v=audio3"
                    alt="Album art" loading="eager"
                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
                    class="absolute inset-0 w-full h-full object-cover" />
@@ -318,7 +318,7 @@
                       {{ t.track_number or '' }}
                     </span>
                     <div class="w-8 h-8 rounded bg-ink-800 flex-shrink-0 overflow-hidden relative">
-                      <img src="/thumb/{{ t.secure_hash }}{{ t.message_id }}.jpg"
+                      <img src="/thumb/{{ t.secure_hash }}{{ t.message_id }}.jpg?v=audio3"
                            alt="" loading="lazy" onerror="this.style.display='none'"
                            class="absolute inset-0 w-full h-full object-cover" />
                     </div>

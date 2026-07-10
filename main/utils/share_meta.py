@@ -42,8 +42,14 @@ def item_image_url(item, *, size: str = "w780") -> str:
     secure_hash = getattr(item, "secure_hash", "") or ""
     message_id = getattr(item, "message_id", "") or ""
     if secure_hash and message_id:
-        return absolute_url(f"thumb/{secure_hash}{message_id}.jpg")
+        suffix = "?v=audio3" if getattr(item, "media_kind", "") == "audio" else ""
+        return absolute_url(f"thumb/{secure_hash}{message_id}.jpg{suffix}")
     return ""
+
+
+def fallback_thumb_url(secure_hash: str, message_id: int | str, *, is_audio: bool = False) -> str:
+    suffix = "?v=audio3" if is_audio else ""
+    return absolute_url(f"thumb/{secure_hash}{message_id}.jpg{suffix}")
 
 
 def compact_description(*values: str | None, fallback: str = "Watch on TeleDirect", limit: int = 220) -> str:

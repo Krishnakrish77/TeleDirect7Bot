@@ -33,7 +33,8 @@ def _tmdb_poster(item) -> str:
     """Return a displayable poster URL for a catalogue item."""
     if item.poster_path:
         return tmdb_image_url(item.poster_path, "w342")
-    return f"/thumb/{item.secure_hash}{item.message_id}.jpg"
+    suffix = "?v=audio3" if getattr(item, "media_kind", "") == "audio" else ""
+    return f"/thumb/{item.secure_hash}{item.message_id}.jpg{suffix}"
 
 
 def _json(data: dict, *, status: int = 200) -> web.Response:

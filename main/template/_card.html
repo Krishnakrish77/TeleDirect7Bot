@@ -22,7 +22,7 @@
         </svg>
       </div>
       <img
-        src="/thumb/{{ poster.secure_hash }}{{ poster.message_id }}.jpg"
+        src="/thumb/{{ poster.secure_hash }}{{ poster.message_id }}.jpg?v=audio3"
         alt="" loading="lazy" onerror="this.remove()"
         class="absolute inset-0 w-full h-full object-cover
                group-hover:scale-105 transition-transform duration-300"
@@ -161,7 +161,7 @@
 {% else %}
   <a href="/watch/{{ item.secure_hash }}{{ item.message_id }}"
      {% if item.media_kind == 'audio' %}
-     onclick="event.preventDefault(); _cardPlayAudio('/{{ item.secure_hash }}{{ item.message_id }}', '/watch/{{ item.secure_hash }}{{ item.message_id }}', {{ (item.title or item.file_name) | tojson }}, {{ (item.artist or '') | tojson }}, '/thumb/{{ item.secure_hash }}{{ item.message_id }}.jpg')"
+     onclick="event.preventDefault(); _cardPlayAudio('/{{ item.secure_hash }}{{ item.message_id }}', '/watch/{{ item.secure_hash }}{{ item.message_id }}', {{ (item.title or item.file_name) | tojson }}, {{ (item.artist or '') | tojson }}, '/thumb/{{ item.secure_hash }}{{ item.message_id }}.jpg?v=audio3')"
      {% endif %}
      class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
             hover:border-brand-400/40 hover:bg-ink-800
@@ -183,7 +183,7 @@
         {% endif %}
       </div>
       <img
-        src="{% if item.poster_path %}https://image.tmdb.org/t/p/w342{{ item.poster_path }}{% else %}/thumb/{{ item.secure_hash }}{{ item.message_id }}.jpg{% endif %}"
+        src="{% if item.poster_path %}https://image.tmdb.org/t/p/w342{{ item.poster_path }}{% else %}/thumb/{{ item.secure_hash }}{{ item.message_id }}.jpg{% if item.media_kind == 'audio' %}?v=audio3{% endif %}{% endif %}"
         alt=""
         loading="lazy"
         onerror="this.remove()"

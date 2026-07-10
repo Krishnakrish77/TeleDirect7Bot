@@ -828,7 +828,10 @@ async def api_items(request: web.Request) -> web.Response:
             # fallback for items without a native Telegram thumb. The
             # <img onerror> in the consumer will hide the image if even
             # the fallback fails (truly broken file).
-            "thumb_url": f"/thumb/{item.secure_hash}{item.message_id}.jpg",
+            "thumb_url": (
+                f"/thumb/{item.secure_hash}{item.message_id}.jpg"
+                f"{'?v=audio3' if (item.media_kind or '') == 'audio' else ''}"
+            ),
             "next_episode": next_ep,
         })
     return web.json_response(out, headers={"Cache-Control": "no-store"})
@@ -1209,10 +1212,43 @@ async def hub_thumb(request: web.Request) -> web.Response:
     if item.secure_hash != secure_hash:
         raise web.HTTPForbidden(text="Invalid hash")
 
+    def _thumb_response(data: bytes, *, cache_control: str) -> web.Response:
+        return web.Response(
+            body=data,
+            content_type="image/jpeg",
+            headers={
+                "Cache-Control": cache_control,
+                "Content-Length": str(len(data)),
+            },
+        )
+
+    def _media_bytes(bytesio) -> Optional[bytes]:
+        if bytesio is None:
+            return None
+        return bytesio.getvalue() if hasattr(bytesio, "getvalue") else bytes(bytesio)
+
+    async def fetch_telegram_audio_thumb() -> Optional[bytes]:
+        try:
+            message = await StreamBot.get_messages(Var.BIN_CHANNEL, message_id)
+        except Exception:
+            return None
+        audio_msg = getattr(message, "audio", None)
+        if not audio_msg:
+            return None
+        thumbs = getattr(audio_msg, "thumbs", None) or []
+        if not thumbs:
+            single = getattr(audio_msg, "thumb", None)
+            if single:
+                thumbs = [single]
+        if not thumbs:
+            return None
+        try:
+            bytesio = await StreamBot.download_media(thumbs[-1].file_id, in_memory=True)
+            return _media_bytes(bytesio)
+        except Exception:
+            return None
+
     async def fetch() -> Optional[bytes]:
-        # Telegram fallback for audio — populated if the track has a stored
-        # thumbnail but ffmpeg APIC extraction fails (e.g. no image stream).
-        _tg_audio_thumbs: list = []
         try:
             message = await StreamBot.get_messages(Var.BIN_CHANNEL, message_id)
         except Exception:
@@ -1220,17 +1256,9 @@ async def hub_thumb(request: web.Request) -> web.Response:
         if message is not None:
             audio_msg = getattr(message, "audio", None)
             if audio_msg:
-                # Audio: prefer ffmpeg APIC extraction over Telegram's stored
-                # thumbnail. Telegram compresses audio thumbs to ~320 px which
-                # looks blurry at the large album-art display on the watch page.
-                # The APIC embedded in the file is often 500-1000 px and is
-                # extracted at seek=0.0 below. Save Telegram's version as a
-                # fallback in case ffmpeg finds no image stream.
-                _tg_audio_thumbs = getattr(audio_msg, "thumbs", None) or []
-                if not _tg_audio_thumbs:
-                    _single = getattr(audio_msg, "thumb", None)
-                    if _single:
-                        _tg_audio_thumbs = [_single]
+                # Audio: keep the durable cache for high-quality embedded art
+                # extracted by ffmpeg. Telegram's compressed thumb is served
+                # separately as a short-lived fallback on cold requests.
                 media = None  # proceed to ffmpeg APIC path
             else:
                 media = (
@@ -1249,11 +1277,9 @@ async def hub_thumb(request: web.Request) -> web.Response:
                         bytesio = await StreamBot.download_media(
                             thumbs[-1].file_id, in_memory=True,
                         )
-                        if bytesio is not None:
-                            return (
-                                bytesio.getvalue()
-                                if hasattr(bytesio, "getvalue") else bytes(bytesio)
-                            )
+                        data = _media_bytes(bytesio)
+                        if data is not None:
+                            return data
                     except Exception:
                         pass  # fall through to ffmpeg fallback
 
@@ -1288,35 +1314,34 @@ async def hub_thumb(request: web.Request) -> web.Response:
             seek=1.0,
             is_audio=is_audio,
         )
-        if result is not None:
-            return result
-        # ffmpeg found no image stream — fall back to Telegram's compressed thumb.
-        # Only reachable for audio; videos always have a frame to grab.
-        if is_audio and _tg_audio_thumbs:
-            try:
-                bytesio = await StreamBot.download_media(
-                    _tg_audio_thumbs[-1].file_id, in_memory=True,
-                )
-                if bytesio is not None:
-                    return (
-                        bytesio.getvalue()
-                        if hasattr(bytesio, "getvalue") else bytes(bytesio)
-                    )
-            except Exception:
-                pass
-        return None
+        return result
 
     is_audio_item = getattr(item, "media_kind", "") == "audio"
     cache_key = thumb_cache.cache_id(message_id, audio=is_audio_item)
+
+    if is_audio_item:
+        cached = await thumb_cache.cached_only(cache_key)
+        if cached is not None:
+            return _thumb_response(
+                cached,
+                cache_control="public, max-age=86400, immutable",
+            )
+        fallback = await fetch_telegram_audio_thumb()
+        if fallback is not None:
+            try:
+                asyncio.create_task(thumb_cache.cached_or_fetch(cache_key, fetch))
+            except RuntimeError:
+                pass
+            return _thumb_response(
+                fallback,
+                cache_control="public, max-age=300",
+            )
+
     data = await thumb_cache.cached_or_fetch(cache_key, fetch)
     if data is None:
         raise web.HTTPNotFound(text="thumb not found")
 
-    return web.Response(
-        body=data,
-        content_type="image/jpeg",
-        headers={
-            "Cache-Control": "public, max-age=86400, immutable",
-            "Content-Length": str(len(data)),
-        },
+    return _thumb_response(
+        data,
+        cache_control="public, max-age=86400, immutable",
     )

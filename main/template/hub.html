@@ -94,7 +94,7 @@
                 </template>
                 <template x-if="!it.poster_path">
                   <div class="w-8 h-12 rounded bg-ink-800 flex-shrink-0 relative overflow-hidden">
-                    <img :src="'/thumb/' + it.secure_hash + it.message_id + '.jpg'" alt=""
+                    <img :src="'/thumb/' + it.secure_hash + it.message_id + '.jpg' + ((it.media_kind === 'audio' || it.kind === 'audio') ? '?v=audio3' : '')" alt=""
                          loading="lazy"
                          @error="$el.style.opacity='0'; $el.nextElementSibling.style.display='flex'"
                          class="w-full h-full object-cover" />

@@ -35,7 +35,7 @@ _cache: "OrderedDict[int, Tuple[float, bytes]]" = OrderedDict()
 _locks: Dict[int, asyncio.Lock] = {}
 _failures: Dict[int, float] = {}  # message_id → timestamp of last fetch failure
 _global_lock = asyncio.Lock()
-_AUDIO_THUMB_VERSION = 2
+_AUDIO_THUMB_VERSION = 3
 
 
 def cache_id(message_id: int, *, audio: bool = False) -> int:
@@ -126,6 +126,33 @@ def lock_for(message_id: int) -> asyncio.Lock:
     """Return a per-message lock so multiple concurrent /thumb requests for
     the same file collapse into a single Telegram download."""
     return _locks.setdefault(message_id, asyncio.Lock())
+
+
+async def cached_only(message_id: int) -> Optional[bytes]:
+    """Return cached bytes from L1/L2 without invoking a generator.
+
+    Used by audio thumbnails so we can serve Telegram's fast embedded thumb as
+    a short-lived response while keeping the durable audio cache reserved for
+    APIC/ffmpeg artwork.
+    """
+    data = get(message_id)
+    if data is not None:
+        return data
+    # Intentionally do not take lock_for(message_id): an APIC warm task may be
+    # holding it for seconds, and this read path must remain fast enough to
+    # fall through to Telegram's short-lived fallback.
+    store = _store()
+    if store is None:
+        return None
+    try:
+        persisted = await store.get_thumb(message_id)
+    except Exception:
+        logging.exception("thumb_cache: L2 get failed for msg %d", message_id)
+        return None
+    if persisted:
+        set_(message_id, persisted)
+        return persisted
+    return None
 
 
 async def cached_or_fetch(message_id: int, fetcher) -> Optional[bytes]:

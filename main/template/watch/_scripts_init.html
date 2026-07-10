@@ -89,7 +89,7 @@
           streamUrl: streamSrc,
           title: {{ (meta.title | clean_music_tag) | tojson }},
           artist: {{ ((meta.artist or '') | clean_music_tag) | tojson }},
-          art: {% if meta.secure_hash %}"/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg"{% else %}""{% endif %},
+          art: {% if meta.secure_hash %}"/thumb/{{ meta.secure_hash }}{{ meta.message_id }}.jpg{% if is_audio %}?v=audio3{% endif %}"{% else %}""{% endif %},
           nextUrl: {{ next_track.url | tojson if next_track else 'null' }},
           nextStreamUrl: {{ next_track.stream_url | tojson if next_track else 'null' }},
           nextTitle: {{ next_track.title | tojson if next_track else 'null' }},

@@ -1865,6 +1865,7 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
             "poster_path": it.poster_path,
             "secure_hash": it.secure_hash,
             "message_id": it.message_id,
+            "media_kind": it.media_kind,
         })
         if len(suggestions) >= limit:
             break
