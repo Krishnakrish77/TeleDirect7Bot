@@ -560,9 +560,34 @@ def _card_from_item(item: HubItem) -> dict:
     }
 
 
+def _common_with_group_art(identity_item: HubItem, art_item: HubItem | None) -> dict:
+    common = _item_common(identity_item)
+    if (
+        art_item is not None
+        and art_item is not identity_item
+        and getattr(art_item, "poster_path", "")
+    ):
+        art_common = _item_common(art_item)
+        for key in (
+            "posterUrl",
+            "backdropUrl",
+            "genres",
+            "overview",
+            "tmdbId",
+            "tmdbKind",
+            "imdbId",
+            "imdbHref",
+            "externalRating",
+            "trailerKey",
+        ):
+            if art_common.get(key):
+                common[key] = art_common[key]
+    return common
+
+
 def _card_from_series(card: SeriesGroup) -> dict:
     poster = card.poster_item
-    common = _item_common(poster)
+    common = _common_with_group_art(poster, getattr(card, "art_item", None))
     return {
         **common,
         "type": "series",
@@ -587,7 +612,7 @@ def _card_from_series(card: SeriesGroup) -> dict:
 
 def _card_from_movie(card: MovieGroup) -> dict:
     poster = card.poster_item
-    common = _item_common(poster)
+    common = _common_with_group_art(poster, getattr(card, "art_item", None))
     return {
         **common,
         "type": "movie",

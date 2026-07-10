@@ -1333,6 +1333,19 @@ def query(
     return page, next_cursor
 
 
+def _preferred_art_item(items: List[HubItem]) -> HubItem:
+    """Choose the group representative that gives cards the best artwork."""
+    return max(
+        items,
+        key=lambda item: (
+            bool(item.poster_path),
+            bool(item.has_thumb),
+            bool(item.tmdb_id),
+            item.message_id,
+        ),
+    )
+
+
 def _build_series_group(episodes: List[HubItem]) -> SeriesGroup:
     """Construct a SeriesGroup from at least one episode HubItem."""
     poster = next(
@@ -1353,6 +1366,7 @@ def _build_series_group(episodes: List[HubItem]) -> SeriesGroup:
         season_count=len(seasons) or 1,
         latest_message_id=max(e.message_id for e in episodes),
         poster_item=poster,
+        art_item=_preferred_art_item(episodes),
         has_thumb=any(e.has_thumb for e in episodes),
     )
 
@@ -1374,6 +1388,7 @@ def _build_movie_group(variants: List[HubItem]) -> MovieGroup:
         variant_count=len(variants),
         latest_message_id=max(v.message_id for v in variants),
         poster_item=poster,
+        art_item=_preferred_art_item(variants),
         has_thumb=any(v.has_thumb for v in variants),
         total_size=sum(v.file_size for v in variants),
     )

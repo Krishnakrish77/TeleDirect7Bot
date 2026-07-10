@@ -107,6 +107,7 @@ class SeriesGroup:
     season_count: int
     latest_message_id: int  # for newest-first ordering of the hub page
     poster_item: "HubItem"  # representative episode used for thumb/year/tags
+    art_item: Optional["HubItem"] = None
     has_thumb: bool = False
 
 
@@ -119,6 +120,7 @@ class MovieGroup:
     variant_count: int
     latest_message_id: int   # for newest-first ordering of the hub page
     poster_item: "HubItem"
+    art_item: Optional["HubItem"] = None
     has_thumb: bool = False
     total_size: int = 0      # sum of variant file sizes — used for "largest" sort
 

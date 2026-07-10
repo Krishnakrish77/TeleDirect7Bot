@@ -30,23 +30,26 @@ def _video_item(
     title: str = "Kalki",
     movie_key: str = "",
     genres: list[str] | None = None,
+    **overrides,
 ) -> HubItem:
-    return HubItem(
-        message_id=message_id,
-        secure_hash=secure_hash,
-        title=title,
-        year=2024,
-        description="",
-        tags=[],
-        duration=7200,
-        file_size=1024,
-        has_thumb=True,
-        quality="1080p",
-        file_name=f"{title}.mkv",
-        movie_key=movie_key,
-        tmdb_genres=genres or ["Action"],
-        media_kind="video",
-    )
+    data = {
+        "message_id": message_id,
+        "secure_hash": secure_hash,
+        "title": title,
+        "year": 2024,
+        "description": "",
+        "tags": [],
+        "duration": 7200,
+        "file_size": 1024,
+        "has_thumb": True,
+        "quality": "1080p",
+        "file_name": f"{title}.mkv",
+        "movie_key": movie_key,
+        "tmdb_genres": genres or ["Action"],
+        "media_kind": "video",
+    }
+    data.update(overrides)
+    return HubItem(**data)
 
 
 class SpaHubPayloadTest(unittest.TestCase):
@@ -221,6 +224,90 @@ class SpaHubPayloadTest(unittest.TestCase):
 
         self.assertEqual(rows[0]["items"][0]["itemId"], "movie:related::2024")
         self.assertTrue(rows[0]["items"][0]["watched"])
+
+    def test_movie_group_card_prefers_tmdb_poster_over_newer_telegram_thumb(self):
+        previous = dict(media_index._items)
+        media_index._items.clear()
+        try:
+            plain_newer = _video_item(
+                message_id=302,
+                secure_hash="newer",
+                title="Kalki",
+                movie_key="kalki::2024",
+                tmdb_id=None,
+                poster_path="",
+            )
+            enriched_older = _video_item(
+                message_id=301,
+                secure_hash="older",
+                title="Kalki",
+                movie_key="kalki::2024",
+                tmdb_id=123,
+                tmdb_kind="movie",
+                poster_path="/tmdb-poster.jpg",
+            )
+            media_index._items.update({
+                plain_newer.message_id: plain_newer,
+                enriched_older.message_id: enriched_older,
+            })
+
+            cards, total = media_index.query_grouped(view="movies", limit=10)
+
+            self.assertEqual(total, 1)
+            self.assertEqual(cards[0].poster_item.message_id, 302)
+            self.assertEqual(cards[0].art_item.message_id, 301)
+            payload = _hub_card(cards[0])
+            self.assertEqual(payload["posterUrl"], "/api/tmdb-image/w342/tmdb-poster.jpg")
+            self.assertEqual(payload["watchKey"], "newer302")
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
+    def test_series_group_card_prefers_tmdb_poster_over_newer_telegram_thumb(self):
+        previous = dict(media_index._items)
+        media_index._items.clear()
+        try:
+            plain_newer = _video_item(
+                message_id=402,
+                secure_hash="seriesnew",
+                title="Castle S01E02",
+                series_key="castle",
+                series_title="Castle",
+                season=1,
+                episode=2,
+                movie_key="",
+                tmdb_id=None,
+                poster_path="",
+            )
+            enriched_older = _video_item(
+                message_id=401,
+                secure_hash="seriesold",
+                title="Castle S01E01",
+                series_key="castle",
+                series_title="Castle",
+                season=1,
+                episode=1,
+                movie_key="",
+                tmdb_id=456,
+                tmdb_kind="tv",
+                poster_path="/series-poster.jpg",
+            )
+            media_index._items.update({
+                plain_newer.message_id: plain_newer,
+                enriched_older.message_id: enriched_older,
+            })
+
+            cards, total = media_index.query_grouped(view="series", limit=10)
+
+            self.assertEqual(total, 1)
+            self.assertEqual(cards[0].poster_item.message_id, 402)
+            self.assertEqual(cards[0].art_item.message_id, 401)
+            payload = _hub_card(cards[0])
+            self.assertEqual(payload["posterUrl"], "/api/tmdb-image/w342/series-poster.jpg")
+            self.assertEqual(payload["watchKey"], "seriesnew402")
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
 
     def test_home_shelf_budget_keeps_high_signal_rows(self):
         shelves = [
