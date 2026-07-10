@@ -103,12 +103,12 @@ const ADMIN_JOBS: AdminJobDefinition[] = [
   },
   {
     key: 'credits',
-    label: 'TMDB credits',
-    description: 'Fills missing cast and director from existing TMDB IDs.',
+    label: 'TMDB credits & ratings',
+    description: 'Fills missing cast, director, and ratings from existing TMDB IDs.',
     action: 'backfill-credits',
-    actionLabel: 'Backfill credits',
-    confirmMessage: 'Backfill missing cast/director credits from existing TMDB IDs?',
-    detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} checked - ${state.updated ?? 0} updated` : 'Safe backfill for cast search',
+    actionLabel: 'Backfill credits & ratings',
+    confirmMessage: 'Backfill missing cast/director credits and ratings from existing TMDB IDs?',
+    detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} checked - ${state.updated ?? 0} updated` : 'Safe backfill for TMDB gaps',
   },
   {
     key: 'reindex',
@@ -390,7 +390,7 @@ function MaintenancePanel({
   onMergeSeries: (sourceKey: string, targetKey: string) => Promise<void>;
 }) {
   const actions = [
-    ['backfill-credits', 'Backfill credits', 'Fill missing cast/director from existing TMDB IDs', 'Backfill missing cast/director credits from existing TMDB IDs?'],
+    ['backfill-credits', 'Backfill credits & ratings', 'Fill missing cast/director and ratings from existing TMDB IDs', 'Backfill missing cast/director credits and ratings from existing TMDB IDs?'],
     ['metadata-cleanup', 'Backfill metadata', 'Force-refresh TMDB credits and episode details', 'Run metadata backfill? This refreshes TMDB-owned fields for video items.'],
     ['clear-audio-tmdb', 'Fix audio', 'Clear bad TMDB matches'],
     ['clear-audio-thumbs', 'Audio thumbs', 'Refresh music artwork'],

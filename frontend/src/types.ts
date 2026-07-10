@@ -802,7 +802,9 @@ export interface AdminDashboardResponse {
   metadata_quality: {
     video_items: number;
     tmdb_enriched_video_items: number;
+    missing_tmdb_metadata?: number;
     missing_credits: number;
+    missing_ratings: number;
     missing_tmdb_id: number;
     missing_overview: number;
     missing_year: number;

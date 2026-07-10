@@ -2664,7 +2664,7 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
             )
         asyncio.create_task(media_index.backfill_missing_credits(bot=StreamBot))
         return _admin_json_message(
-            "Credits backfill queued: missing cast and director fields",
+            "Credits and ratings backfill queued",
             status=_admin_status_payload(),
         )
 

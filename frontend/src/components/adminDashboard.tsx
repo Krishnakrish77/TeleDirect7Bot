@@ -98,6 +98,10 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
 
   const metadata = data?.metadata_quality;
   const creditsBackfill = data?.credits_backfill;
+  const missingRatings = metadata?.missing_ratings ?? 0;
+  const backfillableMetadata = metadata
+    ? (metadata.missing_tmdb_metadata ?? metadata.missing_credits + missingRatings)
+    : 0;
   const metadataIssues = metadata ? [
     { label: 'Missing overview', value: metadata.missing_overview, filter: 'no-overview' },
     { label: 'Missing year', value: metadata.missing_year, filter: 'no-year' },
@@ -164,7 +168,8 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
             {metadata && (
               <StatCard label="Credits coverage">
                 <StatRow label="TMDB video items" value={`${metadata.tmdb_enriched_video_items.toLocaleString()} / ${metadata.video_items.toLocaleString()}`} />
-                <StatRow label="Backfillable now" value={metadata.missing_credits ? metadata.missing_credits.toLocaleString() : 'none'} warn={metadata.missing_credits > 0} />
+                <StatRow label="Backfillable now" value={backfillableMetadata ? backfillableMetadata.toLocaleString() : 'none'} warn={backfillableMetadata > 0} />
+                <StatRow label="Missing ratings" value={missingRatings ? missingRatings.toLocaleString() : 'none'} warn={missingRatings > 0} />
                 <StatRow label="Skipped: no TMDB ID" value={metadata.missing_tmdb_id ? metadata.missing_tmdb_id.toLocaleString() : 'none'} warn={metadata.missing_tmdb_id > 0} />
                 <StatRow label="Last run" value={formatRunTime(creditsBackfill?.finished_at)} />
                 <StatRow label="Last result" value={formatCreditsResult(creditsBackfill)} warn={(creditsBackfill?.failed ?? 0) > 0} />
@@ -181,7 +186,7 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
                     disabled={Boolean(cleanupBusy)}
                     onClick={() => void runCleanup('backfill-credits')}
                   >
-                    {cleanupBusy === 'backfill-credits' ? 'Queuing...' : 'Backfill credits'}
+                    {cleanupBusy === 'backfill-credits' ? 'Queuing...' : 'Backfill credits & ratings'}
                   </button>
                 </div>
               </StatCard>

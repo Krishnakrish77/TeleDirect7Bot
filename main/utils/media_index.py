@@ -459,6 +459,13 @@ def _clean_file_name(name: str) -> str:
     return name
 
 
+def _is_generic_media_title(value: str) -> bool:
+    value = (value or "").strip()
+    if not value:
+        return True
+    return bool(_KURIGRAM_TS_RE.match(value) or _DEVICE_NAME_RE.match(value))
+
+
 _MIME_TO_EXT = {
     "mp4": "mp4", "x-matroska": "mkv", "quicktime": "mov",
     "x-msvideo": "avi", "webm": "webm", "x-ms-wmv": "wmv",
@@ -1922,6 +1929,15 @@ def _dedup_by_group(items: List[HubItem]) -> List[HubItem]:
     return out
 
 
+def _is_hero_candidate(item: HubItem) -> bool:
+    if item.hidden or (item.media_kind or "") == "audio":
+        return False
+    title_signal = item.series_title or item.title or item.file_name or ""
+    if _is_generic_media_title(title_signal):
+        return False
+    return True
+
+
 def pick_heroes(limit: int = 6) -> List[HubItem]:
     """Choose featured items for the landing-page hero carousel.
 
@@ -1936,7 +1952,10 @@ def pick_heroes(limit: int = 6) -> List[HubItem]:
     Each tier is deduplicated by series_key / movie_key so a show with
     several recent episodes shows up once, not three times.
     """
-    by_recent = sorted(_items.values(), key=lambda it: -it.message_id)
+    by_recent = sorted(
+        (it for it in _items.values() if _is_hero_candidate(it)),
+        key=lambda it: -it.message_id,
+    )
 
     tier1 = _dedup_by_group([it for it in by_recent
                              if it.backdrop_path and it.overview])
@@ -2623,21 +2642,21 @@ async def enrich_one(message_id: int, bot=None) -> bool:
     if item.media_kind == "audio":
         return False
 
-    # Don't burn a TMDB search on items with no meaningful title.
-    # Device-generated names ("Untitled", "Video", bare timestamps) are
-    # already stripped by _clean_file_name, so an empty or very short
-    # title here means we genuinely have nothing to search with.
     _search_signal = (item.series_title or item.title or "").strip()
-    if len(_search_signal) < 3:
+
+    hit = None
+    if item.tmdb_id and item.tmdb_kind in ("movie", "tv"):
+        hit = await tmdb.fetch_by_id(item.tmdb_id, item.tmdb_kind)
+
+    # Don't burn a TMDB search on items with no meaningful title.
+    # Exact/admin TMDB IDs are fetched above; this guard only blocks
+    # search-based matching for generic names like "Untitled".
+    if hit is None and (len(_search_signal) < 3 or _is_generic_media_title(_search_signal)):
         async with _lock:
             item.enriched_at = time.time()
             _persist_unlocked()
         await _store_upsert(item)
         return False
-
-    hit = None
-    if item.tmdb_id and item.tmdb_kind in ("movie", "tv"):
-        hit = await tmdb.fetch_by_id(item.tmdb_id, item.tmdb_kind)
 
     if hit is None and item.series_key and item.series_title:
         # TV: lookup the show. series_title is already clean per series.parse.
@@ -3121,6 +3140,10 @@ def needs_credits_backfill(item: HubItem) -> bool:
     return _needs_credits_backfill(item)
 
 
+def _needs_tmdb_metadata_backfill(item: HubItem) -> bool:
+    return _needs_credits_backfill(item) or _needs_tmdb_vote_backfill(item)
+
+
 def _apply_credits_backfill(item: HubItem, hit: "tmdb.TMDBHit") -> bool:
     changed = False
     if not item.cast and hit.cast:
@@ -3132,10 +3155,7 @@ def _apply_credits_backfill(item: HubItem, hit: "tmdb.TMDBHit") -> bool:
     if not item.imdb_id and hit.imdb_id:
         item.imdb_id = hit.imdb_id
         changed = True
-    if (
-        not item.tmdb_vote_checked_at
-        and (hit.vote_average or hit.vote_count)
-    ):
+    if not item.tmdb_vote_checked_at:
         item.tmdb_vote_average = float(hit.vote_average or 0)
         item.tmdb_vote_count = int(hit.vote_count or 0)
         item.tmdb_vote_checked_at = time.time()
@@ -3144,12 +3164,12 @@ def _apply_credits_backfill(item: HubItem, hit: "tmdb.TMDBHit") -> bool:
 
 
 async def backfill_missing_credits(bot=None) -> dict:
-    """Fill missing cast/director data from existing TMDB IDs only.
+    """Fill missing cast/director/rating data from existing TMDB IDs only.
 
     Unlike ``enrich_all(force=True)``, this never searches by title and
     never updates titles, years, grouping keys, posters, backdrops,
     overview, or genres. It is intended as the low-risk operational pass
-    that unlocks cast search and person pages on already-enriched items.
+    that repairs already-enriched items without rematching them.
     """
     if _credits_state["running"]:
         return {"already_running": True, "total": len(_items)}
@@ -3160,7 +3180,7 @@ async def backfill_missing_credits(bot=None) -> dict:
 
     targets = [
         mid for mid, item in list(_items.items())
-        if _needs_credits_backfill(item)
+        if _needs_tmdb_metadata_backfill(item)
     ]
     _credits_state.update(
         running=True,
@@ -3562,7 +3582,9 @@ def dashboard_stats() -> dict:
     metadata_quality = {
         "video_items": 0,
         "tmdb_enriched_video_items": 0,
+        "missing_tmdb_metadata": 0,
         "missing_credits": 0,
+        "missing_ratings": 0,
         "missing_tmdb_id": 0,
         "missing_overview": 0,
         "missing_year": 0,
@@ -3604,8 +3626,14 @@ def dashboard_stats() -> dict:
             metadata_quality["video_items"] += 1
             if it.tmdb_id:
                 metadata_quality["tmdb_enriched_video_items"] += 1
-                if _needs_credits_backfill(it):
+                needs_credits = _needs_credits_backfill(it)
+                needs_ratings = _needs_tmdb_vote_backfill(it)
+                if needs_credits:
                     metadata_quality["missing_credits"] += 1
+                if needs_ratings:
+                    metadata_quality["missing_ratings"] += 1
+                if needs_credits or needs_ratings:
+                    metadata_quality["missing_tmdb_metadata"] += 1
             else:
                 metadata_quality["missing_tmdb_id"] += 1
             if not (it.overview or it.description):
@@ -3650,12 +3678,13 @@ def dashboard_stats() -> dict:
             metadata_quality["missing_overview"]
             + metadata_quality["missing_year"]
             + metadata_quality["missing_credits"]
+            + metadata_quality["missing_ratings"]
             + metadata_quality["missing_episode_metadata"]
             + metadata_quality["missing_playback_markers"]
         )
         metadata_quality["health_score"] = max(
             0,
-            min(100, round(100 - (issue_total / (video_items * 5)) * 100)),
+            min(100, round(100 - (issue_total / (video_items * 6)) * 100)),
         )
 
     return {

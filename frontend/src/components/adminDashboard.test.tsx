@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { fetchAdminDashboard, runAdminMaintenance } from '../api';
 import type { AdminDashboardResponse, User } from '../types';
@@ -49,7 +49,9 @@ const dashboard: AdminDashboardResponse = {
   metadata_quality: {
     video_items: 10,
     tmdb_enriched_video_items: 8,
+    missing_tmdb_metadata: 4,
     missing_credits: 3,
+    missing_ratings: 2,
     missing_tmdb_id: 2,
     missing_overview: 2,
     missing_year: 1,
@@ -94,6 +96,8 @@ describe('AdminDashboard', () => {
 
     await waitFor(() => expect(screen.getByText('Credits coverage')).toBeTruthy());
     expect(screen.getByText('8 / 10')).toBeTruthy();
+    expect(within(screen.getByText('Backfillable now').closest('.dash-stat-row') as HTMLElement).getByText('4')).toBeTruthy();
+    expect(within(screen.getByText('Missing ratings').closest('.dash-stat-row') as HTMLElement).getByText('2')).toBeTruthy();
     expect(screen.getByText('3 updated · 4 checked · 1 failed')).toBeTruthy();
     expect(screen.getByRole('link', { name: /Missing credits 3/i }).getAttribute('href')).toBe('/app/admin?filter=no-cast');
     expect(screen.getByRole('link', { name: /No TMDB ID 2/i }).getAttribute('href')).toBe('/app/admin?filter=unenriched');
@@ -117,7 +121,7 @@ describe('AdminDashboard', () => {
 
     render(<AdminDashboard user={adminUser} onSignIn={vi.fn()} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Backfill credits' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Backfill credits & ratings' }));
 
     await waitFor(() => expect(runAdminMaintenance).toHaveBeenCalledWith('backfill-credits'));
     expect(await screen.findByText('Credits backfill queued')).toBeTruthy();
