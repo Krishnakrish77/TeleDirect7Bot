@@ -72,6 +72,8 @@ _HOME_OPTIONAL_SHELVES_TIMEOUT = max(
     _HOME_TOP_PLAYS_TIMEOUT,
 )
 _HOME_REC_REASONS_TIMEOUT = 0.6
+_VISIBLE_ART_RECOVERY_LIMIT = 3
+_VISIBLE_ART_RECOVERY_TIMEOUT = 6.0
 _api_response_cache: dict[str, tuple[str, float]] = {}
 _filter_cache: tuple[dict, float] | None = None
 _HUB_CARD_PAYLOAD_KEYS = (
@@ -450,6 +452,19 @@ def _prewarm_card_thumbs(cards) -> None:
         asyncio.create_task(thumb_cache.prewarm_from_store(message_ids))
     except RuntimeError:
         pass
+
+
+async def _recover_visible_tmdb_art(cards, timings: dict | None = None) -> int:
+    mark = time.monotonic()
+    recovered = await media_index.ensure_cards_art_enriched(
+        cards,
+        limit=_VISIBLE_ART_RECOVERY_LIMIT,
+        timeout=_VISIBLE_ART_RECOVERY_TIMEOUT,
+    )
+    if timings is not None:
+        timings["art_recovery_ms"] = round((time.monotonic() - mark) * 1000, 1)
+        timings["art_recovered"] = recovered
+    return recovered
 
 
 def _watch_url(item: HubItem) -> str:
@@ -1138,6 +1153,32 @@ async def api_hub(request: web.Request) -> web.Response:
     if next_offset >= total:
         next_offset = None
 
+    if (
+        params["offset"] == 0
+        and (params["q"] or params["view"] in ("movies", "series"))
+    ):
+        recovered = await _recover_visible_tmdb_art(items, timings)
+        if recovered:
+            mark = time.monotonic()
+            items, total = media_index.query_grouped(
+                q=params["q"],
+                year=params["year"],
+                quality=params["quality"],
+                tag=params["tag"],
+                genre=params["genre"],
+                sort=params["sort"],
+                view=params["view"],
+                offset=params["offset"],
+                limit=params["limit"],
+            )
+            timings["query_after_art_recovery_ms"] = round(
+                (time.monotonic() - mark) * 1000,
+                1,
+            )
+            next_offset = params["offset"] + params["limit"]
+            if next_offset >= total:
+                next_offset = None
+
     mark = time.monotonic()
     _prewarm_card_thumbs(items)
     timings["thumb_prewarm_ms"] = round((time.monotonic() - mark) * 1000, 1)
@@ -1674,6 +1715,13 @@ async def api_app_movie(request: web.Request) -> web.Response:
     user = get_user(request)
     watched_keys = await _watched_keys_for_user(user)
     watched_movie_keys = _watched_movie_keys_for_keys(watched_keys)
+    variants = media_index.variants_for_movie(request.match_info["key"])
+    if variants:
+        await media_index.ensure_cards_art_enriched(
+            variants[:1],
+            limit=1,
+            timeout=_VISIBLE_ART_RECOVERY_TIMEOUT,
+        )
     payload = _movie_detail_payload(
         request.match_info["key"],
         watched_keys=watched_keys,
@@ -1689,6 +1737,13 @@ async def api_app_series(request: web.Request) -> web.Response:
     user = get_user(request)
     watched_keys = await _watched_keys_for_user(user)
     watched_movie_keys = _watched_movie_keys_for_keys(watched_keys)
+    episodes = media_index.episodes_for_series(request.match_info["key"])
+    if episodes:
+        await media_index.ensure_cards_art_enriched(
+            episodes[:1],
+            limit=1,
+            timeout=_VISIBLE_ART_RECOVERY_TIMEOUT,
+        )
     payload = _series_detail_payload(
         request.match_info["key"],
         (request.query.get("season") or "").strip().lower(),

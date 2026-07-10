@@ -41,7 +41,13 @@ class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self._items = dict(media_index._items)
         self._credits_state = dict(media_index._credits_state)
+        self._group_enrich_locks = dict(media_index._group_enrich_locks)
+        self._group_art_tasks = dict(media_index._group_art_tasks)
+        self._art_recovery_negative_until = dict(media_index._art_recovery_negative_until)
         media_index._items.clear()
+        media_index._group_enrich_locks.clear()
+        media_index._group_art_tasks.clear()
+        media_index._art_recovery_negative_until.clear()
         media_index._credits_state.update(
             running=False,
             done=0,
@@ -56,6 +62,12 @@ class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         media_index._items.clear()
         media_index._items.update(self._items)
+        media_index._group_enrich_locks.clear()
+        media_index._group_enrich_locks.update(self._group_enrich_locks)
+        media_index._group_art_tasks.clear()
+        media_index._group_art_tasks.update(self._group_art_tasks)
+        media_index._art_recovery_negative_until.clear()
+        media_index._art_recovery_negative_until.update(self._art_recovery_negative_until)
         media_index._credits_state.clear()
         media_index._credits_state.update(self._credits_state)
 
@@ -243,6 +255,194 @@ class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
         lookup_series.assert_not_awaited()
         self.assertEqual(item.title, "Manual Pick")
         self.assertEqual(item.tmdb_vote_average, 6.5)
+
+    async def test_visible_art_recovery_enriches_missing_series_group(self):
+        first = video_item(
+            message_id=201,
+            secure_hash="castle1",
+            title="Castle S01E01",
+            year=None,
+            file_name="Castle.S01E01.mkv",
+            movie_key="",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=1,
+            tmdb_id=None,
+            tmdb_kind="",
+            poster_path="",
+            backdrop_path="",
+            overview="",
+            tmdb_genres=[],
+        )
+        second = video_item(
+            message_id=202,
+            secure_hash="castle2",
+            title="Castle S01E02",
+            year=None,
+            file_name="Castle.S01E02.mkv",
+            movie_key="",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            tmdb_id=None,
+            tmdb_kind="",
+            poster_path="",
+            backdrop_path="",
+            overview="",
+            tmdb_genres=[],
+        )
+        media_index._items[first.message_id] = first
+        media_index._items[second.message_id] = second
+        hit = tmdb.TMDBHit(
+            tmdb_id=1419,
+            kind="tv",
+            title="Castle",
+            year=2009,
+            overview="A mystery novelist helps solve crimes.",
+            poster_path="/castle-poster.jpg",
+            backdrop_path="/castle-backdrop.jpg",
+            genres=["Drama", "Crime"],
+            imdb_id="tt1219024",
+            vote_average=8.0,
+            vote_count=2000,
+        )
+
+        with (
+            patch.object(media_index.tmdb, "is_configured", return_value=True),
+            patch.object(media_index.tmdb, "lookup_series", new=AsyncMock(return_value=hit)) as lookup_series,
+            patch.object(media_index.tmdb, "lookup_movie", new=AsyncMock()) as lookup_movie,
+            patch.object(media_index.tmdb, "fetch_season", new=AsyncMock(return_value=None)),
+            patch.object(media_index.tmdb, "fetch_trailer", new=AsyncMock(return_value="")),
+            patch.object(media_index, "_persist_unlocked"),
+            patch.object(media_index, "persist_now", new=AsyncMock()),
+            patch.object(media_index, "_store_upsert", new=AsyncMock()),
+        ):
+            recovered = await media_index.ensure_cards_art_enriched(
+                [first],
+                limit=1,
+                timeout=1.0,
+            )
+
+        self.assertEqual(recovered, 1)
+        lookup_series.assert_awaited_once_with("Castle", None)
+        lookup_movie.assert_not_awaited()
+        self.assertEqual(first.tmdb_id, 1419)
+        self.assertEqual(first.poster_path, "/castle-poster.jpg")
+        self.assertEqual(second.tmdb_id, 1419)
+        self.assertEqual(second.poster_path, "/castle-poster.jpg")
+
+    async def test_visible_art_recovery_suppresses_tmdb_hit_without_poster(self):
+        item = video_item(
+            message_id=211,
+            secure_hash="noposter",
+            title="Posterless Show S01E01",
+            year=None,
+            file_name="Posterless.Show.S01E01.mkv",
+            movie_key="",
+            series_key="posterless-show",
+            series_title="Posterless Show",
+            season=1,
+            episode=1,
+            tmdb_id=None,
+            tmdb_kind="",
+            poster_path="",
+            backdrop_path="",
+            overview="",
+            tmdb_genres=[],
+        )
+        media_index._items[item.message_id] = item
+        hit = tmdb.TMDBHit(
+            tmdb_id=999,
+            kind="tv",
+            title="Posterless Show",
+            year=2024,
+            overview="No poster is available.",
+            poster_path="",
+            backdrop_path="",
+            genres=["Drama"],
+            imdb_id="tt999",
+            vote_average=6.0,
+            vote_count=10,
+        )
+
+        with (
+            patch.object(media_index.tmdb, "is_configured", return_value=True),
+            patch.object(media_index.tmdb, "lookup_series", new=AsyncMock(return_value=hit)) as lookup_series,
+            patch.object(media_index.tmdb, "fetch_by_id", new=AsyncMock(return_value=hit)) as fetch_by_id,
+            patch.object(media_index.tmdb, "lookup_movie", new=AsyncMock()) as lookup_movie,
+            patch.object(media_index.tmdb, "fetch_season", new=AsyncMock(return_value=None)),
+            patch.object(media_index.tmdb, "fetch_trailer", new=AsyncMock(return_value="")),
+            patch.object(media_index, "_persist_unlocked"),
+            patch.object(media_index, "persist_now", new=AsyncMock()),
+            patch.object(media_index, "_store_upsert", new=AsyncMock()),
+        ):
+            recovered = await media_index.ensure_cards_art_enriched(
+                [item],
+                limit=1,
+                timeout=1.0,
+            )
+            second_recovered = await media_index.ensure_cards_art_enriched(
+                [item],
+                limit=1,
+                timeout=1.0,
+            )
+
+        self.assertEqual(recovered, 0)
+        self.assertEqual(second_recovered, 0)
+        lookup_series.assert_awaited_once_with("Posterless Show", None)
+        fetch_by_id.assert_not_awaited()
+        lookup_movie.assert_not_awaited()
+        self.assertEqual(item.tmdb_id, 999)
+        self.assertEqual(item.poster_path, "")
+        self.assertIn(("series", "posterless-show"), media_index._art_recovery_negative_until)
+
+    async def test_visible_art_recovery_suppresses_tmdb_miss(self):
+        item = video_item(
+            message_id=221,
+            secure_hash="miss",
+            title="Unknown Series S01E01",
+            year=None,
+            file_name="Unknown.Series.S01E01.mkv",
+            movie_key="",
+            series_key="unknown-series",
+            series_title="Unknown Series",
+            season=1,
+            episode=1,
+            tmdb_id=None,
+            tmdb_kind="",
+            poster_path="",
+            backdrop_path="",
+            overview="",
+            tmdb_genres=[],
+        )
+        media_index._items[item.message_id] = item
+
+        with (
+            patch.object(media_index.tmdb, "is_configured", return_value=True),
+            patch.object(media_index.tmdb, "lookup_series", new=AsyncMock(return_value=None)) as lookup_series,
+            patch.object(media_index.tmdb, "lookup_movie", new=AsyncMock()) as lookup_movie,
+            patch.object(media_index, "_persist_unlocked"),
+            patch.object(media_index, "_store_upsert", new=AsyncMock()),
+        ):
+            recovered = await media_index.ensure_cards_art_enriched(
+                [item],
+                limit=1,
+                timeout=1.0,
+            )
+            second_recovered = await media_index.ensure_cards_art_enriched(
+                [item],
+                limit=1,
+                timeout=1.0,
+            )
+
+        self.assertEqual(recovered, 0)
+        self.assertEqual(second_recovered, 0)
+        lookup_series.assert_awaited_once_with("Unknown Series", None)
+        lookup_movie.assert_not_awaited()
+        self.assertIsNone(item.tmdb_id)
+        self.assertIn(("series", "unknown-series"), media_index._art_recovery_negative_until)
 
     def test_pick_heroes_skips_generic_enriched_titles(self):
         generic = video_item(

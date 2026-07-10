@@ -97,6 +97,10 @@ _reindex_state: dict = {"running": False, "done": 0, "total": 0,
                         "series_changed": 0, "movie_changed": 0,
                         "quality_changed": 0,
                         "started_at": 0.0, "finished_at": 0.0}
+_group_enrich_locks: dict[tuple[str, str], asyncio.Lock] = {}
+_group_art_tasks: dict[tuple[str, str], asyncio.Task] = {}
+_art_recovery_negative_until: dict[tuple[str, str], float] = {}
+_ART_RECOVERY_NEGATIVE_TTL = 60 * 60 * 6
 
 # --- Durable store (Mongo when configured) ---------------------------------
 # When ``STORE_BACKEND=mongo``, every mutation also writes-through to
@@ -1427,6 +1431,162 @@ def poster_path_for_item(
 ) -> str:
     art_item = best_group_art_item(item, cache=cache)
     return (art_item.poster_path if art_item is not None else item.poster_path) or ""
+
+
+def _card_group_members(card: object) -> tuple[tuple[str, str] | None, list[HubItem]]:
+    if isinstance(card, SeriesGroup):
+        return ("series", card.series_key), episodes_for_series(card.series_key)
+    if isinstance(card, MovieGroup):
+        return ("movie", card.movie_key), variants_for_movie(card.movie_key)
+    if not isinstance(card, HubItem):
+        return None, []
+    if (card.media_kind or "") == "audio":
+        return None, []
+    if card.series_key:
+        return ("series", card.series_key), episodes_for_series(card.series_key)
+    if card.movie_key:
+        return ("movie", card.movie_key), variants_for_movie(card.movie_key)
+    return ("item", str(card.message_id)), [card]
+
+
+def _needs_art_recovery(members: list[HubItem]) -> bool:
+    if not members:
+        return False
+    if any(item.poster_path for item in members):
+        return False
+    return any((item.media_kind or "") != "audio" for item in members)
+
+
+def _art_recovery_is_suppressed(group_key: tuple[str, str]) -> bool:
+    until = _art_recovery_negative_until.get(group_key)
+    if not until:
+        return False
+    if time.time() < until:
+        return True
+    _art_recovery_negative_until.pop(group_key, None)
+    return False
+
+
+def _remember_art_recovery_miss(group_key: tuple[str, str]) -> None:
+    _art_recovery_negative_until[group_key] = time.time() + _ART_RECOVERY_NEGATIVE_TTL
+
+
+def _art_recovery_target(members: list[HubItem]) -> Optional[HubItem]:
+    candidates = [
+        item for item in members
+        if not item.hidden and (item.media_kind or "") != "audio"
+    ]
+    if not candidates:
+        return None
+    enriched = next((item for item in candidates if item.tmdb_id), None)
+    if enriched is not None:
+        return enriched
+    return max(
+        candidates,
+        key=lambda item: (
+            len((item.series_title or item.title or item.file_name or "").strip()),
+            item.message_id,
+        ),
+    )
+
+
+async def ensure_card_art_enriched(card: object, *, bot=None) -> bool:
+    """Best-effort TMDB recovery for one visible card/detail group.
+
+    This is intentionally read-path scoped: it only runs when a visible
+    movie/series has no TMDB poster on any sibling. Successful enrichment
+    is persisted by ``enrich_one`` so the next request is a normal cache hit.
+    """
+    if not tmdb.is_configured():
+        return False
+    group_key, members = _card_group_members(card)
+    if group_key is None or not _needs_art_recovery(members):
+        return False
+    if _art_recovery_is_suppressed(group_key):
+        return False
+    lock = _group_enrich_locks.setdefault(group_key, asyncio.Lock())
+    async with lock:
+        _group_key, members = _card_group_members(card)
+        if not _needs_art_recovery(members):
+            return False
+        if _art_recovery_is_suppressed(group_key):
+            return False
+        target = _art_recovery_target(members)
+        if target is None:
+            return False
+        enriched = await enrich_one(target.message_id, bot=bot)
+        _group_key, refreshed_members = _card_group_members(card)
+        if any(item.poster_path for item in refreshed_members):
+            _art_recovery_negative_until.pop(group_key, None)
+            return True
+        _remember_art_recovery_miss(group_key)
+        return False
+
+
+def _group_art_task_done(group_key: tuple[str, str], task: asyncio.Task) -> None:
+    if _group_art_tasks.get(group_key) is task:
+        _group_art_tasks.pop(group_key, None)
+
+
+async def ensure_cards_art_enriched(
+    cards: Iterable[object],
+    *,
+    bot=None,
+    limit: int = 3,
+    timeout: float = 6.0,
+) -> int:
+    """Recover missing TMDB art for a small set of visible cards.
+
+    The limit keeps grid/search requests from turning into a bulk
+    enrichment job. Admin still owns full backfills via ``enrich_all``.
+    """
+    if not tmdb.is_configured():
+        return 0
+    targets: list[object] = []
+    seen: set[tuple[str, str]] = set()
+    for card in cards:
+        group_key, members = _card_group_members(card)
+        if group_key is None or group_key in seen:
+            continue
+        if _art_recovery_is_suppressed(group_key):
+            continue
+        if not _needs_art_recovery(members):
+            continue
+        seen.add(group_key)
+        targets.append(card)
+        if len(targets) >= limit:
+            break
+    if not targets:
+        return 0
+
+    tasks: list[asyncio.Task] = []
+    for card in targets:
+        group_key, _members = _card_group_members(card)
+        if group_key is None:
+            continue
+        task = _group_art_tasks.get(group_key)
+        if task is None or task.done():
+            task = asyncio.create_task(ensure_card_art_enriched(card, bot=bot))
+            _group_art_tasks[group_key] = task
+            task.add_done_callback(
+                lambda done_task, key=group_key: _group_art_task_done(key, done_task)
+            )
+        tasks.append(task)
+    if not tasks:
+        return 0
+
+    done, _pending = await asyncio.wait(tasks, timeout=timeout)
+    if not done:
+        logging.warning("media_index: visible art recovery timed out")
+        return 0
+    recovered = 0
+    for task in done:
+        try:
+            if task.result():
+                recovered += 1
+        except Exception:
+            logging.exception("media_index: visible art recovery failed")
+    return recovered
 
 
 def _build_series_group(episodes: List[HubItem]) -> SeriesGroup:
