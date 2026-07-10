@@ -762,8 +762,7 @@ async def api_items(request: web.Request) -> web.Response:
     if not raw:
         return web.json_response([], headers={"Cache-Control": "no-store"})
     keys = [k for k in raw.split(",") if k][:50]
-    out = []
-    _eps_cache: dict = {}  # series_key → episode list, memoised for this request
+    resolved: list[tuple[str, HubItem]] = []
     for k in keys:
         m = re.match(r"^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$", k)
         if not m:
@@ -775,6 +774,12 @@ async def api_items(request: web.Request) -> web.Response:
         item = media_index.get_item(mid)
         if item is None or item.secure_hash != m.group(1):
             continue
+        resolved.append((k, item))
+
+    out = []
+    _eps_cache: dict = {}  # series_key → episode list, memoised for this request
+    _art_cache = media_index.group_art_cache_for(item for _k, item in resolved)
+    for k, item in resolved:
         # Prefer a series episode's parent show title for the card label
         # so the Continue-watching shelf reads coherently.
         label = (item.series_title or "") if item.series_key else ""
@@ -810,7 +815,7 @@ async def api_items(request: web.Request) -> web.Response:
                     "title": nxt.title,
                     "watch_url": f"/watch/{nxt.secure_hash}{nxt.message_id}",
                     "thumb_url": f"/thumb/{nxt.secure_hash}{nxt.message_id}.jpg",
-                    "poster_path": nxt.poster_path or "",
+                    "poster_path": media_index.poster_path_for_item(nxt, cache=_art_cache),
                 }
         out.append({
             "key": k,
@@ -820,7 +825,7 @@ async def api_items(request: web.Request) -> web.Response:
             "series_title": label,
             "episode_label": ep_label,
             "year": item.year,
-            "poster_path": item.poster_path or "",
+            "poster_path": media_index.poster_path_for_item(item, cache=_art_cache),
             "kind": "series" if item.series_key else ("movie" if item.movie_key else ""),
             "media_kind": item.media_kind or "",
             "watch_url": f"/watch/{item.secure_hash}{item.message_id}",

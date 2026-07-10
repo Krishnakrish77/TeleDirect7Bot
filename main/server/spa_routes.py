@@ -589,8 +589,11 @@ def _video_subtitle(item: HubItem, common: dict) -> str:
     return " - ".join(part for part in parts if part)
 
 
-def _card_from_item(item: HubItem) -> dict:
-    common = _item_common(item)
+def _card_from_item(item: HubItem, art_cache: dict | None = None) -> dict:
+    common = _common_with_group_art(
+        item,
+        media_index.best_group_art_item(item, cache=art_cache),
+    )
     is_audio = (item.media_kind or "") == "audio"
     subtitle = common["artist"] if is_audio else _video_subtitle(item, common)
     return {
@@ -704,14 +707,14 @@ def _card_from_album(card: AlbumGroup) -> dict:
     }
 
 
-def _card(card) -> dict:
+def _card(card, art_cache: dict | None = None) -> dict:
     if isinstance(card, SeriesGroup):
         return _card_from_series(card)
     if isinstance(card, MovieGroup):
         return _card_from_movie(card)
     if isinstance(card, AlbumGroup):
         return _card_from_album(card)
-    return _card_from_item(card)
+    return _card_from_item(card, art_cache=art_cache)
 
 
 def _compact_hub_card_payload(payload: dict) -> dict:
@@ -727,8 +730,9 @@ def _hub_card(
     rating_counts: dict[int, dict] | None = None,
     watched_keys: set[str] | None = None,
     watched_movie_keys: set[str] | None = None,
+    art_cache: dict | None = None,
 ) -> dict:
-    payload = _card(card)
+    payload = _card(card, art_cache=art_cache)
     if rating_counts:
         payload = _with_rating_counts(payload, card, rating_counts)
     if watched_keys and _is_card_watched(card, watched_keys, watched_movie_keys):
@@ -736,8 +740,11 @@ def _hub_card(
     return _compact_hub_card_payload(payload)
 
 
-def _hero(item: HubItem) -> dict:
-    common = _item_common(item)
+def _hero(item: HubItem, art_cache: dict | None = None) -> dict:
+    common = _common_with_group_art(
+        item,
+        media_index.best_group_art_item(item, cache=art_cache),
+    )
     details_href = _detail_url(item)
     kind = "Movie"
     title = common["title"]
@@ -1038,6 +1045,7 @@ async def api_hub(request: web.Request) -> web.Response:
             for shelf in raw_shelves
             for item in (shelf.get("items") or [])
         ]
+        art_cache = media_index.group_art_cache_for(hero_items + shelf_source_items)
         rating_counts = await _rating_counts_for_cards(shelf_source_items)
         timings["ratings_ms"] = round((time.monotonic() - mark) * 1000, 1)
 
@@ -1052,7 +1060,13 @@ async def api_hub(request: web.Request) -> web.Response:
             rec_reasons = shelf.get("rec_reasons") or []
             items = []
             for index, item in enumerate(shelf.get("items") or []):
-                payload = _hub_card(item, rating_counts, watched_keys, watched_movie_keys)
+                payload = _hub_card(
+                    item,
+                    rating_counts,
+                    watched_keys,
+                    watched_movie_keys,
+                    art_cache=art_cache,
+                )
                 if index < len(rec_reasons) and rec_reasons[index]:
                     payload["recReason"] = rec_reasons[index]
                 items.append(payload)
@@ -1073,7 +1087,7 @@ async def api_hub(request: web.Request) -> web.Response:
             "params": params,
             "filters": base_filters,
             "catalogueSize": media_index.size(),
-            "heroes": [_hero(item) for item in hero_items],
+            "heroes": [_hero(item, art_cache=art_cache) for item in hero_items],
             "shelves": shelves,
             "homeShelfLimit": _home_shelf_limit(),
             "items": [],
@@ -1138,6 +1152,7 @@ async def api_hub(request: web.Request) -> web.Response:
     timings["watched_ms"] = round((time.monotonic() - mark) * 1000, 1)
 
     mark = time.monotonic()
+    art_cache = media_index.group_art_cache_for(items)
     payload = {
         "mode": "grid",
         "params": params,
@@ -1146,7 +1161,16 @@ async def api_hub(request: web.Request) -> web.Response:
         "heroes": [],
         "shelves": [],
         "homeShelfLimit": _home_shelf_limit(),
-        "items": [_hub_card(item, rating_counts, watched_keys, watched_movie_keys) for item in items],
+        "items": [
+            _hub_card(
+                item,
+                rating_counts,
+                watched_keys,
+                watched_movie_keys,
+                art_cache=art_cache,
+            )
+            for item in items
+        ],
         "total": total,
         "nextOffset": next_offset,
         "nextHref": _app_query(params, offset=next_offset) if next_offset is not None else None,
@@ -1276,6 +1300,7 @@ def _related_rows(
     watched_movie_keys: set[str] | None = None,
 ) -> list[dict]:
     rows: list[dict] = []
+    art_cache: dict = {}
     exclude = {
         f"movie:{item.movie_key}" if item.movie_key else "",
         f"series:{item.series_key}" if item.series_key else "",
@@ -1290,9 +1315,15 @@ def _related_rows(
             offset=0,
             limit=limit + 6,
         )
+        art_cache.update(media_index.group_art_cache_for(cards))
         row_items = []
         for card in cards:
-            payload = _hub_card(card, watched_keys=watched_keys, watched_movie_keys=watched_movie_keys)
+            payload = _hub_card(
+                card,
+                watched_keys=watched_keys,
+                watched_movie_keys=watched_movie_keys,
+                art_cache=art_cache,
+            )
             if payload.get("itemId") not in exclude:
                 row_items.append(payload)
             if len(row_items) >= limit:
@@ -1310,16 +1341,27 @@ def _related_rows(
             rows.append({
                 "name": f"More by {_clean_music_tag(media_index.artist_display_name(artist_slug))}",
                 "items": [
-                    _hub_card(track, watched_keys=watched_keys, watched_movie_keys=watched_movie_keys)
+                    _hub_card(
+                        track,
+                        watched_keys=watched_keys,
+                        watched_movie_keys=watched_movie_keys,
+                        art_cache=art_cache,
+                    )
                     for track in artist_tracks
                 ],
             })
 
     if not rows:
         for shelf in media_index.shelves(per_shelf=limit):
+            art_cache.update(media_index.group_art_cache_for(shelf.get("items") or []))
             row_items = []
             for card in shelf.get("items") or []:
-                payload = _hub_card(card, watched_keys=watched_keys, watched_movie_keys=watched_movie_keys)
+                payload = _hub_card(
+                    card,
+                    watched_keys=watched_keys,
+                    watched_movie_keys=watched_movie_keys,
+                    art_cache=art_cache,
+                )
                 if payload.get("itemId") not in exclude:
                     row_items.append(payload)
                 if len(row_items) >= limit:
@@ -1612,6 +1654,7 @@ def _person_detail_payload(slug: str) -> dict | None:
         role_label = "Actor"
     all_items = cast_items + directed_items
     rep = next((item for item in all_items if item.backdrop_path), all_items[0])
+    art_cache = media_index.group_art_cache_for(all_items)
     return {
         "kind": "person",
         "key": slug,
@@ -1621,8 +1664,8 @@ def _person_detail_payload(slug: str) -> dict | None:
         "totalUnique": len({it.message_id for it in cast_items} | {it.message_id for it in directed_items}),
         "posterUrl": _tmdb_image(rep.poster_path) or _thumb(rep),
         "backdropUrl": _tmdb_image(rep.backdrop_path, "w1280") or _thumb(rep),
-        "castItems": [_card_from_item(item) for item in cast_items],
-        "directedItems": [_card_from_item(item) for item in directed_items],
+        "castItems": [_card_from_item(item, art_cache=art_cache) for item in cast_items],
+        "directedItems": [_card_from_item(item, art_cache=art_cache) for item in directed_items],
     }
 
 

@@ -309,6 +309,84 @@ class SpaHubPayloadTest(unittest.TestCase):
             media_index._items.clear()
             media_index._items.update(previous)
 
+    def test_raw_movie_card_prefers_tmdb_poster_from_group_sibling(self):
+        previous = dict(media_index._items)
+        media_index._items.clear()
+        try:
+            plain_newer = _video_item(
+                message_id=502,
+                secure_hash="newmovie",
+                title="Kalki",
+                movie_key="kalki::2024",
+                tmdb_id=None,
+                poster_path="",
+            )
+            enriched_older = _video_item(
+                message_id=501,
+                secure_hash="oldmovie",
+                title="Kalki",
+                movie_key="kalki::2024",
+                tmdb_id=123,
+                tmdb_kind="movie",
+                poster_path="/tmdb-movie.jpg",
+            )
+            media_index._items.update({
+                plain_newer.message_id: plain_newer,
+                enriched_older.message_id: enriched_older,
+            })
+
+            payload = _hub_card(plain_newer)
+
+            self.assertEqual(payload["posterUrl"], "/api/tmdb-image/w342/tmdb-movie.jpg")
+            self.assertEqual(payload["watchKey"], "newmovie502")
+            self.assertEqual(media_index.poster_path_for_item(plain_newer, cache={}), "/tmdb-movie.jpg")
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
+    def test_raw_series_episode_card_prefers_tmdb_poster_from_group_sibling(self):
+        previous = dict(media_index._items)
+        media_index._items.clear()
+        try:
+            plain_newer = _video_item(
+                message_id=602,
+                secure_hash="newep",
+                title="Castle S01E02",
+                series_key="castle",
+                series_title="Castle",
+                season=1,
+                episode=2,
+                movie_key="",
+                tmdb_id=None,
+                poster_path="",
+            )
+            enriched_older = _video_item(
+                message_id=601,
+                secure_hash="oldep",
+                title="Castle S01E01",
+                series_key="castle",
+                series_title="Castle",
+                season=1,
+                episode=1,
+                movie_key="",
+                tmdb_id=456,
+                tmdb_kind="tv",
+                poster_path="/tmdb-series.jpg",
+            )
+            media_index._items.update({
+                plain_newer.message_id: plain_newer,
+                enriched_older.message_id: enriched_older,
+            })
+
+            payload = _hub_card(plain_newer)
+
+            self.assertEqual(payload["posterUrl"], "/api/tmdb-image/w342/tmdb-series.jpg")
+            self.assertEqual(payload["watchKey"], "newep602")
+            self.assertEqual(media_index.poster_path_for_item(plain_newer, cache={}), "/tmdb-series.jpg")
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
     def test_home_shelf_budget_keeps_high_signal_rows(self):
         shelves = [
             {"name": "Recently added", "items": [1]},

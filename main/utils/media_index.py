@@ -27,7 +27,7 @@ import re
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlencode
 
 from main.utils.file_properties import get_hash
@@ -1339,11 +1339,94 @@ def _preferred_art_item(items: List[HubItem]) -> HubItem:
         items,
         key=lambda item: (
             bool(item.poster_path),
+            bool(item.backdrop_path),
             bool(item.has_thumb),
             bool(item.tmdb_id),
             item.message_id,
         ),
     )
+
+
+def best_group_art_item(
+    item: HubItem,
+    cache: Optional[dict[tuple[str, str], Optional[HubItem]]] = None,
+) -> Optional[HubItem]:
+    """Return the best TMDB-art sibling for a raw movie/series item.
+
+    Raw cards must keep their own watch identity, but can borrow poster
+    metadata from an enriched sibling in the same movie/series group.
+    ``cache`` is request-scoped and avoids repeated full-catalog scans.
+    """
+    if (item.media_kind or "") == "audio" or item.poster_path:
+        return None
+    group_key: tuple[str, str] | None = None
+    if item.series_key:
+        group_key = ("series", item.series_key)
+    elif item.movie_key:
+        group_key = ("movie", item.movie_key)
+    if group_key is None:
+        return None
+    if cache is not None and group_key in cache:
+        cached = cache[group_key]
+        return cached if cached is not None and cached.message_id != item.message_id else None
+    if group_key[0] == "series":
+        candidates = episodes_for_series(group_key[1])
+    else:
+        candidates = variants_for_movie(group_key[1])
+    result = None
+    if candidates:
+        best = _preferred_art_item(candidates)
+        if best.message_id != item.message_id and best.poster_path:
+            result = best
+    if cache is not None:
+        cache[group_key] = result
+    return result
+
+
+def group_art_cache_for(items: Iterable[object]) -> dict[tuple[str, str], Optional[HubItem]]:
+    wanted_series: set[str] = set()
+    wanted_movies: set[str] = set()
+    for item in items:
+        if not isinstance(item, HubItem):
+            continue
+        if (item.media_kind or "") == "audio":
+            continue
+        if item.series_key:
+            wanted_series.add(item.series_key)
+        elif item.movie_key:
+            wanted_movies.add(item.movie_key)
+    if not wanted_series and not wanted_movies:
+        return {}
+
+    buckets: dict[tuple[str, str], list[HubItem]] = {}
+    for candidate in _items.values():
+        if candidate.hidden or (candidate.media_kind or "") == "audio":
+            continue
+        if candidate.series_key in wanted_series:
+            buckets.setdefault(("series", candidate.series_key), []).append(candidate)
+        elif candidate.movie_key in wanted_movies:
+            buckets.setdefault(("movie", candidate.movie_key), []).append(candidate)
+
+    cache: dict[tuple[str, str], Optional[HubItem]] = {}
+    for series_key in wanted_series:
+        key = ("series", series_key)
+        candidates = buckets.get(key) or []
+        best = _preferred_art_item(candidates) if candidates else None
+        cache[key] = best if best is not None and best.poster_path else None
+    for movie_key in wanted_movies:
+        key = ("movie", movie_key)
+        candidates = buckets.get(key) or []
+        best = _preferred_art_item(candidates) if candidates else None
+        cache[key] = best if best is not None and best.poster_path else None
+    return cache
+
+
+def poster_path_for_item(
+    item: HubItem,
+    cache: Optional[dict[tuple[str, str], Optional[HubItem]]] = None,
+) -> str:
+    art_item = best_group_art_item(item, cache=cache)
+    return (art_item.poster_path if art_item is not None else item.poster_path) or ""
 
 
 def _build_series_group(episodes: List[HubItem]) -> SeriesGroup:
