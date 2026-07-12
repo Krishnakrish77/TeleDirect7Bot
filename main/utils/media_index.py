@@ -1238,14 +1238,24 @@ def _haystack(item: HubItem) -> str:
     Lowercased once at search time — cheap on a single-thousand-item
     catalogue and avoids paying for it per substring comparison.
     """
+    episode_label = ""
+    if item.season is not None and item.episode is not None:
+        episode_label = f"s{item.season:02d}e{item.episode:02d}"
+    elif item.episode is not None:
+        episode_label = f"episode {item.episode}"
     return " ".join([
         item.title.lower(),
         item.series_title.lower(),
         item.description.lower(),
         item.overview.lower(),
+        item.episode_title.lower(),
+        item.episode_overview.lower(),
         item.file_name.lower(),
         item.imdb_id.lower(),
-        " ".join(item.tags),
+        str(item.year or ""),
+        item.quality.lower(),
+        episode_label,
+        " ".join(t.lower() for t in item.tags),
         " ".join(g.lower() for g in item.tmdb_genres),
         # Cast + director — lets users find titles by actor or director name
         " ".join(a.lower() for a in item.cast),
@@ -1281,6 +1291,37 @@ def _fuzzy_score(q: str, item: HubItem) -> float:
     return best if best >= 0.75 else 0.0
 
 
+def _search_score(q: str, item: HubItem) -> float:
+    """Return a relevance score for a user search query.
+
+    Scores are intentionally coarse: exact/title matches should outrank
+    artist/album matches, which should outrank broad metadata hits.
+    """
+    ql = (q or "").strip().lower().lstrip("#")
+    if not ql:
+        return 0.0
+    title = item.title.lower()
+    series_title = item.series_title.lower()
+    if ql == title or ql == series_title:
+        return 1.2
+    if ql in title or ql in series_title:
+        return 1.0
+    if item.media_kind == "audio":
+        artist = (item.artist or "").lower()
+        album = (item.album_title or "").lower()
+        if ql == artist or ql == album:
+            return 0.95
+        if ql in artist or ql in album:
+            return 0.9
+    if ql in _haystack(item):
+        return 0.6
+    if len(ql) >= 3:
+        fuzzy = _fuzzy_score(ql, item)
+        if fuzzy > 0:
+            return fuzzy * 0.8
+    return 0.0
+
+
 def _matches(item: HubItem, q: str, year: Optional[int], quality: str,
              tag: str, genre: str = "") -> bool:
     if year is not None and item.year != year:
@@ -1294,14 +1335,7 @@ def _matches(item: HubItem, q: str, year: Optional[int], quality: str,
         if not any(g.lower() == gl for g in (item.tmdb_genres or [])):
             return False
     if q:
-        ql = q.lower().lstrip("#")
-        if ql in _haystack(item):
-            return True
-        # Fuzzy fallback — only for queries 3+ chars so a stray keystroke
-        # doesn't sweep in the whole catalogue.
-        if len(ql) >= 3 and _fuzzy_score(ql, item) > 0:
-            return True
-        return False
+        return _search_score(q, item) > 0
     return True
 
 
@@ -1317,12 +1351,17 @@ def query(
     limit: int = 24,
 ) -> Tuple[List[HubItem], Optional[int]]:
     """Unified filter + sort + paginate over the in-process catalogue."""
+    q = (q or "").strip()
     key_fn, reverse = _SORT_KEYS.get(sort, _SORT_KEYS["newest"])
     items_all = sorted(_items.values(), key=key_fn, reverse=reverse)
 
     # Exclude hidden items from all public library views
     items_all = [it for it in items_all if not it.hidden]
     items_all = [it for it in items_all if _matches(it, q, year, quality, tag, genre)]
+    if q and sort == "newest":
+        items_all.sort(
+            key=lambda item: (-_search_score(q, item), -item.message_id)
+        )
 
     # Pagination cursor is only meaningful for message_id-ordered sorts.
     if before_id and sort in ("newest",):
@@ -1656,11 +1695,16 @@ def query_grouped(
     collapsed by movie_key). Returns ``(page, total_count)`` so the caller
     can build a Load More button without an extra query.
     """
+    q = (q or "").strip()
     items_all = [
         it for it in _items.values()
         if not it.hidden
-        and (_matches(it, q, year, quality, tag, genre) or _series_matches_query(it, q))
+        and _matches(it, q, year, quality, tag, genre)
     ]
+    search_scores = {
+        it.message_id: _search_score(q, it)
+        for it in items_all
+    } if q and sort == "newest" else {}
 
     series_groups: dict = {}
     movie_groups: dict = {}
@@ -1711,15 +1755,26 @@ def query_grouped(
             else:
                 audio_singles.append(it)
         music_albums = [_build_album_group(tracks) for tracks in audio_buckets.values()]
+        combined = music_albums + audio_singles
         combined = sorted(
-            music_albums + audio_singles,
-            key=_grouped_sort_key(sort),
+            combined,
+            key=(
+                (lambda card: _grouped_search_key(card, search_scores))
+                if search_scores else _grouped_sort_key(sort)
+            ),
         )
         total = len(combined)
         page_items = combined[offset:offset + limit]
         return page_items, total
 
-    combined = sorted(grouped_series + grouped_movies + standalone, key=_grouped_sort_key(sort))
+    combined = grouped_series + grouped_movies + standalone
+    combined = sorted(
+        combined,
+        key=(
+            (lambda card: _grouped_search_key(card, search_scores))
+            if search_scores else _grouped_sort_key(sort)
+        ),
+    )
     total = len(combined)
     page = combined[offset : offset + limit]
     return page, total
@@ -1765,10 +1820,25 @@ def _grouped_sort_key(sort: str):
     return lambda card: -_card_message_id(card)
 
 
-def _series_matches_query(it: HubItem, q: str) -> bool:
-    if not q or not it.series_key:
-        return False
-    return q.lower().lstrip("#") in it.series_title.lower()
+def _grouped_search_key(card, scores: dict[int, float]):
+    if isinstance(card, SeriesGroup):
+        score = max(
+            (scores.get(e.message_id, 0.0) for e in episodes_for_series(card.series_key)),
+            default=0.0,
+        )
+    elif isinstance(card, MovieGroup):
+        score = max(
+            (scores.get(v.message_id, 0.0) for v in variants_for_movie(card.movie_key)),
+            default=0.0,
+        )
+    elif isinstance(card, AlbumGroup):
+        score = max(
+            (scores.get(t.message_id, 0.0) for t in tracks_for_album(card.album_key)),
+            default=0.0,
+        )
+    else:
+        score = scores.get(card.message_id, 0.0)
+    return (-score, -_card_message_id(card))
 
 
 def episodes_for_series(series_key: str) -> List[HubItem]:
@@ -2046,20 +2116,7 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
     for it in _items.values():
         if it.hidden:
             continue
-        hay = _haystack(it)
-        score = 0.0
-        if ql in it.title.lower() or ql in it.series_title.lower():
-            score = 1.0  # title-substring is the strongest signal
-        elif it.media_kind == "audio" and (
-            ql in (it.artist or "").lower() or ql in (it.album_title or "").lower()
-        ):
-            score = 0.9  # artist/album match — almost as strong as title
-        elif ql in hay:
-            score = 0.6  # substring elsewhere (description, genres, cast, file)
-        elif len(ql) >= 3:
-            fuzzy = _fuzzy_score(ql, it)
-            if fuzzy > 0:
-                score = fuzzy * 0.8  # fuzzy under exact substring
+        score = _search_score(ql, it)
         if score > 0:
             scored.append((score, it))
 
@@ -2073,6 +2130,7 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
     seen_series: set = set()
     seen_album:  set = set()
     seen_movie:  set = set()
+    art_cache = group_art_cache_for(it for _score, it in scored)
     suggestions: List[dict] = []
     for score, it in scored:
         if it.series_key:
@@ -2105,7 +2163,7 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
             "year": it.year,
             "kind": kind,
             "url": url,
-            "poster_path": it.poster_path,
+            "poster_path": poster_path_for_item(it, cache=art_cache),
             "secure_hash": it.secure_hash,
             "message_id": it.message_id,
             "media_kind": it.media_kind,
