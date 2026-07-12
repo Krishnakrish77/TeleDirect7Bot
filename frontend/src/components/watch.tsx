@@ -6,6 +6,7 @@ import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchV
 import { ErrorPanel, LoadingRows } from './common';
 import { LyricsFlipCard, LyricsPanel } from './lyrics';
 import { RatingControls } from './rating';
+import { AudioPlaybackIssue } from './audioPlayer';
 import { attachHls, hlsUrl } from '../media/hls';
 import { restoreCachedSubtitle, revokeSubtitleTrack, subtitleFileToTrack } from '../media/subtitles';
 import { buildVlcHref } from '../media/vlc';
@@ -377,6 +378,14 @@ export function WatchPage({
               />
               <span>{formatClock(duration)}</span>
             </div>
+            {player.error && current && (
+              <AudioPlaybackIssue
+                live="status"
+                message={player.error}
+                track={track}
+                onRetry={() => togglePlayback(track, queue)}
+              />
+            )}
             <div className="audio-toolbar">
               <div className="audio-actions">
                 {onToggleSaved && (
@@ -466,7 +475,6 @@ export function WatchPage({
               seek(seconds);
             }}
           />
-          {player.error && current && <p className="player-error">{player.error}</p>}
           <a className="section-link classic-link" href={track.classicHref}>
             <span>Classic player</span>
             <ChevronRightIcon />

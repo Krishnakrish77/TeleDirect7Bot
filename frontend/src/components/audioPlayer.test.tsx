@@ -83,6 +83,28 @@ describe('MiniPlayer', () => {
 
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
+
+  it('shows playback failure recovery actions', () => {
+    const togglePlayback = vi.fn();
+
+    render(
+      <MiniPlayer
+        player={makePlayer({ error: 'Network issue while loading the audio stream.' })}
+        playRelative={vi.fn()}
+        playQueueIndex={vi.fn()}
+        togglePlayback={togglePlayback}
+        seek={vi.fn()}
+        onExpand={vi.fn()}
+        onOpenQueue={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('alert').textContent).toContain('Network issue');
+    fireEvent.click(screen.getByText('Retry'));
+    expect(togglePlayback).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('link', { name: /Classic/i }).getAttribute('href')).toBe('/watch/track-key');
+  });
 });
 
 describe('NowPlayingSheet', () => {
@@ -154,6 +176,33 @@ describe('NowPlayingSheet', () => {
 
     fireEvent.click(screen.getByText('Cancel'));
     expect(cancelNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows expanded playback failure recovery actions', () => {
+    const togglePlayback = vi.fn();
+
+    render(
+      <NowPlayingSheet
+        open
+        player={makePlayer({ error: 'This browser cannot play the FLAC stream.' })}
+        playRelative={vi.fn()}
+        togglePlayback={togglePlayback}
+        seek={vi.fn()}
+        setSpeed={vi.fn()}
+        cycleRepeatMode={vi.fn()}
+        setVolume={vi.fn()}
+        toggleMute={vi.fn()}
+        confirmNext={vi.fn()}
+        cancelNext={vi.fn()}
+        onClose={vi.fn()}
+        onOpenQueue={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('FLAC stream');
+    fireEvent.click(screen.getByText('Retry'));
+    expect(togglePlayback).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('link', { name: /Download/i }).getAttribute('href')).toBe('/stream/track-key');
   });
 });
 

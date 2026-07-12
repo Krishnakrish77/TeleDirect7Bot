@@ -808,4 +808,34 @@ describe('WatchPage audio player', () => {
     fireEvent.click(queueButton);
     expect(onOpenQueue).toHaveBeenCalledTimes(1);
   });
+
+  it('shows audio playback failures next to the controls with recovery actions', async () => {
+    const track = makeTrack();
+    const audio = makeAudio({
+      track,
+      queue: [track],
+      queueIndex: 0,
+      error: 'This browser cannot play the FLAC stream.',
+    });
+    fetchWatchMock.mockResolvedValue({
+      mediaKind: 'music',
+      item: track,
+      albumTracks: [track],
+    });
+
+    render(
+      <WatchPage
+        watchKey={track.key}
+        audio={audio}
+        onOpenQueue={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Theme', level: 1 });
+    expect(screen.getByRole('status').textContent).toContain('FLAC stream');
+
+    fireEvent.click(screen.getByText('Retry'));
+    expect(audio.togglePlayback).toHaveBeenCalledWith(track, [track]);
+    expect(screen.getAllByRole('link', { name: /Classic/i })[0].getAttribute('href')).toBe('/watch/track-key');
+  });
 });

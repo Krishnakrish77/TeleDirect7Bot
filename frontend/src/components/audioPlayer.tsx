@@ -1,9 +1,49 @@
-import { ChevronRightIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, RepeatIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
+import { ChevronRightIcon, DownloadIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, RepeatIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 import { LyricsPanel } from './lyrics';
 
 const SPEEDS = [0.75, 1, 1.5, 2];
+
+export function AudioPlaybackIssue({
+  message,
+  track,
+  onRetry,
+  compact = false,
+  live = 'alert',
+}: {
+  message: string;
+  track: WatchTrack;
+  onRetry?: () => void;
+  compact?: boolean;
+  live?: 'alert' | 'status';
+}) {
+  if (!message) return null;
+  const downloadHref = track.downloadHref || track.streamHref;
+  return (
+    <div className={compact ? 'player-error playback-issue compact' : 'player-error playback-issue'} role={live}>
+      <p>{message}</p>
+      <div className="playback-issue-actions">
+        {onRetry && (
+          <button type="button" className="playback-issue-action" onClick={onRetry}>
+            <PlayIcon />
+            <span>Retry</span>
+          </button>
+        )}
+        <a className="playback-issue-action" href={track.classicHref}>
+          <ChevronRightIcon />
+          <span>Classic</span>
+        </a>
+        {!compact && downloadHref && (
+          <a className="playback-issue-action" href={downloadHref} download>
+            <DownloadIcon />
+            <span>Download</span>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function MiniPlayer({
   player,
@@ -72,7 +112,12 @@ export function MiniPlayer({
         <span>{formatClock(duration)}</span>
       </div>
       {player.queueToast && <p className="queue-toast" role="status">{player.queueToast}</p>}
-      {player.error && <p className="player-error mini-error">{player.error}</p>}
+      <AudioPlaybackIssue
+        compact
+        message={player.error}
+        track={track}
+        onRetry={() => togglePlayback()}
+      />
     </aside>
   );
 }
@@ -214,6 +259,12 @@ export function NowPlayingSheet({
           </div>
         )}
         {player.queueToast && <p className="queue-toast" role="status">{player.queueToast}</p>}
+        <AudioPlaybackIssue
+          live="status"
+          message={player.error}
+          track={track}
+          onRetry={() => togglePlayback()}
+        />
         <a className="section-link classic-link" href={track.classicHref}>
           <span>Classic player</span>
           <ChevronRightIcon />

@@ -34,8 +34,13 @@ const QUEUE_INDEX_KEY = 'td:queueIndex';
 const PRELOAD_AT_SECONDS = 30;
 const CROSSFADE_SECONDS = 3;
 const NEXT_COUNTDOWN_SECONDS = 5;
+const PLAYBACK_START_TIMEOUT_MS = 12000;
 const DEFAULT_VOLUME = 1;
 const SILENT_VOLUME = 0.001;
+const MEDIA_ERR_ABORTED = 1;
+const MEDIA_ERR_NETWORK = 2;
+const MEDIA_ERR_DECODE = 3;
+const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -117,6 +122,55 @@ export function formatClock(seconds: number): string {
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function playbackErrorName(error: unknown): string {
+  if (!error || typeof error !== 'object' || !('name' in error)) return '';
+  const name = (error as { name?: unknown }).name;
+  return typeof name === 'string' ? name : '';
+}
+
+function playbackFormatLabel(track: WatchTrack | null): string {
+  const label = track?.format || track?.qualityLabel || track?.quality || '';
+  return label ? label.toUpperCase() : 'audio';
+}
+
+function unsupportedPlaybackMessage(track: WatchTrack | null): string {
+  return `This browser could not play the ${playbackFormatLabel(track)} stream. It may be unsupported or returning an error page. Try the classic player or download it.`;
+}
+
+export function describeAudioPlaybackFailure(
+  error: unknown,
+  audio: HTMLAudioElement | null,
+  track: WatchTrack | null,
+): string {
+  const name = playbackErrorName(error);
+  if (name === 'NotAllowedError') return 'Tap play to start audio.';
+  if (typeof navigator !== 'undefined' && 'onLine' in navigator && !navigator.onLine) {
+    return 'You appear to be offline. Reconnect and try playing the track again.';
+  }
+
+  const mediaError = audio?.error;
+  switch (mediaError?.code) {
+    case MEDIA_ERR_ABORTED:
+      return 'Playback was interrupted before the audio started. Tap play to try again.';
+    case MEDIA_ERR_NETWORK:
+      return 'Network issue while loading the audio stream. Try again, open the classic player, or download the track.';
+    case MEDIA_ERR_DECODE:
+      return 'This track loaded but could not be decoded by the browser. Try the classic player or download it.';
+    case MEDIA_ERR_SRC_NOT_SUPPORTED:
+      return unsupportedPlaybackMessage(track);
+    default:
+      break;
+  }
+
+  if (name === 'NotSupportedError') {
+    return unsupportedPlaybackMessage(track);
+  }
+  if (name === 'AbortError') {
+    return 'Playback was interrupted before the audio started. Tap play to try again.';
+  }
+  return 'Audio playback failed. Try again, open the classic player, or download the track.';
+}
+
 function persistNowPlaying(player: PlayerState): void {
   try {
     if (!player.track) {
@@ -175,6 +229,9 @@ export function useAudioPlayer() {
   const pendingNextIndexRef = useRef<number | null>(null);
   const explicitSilentOutputRef = useRef(false);
   const toastTimerRef = useRef<number | null>(null);
+  const playbackWatchdogRef = useRef<number | null>(null);
+  const playbackAttemptRef = useRef(0);
+  const playbackAttemptTrackKeyRef = useRef('');
   const cwLastSyncRef = useRef(0);
   const persistLastRef = useRef(0);
   const [player, setPlayer] = useState<PlayerState>(() => initialPlayerState());
@@ -199,6 +256,24 @@ export function useAudioPlayer() {
     audio.muted = current.muted;
     audio.volume = current.muted ? 0 : clamp(fadeVolume ?? current.volume, 0, 1);
   }, []);
+
+  const clearPlaybackWatchdog = useCallback(() => {
+    if (!playbackWatchdogRef.current) return;
+    window.clearTimeout(playbackWatchdogRef.current);
+    playbackWatchdogRef.current = null;
+  }, []);
+
+  const beginPlaybackAttempt = useCallback((track?: WatchTrack | null) => {
+    playbackAttemptRef.current += 1;
+    playbackAttemptTrackKeyRef.current = track?.key || '';
+    return playbackAttemptRef.current;
+  }, []);
+
+  const cancelPlaybackAttempt = useCallback(() => {
+    playbackAttemptRef.current += 1;
+    playbackAttemptTrackKeyRef.current = '';
+    clearPlaybackWatchdog();
+  }, [clearPlaybackWatchdog]);
 
   const ensureAudibleOutput = useCallback(() => {
     const current = playerRef.current;
@@ -308,11 +383,67 @@ export function useAudioPlayer() {
     seekActiveAudioTo(baseTime + offset);
   }, [getActiveAudio, seekActiveAudioTo]);
 
+  const failPlayback = useCallback((track: WatchTrack | null, audio: HTMLAudioElement | null, attemptId: number, error?: unknown) => {
+    if (attemptId !== playbackAttemptRef.current) return;
+    if (audio && audio !== getActiveAudio()) return;
+    const attemptTrackKey = playbackAttemptTrackKeyRef.current;
+    if (track?.key && attemptTrackKey && attemptTrackKey !== track.key) return;
+    clearPlaybackWatchdog();
+    try {
+      if (audio && !audio.paused) audio.pause();
+    } catch (_) {
+      // Some browsers can throw while an element is changing source.
+    }
+    setMediaSessionPlaybackState(false, Boolean(playerRef.current.track || track));
+    const failedKey = track?.key || '';
+    setPlayer((state) => {
+      if (failedKey && state.track?.key !== failedKey) return state;
+      return {
+        ...state,
+        playing: false,
+        error: describeAudioPlaybackFailure(error, audio, state.track || track),
+      };
+    });
+  }, [clearPlaybackWatchdog, getActiveAudio, setMediaSessionPlaybackState]);
+
+  const armPlaybackWatchdog = useCallback((audio: HTMLAudioElement, track: WatchTrack, attemptId: number) => {
+    clearPlaybackWatchdog();
+    const trackKey = track.key;
+    const timer = window.setTimeout(() => {
+      if (playbackWatchdogRef.current === timer) playbackWatchdogRef.current = null;
+      if (attemptId !== playbackAttemptRef.current) return;
+      if (getActiveAudio() !== audio) return;
+      if (audio.error || audio.readyState >= 3 || audio.currentTime > 0) return;
+      try {
+        if (!audio.paused) audio.pause();
+      } catch (_) {
+        // Keep state recovery working even if pause is rejected by the browser.
+      }
+      setMediaSessionPlaybackState(false, true);
+      setPlayer((state) => {
+        if (state.track?.key !== trackKey || !state.playing) return state;
+        return {
+          ...state,
+          playing: false,
+          error: 'Still waiting for audio data. The stream may be slow or blocked; try again, open the classic player, or download the track.',
+        };
+      });
+    }, PLAYBACK_START_TIMEOUT_MS);
+    playbackWatchdogRef.current = timer;
+  }, [clearPlaybackWatchdog, getActiveAudio, setMediaSessionPlaybackState]);
+
   const playActiveAudioFromSession = useCallback(() => {
     const audio = getActiveAudio();
     const current = playerRef.current;
     if (!audio || !current.track) return;
     ensureAudibleOutput();
+    if (audio.error || !audio.src) {
+      const reloadFromError = Boolean(audio.error);
+      audio.src = trackSrc(current.track);
+      audio.currentTime = reloadFromError ? 0 : current.currentTime || 0;
+      preloadedKeyRef.current = '';
+      audio.load();
+    }
     applyOutputSettings(audio);
     setMediaSessionPlaybackState(true, true);
     setPlayer((state) => ({
@@ -320,26 +451,22 @@ export function useAudioPlayer() {
       playing: true,
       error: '',
     }));
+    const attemptId = beginPlaybackAttempt(current.track);
     const promise = audio.play();
+    armPlaybackWatchdog(audio, current.track, attemptId);
     if (promise) {
-      promise.catch(() => {
-        setMediaSessionPlaybackState(false, true);
-        setPlayer((state) => ({
-          ...state,
-          playing: false,
-          error: 'Tap play to start audio.',
-        }));
-      });
+      promise.catch((error) => failPlayback(current.track, audio, attemptId, error));
     }
-  }, [applyOutputSettings, ensureAudibleOutput, getActiveAudio, setMediaSessionPlaybackState]);
+  }, [applyOutputSettings, armPlaybackWatchdog, beginPlaybackAttempt, ensureAudibleOutput, failPlayback, getActiveAudio, setMediaSessionPlaybackState]);
 
   const pauseActiveAudioFromSession = useCallback(() => {
     const audio = getActiveAudio();
     if (!audio) return;
+    cancelPlaybackAttempt();
     audio.pause();
     setMediaSessionPlaybackState(false, Boolean(playerRef.current.track));
     setPlayer((state) => ({ ...state, playing: false }));
-  }, [getActiveAudio, setMediaSessionPlaybackState]);
+  }, [cancelPlaybackAttempt, getActiveAudio, setMediaSessionPlaybackState]);
 
   const setMediaSessionAction = useCallback((action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
     if (!('mediaSession' in navigator)) return;
@@ -354,25 +481,22 @@ export function useAudioPlayer() {
     const audio = getActiveAudio();
     if (!audio) return;
     const nextSrc = trackSrc(track);
-    if (audio.src !== nextSrc) {
-      audio.src = track.streamHref;
+    const shouldReload = audio.src !== nextSrc || Boolean(audio.error);
+    if (shouldReload) {
+      audio.src = nextSrc;
       reset = true;
       preloadedKeyRef.current = '';
+      audio.load();
     }
     if (reset) audio.currentTime = 0;
     applyOutputSettings(audio);
+    const attemptId = beginPlaybackAttempt(track);
     const promise = audio.play();
+    armPlaybackWatchdog(audio, track, attemptId);
     if (promise) {
-      promise.catch(() => {
-        setMediaSessionPlaybackState(false, true);
-        setPlayer((current) => ({
-          ...current,
-          playing: false,
-          error: 'Tap play to start audio.',
-        }));
-      });
+      promise.catch((error) => failPlayback(track, audio, attemptId, error));
     }
-  }, [applyOutputSettings, getActiveAudio, setMediaSessionPlaybackState]);
+  }, [applyOutputSettings, armPlaybackWatchdog, beginPlaybackAttempt, failPlayback, getActiveAudio]);
 
   const stopInactive = useCallback(() => {
     const inactive = getInactiveAudio();
@@ -474,6 +598,7 @@ export function useAudioPlayer() {
     pendingNextIndexRef.current = null;
     preloadedKeyRef.current = '';
     crossfadeRef.current = false;
+    cancelPlaybackAttempt();
     [audioRef.current, bufferRef.current].forEach((audio) => {
       if (!audio) return;
       audio.pause();
@@ -501,7 +626,7 @@ export function useAudioPlayer() {
       nextCountdown: NEXT_COUNTDOWN_SECONDS,
       queueToast: '',
     }));
-  }, [setMediaSessionPlaybackState]);
+  }, [cancelPlaybackAttempt, setMediaSessionPlaybackState]);
 
   const clearAudioMediaSessionActions = useCallback(() => {
     setMediaSessionAction('play', null);
@@ -635,25 +760,36 @@ export function useAudioPlayer() {
     if (!audio || !current.track) return;
     if (audio.paused) {
       ensureAudibleOutput();
-      applyOutputSettings(audio);
       setMediaSessionPlaybackState(true, true);
       setPlayer((state) => ({ ...state, playing: true, error: '' }));
+      if (current.track && (audio.error || !audio.src)) {
+        startAudio(current.track, false);
+        return;
+      }
+      applyOutputSettings(audio);
+      const attemptId = beginPlaybackAttempt(current.track);
       const promise = audio.play();
+      if (current.track) armPlaybackWatchdog(audio, current.track, attemptId);
       if (promise) {
-        promise.catch(() => {
-          setMediaSessionPlaybackState(false, true);
-          setPlayer((state) => ({
-            ...state,
-            playing: false,
-            error: 'Tap play to start audio.',
-          }));
-        });
+        promise.catch((error) => failPlayback(current.track, audio, attemptId, error));
       }
     } else {
+      cancelPlaybackAttempt();
       audio.pause();
       setMediaSessionPlaybackState(false, true);
     }
-  }, [applyOutputSettings, ensureAudibleOutput, getActiveAudio, playTrack, setMediaSessionPlaybackState]);
+  }, [
+    applyOutputSettings,
+    armPlaybackWatchdog,
+    beginPlaybackAttempt,
+    cancelPlaybackAttempt,
+    ensureAudibleOutput,
+    failPlayback,
+    getActiveAudio,
+    playTrack,
+    setMediaSessionPlaybackState,
+    startAudio,
+  ]);
 
   const seek = useCallback((seconds: number) => {
     seekActiveAudioTo(seconds);
@@ -734,14 +870,14 @@ export function useAudioPlayer() {
     if (!inactive) return;
     const nextSrc = trackSrc(next);
     if (remaining <= PRELOAD_AT_SECONDS && preloadedKeyRef.current !== next.key) {
-      inactive.src = next.streamHref;
+      inactive.src = nextSrc;
       inactive.preload = 'auto';
       inactive.load();
       preloadedKeyRef.current = next.key;
     }
     if (remaining > CROSSFADE_SECONDS || crossfadeRef.current) return;
     crossfadeRef.current = true;
-    inactive.src = inactive.src || next.streamHref;
+    inactive.src = inactive.src || nextSrc;
     inactive.currentTime = 0;
     applyOutputSettings(inactive, 0);
     const from = audio;
@@ -814,6 +950,7 @@ export function useAudioPlayer() {
         currentTime,
         duration,
       }));
+      if (currentTime > 0 || audio.readyState >= 3) clearPlaybackWatchdog();
       if (current.track && now - persistLastRef.current > 2000) {
         persistLastRef.current = now;
         persistNowPlaying({ ...current, currentTime, duration });
@@ -834,18 +971,29 @@ export function useAudioPlayer() {
     };
 
     const onPlay = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (audio !== getActiveAudio()) return;
+      const current = playerRef.current;
+      if (current.track) armPlaybackWatchdog(audio, current.track, playbackAttemptRef.current);
+      setMediaSessionPlaybackState(true, Boolean(playerRef.current.track));
+      setPlayer((state) => ({ ...state, playing: true, error: '' }));
+    };
+    const onPlaying = (event: Event) => {
       if (event.currentTarget !== getActiveAudio()) return;
+      clearPlaybackWatchdog();
       setMediaSessionPlaybackState(true, Boolean(playerRef.current.track));
       setPlayer((state) => ({ ...state, playing: true, error: '' }));
     };
     const onPause = (event: Event) => {
       if (event.currentTarget !== getActiveAudio()) return;
+      cancelPlaybackAttempt();
       setMediaSessionPlaybackState(false, Boolean(playerRef.current.track));
       setPlayer((state) => ({ ...state, playing: false }));
     };
     const onEnded = (event: Event) => {
       const audio = event.currentTarget as HTMLAudioElement;
       if (audio !== getActiveAudio() || crossfadeRef.current) return;
+      clearPlaybackWatchdog();
       const current = playerRef.current;
       if (current.track) {
         void recordWatchHistory(current.track.key, current.track.title).catch(() => undefined);
@@ -869,12 +1017,17 @@ export function useAudioPlayer() {
       scheduleNext(nextIndex);
     };
     const onError = (event: Event) => {
-      if (event.currentTarget !== getActiveAudio()) return;
-      setPlayer((state) => ({
-        ...state,
-        playing: false,
-        error: 'Audio could not be loaded.',
-      }));
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (audio !== getActiveAudio()) return;
+      const current = playerRef.current;
+      if (!current.playing) return;
+      failPlayback(current.track, audio, playbackAttemptRef.current);
+    };
+    const onWaiting = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      const current = playerRef.current;
+      if (audio !== getActiveAudio() || !current.track || !current.playing) return;
+      armPlaybackWatchdog(audio, current.track, playbackAttemptRef.current);
     };
 
     audioNodes.forEach((audio) => {
@@ -882,9 +1035,12 @@ export function useAudioPlayer() {
       audio.addEventListener('loadedmetadata', onTime);
       audio.addEventListener('durationchange', onTime);
       audio.addEventListener('play', onPlay);
+      audio.addEventListener('playing', onPlaying);
       audio.addEventListener('pause', onPause);
       audio.addEventListener('ended', onEnded);
       audio.addEventListener('error', onError);
+      audio.addEventListener('stalled', onWaiting);
+      audio.addEventListener('waiting', onWaiting);
       applyOutputSettings(audio);
     });
 
@@ -894,18 +1050,33 @@ export function useAudioPlayer() {
         audio.removeEventListener('loadedmetadata', onTime);
         audio.removeEventListener('durationchange', onTime);
         audio.removeEventListener('play', onPlay);
+        audio.removeEventListener('playing', onPlaying);
         audio.removeEventListener('pause', onPause);
         audio.removeEventListener('ended', onEnded);
         audio.removeEventListener('error', onError);
+        audio.removeEventListener('stalled', onWaiting);
+        audio.removeEventListener('waiting', onWaiting);
       });
     };
-  }, [applyOutputSettings, getActiveAudio, maybeCrossfade, resolveNextIndex, scheduleNext, setMediaSessionPlaybackState, setMediaSessionPosition]);
+  }, [
+    applyOutputSettings,
+    armPlaybackWatchdog,
+    cancelPlaybackAttempt,
+    clearPlaybackWatchdog,
+    failPlayback,
+    getActiveAudio,
+    maybeCrossfade,
+    resolveNextIndex,
+    scheduleNext,
+    setMediaSessionPlaybackState,
+    setMediaSessionPosition,
+  ]);
 
   useEffect(() => {
     const audio = getActiveAudio();
     const current = playerRef.current;
     if (!audio || !current.track || audio.src) return;
-    audio.src = current.track.streamHref;
+    audio.src = trackSrc(current.track);
     audio.currentTime = current.currentTime || 0;
     applyOutputSettings(audio);
   }, [applyOutputSettings, getActiveAudio]);
@@ -950,7 +1121,8 @@ export function useAudioPlayer() {
 
   useEffect(() => () => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-  }, []);
+    clearPlaybackWatchdog();
+  }, [clearPlaybackWatchdog]);
 
   return {
     audioRef,

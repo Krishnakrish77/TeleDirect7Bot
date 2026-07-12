@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RESTORE_AUDIO_MEDIA_SESSION_EVENT, useAudioPlayer } from './audio';
+import { describeAudioPlaybackFailure, RESTORE_AUDIO_MEDIA_SESSION_EVENT, useAudioPlayer } from './audio';
 import { clearLyricsCache } from './lyrics';
 import type { WatchTrack } from '../types';
 
@@ -49,10 +49,12 @@ function AudioHarness({ track = makeTrack(), queue }: { track?: WatchTrack; queu
       <button type="button" onClick={() => audio.playTrack(track, queue || [track])}>Start</button>
       <button type="button" onClick={() => audio.toggleMute()}>Mute</button>
       <button type="button" onClick={() => audio.togglePlayback()}>Toggle</button>
+      <button type="button" onClick={() => audio.playRelative(1)}>Next</button>
       <button type="button" onClick={() => audio.dismissPlayer()}>Dismiss</button>
       <span data-testid="track">{audio.player.track?.title || 'none'}</span>
       <span data-testid="muted">{String(audio.player.muted)}</span>
       <span data-testid="volume">{audio.player.volume}</span>
+      <span data-testid="error">{audio.player.error}</span>
     </div>
   );
 }
@@ -108,6 +110,144 @@ afterEach(() => {
 });
 
 describe('useAudioPlayer', () => {
+  it('explains browser playback failures with actionable messages', () => {
+    const track = makeTrack({ format: 'FLAC', qualityLabel: 'FLAC' });
+    const audio = document.createElement('audio');
+
+    Object.defineProperty(audio, 'error', {
+      configurable: true,
+      value: { code: 4 },
+    });
+
+    expect(describeAudioPlaybackFailure({ name: 'NotAllowedError' }, null, track)).toBe('Tap play to start audio.');
+    expect(describeAudioPlaybackFailure({ name: 'NotSupportedError' }, null, track)).toContain('FLAC stream');
+    expect(describeAudioPlaybackFailure(undefined, audio, track)).toContain('FLAC stream');
+  });
+
+  it('surfaces play promise failures in the player state', async () => {
+    vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce({ name: 'NotSupportedError' });
+
+    render(<AudioHarness />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    await waitFor(() => expect(screen.getByTestId('error').textContent).toContain('MP3 stream'));
+  });
+
+  it('surfaces native media loading errors in the player state', async () => {
+    render(<AudioHarness />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'error', {
+      configurable: true,
+      value: { code: 2 },
+    });
+    fireEvent.error(primary);
+
+    await waitFor(() => expect(screen.getByTestId('error').textContent).toContain('Network issue'));
+  });
+
+  it('reloads the audio source when retrying after a native media error', async () => {
+    const load = vi.mocked(HTMLMediaElement.prototype.load);
+
+    render(<AudioHarness />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'error', {
+      configurable: true,
+      value: { code: 2 },
+    });
+    Object.defineProperty(primary, 'paused', { configurable: true, value: true });
+    fireEvent.error(primary);
+    await waitFor(() => expect(screen.getByTestId('error').textContent).toContain('Network issue'));
+
+    load.mockClear();
+    fireEvent.click(screen.getByText('Toggle'));
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+  });
+
+  it('reloads an errored audio source when Media Session play retries', async () => {
+    const { handlers } = installMediaSession();
+    const load = vi.mocked(HTMLMediaElement.prototype.load);
+
+    render(<AudioHarness />);
+
+    fireEvent.click(screen.getByText('Start'));
+    await waitFor(() => expect(handlers.get('play')).toBeTruthy());
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'error', {
+      configurable: true,
+      value: { code: 2 },
+    });
+    Object.defineProperty(primary, 'paused', { configurable: true, value: true });
+    fireEvent.error(primary);
+    await waitFor(() => expect(screen.getByTestId('error').textContent).toContain('Network issue'));
+
+    load.mockClear();
+    handlers.get('play')?.({ action: 'play' });
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+  });
+
+  it('ignores stale play promise failures after the user starts another track', async () => {
+    const first = makeTrack();
+    const second = makeTrack({
+      key: 'second-key',
+      itemId: 'item-second-key',
+      messageId: 2,
+      title: 'Second Theme',
+      streamHref: '/stream/second-key',
+      watchKey: 'second-key',
+      appHref: '/app/watch/second-key',
+      classicHref: '/watch/second-key',
+    });
+    let rejectFirstPlay: ((error: unknown) => void) | null = null;
+    vi.mocked(HTMLMediaElement.prototype.play)
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectFirstPlay = reject; }))
+      .mockResolvedValue(undefined);
+
+    render(<AudioHarness track={first} queue={[first, second]} />);
+
+    fireEvent.click(screen.getByText('Start'));
+    await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Theme'));
+
+    fireEvent.click(screen.getByText('Next'));
+    await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Second Theme'));
+
+    await act(async () => {
+      rejectFirstPlay?.({ name: 'AbortError' });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('track').textContent).toBe('Second Theme');
+    expect(screen.getByTestId('error').textContent).toBe('');
+  });
+
+  it('times out a stuck playback start with a retryable failure state', async () => {
+    vi.useFakeTimers();
+    const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+
+    render(<AudioHarness />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+
+    act(() => {
+      vi.advanceTimersByTime(12000);
+    });
+
+    expect(pause).toHaveBeenCalled();
+    expect(screen.getByTestId('error').textContent).toContain('Still waiting');
+  });
+
   it('restores audible output when playback starts from a stale muted preference', async () => {
     localStorage.setItem('td:muted', '1');
     localStorage.setItem('td:volume', '0');

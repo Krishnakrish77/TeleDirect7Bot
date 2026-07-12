@@ -4382,6 +4382,73 @@ img {
   font-size: 0.86rem;
 }
 
+.playback-issue {
+  display: grid;
+  gap: 0.65rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.18);
+  color: #fecdd3;
+}
+
+.playback-issue p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.playback-issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.playback-issue-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 32px;
+  padding: 0 0.62rem;
+  border: 1px solid rgba(254, 205, 211, 0.24);
+  border-radius: 8px;
+  background: rgba(11, 12, 14, 0.5);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.playback-issue-action:hover,
+.playback-issue-action:focus-visible {
+  border-color: rgba(254, 205, 211, 0.54);
+  background: rgba(127, 29, 29, 0.32);
+  outline: none;
+}
+
+.playback-issue-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.playback-issue.compact {
+  padding: 0.6rem;
+}
+
+.mini-player .playback-issue {
+  grid-column: 1 / -1;
+  margin-top: -0.35rem;
+}
+
+.now-sheet .playback-issue {
+  max-width: 100%;
+}
+
 .classic-link {
   width: fit-content;
   margin-top: 0.65rem;
@@ -6741,6 +6808,7 @@ img {
       "art controls"
       "art settings"
       "art next"
+      "art issue"
       "art lyrics"
       "art classic";
     align-items: start;
@@ -6753,7 +6821,7 @@ img {
     transform: translate(-50%, -50%);
   }
 
-  .now-art {
+  .now-art-wrap {
     grid-area: art;
     width: 100%;
     max-height: min(64svh, 520px);
@@ -6784,6 +6852,10 @@ img {
 
   .now-sheet .next-track-card {
     grid-area: next;
+  }
+
+  .now-sheet .playback-issue {
+    grid-area: issue;
   }
 
   .now-lyrics {
@@ -9401,7 +9473,7 @@ select.edit-field-input {
     overflow: auto;
   }
 
-  .now-art {
+  .now-art-wrap {
     grid-row: 1 / span 4;
     width: 100%;
   }
@@ -9419,6 +9491,7 @@ select.edit-field-input {
 
   .now-progress,
   .now-controls,
+  .now-sheet .playback-issue,
   .now-lyrics,
   .now-sheet .classic-link {
     grid-column: 2;
