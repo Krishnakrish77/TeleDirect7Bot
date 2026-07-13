@@ -41,6 +41,28 @@ export class ApiError extends Error {
   }
 }
 
+function isHtmlResponse(contentType: string, text: string): boolean {
+  const normalizedType = contentType.toLowerCase();
+  const body = text.trim().toLowerCase();
+  return normalizedType.includes('text/html') || body.startsWith('<!doctype') || body.startsWith('<html');
+}
+
+function nonJsonErrorMessage(response: Response, text: string, contentType: string): string {
+  const status = response.status || 0;
+  const statusLabel = status ? ` (${status})` : '';
+  const fallback = response.statusText || `Request failed${statusLabel}`;
+
+  if (isHtmlResponse(contentType, text)) {
+    if (status === 401 || status === 403) return 'Admin access required. Sign in again and retry.';
+    if (status === 0 || response.ok) return 'Server returned an HTML page instead of JSON. Sign in again and retry.';
+    if ([502, 503, 504].includes(status)) return `Server returned an HTML error page${statusLabel}. Try again shortly.`;
+    return `Request failed${statusLabel}.`;
+  }
+
+  const clean = text.trim();
+  return clean ? clean.slice(0, 500) : fallback;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
@@ -51,19 +73,24 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!response.ok) {
     let message = response.statusText || 'Request failed';
-    const contentType = response.headers.get('content-type') || '';
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
     try {
-      if (contentType.includes('application/json')) {
+      if (contentType.includes('json')) {
         const data = await response.json() as { error?: string; message?: string };
         message = data.error || data.message || message;
       } else {
         const text = await response.text();
-        message = text || message;
+        message = nonJsonErrorMessage(response, text, contentType);
       }
     } catch (_) {
       // Keep the status text when the error body is unreadable.
     }
     throw new ApiError(message, response.status);
+  }
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  if (!contentType.includes('json')) {
+    const text = await response.text();
+    throw new ApiError(nonJsonErrorMessage(response, text, contentType), response.status);
   }
   return (await response.json()) as T;
 }
@@ -348,23 +375,23 @@ export async function saveAdminItem(id: number, payload: AdminItemEditPayload): 
 }
 
 export async function fetchAiModels(signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
-  return request<Array<{ id: string; name: string }>>('/admin/ai-models', { signal });
+  return request<Array<{ id: string; name: string }>>('/api/app/admin/ai-models', { signal });
 }
 
 export async function aiSuggestItem(id: number, model: string, fields?: string): Promise<AiSuggestResponse> {
   const qs = new URLSearchParams({ model });
   if (fields) qs.set('fields', fields);
-  return request<AiSuggestResponse>(`/admin/ai-suggest/${id}?${qs}`, { method: 'POST' });
+  return request<AiSuggestResponse>(`/api/app/admin/item/${id}/ai-suggest?${qs}`, { method: 'POST' });
 }
 
 export async function fetchTmdbPreview(tmdbId: number, kind: string, signal?: AbortSignal): Promise<TmdbPreviewResult> {
   const qs = new URLSearchParams({ id: String(tmdbId), kind });
-  return request<TmdbPreviewResult>(`/admin/tmdb-preview?${qs}`, { signal });
+  return request<TmdbPreviewResult>(`/api/app/admin/tmdb-preview?${qs}`, { signal });
 }
 
 export async function resolveTmdbImdb(imdbInput: string, signal?: AbortSignal): Promise<{ tmdb_id: number; kind: string; imdb_id: string; error?: string }> {
   const qs = new URLSearchParams({ imdb_id: imdbInput });
-  return request(`/admin/tmdb-resolve-imdb?${qs}`, { signal });
+  return request(`/api/app/admin/tmdb-resolve-imdb?${qs}`, { signal });
 }
 
 export async function recordWatchHistory(key: string, title: string): Promise<void> {

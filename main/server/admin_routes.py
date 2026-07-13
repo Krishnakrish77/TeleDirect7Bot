@@ -743,15 +743,7 @@ async def admin_trending_gaps_refresh(request: web.Request) -> web.Response:
     raise _redirect_with_flash("Trending cache cleared — next load will re-fetch from TMDB.")
 
 
-@routes.get("/admin/tmdb-preview")
-async def admin_tmdb_preview(request: web.Request) -> web.Response:
-    """Preview a TMDB record by id so admin can confirm before applying.
-
-    Hit by the Edit modal whenever the operator types a TMDB id. Returns
-    poster path, title, year, overview, genres so the UI can render a
-    small preview card next to the input.
-    """
-    _require_session(request)
+async def _tmdb_preview_response(request: web.Request) -> web.Response:
     try:
         tmdb_id = int(request.query.get("id", ""))
     except ValueError:
@@ -778,14 +770,25 @@ async def admin_tmdb_preview(request: web.Request) -> web.Response:
     })
 
 
-@routes.get("/admin/tmdb-resolve-imdb")
-async def admin_tmdb_resolve_imdb(request: web.Request) -> web.Response:
-    """Resolve an IMDb tt-id to a TMDB (id, kind) pair via /find.
+@routes.get("/admin/tmdb-preview")
+async def admin_tmdb_preview(request: web.Request) -> web.Response:
+    """Preview a TMDB record by id so admin can confirm before applying.
 
-    Lets the Edit modal accept an IMDb URL/id and auto-fill the TMDB id
-    + kind fields, sparing the operator a manual TMDB lookup.
+    Hit by the Edit modal whenever the operator types a TMDB id. Returns
+    poster path, title, year, overview, genres so the UI can render a
+    small preview card next to the input.
     """
     _require_session(request)
+    return await _tmdb_preview_response(request)
+
+
+@routes.get("/api/app/admin/tmdb-preview")
+async def api_app_admin_tmdb_preview(request: web.Request) -> web.Response:
+    _require_api_admin(request)
+    return await _tmdb_preview_response(request)
+
+
+async def _tmdb_resolve_imdb_response(request: web.Request) -> web.Response:
     imdb_id = (request.query.get("imdb_id") or "").strip()
     # Accept either ``tt1234567`` or the full IMDb URL — pull the tt-id
     # out so the admin can paste either form.
@@ -807,6 +810,23 @@ async def admin_tmdb_resolve_imdb(request: web.Request) -> web.Response:
         )
     tmdb_id, kind = resolved
     return web.json_response({"tmdb_id": tmdb_id, "kind": kind, "imdb_id": imdb_id})
+
+
+@routes.get("/admin/tmdb-resolve-imdb")
+async def admin_tmdb_resolve_imdb(request: web.Request) -> web.Response:
+    """Resolve an IMDb tt-id to a TMDB (id, kind) pair via /find.
+
+    Lets the Edit modal accept an IMDb URL/id and auto-fill the TMDB id
+    + kind fields, sparing the operator a manual TMDB lookup.
+    """
+    _require_session(request)
+    return await _tmdb_resolve_imdb_response(request)
+
+
+@routes.get("/api/app/admin/tmdb-resolve-imdb")
+async def api_app_admin_tmdb_resolve_imdb(request: web.Request) -> web.Response:
+    _require_api_admin(request)
+    return await _tmdb_resolve_imdb_response(request)
 
 
 @routes.get("/admin/status")
@@ -1130,15 +1150,7 @@ async def admin_action(request: web.Request) -> web.Response:
     raise _redirect_with_flash("Unknown action", target=_target)
 
 
-@routes.get("/admin/ai-models")
-async def admin_ai_models(request: web.Request) -> web.Response:
-    """Return models available for the configured GEMINI_API_KEY.
-
-    Calls Google's model-list endpoint and filters to those that support
-    generateContent (i.e. can be used with our suggest endpoint).
-    Returns an empty list when the key is not configured.
-    """
-    _require_session(request)
+async def _ai_models_response() -> web.Response:
     if not Var.GEMINI_API_KEY:
         return web.json_response([])
 
@@ -1169,6 +1181,24 @@ async def admin_ai_models(request: web.Request) -> web.Response:
     except Exception:
         logging.exception("admin: failed to list Gemini models")
         return web.json_response([])
+
+
+@routes.get("/admin/ai-models")
+async def admin_ai_models(request: web.Request) -> web.Response:
+    """Return models available for the configured GEMINI_API_KEY.
+
+    Calls Google's model-list endpoint and filters to those that support
+    generateContent (i.e. can be used with our suggest endpoint).
+    Returns an empty list when the key is not configured.
+    """
+    _require_session(request)
+    return await _ai_models_response()
+
+
+@routes.get("/api/app/admin/ai-models")
+async def api_app_admin_ai_models(request: web.Request) -> web.Response:
+    _require_api_admin(request)
+    return await _ai_models_response()
 
 
 async def _fetch_thumb_bytes(item) -> Optional[bytes]:
@@ -1390,8 +1420,7 @@ async def admin_ai_apply(request: web.Request) -> web.Response:
     raise _redirect_with_flash(f"Applied {changed} of {len(approved)} approved proposals")
 
 
-@routes.post(r"/admin/ai-suggest/{id:\d+}")
-async def admin_ai_suggest(request: web.Request) -> web.Response:
+async def _ai_suggest_response(request: web.Request, message_id: int) -> web.Response:
     """Gemini Vision thumbnail analysis → structured metadata suggestions.
 
     Sends the video thumbnail + basic metadata to Gemini 2.0 Flash (free).
@@ -1399,13 +1428,11 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
     episode markers, watermarks, URLs) to identify the content and return
     pre-filled suggestions for title, series, season, episode, etc.
     """
-    _require_session(request)
     if not Var.GEMINI_API_KEY:
         return web.json_response(
             {"error": "GEMINI_API_KEY not configured — get a free key at aistudio.google.com"},
             status=503,
         )
-    message_id = int(request.match_info["id"])
     item = media_index.get_item(message_id)
     if item is None:
         return web.json_response({"error": "Item not found"}, status=404)
@@ -1730,6 +1757,18 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": "Gemini request failed — check server logs"}, status=500
         )
+
+
+@routes.post(r"/admin/ai-suggest/{id:\d+}")
+async def admin_ai_suggest(request: web.Request) -> web.Response:
+    _require_session(request)
+    return await _ai_suggest_response(request, int(request.match_info["id"]))
+
+
+@routes.post(r"/api/app/admin/item/{id:\d+}/ai-suggest")
+async def api_app_admin_item_ai_suggest(request: web.Request) -> web.Response:
+    _require_api_admin(request)
+    return await _ai_suggest_response(request, int(request.match_info["id"]))
 
 
 def _clear_tmdb_fields(item: HubItem) -> None:
