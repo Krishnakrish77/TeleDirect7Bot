@@ -1,5 +1,5 @@
 import { type CSSProperties, DragEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { deleteContinueEntry, fetchAudioTracks, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
+import { deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
 import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
 import { formatClock, RESTORE_AUDIO_MEDIA_SESSION_EVENT, type AudioPlayerHandle, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
@@ -11,6 +11,7 @@ import { attachHls, hlsUrl } from '../media/hls';
 import { restoreCachedSubtitle, revokeSubtitleTrack, subtitleFileToTrack } from '../media/subtitles';
 import { buildVlcHref } from '../media/vlc';
 import { markLocallyWatched } from '../utils/localWatched';
+import { isContinueSuppressed } from '../utils/continueWatching';
 import { uniqueMetadataParts } from '../utils/metadata';
 
 function isWatchTrack(item: WatchResponse['item']): item is WatchTrack {
@@ -183,6 +184,7 @@ export function WatchPage({
   onAddToPlaylist,
   savedIds,
   onToggleSaved,
+  serverSyncEnabled = false,
 }: {
   watchKey: string;
   audio: AudioPlayerHandle;
@@ -190,6 +192,7 @@ export function WatchPage({
   onAddToPlaylist?: (track: WatchTrack) => void;
   savedIds?: Set<string>;
   onToggleSaved?: (itemId: string) => void;
+  serverSyncEnabled?: boolean;
 }) {
   const { player, playTrack, playRelative, playQueueIndex, addToQueue, shuffleQueue,
     togglePlayback, seek, setSpeed, cycleRepeatMode, setVolume, toggleMute,
@@ -231,7 +234,7 @@ export function WatchPage({
   }
 
   if (isWatchVideo(data.item)) {
-    return <VideoWatchPage video={data.item} />;
+    return <VideoWatchPage video={data.item} serverSyncEnabled={serverSyncEnabled} />;
   }
 
   if (!isWatchTrack(data.item)) {
@@ -573,7 +576,7 @@ export function WatchPage({
   );
 }
 
-function VideoWatchPage({ video }: { video: WatchVideo }) {
+function VideoWatchPage({ video, serverSyncEnabled = false }: { video: WatchVideo; serverSyncEnabled?: boolean }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
@@ -606,6 +609,8 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   const clickTimerRef = useRef<number | null>(null);
   const stillWatchingTimerRef = useRef<number | null>(null);
   const lastStillWatchingActivityRef = useRef<number | null>(null);
+  const pendingServerResumeRef = useRef(false);
+  const pendingResumeMaxPositionRef = useRef(0);
   const [autoplayNext, setAutoplayNext] = useState(() => {
     try {
       return localStorage.getItem('td:videoAutoplay') !== '0';
@@ -906,37 +911,115 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
+    const mediaEl = el;
     let restored = false;
     let lastSave = 0;
     let lastServerSave = 0;
     let completed = false;
-    const loadResume = () => {
-      if (restored || !el.duration) return;
-      restored = true;
+    let cancelled = false;
+    let restoredPosition = 0;
+    let serverResume: { pos: number; dur: number; t: number; title: string } | null = null;
+    let serverChecked = !serverSyncEnabled;
+    let serverResumePending = serverSyncEnabled;
+    pendingServerResumeRef.current = serverSyncEnabled;
+    pendingResumeMaxPositionRef.current = 0;
+    const readLocalResume = () => {
       try {
         const data = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
-        const entry = data[video.resumeKey];
-        if (entry?.pos > 0 && entry.pos < el.duration * 0.95) {
-          el.currentTime = entry.pos;
+        const entry = data[video.resumeKey] || null;
+        return isContinueSuppressed(video.resumeKey, entry) ? null : entry;
+      } catch (_) {
+        return null;
+      }
+    };
+    const persistServerResume = (entry: { pos: number; dur: number; t: number; title: string }) => {
+      try {
+        const data = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
+        const local = data[video.resumeKey];
+        if (!local || (entry.t || 0) > (local.t || 0)) {
+          data[video.resumeKey] = entry;
+          localStorage.setItem('td:cw', JSON.stringify(data));
         }
       } catch (_) {
         // Local resume state is best-effort only.
       }
     };
-    const saveResume = (force = false) => {
-      if (!el.duration || !Number.isFinite(el.duration)) return;
+    const validResume = (entry: { pos?: number; dur?: number } | null, duration: number) => (
+      Boolean(entry && entry.pos && entry.pos > 0 && entry.pos < duration * 0.95)
+    );
+    const bestResume = () => {
+      const local = readLocalResume();
+      if (serverResume && (!local || (serverResume.t || 0) > (local.t || 0))) return serverResume;
+      return local;
+    };
+    const loadResume = () => {
+      if (restored || !el.duration) return;
+      const local = readLocalResume();
+      if (serverSyncEnabled && !serverChecked && !local) return;
+      const entry = bestResume();
+      restored = true;
+      if (validResume(entry, el.duration)) {
+        el.currentTime = entry.pos;
+        restoredPosition = entry.pos || 0;
+      }
+    };
+    if (serverSyncEnabled) {
+      void fetchContinueMap()
+        .then((map) => {
+          if (cancelled) return;
+          const serverEntry = map[video.resumeKey] || null;
+          const entry = isContinueSuppressed(video.resumeKey, serverEntry) ? null : serverEntry;
+          serverResume = entry;
+          serverChecked = true;
+          serverResumePending = false;
+          pendingServerResumeRef.current = false;
+          if (completed) return;
+          const pendingPlaybackPosition = pendingResumeMaxPositionRef.current;
+          const serverWouldJumpBack = Boolean(entry && pendingPlaybackPosition > 0 && entry.pos < pendingPlaybackPosition - 2);
+          if (serverWouldJumpBack) {
+            saveResume(true);
+            return;
+          }
+          const localBeforeServerPersist = readLocalResume();
+          if (entry) persistServerResume(entry);
+          if (entry && el.duration && validResume(entry, el.duration)) {
+            const serverIsNewer = !localBeforeServerPersist || (entry.t || 0) > (localBeforeServerPersist.t || 0);
+            if (!restored || serverIsNewer) {
+              el.currentTime = entry.pos;
+              restoredPosition = entry.pos || 0;
+              restored = true;
+            }
+          }
+          loadResume();
+        })
+        .catch(() => {
+          if (cancelled) return;
+          serverChecked = true;
+          serverResumePending = false;
+          pendingServerResumeRef.current = false;
+          loadResume();
+        });
+    }
+    function saveResume(force = false, endedPlayback = false) {
+      if (!mediaEl.duration || !Number.isFinite(mediaEl.duration)) return;
       const now = Date.now();
       if (!force && now - lastSave < 5000) return;
       lastSave = now;
-      const pct = el.currentTime / el.duration;
+      const pct = endedPlayback ? 1 : mediaEl.currentTime / mediaEl.duration;
+      if (serverResumePending && pct < 0.95) {
+        const currentPosition = mediaEl.currentTime || 0;
+        pendingResumeMaxPositionRef.current = Math.max(pendingResumeMaxPositionRef.current, currentPosition);
+        const pendingProgressed = Math.max(pendingResumeMaxPositionRef.current, currentPosition) > restoredPosition + 2;
+        if (!(force && pct >= 0.02 && pendingProgressed)) return;
+      }
       try {
         const data = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
         if (pct >= 0.95 || pct < 0.02) {
           delete data[video.resumeKey];
         } else {
           data[video.resumeKey] = {
-            pos: el.currentTime,
-            dur: el.duration,
+            pos: mediaEl.currentTime,
+            dur: mediaEl.duration,
             t: now,
             title: video.title,
           };
@@ -957,8 +1040,8 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
         if (shouldSync) {
           lastServerSave = now;
           void saveContinueEntry(video.resumeKey, {
-            pos: Math.floor(el.currentTime),
-            dur: Math.floor(el.duration),
+            pos: Math.floor(mediaEl.currentTime),
+            dur: Math.floor(mediaEl.duration),
             t: now,
             title: video.title,
           }).catch(() => undefined);
@@ -966,8 +1049,9 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       } else if (force) {
         void deleteContinueEntry(video.resumeKey).catch(() => undefined);
       }
-    };
+    }
     const onTime = () => {
+      if (serverResumePending) pendingResumeMaxPositionRef.current = Math.max(pendingResumeMaxPositionRef.current, el.currentTime || 0);
       setCurrentTime(el.currentTime || 0);
       setDuration(el.duration || video.duration || 0);
       setVideoMediaSessionPosition(el.currentTime || 0);
@@ -979,7 +1063,7 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       loadResume();
     };
     const onEnded = () => {
-      saveResume(true);
+      saveResume(true, true);
       setPlaying(false);
       setVideoMediaSessionPlaybackState(false);
       if (video.nextEpisode) setShowNext(true);
@@ -1022,9 +1106,11 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
       el.removeEventListener('ended', onEnded);
       el.removeEventListener('error', onError);
       window.removeEventListener('beforeunload', onBeforeUnload);
+      cancelled = true;
+      pendingServerResumeRef.current = false;
       saveResume(true);
     };
-  }, [hasHls, setVideoMediaSessionPlaybackState, setVideoMediaSessionPosition, sourceMode, sourceSrc, video]);
+  }, [hasHls, serverSyncEnabled, setVideoMediaSessionPlaybackState, setVideoMediaSessionPosition, sourceMode, sourceSrc, video]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -1139,6 +1225,9 @@ function VideoWatchPage({ video }: { video: WatchVideo }) {
     if (!el) return;
     noteStillWatchingActivity();
     const next = Math.max(0, Math.min(seconds, duration || video.duration || seconds));
+    if (pendingServerResumeRef.current) {
+      pendingResumeMaxPositionRef.current = Math.max(pendingResumeMaxPositionRef.current, el.currentTime || 0, next);
+    }
     el.currentTime = next;
     setCurrentTime(next);
     setVideoMediaSessionPosition(next);

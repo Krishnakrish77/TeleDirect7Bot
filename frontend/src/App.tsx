@@ -517,6 +517,7 @@ function App() {
               if (!user) { requireAuth(); return; }
               void toggle(itemId);
             }}
+            serverSyncEnabled={Boolean(user)}
           />
         )}
       </Suspense>

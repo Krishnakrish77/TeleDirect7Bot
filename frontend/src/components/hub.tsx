@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, fetchContinueMap } from '../api';
+import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, fetchContinueMap, saveContinueEntry } from '../api';
 import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, PlayIcon, UserIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
 import { tmdbImageUrl } from '../utils/tmdb';
 import { formatExternalRating } from '../utils/externalRating';
+import { addContinueClearTombstone, addContinueTombstone, isContinueSuppressed, readContinueClearTombstone, readContinueTombstones, readLocalContinue } from '../utils/continueWatching';
 import { MediaCard } from './mediaCard';
 
 type HubShelf = { name: string; href: string | null; items: HubCard[]; dismissable?: boolean; recMeta?: Array<RecommendationMeta | null> };
@@ -124,27 +125,66 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
 
 export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnabled?: boolean }) {
   const [entries, setEntries] = useState<Array<ContinueEntry & ContinueItem>>([]);
+  const pendingSyncRef = useRef<Promise<void>>(Promise.resolve());
+  const suppressedSyncKeysRef = useRef<Set<string>>(new Set());
+
+  const queueServerMutation = (mutation: () => Promise<unknown>) => {
+    const task = pendingSyncRef.current
+      .catch(() => undefined)
+      .then(() => mutation())
+      .catch(() => undefined)
+      .then(() => undefined);
+    pendingSyncRef.current = task;
+    return task;
+  };
 
   const load = useCallback(() => {
     const controller = new AbortController();
-    let raw: Record<string, Omit<ContinueEntry, 'key'>> = {};
-    try {
-      raw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
-    } catch (_) {
-      raw = {};
-    }
+    let raw = readLocalContinue();
+    const tombstones = readContinueTombstones();
+    const clearAt = readContinueClearTombstone();
+    Object.keys(raw).forEach((key) => {
+      if (isContinueSuppressed(key, raw[key], tombstones, clearAt)) delete raw[key];
+    });
 
     const hydrate = async () => {
       if (serverSyncEnabled) {
         try {
           const server = await fetchContinueMap(controller.signal);
-          // Server is canonical: prune local entries the server has deleted,
-          // then merge in newer server values.
-          Object.keys(raw).forEach((key) => { if (!(key in server)) delete raw[key]; });
+          const pendingLocalSync: Array<[string, Omit<ContinueEntry, 'key'>]> = [];
+          const latestTombstones = readContinueTombstones();
+          const latestClearAt = readContinueClearTombstone();
+
+          Object.keys(raw).forEach((key) => {
+            if (isContinueSuppressed(key, raw[key], latestTombstones, latestClearAt)) delete raw[key];
+          });
+
           Object.entries(server).forEach(([key, value]) => {
+            if (isContinueSuppressed(key, value, latestTombstones, latestClearAt)) return;
             if (!raw[key] || (value.t || 0) > (raw[key].t || 0)) raw[key] = value;
           });
+          Object.entries(raw).forEach(([key, value]) => {
+            if (isContinueSuppressed(key, value, latestTombstones, latestClearAt)) return;
+            const serverValue = server[key];
+            const localIsNewer = !serverValue || (value.t || 0) > (serverValue.t || 0);
+            const pct = value.dur > 0 ? value.pos / value.dur : 0;
+            if (localIsNewer && serverValue && pct >= 0.02 && pct < 0.95) {
+              pendingLocalSync.push([key, value]);
+            }
+          });
           localStorage.setItem('td:cw', JSON.stringify(raw));
+          const syncBatch = pendingLocalSync.slice(0, 10);
+          if (syncBatch.length) {
+            void queueServerMutation(async () => {
+              await Promise.all(syncBatch.map(([key, value]) => {
+                if (suppressedSyncKeysRef.current.has(key)) return Promise.resolve();
+                const latestLocal = readLocalContinue()[key];
+                if (isContinueSuppressed(key, latestLocal)) return Promise.resolve();
+                if (!latestLocal || (latestLocal.t || 0) !== (value.t || 0)) return Promise.resolve();
+                return saveContinueEntry(key, value).catch(() => undefined);
+              }));
+            });
+          }
         } catch (_) {
           // Offline signed-in sessions use local resume data.
         }
@@ -192,6 +232,8 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
   if (!entries.length) return null;
 
   const forget = (key: string) => {
+    suppressedSyncKeysRef.current.add(key);
+    addContinueTombstone(key);
     try {
       const data = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
       delete data[key];
@@ -199,18 +241,22 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
     } catch (_) {
       // local-only convenience state; ignore storage failures.
     }
-    if (serverSyncEnabled) void deleteContinueEntry(key).catch(() => undefined);
+    if (serverSyncEnabled) void queueServerMutation(() => deleteContinueEntry(key));
     setEntries((current) => current.filter((entry) => entry.key !== key));
   };
 
   const forgetAll = () => {
+    const now = Date.now();
+    const localKeys = Object.keys(readLocalContinue());
+    [...localKeys, ...entries.map((entry) => entry.key)].forEach((key) => suppressedSyncKeysRef.current.add(key));
+    addContinueClearTombstone(now);
     setEntries([]);
     try {
       localStorage.removeItem('td:cw');
     } catch (_) {
       // local-only convenience state; ignore storage failures.
     }
-    if (serverSyncEnabled) void clearAllContinue().catch(() => undefined);
+    if (serverSyncEnabled) void queueServerMutation(() => clearAllContinue());
   };
 
   return (

@@ -1,12 +1,13 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { deleteContinueEntry, fetchAudioTracks, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, setRating } from '../api';
+import { deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, setRating } from '../api';
 import type { AudioPlayerHandle, PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, VideoChoice, WatchTrack, WatchVideo } from '../types';
 import { STILL_WATCHING_TIMEOUT_MS, WatchPage } from './watch';
 
 vi.mock('../api', () => ({
   fetchAudioTracks: vi.fn(),
+  fetchContinueMap: vi.fn(),
   deleteContinueEntry: vi.fn(),
   fetchRating: vi.fn(),
   fetchSubtitles: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('../api', () => ({
 const fetchWatchMock = vi.mocked(fetchWatch);
 const fetchSubtitlesMock = vi.mocked(fetchSubtitles);
 const fetchAudioTracksMock = vi.mocked(fetchAudioTracks);
+const fetchContinueMapMock = vi.mocked(fetchContinueMap);
 const fetchRatingMock = vi.mocked(fetchRating);
 const saveContinueEntryMock = vi.mocked(saveContinueEntry);
 const deleteContinueEntryMock = vi.mocked(deleteContinueEntry);
@@ -200,7 +202,7 @@ function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
   };
 }
 
-function renderWatchPage(video = makeVideo()) {
+function renderWatchPage(video = makeVideo(), options: { serverSyncEnabled?: boolean } = {}) {
   fetchWatchMock.mockResolvedValue({
     mediaKind: 'video',
     item: video,
@@ -211,6 +213,7 @@ function renderWatchPage(video = makeVideo()) {
       watchKey={video.key}
       audio={makeAudio()}
       onOpenQueue={vi.fn()}
+      serverSyncEnabled={options.serverSyncEnabled}
     />,
   );
 }
@@ -254,6 +257,7 @@ beforeEach(() => {
   localStorage.clear();
   fetchSubtitlesMock.mockResolvedValue([]);
   fetchAudioTracksMock.mockResolvedValue([]);
+  fetchContinueMapMock.mockResolvedValue({});
   fetchRatingMock.mockResolvedValue({ rating: null, counts: { up: 0, down: 0 } });
   saveContinueEntryMock.mockResolvedValue(undefined);
   deleteContinueEntryMock.mockResolvedValue(undefined);
@@ -262,12 +266,159 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   Reflect.deleteProperty(navigator, 'mediaSession');
   Reflect.deleteProperty(window, 'MediaMetadata');
   Reflect.deleteProperty(window, 'Hls');
 });
 
 describe('WatchPage video player', () => {
+  it('restores direct watch pages from server continue progress for signed-in users', async () => {
+    fetchContinueMapMock.mockResolvedValue({
+      'video-key': { pos: 45, dur: 120, t: 200, title: 'Pilot' },
+    });
+    const view = renderWatchPage(makeVideo(), { serverSyncEnabled: true });
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { configurable: true, get: () => 120 });
+
+    fireEvent.loadedMetadata(video);
+
+    await waitFor(() => expect(video.currentTime).toBe(45));
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['video-key']).toMatchObject({
+      pos: 45,
+      dur: 120,
+    });
+  });
+
+  it('ignores tombstoned server continue progress on direct watch pages', async () => {
+    localStorage.setItem('td:cw:tombstones', JSON.stringify({ 'video-key': 300 }));
+    fetchContinueMapMock.mockResolvedValue({
+      'video-key': { pos: 45, dur: 120, t: 200, title: 'Pilot' },
+    });
+    const view = renderWatchPage(makeVideo(), { serverSyncEnabled: true });
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { configurable: true, get: () => 120 });
+
+    fireEvent.loadedMetadata(video);
+
+    await waitFor(() => expect(fetchContinueMap).toHaveBeenCalled());
+    expect(video.currentTime).toBe(0);
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['video-key']).toBeUndefined();
+  });
+
+  it('prefers newer server continue progress over stale local progress', async () => {
+    localStorage.setItem('td:cw', JSON.stringify({
+      'video-key': { pos: 10, dur: 120, t: 100, title: 'Pilot' },
+    }));
+    let resolveServer!: (value: Record<string, { pos: number; dur: number; t: number; title: string }>) => void;
+    fetchContinueMapMock.mockReturnValue(new Promise((resolve) => { resolveServer = resolve; }));
+    const view = renderWatchPage(makeVideo(), { serverSyncEnabled: true });
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { configurable: true, get: () => 120 });
+
+    fireEvent.loadedMetadata(video);
+    await waitFor(() => expect(video.currentTime).toBe(10));
+    video.currentTime = 12;
+    fireEvent.timeUpdate(video);
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['video-key']).toMatchObject({ pos: 10, t: 100 });
+
+    await act(async () => {
+      resolveServer({ 'video-key': { pos: 45, dur: 120, t: 200, title: 'Pilot' } });
+      await Promise.resolve();
+    });
+
+    expect(video.currentTime).toBe(45);
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['video-key']).toMatchObject({ pos: 45, t: 200 });
+  });
+
+  it('does not jump backward when late server progress is behind active playback', async () => {
+    localStorage.setItem('td:cw', JSON.stringify({
+      'video-key': { pos: 10, dur: 120, t: 100, title: 'Pilot' },
+    }));
+    let resolveServer!: (value: Record<string, { pos: number; dur: number; t: number; title: string }>) => void;
+    fetchContinueMapMock.mockReturnValue(new Promise((resolve) => { resolveServer = resolve; }));
+    const view = renderWatchPage(makeVideo(), { serverSyncEnabled: true });
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { configurable: true, get: () => 120 });
+
+    fireEvent.loadedMetadata(video);
+    await waitFor(() => expect(video.currentTime).toBe(10));
+    video.currentTime = 80;
+    fireEvent.timeUpdate(video);
+
+    await act(async () => {
+      resolveServer({ 'video-key': { pos: 45, dur: 120, t: 200, title: 'Pilot' } });
+      await Promise.resolve();
+    });
+
+    expect(video.currentTime).toBe(80);
+    await waitFor(() => expect(saveContinueEntry).toHaveBeenCalledWith(
+      'video-key',
+      expect.objectContaining({ pos: 80, dur: 120, title: 'Pilot' }),
+    ));
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['video-key']).toMatchObject({ pos: 80 });
+  });
+
+  it('does not mutate server continue state while initial server resume is pending', async () => {
+    fetchContinueMapMock.mockReturnValue(new Promise(() => undefined));
+    const view = renderWatchPage(makeVideo(), { serverSyncEnabled: true });
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.currentTime = 1;
+
+    fireEvent.loadedMetadata(video);
+    view.unmount();
+
+    expect(saveContinueEntry).not.toHaveBeenCalled();
+    expect(deleteContinueEntry).not.toHaveBeenCalled();
+  });
+
+  it('saves progressed playback on unmount while initial server resume is pending', async () => {
+    fetchContinueMapMock.mockReturnValue(new Promise(() => undefined));
+    const view = renderWatchPage(makeVideo(), { serverSyncEnabled: true });
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { configurable: true, get: () => 120 });
+    video.currentTime = 30;
+
+    fireEvent.timeUpdate(video);
+    view.unmount();
+
+    await waitFor(() => expect(saveContinueEntry).toHaveBeenCalledWith(
+      'video-key',
+      expect.objectContaining({ pos: 30, dur: 120, title: 'Pilot' }),
+    ));
+    expect(deleteContinueEntry).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['video-key']).toMatchObject({ pos: 30 });
+  });
+
+  it('records completed videos even when initial server resume is pending', async () => {
+    fetchContinueMapMock.mockReturnValue(new Promise(() => undefined));
+    const view = renderWatchPage(makeVideo(), { serverSyncEnabled: true });
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.currentTime = 120;
+
+    fireEvent.ended(video);
+
+    await waitFor(() => expect(deleteContinueEntry).toHaveBeenCalledWith('video-key'));
+    expect(recordWatchHistory).toHaveBeenCalledWith('video-key', 'Pilot');
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['video-key']).toBeUndefined();
+  });
+
   it('persists the autoplay-next preference from the player menu', async () => {
     localStorage.setItem('td:videoAutoplay', '0');
     renderWatchPage();
@@ -323,6 +474,7 @@ describe('WatchPage video player', () => {
     await screen.findByRole('heading', { name: 'Pilot' });
     const video = view.container.querySelector('video') as HTMLVideoElement;
     video.currentTime = 120;
+    await act(async () => {});
 
     fireEvent.ended(video);
     const panel = await screen.findByRole('dialog', { name: 'Next episode' });
