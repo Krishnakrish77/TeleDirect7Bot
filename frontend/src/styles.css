@@ -1486,6 +1486,39 @@ img {
   color: #fde68a;
 }
 
+.card-new-episode {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  min-height: 23px;
+  margin-top: 0.34rem;
+  padding: 0 0.46rem;
+  overflow: hidden;
+  border: 1px solid rgba(251, 191, 36, 0.26);
+  border-radius: 5px;
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
+  font-size: 0.7rem;
+  font-weight: 850;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-new-episode span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 15px;
+  padding: 0 0.28rem;
+  border-radius: 4px;
+  background: rgba(251, 191, 36, 0.2);
+  color: #fff7ed;
+  font-size: 0.62rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
 .card-community-rating {
   display: inline-flex;
   flex-wrap: wrap;

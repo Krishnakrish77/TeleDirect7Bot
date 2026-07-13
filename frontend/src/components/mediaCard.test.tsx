@@ -94,6 +94,97 @@ describe('MediaCard', () => {
     expect(screen.getByText('Because you like Action')).toBeTruthy();
   });
 
+  it('highlights new episode updates on series cards', () => {
+    render(
+      <MediaCard
+        card={card({
+          type: 'series',
+          itemId: 'series:castle',
+          title: 'Castle',
+          subtitle: '12 episodes - 1 season',
+          href: '/app/series/castle',
+          detailsHref: '/app/series/castle',
+          playHref: '/app/watch/latest704',
+          watchKey: 'latest704',
+          episodeCount: 12,
+          seasonCount: 1,
+          newEpisode: {
+            label: 'S01E02',
+            title: 'Nanny McDead',
+            playHref: '/app/watch/latest704',
+            watchKey: 'latest704',
+          },
+        })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Castle')).toBeTruthy();
+    expect(screen.getByLabelText('Castle has new episode S01E02 · Nanny McDead')).toBeTruthy();
+    expect(screen.getByText('12 episodes - 1 season')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Castle from poster' }).getAttribute('href')).toBe('/app/series/castle');
+  });
+
+  it('does not duplicate the new episode fallback label', () => {
+    render(
+      <MediaCard
+        card={card({
+          type: 'series',
+          itemId: 'series:castle',
+          title: 'Castle',
+          subtitle: '12 episodes - 1 season',
+          href: '/app/series/castle',
+          detailsHref: '/app/series/castle',
+          playHref: '/app/watch/latest704',
+          watchKey: 'latest704',
+          episodeCount: 12,
+          seasonCount: 1,
+          newEpisode: {
+            label: '',
+            title: 'Castle Latest Upload',
+            playHref: '/app/watch/latest704',
+            watchKey: 'latest704',
+          },
+        })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Castle has new episode Castle Latest Upload')).toBeTruthy();
+    expect(screen.queryByText('New episode')).toBeNull();
+  });
+
+  it('renders only the episode label when no clean episode title is available', () => {
+    render(
+      <MediaCard
+        card={card({
+          type: 'series',
+          itemId: 'series:castle',
+          title: 'Castle',
+          subtitle: '12 episodes - 1 season',
+          href: '/app/series/castle',
+          detailsHref: '/app/series/castle',
+          playHref: '/app/watch/latest704',
+          watchKey: 'latest704',
+          episodeCount: 12,
+          seasonCount: 1,
+          newEpisode: {
+            label: 'S01E02',
+            title: '',
+            playHref: '/app/watch/latest704',
+            watchKey: 'latest704',
+          },
+        })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Castle has new episode S01E02')).toBeTruthy();
+  });
+
   it('shows external ratings for video cards', () => {
     render(
       <MediaCard

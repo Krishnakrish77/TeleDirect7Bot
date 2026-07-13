@@ -86,6 +86,12 @@ export interface HubCard {
   watched?: boolean;
   recMeta?: RecommendationMeta | null;
   recReason?: string;
+  newEpisode?: {
+    label: string;
+    title: string;
+    playHref: string;
+    watchKey: string;
+  };
 }
 
 export interface RecommendationMeta {

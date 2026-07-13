@@ -102,6 +102,7 @@ _HUB_CARD_PAYLOAD_KEYS = (
     "seasonCount",
     "trackCount",
     "watched",
+    "newEpisode",
 )
 
 
@@ -653,7 +654,7 @@ def _common_with_group_art(identity_item: HubItem, art_item: HubItem | None) -> 
 def _card_from_series(card: SeriesGroup) -> dict:
     poster = card.poster_item
     common = _common_with_group_art(poster, getattr(card, "art_item", None))
-    return {
+    payload = {
         **common,
         "type": "series",
         "itemId": f"series:{card.series_key}",
@@ -673,6 +674,19 @@ def _card_from_series(card: SeriesGroup) -> dict:
         "episodeCount": card.episode_count,
         "seasonCount": card.season_count,
     }
+    new_episode = getattr(card, "new_episode_item", None)
+    if new_episode is not None:
+        label = _episode_label(new_episode)
+        title = new_episode.episode_title or ("" if label else (new_episode.title or new_episode.file_name or ""))
+        payload["playHref"] = _play_url(new_episode)
+        payload["watchKey"] = f"{new_episode.secure_hash}{new_episode.message_id}"
+        payload["newEpisode"] = {
+            "label": label,
+            "title": title,
+            "playHref": _play_url(new_episode),
+            "watchKey": f"{new_episode.secure_hash}{new_episode.message_id}",
+        }
+    return payload
 
 
 def _card_from_movie(card: MovieGroup) -> dict:

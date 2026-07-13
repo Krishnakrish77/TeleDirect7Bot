@@ -1,3 +1,5 @@
+import asyncio
+import importlib
 import os
 import unittest
 from types import SimpleNamespace
@@ -20,7 +22,9 @@ from main.server.spa_routes import (
     _watched_movie_keys_for_keys,
 )
 from main.utils import media_index
-from main.utils.hub_query import HubItem, MovieGroup
+from main.utils.hub_query import HubItem, MovieGroup, SeriesGroup
+
+hub_routes = importlib.import_module("main.server.hub_routes")
 
 
 def _video_item(
@@ -129,6 +133,12 @@ class SpaHubPayloadTest(unittest.TestCase):
             "aspect": "poster",
             "variantCount": 1,
             "watched": True,
+            "newEpisode": {
+                "label": "S01E02",
+                "title": "The New One",
+                "playHref": "/app/watch/hash102",
+                "watchKey": "hash102",
+            },
         }
 
         compact = _compact_hub_card_payload(payload)
@@ -140,6 +150,7 @@ class SpaHubPayloadTest(unittest.TestCase):
         self.assertEqual(compact["watchKey"], "hash101")
         self.assertEqual(compact["variantCount"], 1)
         self.assertTrue(compact["watched"])
+        self.assertEqual(compact["newEpisode"]["label"], "S01E02")
         for unused in (
             "messageId",
             "secureHash",
@@ -309,6 +320,170 @@ class SpaHubPayloadTest(unittest.TestCase):
             media_index._items.clear()
             media_index._items.update(previous)
 
+    def test_new_episode_series_card_highlights_latest_episode(self):
+        latest = _video_item(
+            message_id=452,
+            secure_hash="latest",
+            title="Castle S01E02",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            episode_title="Nanny McDead",
+            movie_key="",
+        )
+        poster = _video_item(
+            message_id=451,
+            secure_hash="poster",
+            title="Castle S01E01",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=1,
+            movie_key="",
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=2,
+            season_count=1,
+            latest_message_id=452,
+            poster_item=poster,
+            new_episode_item=latest,
+        )
+
+        payload = _hub_card(group)
+
+        self.assertEqual(payload["type"], "series")
+        self.assertEqual(payload["href"], "/app/series/castle")
+        self.assertEqual(payload["detailsHref"], "/app/series/castle")
+        self.assertEqual(payload["playHref"], "/app/watch/latest452")
+        self.assertEqual(payload["watchKey"], "latest452")
+        self.assertEqual(payload["newEpisode"], {
+            "label": "S01E02",
+            "title": "Nanny McDead",
+            "playHref": "/app/watch/latest452",
+            "watchKey": "latest452",
+        })
+
+    def test_new_episode_payload_falls_back_to_item_title_without_episode_label(self):
+        latest = _video_item(
+            message_id=462,
+            secure_hash="latest",
+            title="Castle Latest Upload",
+            series_key="castle",
+            series_title="Castle",
+            season=None,
+            episode=None,
+            episode_title="",
+            movie_key="",
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=1,
+            season_count=1,
+            latest_message_id=462,
+            poster_item=latest,
+            new_episode_item=latest,
+        )
+
+        payload = _hub_card(group)
+
+        self.assertEqual(payload["newEpisode"], {
+            "label": "",
+            "title": "Castle Latest Upload",
+            "playHref": "/app/watch/latest462",
+            "watchKey": "latest462",
+        })
+
+    def test_new_episode_payload_omits_noisy_title_when_label_is_available(self):
+        latest = _video_item(
+            message_id=463,
+            secure_hash="latest",
+            title="Castle.S01E02.1080p.WEB-DL",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            episode_title="",
+            movie_key="",
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=2,
+            season_count=1,
+            latest_message_id=463,
+            poster_item=latest,
+            new_episode_item=latest,
+        )
+
+        payload = _hub_card(group)
+
+        self.assertEqual(payload["newEpisode"], {
+            "label": "S01E02",
+            "title": "",
+            "playHref": "/app/watch/latest463",
+            "watchKey": "latest463",
+        })
+
+    def test_classic_series_card_renders_new_episode_highlight(self):
+        latest = _video_item(
+            message_id=472,
+            secure_hash="latest",
+            title="Castle S01E02",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            episode_title="Nanny McDead",
+            movie_key="",
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=2,
+            season_count=1,
+            latest_message_id=472,
+            poster_item=latest,
+            new_episode_item=latest,
+        )
+
+        html = asyncio.run(hub_routes._env.get_template("_card.html").render_async(item=group))
+
+        self.assertIn("/series/castle", html)
+        self.assertIn("New", html)
+        self.assertIn("S01E02", html)
+        self.assertIn("Nanny McDead", html)
+
+    def test_classic_series_card_omits_noisy_fallback_when_episode_label_exists(self):
+        latest = _video_item(
+            message_id=473,
+            secure_hash="latest",
+            title="Castle.S01E02.1080p.WEB-DL",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            episode_title="",
+            movie_key="",
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=2,
+            season_count=1,
+            latest_message_id=473,
+            poster_item=latest,
+            new_episode_item=latest,
+        )
+
+        html = asyncio.run(hub_routes._env.get_template("_card.html").render_async(item=group))
+
+        self.assertIn("S01E02", html)
+        self.assertNotIn("Castle.S01E02.1080p.WEB-DL", html)
+
     def test_raw_movie_card_prefers_tmdb_poster_from_group_sibling(self):
         previous = dict(media_index._items)
         media_index._items.clear()
@@ -383,6 +558,93 @@ class SpaHubPayloadTest(unittest.TestCase):
             self.assertEqual(payload["posterUrl"], "/api/tmdb-image/w342/tmdb-series.jpg")
             self.assertEqual(payload["watchKey"], "newep602")
             self.assertEqual(media_index.poster_path_for_item(plain_newer, cache={}), "/tmdb-series.jpg")
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
+    def test_new_episodes_shelf_collapses_multiple_episodes_per_series(self):
+        previous = dict(media_index._items)
+        media_index._items.clear()
+        try:
+            castle_old = _video_item(
+                message_id=701,
+                secure_hash="castleold",
+                title="Castle S01E01",
+                series_key="castle",
+                series_title="Castle",
+                season=1,
+                episode=1,
+                movie_key="",
+            )
+            office = _video_item(
+                message_id=702,
+                secure_hash="office",
+                title="The Office S01E01",
+                series_key="the-office",
+                series_title="The Office",
+                season=1,
+                episode=1,
+                movie_key="",
+            )
+            lost = _video_item(
+                message_id=703,
+                secure_hash="lost",
+                title="Lost S01E01",
+                series_key="lost",
+                series_title="Lost",
+                season=1,
+                episode=1,
+                movie_key="",
+            )
+            castle_latest = _video_item(
+                message_id=704,
+                secure_hash="castlelatest",
+                title="Castle S01E02",
+                series_key="castle",
+                series_title="Castle",
+                season=1,
+                episode=2,
+                episode_title="Nanny McDead",
+                movie_key="",
+            )
+            media_index._items.update({
+                item.message_id: item
+                for item in (castle_old, office, lost, castle_latest)
+            })
+
+            new_shelf = next(shelf for shelf in media_index.shelves(per_shelf=10) if shelf["name"] == "New episodes")
+
+            self.assertEqual(new_shelf["total"], 3)
+            self.assertEqual([item.series_key for item in new_shelf["items"]], ["castle", "lost", "the-office"])
+            self.assertEqual([item.new_episode_item.message_id for item in new_shelf["items"]], [704, 703, 702])
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
+    def test_new_episodes_shelf_surfaces_single_updated_series(self):
+        previous = dict(media_index._items)
+        media_index._items.clear()
+        try:
+            episodes = [
+                _video_item(
+                    message_id=801 + idx,
+                    secure_hash=f"castle{idx}",
+                    title=f"Castle S01E0{idx + 1}",
+                    series_key="castle",
+                    series_title="Castle",
+                    season=1,
+                    episode=idx + 1,
+                    movie_key="",
+                )
+                for idx in range(3)
+            ]
+            media_index._items.update({item.message_id: item for item in episodes})
+
+            new_shelf = next(shelf for shelf in media_index.shelves(per_shelf=10) if shelf["name"] == "New episodes")
+
+            self.assertEqual(new_shelf["total"], 1)
+            self.assertEqual([item.series_key for item in new_shelf["items"]], ["castle"])
+            self.assertEqual(new_shelf["items"][0].new_episode_item.message_id, 803)
         finally:
             media_index._items.clear()
             media_index._items.update(previous)

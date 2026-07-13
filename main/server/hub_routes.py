@@ -56,6 +56,16 @@ def _fmt_duration(seconds: int) -> str:
     return f"{m}:{s:02d}"
 
 
+def _episode_label(item: HubItem) -> str:
+    if item.season is not None and item.episode is not None:
+        end = f"-E{item.episode_end:02d}" if item.episode_end else ""
+        return f"S{item.season:02d}E{item.episode:02d}{end}"
+    if item.episode is not None:
+        end = f"-{item.episode_end}" if item.episode_end else ""
+        return f"Episode {item.episode}{end}"
+    return ""
+
+
 _env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
 _env.filters["duration"] = lambda s: _fmt_duration(int(s)) if s else ""
 from main.utils.codec_probe import _clean_music_tag as _cmt
@@ -66,6 +76,7 @@ _env.filters["primary_artist_slug"] = lambda s: media_index._artist_slug(media_i
 _env.filters["artist_credits"] = lambda s: [(media_index._artist_slug(a), a) for a in media_index._artist_credits(s or "")]
 _env.filters["person_slug"] = lambda s: media_index._person_slug(s or "")
 _env.filters["director_credits"] = lambda s: [(media_index._person_slug(n), n) for n in media_index._director_credits(s or "")]
+_env.globals["episode_label"] = _episode_label
 _env.globals["bot_username"] = Var.BOT_USERNAME
 _env.globals["Var"] = Var
 

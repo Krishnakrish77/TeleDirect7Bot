@@ -124,6 +124,9 @@ function MediaCardBase({
   const rawProgress = useMemo(() => card.watchKey ? getLocalCwPct(card.watchKey) : 0, [card.watchKey]);
   const watched = !isMusic && card.type !== 'series' && (Boolean(card.watched) || isLocallyWatched(card.watchKey));
   const progressPct = watched ? 0 : rawProgress;
+  const newEpisodeText = card.newEpisode
+    ? [card.newEpisode.label, card.newEpisode.title].filter(Boolean).join(' · ')
+    : '';
   const [previewOpen, setPreviewOpen] = useState(false);
   const canPreview = Boolean(card.trailerKey) && !isMusic;
   const preventDisabledNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -243,6 +246,12 @@ function MediaCardBase({
             )}
           </span>
           <strong dir="auto">{display.title}</strong>
+          {newEpisodeText && (
+            <span className="card-new-episode" aria-label={`${display.title} has new episode ${newEpisodeText}`}>
+              <span>New</span>
+              {newEpisodeText}
+            </span>
+          )}
           {metaItems.length > 0 && (
             <span className="card-meta-strip" aria-label={`${display.title} metadata`}>
               {metaItems.map((item) => <span key={item} className={item === externalRating ? 'rating' : undefined}>{item}</span>)}

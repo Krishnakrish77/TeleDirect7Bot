@@ -26,6 +26,7 @@ import os
 import re
 import time
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlencode
@@ -2361,6 +2362,7 @@ def shelves(per_shelf: int = 25) -> List[dict]:
             singles.append(it)
 
     series_groups = [_build_series_group(eps) for eps in series_buckets.values()]
+    series_group_by_key = {group.series_key: group for group in series_groups}
     movie_groups: List = []
     standalone_movies: List[HubItem] = []
     for variants in movie_buckets.values():
@@ -2404,8 +2406,9 @@ def shelves(per_shelf: int = 25) -> List[dict]:
             "total": len(recent_items),
         })
 
-    new_episodes: List[HubItem] = []
+    new_episode_updates: List[SeriesGroup] = []
     seen_episode_keys: set = set()
+    seen_series_keys: set = set()
     for it in sorted(_items.values(), key=lambda item: -item.message_id):
         if it.hidden or getattr(it, "media_kind", "") == "audio" or not it.series_key:
             continue
@@ -2413,15 +2416,21 @@ def shelves(per_shelf: int = 25) -> List[dict]:
         if episode_key in seen_episode_keys:
             continue
         seen_episode_keys.add(episode_key)
-        new_episodes.append(it)
-        if len(new_episodes) >= per_shelf:
+        if it.series_key in seen_series_keys:
+            continue
+        group = series_group_by_key.get(it.series_key)
+        if not group:
+            continue
+        seen_series_keys.add(it.series_key)
+        new_episode_updates.append(replace(group, new_episode_item=it))
+        if len(new_episode_updates) >= per_shelf:
             break
-    if len(new_episodes) >= 3:
+    if new_episode_updates:
         out.append({
             "name": "New episodes",
-            "items": new_episodes,
+            "items": new_episode_updates,
             "link": "/?view=series",
-            "total": len(new_episodes),
+            "total": len(new_episode_updates),
         })
 
     if series_groups:

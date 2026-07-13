@@ -104,6 +104,9 @@
 {% elif item.episode_count is defined %}
   {# SeriesGroup: collapsed card linking to /series/{key} #}
   {% set poster = item.poster_item %}
+  {% set latest = item.new_episode_item if item.new_episode_item is defined else none %}
+  {% set latest_label = episode_label(latest) if latest else '' %}
+  {% set latest_title = (latest.episode_title or ('' if latest_label else (latest.title or latest.file_name))) if latest else '' %}
   <a href="/series/{{ item.series_key }}"
      hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
      class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5
@@ -125,11 +128,19 @@
         class="absolute inset-0 w-full h-full object-cover
                group-hover:scale-105 transition-transform duration-300"
       />
-      <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded
-                   bg-brand-500/90 text-[10px] font-semibold text-white
-                   uppercase tracking-wider">
-        Series
-      </span>
+      {% if latest %}
+        <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded
+                     bg-amber-500/90 text-[10px] font-semibold text-white
+                     uppercase tracking-wider">
+          New
+        </span>
+      {% else %}
+        <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded
+                     bg-brand-500/90 text-[10px] font-semibold text-white
+                     uppercase tracking-wider">
+          Series
+        </span>
+      {% endif %}
       <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded
                    bg-black/70 text-[10px] font-medium text-white
                    tabular-nums">
@@ -153,9 +164,15 @@
                  group-hover:text-brand-300 transition-colors flex-1 min-h-0">
         {{ item.series_title }}
       </h3>
-      <p class="mt-1 text-xs text-slate-500 shrink-0">
-        {{ item.season_count }} season{{ '' if item.season_count == 1 else 's' }}
-      </p>
+      {% if latest %}
+        <p class="mt-1 text-xs text-amber-200 shrink-0 truncate">
+          {{ latest_label }}{% if latest_label and latest_title %} · {% endif %}{{ latest_title }}
+        </p>
+      {% else %}
+        <p class="mt-1 text-xs text-slate-500 shrink-0">
+          {{ item.season_count }} season{{ '' if item.season_count == 1 else 's' }}
+        </p>
+      {% endif %}
     </div>
   </a>
 {% else %}

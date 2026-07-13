@@ -109,6 +109,7 @@ class SeriesGroup:
     poster_item: "HubItem"  # representative episode used for thumb/year/tags
     art_item: Optional["HubItem"] = None
     has_thumb: bool = False
+    new_episode_item: Optional["HubItem"] = None
 
 
 @dataclass
