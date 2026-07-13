@@ -81,6 +81,9 @@ class HubItem:
     episode_overview: str = ""
     episode_still_path: str = ""
     episode_air_date: str = ""
+    episode_tmdb_vote_average: float = 0.0
+    episode_tmdb_vote_count: int = 0
+    episode_tmdb_vote_checked_at: float = 0.0
     trailer_key: str = ""          # YouTube video ID; "" if not available
     # --- Music metadata (populated for audio files) ---
     media_kind: str = ""           # "video" | "audio" | ""

@@ -106,7 +106,7 @@
   {% set poster = item.poster_item %}
   {% set latest = item.new_episode_item if item.new_episode_item is defined else none %}
   {% set latest_label = episode_label(latest) if latest else '' %}
-  {% set latest_title = (latest.episode_title or ('' if latest_label else (latest.title or latest.file_name))) if latest else '' %}
+  {% set latest_title = new_episode_display_title(latest, latest_label) if latest else '' %}
   <a href="/series/{{ item.series_key }}"
      hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
      class="group flex flex-col h-full rounded-xl overflow-hidden bg-ink-800/60 border border-white/5

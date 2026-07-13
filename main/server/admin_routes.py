@@ -33,6 +33,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from main import StreamBot
 from main.utils import media_index, thumb_cache, trending as _trending
 from main.utils.human_readable import humanbytes
+from main.utils.hub_query import HubItem
 from main.utils.index_entry import IndexEntry, render
 from main.utils import series as series_parse
 from main.utils.media_index import compute_movie_key
@@ -1731,6 +1732,24 @@ async def admin_ai_suggest(request: web.Request) -> web.Response:
         )
 
 
+def _clear_tmdb_fields(item: HubItem) -> None:
+    item.tmdb_id = None
+    item.tmdb_kind = ""
+    item.imdb_id = ""
+    item.tmdb_vote_average = 0.0
+    item.tmdb_vote_count = 0
+    item.tmdb_vote_checked_at = 0.0
+    item.poster_path = ""
+    item.backdrop_path = ""
+    item.overview = ""
+    item.tmdb_genres = []
+    item.cast = []
+    item.director = ""
+    item.enriched_at = 0.0
+    media_index.clear_episode_tmdb_fields(item)
+    item.trailer_key = ""
+
+
 @routes.post(r"/admin/clear-tmdb/{id:\d+}")
 async def admin_clear_tmdb(request: web.Request) -> web.Response:
     """Wipe all TMDB-derived fields for a catalogue entry.
@@ -1747,18 +1766,7 @@ async def admin_clear_tmdb(request: web.Request) -> web.Response:
         raise _redirect_with_flash(f"bin:{message_id} not found")
 
     async with media_index._lock:
-        item.tmdb_id = None
-        item.tmdb_kind = ""
-        item.imdb_id = ""
-        item.poster_path = ""
-        item.backdrop_path = ""
-        item.overview = ""
-        item.tmdb_genres = []
-        item.enriched_at = 0.0
-        item.episode_title = ""
-        item.episode_overview = ""
-        item.episode_still_path = ""
-        item.episode_air_date = ""
+        _clear_tmdb_fields(item)
         media_index._persist_unlocked()
 
     await media_index._store_upsert(item)
@@ -1948,14 +1956,10 @@ async def admin_edit(request: web.Request) -> web.Response:
         if tmdb.is_configured():
             item = media_index.get_item(message_id)
             if item is not None:
-                item.tmdb_id = None
-                item.tmdb_kind = ""
-                item.imdb_id = ""
-                item.poster_path = ""
-                item.backdrop_path = ""
-                item.overview = ""
-                item.tmdb_genres = []
-                item.enriched_at = 0.0
+                async with media_index._lock:
+                    _clear_tmdb_fields(item)
+                    media_index._persist_unlocked()
+                await media_index._store_upsert(item)
             import asyncio as _aio
             _aio.create_task(
                 media_index.enrich_one(message_id, bot=StreamBot)
@@ -2821,18 +2825,7 @@ async def api_app_admin_item_clear_tmdb(request: web.Request) -> web.Response:
     if item is None:
         return web.json_response({"error": "Not found"}, status=404)
     async with media_index._lock:
-        item.tmdb_id = None
-        item.tmdb_kind = ""
-        item.imdb_id = ""
-        item.poster_path = ""
-        item.backdrop_path = ""
-        item.overview = ""
-        item.tmdb_genres = []
-        item.enriched_at = 0.0
-        item.episode_title = ""
-        item.episode_overview = ""
-        item.episode_still_path = ""
-        item.episode_air_date = ""
+        _clear_tmdb_fields(item)
         media_index._persist_unlocked()
     await media_index._store_upsert(item)
     return web.json_response({"ok": True, "item": _admin_item_payload(item, set())},
@@ -2957,11 +2950,10 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
         if tmdb.is_configured():
             item_now = media_index.get_item(message_id)
             if item_now is not None:
-                for _f in ("tmdb_id", "tmdb_kind", "imdb_id", "poster_path",
-                           "backdrop_path", "overview"):
-                    if hasattr(item_now, _f): setattr(item_now, _f, None if _f == "tmdb_id" else "")
-                if hasattr(item_now, "tmdb_genres"): item_now.tmdb_genres = []
-                if hasattr(item_now, "enriched_at"): item_now.enriched_at = 0.0
+                async with media_index._lock:
+                    _clear_tmdb_fields(item_now)
+                    media_index._persist_unlocked()
+                await media_index._store_upsert(item_now)
             asyncio.create_task(media_index.enrich_one(message_id, bot=StreamBot))
 
     if status == "failed":

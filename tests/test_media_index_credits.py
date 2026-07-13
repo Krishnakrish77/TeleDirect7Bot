@@ -333,6 +333,121 @@ class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.tmdb_id, 1419)
         self.assertEqual(second.poster_path, "/castle-poster.jpg")
 
+    async def test_episode_metadata_fill_stores_episode_rating(self):
+        item = video_item(
+            message_id=203,
+            secure_hash="castle3",
+            title="Castle S01E03",
+            year=None,
+            file_name="Castle.S01E03.mkv",
+            movie_key="",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=3,
+            tmdb_id=1419,
+            tmdb_kind="tv",
+            episode_title="",
+            episode_tmdb_vote_average=0.0,
+            episode_tmdb_vote_count=0,
+            episode_tmdb_vote_checked_at=0.0,
+        )
+
+        with patch.object(
+            media_index.tmdb,
+            "fetch_season",
+            new=AsyncMock(return_value={
+                "episodes": [{
+                    "episode_number": 3,
+                    "name": "Hedge Fund Homeboys",
+                    "overview": "A Wall Street trader is murdered.",
+                    "still_path": "/still.jpg",
+                    "air_date": "2009-03-23",
+                    "vote_average": 7.4,
+                    "vote_count": 12,
+                }],
+            }),
+        ) as fetch_season:
+            changed = await media_index._fill_episode_metadata(item)
+
+        self.assertTrue(changed)
+        fetch_season.assert_awaited_once_with(1419, 1)
+        self.assertEqual(item.episode_title, "Hedge Fund Homeboys")
+        self.assertEqual(item.episode_tmdb_vote_average, 7.4)
+        self.assertEqual(item.episode_tmdb_vote_count, 12)
+        self.assertGreater(item.episode_tmdb_vote_checked_at, 0)
+
+    def test_episode_rating_serialization_round_trip(self):
+        item = video_item(
+            episode_tmdb_vote_average=7.4,
+            episode_tmdb_vote_count=12,
+            episode_tmdb_vote_checked_at=123.0,
+        )
+
+        restored = media_index._from_serializable(media_index._to_serializable(item))
+
+        self.assertEqual(restored.episode_tmdb_vote_average, 7.4)
+        self.assertEqual(restored.episode_tmdb_vote_count, 12)
+        self.assertEqual(restored.episode_tmdb_vote_checked_at, 123.0)
+
+    async def test_manual_tmdb_override_clears_stale_episode_metadata_when_refill_misses(self):
+        item = video_item(
+            message_id=204,
+            secure_hash="castle4",
+            title="Castle S01E04",
+            year=None,
+            file_name="Castle.S01E04.mkv",
+            movie_key="",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=4,
+            tmdb_id=111,
+            tmdb_kind="tv",
+            episode_title="Old Episode",
+            episode_overview="Old overview",
+            episode_still_path="/old.jpg",
+            episode_air_date="2009-01-01",
+            episode_tmdb_vote_average=8.8,
+            episode_tmdb_vote_count=99,
+            episode_tmdb_vote_checked_at=123.0,
+        )
+        media_index._items[item.message_id] = item
+        hit = tmdb.TMDBHit(
+            tmdb_id=222,
+            kind="tv",
+            title="Castle",
+            year=2009,
+            overview="A mystery novelist helps solve crimes.",
+            poster_path="/castle-poster.jpg",
+            backdrop_path="/castle-backdrop.jpg",
+            genres=["Drama"],
+            imdb_id="tt1219024",
+            vote_average=8.0,
+            vote_count=2000,
+        )
+
+        with (
+            patch.object(media_index.tmdb, "is_configured", return_value=True),
+            patch.object(media_index.tmdb, "fetch_by_id", new=AsyncMock(return_value=hit)),
+            patch.object(media_index.tmdb, "fetch_season", new=AsyncMock(return_value=None)),
+            patch.object(media_index.tmdb, "fetch_trailer", new=AsyncMock(return_value="")),
+            patch.object(media_index, "_persist_unlocked"),
+            patch.object(media_index, "persist_now", new=AsyncMock()),
+            patch.object(media_index, "_store_upsert", new=AsyncMock()),
+        ):
+            ok = await media_index.enrich_with_tmdb_id(item.message_id, 222, "tv")
+
+        self.assertTrue(ok)
+        self.assertEqual(item.tmdb_id, 222)
+        self.assertEqual(item.episode_title, "")
+        self.assertEqual(item.episode_overview, "")
+        self.assertEqual(item.episode_still_path, "")
+        self.assertEqual(item.episode_air_date, "")
+        self.assertEqual(item.episode_tmdb_vote_average, 0.0)
+        self.assertEqual(item.episode_tmdb_vote_count, 0)
+        self.assertEqual(item.episode_tmdb_vote_checked_at, 0.0)
+
     async def test_visible_art_recovery_suppresses_tmdb_hit_without_poster(self):
         item = video_item(
             message_id=211,

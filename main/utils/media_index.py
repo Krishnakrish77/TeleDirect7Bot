@@ -268,6 +268,9 @@ def _to_serializable(item: HubItem) -> dict:
         "episode_overview": item.episode_overview,
         "episode_still_path": item.episode_still_path,
         "episode_air_date": item.episode_air_date,
+        "episode_tmdb_vote_average": item.episode_tmdb_vote_average,
+        "episode_tmdb_vote_count": item.episode_tmdb_vote_count,
+        "episode_tmdb_vote_checked_at": item.episode_tmdb_vote_checked_at,
         "trailer_key": item.trailer_key,
         "media_kind": item.media_kind,
         "artist": item.artist,
@@ -335,6 +338,9 @@ def _from_serializable(d: dict) -> HubItem:
         episode_overview=d.get("episode_overview", "") or "",
         episode_still_path=d.get("episode_still_path", "") or "",
         episode_air_date=d.get("episode_air_date", "") or "",
+        episode_tmdb_vote_average=float(d.get("episode_tmdb_vote_average") or 0),
+        episode_tmdb_vote_count=int(d.get("episode_tmdb_vote_count") or 0),
+        episode_tmdb_vote_checked_at=float(d.get("episode_tmdb_vote_checked_at") or 0),
         trailer_key=d.get("trailer_key", "") or "",
         media_kind=d.get("media_kind", "") or "",
         artist=d.get("artist", "") or "",
@@ -1125,6 +1131,9 @@ async def seed(bot, channel_id: int) -> None:
                         new_item.tmdb_vote_average = existing.tmdb_vote_average or new_item.tmdb_vote_average
                         new_item.tmdb_vote_count = existing.tmdb_vote_count or new_item.tmdb_vote_count
                         new_item.tmdb_vote_checked_at = existing.tmdb_vote_checked_at or new_item.tmdb_vote_checked_at
+                        new_item.episode_tmdb_vote_average = existing.episode_tmdb_vote_average or new_item.episode_tmdb_vote_average
+                        new_item.episode_tmdb_vote_count = existing.episode_tmdb_vote_count or new_item.episode_tmdb_vote_count
+                        new_item.episode_tmdb_vote_checked_at = existing.episode_tmdb_vote_checked_at or new_item.episode_tmdb_vote_checked_at
                         new_item.subtitles    = existing.subtitles    or new_item.subtitles
                         new_item.enriched_at  = existing.enriched_at  or new_item.enriched_at
                         caption_lost_enrichment = existing.tmdb_id and not new_item.tmdb_id
@@ -2865,6 +2874,16 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
             existing.add(slug)
 
 
+def clear_episode_tmdb_fields(item: HubItem) -> None:
+    item.episode_title = ""
+    item.episode_overview = ""
+    item.episode_still_path = ""
+    item.episode_air_date = ""
+    item.episode_tmdb_vote_average = 0.0
+    item.episode_tmdb_vote_count = 0
+    item.episode_tmdb_vote_checked_at = 0.0
+
+
 async def _fill_episode_metadata(item: HubItem) -> bool:
     """For a TV episode with known (season, episode), copy TMDB's
     per-episode name/overview/still onto the item.
@@ -2898,16 +2917,30 @@ async def _fill_episode_metadata(item: HubItem) -> bool:
     new_overview = (ep.get("overview") or "").strip()
     new_still = (ep.get("still_path") or "").strip()
     new_air = (ep.get("air_date") or "").strip()
+    try:
+        new_vote_average = float(ep.get("vote_average") or 0)
+    except (TypeError, ValueError):
+        new_vote_average = 0.0
+    try:
+        new_vote_count = int(ep.get("vote_count") or 0)
+    except (TypeError, ValueError):
+        new_vote_count = 0
     changed = (
         new_title != item.episode_title
         or new_overview != item.episode_overview
         or new_still != item.episode_still_path
         or new_air != item.episode_air_date
+        or new_vote_average != item.episode_tmdb_vote_average
+        or new_vote_count != item.episode_tmdb_vote_count
+        or not item.episode_tmdb_vote_checked_at
     )
     item.episode_title = new_title
     item.episode_overview = new_overview
     item.episode_still_path = new_still
     item.episode_air_date = new_air
+    item.episode_tmdb_vote_average = new_vote_average
+    item.episode_tmdb_vote_count = new_vote_count
+    item.episode_tmdb_vote_checked_at = time.time()
     return changed
 
 
@@ -3034,6 +3067,7 @@ async def enrich_one(message_id: int, bot=None) -> bool:
 
     async with _lock:
         _apply_tmdb_to_item(item, hit)
+        clear_episode_tmdb_fields(item)
         # For TV series, propagate the show-level enrichment (tmdb_id,
         # poster, backdrop, overview, genres, series_title) to every
         # other episode sharing the same series_key. Without this, only
@@ -3064,10 +3098,7 @@ async def enrich_one(message_id: int, bot=None) -> bool:
                 # Clear stale per-episode fields so the upcoming
                 # _fill_episode_metadata pass re-resolves them against
                 # the freshly-stamped TMDB id.
-                sib.episode_title       = ""
-                sib.episode_overview    = ""
-                sib.episode_still_path  = ""
-                sib.episode_air_date    = ""
+                clear_episode_tmdb_fields(sib)
                 propagated.append(sib)
         _persist_unlocked()
 
@@ -3125,6 +3156,7 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
         return False
     async with _lock:
         _apply_tmdb_to_item(item, hit)
+        clear_episode_tmdb_fields(item)
         # Propagate TV series enrichment to every sibling sharing the
         # same series_key — same logic as enrich_one(). One manual TMDB
         # override should stamp the whole series, not just one episode.
@@ -3150,10 +3182,7 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
                 sib.series_title = item.series_title or sib.series_title
                 sib.enriched_at  = time.time()
                 # Clear stale per-episode fields so the next pass re-resolves.
-                sib.episode_title       = ""
-                sib.episode_overview    = ""
-                sib.episode_still_path  = ""
-                sib.episode_air_date    = ""
+                clear_episode_tmdb_fields(sib)
                 propagated.append(sib)
         _persist_unlocked()
     await _fill_episode_metadata(item)
@@ -3301,7 +3330,7 @@ async def fill_episode_details(bot=None) -> dict:
         it for it in _items.values()
         if it.tmdb_kind == "tv" and it.tmdb_id
            and it.season is not None and it.episode is not None
-           and not it.episode_title
+           and (not it.episode_title or not it.episode_tmdb_vote_checked_at)
     ]
     _episode_fill_state.update(
         running=True, done=0, total=len(targets), filled=0,

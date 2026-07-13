@@ -66,6 +66,38 @@ def _episode_label(item: HubItem) -> str:
     return ""
 
 
+def _looks_like_episode_release_title(item: HubItem, title: str) -> bool:
+    if not title:
+        return False
+    normalized = re.sub(r"[\s._-]+", " ", title).strip().lower()
+    series = re.sub(r"[\s._-]+", " ", item.series_title or "").strip().lower()
+    if series and normalized == series:
+        return True
+    if item.season is not None and item.episode is not None:
+        season = int(item.season)
+        episode = int(item.episode)
+        patterns = (
+            rf"\bs0?{season}\s*e0?{episode}\b",
+            rf"\bs0?{season}\s*ep0?{episode}\b",
+            rf"\b0?{season}x0?{episode}\b",
+            rf"\bseason\s*0?{season}\s*episode\s*0?{episode}\b",
+        )
+        return any(re.search(pattern, normalized, re.IGNORECASE) for pattern in patterns)
+    if item.episode is not None:
+        episode = int(item.episode)
+        return bool(re.search(rf"\b(?:episode|ep)\s*0?{episode}\b", normalized, re.IGNORECASE))
+    return False
+
+
+def _new_episode_display_title(item: HubItem, label: str) -> str:
+    if item.episode_title:
+        return item.episode_title
+    title = (item.title or item.file_name or "").strip()
+    if label and _looks_like_episode_release_title(item, title):
+        return ""
+    return title
+
+
 _env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
 _env.filters["duration"] = lambda s: _fmt_duration(int(s)) if s else ""
 from main.utils.codec_probe import _clean_music_tag as _cmt
@@ -77,6 +109,7 @@ _env.filters["artist_credits"] = lambda s: [(media_index._artist_slug(a), a) for
 _env.filters["person_slug"] = lambda s: media_index._person_slug(s or "")
 _env.filters["director_credits"] = lambda s: [(media_index._person_slug(n), n) for n in media_index._director_credits(s or "")]
 _env.globals["episode_label"] = _episode_label
+_env.globals["new_episode_display_title"] = _new_episode_display_title
 _env.globals["bot_username"] = Var.BOT_USERNAME
 _env.globals["Var"] = Var
 

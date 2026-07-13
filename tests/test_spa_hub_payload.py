@@ -25,6 +25,7 @@ from main.utils import media_index
 from main.utils.hub_query import HubItem, MovieGroup, SeriesGroup
 
 hub_routes = importlib.import_module("main.server.hub_routes")
+admin_routes = importlib.import_module("main.server.admin_routes")
 
 
 def _video_item(
@@ -428,6 +429,200 @@ class SpaHubPayloadTest(unittest.TestCase):
             "watchKey": "latest463",
         })
 
+    def test_new_episode_payload_preserves_clean_raw_title_when_label_is_available(self):
+        latest = _video_item(
+            message_id=464,
+            secure_hash="latest",
+            title="Nanny McDead",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            episode_title="",
+            movie_key="",
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=2,
+            season_count=1,
+            latest_message_id=464,
+            poster_item=latest,
+            new_episode_item=latest,
+        )
+
+        payload = _hub_card(group)
+
+        self.assertEqual(payload["newEpisode"], {
+            "label": "S01E02",
+            "title": "Nanny McDead",
+            "playHref": "/app/watch/latest464",
+            "watchKey": "latest464",
+        })
+
+    def test_new_episode_series_card_uses_episode_rating(self):
+        latest = _video_item(
+            message_id=465,
+            secure_hash="latest",
+            title="Castle S01E02",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            episode_title="Nanny McDead",
+            movie_key="",
+            tmdb_id=1419,
+            tmdb_kind="tv",
+            tmdb_vote_average=8.5,
+            tmdb_vote_count=2000,
+            episode_tmdb_vote_average=7.2,
+            episode_tmdb_vote_count=42,
+            episode_tmdb_vote_checked_at=1.0,
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=2,
+            season_count=1,
+            latest_message_id=465,
+            poster_item=latest,
+            new_episode_item=latest,
+        )
+
+        payload = _hub_card(group)
+
+        self.assertEqual(payload["externalRating"], {
+            "provider": "TMDB",
+            "value": 7.2,
+            "label": "7.2",
+            "count": 42,
+        })
+
+    def test_new_episode_series_card_does_not_fall_back_to_series_rating(self):
+        latest = _video_item(
+            message_id=466,
+            secure_hash="latest",
+            title="Castle S01E02",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            movie_key="",
+            tmdb_vote_average=8.5,
+            tmdb_vote_count=2000,
+            episode_tmdb_vote_average=0.0,
+            episode_tmdb_vote_count=0,
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=2,
+            season_count=1,
+            latest_message_id=466,
+            poster_item=latest,
+            new_episode_item=latest,
+        )
+
+        payload = _hub_card(group)
+
+        self.assertNotIn("externalRating", payload)
+
+    def test_new_episode_series_card_uses_latest_episode_rating_counts(self):
+        poster = _video_item(
+            message_id=467,
+            secure_hash="poster",
+            title="Castle S01E01",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=1,
+            movie_key="",
+        )
+        latest = _video_item(
+            message_id=468,
+            secure_hash="latest",
+            title="Castle S01E02",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            movie_key="",
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=2,
+            season_count=1,
+            latest_message_id=468,
+            poster_item=poster,
+            new_episode_item=latest,
+        )
+
+        payload = _hub_card(
+            group,
+            rating_counts={
+                poster.message_id: {"up": 9, "down": 0},
+                latest.message_id: {"up": 2, "down": 1},
+            },
+        )
+
+        self.assertEqual(payload["ratingCounts"], {"up": 2, "down": 1})
+
+    def test_clear_tmdb_fields_clears_episode_rating(self):
+        item = _video_item(
+            message_id=469,
+            secure_hash="latest",
+            title="Castle S01E02",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            movie_key="",
+            tmdb_id=1419,
+            tmdb_kind="tv",
+            tmdb_vote_average=8.5,
+            tmdb_vote_count=2000,
+            episode_tmdb_vote_average=7.2,
+            episode_tmdb_vote_count=42,
+            episode_tmdb_vote_checked_at=1.0,
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=2,
+            season_count=1,
+            latest_message_id=469,
+            poster_item=item,
+            new_episode_item=item,
+        )
+
+        admin_routes._clear_tmdb_fields(item)
+        payload = _hub_card(group)
+
+        self.assertIsNone(item.tmdb_id)
+        self.assertEqual(item.tmdb_vote_average, 0.0)
+        self.assertEqual(item.tmdb_vote_count, 0)
+        self.assertEqual(item.tmdb_vote_checked_at, 0.0)
+        self.assertEqual(item.episode_tmdb_vote_average, 0.0)
+        self.assertEqual(item.episode_tmdb_vote_count, 0)
+        self.assertEqual(item.episode_tmdb_vote_checked_at, 0.0)
+        self.assertNotIn("externalRating", payload)
+
+    def test_stale_tmdb_rating_is_not_rendered_without_tmdb_id(self):
+        item = _video_item(
+            message_id=470,
+            secure_hash="stale",
+            title="Stale Rating",
+            tmdb_id=None,
+            tmdb_kind="",
+            tmdb_vote_average=9.1,
+            tmdb_vote_count=100,
+        )
+
+        payload = _hub_card(item)
+
+        self.assertIsNone(payload["externalRating"])
+
     def test_classic_series_card_renders_new_episode_highlight(self):
         latest = _video_item(
             message_id=472,
@@ -483,6 +678,33 @@ class SpaHubPayloadTest(unittest.TestCase):
 
         self.assertIn("S01E02", html)
         self.assertNotIn("Castle.S01E02.1080p.WEB-DL", html)
+
+    def test_classic_series_card_preserves_clean_raw_title_when_episode_label_exists(self):
+        latest = _video_item(
+            message_id=474,
+            secure_hash="latest",
+            title="Nanny McDead",
+            series_key="castle",
+            series_title="Castle",
+            season=1,
+            episode=2,
+            episode_title="",
+            movie_key="",
+        )
+        group = SeriesGroup(
+            series_key="castle",
+            series_title="Castle",
+            episode_count=2,
+            season_count=1,
+            latest_message_id=474,
+            poster_item=latest,
+            new_episode_item=latest,
+        )
+
+        html = asyncio.run(hub_routes._env.get_template("_card.html").render_async(item=group))
+
+        self.assertIn("S01E02", html)
+        self.assertIn("Nanny McDead", html)
 
     def test_raw_movie_card_prefers_tmdb_poster_from_group_sibling(self):
         previous = dict(media_index._items)

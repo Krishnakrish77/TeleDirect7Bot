@@ -344,6 +344,10 @@ def _thumb_source_id(card) -> Optional[int]:
 
 
 def _rating_source_id(card) -> Optional[int]:
+    new_episode = getattr(card, "new_episode_item", None)
+    if new_episode is not None:
+        message_id = getattr(new_episode, "message_id", None)
+        return int(message_id) if message_id else None
     poster = getattr(card, "poster_item", None)
     item = poster if poster is not None else card
     if (getattr(item, "media_kind", "") or "") == "audio":
@@ -585,6 +589,11 @@ def _item_common(item: HubItem) -> dict:
 
 
 def _external_rating(item: HubItem) -> dict | None:
+    if not (
+        getattr(item, "tmdb_id", None)
+        and getattr(item, "tmdb_kind", "") in ("movie", "tv")
+    ):
+        return None
     value = round(float(getattr(item, "tmdb_vote_average", 0) or 0), 1)
     if value <= 0:
         return None
@@ -594,6 +603,56 @@ def _external_rating(item: HubItem) -> dict | None:
         "label": f"{value:.1f}",
         "count": int(getattr(item, "tmdb_vote_count", 0) or 0),
     }
+
+
+def _episode_external_rating(item: HubItem) -> dict | None:
+    if not (
+        getattr(item, "tmdb_id", None)
+        and getattr(item, "tmdb_kind", "") == "tv"
+        and getattr(item, "episode_tmdb_vote_checked_at", 0)
+    ):
+        return None
+    value = round(float(getattr(item, "episode_tmdb_vote_average", 0) or 0), 1)
+    if value <= 0:
+        return None
+    return {
+        "provider": "TMDB",
+        "value": value,
+        "label": f"{value:.1f}",
+        "count": int(getattr(item, "episode_tmdb_vote_count", 0) or 0),
+    }
+
+
+def _looks_like_episode_release_title(item: HubItem, title: str) -> bool:
+    if not title:
+        return False
+    normalized = re.sub(r"[\s._-]+", " ", title).strip().lower()
+    series = re.sub(r"[\s._-]+", " ", item.series_title or "").strip().lower()
+    if series and normalized == series:
+        return True
+    if item.season is not None and item.episode is not None:
+        season = int(item.season)
+        episode = int(item.episode)
+        patterns = (
+            rf"\bs0?{season}\s*e0?{episode}\b",
+            rf"\bs0?{season}\s*ep0?{episode}\b",
+            rf"\b0?{season}x0?{episode}\b",
+            rf"\bseason\s*0?{season}\s*episode\s*0?{episode}\b",
+        )
+        return any(re.search(pattern, normalized, re.IGNORECASE) for pattern in patterns)
+    if item.episode is not None:
+        episode = int(item.episode)
+        return bool(re.search(rf"\b(?:episode|ep)\s*0?{episode}\b", normalized, re.IGNORECASE))
+    return False
+
+
+def _new_episode_display_title(item: HubItem, label: str) -> str:
+    if item.episode_title:
+        return item.episode_title
+    title = (item.title or item.file_name or "").strip()
+    if label and _looks_like_episode_release_title(item, title):
+        return ""
+    return title
 
 
 def _video_subtitle(item: HubItem, common: dict) -> str:
@@ -612,6 +671,10 @@ def _card_from_item(item: HubItem, art_cache: dict | None = None) -> dict:
     )
     is_audio = (item.media_kind or "") == "audio"
     subtitle = common["artist"] if is_audio else _video_subtitle(item, common)
+    if item.series_key:
+        episode_rating = _episode_external_rating(item)
+        if episode_rating:
+            common["externalRating"] = episode_rating
     return {
         **common,
         "type": "track" if is_audio else "item",
@@ -677,9 +740,14 @@ def _card_from_series(card: SeriesGroup) -> dict:
     new_episode = getattr(card, "new_episode_item", None)
     if new_episode is not None:
         label = _episode_label(new_episode)
-        title = new_episode.episode_title or ("" if label else (new_episode.title or new_episode.file_name or ""))
+        title = _new_episode_display_title(new_episode, label)
+        episode_rating = _episode_external_rating(new_episode)
         payload["playHref"] = _play_url(new_episode)
         payload["watchKey"] = f"{new_episode.secure_hash}{new_episode.message_id}"
+        if episode_rating:
+            payload["externalRating"] = episode_rating
+        else:
+            payload.pop("externalRating", None)
         payload["newEpisode"] = {
             "label": label,
             "title": title,
