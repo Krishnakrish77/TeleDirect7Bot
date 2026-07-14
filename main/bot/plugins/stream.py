@@ -3,7 +3,7 @@ import logging
 from main.bot import StreamBot
 from main.utils import media_index
 from main.utils.download_urls import as_download_url
-from main.utils.file_properties import gen_link, get_hash
+from main.utils.file_properties import gen_link, get_hash, get_media_from_message
 from main.utils.indexer import schedule_index, schedule_subtitle_pairing
 from main.utils.subtitles import is_subtitle_filename, is_subtitle_mime
 from main.vars import Var
@@ -35,6 +35,122 @@ def _schedule_index_if_admin(bot: Client, source_msg: Message, bin_msg: Message)
         getattr(getattr(source_msg, "chat", None), "id", "?"),
         getattr(getattr(source_msg, "from_user", None), "id", "?"),
     )
+
+
+_pending_bin_copies: dict[tuple[str, int], asyncio.Future] = {}
+_pending_bin_copies_lock = asyncio.Lock()
+_COPY_RESERVATION_TTL = 300
+
+
+def _exact_upload_key(m: Message) -> tuple[str, int] | None:
+    media = get_media_from_message(m)
+    if media is None:
+        return None
+    secure_hash = get_hash(m)
+    try:
+        file_size = int(getattr(media, "file_size", 0) or 0)
+    except (TypeError, ValueError):
+        file_size = 0
+    if not secure_hash or not file_size:
+        return None
+    return secure_hash, file_size
+
+
+async def _fetch_existing_bin_message(bot: Client, key: tuple[str, int]) -> Message | None:
+    existing = media_index.find_exact_upload(*key)
+    if existing is None:
+        return None
+    try:
+        msg = await bot.get_messages(Var.BIN_CHANNEL, existing.message_id)
+    except Exception:
+        logging.debug(
+            "upload dedupe: failed to fetch existing bin:%d",
+            existing.message_id,
+            exc_info=True,
+        )
+        return None
+    if getattr(msg, "empty", False):
+        return None
+    return msg
+
+
+async def _copy_or_reuse_bin_message(bot: Client, source_msg: Message) -> tuple[Message, bool]:
+    """Copy media to BIN_CHANNEL unless the exact file already exists.
+
+    Multi-file Telegram forwards arrive as parallel updates. Without the
+    pending-copy reservation below, two identical forwarded files can both pass
+    the catalogue lookup before either background index task has updated
+    ``media_index``. The reservation lets later updates reuse the first BIN
+    message and keeps the channel/catalogue from growing duplicate uploads.
+    """
+    key = _exact_upload_key(source_msg)
+    if key is None:
+        return await source_msg.copy(chat_id=Var.BIN_CHANNEL), False
+
+    while True:
+        existing = await _fetch_existing_bin_message(bot, key)
+        if existing is not None:
+            logging.info(
+                "upload dedupe: reusing existing bin:%d for hash=%s size=%d",
+                existing.id,
+                key[0],
+                key[1],
+            )
+            return existing, True
+
+        loop = asyncio.get_running_loop()
+        async with _pending_bin_copies_lock:
+            pending = _pending_bin_copies.get(key)
+            if pending is None:
+                pending = loop.create_future()
+                _pending_bin_copies[key] = pending
+                creator = True
+            else:
+                creator = False
+
+        if not creator:
+            try:
+                msg = await pending
+                logging.info(
+                    "upload dedupe: reused pending bin:%d for hash=%s size=%d",
+                    getattr(msg, "id", 0),
+                    key[0],
+                    key[1],
+                )
+                return msg, True
+            except Exception:
+                # The leading copy failed; loop around and either find a now
+                # indexed item or become the new copy owner.
+                continue
+
+        copied = False
+        try:
+            log_msg = await source_msg.copy(chat_id=Var.BIN_CHANNEL)
+            copied = True
+            if not pending.done():
+                pending.set_result(log_msg)
+            asyncio.create_task(_clear_copy_reservation_later(key, pending))
+            return log_msg, False
+        except Exception as exc:
+            if not pending.done():
+                pending.set_exception(exc)
+                pending.add_done_callback(lambda fut: fut.exception())
+            raise
+        finally:
+            if not copied:
+                async with _pending_bin_copies_lock:
+                    if _pending_bin_copies.get(key) is pending:
+                        _pending_bin_copies.pop(key, None)
+
+
+async def _clear_copy_reservation_later(
+    key: tuple[str, int],
+    pending: asyncio.Future,
+) -> None:
+    await asyncio.sleep(_COPY_RESERVATION_TTL)
+    async with _pending_bin_copies_lock:
+        if _pending_bin_copies.get(key) is pending:
+            _pending_bin_copies.pop(key, None)
 
 
 @StreamBot.on_deleted_messages(filters.channel)
@@ -103,9 +219,8 @@ async def private_receive_handler(c: Client, m: Message):
         # non-editable even by the bot that did the forwarding. Copy
         # reposts as a fresh bot-authored message, keeping admin
         # re-enrichment / caption rewrites working.
-        log_msg = await m.copy(chat_id=Var.BIN_CHANNEL)
-
         if _looks_like_subtitle(m):
+            log_msg = await m.copy(chat_id=Var.BIN_CHANNEL)
             schedule_subtitle_pairing(c, log_msg, m)
             await m.reply_text(
                 text="📝 Subtitle saved. I'll attach it to the matching video.",
@@ -113,9 +228,12 @@ async def private_receive_handler(c: Client, m: Message):
             )
             return
 
-        _schedule_index_if_admin(c, m, log_msg)
-        reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=False)
-        await log_msg.reply_text(text=f"**Requested By :** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n**User ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
+        log_msg, reused_bin = await _copy_or_reuse_bin_message(c, m)
+        if not reused_bin:
+            _schedule_index_if_admin(c, m, log_msg)
+        reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=reused_bin)
+        if not reused_bin:
+            await log_msg.reply_text(text=f"**Requested By :** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n**User ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
 
         await m.reply_text(
             text=Stream_Text,
@@ -141,14 +259,16 @@ async def channel_receive_handler(bot, broadcast: Message):
         # See private_receive_handler — copy keeps the bin caption
         # editable. The reply-text below still carries the source
         # channel attribution, so we don't lose that context.
-        log_msg = await broadcast.copy(chat_id=Var.BIN_CHANNEL)
-        _schedule_index_if_admin(bot, broadcast, log_msg)
+        log_msg, reused_bin = await _copy_or_reuse_bin_message(bot, broadcast)
+        if not reused_bin:
+            _schedule_index_if_admin(bot, broadcast, log_msg)
         file_hash = get_hash(log_msg)
         stream_link = as_download_url(f"{Var.URL}{file_hash}{log_msg.id}")
-        await log_msg.reply_text(
-            text=f"**Channel Name:** `{broadcast.chat.title}`\n**Channel ID:** `{broadcast.chat.id}`\n**Request URL:** https://t.me/{(await bot.get_me()).username}?start=msgid_{str(log_msg.id)}",
-            quote=True,
-        )
+        if not reused_bin:
+            await log_msg.reply_text(
+                text=f"**Channel Name:** `{broadcast.chat.title}`\n**Channel ID:** `{broadcast.chat.id}`\n**Request URL:** https://t.me/{(await bot.get_me()).username}?start=msgid_{str(log_msg.id)}",
+                quote=True,
+            )
         # Best-effort: try to attach an inline "Download Link" button to
         # the source-channel message. This only works when the bot
         # itself authored the post or has explicit edit rights in the
@@ -200,10 +320,12 @@ async def channel_receive_handler(bot, broadcast: Message):
 async def group_receive_handler(c: Client, m: Message):
     try:
         # See private_receive_handler — copy keeps captions editable.
-        log_msg = await m.copy(chat_id=Var.BIN_CHANNEL)
-        _schedule_index_if_admin(c, m, log_msg)
+        log_msg, reused_bin = await _copy_or_reuse_bin_message(c, m)
+        if not reused_bin:
+            _schedule_index_if_admin(c, m, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=True)
-        await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
+        if not reused_bin:
+            await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
 
         await m.reply_text(
             text=Stream_Text,

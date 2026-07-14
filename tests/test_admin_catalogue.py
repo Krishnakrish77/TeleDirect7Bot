@@ -10,7 +10,12 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 admin_routes = importlib.import_module("main.server.admin_routes")
-from main.server.admin_routes import _admin_duplicate_candidates, _bulk_delete, _bulk_delete_message
+from main.server.admin_routes import (
+    _admin_catalogue_context,
+    _admin_duplicate_candidates,
+    _bulk_delete,
+    _bulk_delete_message,
+)
 from main.utils import media_index
 from main.utils.hub_query import HubItem
 
@@ -94,6 +99,8 @@ class AdminCatalogueTest(unittest.TestCase):
         self.assertEqual(extras, 1)
         self.assertEqual(details[101]["reason"], "Exact file")
         self.assertEqual(details[102]["reason"], "Exact file")
+        self.assertFalse(details[101]["extra"])
+        self.assertTrue(details[102]["extra"])
 
     def test_duplicate_counts_ignore_same_title_review_candidates(self):
         details, groups, extras = _admin_duplicate_candidates([
@@ -106,6 +113,37 @@ class AdminCatalogueTest(unittest.TestCase):
         self.assertEqual(extras, 1)
         self.assertEqual(details[101]["reason"], "Exact file")
         self.assertNotIn(103, details)
+
+    def test_duplicates_filter_shows_only_extra_uploads(self):
+        original_items = dict(media_index._items)
+        original_hash_map = dict(media_index._hash_map)
+        try:
+            media_index._items.clear()
+            media_index._hash_map.clear()
+            keep = _item(101, secure_hash="same", file_size=1000)
+            extra = _item(102, secure_hash="same", file_size=1000)
+            unrelated = _item(103, secure_hash="other", file_size=1000)
+            media_index._items.update({
+                keep.message_id: keep,
+                extra.message_id: extra,
+                unrelated.message_id: unrelated,
+            })
+            request = SimpleNamespace(
+                query={"filter": "duplicates"},
+                cookies={},
+            )
+
+            ctx = _admin_catalogue_context(request)
+
+            self.assertEqual([item.message_id for item in ctx["items"]], [102])
+            self.assertEqual(ctx["filtered_count"], 1)
+            self.assertEqual(ctx["duplicate_message_ids"], {101, 102})
+            self.assertEqual(ctx["stats"]["duplicate_extras"], 1)
+        finally:
+            media_index._items.clear()
+            media_index._items.update(original_items)
+            media_index._hash_map.clear()
+            media_index._hash_map.update(original_hash_map)
 
     def test_duplicate_candidates_do_not_flag_different_series_episodes_by_tmdb_id(self):
         details, groups, extras = _admin_duplicate_candidates([

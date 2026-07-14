@@ -147,6 +147,24 @@ class MediaIndexSearchTests(unittest.TestCase):
         self.assertEqual(suggestions[0]["poster_path"], "/tmdb-kalki.jpg")
         self.assertEqual(suggestions[0]["message_id"], plain_newer.message_id)
 
+    def test_find_exact_upload_uses_hash_and_size(self):
+        original = video_item(501, title="Original", secure_hash="same", file_size=1000)
+        collision = video_item(502, title="Collision", secure_hash="same", file_size=2000)
+        media_index._items.update({
+            original.message_id: original,
+            collision.message_id: collision,
+        })
+
+        self.assertEqual(
+            media_index.find_exact_upload("same", 1000).message_id,
+            501,
+        )
+        self.assertEqual(
+            media_index.find_exact_upload("same", 2000).message_id,
+            502,
+        )
+        self.assertIsNone(media_index.find_exact_upload("same", 3000))
+
 
 if __name__ == "__main__":
     unittest.main()

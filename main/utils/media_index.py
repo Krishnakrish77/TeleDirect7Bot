@@ -677,6 +677,25 @@ def find_by_hash(secure_hash: str) -> Optional[HubItem]:
     return _items.get(msg_id) if msg_id else None
 
 
+def find_exact_upload(secure_hash: str, file_size: int) -> Optional[HubItem]:
+    """Return the oldest known upload for an exact file identity.
+
+    ``secure_hash`` is intentionally short because it is embedded in URLs, so
+    callers that are making destructive or de-duplication decisions should pair
+    it with Telegram's file size to avoid treating hash-prefix collisions as
+    duplicate media.
+    """
+    if not secure_hash or not file_size:
+        return None
+    matches = [
+        it for it in _items.values()
+        if it.secure_hash == secure_hash and int(it.file_size or 0) == int(file_size)
+    ]
+    if not matches:
+        return None
+    return min(matches, key=lambda it: it.message_id)
+
+
 def find_by_filename_stem(stem: str) -> Optional[HubItem]:
     """Most-recent indexed video whose filename stem matches.
 

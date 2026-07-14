@@ -144,6 +144,7 @@ def _admin_duplicate_candidates(items: list) -> tuple[dict[int, dict], int, int]
                 "reason": reason,
                 "group": group_id,
                 "size": len(sorted_members),
+                "extra": item.message_id in bucket_extra_ids,
             })
 
     duplicate_extras = len(extra_ids)
@@ -185,6 +186,10 @@ def _admin_catalogue_context(request: web.Request) -> dict:
     duplicate_details, duplicate_groups, duplicate_extras = _admin_duplicate_candidates(
         [it for it in items_all if not it.hidden],
     )
+    duplicate_extra_ids = {
+        message_id for message_id, info in duplicate_details.items()
+        if info.get("extra")
+    }
     duplicate_message_ids = set(duplicate_details)
 
     def _is_video_item(it) -> bool:
@@ -207,7 +212,7 @@ def _admin_catalogue_context(request: web.Request) -> dict:
             return False
         if filter_name == "no-poster" and (it.poster_path or not it.tmdb_id):
             return False
-        if filter_name == "duplicates" and it.message_id not in duplicate_message_ids:
+        if filter_name == "duplicates" and it.message_id not in duplicate_extra_ids:
             return False
         if filter_name == "no-thumb" and (it.has_thumb or it.duration):
             return False
