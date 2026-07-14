@@ -6206,6 +6206,14 @@ img {
   gap: 0.35rem;
 }
 
+.video-topbar-side {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.45rem;
+  pointer-events: auto;
+}
+
 .video-topbar-badges span {
   min-height: 24px;
   padding: 0.25rem 0.45rem;
@@ -6216,6 +6224,29 @@ img {
   font-size: 0.68rem;
   font-weight: 850;
   text-transform: uppercase;
+}
+
+.video-topbar-vlc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 0.58rem;
+  border: 1px solid rgba(253, 186, 116, 0.3);
+  border-radius: 7px;
+  background: rgba(253, 186, 116, 0.13);
+  color: #fed7aa;
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-decoration: none;
+}
+
+.video-topbar-vlc:hover,
+.video-topbar-vlc:focus-visible {
+  border-color: rgba(253, 186, 116, 0.56);
+  background: rgba(253, 186, 116, 0.2);
+  color: #fff;
 }
 
 .video-controls {
@@ -9137,9 +9168,7 @@ select.edit-field-input {
     left: 0.45rem;
     right: 0.45rem;
     bottom: 0.45rem;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
+    grid-template-columns: auto auto minmax(0, 1fr) repeat(5, auto);
     gap: 0.38rem;
     padding: 0.45rem;
   }
@@ -9156,9 +9185,22 @@ select.edit-field-input {
     display: none;
   }
 
+  .video-topbar-side {
+    gap: 0.35rem;
+  }
+
+  .video-topbar-vlc {
+    min-height: 30px;
+    padding-inline: 0.62rem;
+  }
+
   .video-controls .icon-button {
     width: 36px;
     height: 36px;
+  }
+
+  .video-pip-control {
+    display: none;
   }
 
   .video-play {
@@ -9202,8 +9244,6 @@ select.edit-field-input {
   }
 
   .video-time {
-    order: -1;
-    flex: 1 0 100%;
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -9405,6 +9445,10 @@ select.edit-field-input {
   .video-topbar-copy span,
   .video-topbar-badges {
     display: none;
+  }
+
+  .video-topbar-side {
+    margin-left: auto;
   }
 
   .video-pip-control {

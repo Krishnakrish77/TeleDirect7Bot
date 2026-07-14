@@ -1635,11 +1635,16 @@ function VideoWatchPage({
             <strong dir="auto">{video.title}</strong>
             {displaySubtitle && <span>{displaySubtitle}</span>}
           </div>
-          <div className="video-topbar-badges" aria-label="Playback state">
-            <span>{sourceMode === 'hls' ? 'HLS' : 'Direct'}</span>
-            {video.quality && <span>{video.quality}</span>}
-            {activeSubtitle && <span>{activeSubtitle.label || activeSubtitle.language || 'Captions'}</span>}
-            {activeChapter && <span>{activeChapter.title}</span>}
+          <div className="video-topbar-side">
+            <div className="video-topbar-badges" aria-label="Playback state">
+              <span>{sourceMode === 'hls' ? 'HLS' : 'Direct'}</span>
+              {video.quality && <span>{video.quality}</span>}
+              {activeSubtitle && <span>{activeSubtitle.label || activeSubtitle.language || 'Captions'}</span>}
+              {activeChapter && <span>{activeChapter.title}</span>}
+            </div>
+            <a className="video-topbar-vlc" href={vlcHref} aria-label="Open in VLC" title="Open in VLC">
+              VLC
+            </a>
           </div>
         </div>
 

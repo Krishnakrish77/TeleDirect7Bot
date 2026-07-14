@@ -822,6 +822,16 @@ describe('WatchPage video player', () => {
     expect(screen.getByRole('menuitem', { name: /720pOpen/i }).getAttribute('href')).toBe('/app/watch/video-key-720');
   });
 
+  it('exposes VLC as a direct player action without opening the options menu', async () => {
+    renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+
+    const vlcLink = screen.getByRole('link', { name: 'Open in VLC' });
+    expect(vlcLink.getAttribute('href')).toBe('vlc://https://example.test/stream/video-key');
+    expect(screen.queryByRole('menu', { name: 'Video options' })).toBeNull();
+  });
+
   it('hides the video download menu action when downloads are disabled', async () => {
     renderWatchPage(makeVideo(), { canDownload: false });
 
