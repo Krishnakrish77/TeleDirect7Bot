@@ -185,6 +185,7 @@ export function WatchPage({
   savedIds,
   onToggleSaved,
   serverSyncEnabled = false,
+  canDownload = true,
 }: {
   watchKey: string;
   audio: AudioPlayerHandle;
@@ -193,6 +194,7 @@ export function WatchPage({
   savedIds?: Set<string>;
   onToggleSaved?: (itemId: string) => void;
   serverSyncEnabled?: boolean;
+  canDownload?: boolean;
 }) {
   const { player, playTrack, playRelative, playQueueIndex, addToQueue, shuffleQueue,
     togglePlayback, seek, setSpeed, cycleRepeatMode, setVolume, toggleMute,
@@ -234,7 +236,7 @@ export function WatchPage({
   }
 
   if (isWatchVideo(data.item)) {
-    return <VideoWatchPage video={data.item} serverSyncEnabled={serverSyncEnabled} />;
+    return <VideoWatchPage video={data.item} serverSyncEnabled={serverSyncEnabled} canDownload={canDownload} />;
   }
 
   if (!isWatchTrack(data.item)) {
@@ -402,10 +404,12 @@ export function WatchPage({
                     <span>{savedIds?.has(track.itemId) ? 'Liked' : 'Like'}</span>
                   </button>
                 )}
-                <a className="secondary-action" href={track.downloadHref || track.streamHref} download>
-                  <DownloadIcon />
-                  <span>Download</span>
-                </a>
+                {canDownload && (
+                  <a className="secondary-action" href={track.downloadHref || track.streamHref} download>
+                    <DownloadIcon />
+                    <span>Download</span>
+                  </a>
+                )}
                 <button type="button" className="secondary-action" onClick={shareAudio}>
                   <ShareIcon />
                   <span>Share</span>
@@ -576,7 +580,15 @@ export function WatchPage({
   );
 }
 
-function VideoWatchPage({ video, serverSyncEnabled = false }: { video: WatchVideo; serverSyncEnabled?: boolean }) {
+function VideoWatchPage({
+  video,
+  serverSyncEnabled = false,
+  canDownload = true,
+}: {
+  video: WatchVideo;
+  serverSyncEnabled?: boolean;
+  canDownload?: boolean;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
@@ -1843,10 +1855,12 @@ function VideoWatchPage({ video, serverSyncEnabled = false }: { video: WatchVide
               <span>VLC</span>
               <strong>Open</strong>
             </a>
-            <a className="video-menu-row" role="menuitem" href={video.downloadHref} download>
-              <span>Download</span>
-              <strong>File</strong>
-            </a>
+            {canDownload && (
+              <a className="video-menu-row" role="menuitem" href={video.downloadHref} download>
+                <span>Download</span>
+                <strong>File</strong>
+              </a>
+            )}
             <button type="button" className="video-menu-row" role="menuitem" onClick={shareVideo}>
               <span>Share</span>
               <strong>Link</strong>

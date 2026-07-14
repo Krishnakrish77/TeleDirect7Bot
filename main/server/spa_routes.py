@@ -108,8 +108,28 @@ _HUB_CARD_PAYLOAD_KEYS = (
 
 @routes.get("/robots.txt")
 async def robots_txt(_: web.Request) -> web.Response:
+    lines = [
+        "User-agent: *",
+        "Disallow: /admin",
+        "Disallow: /api",
+        "Disallow: /auth",
+        "Disallow: /watch",
+        "Disallow: /hls",
+        "Disallow: /sub",
+        "Disallow: /thumb",
+        "Disallow: /app/admin",
+        "Disallow: /app/live-tv",
+        "Disallow: /app/watch",
+        "Disallow: /app/watchlist",
+        "Disallow: /app/liked-songs",
+        "Disallow: /app/playlists",
+        "Disallow: /app/stats",
+        "Allow: /app",
+        "Allow: /manifest.json",
+        "Allow: /favicon.svg",
+    ]
     return web.Response(
-        text="User-agent: *\nDisallow: /admin\nDisallow: /api\nAllow: /app\nAllow: /\n",
+        text="\n".join(lines) + "\n",
         content_type="text/plain",
         headers={"Cache-Control": "max-age=86400"},
     )

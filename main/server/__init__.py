@@ -166,9 +166,11 @@ async def security_middleware(request: web.Request, handler):
         return response
     for k, v in _SECURITY_HEADERS.items():
         response.headers.setdefault(k, v)
+    if ctype.startswith("text/html"):
+        response.headers.setdefault("X-Robots-Tag", "noindex, nofollow, noarchive")
     # HSTS — only on HTTPS deployments.  Tell browsers to always use
     # HTTPS for this origin for the next year.
-    if _Var.HAS_SSL or _Var.ON_HEROKU:
+    if _Var.HAS_SSL or getattr(_Var, "ON_KOYEB", False):
         response.headers.setdefault(
             "Strict-Transport-Security",
             "max-age=31536000; includeSubDomains",

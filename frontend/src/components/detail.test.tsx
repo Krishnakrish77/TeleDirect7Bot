@@ -334,6 +334,29 @@ describe('Series detail', () => {
     }
   });
 
+  it('hides series download actions when downloads are disabled', () => {
+    render(
+      <DetailPage
+        route={{ kind: 'detail', detailKind: 'series', key: 'ultimate-spiderman' }}
+        data={makeSeries()}
+        loading={false}
+        error=""
+        saved={new Set()}
+        onToggleSaved={vi.fn()}
+        navigate={vi.fn()}
+        playTrack={vi.fn()}
+        togglePlayback={vi.fn()}
+        addToQueue={vi.fn()}
+        shuffleQueue={vi.fn()}
+        player={makePlayer()}
+        canDownload={false}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Download all shown episodes' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Download S01E01 Training Day' })).toBeNull();
+  });
+
   it('marks the shown episodes watched from the detail page', () => {
     const series = makeSeries();
     const onMarkWatched = vi.fn();

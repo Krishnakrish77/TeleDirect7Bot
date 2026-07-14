@@ -26,6 +26,7 @@ export function DetailPage({
   player,
   onAddToPlaylist,
   onMarkWatched,
+  canDownload = true,
 }: {
   route: Extract<AppRoute, { kind: 'detail' }>;
   data: DetailResponse | null;
@@ -41,6 +42,7 @@ export function DetailPage({
   player: PlayerState;
   onAddToPlaylist?: (track: WatchTrack) => void;
   onMarkWatched?: (keys: string[], title: string) => void;
+  canDownload?: boolean;
 }) {
   if (loading) {
     return <main className="detail-main"><LoadingRows /></main>;
@@ -55,7 +57,16 @@ export function DetailPage({
     case 'movie':
       return <MovieDetail data={data} saved={saved} onToggleSaved={onToggleSaved} onMarkWatched={onMarkWatched} />;
     case 'series':
-      return <SeriesDetail data={data} saved={saved} onToggleSaved={onToggleSaved} navigate={navigate} onMarkWatched={onMarkWatched} />;
+      return (
+        <SeriesDetail
+          data={data}
+          saved={saved}
+          onToggleSaved={onToggleSaved}
+          navigate={navigate}
+          onMarkWatched={onMarkWatched}
+          canDownload={canDownload}
+        />
+      );
     case 'album':
       return (
         <AlbumDetail
@@ -569,12 +580,14 @@ function SeriesDetail({
   onToggleSaved,
   navigate,
   onMarkWatched,
+  canDownload = true,
 }: {
   data: SeriesDetailResponse;
   saved: Set<string>;
   onToggleSaved: (itemId: string) => void;
   navigate: (href: string, replace?: boolean) => void;
   onMarkWatched?: (keys: string[], title: string) => void;
+  canDownload?: boolean;
 }) {
   const ratingId = data.seasonBlocks[0]?.entries[0]?.rep.itemId || null;
   const [, refreshSeriesWatchedState] = useState(0);
@@ -602,6 +615,7 @@ function SeriesDetail({
   const [downloadBatch, setDownloadBatch] = useState<{ current: number; total: number } | null>(null);
   const downloadStatusTimer = useRef<number | null>(null);
   const downloadTargets = useMemo(() => {
+    if (!canDownload) return [];
     const seen = new Set<string>();
     return data.seasonBlocks.flatMap((block) => (
       block.entries.flatMap((entry) => {
@@ -611,7 +625,7 @@ function SeriesDetail({
         return [href];
       })
     ));
-  }, [data.seasonBlocks]);
+  }, [canDownload, data.seasonBlocks]);
 
   const clearDownloadStatusTimer = () => {
     if (downloadStatusTimer.current !== null) {
@@ -752,7 +766,7 @@ function SeriesDetail({
                             ))}
                           </div>
                         )}
-                        {entry.rep.downloadHref && (
+                        {canDownload && entry.rep.downloadHref && (
                           <div className="episode-card-actions">
                             <a
                               className="episode-download-action"

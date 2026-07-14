@@ -12,6 +12,9 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 type InstallMode = 'native' | 'ios';
+type InstallPromptProps = {
+  enabled?: boolean;
+};
 
 const DISMISS_KEY = 'td:pwa-install-dismissed-until:v1';
 const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -61,27 +64,35 @@ function isIosDevice(): boolean {
   return /iphone|ipad|ipod/i.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1);
 }
 
-export function InstallPrompt() {
+export function InstallPrompt({ enabled = true }: InstallPromptProps) {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [mode, setMode] = useState<InstallMode | null>(null);
   const [installed, setInstalled] = useState(() => isStandalone());
   const [dismissedUntil, setDismissedUntil] = useState(() => readDismissedUntil());
 
   useEffect(() => {
+    if (!enabled) {
+      setMode(null);
+      return;
+    }
     if (isStandalone()) {
       setInstalled(true);
       return;
     }
     if (isDismissed()) return;
+    if (installEvent) {
+      setMode('native');
+      return;
+    }
     if (isIosDevice()) setMode('ios');
-  }, []);
+  }, [enabled, installEvent]);
 
   useEffect(() => {
     const onBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       if (isStandalone() || isDismissed()) return;
       setInstallEvent(event as BeforeInstallPromptEvent);
-      setMode('native');
+      setMode(enabled ? 'native' : null);
     };
     const onAppInstalled = () => {
       clearDismissal();
@@ -96,7 +107,7 @@ export function InstallPrompt() {
       window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
       window.removeEventListener('appinstalled', onAppInstalled);
     };
-  }, []);
+  }, [enabled]);
 
   const dismiss = useCallback(() => {
     setDismissedUntil(rememberDismissal());
@@ -123,7 +134,7 @@ export function InstallPrompt() {
     }
   }, [installEvent]);
 
-  if (installed || !mode || dismissedUntil > Date.now()) return null;
+  if (!enabled || installed || !mode || dismissedUntil > Date.now()) return null;
 
   const isNative = mode === 'native' && installEvent;
   const title = isNative ? 'Install TeleDirect' : 'Add TeleDirect to Home Screen';

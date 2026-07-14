@@ -103,4 +103,15 @@ describe('InstallPrompt', () => {
 
     expect(screen.queryByLabelText('Install TeleDirect')).toBeNull();
   });
+
+  it('stays hidden when disabled for guests', () => {
+    const event = makeBeforeInstallPrompt('accepted');
+    render(<InstallPrompt enabled={false} />);
+
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(screen.queryByLabelText('Install TeleDirect')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Install' })).toBeNull();
+  });
 });

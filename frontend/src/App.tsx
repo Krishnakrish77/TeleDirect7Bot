@@ -317,7 +317,7 @@ function App() {
         activeView={activeView}
         activeSection={activeSection}
       />
-      <InstallPrompt />
+      <InstallPrompt enabled={Boolean(user)} />
 
       <Suspense fallback={<RouteFallback />}>
         {isHubRoute ? (
@@ -406,6 +406,7 @@ function App() {
             player={audio.player}
             onAddToPlaylist={onAddToPlaylist}
             onMarkWatched={onMarkWatched}
+            canDownload={Boolean(user)}
           />
         ) : route.kind === 'watchlist' ? (
           <WatchlistPage
@@ -518,6 +519,7 @@ function App() {
               void toggle(itemId);
             }}
             serverSyncEnabled={Boolean(user)}
+            canDownload={Boolean(user)}
           />
         )}
       </Suspense>

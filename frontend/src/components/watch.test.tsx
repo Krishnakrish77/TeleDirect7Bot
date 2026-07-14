@@ -202,7 +202,7 @@ function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
   };
 }
 
-function renderWatchPage(video = makeVideo(), options: { serverSyncEnabled?: boolean } = {}) {
+function renderWatchPage(video = makeVideo(), options: { serverSyncEnabled?: boolean; canDownload?: boolean } = {}) {
   fetchWatchMock.mockResolvedValue({
     mediaKind: 'video',
     item: video,
@@ -214,6 +214,7 @@ function renderWatchPage(video = makeVideo(), options: { serverSyncEnabled?: boo
       audio={makeAudio()}
       onOpenQueue={vi.fn()}
       serverSyncEnabled={options.serverSyncEnabled}
+      canDownload={options.canDownload}
     />,
   );
 }
@@ -821,6 +822,16 @@ describe('WatchPage video player', () => {
     expect(screen.getByRole('menuitem', { name: /720pOpen/i }).getAttribute('href')).toBe('/app/watch/video-key-720');
   });
 
+  it('hides the video download menu action when downloads are disabled', async () => {
+    renderWatchPage(makeVideo(), { canDownload: false });
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    fireEvent.click(screen.getByLabelText('More video options'));
+
+    expect(screen.queryByRole('menuitem', { name: /Download\s*File/i })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: /Share\s*Link/i })).toBeTruthy();
+  });
+
   it('does not repeat the quality as a subtitle in the video titlebar', async () => {
     const view = renderWatchPage(makeVideo({ quality: '720p', subtitle: '720p' }));
 
@@ -989,5 +1000,27 @@ describe('WatchPage audio player', () => {
     fireEvent.click(screen.getByText('Retry'));
     expect(audio.togglePlayback).toHaveBeenCalledWith(track, [track]);
     expect(screen.getAllByRole('link', { name: /Classic/i })[0].getAttribute('href')).toBe('/watch/track-key');
+  });
+
+  it('hides the audio download action when downloads are disabled', async () => {
+    const track = makeTrack();
+    fetchWatchMock.mockResolvedValue({
+      mediaKind: 'music',
+      item: track,
+      albumTracks: [track],
+    });
+
+    render(
+      <WatchPage
+        watchKey={track.key}
+        audio={makeAudio({ track, queue: [track], queueIndex: 0 })}
+        onOpenQueue={vi.fn()}
+        canDownload={false}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Theme', level: 1 });
+    expect(screen.queryByRole('link', { name: 'Download' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Share' })).toBeTruthy();
   });
 });

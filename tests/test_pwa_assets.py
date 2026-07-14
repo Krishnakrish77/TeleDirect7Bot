@@ -1,9 +1,13 @@
+import asyncio
 import json
 import importlib
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from tempfile import TemporaryDirectory
 import unittest
+
+from aiohttp import web
 
 
 os.environ.setdefault("API_ID", "1")
@@ -12,6 +16,8 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 hub_routes = importlib.import_module("main.server.hub_routes")
+server = importlib.import_module("main.server")
+spa_routes = importlib.import_module("main.server.spa_routes")
 
 
 class PwaAssetsTest(unittest.TestCase):
@@ -76,6 +82,25 @@ class PwaAssetsTest(unittest.TestCase):
 
         for asset in hub_routes._load_react_app_shell_assets(manifest_path):
             self.assertIn(asset, hub_routes._SW_JS)
+
+    def test_robots_txt_blocks_private_and_download_heavy_surfaces(self):
+        response = asyncio.run(spa_routes.robots_txt(SimpleNamespace()))
+        body = response.text
+
+        self.assertIn("Disallow: /api", body)
+        self.assertIn("Disallow: /watch", body)
+        self.assertIn("Disallow: /app/watch", body)
+        self.assertIn("Disallow: /app/admin", body)
+        self.assertIn("Allow: /app", body)
+        self.assertNotIn("Allow: /\n", body)
+
+    def test_security_middleware_marks_html_noindex(self):
+        async def handler(_request):
+            return web.Response(text="<html></html>", content_type="text/html")
+
+        response = asyncio.run(server.security_middleware(SimpleNamespace(), handler))
+
+        self.assertEqual(response.headers["X-Robots-Tag"], "noindex, nofollow, noarchive")
 
 
 if __name__ == "__main__":
