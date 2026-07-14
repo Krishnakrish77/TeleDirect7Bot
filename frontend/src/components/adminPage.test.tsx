@@ -63,6 +63,7 @@ const adminData: AdminResponse = {
       duplicate: false,
       duplicateReason: '',
       duplicateGroupSize: 0,
+      duplicateExtra: false,
       hasThumb: true,
       missingThumb: false,
       missingPoster: false,
@@ -257,11 +258,41 @@ describe('AdminPage', () => {
           duplicate: true,
           duplicateReason: 'Exact file',
           duplicateGroupSize: 2,
+          duplicateExtra: true,
         }],
       },
     });
 
-    expect(screen.getByText('Exact file (2)')).toBeTruthy();
+    expect(screen.getByText('Duplicate copy: Exact file (2)')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete copy Kalki' })).toBeTruthy();
+  });
+
+  it('explains and runs exact duplicate cleanup from the duplicates filter', async () => {
+    const reload = vi.fn();
+    renderAdmin({
+      reload,
+      data: {
+        ...adminData,
+        filterName: 'duplicates',
+        items: [{
+          ...adminData.items[0],
+          duplicate: true,
+          duplicateReason: 'Exact file',
+          duplicateGroupSize: 2,
+          duplicateExtra: true,
+        }],
+      },
+    });
+
+    expect(screen.getByRole('region', { name: 'Duplicate resolution' }).textContent).toContain('same file hash and size');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run de-dupe (1)' }));
+
+    await waitFor(() => {
+      expect(runAdminMaintenance).toHaveBeenCalledWith('dedupe');
+    });
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('exact duplicate uploads'));
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it('runs maintenance operations', async () => {

@@ -629,6 +629,37 @@ function BulkBar({
   );
 }
 
+function DuplicateResolutionBanner({
+  data,
+  busy,
+  onDedupe,
+}: {
+  data: AdminResponse;
+  busy: string;
+  onDedupe: () => void;
+}) {
+  if (data.filterName !== 'duplicates') return null;
+  const extras = data.stats.duplicate_extras;
+  return (
+    <section className="admin-duplicate-guide" aria-label="Duplicate resolution">
+      <div>
+        <p className="eyebrow">Duplicate cleanup</p>
+        <h2>Resolve exact duplicate uploads</h2>
+        <p>
+          This view only lists extra copies with the same file hash and size. Different qualities
+          or releases of the same title are kept out of this cleanup flow.
+        </p>
+      </div>
+      <div className="admin-duplicate-guide-actions">
+        <button type="button" className="danger" disabled={Boolean(busy) || extras === 0} onClick={onDedupe}>
+          {busy === 'dedupe' ? 'Running...' : `Run de-dupe${extras ? ` (${extras})` : ''}`}
+        </button>
+        <span>Select rows below to delete individual copies instead.</span>
+      </div>
+    </section>
+  );
+}
+
 function AdminItemRow({
   item,
   selected,
@@ -644,9 +675,11 @@ function AdminItemRow({
   onDelete: () => void;
   onEdit: () => void;
 }) {
+  const duplicateKind = item.duplicateExtra ? 'Duplicate copy' : 'Keeper copy';
   const duplicateLabel = item.duplicateReason
-    ? `${item.duplicateReason}${item.duplicateGroupSize ? ` (${item.duplicateGroupSize})` : ''}`
-    : 'Duplicate';
+    ? `${duplicateKind}: ${item.duplicateReason}${item.duplicateGroupSize ? ` (${item.duplicateGroupSize})` : ''}`
+    : duplicateKind;
+  const deleteLabel = item.duplicateExtra ? 'Delete copy' : 'Delete';
   return (
     <article className={['admin-row', item.hidden ? 'hidden-row' : '', item.duplicate ? 'duplicate-row' : ''].filter(Boolean).join(' ')}>
       <label className="admin-row-check">
@@ -687,11 +720,11 @@ function AdminItemRow({
           type="button"
           className="admin-row-delete"
           onClick={onDelete}
-          title={`Delete ${item.title}`}
-          aria-label={`Delete ${item.title}`}
+          title={`${deleteLabel} ${item.title}`}
+          aria-label={`${deleteLabel} ${item.title}`}
         >
           <TrashIcon />
-          <span>Delete</span>
+          <span>{deleteLabel}</span>
         </button>
       </div>
     </article>
@@ -1471,6 +1504,14 @@ export function AdminPage({
                 setQuery={setQuery}
                 onSubmit={submitSearch}
                 updateParam={updateParam}
+              />
+              <DuplicateResolutionBanner
+                data={data}
+                busy={busy}
+                onDedupe={() => runMaintenanceAction(
+                  'dedupe',
+                  'Run de-dupe? This deletes exact duplicate uploads from BIN and keeps the oldest copy.',
+                )}
               />
               <AdminList
                 data={data}

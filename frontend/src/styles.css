@@ -9830,6 +9830,68 @@ select.edit-field-input {
   padding: 0.85rem;
 }
 
+.admin-duplicate-guide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.85rem;
+  border: 1px solid rgba(253, 186, 116, 0.22);
+  border-radius: 8px;
+  background: rgba(253, 186, 116, 0.07);
+}
+
+.admin-duplicate-guide h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.admin-duplicate-guide p:not(.eyebrow) {
+  margin: 0.25rem 0 0;
+  max-width: 62rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.admin-duplicate-guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+  min-width: min(100%, 18rem);
+}
+
+.admin-duplicate-guide-actions button {
+  min-height: 36px;
+  padding: 0 0.75rem;
+  border: 1px solid rgba(248, 113, 113, 0.34);
+  border-radius: 7px;
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+  font-weight: 900;
+}
+
+.admin-duplicate-guide-actions button:hover,
+.admin-duplicate-guide-actions button:focus-visible {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fff;
+}
+
+.admin-duplicate-guide-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.admin-duplicate-guide-actions span {
+  flex-basis: 100%;
+  color: var(--dim);
+  font-size: 0.74rem;
+  font-weight: 750;
+  text-align: right;
+}
+
 .admin-notice {
   padding: 0.7rem 0.85rem;
   border-color: rgba(20, 184, 166, 0.24);
@@ -10053,15 +10115,36 @@ select.edit-field-input {
 }
 
 .admin-row-copy {
+  min-width: 0;
   gap: 0.18rem;
 }
 
+.admin-row-copy a,
+.admin-row-copy strong,
+.admin-row-copy span,
+.admin-row-copy small {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .admin-row-copy strong {
+  display: block;
+  overflow: visible;
+  line-height: 1.2;
+  text-overflow: clip;
+  white-space: normal;
   font-size: 0.9rem;
 }
 
 .admin-row-copy span,
 .admin-row-copy small {
+  display: block;
+  overflow: visible;
+  line-height: 1.25;
+  text-overflow: clip;
+  white-space: normal;
   font-size: 0.74rem;
 }
 
@@ -10581,6 +10664,18 @@ select.edit-field-input {
   .admin-ops-rail .admin-status-grid,
   .admin-ops-rail .maintenance-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-duplicate-guide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-duplicate-guide-actions {
+    justify-content: flex-start;
+  }
+
+  .admin-duplicate-guide-actions span {
+    text-align: left;
   }
 
   .admin-select-row {

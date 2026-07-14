@@ -13,6 +13,7 @@ admin_routes = importlib.import_module("main.server.admin_routes")
 from main.server.admin_routes import (
     _admin_catalogue_context,
     _admin_duplicate_candidates,
+    _admin_item_payload,
     _bulk_delete,
     _bulk_delete_message,
 )
@@ -101,6 +102,8 @@ class AdminCatalogueTest(unittest.TestCase):
         self.assertEqual(details[102]["reason"], "Exact file")
         self.assertFalse(details[101]["extra"])
         self.assertTrue(details[102]["extra"])
+        self.assertFalse(_admin_item_payload(_item(101, secure_hash="same", file_size=1000), details)["duplicateExtra"])
+        self.assertTrue(_admin_item_payload(_item(102, secure_hash="same", file_size=1000), details)["duplicateExtra"])
 
     def test_duplicate_counts_ignore_same_title_review_candidates(self):
         details, groups, extras = _admin_duplicate_candidates([

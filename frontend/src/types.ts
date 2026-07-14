@@ -542,6 +542,7 @@ export interface AdminItem {
   duplicate: boolean;
   duplicateReason?: string;
   duplicateGroupSize?: number;
+  duplicateExtra?: boolean;
   hasThumb: boolean;
   missingThumb: boolean;
   missingPoster: boolean;

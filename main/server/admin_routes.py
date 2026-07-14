@@ -341,6 +341,7 @@ def _admin_item_payload(item, duplicate_details) -> dict:
         "duplicate": bool(duplicate_info),
         "duplicateReason": (duplicate_info or {}).get("reason", ""),
         "duplicateGroupSize": (duplicate_info or {}).get("size", 0),
+        "duplicateExtra": bool((duplicate_info or {}).get("extra")),
         "hasThumb": bool(item.has_thumb),
         "missingThumb": not item.has_thumb and not item.duration,
         "missingPoster": bool(item.tmdb_id and not item.poster_path),
