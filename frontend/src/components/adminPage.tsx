@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { aiSuggestItem, clearAdminItemTmdb, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem } from '../api';
+import { aiSuggestItem, clearAdminItemTmdb, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem, uploadAdminSubtitle } from '../api';
 import { FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TrashIcon, XIcon } from '../icons';
 
 export function AdminNav({
@@ -780,6 +780,8 @@ function EditModal({
   const [imdbError, setImdbError] = useState('');
   const tmdbDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isAudio, setIsAudio] = useState(false);
+  const [subtitleUploading, setSubtitleUploading] = useState(false);
+  const [subtitleStatus, setSubtitleStatus] = useState('');
 
   const [form, setForm] = useState<FormState>({
     title: '', year: null, tags: '', description: '', fileName: '',
@@ -982,6 +984,22 @@ function EditModal({
       setError(err instanceof Error ? err.message : 'Save failed');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSubtitleUpload = async (file: File | null | undefined) => {
+    if (!file) return;
+    setSubtitleUploading(true);
+    setError('');
+    setSubtitleStatus('');
+    try {
+      const result = await uploadAdminSubtitle(messageId, file);
+      if (result.item) onSaved(result.item as AdminItem);
+      setSubtitleStatus(result.message || `Attached ${file.name}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Subtitle upload failed');
+    } finally {
+      setSubtitleUploading(false);
     }
   };
 
@@ -1210,6 +1228,20 @@ function EditModal({
                           onChange={(e) => setField('chapters', e.currentTarget.value)}
                           placeholder={'0 Opening\n75 First turn\n180 Final scene'}
                         />
+                      </div>
+                      <div className="edit-section">
+                        <p className="edit-section-label">Sidecar subtitles <span className="edit-field-hint">you can attach multiple language tracks</span></p>
+                        <label className="secondary-action compact-action" style={{ display: 'inline-flex', cursor: subtitleUploading ? 'wait' : 'pointer' }}>
+                          <input
+                            hidden
+                            type="file"
+                            accept=".srt,.vtt,text/vtt,application/x-subrip"
+                            disabled={subtitleUploading}
+                            onChange={(event) => void handleSubtitleUpload(event.currentTarget.files?.[0])}
+                          />
+                          {subtitleUploading ? 'Uploading…' : 'Upload subtitle'}
+                        </label>
+                        {subtitleStatus && <p className="edit-field-hint" style={{ marginTop: '0.5rem' }}>{subtitleStatus}</p>}
                       </div>
                     </>
                   )}

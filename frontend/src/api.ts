@@ -374,6 +374,12 @@ export async function saveAdminItem(id: number, payload: AdminItemEditPayload): 
   });
 }
 
+export async function uploadAdminSubtitle(id: number, file: File): Promise<{ ok: boolean; message: string; item: unknown }> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return request(`/api/app/admin/item/${id}/subtitles`, { method: 'POST', body: form });
+}
+
 export async function fetchAiModels(signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
   return request<Array<{ id: string; name: string }>>('/api/app/admin/ai-models', { signal });
 }

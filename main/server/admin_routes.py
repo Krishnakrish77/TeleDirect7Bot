@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import html as _html_lib
+import io
 import json
 import logging
 import re
@@ -33,15 +34,18 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from main import StreamBot
 from main.utils import media_index, thumb_cache, trending as _trending
 from main.utils.human_readable import humanbytes
-from main.utils.hub_query import HubItem
+from main.utils.hub_query import ExternalSubtitle, HubItem
+from main.utils.file_properties import get_hash
 from main.utils.index_entry import IndexEntry, render
 from main.utils import series as series_parse
 from main.utils.media_index import compute_movie_key
 from main.utils.user_auth import decode_token
+from main.utils.subtitles import derive_label, language_from_filename
 from main.vars import Var
 
 
 routes = web.RouteTableDef()
+_MAX_SIDECAR_SUBTITLE_BYTES = 10 * 1024 * 1024
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
 _env = Environment(
@@ -2887,6 +2891,67 @@ async def api_app_admin_item_clear_tmdb(request: web.Request) -> web.Response:
     await media_index._store_upsert(item)
     return web.json_response({"ok": True, "item": _admin_item_payload(item, set())},
                              headers={"Cache-Control": "no-store"})
+
+
+@routes.post(r"/api/app/admin/item/{id:\d+}/subtitles")
+async def api_app_admin_item_upload_subtitle(request: web.Request) -> web.Response:
+    """Upload and attach a durable SRT/VTT sidecar to one video."""
+    _require_api_admin(request)
+    message_id = int(request.match_info["id"])
+    item = media_index.get_item(message_id)
+    if item is None:
+        return web.json_response({"error": "Not found"}, status=404)
+    if getattr(item, "media_kind", "") == "audio":
+        return web.json_response({"error": "Subtitles can only be attached to video"}, status=400)
+    # Reject oversized regular requests before aiohttp parses their multipart
+    # body.  Chunked requests remain protected by the application's 30 MB
+    # maximum and the post-read limit below.
+    if request.content_length is not None and request.content_length > _MAX_SIDECAR_SUBTITLE_BYTES + 64 * 1024:
+        return web.json_response({"error": "Subtitle file exceeds 10 MB"}, status=413)
+    try:
+        form = await request.post()
+        upload = form.get("file")
+        # Browsers normally submit a basename, but normalize Windows paths as
+        # well before using the name in Telegram metadata or API responses.
+        filename = Path((getattr(upload, "filename", "") or "").replace("\\", "/")).name
+        if not filename or Path(filename).suffix.lower() not in {".srt", ".vtt"}:
+            return web.json_response({"error": "Choose an .srt or .vtt file"}, status=400)
+        data = upload.file.read() if hasattr(upload, "file") else b""
+    except Exception:
+        return web.json_response({"error": "Invalid subtitle upload"}, status=400)
+    if not data:
+        return web.json_response({"error": "Subtitle file is empty"}, status=400)
+    if len(data) > _MAX_SIDECAR_SUBTITLE_BYTES:
+        return web.json_response({"error": "Subtitle file exceeds 10 MB"}, status=413)
+    try:
+        bin_message = await StreamBot.send_document(
+            Var.BIN_CHANNEL,
+            io.BytesIO(data),
+            file_name=filename,
+            caption=f"Subtitle sidecar for bin:{message_id}",
+            disable_notification=True,
+        )
+        sidecar = ExternalSubtitle(
+            bin_message_id=bin_message.id,
+            secure_hash=get_hash(bin_message),
+            language=language_from_filename(filename),
+            label=derive_label(language_from_filename(filename), filename),
+        )
+        if not await media_index.attach_subtitle(message_id, sidecar):
+            await StreamBot.delete_messages(Var.BIN_CHANNEL, bin_message.id)
+            return web.json_response({"error": "Video no longer exists"}, status=404)
+        item = media_index.get_item(message_id)
+        if item is not None:
+            await media_index._store_upsert(item)
+            media_index.schedule_snapshot(StreamBot)
+        return web.json_response({
+            "ok": True,
+            "item": _admin_item_payload(item, set()) if item else None,
+            "message": f"Attached {filename}",
+        })
+    except Exception:
+        logging.exception("admin: subtitle upload failed for bin:%d", message_id)
+        return web.json_response({"error": "Could not save subtitle"}, status=502)
 
 
 @routes.post(r"/api/app/admin/item/{id:\d+}")
