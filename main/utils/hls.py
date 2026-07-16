@@ -211,6 +211,7 @@ def _normalise_lang(raw: Optional[str]) -> str:
 _JUNK_TITLE_RE = re.compile(
     r"www\."            # URL fragment
     r"|\.\w{2,6}\s*[-–]"  # domain extension followed by separator (e.g. .nexus -)
+    r"|\w{3,}\.[a-z]{2,4}\b"  # bare domain token, e.g. HDHub4u.Ag, site.com
     r"|\[\s*\w"         # bracket-wrapped codec/bitrate info, e.g. [AAC 2.0 - 64Kbps]
     r"|\d+\s*[Kk]bps"  # bare bitrate string
     r"|^\s*und\s*$"     # "und" = undefined language code
