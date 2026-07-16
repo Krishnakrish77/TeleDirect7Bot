@@ -628,6 +628,7 @@ function VideoWatchPage({
   const lastStillWatchingActivityRef = useRef<number | null>(null);
   const pendingServerResumeRef = useRef(false);
   const pendingResumeMaxPositionRef = useRef(0);
+  const continueSessionStartedRef = useRef(Date.now());
   const [autoplayNext, setAutoplayNext] = useState(() => {
     try {
       return localStorage.getItem('td:videoAutoplay') !== '0';
@@ -893,6 +894,10 @@ function VideoWatchPage({
   }, [muted, sourceSrc, volume]);
 
   useEffect(() => {
+    continueSessionStartedRef.current = Date.now();
+  }, [video.key]);
+
+  useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
     el.playbackRate = playbackRate;
@@ -1070,6 +1075,7 @@ function VideoWatchPage({
             dur: Math.floor(mediaEl.duration),
             t: now,
             title: video.title,
+            startedAt: continueSessionStartedRef.current,
           }).catch(() => undefined);
         }
       } else if (force) {

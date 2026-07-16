@@ -409,6 +409,7 @@ export interface ContinueEntry {
   dur: number;
   t: number;
   title: string;
+  startedAt?: number;
 }
 
 export type ContinueMap = Record<string, Omit<ContinueEntry, 'key'>>;

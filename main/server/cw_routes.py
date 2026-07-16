@@ -9,7 +9,9 @@ DELETE /api/cw          — clear all entries
 from __future__ import annotations
 
 import json
+import math
 import re
+import time
 
 from aiohttp import web
 
@@ -55,12 +57,25 @@ async def api_upsert(request: web.Request) -> web.Response:
         pos = float(body.get("pos", 0))
         dur = float(body.get("dur", 0))
         t = int(body.get("t", 0))
+        started_at = int(body.get("startedAt", t))
         title = str(body.get("title", ""))[:200]
     except Exception:
         return _json({"error": "invalid body"}, status=400)
-    if dur <= 0:
+    if not all(math.isfinite(value) for value in (pos, dur)) or dur <= 0 or pos < 0:
+        return _json({"error": "invalid progress"}, status=400)
+    now_ms = int(time.time() * 1000)
+    # Use server time for future-skewed clients so a fast device cannot later
+    # overwrite a deletion tombstone created by another device.
+    if t <= 0 or t > now_ms:
+        t = now_ms
+    if started_at <= 0 or started_at > now_ms:
+        started_at = t
+    # Completion is authoritative on the server too.  This prevents stale
+    # near-finished entries being displayed or later synced by another device.
+    if pos / dur >= 0.95:
+        await cw_store.delete_one(int(user["sub"]), key)
         return _json({"ok": True})
-    await cw_store.upsert(int(user["sub"]), key, pos, dur, t, title)
+    await cw_store.upsert(int(user["sub"]), key, pos, dur, t, title, started_at)
     return _json({"ok": True})
 
 

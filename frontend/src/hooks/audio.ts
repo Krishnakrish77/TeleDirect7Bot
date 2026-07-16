@@ -233,6 +233,8 @@ export function useAudioPlayer() {
   const playbackAttemptRef = useRef(0);
   const playbackAttemptTrackKeyRef = useRef('');
   const cwLastSyncRef = useRef(0);
+  const cwSessionKeyRef = useRef('');
+  const cwSessionStartedRef = useRef(0);
   const persistLastRef = useRef(0);
   const [player, setPlayer] = useState<PlayerState>(() => initialPlayerState());
   const playerRef = useRef(player);
@@ -956,12 +958,17 @@ export function useAudioPlayer() {
         persistNowPlaying({ ...current, currentTime, duration });
       }
       if (current.track && currentTime > 5 && duration > 0 && now - cwLastSyncRef.current > 30000) {
+        if (cwSessionKeyRef.current !== current.track.key) {
+          cwSessionKeyRef.current = current.track.key;
+          cwSessionStartedRef.current = now;
+        }
         cwLastSyncRef.current = now;
         void saveContinueEntry(current.track.key, {
           pos: Math.floor(currentTime),
           dur: Math.floor(duration),
           t: now,
           title: current.track.title,
+          startedAt: cwSessionStartedRef.current || now,
         }).catch(() => undefined);
       }
       if ('mediaSession' in navigator && current.track && duration > 0) {
