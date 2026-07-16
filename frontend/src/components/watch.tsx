@@ -901,12 +901,22 @@ function VideoWatchPage({
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
-    // Match by TextTrack.id so HLS.js-injected tracks at unpredictable
-    // indices don't interfere. Guard activeSub so empty-id HLS tracks
-    // are never accidentally shown when no sub is selected.
+    // TextTrack does not standardise an ``id`` property from the <track>
+    // element, so map our React-rendered tracks through their data attribute.
+    // Retain the id fallback for tracks inserted by HLS.js.
     const applyMode = () => {
+      const rendered = new Set<TextTrack>();
+      el.querySelectorAll<HTMLTrackElement>('track[data-subtitle-id]').forEach((element) => {
+        // jsdom does not implement HTMLTrackElement.track; real browsers do.
+        const textTrack = element.track;
+        if (!textTrack) return;
+        rendered.add(textTrack);
+        textTrack.mode = activeSub && element.dataset.subtitleId === activeSub ? 'showing' : 'disabled';
+      });
       Array.from(el.textTracks || []).forEach((track) => {
-        track.mode = (activeSub && track.id === activeSub) ? 'showing' : 'disabled';
+        if (rendered.has(track)) return;
+        const hlsTrack = track as TextTrack & { id?: string };
+        track.mode = activeSub && hlsTrack.id === activeSub ? 'showing' : 'disabled';
       });
     };
     applyMode();
@@ -1659,6 +1669,7 @@ function VideoWatchPage({
             <track
               key={track.id}
               id={track.id}
+              data-subtitle-id={track.id}
               kind="subtitles"
               src={track.url}
               srcLang={track.language || 'und'}
