@@ -207,11 +207,26 @@ async def render_page(message_id, secure_hash,
                 share_type = "video.other"
 
         from main.utils import codec_probe
-        known_unplayable = (
+        source_known_unplayable = (
             mime_type == "video"
             and meta is not None
             and codec_probe.known_unplayable(meta)
         )
+        source_codec = (getattr(meta, "video_codec", "") or "").lower() if meta else ""
+        # HEVC can sometimes decode directly, but is not reliable through
+        # hls.js/MSE. A probed non-AVC source gets the portable HLS fallback.
+        source_needs_hls_transcode = source_known_unplayable or (
+            mime_type == "video" and bool(source_codec)
+            and source_codec not in {"h264", "avc1"}
+        )
+        # A native-container upload may still contain AV1/HEVC/10-bit H.264.
+        # Route it to HLS so the server can create browser-safe AVC/AAC
+        # segments instead of displaying the VLC-only overlay.
+        if source_needs_hls_transcode and not hls_src:
+            hls_src = urllib.parse.urljoin(
+                Var.URL, f'hls/{secure_hash}{message_id}/playlist.m3u8',
+            )
+        known_unplayable = source_needs_hls_transcode and not hls_src
         # Quality variants — other uploads of the same film or episode at
         # different resolutions / file sizes. Shown as chips on the watch
         # page so users can switch quality without going back.

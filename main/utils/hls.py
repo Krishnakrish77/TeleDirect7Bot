@@ -6,10 +6,10 @@ listing N segments. The browser then fetches each segment from a segment
 endpoint, which spawns ffmpeg on demand, seeks into the source file (served
 by our own /{hash}{id} route via HTTP), and streams an MPEG-TS chunk back.
 
-Inputs come from Telegram, transmuxed (`-c copy`) — no re-encoding. So this
-only works when the source has codecs MPEG-TS can carry: H.264/HEVC video,
-AAC/AC3/EAC3/MP3 audio. ffprobe runs first to confirm; incompatible files
-get the existing VLC fallback in the watch page.
+Inputs come from Telegram. Browser-safe H.264 video is transmuxed (`-c copy`)
+while other video codecs are encoded to H.264 on demand. This keeps common
+MKVs cheap while allowing the web player to handle ordinary HEVC, AV1, VP9,
+VC-1, and MPEG-2 uploads too.
 """
 
 from __future__ import annotations
@@ -36,10 +36,6 @@ PROBE_TTL = 60 * 60
 # Cap concurrent ffmpeg subprocesses so a free-tier instance can't be DOSed
 # into oblivion by a handful of viewers all hitting "play" at once.
 MAX_CONCURRENT_SEGMENTS = int(os.environ.get("HLS_MAX_CONCURRENT", "2"))
-
-# Codecs MPEG-TS can carry without re-encoding.
-HLS_COMPAT_VIDEO = {"h264", "hevc"}
-HLS_COMPAT_AUDIO = {"aac", "ac3", "eac3", "mp3", "mp2"}
 
 # Audio codecs browsers can play natively in HLS without re-encoding.
 # AAC and MP3 are universal in MSE; AC3/EAC3 don't play in Chrome/Firefox so
@@ -95,6 +91,7 @@ class ProbeResult:
     duration: float
     video_codec: Optional[str]
     audio_codec: Optional[str]
+    pix_fmt: str = ""
     subtitles: Tuple[SubtitleTrack, ...] = ()
     audio_tracks: Tuple[AudioTrack, ...] = ()
     # Music metadata from format tags (populated for audio files)
@@ -105,14 +102,20 @@ class ProbeResult:
 
     @property
     def hls_compatible(self) -> bool:
-        if self.duration <= 0:
-            return False
-        if self.video_codec not in HLS_COMPAT_VIDEO:
-            return False
-        # Audio is optional — a silent video is still streamable.
-        if self.audio_codec is not None and self.audio_codec not in HLS_COMPAT_AUDIO:
-            return False
-        return True
+        # ffmpeg can decode and re-encode most ordinary source codecs. The
+        # remaining failures (DRM, corrupt input, unsupported build) are
+        # surfaced by the segment route instead of being guessed from a small
+        # allow-list here.
+        return self.duration > 0 and self.video_codec is not None
+
+    @property
+    def needs_video_transcode(self) -> bool:
+        """Whether this video needs browser-safe AVC output rather than copy."""
+        if self.video_codec != "h264":
+            return True
+        # H.264 10-bit is not portable through browser MSE either.
+        pix_fmt = self.pix_fmt.lower()
+        return any(hint in pix_fmt for hint in ("10le", "10be", "p010", "p012", "12le"))
 
     @property
     def segment_count(self) -> int:
@@ -235,7 +238,7 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
         # Also pull tags so we know the subtitle's language + title,
         # and format_tags for music metadata (artist, album, track).
         "-show_entries",
-        "format=duration:format_tags=title,artist,album_artist,album,track:stream=index,codec_type,codec_name:stream_tags=language,title",
+        "format=duration:format_tags=title,artist,album_artist,album,track:stream=index,codec_type,codec_name,pix_fmt:stream_tags=language,title",
         "-of", "json",
         "-timeout", "15000000",  # 15s connect/read timeout in microseconds
         source_url,
@@ -283,6 +286,7 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
 
     video_codec = None
     audio_codec = None
+    pix_fmt = ""
     subtitle_tracks: List[SubtitleTrack] = []
     audio_tracks_list: List[AudioTrack] = []
     sub_index = 0   # the Nth subtitle stream (for ffmpeg's -map 0:s:N)
@@ -293,6 +297,7 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
         cname = stream.get("codec_name")
         if ctype == "video" and video_codec is None:
             video_codec = cname
+            pix_fmt = stream.get("pix_fmt") or ""
         elif ctype == "audio":
             tags = stream.get("tags", {}) or {}
             lang = _normalise_lang(tags.get("language"))
@@ -323,6 +328,7 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
         duration=duration,
         video_codec=video_codec,
         audio_codec=audio_codec,
+        pix_fmt=pix_fmt,
         subtitles=tuple(subtitle_tracks),
         audio_tracks=tuple(audio_tracks_list),
         music_title=music_title,

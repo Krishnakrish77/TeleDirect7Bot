@@ -596,7 +596,9 @@ function VideoWatchPage({
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(video.duration || 0);
-  const [sourceMode, setSourceMode] = useState<'direct' | 'hls'>('direct');
+  const [sourceMode, setSourceMode] = useState<'direct' | 'hls'>(() => (
+    video.preferHls && video.hlsSrc ? 'hls' : 'direct'
+  ));
   const [audioIndex, setAudioIndex] = useState(0);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
   const [activeSub, setActiveSub] = useState('');
@@ -801,9 +803,16 @@ function VideoWatchPage({
       attachHls(el, sourceSrc, video.directSrc, () => {
         if (!cancelled) {
           hlsFailedRef.current = true;
-          setSourceMode('direct');
-          setError('');
-          showToast('HLS failed. Using direct stream.');
+          if (video.preferHls) {
+            // The direct source is known to use a browser-incompatible codec;
+            // falling back to it would only replace one error with another.
+            setError('Browser playback could not start. Try VLC.');
+            showToast('HLS playback failed.');
+          } else {
+            setSourceMode('direct');
+            setError('');
+            showToast('HLS failed. Using direct stream.');
+          }
         }
       }).then((instance) => {
         if (cancelled) {
@@ -826,7 +835,7 @@ function VideoWatchPage({
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [hasHls, showToast, sourceMode, sourceSrc, video.directSrc, video.knownUnplayable]);
+  }, [hasHls, showToast, sourceMode, sourceSrc, video.directSrc, video.knownUnplayable, video.preferHls]);
 
   useEffect(() => {
     try {

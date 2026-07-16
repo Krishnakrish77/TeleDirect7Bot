@@ -108,6 +108,7 @@ function makeVideo(overrides: Partial<WatchVideo> = {}): WatchVideo {
     vlcHref: 'vlc://stream/video-key',
     vlcTrackingToken: '',
     knownUnplayable: false,
+    preferHls: false,
     videoCodec: 'h264',
     pixFmt: 'yuv420p',
     qualityVariants: [],

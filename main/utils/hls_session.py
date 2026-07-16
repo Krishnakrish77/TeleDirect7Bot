@@ -43,6 +43,9 @@ IDLE_TTL = int(os.environ.get("HLS_SESSION_IDLE_TTL", str(30 * 60)))
 # with more headroom or multi-audio files (N tracks = N slots per viewer),
 # raise with HLS_SESSION_MAX env var.
 MAX_SESSIONS = int(os.environ.get("HLS_SESSION_MAX", "2"))
+# Re-encoding is CPU-bound, unlike the normal remux path. Limit it separately
+# so a couple of HEVC/AV1 viewers cannot starve the bot or ordinary HLS users.
+MAX_TRANSCODE_SESSIONS = int(os.environ.get("HLS_TRANSCODE_MAX", "1"))
 # If a requested segment is more than this many segments ahead of what
 # ffmpeg has produced, restart ffmpeg from the requested segment instead
 # of waiting (which would otherwise mean polling forever).
@@ -56,12 +59,14 @@ class HlsSession:
 
     def __init__(self, message_id: int, source_url: str,
                  duration: float, audio_codec: Optional[str],
-                 audio_index: int = 0):
+                 audio_index: int = 0, *, transcode_video: bool = False):
         self.message_id = message_id
         self.source_url = source_url
         self.duration = duration
         self.audio_codec = audio_codec
         self.audio_index = audio_index
+        self.transcode_video = transcode_video
+        self._has_transcode_slot = False
         self.work_dir = WORK_ROOT / str(message_id) / f"a{audio_index}"
         # A fresh session must not inherit partial segments from a crashed
         # previous process. Completed segments are an optimization, not state.
@@ -149,6 +154,16 @@ class HlsSession:
             audio_args = ["-c:a", "copy"]
         else:
             audio_args = ["-c:a", "aac", "-b:a", "160k", "-ac", "2"]
+        if self.transcode_video:
+            video_args = [
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+                "-pix_fmt", "yuv420p",
+                # Make every six-second HLS boundary independently decodable.
+                "-force_key_frames", f"expr:gte(t,n_forced*{SEGMENT_SECONDS})",
+                "-sc_threshold", "0",
+            ]
+        else:
+            video_args = ["-c:v", "copy"]
         return [
             "ffmpeg",
             "-y",
@@ -165,7 +180,7 @@ class HlsSession:
             "-i", self.source_url,
             "-map", "0:v:0?",
             "-map", f"0:a:{self.audio_index}?",
-            "-c:v", "copy",
+            *video_args,
             *audio_args,
             "-f", "segment",
             "-segment_time", str(SEGMENT_SECONDS),
@@ -191,6 +206,16 @@ class HlsSession:
                               line.decode(errors="replace").rstrip())
         except Exception:
             pass
+        finally:
+            # A completed full-file session no longer consumes CPU. Release
+            # its scarce encode slot even if it stays cached for seeking.
+            await proc.wait()
+            self._release_transcode_slot()
+
+    def _release_transcode_slot(self) -> None:
+        if self._has_transcode_slot:
+            _transcode_sem().release()
+            self._has_transcode_slot = False
 
     async def _kill_proc_unlocked(self) -> None:
         if self.proc and self.proc.returncode is None:
@@ -213,11 +238,15 @@ class HlsSession:
             self._stderr_task.cancel()
         self.proc = None
         self._stderr_task = None
+        self._release_transcode_slot()
 
     async def _start_unlocked(self, from_segment: int) -> None:
         await self._kill_proc_unlocked()
         self._discard_from(from_segment)
         args = self._ffmpeg_args(from_segment)
+        if self.transcode_video:
+            await _transcode_sem().acquire()
+            self._has_transcode_slot = True
         try:
             self.proc = await asyncio.create_subprocess_exec(
                 *args,
@@ -227,12 +256,14 @@ class HlsSession:
         except FileNotFoundError:
             logging.error("ffmpeg not installed; HLS sessions disabled")
             self.proc = None
+            self._release_transcode_slot()
             return
         self.start_segment = from_segment
         self._stderr_task = asyncio.create_task(self._drain_stderr(self.proc))
         logging.info(
-            "hls_session msg=%d started ffmpeg from segment %d",
-            self.message_id, from_segment,
+            "hls_session msg=%d started %sffmpeg from segment %d",
+            self.message_id, "transcoding " if self.transcode_video else "",
+            from_segment,
         )
 
     # -- public API ----------------------------------------------------
@@ -298,11 +329,19 @@ class HlsSession:
 _sessions: Dict[Tuple[int, int], HlsSession] = {}
 _sessions_lock = asyncio.Lock()
 _reaper_task: Optional[asyncio.Task] = None
+_transcode_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _transcode_sem() -> asyncio.Semaphore:
+    global _transcode_semaphore
+    if _transcode_semaphore is None:
+        _transcode_semaphore = asyncio.Semaphore(MAX_TRANSCODE_SESSIONS)
+    return _transcode_semaphore
 
 
 async def get_or_start(message_id: int, source_url: str,
                        duration: float, audio_codec: Optional[str],
-                       audio_index: int = 0) -> HlsSession:
+                       audio_index: int = 0, *, transcode_video: bool = False) -> HlsSession:
     key = (message_id, audio_index)
     async with _sessions_lock:
         session = _sessions.get(key)
@@ -318,7 +357,7 @@ async def get_or_start(message_id: int, source_url: str,
                          victim_key[0], victim_key[1])
 
         session = HlsSession(message_id, source_url, duration, audio_codec,
-                             audio_index=audio_index)
+                             audio_index=audio_index, transcode_video=transcode_video)
         _sessions[key] = session
         return session
 

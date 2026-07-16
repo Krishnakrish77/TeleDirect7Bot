@@ -2211,9 +2211,19 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
             title = f"{title} - {item.episode_title}"
     absolute_stream = urljoin(Var.URL, f"{item.secure_hash}{item.message_id}")
     vlc_token = _vlc_tracking_token(request, item)
+    # Native containers normally stream directly. A completed codec probe can
+    # override that when the contents are not browser-decodable (for example
+    # an HEVC/AV1 MP4): the HLS route will encode AVC/AAC on demand.
+    source_codec = (item.video_codec or "").lower()
+    # HEVC may work on selected hardware, but it is not portable through
+    # hls.js/MSE. Prefer the AVC fallback whenever a probe identifies it.
+    needs_hls_transcode = (
+        codec_probe.known_unplayable(item)
+        or (bool(source_codec) and source_codec not in {"h264", "avc1"})
+    )
     hls_src = (
         f"/hls/{item.secure_hash}{item.message_id}/playlist.m3u8"
-        if should_offer_hls_for_video(file_name=item.file_name)
+        if should_offer_hls_for_video(file_name=item.file_name) or needs_hls_transcode
         else ""
     )
     hls_base = f"/hls/{item.secure_hash}{item.message_id}" if hls_src else ""
@@ -2278,7 +2288,10 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
         "downloadHref": _download_url(item),
         "vlcHref": f"vlc://{absolute_stream}",
         "vlcTrackingToken": vlc_token,
-        "knownUnplayable": codec_probe.known_unplayable(item),
+        # A known-bad source is playable through the transcode HLS fallback;
+        # reserve the blocking overlay for the (rare) case with no fallback.
+        "knownUnplayable": needs_hls_transcode and not hls_src,
+        "preferHls": bool(needs_hls_transcode and hls_src),
         "videoCodec": item.video_codec or "",
         "pixFmt": item.pix_fmt or "",
         "qualityVariants": [_video_choice_payload(variant) for variant in quality_variants],

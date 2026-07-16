@@ -293,6 +293,7 @@ export interface WatchVideo {
   vlcHref: string;
   vlcTrackingToken: string;
   knownUnplayable: boolean;
+  preferHls: boolean;
   videoCodec: string;
   pixFmt: string;
   qualityVariants: VideoChoice[];

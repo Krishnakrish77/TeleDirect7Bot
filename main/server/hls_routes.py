@@ -131,6 +131,7 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
     session = await hls_session.get_or_start(
         message_id, source_url, probe.duration, probe.audio_codec,
         audio_index=audio_index,
+        transcode_video=probe.needs_video_transcode,
     )
     seg_path = await session.request(n)
     if seg_path is None:
