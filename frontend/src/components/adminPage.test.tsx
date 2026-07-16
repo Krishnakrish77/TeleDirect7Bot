@@ -67,6 +67,7 @@ const adminData: AdminResponse = {
       hasThumb: true,
       missingThumb: false,
       missingPoster: false,
+      subtitleCount: 0,
       mediaKind: 'video',
       seriesTitle: '',
       seriesKey: '',

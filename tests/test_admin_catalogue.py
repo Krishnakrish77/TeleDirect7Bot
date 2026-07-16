@@ -19,6 +19,7 @@ from main.server.admin_routes import (
 )
 from main.utils import media_index
 from main.utils.hub_query import HubItem
+from main.utils.hub_query import ExternalSubtitle
 
 
 def _item(
@@ -60,6 +61,25 @@ def _item(
 
 
 class AdminCatalogueTest(unittest.TestCase):
+    def test_no_subtitles_filter_excludes_audio_and_attached_sidecars(self):
+        no_subs = _item(101)
+        with_subs = _item(102)
+        with_subs.subtitles = [ExternalSubtitle(900, "subhash", language="en")]
+        audio = _item(103)
+        audio.media_kind = "audio"
+        original = media_index._items.copy()
+        try:
+            media_index._items.clear()
+            media_index._items.update({101: no_subs, 102: with_subs, 103: audio})
+            ctx = _admin_catalogue_context(SimpleNamespace(
+                query={"filter": "no-subtitles"}, cookies={},
+            ))
+            self.assertEqual([item.message_id for item in ctx["items"]], [101])
+            self.assertEqual(_admin_item_payload(with_subs, {})["subtitleCount"], 1)
+        finally:
+            media_index._items.clear()
+            media_index._items.update(original)
+
     def test_duplicate_candidates_do_not_flag_same_title_year_movies(self):
         details, groups, extras = _admin_duplicate_candidates([
             _item(101, secure_hash="a", file_size=1000),
