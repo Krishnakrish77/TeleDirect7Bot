@@ -196,6 +196,30 @@ async def hls_audio_list(request: web.Request) -> web.Response:
 _VTT_CACHE_TTL = 60 * 60  # 1h — source is immutable
 _vtt_cache: dict = {}
 _vtt_locks: dict = {}
+# In-flight extraction tasks, keyed by (message_id, track). Detached from any
+# single request so a client disconnect / gateway 504 doesn't kill ffmpeg —
+# extraction finishes and caches, so a reload serves it instantly.
+_vtt_tasks: dict = {}
+# Wait this long for extraction before returning 503. Kept under Koyeb's ~120s
+# edge timeout so the response flushes; the task keeps running past it.
+_VTT_WAIT_BUDGET = 100
+
+
+async def _extract_vtt_cached(cache_key, secure_hash: str, message_id: int, track: int):
+    """Extract a subtitle track to WebVTT and cache it. Returns bytes or None.
+
+    A large MKV subrip track requires ffmpeg to demux the whole (Telegram-
+    streamed) file, which can take minutes. Runs as a detached task so it
+    survives request cancellation.
+    """
+    src = hls.internal_stream_url(secure_hash, message_id)
+    probe = await hls.probe(message_id, src)
+    if not any(s.index == track for s in probe.subtitles):
+        return None
+    data = await hls.extract_subtitle_vtt(src, track)
+    if data:
+        _vtt_cache[cache_key] = (time.monotonic(), data)
+    return data
 
 
 @routes.get(r"/sub/{path:[^/]+}/list.json")
@@ -320,26 +344,30 @@ async def hls_sub_vtt(request: web.Request) -> web.Response:
 
     # Serve from cache if fresh.
     entry = _vtt_cache.get(cache_key)
-    now = time.monotonic()
-    if entry and (now - entry[0]) < _VTT_CACHE_TTL:
+    if entry and (time.monotonic() - entry[0]) < _VTT_CACHE_TTL:
         data = entry[1]
     else:
-        lock = _vtt_locks.setdefault(cache_key, asyncio.Lock())
-        async with lock:
-            entry = _vtt_cache.get(cache_key)
-            if entry and (time.monotonic() - entry[0]) < _VTT_CACHE_TTL:
-                data = entry[1]
-            else:
-                # Verify track exists before spending an ffmpeg cycle on it.
-                probe = await hls.probe(message_id, hls.internal_stream_url(secure_hash, message_id))
-                if not any(s.index == track for s in probe.subtitles):
-                    raise web.HTTPNotFound(text="subtitle track not found")
-                data = await hls.extract_subtitle_vtt(
-                    hls.internal_stream_url(secure_hash, message_id), track
-                )
-                if not data:
-                    raise web.HTTPInternalServerError(text="subtitle extraction failed")
-                _vtt_cache[cache_key] = (time.monotonic(), data)
+        # Reuse an in-flight extraction, or start a detached one. ensure_future
+        # schedules it on the loop independently of this request so a client
+        # disconnect / gateway 504 won't kill ffmpeg mid-demux.
+        task = _vtt_tasks.get(cache_key)
+        if task is None or (task.done() and (task.cancelled()
+                or task.exception() is not None or not task.result())):
+            task = asyncio.ensure_future(
+                _extract_vtt_cached(cache_key, secure_hash, message_id, track)
+            )
+            _vtt_tasks[cache_key] = task
+        # Wait up to the budget WITHOUT cancelling the task on timeout (shield),
+        # so big-file extractions keep running and cache for the next request.
+        try:
+            data = await asyncio.wait_for(asyncio.shield(task), timeout=_VTT_WAIT_BUDGET)
+        except asyncio.TimeoutError:
+            raise web.HTTPServiceUnavailable(
+                text="subtitle still extracting; reload in a moment",
+                headers={"Retry-After": "20", "Access-Control-Allow-Origin": "*"},
+            )
+        if not data:
+            raise web.HTTPNotFound(text="subtitle track not found or extraction failed")
 
     return web.Response(
         body=data,
