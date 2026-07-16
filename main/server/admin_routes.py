@@ -221,12 +221,13 @@ def _admin_catalogue_context(request: web.Request) -> dict:
             not _is_video_item(it) or it.overview or it.description
         ):
             return False
-        # Sidecars are catalogue-owned and therefore durable across restarts.
-        # Embedded tracks are discovered lazily by the player, so they are not
-        # used here; this view is specifically the admin work queue for adding
-        # a reusable subtitle attachment.
+        # Only flag items whose embedded streams have been probed. This avoids
+        # falsely marking legacy/unprobed MKVs that may contain subtitles.
         if filter_name == "no-subtitles" and (
-            not _is_video_item(it) or bool(it.subtitles)
+            not _is_video_item(it)
+            or not getattr(it, "subtitles_probed_at", 0)
+            or bool(it.subtitles)
+            or int(getattr(it, "embedded_subtitle_count", 0) or 0) > 0
         ):
             return False
         if filter_name == "no-year" and (not _is_video_item(it) or it.year):
@@ -354,7 +355,8 @@ def _admin_item_payload(item, duplicate_details) -> dict:
         "hasThumb": bool(item.has_thumb),
         "missingThumb": not item.has_thumb and not item.duration,
         "missingPoster": bool(item.tmdb_id and not item.poster_path),
-        "subtitleCount": len(item.subtitles or []),
+        "subtitleCount": len(item.subtitles or []) + int(item.embedded_subtitle_count or 0),
+        "subtitleProbePending": not bool(item.subtitles_probed_at),
         "mediaKind": getattr(item, "media_kind", "") or "",
         "seriesTitle": item.series_title or "",
         "seriesKey": item.series_key or "",

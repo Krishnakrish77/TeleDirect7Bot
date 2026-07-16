@@ -63,19 +63,41 @@ def _item(
 class AdminCatalogueTest(unittest.TestCase):
     def test_no_subtitles_filter_excludes_audio_and_attached_sidecars(self):
         no_subs = _item(101)
+        no_subs.subtitles_probed_at = 1.0
         with_subs = _item(102)
+        with_subs.subtitles_probed_at = 1.0
         with_subs.subtitles = [ExternalSubtitle(900, "subhash", language="en")]
+        embedded_subs = _item(104)
+        embedded_subs.subtitles_probed_at = 1.0
+        embedded_subs.embedded_subtitle_count = 2
         audio = _item(103)
         audio.media_kind = "audio"
         original = media_index._items.copy()
         try:
             media_index._items.clear()
-            media_index._items.update({101: no_subs, 102: with_subs, 103: audio})
+            media_index._items.update({101: no_subs, 102: with_subs, 103: audio, 104: embedded_subs})
             ctx = _admin_catalogue_context(SimpleNamespace(
                 query={"filter": "no-subtitles"}, cookies={},
             ))
             self.assertEqual([item.message_id for item in ctx["items"]], [101])
             self.assertEqual(_admin_item_payload(with_subs, {})["subtitleCount"], 1)
+            self.assertEqual(_admin_item_payload(embedded_subs, {})["subtitleCount"], 2)
+        finally:
+            media_index._items.clear()
+            media_index._items.update(original)
+
+    def test_no_subtitles_filter_keeps_unprobed_items_out_of_the_work_queue(self):
+        unprobed = _item(101)
+        original = media_index._items.copy()
+        try:
+            media_index._items.clear()
+            media_index._items[101] = unprobed
+            ctx = _admin_catalogue_context(SimpleNamespace(
+                query={"filter": "no-subtitles"}, cookies={},
+            ))
+            self.assertEqual(ctx["items"], [])
+            payload = _admin_item_payload(unprobed, {})
+            self.assertTrue(payload["subtitleProbePending"])
         finally:
             media_index._items.clear()
             media_index._items.update(original)

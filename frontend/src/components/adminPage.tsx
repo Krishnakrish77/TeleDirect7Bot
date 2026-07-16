@@ -710,8 +710,8 @@ function AdminItemRow({
         {item.duplicate && <i className="warn">{duplicateLabel}</i>}
         {item.missingPoster && <i className="warn">No poster</i>}
         {item.missingThumb && <i className="warn">No thumb</i>}
-        {item.mediaKind !== 'audio' && (item.subtitleCount ? <i className="ok">{item.subtitleCount} subtitle{item.subtitleCount === 1 ? '' : 's'}</i> : <i className="warn">No sidecar subtitles</i>)}
-        {!item.hidden && !item.duplicate && !item.missingPoster && !item.missingThumb && Boolean(item.subtitleCount || item.mediaKind === 'audio') && <i className="ok">No issues</i>}
+        {item.mediaKind !== 'audio' && (item.subtitleProbePending ? <i>Subtitles unprobed</i> : item.subtitleCount ? <i className="ok">{item.subtitleCount} subtitle{item.subtitleCount === 1 ? '' : 's'}</i> : <i className="warn">No subtitles</i>)}
+        {!item.hidden && !item.duplicate && !item.missingPoster && !item.missingThumb && Boolean(item.subtitleCount || item.mediaKind === 'audio' || item.subtitleProbePending) && <i className="ok">No issues</i>}
       </div>
       <span className={item.tmdbId ? 'admin-row-tmdb matched' : 'admin-row-tmdb missing'}>{item.tmdbId ? `TMDB ${item.tmdbId}` : 'No TMDB'}</span>
       <div className="admin-row-actions">

@@ -548,6 +548,7 @@ export interface AdminItem {
   missingThumb: boolean;
   missingPoster: boolean;
   subtitleCount: number;
+  subtitleProbePending: boolean;
   mediaKind: string;
   seriesTitle: string;
   seriesKey: string;

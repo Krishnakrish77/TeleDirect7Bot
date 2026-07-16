@@ -38,6 +38,10 @@ class HubItem:
     quality: str = ""  # parsed resolution bucket: 480p / 720p / 1080p / 4K / ""
     file_name: str = ""  # original media filename, retained for sidecar matching
     subtitles: List[ExternalSubtitle] = field(default_factory=list)
+    # Text or image subtitle streams discovered by the codec probe. The
+    # timestamp distinguishes a verified zero from an older, unprobed item.
+    embedded_subtitle_count: int = 0
+    subtitles_probed_at: float = 0.0
     series_key: str = ""           # slug; "" for movies/standalone uploads
     series_title: str = ""         # human-friendly series name
     season: Optional[int] = None

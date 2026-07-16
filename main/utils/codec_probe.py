@@ -110,7 +110,11 @@ def needs_probe(item) -> bool:
     # artist (from Telegram's Audio.performer) but still need probe for album.
     is_audio = getattr(item, "media_kind", "") == "audio"
     missing_artist = is_audio and not getattr(item, "artist", "")
-    return never_probed or missing_duration or missing_artist
+    # Older probes predate embedded-subtitle tracking. Re-probe each video
+    # once so the admin "No subtitles" queue is based on verified streams,
+    # rather than assuming every legacy item has none.
+    missing_subtitle_probe = not is_audio and not getattr(item, "subtitles_probed_at", 0)
+    return never_probed or missing_duration or missing_artist or missing_subtitle_probe
 
 
 async def probe_item(item, *, timeout: float = 30.0) -> bool:
@@ -148,16 +152,15 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         except Exception:
             pass  # best-effort; ffprobe will still try
 
-    # Audio: no stream filter — include codec_type so we can separate the
-    # audio stream (quality info) from any APIC video stream (cover art).
-    # Video: only the first video stream; audio tracks inside a video are
-    # irrelevant and including them slows down the probe.
+    # Include all streams for video files too: subtitle presence needs to be
+    # durable catalogue data so the admin subtitle work queue is accurate.
+    # This is still metadata-only ffprobe output, not a media download.
     if is_audio:
         _stream_filter = []
         _stream_fields = "stream=codec_name,codec_type,pix_fmt,sample_rate,bits_per_sample,channels,width,height"
     else:
-        _stream_filter = ["-select_streams", "v:0"]
-        _stream_fields = "stream=codec_name,pix_fmt,profile,width,height"
+        _stream_filter = []
+        _stream_fields = "stream=codec_name,codec_type,pix_fmt,profile,width,height"
 
     cmd = [
         "ffprobe",
@@ -354,13 +357,18 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         return bool(item.video_codec)
 
     # ── Video file path ─────────────────────────────────────────────────────
-    if not streams:
+    video_streams = [s for s in streams if s.get("codec_type") == "video"]
+    if not video_streams:
         # No video stream — unrecognised container. Tags already saved above.
         item.probed_at = time.time()
         await media_index.persist_now()
         await media_index._store_upsert(item)
         return False
-    s = streams[0]
+    s = video_streams[0]
+    item.embedded_subtitle_count = sum(
+        1 for stream in streams if stream.get("codec_type") == "subtitle"
+    )
+    item.subtitles_probed_at = time.time()
     item.video_codec = (s.get("codec_name") or "").lower()
     item.pix_fmt = (s.get("pix_fmt") or "").lower()
     # Fill duration from ffprobe if Telegram didn't extract it (e.g. document uploads)

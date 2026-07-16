@@ -291,6 +291,8 @@ def _to_serializable(item: HubItem) -> dict:
             }
             for s in item.subtitles
         ],
+        "embedded_subtitle_count": item.embedded_subtitle_count,
+        "subtitles_probed_at": item.subtitles_probed_at,
     }
 
 
@@ -361,6 +363,8 @@ def _from_serializable(d: dict) -> HubItem:
             )
             for s in (d.get("subtitles") or [])
         ],
+        embedded_subtitle_count=int(d.get("embedded_subtitle_count") or 0),
+        subtitles_probed_at=float(d.get("subtitles_probed_at") or 0),
     )
 
 

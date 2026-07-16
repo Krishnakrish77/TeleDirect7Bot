@@ -68,6 +68,7 @@ const adminData: AdminResponse = {
       missingThumb: false,
       missingPoster: false,
       subtitleCount: 0,
+      subtitleProbePending: false,
       mediaKind: 'video',
       seriesTitle: '',
       seriesKey: '',
