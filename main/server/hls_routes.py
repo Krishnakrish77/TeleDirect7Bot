@@ -384,12 +384,20 @@ async def hls_sub_vtt(request: web.Request) -> web.Response:
         # schedules it on the loop independently of this request so a client
         # disconnect / gateway 504 won't kill ffmpeg mid-demux.
         task = _vtt_tasks.get(cache_key)
-        if task is None or (task.done() and (task.cancelled()
-                or task.exception() is not None or not task.result())):
+        if task is None or task.done():
             task = asyncio.ensure_future(
                 _extract_vtt_cached(cache_key, secure_hash, message_id, track)
             )
             _vtt_tasks[cache_key] = task
+            # Drop the entry when done so completed tasks don't pin VTT bytes
+            # (they live in _vtt_cache / Mongo) and so a failed extraction is
+            # retried by the next request instead of being stuck. Retrieve the
+            # exception to silence "exception never retrieved" warnings.
+            def _cleanup(t: "asyncio.Task", key=cache_key) -> None:
+                _vtt_tasks.pop(key, None)
+                if not t.cancelled():
+                    t.exception()
+            task.add_done_callback(_cleanup)
         # Wait up to the budget WITHOUT cancelling the task on timeout (shield),
         # so big-file extractions keep running and cache for the next request.
         try:
