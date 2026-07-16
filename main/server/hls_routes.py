@@ -205,21 +205,54 @@ _vtt_tasks: dict = {}
 _VTT_WAIT_BUDGET = 100
 
 
+def _sub_store_key(message_id: int, track: int) -> str:
+    return f"{message_id}:{track}"
+
+
 async def _extract_vtt_cached(cache_key, secure_hash: str, message_id: int, track: int):
-    """Extract a subtitle track to WebVTT and cache it. Returns bytes or None.
+    """Return a subtitle track as WebVTT from L2 (Mongo) or by extracting.
 
     A large MKV subrip track requires ffmpeg to demux the whole (Telegram-
     streamed) file, which can take minutes. Runs as a detached task so it
-    survives request cancellation.
+    survives request cancellation. Persists to Mongo so the demux is paid
+    once ever, not once per Koyeb restart.
     """
+    store = _sub_store()
+    store_key = _sub_store_key(message_id, track)
+
+    # L2 hit — hydrate L1 and return.
+    if store is not None:
+        try:
+            persisted = await store.get_subtitle(store_key)
+        except Exception:
+            persisted = None
+        if persisted:
+            _vtt_cache[cache_key] = (time.monotonic(), persisted)
+            return persisted
+
     src = hls.internal_stream_url(secure_hash, message_id)
     probe = await hls.probe(message_id, src)
     if not any(s.index == track for s in probe.subtitles):
         return None
     data = await hls.extract_subtitle_vtt(src, track)
-    if data:
-        _vtt_cache[cache_key] = (time.monotonic(), data)
+    if not data:
+        return None
+    _vtt_cache[cache_key] = (time.monotonic(), data)
+    if store is not None:
+        try:
+            await store.set_subtitle(store_key, data)
+        except Exception:
+            logging.exception("hls: subtitle L2 persist failed for %s", store_key)
     return data
+
+
+def _sub_store():
+    """Lazy MongoDB store accessor; None when Mongo isn't configured."""
+    try:
+        from main.utils import media_index
+        return media_index._store
+    except Exception:
+        return None
 
 
 @routes.get(r"/sub/{path:[^/]+}/list.json")

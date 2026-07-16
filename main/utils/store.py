@@ -96,6 +96,10 @@ class MongoStore:
         # don't re-run ffmpeg on every deploy. Collection name doesn't
         # need env-tuning — fixed sibling of items/meta.
         self._thumbs = self._client[db_name]["thumbs"]
+        # Extracted WebVTT subtitles, keyed by "{message_id}:{track}". Persisted
+        # so a subrip demux (minutes of full-file read) is paid once, not once
+        # per restart.
+        self._subs = self._client[db_name]["subtitles"]
         self._initialised = False
 
     async def init(self) -> None:
@@ -167,6 +171,26 @@ class MongoStore:
             await self._thumbs.delete_one({"_id": int(message_id)})
         except Exception:
             logging.exception("store.mongo: remove_thumb failed for bin:%d", message_id)
+
+    # ── Subtitle (WebVTT) persistence ────────────────────────────────
+    # key is "{message_id}:{track}". VTTs are small text; well under 16 MB.
+
+    async def get_subtitle(self, key: str) -> Optional[bytes]:
+        try:
+            doc = await self._subs.find_one({"_id": key}, projection={"data": 1})
+            data = doc.get("data") if doc else None
+            return bytes(data) if data else None
+        except Exception:
+            logging.exception("store.mongo: get_subtitle failed for %s", key)
+            return None
+
+    async def set_subtitle(self, key: str, data: bytes) -> None:
+        """Persist a WebVTT track. Exceptions PROPAGATE so the caller can retry."""
+        if not data or len(data) > self._THUMB_MAX_BYTES:
+            return
+        await self._subs.replace_one(
+            {"_id": key}, {"_id": key, "data": _Binary(data)}, upsert=True,
+        )
 
     async def get_thumbs_bulk(self, message_ids: Iterable[int]) -> "dict":
         """Hydrate many thumbs in one round-trip — cuts page-render cost
