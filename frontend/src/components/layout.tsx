@@ -90,11 +90,16 @@ export function Header({
 }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const accountRef = useRef<HTMLDivElement | null>(null);
   const searchWrapRef = useRef<HTMLFormElement | null>(null);
   const suggestions = useSuggestions(query.trim());
   const suggestionsOpen = open && suggestions.length > 0;
   const activeSuggestionId = suggestionsOpen && activeIndex >= 0 ? `top-search-suggestion-${activeIndex}` : undefined;
+
+  // Telegram Login Widget photo URLs can expire before the session JWT does.
+  // Reset the fallback if a different account/photo is received.
+  useEffect(() => setAvatarFailed(false), [user?.photo, user?.sub]);
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -242,8 +247,8 @@ export function Header({
               aria-expanded={accountOpen}
             >
               <span className="profile-avatar">
-                {user.photo ? (
-                  <img src={user.photo} alt="" />
+                {user.photo && !avatarFailed ? (
+                  <img src={user.photo} alt="" onError={() => setAvatarFailed(true)} />
                 ) : (
                   <span>{(user.name || 'U')[0].toUpperCase()}</span>
                 )}

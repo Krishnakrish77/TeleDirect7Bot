@@ -1514,6 +1514,13 @@ export function AdminPage({
                   'Run de-dupe? This deletes exact duplicate uploads from BIN and keeps the oldest copy.',
                 )}
               />
+              <BulkBar
+                selected={selected}
+                data={data}
+                busy={busy}
+                setSelected={setSelected}
+                onAction={runSelectedAction}
+              />
               <AdminList
                 data={data}
                 selected={selected}
@@ -1522,13 +1529,6 @@ export function AdminPage({
                 onDelete={runSingleDeleteAction}
                 onEdit={(item) => setEditingId(item.messageId)}
                 updateParam={updateParam}
-              />
-              <BulkBar
-                selected={selected}
-                data={data}
-                busy={busy}
-                setSelected={setSelected}
-                onAction={runSelectedAction}
               />
             </section>
           )}

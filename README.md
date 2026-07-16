@@ -162,7 +162,7 @@ you may also add as many as bots you want. (max limit is not tested yet)
 
 ### MongoDB (optional — recommended once the catalogue passes a few thousand items)
 
-`STORE_BACKEND` : Set to `mongo` to switch durable storage from the legacy `/tmp` JSON + pinned-Telegram-snapshot to MongoDB. Unset (the default) keeps the legacy path. The in-memory dict still serves all reads — Mongo is only the durable mirror.
+`STORE_BACKEND` : Set to `mongo` to use MongoDB as the durable catalogue store. Telegram snapshot writes are disabled in this mode. Mongo startup is strict: a missing or unavailable Mongo connection stops the app instead of silently falling back to `/tmp` JSON + pinned Telegram snapshots. Unset keeps the legacy path.
 
 `MONGO_URI` : Atlas SRV connection string (`mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority`). Required when `STORE_BACKEND=mongo`.
 

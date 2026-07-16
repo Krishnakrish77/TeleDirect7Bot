@@ -90,6 +90,15 @@ describe('PrimaryNav', () => {
 });
 
 describe('Header search', () => {
+  it('falls back to the user initial when the Telegram avatar URL fails', () => {
+    const view = renderHeader({ user: { ...user, photo: 'https://cdn.telegram.test/avatar.jpg' } });
+    const avatar = view.container.querySelector('.profile-avatar img');
+    expect(avatar).not.toBeNull();
+    fireEvent.error(avatar!);
+    expect(view.container.querySelector('.profile-avatar img')).toBeNull();
+    expect(screen.getByText('V')).toBeTruthy();
+  });
+
   it('submits search explicitly', () => {
     const onSearchSubmit = vi.fn();
     renderHeader({ query: 'kalki', onSearchSubmit });

@@ -152,10 +152,11 @@
                snapshots bake in the rendered img. On history restore Alpine
                inserts it again → duplicate avatars. x-show only toggles
                display so the same DOM node is always present. #}
-            <img x-show="user && user.photo"
+            <img x-show="user && user.photo && !avatarFailed"
                  :src="user && user.photo ? user.photo : ''" :alt="user ? user.name : ''"
+                 @error="avatarFailed = true"
                  class="w-7 h-7 rounded-full object-cover ring-1 ring-white/10 flex-shrink-0" />
-            <div x-show="!user || !user.photo"
+            <div x-show="!user || !user.photo || avatarFailed"
                  class="w-7 h-7 rounded-full bg-brand-500/20 ring-1 ring-brand-400/30
                         grid place-items-center text-xs font-bold text-brand-300 flex-shrink-0"
                  x-text="user ? user.name[0].toUpperCase() : '?'"></div>

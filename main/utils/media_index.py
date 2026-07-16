@@ -149,8 +149,8 @@ async def init_store() -> None:
         await candidate.init()
         _store = candidate
     except Exception:
-        logging.exception("media_index: store.init() failed, sticking with JSON")
-        _store = None
+        logging.exception("media_index: Mongo store init failed; stopping startup")
+        raise
 
 
 # --- Snapshot debouncer ----------------------------------------------------

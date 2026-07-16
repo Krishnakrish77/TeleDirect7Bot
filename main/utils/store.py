@@ -297,9 +297,9 @@ def from_env() -> Optional["Store"]:
         return None
     uri = os.environ.get("MONGO_URI") or ""
     if not uri:
-        logging.error(
-            "store: STORE_BACKEND=mongo but MONGO_URI is empty — "
-            "falling back to legacy JSON path",
+        raise RuntimeError(
+            "STORE_BACKEND=mongo requires MONGO_URI; refusing to fall back "
+            "to the legacy Telegram snapshot store."
         )
         return None
     db_name = os.environ.get("MONGO_DB") or "teledirect"
@@ -308,5 +308,5 @@ def from_env() -> Optional["Store"]:
     try:
         return MongoStore(uri, db_name, items_coll, meta_coll)
     except Exception:
-        logging.exception("store: MongoStore init failed; using JSON fallback")
-        return None
+        logging.exception("store: MongoStore construction failed")
+        raise

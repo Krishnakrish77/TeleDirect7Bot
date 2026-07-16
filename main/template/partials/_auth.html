@@ -127,7 +127,8 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('tdAuth', () => ({
     user: window._tdAuth.user,
     menuOpen: false,
-    init() { this.user = window._tdAuth.user; },
+    avatarFailed: false,
+    init() { this.user = window._tdAuth.user; this.avatarFailed = false; },
     openModal() { window._tdAuth.openModal(); },
     signOut() { window._tdAuth.signOut(); },
   }));

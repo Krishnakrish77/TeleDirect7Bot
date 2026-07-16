@@ -98,7 +98,7 @@ _ADMIN_FILTERS = [
     ("no-poster", "No poster"),
     ("no-thumb", "No thumb"),
     ("no-overview", "No overview"),
-    ("no-subtitles", "No sidecar subtitles"),
+    ("no-subtitles", "No subtitles (verified)"),
     ("no-year", "No year"),
     ("no-cast", "No cast/crew"),
     ("no-markers", "No playback markers"),
