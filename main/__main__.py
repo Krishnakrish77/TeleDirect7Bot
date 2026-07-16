@@ -39,6 +39,16 @@ logging.getLogger("aiohttp.web").setLevel(logging.ERROR)
 server = web.AppRunner(web_server())
 
 
+async def _connect_catalogue_store() -> None:
+    """Retry Mongo while the web server presents its 503 maintenance page."""
+    delay = 2
+    while not await media_index.init_store():
+        logging.warning("Mongo unavailable; retrying in %ss", delay)
+        await asyncio.sleep(delay)
+        delay = min(delay * 2, 30)
+    asyncio.create_task(media_index.seed(StreamBot, Var.BIN_CHANNEL))
+
+
 async def start_services():
     print()
     print("-------------------- Initializing Telegram Bot --------------------")
@@ -50,25 +60,18 @@ async def start_services():
     print("---------------------- Initializing Clients ----------------------")
     await initialize_clients()
     print("------------------------------ DONE ------------------------------")
-    # Initialise the durable store (Mongo when STORE_BACKEND=mongo) BEFORE
-    # seed() runs — seed will preload from the store when available and
-    # skip the pinned-snapshot dance.
-    await media_index.init_store()
-    # Seed the hub's in-process catalogue from BIN_CHANNEL history. Runs in
-    # the background so it doesn't block web server startup; the hub starts
-    # empty and fills in over the next ~30s as message metadata streams in.
-    asyncio.create_task(media_index.seed(StreamBot, Var.BIN_CHANNEL))
-    # Start the HLS-session reaper so idle ffmpeg processes + their /tmp
-    # segment dirs get freed.
+    print("--------------------- Initalizing Web Server ---------------------")
+    await server.setup()
+    bind_address = "0.0.0.0" if Var.ON_KOYEB else Var.BIND_ADDRESS
+    await web.TCPSite(server, bind_address, Var.PORT).start()
+    # The server is intentionally live before Mongo connects, so visitors get
+    # a styled maintenance page rather than a platform-level connection error.
+    asyncio.create_task(_connect_catalogue_store())
     hls_session.ensure_reaper_running()
     if Var.ON_KOYEB:
         print("------------------ Starting Keep Alive Service ------------------")
         print()
         asyncio.create_task(utils.ping_server())
-    print("--------------------- Initalizing Web Server ---------------------")
-    await server.setup()
-    bind_address = "0.0.0.0" if Var.ON_KOYEB else Var.BIND_ADDRESS
-    await web.TCPSite(server, bind_address, Var.PORT).start()
     print("------------------------------ DONE ------------------------------")
     print()
     print("------------------------- Service Started -------------------------")

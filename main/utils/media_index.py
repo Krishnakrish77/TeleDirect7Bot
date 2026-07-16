@@ -109,10 +109,25 @@ _ART_RECOVERY_NEGATIVE_TTL = 60 * 60 * 6
 # during runtime — Mongo is the durable mirror that survives a /tmp
 # wipe without needing the pinned-snapshot kludge.
 _store: Optional["object"] = None  # store.Store at runtime
+_store_error: str = ""
 
 
 def _store_active() -> bool:
     return _store is not None
+
+
+def mongo_required() -> bool:
+    """True when this deployment must not serve without MongoDB."""
+    import os
+    return (os.environ.get("STORE_BACKEND") or "").strip().lower() == "mongo"
+
+
+def store_ready() -> bool:
+    return not mongo_required() or _store_active()
+
+
+def store_error() -> str:
+    return _store_error
 
 
 async def _store_upsert(item: HubItem) -> None:
@@ -137,20 +152,28 @@ async def _store_remove(message_id: int) -> None:
                           message_id)
 
 
-async def init_store() -> None:
+async def init_store() -> bool:
     """Initialise the configured durable store (if any). Call once at
     bot startup, before seed()."""
-    global _store
-    candidate = _store_module.from_env()
+    global _store, _store_error
+    try:
+        candidate = _store_module.from_env()
+    except Exception as exc:
+        _store_error = str(exc)
+        logging.exception("media_index: Mongo configuration failed")
+        return False
     if candidate is None:
         logging.info("media_index: durable store DISABLED (JSON fallback)")
-        return
+        return True
     try:
         await candidate.init()
         _store = candidate
+        _store_error = ""
+        return True
     except Exception:
-        logging.exception("media_index: Mongo store init failed; stopping startup")
-        raise
+        _store_error = "MongoDB is temporarily unavailable."
+        logging.exception("media_index: Mongo store init failed")
+        return False
 
 
 # --- Snapshot debouncer ----------------------------------------------------
@@ -177,7 +200,7 @@ def schedule_snapshot(bot) -> None:
     through to Mongo, so we skip the upload entirely.
     """
     global _pending_snapshot_task
-    if _store_active():
+    if _store_active() or mongo_required():
         return
     if bot is None:
         return
@@ -2596,7 +2619,7 @@ async def snapshot_to_telegram(bot) -> Optional[int]:
     redundant. This guard applies regardless of how this function was
     called (schedule_snapshot, enrich_all, reindex, etc.).
     """
-    if _store_active():
+    if _store_active() or mongo_required():
         return None
     global _snapshot_msg_id
     try:

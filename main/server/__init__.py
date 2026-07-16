@@ -117,6 +117,23 @@ async def error_middleware(request: web.Request, handler):
     return response
 
 
+@web.middleware
+async def mongo_readiness_middleware(request: web.Request, handler):
+    """Serve a deliberate maintenance response while Mongo reconnects."""
+    if request.path == "/healthz" or request.path.startswith("/static/"):
+        return await handler(request)
+    from main.utils import media_index
+    if not media_index.store_ready():
+        message = "The media catalogue is reconnecting. Please try again shortly."
+        if _wants_html(request):
+            return await render_error(
+                503, message=message, title="Temporarily unavailable",
+                action_href="/app", action_label="Try again",
+            )
+        return web.json_response({"error": "catalogue unavailable", "retry": True}, status=503)
+    return await handler(request)
+
+
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 # Don't waste CPU compressing payloads smaller than this — gzip headers
@@ -216,7 +233,7 @@ def web_server():
     # benefits from compression on the way out.
     web_app = web.Application(
         client_max_size=30000000,
-        middlewares=[error_middleware, security_middleware, gzip_middleware],
+        middlewares=[error_middleware, security_middleware, gzip_middleware, mongo_readiness_middleware],
     )
     # Order matters: specific prefixes (hub, hls) first so they don't get
     # swallowed by the catch-all /{path:\S+} byte-stream route at the end.
