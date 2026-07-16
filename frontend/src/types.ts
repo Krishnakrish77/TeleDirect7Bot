@@ -243,6 +243,17 @@ export interface SubtitleTrack {
   kind: string;
 }
 
+export interface SubtitleSearchResult {
+  id: string;
+  format: string;
+  language: string;
+  label: string;
+  release: string;
+  fileName: string;
+  hearingImpaired: boolean;
+  source: string;
+}
+
 export interface AudioTrackOption {
   index: number;
   language: string;
@@ -549,6 +560,7 @@ export interface AdminItem {
   missingPoster: boolean;
   subtitleCount: number;
   subtitleProbePending: boolean;
+  sidecars?: Array<{ binMessageId: number; language: string; label: string }>;
   mediaKind: string;
   seriesTitle: string;
   seriesKey: string;

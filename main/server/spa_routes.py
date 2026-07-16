@@ -39,6 +39,7 @@ from main.utils.hub_query import AlbumGroup, HubItem, MovieGroup, SeriesGroup
 from main.utils.human_readable import humanbytes
 from main.utils.playback import should_offer_hls_for_video
 from main.utils.user_auth import get_user
+from main.utils import wyzie_subtitles
 from main.vars import Var
 
 
@@ -2344,6 +2345,61 @@ async def api_watch(request: web.Request) -> web.Response:
         "next": _track_payload(next_track) if next_track else None,
         "albumTracks": [_track_payload(track) for track in tracks],
     })
+
+
+def _subtitle_request_item(key: str) -> HubItem | None:
+    parsed = _parse_watch_key(key)
+    if parsed is None:
+        return None
+    secure_hash, message_id = parsed
+    item = media_index.get_item(message_id)
+    if item is None or item.secure_hash != secure_hash or item.hidden or (item.media_kind or "") == "audio":
+        return None
+    return item
+
+
+@routes.get(r"/api/app/subtitles/{key:[A-Za-z0-9_-]+}/search")
+async def api_user_subtitle_search(request: web.Request) -> web.Response:
+    """Search provider-side subtitles without ever disclosing its API key."""
+    user = get_user(request)
+    if user is None:
+        return _json({"error": "Sign in to search subtitles"}, status=401)
+    item = _subtitle_request_item(request.match_info["key"])
+    if item is None:
+        return _json({"error": "Video not found"}, status=404)
+    try:
+        results = await wyzie_subtitles.search(int(user["sub"]), item, request.query.get("language", ""))
+        return _json({"results": results, "configured": True})
+    except wyzie_subtitles.WyzieError as exc:
+        return _json({"error": str(exc), "configured": wyzie_subtitles.configured()}, status=429 if "limit" in str(exc).lower() or "budget" in str(exc).lower() else 503)
+
+
+@routes.post(r"/api/app/subtitles/{key:[A-Za-z0-9_-]+}/attach")
+async def api_user_subtitle_attach(request: web.Request) -> web.Response:
+    """Download one cached provider result for this user's local player only."""
+    user = get_user(request)
+    if user is None:
+        return _json({"error": "Sign in to add subtitles"}, status=401)
+    item = _subtitle_request_item(request.match_info["key"])
+    if item is None:
+        return _json({"error": "Video not found"}, status=404)
+    try:
+        body = await request.json()
+        candidate_id = str(body.get("id") or "") if isinstance(body, dict) else ""
+        data, candidate = await wyzie_subtitles.download(int(user["sub"]), item, candidate_id)
+        # A user request is deliberately ephemeral: it is not sent to BIN,
+        # added to the catalogue, or made visible to anyone else.
+        return _json({
+            "ok": True,
+            "vtt": data.decode("utf-8-sig", errors="replace"),
+            "label": str(candidate.get("label") or "Subtitles"),
+            "language": str(candidate.get("language") or "und"),
+        })
+    except wyzie_subtitles.WyzieError as exc:
+        return _json({"error": str(exc)}, status=429 if "limit" in str(exc).lower() or "budget" in str(exc).lower() else 503)
+    except Exception:
+        logging.exception("wyzie: attach failed for video %s", item.message_id)
+        return _json({"error": "Could not add selected subtitle"}, status=502)
 
 
 def _app_watch_share_metadata(key: str) -> dict | None:

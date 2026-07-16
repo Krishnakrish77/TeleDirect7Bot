@@ -1,14 +1,14 @@
 import { type CSSProperties, DragEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry } from '../api';
+import { attachUserSubtitle, deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, searchUserSubtitles } from '../api';
 import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
 import { formatClock, RESTORE_AUDIO_MEDIA_SESSION_EVENT, type AudioPlayerHandle, type PlayerState } from '../hooks/audio';
-import type { AudioTrackOption, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
+import type { AudioTrackOption, SubtitleSearchResult, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { LyricsFlipCard, LyricsPanel } from './lyrics';
 import { RatingControls } from './rating';
 import { AudioPlaybackIssue } from './audioPlayer';
 import { attachHls, hlsUrl } from '../media/hls';
-import { restoreCachedSubtitle, revokeSubtitleTrack, subtitleFileToTrack } from '../media/subtitles';
+import { revokeSubtitleTrack, subtitleFileToTrack, subtitleTextToTrack } from '../media/subtitles';
 import { buildVlcHref } from '../media/vlc';
 import { markLocallyWatched } from '../utils/localWatched';
 import { isContinueSuppressed } from '../utils/continueWatching';
@@ -605,6 +605,9 @@ function VideoWatchPage({
   const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
   const [customSubtitles, setCustomSubtitles] = useState<SubtitleTrack[]>([]);
   const [subtitleStatus, setSubtitleStatus] = useState('');
+  const [subtitleResults, setSubtitleResults] = useState<SubtitleSearchResult[]>([]);
+  const [subtitleSearching, setSubtitleSearching] = useState(false);
+  const [subtitleAttaching, setSubtitleAttaching] = useState('');
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -779,14 +782,6 @@ function VideoWatchPage({
     }
     return () => controller.abort();
   }, [hasHls, video.audioTrackBase, video.subtitleBase]);
-
-  useEffect(() => {
-    const restored = restoreCachedSubtitle(video.resumeKey);
-    if (!restored) return undefined;
-    setCustomSubtitles([restored]);
-    setSubtitleStatus(`Restored "${restored.label}" subtitles.`);
-    return () => revokeSubtitleTrack(restored);
-  }, [video.resumeKey]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -1340,6 +1335,40 @@ function VideoWatchPage({
     }
   }, [video.resumeKey]);
 
+  const findSubtitles = useCallback(async () => {
+    setSubtitleSearching(true);
+    setSubtitleStatus('');
+    try {
+      const response = await searchUserSubtitles(video.key);
+      setSubtitleResults(response.results);
+      setSubtitleStatus(response.results.length ? 'Choose a subtitle to add to this video.' : 'No matching subtitles found.');
+    } catch (err) {
+      setSubtitleStatus(err instanceof Error ? err.message : 'Could not search subtitles.');
+    } finally {
+      setSubtitleSearching(false);
+    }
+  }, [video.key]);
+
+  const attachSubtitle = useCallback(async (result: SubtitleSearchResult) => {
+    setSubtitleAttaching(result.id);
+    setSubtitleStatus('');
+    try {
+      const response = await attachUserSubtitle(video.key, result.id);
+      const track = subtitleTextToTrack(response.vtt, response.label, response.language);
+      setCustomSubtitles((current) => {
+        current.forEach(revokeSubtitleTrack);
+        return [track];
+      });
+      setActiveSub(track.id);
+      setSubtitleResults([]);
+      setSubtitleStatus('Loaded temporary subtitles for this session.');
+    } catch (err) {
+      setSubtitleStatus(err instanceof Error ? err.message : 'Could not add subtitle.');
+    } finally {
+      setSubtitleAttaching('');
+    }
+  }, [video.key, video.subtitleBase]);
+
   const openAirPlay = useCallback(() => {
     const el = videoRef.current as (HTMLVideoElement & { webkitShowPlaybackTargetPicker?: () => void }) | null;
     if (el?.webkitShowPlaybackTargetPicker) {
@@ -1811,6 +1840,16 @@ function VideoWatchPage({
               <span>Load subtitles</span>
               <strong>SRT/VTT</strong>
             </button>
+            <button type="button" className="video-menu-row" role="menuitem" onClick={() => void findSubtitles()} disabled={subtitleSearching}>
+              <span>Find subtitles</span>
+              <strong>{subtitleSearching ? 'Searching…' : 'Online'}</strong>
+            </button>
+            {subtitleResults.map((result) => (
+              <button key={result.id} type="button" className="video-menu-row" role="menuitem" onClick={() => void attachSubtitle(result)} disabled={Boolean(subtitleAttaching)}>
+                <span>{result.label}{result.release ? ` · ${result.release}` : ''}</span>
+                <strong>{subtitleAttaching === result.id ? 'Adding…' : 'Add'}</strong>
+              </button>
+            ))}
             {hasHls && (
               <label className="video-menu-row">
                 <span>Audio</span>

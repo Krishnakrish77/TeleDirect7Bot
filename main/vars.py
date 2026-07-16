@@ -70,6 +70,9 @@ class Var(object):
     # Optional Gemini API key for thumbnail-based metadata suggestions in admin.
     # Free tier at aistudio.google.com — no credit card required.
     GEMINI_API_KEY = environ.get("GEMINI_API_KEY", "").strip()
+    # Optional Wyzie subtitle provider key.  This is intentionally consumed
+    # by server-side routes only; never expose it to the browser bundle.
+    WYZIE_API_KEY = environ.get("WYZIE_API_KEY", "").strip()
 
     BANNED_CHANNELS = list({int(x) for x in str(environ.get("BANNED_CHANNELS", "")).split()})
     BANNED_USERS = list({int(x) for x in str(environ.get("BANNED_USERS", "")).split()})

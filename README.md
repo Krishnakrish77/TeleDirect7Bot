@@ -160,6 +160,8 @@ you may also add as many as bots you want. (max limit is not tested yet)
 
 `HUB_GENRE_SHELVES` : How many TMDB-genre rows to make eligible for the hub landing page in addition to the core rows. Defaults to `3`. Clamped to `[1, 20]`. The final React Home page still respects `HUB_HOME_SHELVES`, so genre rows fill remaining shelf budget after higher-priority rows.
 
+`WYZIE_API_KEY` : Optional server-side key for user-requested subtitle search. Obtain one from Wyzie, store it only in the deployment environment, and never add it to frontend configuration. The player exposes **Find subtitles** only through this backend proxy. Searches are cached for six hours; limits are 50 searches and 10 attachments per user per UTC day, with a global provider budget of 800 requests/day.
+
 ### MongoDB (optional — recommended once the catalogue passes a few thousand items)
 
 `STORE_BACKEND` : Set to `mongo` to use MongoDB as the durable catalogue store. Telegram snapshot writes are disabled in this mode. Mongo startup is strict: a missing or unavailable Mongo connection stops the app instead of silently falling back to `/tmp` JSON + pinned Telegram snapshots. Unset keeps the legacy path.

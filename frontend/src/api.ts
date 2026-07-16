@@ -23,6 +23,7 @@ import type {
   ContinueEntry,
   ContinueMap,
   SubtitleTrack,
+  SubtitleSearchResult,
   RatingResponse,
   Suggestion,
   TelegramAuthUser,
@@ -144,6 +145,17 @@ export async function fetchDetail(
 export async function fetchSubtitles(base: string, signal?: AbortSignal): Promise<SubtitleTrack[]> {
   if (!base) return [];
   return request<SubtitleTrack[]>(`${base}/list.json`, { signal });
+}
+
+export async function searchUserSubtitles(key: string, language = ''): Promise<{ results: SubtitleSearchResult[] }> {
+  const suffix = language ? `?language=${encodeURIComponent(language)}` : '';
+  return request<{ results: SubtitleSearchResult[] }>(`/api/app/subtitles/${encodeURIComponent(key)}/search${suffix}`);
+}
+
+export async function attachUserSubtitle(key: string, id: string): Promise<{ ok: boolean; vtt: string; label: string; language: string }> {
+  return request<{ ok: boolean; vtt: string; label: string; language: string }>(`/api/app/subtitles/${encodeURIComponent(key)}/attach`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+  });
 }
 
 export async function fetchAudioTracks(base: string, signal?: AbortSignal): Promise<AudioTrackOption[]> {
@@ -378,6 +390,10 @@ export async function uploadAdminSubtitle(id: number, file: File): Promise<{ ok:
   const form = new FormData();
   form.append('file', file, file.name);
   return request(`/api/app/admin/item/${id}/subtitles`, { method: 'POST', body: form });
+}
+
+export async function deleteAdminSubtitle(id: number, binMessageId: number): Promise<{ ok: boolean; message: string; item: unknown }> {
+  return request(`/api/app/admin/item/${id}/subtitles/${binMessageId}`, { method: 'DELETE' });
 }
 
 export async function fetchAiModels(signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {

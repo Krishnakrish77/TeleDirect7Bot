@@ -21,6 +21,19 @@ function subtitleUrl(vtt: string): string {
   return URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
 }
 
+/** Create a temporary track without writing it to the shared catalogue or local cache. */
+export function subtitleTextToTrack(text: string, label: string, language = 'und'): SubtitleTrack {
+  const vtt = looksLikeVtt(text) ? text : srtToVtt(text);
+  return {
+    id: `temporary:${Date.now()}`,
+    url: subtitleUrl(vtt),
+    language: language || 'und',
+    label: label || 'Subtitles',
+    codec: 'webvtt',
+    kind: 'temporary',
+  };
+}
+
 export async function subtitleFileToTrack(file: File, watchKey: string): Promise<SubtitleTrack> {
   const name = (file.name || '').toLowerCase();
   if (!name.endsWith('.srt') && !name.endsWith('.vtt')) {
@@ -29,7 +42,9 @@ export async function subtitleFileToTrack(file: File, watchKey: string): Promise
   const raw = await file.text();
   const vtt = name.endsWith('.vtt') && looksLikeVtt(raw) ? raw : srtToVtt(raw);
   const label = file.name.replace(/\.[^.]+$/, '') || 'Custom';
-  cacheSubtitle(watchKey, label, vtt);
+  // Deliberately keep viewer-supplied files local to the current player.
+  // Durable shared sidecars are an admin-only catalogue operation.
+  void watchKey;
   return {
     id: `custom:${Date.now()}`,
     url: subtitleUrl(vtt),
@@ -77,6 +92,6 @@ export function cacheSubtitle(watchKey: string, label: string, vtt: string): voi
 }
 
 export function revokeSubtitleTrack(track: SubtitleTrack): void {
-  if (track.kind !== 'custom' || !track.url.startsWith('blob:')) return;
+  if (!['custom', 'temporary'].includes(track.kind) || !track.url.startsWith('blob:')) return;
   URL.revokeObjectURL(track.url);
 }

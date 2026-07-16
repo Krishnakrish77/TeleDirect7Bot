@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { aiSuggestItem, clearAdminItemTmdb, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem, uploadAdminSubtitle } from '../api';
+import { aiSuggestItem, clearAdminItemTmdb, deleteAdminSubtitle, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem, uploadAdminSubtitle } from '../api';
 import { FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TrashIcon, XIcon } from '../icons';
 
 export function AdminNav({
@@ -782,6 +782,7 @@ function EditModal({
   const [isAudio, setIsAudio] = useState(false);
   const [subtitleUploading, setSubtitleUploading] = useState(false);
   const [subtitleStatus, setSubtitleStatus] = useState('');
+  const [sidecars, setSidecars] = useState<Array<{ binMessageId: number; language: string; label: string }>>([]);
 
   const [form, setForm] = useState<FormState>({
     title: '', year: null, tags: '', description: '', fileName: '',
@@ -797,6 +798,7 @@ function EditModal({
     fetchAdminItem(messageId, controller.signal)
       .then((data) => {
         const d = data as Record<string, unknown>;
+        setSidecars(Array.isArray(d['sidecars']) ? d['sidecars'] as Array<{ binMessageId: number; language: string; label: string }> : []);
         setIsAudio(d['mediaKind'] === 'audio');
         setForm((prev) => ({
           ...prev,
@@ -994,10 +996,32 @@ function EditModal({
     setSubtitleStatus('');
     try {
       const result = await uploadAdminSubtitle(messageId, file);
-      if (result.item) onSaved(result.item as AdminItem);
+      if (result.item) {
+        const item = result.item as AdminItem;
+        onSaved(item);
+        setSidecars(item.sidecars || []);
+      }
       setSubtitleStatus(result.message || `Attached ${file.name}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Subtitle upload failed');
+    } finally {
+      setSubtitleUploading(false);
+    }
+  };
+
+  const handleSubtitleDelete = async (binMessageId: number) => {
+    setSubtitleUploading(true);
+    setError('');
+    try {
+      const result = await deleteAdminSubtitle(messageId, binMessageId);
+      if (result.item) {
+        const item = result.item as AdminItem;
+        onSaved(item);
+        setSidecars(item.sidecars || []);
+      }
+      setSubtitleStatus(result.message || 'Removed subtitle');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove subtitle');
     } finally {
       setSubtitleUploading(false);
     }
@@ -1242,6 +1266,16 @@ function EditModal({
                           {subtitleUploading ? 'Uploading…' : 'Upload subtitle'}
                         </label>
                         {subtitleStatus && <p className="edit-field-hint" style={{ marginTop: '0.5rem' }}>{subtitleStatus}</p>}
+                        {sidecars.length > 0 && (
+                          <div className="edit-field-hint" style={{ marginTop: '0.75rem' }}>
+                            {sidecars.map((sidecar) => (
+                              <div key={sidecar.binMessageId} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', marginTop: '0.35rem' }}>
+                                <span>{sidecar.label} ({sidecar.language})</span>
+                                <button type="button" className="secondary-action compact-action" disabled={subtitleUploading} onClick={() => void handleSubtitleDelete(sidecar.binMessageId)}>Remove</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </>
                   )}

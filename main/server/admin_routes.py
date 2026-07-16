@@ -360,6 +360,10 @@ def _admin_item_payload(item, duplicate_details) -> dict:
         "missingThumb": not item.has_thumb and not item.duration,
         "missingPoster": bool(item.tmdb_id and not item.poster_path),
         "subtitleCount": len(item.subtitles or []) + int(item.embedded_subtitle_count or 0),
+        "sidecars": [
+            {"binMessageId": sub.bin_message_id, "language": sub.language or "und", "label": sub.label or "Subtitles"}
+            for sub in (item.subtitles or [])
+        ],
         "subtitleProbePending": not bool(item.subtitles_probed_at),
         "mediaKind": getattr(item, "media_kind", "") or "",
         "seriesTitle": item.series_title or "",
@@ -2952,6 +2956,32 @@ async def api_app_admin_item_upload_subtitle(request: web.Request) -> web.Respon
     except Exception:
         logging.exception("admin: subtitle upload failed for bin:%d", message_id)
         return web.json_response({"error": "Could not save subtitle"}, status=502)
+
+
+@routes.delete(r"/api/app/admin/item/{id:\d+}/subtitles/{bin_id:\d+}")
+async def api_app_admin_item_delete_subtitle(request: web.Request) -> web.Response:
+    """Remove an admin-managed durable sidecar for every viewer."""
+    _require_api_admin(request)
+    message_id = int(request.match_info["id"])
+    bin_id = int(request.match_info["bin_id"])
+    item = media_index.get_item(message_id)
+    if item is None:
+        return web.json_response({"error": "Not found"}, status=404)
+    if not await media_index.detach_subtitle(message_id, bin_id):
+        return web.json_response({"error": "Sidecar subtitle not found"}, status=404)
+    item = media_index.get_item(message_id)
+    if item is not None:
+        await media_index._store_upsert(item)
+    if not await media_index.subtitle_is_referenced(bin_id):
+        try:
+            await StreamBot.delete_messages(Var.BIN_CHANNEL, bin_id)
+        except Exception:
+            logging.warning("admin: removed sidecar link but could not delete bin:%d", bin_id)
+    return web.json_response({
+        "ok": True,
+        "item": _admin_item_payload(item, set()) if item else None,
+        "message": "Removed subtitle",
+    })
 
 
 @routes.post(r"/api/app/admin/item/{id:\d+}")

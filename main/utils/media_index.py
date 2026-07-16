@@ -755,6 +755,30 @@ async def attach_subtitle(video_message_id: int, sub: ExternalSubtitle) -> bool:
         return True
 
 
+async def detach_subtitle(video_message_id: int, bin_message_id: int) -> bool:
+    """Remove one durable sidecar link.  Returns whether it existed."""
+    async with _lock:
+        item = _items.get(video_message_id)
+        if item is None:
+            return False
+        before = len(item.subtitles)
+        item.subtitles = [s for s in item.subtitles if s.bin_message_id != bin_message_id]
+        if len(item.subtitles) == before:
+            return False
+        _persist_unlocked()
+        return True
+
+
+async def subtitle_is_referenced(bin_message_id: int) -> bool:
+    """Return whether any catalogue item still owns a durable sidecar."""
+    async with _lock:
+        return any(
+            sub.bin_message_id == bin_message_id
+            for item in _items.values()
+            for sub in item.subtitles
+        )
+
+
 async def remove(message_id: int, bot=None) -> None:
     """Drop an entry from the catalogue.
 
