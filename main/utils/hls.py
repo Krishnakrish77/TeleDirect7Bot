@@ -171,7 +171,15 @@ async def probe(message_id: int, source_url: str) -> ProbeResult:
         # Only cache successful probes. A failed probe (duration=0, no codec)
         # is usually transient (server starting up, loopback contention) —
         # caching it for an hour would lock the item out of codec info.
-        if result.duration > 0 or result.video_codec:
+        #
+        # A video with a valid duration but NO audio stream is almost always a
+        # truncated cold read (real movies have audio). Its subtitle/audio
+        # lists are unreliable, so don't cache it — otherwise captions stay
+        # missing for a full PROBE_TTL hour until the entry expires. Re-probing
+        # next request (once the skeleton cache is warm) recovers the tracks.
+        # ponytail: audio-less heuristic; a genuinely silent video just re-probes each view.
+        incomplete = bool(result.video_codec) and result.audio_codec is None and result.duration > 0
+        if (result.duration > 0 or result.video_codec) and not incomplete:
             now = time.monotonic()
             _probe_cache[message_id] = (now, result)
             # Purge expired cache entries and any orphaned locks (locks whose
