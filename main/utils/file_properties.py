@@ -54,15 +54,20 @@ def get_media_from_message(message: "Message") -> Any:
             return media
 
 
-def get_hash(media_msg: Message) -> str:
-    media = get_media_from_message(media_msg)
-    uid = getattr(media, "file_unique_id", "")[:16]
+def secure_hash_from_unique_id(unique_id: str) -> str:
+    """Derive the exact URL hash from a Telegram file unique-id."""
+    uid = (unique_id or "")[:16]
     # Trim trailing digits so the URL hash never ends in a digit.
     # The path parser splits hash from message_id at the digit boundary;
     # a hash ending in a digit would cause it to over-consume the message_id.
     while uid and uid[-1].isdigit():
         uid = uid[:-1]
     return uid
+
+
+def get_hash(media_msg: Message) -> str:
+    media = get_media_from_message(media_msg)
+    return secure_hash_from_unique_id(getattr(media, "file_unique_id", ""))
 
 def get_media_file_size(m):
     media = get_media_from_message(m)

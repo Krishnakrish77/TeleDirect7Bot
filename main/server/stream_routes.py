@@ -21,6 +21,7 @@ from main import Var, utils, StartTime, __version__, StreamBot
 from main.utils.custom_dl import MediaSessionUnavailable
 from main.utils.download_urls import is_download_query
 from main.utils import skeleton_cache
+from main.utils.file_properties import secure_hash_from_unique_id
 from main.utils.render_template import render_page
 
 
@@ -107,6 +108,7 @@ def _should_serve_probe_head(
 #   float ts   — last progress timestamp (normal debounce)
 #   ("done", float deadline) — completion cooldown: no new complete until deadline
 _vlc_cw_debounce: dict = {}   # (user_id, message_id) → value
+_vlc_cw_session_started: dict = {}  # (user_id, message_id) → epoch seconds
 
 def _vlc_verify(param: str, message_id: int) -> int | None:
     """Return user_id if param is a valid VLC tracking token, else None."""
@@ -182,15 +184,26 @@ async def _vlc_track(user_id: int, message_id: int,
         dur = float(getattr(_mi.get_item(message_id), "duration", 0) or 0)
         cooldown = max(dur, 7200.0)
         _vlc_cw_debounce[(user_id, message_id)] = ("done", time.time() + cooldown)
+        _vlc_cw_session_started.pop((user_id, message_id), None)
     elif action == "progress":
         dur = float(item.duration or 0)
         if dur > 0:
             now = time.time()
             pct = from_bytes / file_size
             pos = pct * dur
+            key = (user_id, message_id)
+            previous = _vlc_cw_debounce.get(key)
+            # A quiet VLC session is a new playback session.  Keeping the
+            # original start time while it is active lets CW tombstones reject
+            # progress from a player that was open before another device
+            # cleared/completed the title.
+            if not isinstance(previous, (int, float)) or now - previous > 300:
+                _vlc_cw_session_started[key] = now
+            session_started = _vlc_cw_session_started.setdefault(key, now)
             _vlc_cw_debounce[(user_id, message_id)] = now
             await cw_store.upsert(user_id, cw_key, pos, dur,
-                                   int(now * 1000), title)
+                                   int(now * 1000), title,
+                                   int(session_started * 1000))
 
 
 def _real_ip(request: web.Request) -> str:
@@ -413,7 +426,7 @@ async def _file_for_index(index: int, message_id: int, secure_hash: str):
     client, tg_connect = _streamer_for_index(index)
     file_id = await tg_connect.get_file_properties(message_id)
     if not secure_hash or not _hmac.compare_digest(
-        file_id.unique_id[:len(secure_hash)], secure_hash
+        secure_hash_from_unique_id(file_id.unique_id), secure_hash
     ):
         logging.debug(f"Invalid hash for message with ID {message_id}")
         raise InvalidHash

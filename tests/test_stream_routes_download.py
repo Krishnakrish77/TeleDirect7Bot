@@ -2,7 +2,7 @@ import os
 import importlib
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 
 os.environ.setdefault("API_ID", "1")
@@ -14,6 +14,7 @@ from aiohttp import web
 
 from main.utils.custom_dl import MediaSessionUnavailable
 from main.utils.hub_query import HubItem
+from main.utils import cw_store, media_index
 
 stream_routes = importlib.import_module("main.server.stream_routes")
 render_template = importlib.import_module("main.utils.render_template")
@@ -285,6 +286,30 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('property="og:url" content="https://media.example/watch/abc42"', html)
         self.assertIn('property="og:image" content="https://image.tmdb.org/t/p/w780/castle-poster.jpg"', html)
         self.assertIn('name="twitter:card" content="summary_large_image"', html)
+
+    async def test_watch_page_rejects_abbreviated_secure_hash(self):
+        async def fake_get_file_ids(*_args):
+            return _FakeFileId()
+
+        with patch.object(render_template, "get_file_ids", fake_get_file_ids):
+            with self.assertRaises(render_template.InvalidHash):
+                await render_template.render_page(42, "a")
+
+    async def test_vlc_progress_carries_stable_session_start(self):
+        item = _video_item(duration=1000)
+        stream_routes._vlc_cw_debounce.clear()
+        stream_routes._vlc_cw_session_started.clear()
+        with (
+            patch.object(media_index, "get_item", return_value=item),
+            patch.object(cw_store, "upsert", new=AsyncMock()) as upsert,
+        ):
+            await stream_routes._vlc_track(7, 42, 100, 1000, "progress")
+            await stream_routes._vlc_track(7, 42, 200, 1000, "progress")
+
+        self.assertEqual(upsert.await_count, 2)
+        first_started = upsert.await_args_list[0].args[-1]
+        second_started = upsert.await_args_list[1].args[-1]
+        self.assertEqual(first_started, second_started)
 
     async def test_watch_page_share_metadata_ignores_hidden_catalogue_item(self):
         item = _video_item(

@@ -21,6 +21,7 @@ from main.bot import multi_clients, work_loads
 from main.server.exceptions import FIleNotFound, InvalidHash
 from main.utils import hls, hls_session, media_index, skeleton_cache, ByteStreamer
 from main.utils.subtitles import srt_to_vtt
+from main.utils.file_properties import secure_hash_from_unique_id
 from main.vars import Var
 
 
@@ -46,7 +47,7 @@ async def _resolve(message_id: int, secure_hash: str):
         streamer = ByteStreamer(client)
         _class_cache[client] = streamer
     file_id = await streamer.get_file_properties(message_id)
-    if file_id.unique_id[:len(secure_hash)] != secure_hash:
+    if secure_hash_from_unique_id(file_id.unique_id) != secure_hash:
         raise InvalidHash
     return file_id, streamer, index
 

@@ -10,7 +10,7 @@ from main.bot import StreamBot
 from main.utils import media_index
 from main.utils.download_urls import as_download_url
 from main.utils.human_readable import humanbytes
-from main.utils.file_properties import get_file_ids
+from main.utils.file_properties import get_file_ids, secure_hash_from_unique_id
 from main.utils.playback import should_offer_hls_for_video
 from main.utils import share_meta
 from main.exceptions import InvalidHash
@@ -74,8 +74,9 @@ def _best_file_name(api_name: str, meta) -> str:
 async def render_page(message_id, secure_hash,
                       vlc_user_id=None, vlc_token=None):
     file_data = await get_file_ids(StreamBot, int(Var.BIN_CHANNEL), int(message_id))
-    if not secure_hash or file_data.unique_id[:len(secure_hash)] != secure_hash:
-        logging.debug(f'link hash: {secure_hash} - {file_data.unique_id[:len(secure_hash) if secure_hash else 6]}')
+    expected_hash = secure_hash_from_unique_id(file_data.unique_id)
+    if not secure_hash or expected_hash != secure_hash:
+        logging.debug(f'link hash: {secure_hash} - {expected_hash}')
         logging.debug(f"Invalid hash for message with - ID {message_id}")
         raise InvalidHash
     src = urllib.parse.urljoin(Var.URL, f'{secure_hash}{message_id}')
