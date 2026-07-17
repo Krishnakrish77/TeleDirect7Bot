@@ -2260,8 +2260,15 @@ def card_for_tmdb_id(tmdb_id: int, kind: str = "") -> object:
     Returns a SeriesGroup/MovieGroup when multiple items share the same
     key, otherwise the raw HubItem.
     """
-    matches = [it for it in _items.values()
-               if it.tmdb_id == tmdb_id and not it.hidden]
+    matches = [
+        it for it in _items.values()
+        if it.tmdb_id == tmdb_id
+        and not it.hidden
+        and (
+            not kind
+            or kind == ("tv" if it.series_key or it.tmdb_kind == "tv" else "movie")
+        )
+    ]
     if not matches:
         return None
     first = matches[0]

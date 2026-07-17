@@ -165,7 +165,7 @@ async def _vlc_track(user_id: int, message_id: int,
                      from_bytes: int, file_size: int,
                      action: str) -> None:
     """Update CW progress and WH completion for VLC viewers."""
-    from main.utils import cw_store, wh_store
+    from main.utils import cw_store, rec_store, wh_store
     from main.utils import media_index as _mi
     item = _mi.get_item(message_id)
     if not item:
@@ -176,6 +176,7 @@ async def _vlc_track(user_id: int, message_id: int,
     if action == "complete":
         await wh_store.record(user_id, cw_key, title)
         await cw_store.delete_one(user_id, cw_key)
+        await rec_store.clear_cached(user_id)
         # Replace the debounce entry with a completion cooldown instead of
         # deleting it.  Deleting caused re-inflation: the next progress event
         # (VLC rewind, re-buffer) would re-add the key, and the next 90%+ seek

@@ -1,7 +1,7 @@
 """Not-for-me dismissal API.
 
 POST /api/dismiss       body: {"tmdb_id": N, "kind": "movie"|"tv"}
-DELETE /api/dismiss     body: {"tmdb_id": N}   — un-dismiss
+DELETE /api/dismiss     body: {"tmdb_id": N, "kind": "movie"|"tv"} — un-dismiss
 """
 
 from __future__ import annotations
@@ -27,6 +27,9 @@ async def api_dismiss(request: web.Request) -> web.Response:
     try:
         body = await request.json()
         tmdb_id = int(body["tmdb_id"])
+        kind = str(body.get("kind", ""))
+        if kind not in ("movie", "tv"):
+            return _json({"error": "invalid kind"}, status=400)
         kind = str(body.get("kind", "movie"))
         if kind not in ("movie", "tv"):
             kind = "movie"
@@ -50,6 +53,6 @@ async def api_undismiss(request: web.Request) -> web.Response:
     except Exception:
         return _json({"error": "invalid body"}, status=400)
 
-    await dismissed_store.undismiss(int(user["sub"]), tmdb_id)
+    await dismissed_store.undismiss(int(user["sub"]), tmdb_id, kind)
     await rec_store.clear_cached(int(user["sub"]))
     return _json({"ok": True})

@@ -39,12 +39,13 @@ _CW_KEY_RE = re.compile(r'^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$')
 _MAX_SEEDS = 8   # max seed items to collect
 _MAX_CALLS = 5   # max TMDB recommendation calls per request
 _MAX_RECS = 12   # max items in shelf
+TmdbKey = Tuple[int, str]
 
 
 def _tmdb_for_item(item) -> Tuple[Optional[int], str]:
     if item is None or not item.tmdb_id:
         return None, ""
-    kind = "tv" if item.series_key else "movie"
+    kind = "tv" if item.series_key or getattr(item, "tmdb_kind", "") == "tv" else "movie"
     return item.tmdb_id, kind
 
 
@@ -103,12 +104,12 @@ async def _collect_signal_profile(user_id: int) -> dict:
     )
 
     seeds: List[Tuple[int, str]] = []
-    seen_seed_tmdb: set[int] = set()
+    seen_seed_tmdb: set[TmdbKey] = set()
     seed_genres: Counter = Counter()
     negative_genres: Counter = Counter()
-    exclude_tmdb: set[int] = set()
-    liked_tmdb: set[int] = set()
-    partial_tmdb: set[int] = set()
+    exclude_tmdb: set[TmdbKey] = set()
+    liked_tmdb: set[TmdbKey] = set()
+    partial_tmdb: set[TmdbKey] = set()
     # Only completed watches may feed "Because you watched ..." copy.
     recent_titles: list[str] = []
 
@@ -123,9 +124,9 @@ async def _collect_signal_profile(user_id: int) -> dict:
         if not tid:
             return
         if exclude:
-            exclude_tmdb.add(tid)
-        if tid not in seen_seed_tmdb:
-            seen_seed_tmdb.add(tid)
+            exclude_tmdb.add((tid, kind))
+        if (tid, kind) not in seen_seed_tmdb:
+            seen_seed_tmdb.add((tid, kind))
             seeds.append((tid, kind))
         for genre in getattr(item, "tmdb_genres", None) or []:
             seed_genres[genre] += weight
@@ -148,9 +149,9 @@ async def _collect_signal_profile(user_id: int) -> dict:
             pct = 0
         if pct <= 0.02 or pct >= 0.95:
             continue
-        tid, _kind = _tmdb_for_item(item)
+        tid, kind = _tmdb_for_item(item)
         if tid:
-            partial_tmdb.add(tid)
+            partial_tmdb.add((tid, kind))
         add_seed(item, 1.0 + min(0.95, pct) * 1.8)
 
     for iid in watchlist_ids[:80]:
@@ -162,12 +163,12 @@ async def _collect_signal_profile(user_id: int) -> dict:
 
     for entry in ratings:
         item = media_index.get_item(int(entry.get("message_id") or 0))
-        tid, _kind = _tmdb_for_item(item)
+        tid, kind = _tmdb_for_item(item)
         if not tid:
             continue
-        exclude_tmdb.add(tid)
+        exclude_tmdb.add((tid, kind))
         if entry.get("rating") == "up":
-            liked_tmdb.add(tid)
+            liked_tmdb.add((tid, kind))
             add_seed(item, 4.0)
         elif entry.get("rating") == "down":
             for genre in getattr(item, "tmdb_genres", None) or []:
@@ -195,23 +196,22 @@ async def _fetch_recs_for_seeds(
                  for tid, kind in seeds[:_MAX_CALLS]]
         results = await asyncio.gather(*calls, return_exceptions=True)
 
-    counter: Counter = Counter()
-    kind_map: dict = {}
+    counter: Counter[TmdbKey] = Counter()
     for rec_list in results:
         if isinstance(rec_list, Exception):
             logging.warning("rec_engine: TMDB recommendation call failed: %s", rec_list)
             continue
         for rec_id, rec_kind in rec_list:
-            if rec_id not in exclude:
-                counter[rec_id] += 1
-                kind_map[rec_id] = rec_kind
+            key = (rec_id, rec_kind)
+            if key not in exclude:
+                counter[key] += 1
 
-    return [(tid, kind_map[tid], count) for tid, count in counter.most_common(80)]
+    return [(tid, kind, count) for (tid, kind), count in counter.most_common(80)]
 
 
 def _rank_candidate_cards(candidates: List[Tuple[int, str, int]], profile: dict) -> list:
     catalogue_tmdb_ids = {
-        it.tmdb_id for it in media_index._items.values()
+        _tmdb_for_item(it) for it in media_index._items.values()
         if it.tmdb_id and not it.hidden
     }
     max_message_id = max((it.message_id for it in media_index._items.values()), default=1)
@@ -220,7 +220,7 @@ def _rank_candidate_cards(candidates: List[Tuple[int, str, int]], profile: dict)
     scored: list[tuple[float, int, str, object, list[str]]] = []
 
     for tid, kind, tmdb_count in candidates:
-        if tid not in catalogue_tmdb_ids:
+        if (tid, kind) not in catalogue_tmdb_ids:
             continue
         card = media_index.card_for_tmdb_id(tid, kind)
         if card is None:
@@ -317,8 +317,8 @@ async def get_personal_shelves(user_id: int, limit: int = 18) -> list[dict]:
         filtered = []
         seen_groups: set[str] = set()
         for card in cards:
-            tid, _kind = _card_tmdb(card)
-            if tid and tid in exclude_tmdb:
+            tid, kind = _card_tmdb(card)
+            if tid and (tid, kind) in exclude_tmdb:
                 continue
             group_key = getattr(card, "series_key", "") or getattr(card, "movie_key", "") or str(_card_message_id(card))
             if group_key in seen_groups:

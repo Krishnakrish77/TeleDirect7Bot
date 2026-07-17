@@ -14,7 +14,7 @@ from aiohttp import web
 
 from main.utils.custom_dl import MediaSessionUnavailable
 from main.utils.hub_query import HubItem
-from main.utils import cw_store, media_index
+from main.utils import cw_store, media_index, rec_store, wh_store
 
 stream_routes = importlib.import_module("main.server.stream_routes")
 render_template = importlib.import_module("main.utils.render_template")
@@ -310,6 +310,19 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
         first_started = upsert.await_args_list[0].args[-1]
         second_started = upsert.await_args_list[1].args[-1]
         self.assertEqual(first_started, second_started)
+
+    async def test_vlc_completion_invalidates_recommendations(self):
+        item = _video_item(duration=1000)
+        with (
+            patch.object(media_index, "get_item", return_value=item),
+            patch.object(wh_store, "record", new=AsyncMock()) as record,
+            patch.object(cw_store, "delete_one", new=AsyncMock()),
+            patch.object(rec_store, "clear_cached", new=AsyncMock()) as clear_cached,
+        ):
+            await stream_routes._vlc_track(7, 42, 950, 1000, "complete")
+
+        record.assert_awaited_once()
+        clear_cached.assert_awaited_once_with(7)
 
     async def test_watch_page_share_metadata_ignores_hidden_catalogue_item(self):
         item = _video_item(

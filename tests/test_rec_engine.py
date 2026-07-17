@@ -19,6 +19,7 @@ def make_item(
     title: str = "The Invisible Guest",
     tmdb_id: int = 123,
     genres: list[str] | None = None,
+    series_key: str = "",
 ) -> HubItem:
     return HubItem(
         message_id=message_id,
@@ -33,6 +34,8 @@ def make_item(
         tmdb_id=tmdb_id,
         tmdb_kind="movie",
         tmdb_genres=genres or ["Mystery", "Thriller"],
+        series_key=series_key,
+        series_title=title if series_key else "",
     )
 
 
@@ -53,6 +56,27 @@ async def empty_continue(_user_id: int) -> dict:
 
 
 class RecEngineSignalTest(unittest.IsolatedAsyncioTestCase):
+    async def test_movie_and_tv_with_same_tmdb_id_remain_distinct_candidates(self):
+        previous = dict(rec_engine.media_index._items)
+        try:
+            movie = make_item(10, title="Movie 77", tmdb_id=77)
+            series = make_item(11, title="Series 77", tmdb_id=77, series_key="series-77")
+            rec_engine.media_index._items.clear()
+            rec_engine.media_index._items.update({10: movie, 11: series})
+
+            cards = rec_engine._rank_candidate_cards(
+                [(77, "movie", 1), (77, "tv", 1)],
+                {"seed_genres": Counter(), "negative_genres": Counter()},
+            )
+
+            self.assertEqual(
+                {rec_engine._card_tmdb(card) for card in cards},
+                {(77, "movie"), (77, "tv")},
+            )
+        finally:
+            rec_engine.media_index._items.clear()
+            rec_engine.media_index._items.update(previous)
+
     async def test_partial_continue_entry_is_seed_but_not_watched_label(self):
         item = make_item()
 

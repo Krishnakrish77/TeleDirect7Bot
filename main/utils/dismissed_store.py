@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Set
+from typing import Set, Tuple
 
 _indexed = False
 
@@ -37,7 +37,16 @@ async def _ensure_indexes() -> None:
     if db is None:
         return
     try:
-        await db["dismissed"].create_index([("user_id", 1), ("tmdb_id", 1)], unique=True)
+        coll = db["dismissed"]
+        # Older releases keyed dismissals only by numeric TMDB ID. Movie and
+        # TV IDs use separate namespaces, so remove that obsolete index before
+        # creating the type-safe replacement. Existing documents retain their
+        # stored kind and continue to work.
+        try:
+            await coll.drop_index("user_id_1_tmdb_id_1")
+        except Exception:
+            pass  # absent on fresh databases or already migrated
+        await coll.create_index([("user_id", 1), ("tmdb_id", 1), ("kind", 1)], unique=True)
         await db["dismissed"].create_index("user_id")
         _indexed = True
     except Exception:
@@ -53,7 +62,7 @@ async def dismiss(user_id: int, tmdb_id: int, kind: str) -> None:
     try:
         now = datetime.now(timezone.utc)
         await db["dismissed"].update_one(
-            {"user_id": user_id, "tmdb_id": tmdb_id},
+            {"user_id": user_id, "tmdb_id": tmdb_id, "kind": kind},
             {"$set": {"kind": kind, "dismissed_at": now}},
             upsert=True,
         )
@@ -61,19 +70,22 @@ async def dismiss(user_id: int, tmdb_id: int, kind: str) -> None:
         logging.exception("dismissed_store: dismiss failed uid=%d tid=%d", user_id, tmdb_id)
 
 
-async def undismiss(user_id: int, tmdb_id: int) -> None:
+async def undismiss(user_id: int, tmdb_id: int, kind: str = "") -> None:
     """Remove a dismissal (toggle off)."""
     db = _get_db()
     if db is None:
         return
     try:
-        await db["dismissed"].delete_one({"user_id": user_id, "tmdb_id": tmdb_id})
+        query = {"user_id": user_id, "tmdb_id": tmdb_id}
+        if kind in ("movie", "tv"):
+            query["kind"] = kind
+        await db["dismissed"].delete_one(query)
     except Exception:
         logging.exception("dismissed_store: undismiss failed uid=%d tid=%d", user_id, tmdb_id)
 
 
-async def get_dismissed_ids(user_id: int) -> Set[int]:
-    """Return all tmdb_ids the user has dismissed."""
+async def get_dismissed_ids(user_id: int) -> Set[Tuple[int, str]]:
+    """Return all ``(tmdb_id, kind)`` pairs the user has dismissed."""
     await _ensure_indexes()
     db = _get_db()
     if db is None:
@@ -81,9 +93,12 @@ async def get_dismissed_ids(user_id: int) -> Set[int]:
     try:
         docs = await db["dismissed"].find(
             {"user_id": user_id},
-            projection={"tmdb_id": 1, "_id": 0},
+            projection={"tmdb_id": 1, "kind": 1, "_id": 0},
         ).to_list(length=2000)
-        return {d["tmdb_id"] for d in docs}
+        return {
+            (int(d["tmdb_id"]), str(d.get("kind") or "movie"))
+            for d in docs if d.get("tmdb_id")
+        }
     except Exception:
         logging.exception("dismissed_store: get_dismissed_ids failed for user %d", user_id)
         return set()

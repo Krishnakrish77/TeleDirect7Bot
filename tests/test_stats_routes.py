@@ -111,10 +111,14 @@ class StatsRoutesTest(unittest.IsolatedAsyncioTestCase):
             rejected = await wh_routes.api_record(_Request("invented999", {"title": "Fake"}))
             self.assertEqual(rejected.status, 404)
 
-            with patch.object(wh_routes.wh_store, "record", new=AsyncMock()) as record:
+            with (
+                patch.object(wh_routes.wh_store, "record", new=AsyncMock()) as record,
+                patch.object(wh_routes.rec_store, "clear_cached", new=AsyncMock()) as clear_cached,
+            ):
                 accepted = await wh_routes.api_record(_Request("hash101", {"title": "Fake"}))
             self.assertEqual(accepted.status, 200)
             record.assert_awaited_once_with(7, "hash101", "Example Movie")
+            clear_cached.assert_awaited_once_with(7)
         finally:
             wh_routes.get_user = original_get_user
             media_index._items.clear()

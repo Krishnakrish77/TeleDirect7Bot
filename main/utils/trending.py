@@ -75,16 +75,15 @@ async def get_trending() -> Dict:
     movie_results = _merge(t_movie, p_movie)
     tv_results    = _merge(t_tv,    p_tv)
 
-    # Build tmdb_id → catalogue card lookup (kind-agnostic key).
-    # Using tmdb_id alone avoids missing standalone episodes:
-    # a HubItem with series_key="" gets kind="movie" but TMDB classifies
-    # it as "tv" — a (tmdb_id, kind) key would never match.
-    tmdb_in_catalogue: Dict[int, object] = {}
+    # Movie and TV TMDB IDs have separate namespaces. Respect ``tmdb_kind``
+    # for standalone episodes that have not yet been grouped into a series.
+    tmdb_in_catalogue: Dict[Tuple[int, str], object] = {}
     for it in media_index._items.values():
         if it.tmdb_id and not it.hidden:
-            if it.tmdb_id not in tmdb_in_catalogue:
-                kind = "tv" if it.series_key else "movie"
-                tmdb_in_catalogue[it.tmdb_id] = media_index.card_for_tmdb_id(it.tmdb_id, kind)
+            kind = "tv" if it.series_key or it.tmdb_kind == "tv" else "movie"
+            key = (it.tmdb_id, kind)
+            if key not in tmdb_in_catalogue:
+                tmdb_in_catalogue[key] = media_index.card_for_tmdb_id(it.tmdb_id, kind)
 
     in_library: List = []
     missing: List[Dict] = []
@@ -95,7 +94,7 @@ async def get_trending() -> Dict:
             tid = r.get("id")
             if not tid:
                 continue
-            card = tmdb_in_catalogue.get(tid)  # kind-agnostic lookup
+            card = tmdb_in_catalogue.get((tid, kind))
             if card is not None:
                 card_id = id(card)
                 if card_id not in seen_cards:
