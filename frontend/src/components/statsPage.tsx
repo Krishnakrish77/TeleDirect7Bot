@@ -74,6 +74,18 @@ export function StatsPage({
 
   if (!data) return null;
 
+  if (!data.has_activity) {
+    return (
+      <main className="stats-main">
+        <div className="empty-state">
+          <ChartIcon />
+          <strong>No activity yet</strong>
+          <span>Start watching or listening to see your personal stats.</span>
+        </div>
+      </main>
+    );
+  }
+
   const maxHeat = Math.max(1, ...data.heatmap.map((cell) => cell.count));
   const audioPct = data.n_audio + data.n_video ? Math.round((data.n_audio / (data.n_audio + data.n_video)) * 100) : 0;
   const videoPct = data.n_audio + data.n_video ? 100 - audioPct : 0;
@@ -90,7 +102,10 @@ export function StatsPage({
         <div className="stats-hero-copy">
           <p className="eyebrow">{data.personality || 'Stats'}</p>
           <h1>{durationLabel(data.total_hours, data.total_mins)}</h1>
-          <p>{data.total_plays.toLocaleString()} plays across {data.total_titles.toLocaleString()} titles</p>
+          <p>
+            {data.total_plays.toLocaleString()} completed play{data.total_plays === 1 ? '' : 's'} across {data.total_titles.toLocaleString()} title{data.total_titles === 1 ? '' : 's'}
+            {data.in_progress > 0 && ` · ${data.in_progress} in progress`}
+          </p>
           {equivParts.length > 0 && (
             <p className="stats-equiv">{equivParts.join(' · ')}</p>
           )}
@@ -99,7 +114,7 @@ export function StatsPage({
             <span><ChartIcon /> {data.active_days} active days</span>
           </div>
         </div>
-        {titlePoster(data.top_title, 'Most played')}
+        {titlePoster(data.top_title, data.top_title_label)}
       </section>
 
       {/* ── Summary cards ── */}

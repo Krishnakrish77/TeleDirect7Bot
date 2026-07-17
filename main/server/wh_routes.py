@@ -11,7 +11,7 @@ import re
 from aiohttp import web
 
 from main.utils.user_auth import get_user
-from main.utils import wh_store
+from main.utils import media_index, wh_store
 
 routes = web.RouteTableDef()
 
@@ -31,9 +31,21 @@ async def api_record(request: web.Request) -> web.Response:
     key = request.match_info["key"]
     if not _VALID_KEY.match(key):
         return _json({"error": "invalid key"}, status=400)
+    # A syntactically valid key is not enough: otherwise any signed-in user
+    # can manufacture history rows and distort their stats (and global play
+    # ranking). Resolve it against the exact currently indexed upload.
+    item = next(
+        (candidate for candidate in media_index._items.values()
+         if key == f"{candidate.secure_hash}{candidate.message_id}"),
+        None,
+    )
+    if item is None:
+        return _json({"error": "unknown media"}, status=404)
     try:
         body = await request.json()
-        title = str(body.get("title", ""))[:200]
+        # The client-provided title is presentation-only; persist the
+        # catalogue title so callers cannot poison history labels.
+        title = (item.title or item.file_name or str(body.get("title", "")))[:200]
     except Exception:
         return _json({"error": "invalid body"}, status=400)
     await wh_store.record(int(user["sub"]), key, title)

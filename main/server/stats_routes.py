@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from aiohttp import web
@@ -62,6 +62,19 @@ def _time_label(hour: int) -> tuple:
     return ("Night", "🌙")
 
 
+def _utc_naive_from_ms(value: object) -> datetime | None:
+    try:
+        return datetime.fromtimestamp(int(value) / 1000, timezone.utc).replace(tzinfo=None)
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
+def _utc_naive(value: object) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    return value.replace(tzinfo=None) if value.tzinfo else value
+
+
 def _play_count(entry: dict) -> int:
     try:
         count = int(entry.get("play_count") or 1)
@@ -95,25 +108,65 @@ def _personality(top_genre: str, night_pct: int, weekend_pct: int,
 
 async def _stats_payload(user_id: int) -> dict:
     import asyncio
-    cw_data, history = await asyncio.gather(
+    cw_data, summary_history, events = await asyncio.gather(
         cw_store.get_all(user_id),
         wh_store.get_recent(user_id, limit=500),
+        wh_store.get_events(user_id),
     )
 
-    # ── Avoid double-counting CW items that also appear in history ─────────
-    # history_mids: int message IDs (for catalogue lookups)
-    # history_cw_keys: raw cw_key strings (for comparing against cw_data keys,
-    #   which are also strings — comparing set[int] against str always misses)
+    # New immutable events give exact replay timing. Preserve the compact
+    # legacy summary as a synthetic event only for completions that predate
+    # event tracking, so existing users do not lose their totals on upgrade.
+    event_counts = Counter(event.get("cw_key", "") for event in events)
+    history = list(events)
+    for summary in summary_history:
+        key = summary.get("cw_key", "")
+        legacy_plays = max(0, _play_count(summary) - event_counts[key])
+        if legacy_plays:
+            legacy = dict(summary)
+            legacy["play_count"] = legacy_plays
+            history.append(legacy)
+    history.sort(key=lambda entry: _utc_naive(entry.get("watched_at")) or datetime.min, reverse=True)
+
+    # ── Completed items and active CW sessions ──────────────────────────────
+    # history_mids are used for catalogue lookups and completion-rate totals.
     history_mids: set = set()
-    history_cw_keys: set = set()
     for h in history:
         ck = h.get("cw_key", "")
         if not ck:
             continue
-        history_cw_keys.add(ck)
         m = _CW_KEY_RE.match(ck)
         if m:
             history_mids.add(int(m.group(1)))
+
+    # A title completed on an earlier session can legitimately be in progress
+    # again. Only suppress CW progress when its completion happened after the
+    # current playback session began.
+    last_completion: dict[str, datetime] = {}
+    for h in history:
+        key = h.get("cw_key", "")
+        watched_at = _utc_naive(h.get("watched_at"))
+        if key and watched_at and (key not in last_completion or watched_at > last_completion[key]):
+            last_completion[key] = watched_at
+
+    def _cw_is_already_completed(key: str, entry: dict) -> bool:
+        watched_at = last_completion.get(key)
+        if watched_at is None:
+            return False
+        try:
+            started_ms = int(entry.get("startedAt") or entry.get("t") or 0)
+        except (TypeError, ValueError):
+            started_ms = 0
+        started_at = _utc_naive_from_ms(started_ms)
+        return bool(started_at and watched_at >= started_at)
+
+    in_progress_entries = [
+        (key, entry) for key, entry in cw_data.items()
+        if _CW_KEY_RE.match(key)
+        and entry.get("dur", 0) > 0
+        and entry.get("pos", 0) / entry["dur"] >= 0.05
+        and not _cw_is_already_completed(key, entry)
+    ]
 
     # ── Total watch/listen time (with audio/video split) ─────────────────
     total_seconds = 0.0
@@ -121,7 +174,7 @@ async def _stats_payload(user_id: int) -> dict:
     audio_seconds = 0.0
     for ck, entry in cw_data.items():
         m = _CW_KEY_RE.match(ck)
-        if m and int(m.group(1)) not in history_mids:
+        if m and not _cw_is_already_completed(ck, entry):
             pos = entry.get("pos", 0)
             total_seconds += pos
             _it = media_index.get_item(int(m.group(1)))
@@ -240,13 +293,40 @@ async def _stats_payload(user_id: int) -> dict:
         if g in title_meta
     ]
     top_title    = most_replayed[0] if most_replayed else None
+    top_title_label = "Most played"
+    if top_title is None and in_progress_entries:
+        progress_key, _progress = max(in_progress_entries, key=lambda pair: pair[1].get("t", 0))
+        progress_match = _CW_KEY_RE.match(progress_key)
+        progress_item = media_index.get_item(int(progress_match.group(1))) if progress_match else None
+        if progress_item:
+            if progress_item.series_key:
+                progress_title = progress_item.series_title or progress_item.title
+                progress_url = f"/series/{progress_item.series_key}"
+            elif progress_item.album_key:
+                progress_title = progress_item.album_title or progress_item.title
+                progress_url = f"/album/{progress_item.album_key}"
+            elif progress_item.movie_key:
+                progress_title = progress_item.title
+                progress_url = f"/movie/{progress_item.movie_key}"
+            else:
+                progress_title = progress_item.title
+                progress_url = f"/watch/{progress_item.secure_hash}{progress_item.message_id}"
+            top_title = {
+                "title": progress_title,
+                "poster": _tmdb_poster(progress_item),
+                "url": progress_url,
+                "media_kind": progress_item.media_kind or "video",
+                "year": progress_item.year or "",
+                "is_series": bool(progress_item.series_key),
+            }
+            top_title_label = "Continue watching"
     total_titles = len(title_counts)  # distinct series/movies/albums completed
 
     # ── Temporal patterns ─────────────────────────────────────────────────
     dow_counts:  Counter = Counter()   # 0=Mon … 6=Sun
     hour_counts: Counter = Counter()   # 0-23
     from datetime import date as _date_cls
-    _today_utc     = datetime.utcnow().date()
+    _today_utc     = datetime.now(timezone.utc).date()
     _this_monday   = _today_utc - timedelta(days=_today_utc.weekday())
     _heatmap_start = _this_monday - timedelta(weeks=12)
     # Align week_start to the Monday that opens the heatmap grid so every
@@ -256,28 +336,27 @@ async def _stats_payload(user_id: int) -> dict:
     daily_counts: defaultdict = defaultdict(int)
 
     for h in history:
-        wa = h.get("watched_at")
+        wa = _utc_naive(h.get("watched_at"))
         if not wa:
             continue
-        if hasattr(wa, 'tzinfo') and wa.tzinfo:
-            wa = wa.replace(tzinfo=None)
         plays = _play_count(h)
         dow_counts[wa.weekday()] += plays
         hour_counts[wa.hour]     += plays
         if wa >= week_start:
             daily_counts[wa.strftime("%Y-%m-%d")] += plays
 
-    # Also count days with in-progress CW activity (t = epoch-ms of last save).
-    # Skip entries already in history_cw_keys to avoid double-counting the same
-    # day (completion date from history + CW t date for the same item).
-    for ck, entry in cw_data.items():
-        if ck in history_cw_keys:
-            continue  # already counted via history loop above
+    # Also count days with genuinely in-progress CW activity (t = epoch-ms of
+    # the last save), including a rewatch started after an earlier completion.
+    for ck, entry in in_progress_entries:
         t_ms = entry.get("t", 0)
         if t_ms > 0:
-            cw_day = datetime.utcfromtimestamp(t_ms / 1000)
+            cw_day = _utc_naive_from_ms(t_ms)
+            if cw_day is None:
+                continue
             if cw_day >= week_start:
                 daily_counts[cw_day.strftime("%Y-%m-%d")] += 1
+            dow_counts[cw_day.weekday()] += 1
+            hour_counts[cw_day.hour] += 1
 
     # ── All-time active days set for streak computation ───────────────────
     # daily_counts is windowed to 12 weeks; using it for streaks would cap
@@ -285,17 +364,15 @@ async def _stats_payload(user_id: int) -> dict:
     # and cw_data (90-day TTL) so long streaks are reported correctly.
     _all_active_days: set = set()
     for h in history:
-        _wa = h.get("watched_at")
+        _wa = _utc_naive(h.get("watched_at"))
         if _wa:
-            if hasattr(_wa, 'tzinfo') and _wa.tzinfo:
-                _wa = _wa.replace(tzinfo=None)
             _all_active_days.add(_wa.strftime("%Y-%m-%d"))
-    for _ck, _entry in cw_data.items():
+    for _ck, _entry in in_progress_entries:
         _t = _entry.get("t", 0)
         if _t > 0:
-            _all_active_days.add(
-                datetime.utcfromtimestamp(_t / 1000).strftime("%Y-%m-%d")
-            )
+            _cw_day = _utc_naive_from_ms(_t)
+            if _cw_day:
+                _all_active_days.add(_cw_day.strftime("%Y-%m-%d"))
 
     # Day-of-week bar: max=100 so bars are relative
     max_dow = max(dow_counts.values(), default=1)
@@ -324,13 +401,7 @@ async def _stats_payload(user_id: int) -> dict:
     # ── Completion rate ───────────────────────────────────────────────────
     # Only count in-progress items that have a valid cw_key (valid regex +
     # minimum 5% progress) and are not already in watch history.
-    in_progress = [
-        k for k, v in cw_data.items()
-        if k not in history_cw_keys
-        and _CW_KEY_RE.match(k)
-        and v.get("dur", 0) > 0
-        and v.get("pos", 0) / v["dur"] >= 0.05
-    ]
+    in_progress = [key for key, _entry in in_progress_entries]
     started    = len(history_mids) + len(in_progress)
     finished   = len(history_mids)
     completion = int(finished / started * 100) if started else 0
@@ -378,10 +449,8 @@ async def _stats_payload(user_id: int) -> dict:
     # ── Most active month ─────────────────────────────────────────────────
     month_counts: Counter = Counter()
     for h in history:
-        _mwa = h.get("watched_at")
+        _mwa = _utc_naive(h.get("watched_at"))
         if _mwa:
-            if hasattr(_mwa, 'tzinfo') and _mwa.tzinfo:
-                _mwa = _mwa.replace(tzinfo=None)
             month_counts[_mwa.strftime("%b %Y")] += _play_count(h)
     best_month = month_counts.most_common(1)[0] if month_counts else None
 
@@ -415,10 +484,8 @@ async def _stats_payload(user_id: int) -> dict:
             rh_title = item.title
             rh_url = f"/watch/{item.secure_hash}{item.message_id}"
         rh_poster = _tmdb_poster(item)
-        wa = h.get("watched_at")
+        wa = _utc_naive(h.get("watched_at"))
         if wa:
-            if hasattr(wa, "tzinfo") and wa.tzinfo:
-                wa = wa.replace(tzinfo=None)
             rh_date = wa.strftime("%b %d")
         else:
             rh_date = ""
@@ -452,10 +519,13 @@ async def _stats_payload(user_id: int) -> dict:
         "audio_mins": audio_mins,
         "total_plays": total_plays,
         "total_titles": total_titles,
+        "in_progress": len(in_progress),
+        "has_activity": bool(total_seconds or total_plays or in_progress),
         "active_days": active_days,
         "equiv_movies": equiv_movies,
         "equiv_flights": equiv_flights,
         "top_title": top_title,
+        "top_title_label": top_title_label,
         "most_replayed": most_replayed[1:] if len(most_replayed) > 1 else [],
         "top_genres": top_genres,
         "top_genre": top_genre,

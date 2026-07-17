@@ -506,10 +506,13 @@ export interface StatsResponse {
   audio_mins: number;
   total_plays: number;
   total_titles: number;
+  in_progress: number;
+  has_activity: boolean;
   active_days: number;
   equiv_movies: number;
   equiv_flights: number;
   top_title: StatsTitle | null;
+  top_title_label: string;
   most_replayed: StatsTitle[];
   top_genres: Array<[string, number]>;
   top_genre: string;

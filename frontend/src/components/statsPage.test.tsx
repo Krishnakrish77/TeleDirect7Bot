@@ -24,6 +24,8 @@ const stats: StatsResponse = {
   audio_mins: 0,
   total_plays: 14,
   total_titles: 6,
+  in_progress: 0,
+  has_activity: true,
   active_days: 5,
   equiv_movies: 5,
   equiv_flights: 3,
@@ -36,6 +38,7 @@ const stats: StatsResponse = {
     is_series: true,
     count: 4,
   },
+  top_title_label: 'Most played',
   most_replayed: [
     {
       title: 'Navarasa',
@@ -104,10 +107,25 @@ describe('StatsPage', () => {
     );
 
     expect(screen.getByRole('heading', { name: '10h' })).toBeTruthy();
-    expect(screen.getByText('14 plays across 6 titles')).toBeTruthy();
+    expect(screen.getByText('14 completed plays across 6 titles')).toBeTruthy();
     expect(screen.getByRole('link', { name: /Ultimate Spiderman/ }).getAttribute('href')).toBe('/app/series/ultimate-spiderman');
     expect(screen.getByText('Navarasa')).toBeTruthy();
     expect(screen.getByText('Action')).toBeTruthy();
     expect(screen.getByLabelText('Activity heatmap').children.length).toBe(2);
+  });
+
+  it('shows an empty state instead of zero-valued charts', () => {
+    render(
+      <StatsPage
+        user={user}
+        data={{ ...stats, has_activity: false, total_seconds: 0, total_plays: 0, in_progress: 0 }}
+        loading={false}
+        error=""
+        onSignIn={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('No activity yet')).toBeTruthy();
+    expect(screen.queryByText('Weekly activity')).toBeNull();
   });
 });
