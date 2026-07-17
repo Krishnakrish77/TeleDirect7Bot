@@ -2,6 +2,7 @@ import os
 import importlib
 from types import SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock
 
 
 os.environ.setdefault("API_ID", "1")
@@ -61,6 +62,19 @@ def _item(
 
 
 class AdminCatalogueTest(unittest.TestCase):
+    def test_custom_thumbnail_rejects_private_and_non_http_urls(self):
+        for url in (
+            "http://127.0.0.1/image.jpg",
+            "http://169.254.169.254/latest/meta-data",
+            "file:///tmp/image.jpg",
+        ):
+            with self.assertRaises(ValueError):
+                admin_routes._validate_public_thumbnail_url(url)
+        self.assertEqual(
+            admin_routes._validate_public_thumbnail_url("https://images.example.com/poster.jpg"),
+            "https://images.example.com/poster.jpg",
+        )
+
     def test_no_subtitles_filter_excludes_audio_and_attached_sidecars(self):
         no_subs = _item(101)
         no_subs.subtitles_probed_at = 1.0
@@ -233,6 +247,39 @@ class ZeroDeleteBot(FakeBot):
 
 
 class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_custom_thumbnail_uses_message_cache_key_and_clear_api(self):
+        original_clear = admin_routes.thumb_cache.clear
+        original_set = admin_routes.thumb_cache.set_
+        original_store = admin_routes.thumb_cache._store
+        original_fetch = admin_routes._fetch_public_thumbnail
+        try:
+            clear = AsyncMock()
+            stored: list[tuple[int, bytes]] = []
+
+            async def fetch(_url: str) -> bytes:
+                return b"image-data"
+
+            admin_routes.thumb_cache.clear = clear
+            admin_routes.thumb_cache.set_ = lambda key, value: stored.append((key, value))
+            admin_routes.thumb_cache._store = lambda: None
+            admin_routes._fetch_public_thumbnail = fetch
+
+            self.assertEqual(
+                await admin_routes._apply_custom_thumbnail(371, "__clear__"),
+                "thumbnail cleared",
+            )
+            clear.assert_awaited_once_with(371)
+            self.assertEqual(
+                await admin_routes._apply_custom_thumbnail(371, "https://images.example.com/poster.jpg"),
+                "thumbnail updated",
+            )
+            self.assertEqual(stored, [(371, b"image-data")])
+        finally:
+            admin_routes.thumb_cache.clear = original_clear
+            admin_routes.thumb_cache.set_ = original_set
+            admin_routes.thumb_cache._store = original_store
+            admin_routes._fetch_public_thumbnail = original_fetch
+
     async def test_bulk_delete_hides_catalogue_row_when_bin_delete_fails(self):
         original_items = dict(media_index._items)
         original_hash_map = dict(media_index._hash_map)

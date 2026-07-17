@@ -23,12 +23,16 @@ import json
 import logging
 import re
 import secrets
+import socket
 import time
+from ipaddress import ip_address
 from pathlib import Path
 from typing import List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 from aiohttp import web
+from aiohttp.abc import AbstractResolver
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
@@ -46,6 +50,8 @@ from main.vars import Var
 
 routes = web.RouteTableDef()
 _MAX_SIDECAR_SUBTITLE_BYTES = 10 * 1024 * 1024
+_THUMB_MAX_BYTES = 5 * 1024 * 1024
+_THUMB_REDIRECT_LIMIT = 3
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
 _env = Environment(
@@ -54,6 +60,126 @@ _env = Environment(
     enable_async=True,
 )
 _env.filters["humansize"] = lambda b: humanbytes(b) if b else ""
+
+
+def _validate_public_thumbnail_url(value: str) -> str:
+    """Validate a thumbnail URL before connecting to it.
+
+    The resolver below also validates DNS results, which prevents a hostname
+    from bypassing this literal-IP check or rebinding to an internal address.
+    """
+    url = str(value or "").strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("only valid http(s) URLs are allowed")
+    hostname = (parsed.hostname or "").lower()
+    if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".local"):
+        raise ValueError("private/loopback addresses are not allowed")
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        return url
+    if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_unspecified:
+        raise ValueError("private/loopback addresses are not allowed")
+    return url
+
+
+def _reject_private_thumbnail_ip(host: str) -> None:
+    try:
+        address = ip_address(host)
+    except ValueError as exc:
+        raise ValueError("Unable to resolve thumbnail host") from exc
+    if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_unspecified:
+        raise ValueError("private/loopback addresses are not allowed")
+
+
+class _SafeThumbnailResolver(AbstractResolver):
+    """Resolve only public addresses, including after every redirect."""
+    def __init__(self):
+        self._resolver = aiohttp.resolver.DefaultResolver()
+
+    async def resolve(self, host, port=0, family=socket.AF_INET):
+        records = await self._resolver.resolve(host, port, family)
+        if not records:
+            raise ValueError("Unable to resolve thumbnail host")
+        for record in records:
+            _reject_private_thumbnail_ip(str(record.get("host") or ""))
+        return records
+
+    async def close(self):
+        await self._resolver.close()
+
+
+async def _fetch_public_thumbnail(url: str) -> bytes:
+    """Download one small image without following unsafe redirects."""
+    current = _validate_public_thumbnail_url(url)
+    connector = aiohttp.TCPConnector(
+        resolver=_SafeThumbnailResolver(), ttl_dns_cache=0,
+    )
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+        for _attempt in range(_THUMB_REDIRECT_LIMIT + 1):
+            async with session.get(
+                current,
+                allow_redirects=False,
+                headers={"Accept": "image/avif,image/webp,image/svg+xml,image/*,*/*;q=0.8"},
+            ) as response:
+                if 300 <= response.status < 400:
+                    location = response.headers.get("Location")
+                    if not location:
+                        raise ValueError("thumbnail URL redirected without a location")
+                    current = _validate_public_thumbnail_url(urljoin(current, location))
+                    continue
+                if response.status >= 400:
+                    raise ValueError(f"thumbnail fetch failed ({response.status})")
+                if not (response.content_type or "").lower().startswith("image/"):
+                    raise ValueError("thumbnail URL did not return an image")
+                declared = response.headers.get("Content-Length")
+                if declared:
+                    try:
+                        declared_size = int(declared)
+                    except ValueError:
+                        declared_size = 0
+                    if declared_size > _THUMB_MAX_BYTES:
+                        raise ValueError("thumbnail too large (> 5 MB)")
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    total += len(chunk)
+                    if total > _THUMB_MAX_BYTES:
+                        raise ValueError("thumbnail too large (> 5 MB)")
+                    chunks.append(chunk)
+                return b"".join(chunks)
+    raise ValueError("thumbnail URL redirected too many times")
+
+
+async def _apply_custom_thumbnail(message_id: int, thumb_url: str) -> str:
+    """Clear or persist a safe custom thumbnail and return its operator message."""
+    if thumb_url == "__clear__":
+        await thumb_cache.clear(message_id)
+        return "thumbnail cleared"
+    try:
+        image = await _fetch_public_thumbnail(thumb_url)
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+        return f"thumbnail rejected: {exc}"
+    except Exception:
+        logging.exception("admin: thumbnail download failed for %s", thumb_url)
+        return "thumbnail error"
+
+    keys = [message_id]
+    item = media_index.get_item(message_id)
+    if getattr(item, "media_kind", "") == "audio":
+        keys.append(thumb_cache.cache_id(message_id, audio=True))
+    for key in keys:
+        thumb_cache.set_(key, image)
+    store = thumb_cache._store()
+    if store is not None:
+        for key in keys:
+            try:
+                await store.set_thumb(key, image)
+            except Exception:
+                logging.exception("admin: durable thumbnail save failed for %d", key)
+    return "thumbnail updated"
 
 
 def _get_admin_user(request: web.Request) -> Optional[dict]:
@@ -2030,89 +2156,9 @@ async def admin_edit(request: web.Request) -> web.Response:
                 media_index.enrich_one(message_id, bot=StreamBot)
             )
 
-    # Custom thumbnail: download and store in thumb cache, or clear to re-detect.
-    _THUMB_MAX_BYTES = 5 * 1024 * 1024  # 5 MB hard cap — prevents OOM on large responses
-
-    def _thumb_url_safe(url: str) -> Optional[str]:
-        """Return an error string if the URL is unsafe, None if it is OK.
-
-        Rejects non-http/https schemes and private/loopback/link-local
-        address literals to block SSRF against cloud metadata endpoints
-        (169.254.169.254) and internal services.  DNS rebinding is
-        not mitigated here since this is an admin-only action.
-        """
-        import ipaddress as _ipa
-        from urllib.parse import urlparse as _up
-        try:
-            p = _up(url)
-            if p.scheme not in ("http", "https"):
-                return "only http/https URLs are allowed"
-            host = (p.hostname or "").lower()
-            _PRIV = ("localhost", "127.", "0.0.0.0", "10.", "192.168.", "169.254.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.", "::1")
-            if any(host == s or host.startswith(s) for s in _PRIV):
-                return "private/loopback addresses are not allowed"
-            try:
-                _ip = _ipa.ip_address(host)
-                if _ip.is_private or _ip.is_loopback or _ip.is_link_local:
-                    return "private/loopback addresses are not allowed"
-            except ValueError:
-                pass  # hostname, not a literal IP — the prefix check above is sufficient
-            return None
-        except Exception:
-            return "invalid URL"
-
     thumb_msg = ""
     if thumb_url and status in ("written", "local-only"):
-        from main.utils import thumb_cache
-        if thumb_url == "__clear__":
-            await thumb_cache.clear(message_id)
-            thumb_msg = " — thumbnail cleared"
-        else:
-            _ssrf_err = _thumb_url_safe(thumb_url)
-            if _ssrf_err:
-                thumb_msg = f" — thumbnail rejected: {_ssrf_err}"
-            else:
-                import aiohttp as _aio
-                try:
-                    async with _aio.ClientSession() as _s:
-                        async with _s.get(
-                            thumb_url,
-                            timeout=_aio.ClientTimeout(total=15),
-                            headers={"User-Agent": "TeleDirect/1.0"},
-                        ) as _r:
-                            if _r.ok:
-                                _content_type = (_r.content_type or "").lower()
-                                if "image" not in _content_type:
-                                    thumb_msg = f" — thumbnail URL did not return an image (got {_content_type!r})"
-                                else:
-                                    _cl = _r.headers.get("Content-Length")
-                                    if _cl and int(_cl) > _THUMB_MAX_BYTES:
-                                        thumb_msg = f" — thumbnail too large ({int(_cl)//1024} KB > 5 MB limit)"
-                                    else:
-                                        _img = await _r.content.read(_THUMB_MAX_BYTES + 1)
-                                        if len(_img) > _THUMB_MAX_BYTES:
-                                            thumb_msg = " — thumbnail too large (> 5 MB)"
-                                        else:
-                                            _thumb_keys = [message_id]
-                                            _item = media_index.get_item(message_id)
-                                            if getattr(_item, "media_kind", "") == "audio":
-                                                _thumb_keys.append(
-                                                    thumb_cache.cache_id(message_id, audio=True)
-                                                )
-                                            for _thumb_key in _thumb_keys:
-                                                thumb_cache.set_(_thumb_key, _img)
-                                            _tc_store = thumb_cache._store()
-                                            if _tc_store:
-                                                for _thumb_key in _thumb_keys:
-                                                    try:
-                                                        await _tc_store.set_thumb(_thumb_key, _img)
-                                                    except Exception:
-                                                        pass
-                                            thumb_msg = " — thumbnail updated"
-                            else:
-                                thumb_msg = f" — thumbnail fetch failed ({_r.status})"
-                except Exception as _e:
-                    thumb_msg = f" — thumbnail error: {_e}"
+        thumb_msg = f" — {await _apply_custom_thumbnail(message_id, thumb_url)}"
 
     from urllib.parse import quote
     if status == "written":
@@ -3112,20 +3158,7 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
         return web.json_response({"error": "Save failed — item may no longer exist"}, status=500)
 
     if thumb_url:
-        _thumb_max = 5 * 1024 * 1024
-        if thumb_url == "__clear__":
-            await thumb_cache.clear_item(f"{item_before.secure_hash}{item_before.message_id}")
-        elif thumb_url.startswith(("http://", "https://")):
-            try:
-                async with aiohttp.ClientSession() as sess:
-                    async with sess.get(thumb_url, timeout=aiohttp.ClientTimeout(total=15)) as r:
-                        if r.status == 200 and int(r.headers.get("Content-Length", "0")) <= _thumb_max:
-                            data_bytes = await r.read()
-                            if len(data_bytes) <= _thumb_max:
-                                await thumb_cache.store(
-                                    f"{item_before.secure_hash}{item_before.message_id}", data_bytes)
-            except Exception:
-                logging.exception("api: thumb download failed for %s", thumb_url)
+        await _apply_custom_thumbnail(message_id, thumb_url)
 
     item_result = media_index.get_item(message_id)
     return web.json_response({
