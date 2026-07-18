@@ -1,9 +1,104 @@
-import { ChevronRightIcon, DownloadIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, RepeatIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
+import { type ReactNode, useEffect, useId, useState } from 'react';
+import { ChevronRightIcon, DownloadIcon, ListIcon, MoreVerticalIcon, MusicIcon, PauseIcon, PlayIcon, RepeatIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 import { LyricsPanel } from './lyrics';
 
 const SPEEDS = [0.75, 1, 1.5, 2];
+
+export function useCompactAudioLayout(): boolean {
+  const getValue = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(max-width: 680px)').matches);
+  const [compact, setCompact] = useState(getValue);
+
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const media = window.matchMedia('(max-width: 680px)');
+    const update = () => setCompact(media.matches);
+    update();
+    media.addEventListener?.('change', update);
+    return () => media.removeEventListener?.('change', update);
+  }, []);
+
+  return compact;
+}
+
+export function AudioSettingsControls({
+  player,
+  setSpeed,
+  cycleRepeatMode,
+  setVolume,
+  toggleMute,
+  className = '',
+}: {
+  player: PlayerState;
+  setSpeed: (speed: number) => void;
+  cycleRepeatMode: () => void;
+  setVolume: (volume: number) => void;
+  toggleMute: () => void;
+  className?: string;
+}) {
+  return (
+    <div className={`player-settings ${className}`.trim()} aria-label="Playback settings">
+      <div className="speed-controls" aria-label="Playback speed">
+        {SPEEDS.map((speed) => (
+          <button
+            key={speed}
+            type="button"
+            className={player.speed === speed ? 'active' : ''}
+            onClick={() => setSpeed(speed)}
+          >
+            {speed === 0.75 ? '3/4x' : `${speed}x`}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className={player.repeatMode === 'off' ? 'icon-button repeat-button' : 'icon-button repeat-button active'}
+        onClick={cycleRepeatMode}
+        aria-label={`Repeat ${player.repeatMode}`}
+        title={`Repeat ${player.repeatMode}`}
+      >
+        <RepeatIcon />
+        {player.repeatMode === 'one' && <span aria-hidden="true">1</span>}
+      </button>
+      <label className="volume-control audio-volume-control">
+        <button type="button" className="icon-button" onClick={toggleMute} aria-label={player.muted ? 'Unmute audio' : 'Mute audio'}>
+          <VolumeIcon />
+        </button>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={player.muted ? 0 : player.volume}
+          onChange={(event) => setVolume(Number(event.currentTarget.value))}
+          aria-label="Audio volume"
+        />
+      </label>
+    </div>
+  );
+}
+
+export function AudioSettingsDisclosure({
+  open,
+  onToggle,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  const settingsId = useId();
+  return (
+    <div className="audio-settings-disclosure">
+      <button type="button" className="secondary-action" onClick={onToggle} aria-expanded={open} aria-controls={settingsId}>
+        <MoreVerticalIcon />
+        <span>Playback settings</span>
+      </button>
+      {open && <div id={settingsId}>{children}</div>}
+    </div>
+  );
+}
 
 export function AudioPlaybackIssue({
   message,
@@ -151,6 +246,8 @@ export function NowPlayingSheet({
   onClose: () => void;
   onOpenQueue: () => void;
 }) {
+  const compact = useCompactAudioLayout();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const track = player.track;
   if (!open || !track) return null;
   const duration = player.duration || track.duration || 0;
@@ -206,44 +303,25 @@ export function NowPlayingSheet({
             <ListIcon />
           </button>
         </div>
-        <div className="player-settings" aria-label="Playback settings">
-          <div className="speed-controls" aria-label="Playback speed">
-            {SPEEDS.map((speed) => (
-              <button
-                key={speed}
-                type="button"
-                className={player.speed === speed ? 'active' : ''}
-                onClick={() => setSpeed(speed)}
-              >
-                {speed === 0.75 ? '3/4x' : `${speed}x`}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className={player.repeatMode === 'off' ? 'icon-button repeat-button' : 'icon-button repeat-button active'}
-            onClick={cycleRepeatMode}
-            aria-label={`Repeat ${player.repeatMode}`}
-            title={`Repeat ${player.repeatMode}`}
-          >
-            <RepeatIcon />
-            {player.repeatMode === 'one' && <span aria-hidden="true">1</span>}
-          </button>
-          <label className="volume-control audio-volume-control">
-            <button type="button" className="icon-button" onClick={toggleMute} aria-label={player.muted ? 'Unmute audio' : 'Mute audio'}>
-              <VolumeIcon />
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={player.muted ? 0 : player.volume}
-              onChange={(event) => setVolume(Number(event.currentTarget.value))}
-              aria-label="Audio volume"
+        {compact ? (
+          <AudioSettingsDisclosure open={settingsOpen} onToggle={() => setSettingsOpen((value) => !value)}>
+            <AudioSettingsControls
+              player={player}
+              setSpeed={setSpeed}
+              cycleRepeatMode={cycleRepeatMode}
+              setVolume={setVolume}
+              toggleMute={toggleMute}
             />
-          </label>
-        </div>
+          </AudioSettingsDisclosure>
+        ) : (
+          <AudioSettingsControls
+            player={player}
+            setSpeed={setSpeed}
+            cycleRepeatMode={cycleRepeatMode}
+            setVolume={setVolume}
+            toggleMute={toggleMute}
+          />
+        )}
         {player.nextTrack && (
           <div className="next-track-card">
             <p className="eyebrow">Up next - {player.nextCountdown}s</p>

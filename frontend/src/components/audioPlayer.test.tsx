@@ -178,6 +178,41 @@ describe('NowPlayingSheet', () => {
     expect(cancelNext).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps advanced playback settings collapsed on mobile until requested', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+
+    render(
+      <NowPlayingSheet
+        open
+        player={makePlayer()}
+        playRelative={vi.fn()}
+        togglePlayback={vi.fn()}
+        seek={vi.fn()}
+        setSpeed={vi.fn()}
+        cycleRepeatMode={vi.fn()}
+        setVolume={vi.fn()}
+        toggleMute={vi.fn()}
+        confirmNext={vi.fn()}
+        cancelNext={vi.fn()}
+        onClose={vi.fn()}
+        onOpenQueue={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Playback settings' }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('1.5x')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Playback settings' }));
+
+    expect(screen.getByText('1.5x')).toBeTruthy();
+    expect(screen.getByLabelText('Audio volume')).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
   it('shows expanded playback failure recovery actions', () => {
     const togglePlayback = vi.fn();
 

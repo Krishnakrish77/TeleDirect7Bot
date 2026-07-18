@@ -6,7 +6,7 @@ import type { AudioTrackOption, SubtitleSearchResult, SubtitleTrack, WatchRespon
 import { ErrorPanel, LoadingRows } from './common';
 import { LyricsFlipCard, LyricsPanel } from './lyrics';
 import { RatingControls } from './rating';
-import { AudioPlaybackIssue } from './audioPlayer';
+import { AudioPlaybackIssue, AudioSettingsControls, AudioSettingsDisclosure, useCompactAudioLayout } from './audioPlayer';
 import { attachHls, hlsUrl } from '../media/hls';
 import { revokeSubtitleTrack, subtitleFileToTrack, subtitleTextToTrack } from '../media/subtitles';
 import { buildVlcHref } from '../media/vlc';
@@ -202,6 +202,8 @@ export function WatchPage({
   const [data, setData] = useState<WatchResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const compactAudioLayout = useCompactAudioLayout();
+  const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -421,37 +423,27 @@ export function WatchPage({
                   </a>
                 )}
               </div>
-              <div className="player-settings audio-watch-settings" aria-label="Audio settings">
-                <div className="speed-controls" aria-label="Playback speed">
-                  {[0.75, 1, 1.5, 2].map((speed) => (
-                    <button
-                      key={speed}
-                      type="button"
-                      className={player.speed === speed ? 'active' : ''}
-                      onClick={() => setSpeed(speed)}
-                    >
-                      {speed === 0.75 ? '3/4x' : `${speed}x`}
-                    </button>
-                  ))}
-                </div>
-                <button type="button" className="secondary-action compact-action" onClick={cycleRepeatMode}>
-                  <span>Repeat {player.repeatMode}</span>
-                </button>
-                <label className="volume-control audio-volume-control">
-                  <button type="button" className="icon-button" onClick={toggleMute} aria-label={player.muted ? 'Unmute audio' : 'Mute audio'}>
-                    <VolumeIcon />
-                  </button>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={player.muted ? 0 : player.volume}
-                    onChange={(event) => setVolume(Number(event.currentTarget.value))}
-                    aria-label="Audio volume"
+              {compactAudioLayout ? (
+                <AudioSettingsDisclosure open={audioSettingsOpen} onToggle={() => setAudioSettingsOpen((value) => !value)}>
+                  <AudioSettingsControls
+                    player={player}
+                    setSpeed={setSpeed}
+                    cycleRepeatMode={cycleRepeatMode}
+                    setVolume={setVolume}
+                    toggleMute={toggleMute}
+                    className="audio-watch-settings"
                   />
-                </label>
-              </div>
+                </AudioSettingsDisclosure>
+              ) : (
+                <AudioSettingsControls
+                  player={player}
+                  setSpeed={setSpeed}
+                  cycleRepeatMode={cycleRepeatMode}
+                  setVolume={setVolume}
+                  toggleMute={toggleMute}
+                  className="audio-watch-settings"
+                />
+              )}
             </div>
           </div>
           {player.nextTrack && (

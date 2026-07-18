@@ -4170,6 +4170,23 @@ img {
   margin-top: 0;
 }
 
+.audio-settings-disclosure {
+  width: 100%;
+}
+
+.audio-settings-disclosure > .secondary-action {
+  width: 100%;
+  justify-content: center;
+}
+
+.audio-settings-disclosure > div {
+  margin-top: 0.55rem;
+}
+
+.audio-settings-disclosure .player-settings {
+  margin-top: 0;
+}
+
 .audio-actions .secondary-action,
 .audio-watch-settings .secondary-action {
   min-height: 38px;
@@ -8950,7 +8967,19 @@ select.edit-field-input {
     font-size: 0.78rem;
   }
 
-  .audio-watch-settings .audio-volume-control,
+  .audio-settings-disclosure .player-settings {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+    gap: 0.45rem;
+  }
+
+  .audio-settings-disclosure .audio-volume-control {
+    display: inline-flex;
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
   .audio-watch-lyrics {
     display: none;
   }
@@ -9155,7 +9184,12 @@ select.edit-field-input {
     min-width: 0;
   }
 
-  .now-sheet .audio-volume-control,
+  .now-sheet .audio-settings-disclosure .audio-volume-control {
+    display: inline-flex;
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
   .now-lyrics {
     display: none;
   }
