@@ -3,13 +3,17 @@ import { fetchAdminDashboard, runAdminMaintenance } from '../api';
 import { ChevronRightIcon } from '../icons';
 import type { AdminDashboardResponse, AdminProgressState, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
+import { Button } from './ui/button';
+import { Card, CardContent } from './ui/card';
 
 function StatCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="admin-panel dash-card">
-      <p className="eyebrow">{label}</p>
-      {children}
-    </div>
+    <Card className="dash-card">
+      <CardContent className="dash-card">
+        <p className="eyebrow">{label}</p>
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -90,7 +94,7 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
       <main className="admin-main">
         <div className="empty-state">
           <strong>{user ? 'Admin access required' : 'Sign in required'}</strong>
-          <button type="button" className="primary-action" onClick={onSignIn}>Sign in</button>
+          <Button type="button" onClick={onSignIn}>Sign in</Button>
         </div>
       </main>
     );
@@ -117,10 +121,9 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
           <h1>Dashboard</h1>
           {data && <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{data.total.toLocaleString()} items · {data.total_size_label}</p>}
         </div>
-        <a className="secondary-action" href="/app/admin">
-          <ChevronRightIcon />
-          <span>Admin console</span>
-        </a>
+        <Button asChild variant="secondary">
+          <a href="/app/admin"><ChevronRightIcon />Admin console</a>
+        </Button>
       </div>
 
       {loading && !data && <LoadingRows variant="detail" />}
@@ -180,14 +183,14 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
                   <a className="secondary-action compact-action" href="/app/admin?filter=unenriched">
                     No TMDB ID {metadata.missing_tmdb_id.toLocaleString()}
                   </a>
-                  <button
+                  <Button
                     type="button"
-                    className="primary-action compact-action"
+                    size="sm"
                     disabled={Boolean(cleanupBusy)}
                     onClick={() => void runCleanup('backfill-credits')}
                   >
                     {cleanupBusy === 'backfill-credits' ? 'Queuing...' : 'Backfill credits & ratings'}
-                  </button>
+                  </Button>
                 </div>
               </StatCard>
             )}
@@ -237,22 +240,23 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
                 </span>
               </div>
               <div className="dash-action-row">
-                <button
+                <Button
                   type="button"
-                  className="primary-action compact-action"
+                  size="sm"
                   disabled={Boolean(cleanupBusy)}
                   onClick={() => void runCleanup('metadata-cleanup')}
                 >
                   {cleanupBusy === 'metadata-cleanup' ? 'Queuing...' : 'Auto cleanup'}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="secondary-action compact-action"
+                  variant="secondary"
+                  size="sm"
                   disabled={Boolean(cleanupBusy)}
                   onClick={() => void runCleanup('fetch-episodes')}
                 >
                   {cleanupBusy === 'fetch-episodes' ? 'Queuing...' : 'Fetch episodes'}
-                </button>
+                </Button>
               </div>
               <div className="dash-grid-4">
                 {metadataIssues.map((item) => (

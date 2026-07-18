@@ -3,6 +3,11 @@ import { deleteAdminIptvChannel, importAdminIptvM3u, importAdminIptvM3uUrl, save
 import { BroadcastIcon, CheckIcon, PlayIcon, SearchIcon, ShieldIcon, XIcon } from '../icons';
 import { ErrorPanel, LoadingRows } from './common';
 import { AdminGate } from './adminPage';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Card, CardContent } from './ui/card';
+import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
 import type { AdminIptvResponse, IptvChannel, IptvChannelPayload, User } from '../types';
 
 const emptyForm: IptvChannelPayload = {
@@ -178,18 +183,9 @@ export function AdminIptvPage({
             <p>{channels.length.toLocaleString()} configured channels. {data?.mongoAvailable ? 'Mongo storage is active.' : 'JSON fallback storage is active.'}</p>
           </div>
           <div className="admin-hero-actions">
-            <a className="secondary-action" href="/app/admin">
-              <ShieldIcon />
-              <span>Console</span>
-            </a>
-            <a className="secondary-action" href="/app/live-tv">
-              <BroadcastIcon />
-              <span>Live TV</span>
-            </a>
-            <button type="button" className="secondary-action" onClick={() => reload()} disabled={loading}>
-              <CheckIcon />
-              <span>Refresh</span>
-            </button>
+            <Button asChild variant="secondary" size="sm"><a href="/app/admin"><ShieldIcon />Console</a></Button>
+            <Button asChild variant="secondary" size="sm"><a href="/app/live-tv"><BroadcastIcon />Live TV</a></Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => reload()} disabled={loading}><CheckIcon />Refresh</Button>
           </div>
         </div>
       </section>
@@ -199,58 +195,58 @@ export function AdminIptvPage({
       {notice && <p className="admin-notice" role="status">{notice}</p>}
 
       <section className="iptv-admin-layout" aria-label="IPTV manager">
-        <div className="admin-panel iptv-editor-panel">
+        <Card className="iptv-editor-panel">
+          <CardContent>
           <div className="section-heading">
             <div>
               <span>Channel</span>
               <h2>{form.id ? 'Edit channel' : 'Add channel'}</h2>
             </div>
             {form.id && (
-              <button type="button" className="secondary-action" onClick={() => setForm(emptyForm)}>
-                <XIcon />
-                <span>Clear</span>
-              </button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setForm(emptyForm)}><XIcon />Clear</Button>
             )}
           </div>
           <form className="iptv-channel-form" onSubmit={submitChannel}>
             <label>
               <span>Name</span>
-              <input value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required />
+              <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required />
             </label>
             <label>
               <span>Category</span>
-              <input value={form.category} onChange={(event) => setForm({ ...form, category: event.currentTarget.value })} placeholder="News" />
+              <Input value={form.category} onChange={(event) => setForm({ ...form, category: event.currentTarget.value })} placeholder="News" />
             </label>
             <label className="wide">
               <span>Stream URL</span>
-              <input value={form.streamUrl} onChange={(event) => setForm({ ...form, streamUrl: event.currentTarget.value })} required />
+              <Input value={form.streamUrl} onChange={(event) => setForm({ ...form, streamUrl: event.currentTarget.value })} required />
             </label>
             <label className="wide">
               <span>Logo URL</span>
-              <input value={form.logoUrl} onChange={(event) => setForm({ ...form, logoUrl: event.currentTarget.value })} />
+              <Input value={form.logoUrl} onChange={(event) => setForm({ ...form, logoUrl: event.currentTarget.value })} />
             </label>
             <label>
               <span>Sort</span>
-              <input type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.currentTarget.value) || 0 })} />
+              <Input type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.currentTarget.value) || 0 })} />
             </label>
             <label className="iptv-toggle-field">
-              <input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.currentTarget.checked })} />
+              <Input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.currentTarget.checked })} />
               <span>Enabled</span>
             </label>
             <div className="iptv-form-actions">
-              <button type="submit" className="primary-action" disabled={busy === 'save'}>
+              <Button type="submit" disabled={busy === 'save'}>
                 <CheckIcon />
-                <span>{busy === 'save' ? 'Saving' : 'Save'}</span>
-              </button>
-              <button type="button" className="secondary-action" onClick={testStream} disabled={busy === 'test' || !form.streamUrl.trim()}>
+                {busy === 'save' ? 'Saving' : 'Save'}
+              </Button>
+              <Button type="button" variant="secondary" onClick={testStream} disabled={busy === 'test' || !form.streamUrl.trim()}>
                 <PlayIcon />
-                <span>{busy === 'test' ? 'Checking' : 'Validate'}</span>
-              </button>
+                {busy === 'test' ? 'Checking' : 'Validate'}
+              </Button>
             </div>
           </form>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="admin-panel iptv-import-panel">
+        <Card className="iptv-import-panel">
+          <CardContent className="grid gap-2.5 iptv-import-panel-content">
           <div className="section-heading">
             <div>
               <span>Playlist</span>
@@ -259,24 +255,25 @@ export function AdminIptvPage({
           </div>
           <label className="iptv-import-url">
             <span>Playlist URL</span>
-            <input
+            <Input
               value={m3uUrl}
               onChange={(event) => setM3uUrl(event.currentTarget.value)}
               placeholder="https://iptv-org.github.io/iptv/categories/news.m3u"
             />
           </label>
-          <button type="button" className="primary-action" onClick={importPlaylistUrl} disabled={busy === 'import-url' || !m3uUrl.trim()}>
+          <Button type="button" onClick={importPlaylistUrl} disabled={busy === 'import-url' || !m3uUrl.trim()}>
             <CheckIcon />
-            <span>{busy === 'import-url' ? 'Importing' : 'Import URL'}</span>
-          </button>
-          <textarea value={m3u} onChange={(event) => setM3u(event.currentTarget.value)} placeholder="#EXTM3U" />
-          <button type="button" className="primary-action" onClick={importPlaylist} disabled={busy === 'import' || !m3u.trim()}>
+            {busy === 'import-url' ? 'Importing' : 'Import URL'}
+          </Button>
+          <Textarea value={m3u} onChange={(event) => setM3u(event.currentTarget.value)} placeholder="#EXTM3U" />
+          <Button type="button" onClick={importPlaylist} disabled={busy === 'import' || !m3u.trim()}>
             <CheckIcon />
-            <span>{busy === 'import' ? 'Importing' : 'Import M3U'}</span>
-          </button>
-        </div>
+            {busy === 'import' ? 'Importing' : 'Import M3U'}
+          </Button>
+          </CardContent>
+        </Card>
 
-        <div className="admin-panel iptv-list-panel">
+        <Card className="iptv-list-panel">
           <div className="iptv-list-head">
             <div className="section-heading">
               <div>
@@ -286,7 +283,7 @@ export function AdminIptvPage({
             </div>
             <label className="iptv-list-search">
               <SearchIcon />
-              <input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search channels" />
+              <Input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search channels" />
               {query && (
                 <button type="button" className="icon-button" aria-label="Clear IPTV search" onClick={() => setQuery('')}>
                   <XIcon />
@@ -304,7 +301,7 @@ export function AdminIptvPage({
                   <em>{channel.streamUrl}</em>
                 </div>
                 <div className="iptv-row-state">
-                  <i>{channel.enabled ? 'Enabled' : 'Disabled'}</i>
+                  <Badge variant={channel.enabled ? 'success' : 'muted'}>{channel.enabled ? 'Enabled' : 'Disabled'}</Badge>
                   <small>Sort {channel.sortOrder || 0}</small>
                 </div>
                 <div className="iptv-row-actions">
@@ -323,7 +320,7 @@ export function AdminIptvPage({
               </div>
             )}
           </div>
-        </div>
+        </Card>
       </section>
     </main>
   );
