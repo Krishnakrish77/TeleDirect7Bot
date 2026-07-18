@@ -151,10 +151,10 @@ export function LiveTvPage({
       return `${channel.name} ${channel.category}`.toLowerCase().includes(needle);
     });
   }, [activeCategory, channels, favoriteChannels, query, recentChannels]);
-  // Don't fall back to channels[0] when a filter is active and produces no results —
-  // that would silently stream a hidden channel while the list shows "no results".
-  const selected = filteredChannels.find((channel) => channel.id === selectedId) || filteredChannels[0] || null;
-  const playbackChannel = selected?.id === playbackId ? selected : null;
+  // Browsing/searching must not replace or stop an active stream. Keep selection
+  // and playback tied to the full catalogue, while filters only change the rail.
+  const selected = channelById.get(selectedId) || channels[0] || null;
+  const playbackChannel = channelById.get(playbackId) || null;
   const selectedFavorite = Boolean(selected && favoriteIds.has(selected.id));
   const visibleChannels = useMemo(
     () => filteredChannels.slice(0, visibleChannelCount),

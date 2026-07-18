@@ -2085,6 +2085,7 @@ img {
   position: sticky;
   top: calc(128px + 0.8rem);
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   max-height: calc(100svh - 150px);
   overflow: hidden;
 }
@@ -2207,7 +2208,9 @@ img {
 .live-channel-list {
   display: grid;
   align-content: start;
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .live-channel-row {

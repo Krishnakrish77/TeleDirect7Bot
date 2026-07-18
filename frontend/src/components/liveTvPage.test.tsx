@@ -64,13 +64,14 @@ describe('LiveTvPage', () => {
     await waitFor(() => expect(video?.getAttribute('src')).toBe('/api/live-tv/stream/movies'));
 
     fireEvent.click(screen.getByRole('tab', { name: /News\s*1/i }));
-    expect(screen.getByRole('heading', { name: 'News 24' })).toBeTruthy();
-    expect(video?.getAttribute('src')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Movie One' })).toBeTruthy();
+    expect(video?.getAttribute('src')).toBe('/api/live-tv/stream/movies');
 
     fireEvent.change(screen.getByPlaceholderText('Search channels'), { target: { value: 'news' } });
     const rail = screen.getByLabelText('Channels');
     expect(within(rail).getByRole('button', { name: /News 24/i })).toBeTruthy();
     expect(within(rail).queryByRole('button', { name: /Movie One/i })).toBeNull();
+    expect(video?.getAttribute('src')).toBe('/api/live-tv/stream/movies');
 
     fireEvent.click(within(rail).getByRole('button', { name: /News 24/i }));
     await waitFor(() => expect(video?.getAttribute('src')).toBe('/api/live-tv/stream/news'));
@@ -92,9 +93,9 @@ describe('LiveTvPage', () => {
     const rail = screen.getByLabelText('Channels');
 
     fireEvent.click(within(tabs).getByRole('tab', { name: /Favorites/i }));
-    expect(screen.getByRole('heading', { name: 'News 24' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Movie One' })).toBeTruthy();
     expect(within(rail).queryByRole('button', { name: /Movie One/i })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Remove News 24 from favorites' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add Movie One to favorites' })).toBeTruthy();
 
     fireEvent.click(within(tabs).getByRole('tab', { name: /Recent/i }));
     expect(within(rail).getByRole('button', { name: /News 24/i })).toBeTruthy();
