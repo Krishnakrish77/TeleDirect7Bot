@@ -50,10 +50,12 @@ function AudioHarness({ track = makeTrack(), queue }: { track?: WatchTrack; queu
       <button type="button" onClick={() => audio.toggleMute()}>Mute</button>
       <button type="button" onClick={() => audio.togglePlayback()}>Toggle</button>
       <button type="button" onClick={() => audio.playRelative(1)}>Next</button>
+      <button type="button" onClick={() => audio.setSpeed(0.75)}>Slow</button>
       <button type="button" onClick={() => audio.dismissPlayer()}>Dismiss</button>
       <span data-testid="track">{audio.player.track?.title || 'none'}</span>
       <span data-testid="muted">{String(audio.player.muted)}</span>
       <span data-testid="volume">{audio.player.volume}</span>
+      <span data-testid="speed">{audio.player.speed}</span>
       <span data-testid="error">{audio.player.error}</span>
     </div>
   );
@@ -110,6 +112,26 @@ afterEach(() => {
 });
 
 describe('useAudioPlayer', () => {
+  it('starts music at normal speed and removes the legacy persisted speed', () => {
+    localStorage.setItem('td:speed', '0.75');
+
+    render(<AudioHarness />);
+
+    expect(screen.getByTestId('speed').textContent).toBe('1');
+    expect(localStorage.getItem('td:speed')).toBeNull();
+  });
+
+  it('keeps a temporary speed change only for the current listening session', async () => {
+    render(<AudioHarness />);
+
+    fireEvent.click(screen.getByText('Slow'));
+    expect(screen.getByTestId('speed').textContent).toBe('0.75');
+    expect(localStorage.getItem('td:speed')).toBeNull();
+
+    fireEvent.click(screen.getByText('Dismiss'));
+    await waitFor(() => expect(screen.getByTestId('speed').textContent).toBe('1'));
+  });
+
   it('explains browser playback failures with actionable messages', () => {
     const track = makeTrack({ format: 'FLAC', qualityLabel: 'FLAC' });
     const audio = document.createElement('audio');

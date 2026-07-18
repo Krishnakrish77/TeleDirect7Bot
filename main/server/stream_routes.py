@@ -20,8 +20,8 @@ from main.server.exceptions import FIleNotFound, InvalidHash
 from main import Var, utils, StartTime, __version__, StreamBot
 from main.utils.custom_dl import MediaSessionUnavailable
 from main.utils.download_urls import is_download_query
-from main.utils import skeleton_cache
-from main.utils.file_properties import secure_hash_from_unique_id
+from main.utils import media_index, skeleton_cache
+from main.utils.file_properties import matches_secure_hash
 from main.utils.render_template import render_page
 
 
@@ -426,8 +426,12 @@ def _streamer_for_index(index: int):
 async def _file_for_index(index: int, message_id: int, secure_hash: str):
     client, tg_connect = _streamer_for_index(index)
     file_id = await tg_connect.get_file_properties(message_id)
-    if not secure_hash or not _hmac.compare_digest(
-        secure_hash_from_unique_id(file_id.unique_id), secure_hash
+    item = media_index.get_item(message_id)
+    catalogued_hash = getattr(item, "secure_hash", "") if item else ""
+    if not matches_secure_hash(
+        file_id.unique_id,
+        secure_hash,
+        catalogued_hash=catalogued_hash,
     ):
         logging.debug(f"Invalid hash for message with ID {message_id}")
         raise InvalidHash

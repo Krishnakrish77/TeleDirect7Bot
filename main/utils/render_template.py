@@ -10,7 +10,7 @@ from main.bot import StreamBot
 from main.utils import media_index
 from main.utils.download_urls import as_download_url
 from main.utils.human_readable import humanbytes
-from main.utils.file_properties import get_file_ids, secure_hash_from_unique_id
+from main.utils.file_properties import get_file_ids, matches_secure_hash
 from main.utils.playback import should_offer_hls_for_video
 from main.utils import share_meta
 from main.exceptions import InvalidHash
@@ -74,9 +74,14 @@ def _best_file_name(api_name: str, meta) -> str:
 async def render_page(message_id, secure_hash,
                       vlc_user_id=None, vlc_token=None):
     file_data = await get_file_ids(StreamBot, int(Var.BIN_CHANNEL), int(message_id))
-    expected_hash = secure_hash_from_unique_id(file_data.unique_id)
-    if not secure_hash or expected_hash != secure_hash:
-        logging.debug(f'link hash: {secure_hash} - {expected_hash}')
+    item = media_index.get_item(int(message_id))
+    catalogued_hash = getattr(item, "secure_hash", "") if item else ""
+    if not matches_secure_hash(
+        file_data.unique_id,
+        secure_hash,
+        catalogued_hash=catalogued_hash,
+    ):
+        logging.debug(f'link hash: {secure_hash} - {file_data.unique_id}')
         logging.debug(f"Invalid hash for message with - ID {message_id}")
         raise InvalidHash
     src = urllib.parse.urljoin(Var.URL, f'{secure_hash}{message_id}')
@@ -103,7 +108,7 @@ async def render_page(message_id, secure_hash,
         )
         # TMDB metadata, if the catalogue has it for this entry. Optional —
         # template guards on `meta and meta.tmdb_id`.
-        meta = media_index.get_item(int(message_id))
+        meta = item
         next_ep = media_index.next_episode(meta) if meta else None
         # Derive human-readable format label from the MIME type so the badge
         # works even before a codec probe runs on the file.

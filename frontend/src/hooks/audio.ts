@@ -78,6 +78,13 @@ function readRepeatMode(): RepeatMode {
 }
 
 function initialPlayerState(): PlayerState {
+  // Music should start at normal speed. Remove the legacy persisted setting
+  // so a past 0.75x choice cannot unexpectedly affect a later session.
+  try {
+    localStorage.removeItem(SPEED_KEY);
+  } catch (_) {
+    // Storage is optional in private or quota-limited browsing modes.
+  }
   const base: PlayerState = {
     track: null,
     queue: [],
@@ -86,7 +93,7 @@ function initialPlayerState(): PlayerState {
     currentTime: 0,
     duration: 0,
     error: '',
-    speed: clamp(readNumber(SPEED_KEY, 1), 0.5, 3),
+    speed: 1,
     repeatMode: readRepeatMode(),
     volume: clamp(readNumber(VOLUME_KEY, DEFAULT_VOLUME), 0, 1),
     muted: localStorage.getItem(MUTED_KEY) === '1',
@@ -627,6 +634,7 @@ export function useAudioPlayer() {
       nextTrack: null,
       nextCountdown: NEXT_COUNTDOWN_SECONDS,
       queueToast: '',
+      speed: 1,
     }));
   }, [cancelPlaybackAttempt, setMediaSessionPlaybackState]);
 
@@ -799,11 +807,6 @@ export function useAudioPlayer() {
 
   const setSpeed = useCallback((speed: number) => {
     const next = clamp(speed, 0.5, 3);
-    try {
-      localStorage.setItem(SPEED_KEY, String(next));
-    } catch (_) {
-      // Preference only.
-    }
     setPlayer((state) => ({ ...state, speed: next }));
     if (audioRef.current) audioRef.current.playbackRate = next;
     if (bufferRef.current) bufferRef.current.playbackRate = next;

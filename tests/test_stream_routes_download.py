@@ -13,6 +13,7 @@ os.environ.setdefault("BIN_CHANNEL", "-1001")
 from aiohttp import web
 
 from main.utils.custom_dl import MediaSessionUnavailable
+from main.utils.file_properties import matches_secure_hash
 from main.utils.hub_query import HubItem
 from main.utils import cw_store, media_index, rec_store, wh_store
 
@@ -102,6 +103,22 @@ class _FakeRequest:
 
 
 class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
+    def test_legacy_hash_validation_stays_scoped_to_the_catalogued_value(self):
+        self.assertTrue(
+            matches_secure_hash(
+                "abc123",
+                "legacy-hash",
+                catalogued_hash="legacy-hash",
+            )
+        )
+        self.assertFalse(
+            matches_secure_hash(
+                "abc123",
+                "legacy-hash",
+                catalogued_hash="another-hash",
+            )
+        )
+
     async def _call_media_streamer(self, request):
         client = _FakeClient()
         with (
@@ -133,6 +150,18 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.headers["Retry-After"], "5")
         self.assertEqual(stream_routes._total_active, 0)
         self.assertEqual(stream_routes._ip_active, {})
+
+    async def test_stream_accepts_the_catalogued_legacy_hash_for_the_same_item(self):
+        client = _FakeClient()
+        legacy_item = _video_item(secure_hash="legacy-hash")
+        with (
+            patch.object(stream_routes, "multi_clients", {0: client}),
+            patch.object(stream_routes, "class_cache", {client: _FakeStreamer()}),
+            patch.object(stream_routes.media_index, "get_item", return_value=legacy_item),
+        ):
+            _, _, file_id = await stream_routes._file_for_index(0, 42, "legacy-hash")
+
+        self.assertEqual(file_id.unique_id, "abc123")
 
     async def test_direct_stream_falls_back_to_second_client(self):
         bad_client = _FakeClient("bad")

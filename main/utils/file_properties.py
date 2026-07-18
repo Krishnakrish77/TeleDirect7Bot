@@ -1,3 +1,5 @@
+import hmac
+
 from pyrogram import Client
 from typing import Any, Optional
 from pyrogram.types import Message
@@ -63,6 +65,26 @@ def secure_hash_from_unique_id(unique_id: str) -> str:
     while uid and uid[-1].isdigit():
         uid = uid[:-1]
     return uid
+
+
+def matches_secure_hash(
+    unique_id: str,
+    secure_hash: str,
+    *,
+    catalogued_hash: str = "",
+) -> bool:
+    """Accept the current file hash or its exact legacy catalogue value.
+
+    Earlier releases stored shorter hash values in catalogue rows. Those
+    values remain valid capabilities for their original message IDs, while
+    arbitrary abbreviated hashes must still be rejected.
+    """
+    if not secure_hash:
+        return False
+    expected = secure_hash_from_unique_id(unique_id)
+    if hmac.compare_digest(expected, secure_hash):
+        return True
+    return bool(catalogued_hash) and hmac.compare_digest(catalogued_hash, secure_hash)
 
 
 def get_hash(media_msg: Message) -> str:
