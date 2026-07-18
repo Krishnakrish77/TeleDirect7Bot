@@ -3,6 +3,8 @@ import { attachHls } from '../media/hls';
 import { BroadcastIcon, HeartIcon, PlayIcon, SearchIcon, XIcon } from '../icons';
 import { ErrorPanel, LoadingRows } from './common';
 import type { IptvChannel, LiveTvResponse } from '../types';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
 
 const HLS_RE = /\.m3u8(?:[?#]|$)|[?&](?:type|format)=m3u8/i;
 const FAVORITES_KEY = 'td:live-tv:favorites';
@@ -316,10 +318,10 @@ export function LiveTvPage({
                 <div className="live-video-placeholder">
                   <BroadcastIcon />
                   {selected && (
-                    <button type="button" className="primary-action live-play-button" onClick={playSelected}>
+                    <Button type="button" className="live-play-button" onClick={playSelected}>
                       <PlayIcon />
                       <span>Play channel</span>
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}
@@ -359,14 +361,14 @@ export function LiveTvPage({
                   <span>{filteredChannels.length === 1 ? 'channel' : 'channels'} in {activeViewLabel}</span>
                 </div>
                 {filterActive && filteredChannels.length > 0 && (
-                  <button type="button" className="text-button live-clear-filters" onClick={clearChannelFilters}>
+                  <Button type="button" variant="ghost" size="sm" className="live-clear-filters" onClick={clearChannelFilters}>
                     Clear filters
-                  </button>
+                  </Button>
                 )}
               </div>
               <label className="live-search">
                 <SearchIcon />
-                <input
+                <Input
                   value={query}
                   onChange={(event) => setQuery(event.currentTarget.value)}
                   placeholder="Search channels"
@@ -436,9 +438,9 @@ export function LiveTvPage({
                 <div className="live-channel-empty">
                   <strong>{emptyMessage}</strong>
                   {filterActive && (
-                    <button type="button" className="secondary-action compact-action" onClick={clearChannelFilters}>
+                    <Button type="button" variant="secondary" size="sm" onClick={clearChannelFilters}>
                       Clear filters
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}
