@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAllContinue, deleteContinueEntry, fetchContinueItems, fetchContinueMap, saveContinueEntry } from '../api';
-import type { HubCard, HubParams, HubResponse } from '../types';
-import { budgetHomeShelves, ContinueWatching, GridView, HOME_SHELF_LIMIT, RecommendationTeaser, shelfPresentation, sortHomeShelves } from './hub';
+import type { HeroItem, HubCard, HubParams, HubResponse } from '../types';
+import { budgetHomeShelves, ContinueWatching, GridView, HeroStage, HOME_SHELF_LIMIT, RecommendationTeaser, shelfPresentation, sortHomeShelves } from './hub';
 
 vi.mock('../api', () => ({
   clearAllContinue: vi.fn(),
@@ -215,6 +215,40 @@ describe('RecommendationTeaser', () => {
 
     expect(screen.getByText('Personal picks unlock after sign-in')).toBeTruthy();
     expect(onSignIn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('HeroStage', () => {
+  it('uses brand-led actions and exposes the active featured position', () => {
+    const heroes: HeroItem[] = [
+      {
+        ...card(),
+        itemId: 'hero:1',
+        title: 'First feature',
+        eyebrow: 'Movie',
+        meta: ['2026'],
+        detailsHref: '/app/movie/first-feature',
+        playHref: '/app/watch/first-feature',
+      },
+      {
+        ...card(),
+        itemId: 'hero:2',
+        title: 'Second feature',
+        eyebrow: 'Series',
+        meta: ['2025'],
+        detailsHref: '/app/series/second-feature',
+        playHref: '/app/watch/second-feature',
+      },
+    ];
+
+    render(<HeroStage heroes={heroes} />);
+
+    expect(screen.getByRole('link', { name: 'Play' }).getAttribute('data-variant')).toBe('default');
+    expect(screen.getByRole('link', { name: 'Details' }).getAttribute('data-variant')).toBe('secondary');
+    expect(screen.getByText('1/2')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Second feature' }));
+    expect(screen.getByText('2/2')).toBeTruthy();
   });
 });
 

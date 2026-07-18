@@ -7,6 +7,7 @@ import { tmdbImageUrl } from '../utils/tmdb';
 import { formatExternalRating } from '../utils/externalRating';
 import { addContinueClearTombstone, addContinueTombstone, isContinueSuppressed, readContinueClearTombstone, readContinueTombstones, readLocalContinue } from '../utils/continueWatching';
 import { MediaCard } from './mediaCard';
+import { Button } from './ui/button';
 
 type HubShelf = { name: string; href: string | null; items: HubCard[]; dismissable?: boolean; recMeta?: Array<RecommendationMeta | null> };
 export const HOME_SHELF_LIMIT = 7;
@@ -57,7 +58,7 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
   const hero = heroes[active] || heroes[0];
 
   useEffect(() => {
-    if (heroes.length < 2) return;
+    if (heroes.length < 2 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     let timer: number | undefined;
     const start = () => {
       window.clearInterval(timer);
@@ -92,19 +93,25 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
             <span className="hero-rating">{formatExternalRating(hero.externalRating)}</span>
           )}
         </div>
-        <div className="hero-actions">
-          <a className="primary-action" href={hero.playHref}>
+      <div className="hero-actions">
+          <Button asChild size="lg">
+            <a href={hero.playHref}>
             <PlayIcon />
             <span>Play</span>
-          </a>
-          <a className="secondary-action" href={hero.detailsHref}>
+            </a>
+          </Button>
+          <Button asChild variant="secondary" size="lg">
+            <a href={hero.detailsHref}>
             <span>Details</span>
             <ChevronRightIcon />
-          </a>
+            </a>
+          </Button>
         </div>
       </div>
       {heroes.length > 1 && (
-        <div className="hero-strip" aria-label="Featured titles">
+        <div className="hero-featured-nav" aria-label="Featured titles">
+          <span className="hero-featured-label">Featured <strong>{active + 1}/{heroes.length}</strong></span>
+          <div className="hero-strip" role="tablist">
           {heroes.map((item, index) => (
             <button
               key={item.itemId}
@@ -112,11 +119,14 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
               className={index === active ? 'active' : ''}
               onClick={() => setActive(index)}
               aria-label={item.title}
-              aria-current={index === active ? 'true' : undefined}
+              aria-selected={index === active}
+              role="tab"
+              title={item.title}
             >
               <img src={item.posterUrl} alt="" loading="lazy" decoding="async" />
             </button>
           ))}
+          </div>
         </div>
       )}
     </section>
@@ -333,10 +343,10 @@ export function RecommendationTeaser({ onSignIn }: { onSignIn: () => void }) {
         <h2>Personal picks unlock after sign-in</h2>
         <p>Ratings, saves, and play history tune the rows on this Home screen.</p>
       </div>
-      <button type="button" className="primary-action compact-action" onClick={onSignIn}>
+      <Button type="button" className="compact-action" onClick={onSignIn}>
         <UserIcon />
         <span>Sign in</span>
-      </button>
+      </Button>
     </section>
   );
 }

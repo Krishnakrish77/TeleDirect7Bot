@@ -650,6 +650,10 @@ img {
   margin-top: 1.5rem;
 }
 
+.hero-actions [data-slot="button"] {
+  min-height: 46px;
+}
+
 .primary-action,
 .secondary-action {
   min-height: 44px;
@@ -708,11 +712,27 @@ img {
   height: 18px;
 }
 
-.hero-strip {
+.hero-featured-nav {
   position: absolute;
   left: clamp(1rem, 7vw, 6rem);
   right: clamp(1rem, 7vw, 6rem);
   bottom: 1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.hero-featured-label {
+  color: rgba(226, 232, 240, 0.76);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.hero-featured-label strong {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-strip {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 58px;
@@ -1115,6 +1135,10 @@ img {
 .recommendation-teaser .primary-action {
   flex: 0 0 auto;
   color: #0b0c0e;
+}
+
+.recommendation-teaser [data-slot="button"] {
+  flex: 0 0 auto;
 }
 
 .shelf-section {
@@ -8322,6 +8346,11 @@ select.edit-field-input {
     font-size: clamp(2.8rem, 4.8vw, 5.2rem);
   }
 
+  .hero-featured-nav {
+    left: clamp(1rem, 7vw, 6rem);
+    right: clamp(1rem, 7vw, 6rem);
+  }
+
   .hero-strip {
     grid-auto-columns: 64px;
     gap: 0.7rem;
@@ -9159,9 +9188,12 @@ select.edit-field-input {
     -webkit-line-clamp: 2;
   }
 
-  .hero-strip {
+  .hero-featured-nav {
     left: 1rem;
     right: 1rem;
+  }
+
+  .hero-strip {
     grid-auto-columns: 48px;
   }
 
