@@ -236,7 +236,7 @@ export function AdminGate({
         {user ? (
           <a className="secondary-action" href="/app">Back to library</a>
         ) : (
-          <button type="button" className="primary-action" onClick={onSignIn}>Sign in</button>
+          <Button type="button" onClick={onSignIn}>Sign in</Button>
         )}
       </div>
     </main>
@@ -989,14 +989,16 @@ function EditModal({
   };
 
   const aiFieldButton = (field: string, label: string) => hasGemini ? (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="sm"
       className="edit-ai-field-btn"
       onClick={() => void handleAiFieldSuggest(field)}
       disabled={Boolean(aiFieldLoading) || aiLoading}
     >
       {aiFieldLoading === field ? '...' : label}
-    </button>
+    </Button>
   ) : null;
 
   const handleSave = async () => {
@@ -1086,19 +1088,21 @@ function EditModal({
                   {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                   {!aiModels.length && <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>}
                 </select>
-                <button type="button" className="edit-ai-btn" onClick={handleAiSuggest} disabled={aiLoading}>
+                <Button type="button" size="sm" onClick={handleAiSuggest} disabled={aiLoading}>
                   {aiLoading ? '⏳ Searching…' : '✨ Suggest'}
-                </button>
+                </Button>
               </div>
             )}
-            <button className="icon-button modal-close" type="button" onClick={onClose} aria-label="Close"><XIcon /></button>
+            <Button className="modal-close" variant="ghost" size="icon-sm" type="button" onClick={onClose} aria-label="Close"><XIcon /></Button>
           </div>
         </div>
-        <div className="edit-modal-tabs">
+        <div className="edit-modal-tabs" role="tablist" aria-label="Edit sections">
           {(['identity', 'metadata', 'advanced'] as const).map((s) => (
             <button
               key={s}
               type="button"
+              role="tab"
+              aria-selected={activeSection === s}
               className={activeSection === s ? 'edit-modal-tab-btn active' : 'edit-modal-tab-btn'}
               onClick={() => setActiveSection(s)}
             >
@@ -1209,9 +1213,9 @@ function EditModal({
                       <span className="edit-field-label">IMDb id or URL</span>
                       <div className="edit-field-row">
                         <input className="edit-field-input" style={{ flex: 1 }} value={form.imdbInput} onChange={(e) => setField('imdbInput', e.currentTarget.value)} placeholder="tt1234567 or https://imdb.com/title/tt1234567/" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleResolveImdb(); } }} />
-                        <button type="button" className="primary-action compact-action" onClick={() => void handleResolveImdb()} disabled={imdbLoading}>
+                        <Button type="button" size="sm" onClick={() => void handleResolveImdb()} disabled={imdbLoading}>
                           {imdbLoading ? 'Resolving…' : 'Resolve →'}
-                        </button>
+                        </Button>
                       </div>
                       {imdbError && <p className="edit-error" style={{ marginTop: '0.25rem' }}>{imdbError}</p>}
                     </label>
@@ -1250,7 +1254,7 @@ function EditModal({
                     <p className="edit-section-label">Thumbnail <span className="edit-field-hint">(paste URL to override)</span></p>
                     <div className="edit-field-row">
                       <input className="edit-field-input" style={{ flex: 1 }} value={form.thumbUrlInput} onChange={(e) => setField('thumbUrlInput', e.currentTarget.value)} placeholder="https://image.tmdb.org/t/p/w500/… or any .jpg URL" />
-                      <button type="button" className="secondary-action compact-action" onClick={() => setField('thumbUrlInput', '__clear__')}>Clear</button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setField('thumbUrlInput', '__clear__')}>Clear</Button>
                     </div>
                   </div>
                   {!isAudio && (
@@ -1306,7 +1310,7 @@ function EditModal({
                             {sidecars.map((sidecar) => (
                               <div key={sidecar.binMessageId} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', marginTop: '0.35rem' }}>
                                 <span>{sidecar.label} ({sidecar.language})</span>
-                                <button type="button" className="secondary-action compact-action" disabled={subtitleUploading} onClick={() => void handleSubtitleDelete(sidecar.binMessageId)}>Remove</button>
+                                <Button type="button" variant="outline" size="sm" disabled={subtitleUploading} onClick={() => void handleSubtitleDelete(sidecar.binMessageId)}>Remove</Button>
                               </div>
                             ))}
                           </div>
@@ -1321,13 +1325,13 @@ function EditModal({
         </div>
 
         <div className="edit-modal-footer">
-          <button type="button" className="secondary-action" style={{ marginRight: 'auto', color: 'var(--error, #f87171)', borderColor: 'var(--error, #f87171)' }} onClick={async () => { if (!confirm('Clear all TMDB enrichment for this item?')) return; try { const res = await clearAdminItemTmdb(messageId); if (res.item) onSaved(res.item as AdminItem); onClose(); } catch (_) { /* ignore */ } }}>
+          <Button type="button" variant="destructive" size="sm" style={{ marginRight: 'auto' }} onClick={async () => { if (!confirm('Clear all TMDB enrichment for this item?')) return; try { const res = await clearAdminItemTmdb(messageId); if (res.item) onSaved(res.item as AdminItem); onClose(); } catch (_) { /* ignore */ } }}>
             Clear TMDB
-          </button>
-          <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
-          <button type="button" className="primary-action" onClick={() => void handleSave()} disabled={saving}>
+          </Button>
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="button" onClick={() => void handleSave()} disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
