@@ -203,7 +203,8 @@ describe('AdminPage', () => {
     expect(screen.getByRole('heading', { name: 'Admin console' })).toBeTruthy();
     expect(screen.getByText('Kalki')).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText('Filter'), { target: { value: 'movies' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Filter' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Movies' }));
     expect(navigate).toHaveBeenCalledWith('/app/admin?filter=movies');
   });
 

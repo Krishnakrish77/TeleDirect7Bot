@@ -5,6 +5,7 @@ import { Checkbox } from './ui/checkbox';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Progress } from './ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 export function AdminNav({
   routeKind,
@@ -316,35 +317,31 @@ function AdminControls({
       <div className="admin-select-row">
         <label>
           <span>Filter</span>
-          <select
-            value={data.filterName}
-            onChange={(event) => updateParam({ filter: event.currentTarget.value, page: 1 })}
-          >
-            {data.filters.map((filter) => (
-              <option key={filter.value} value={filter.value}>{filter.label}</option>
-            ))}
-          </select>
+          <Select value={data.filterName} onValueChange={(filter) => updateParam({ filter, page: 1 })}>
+            <SelectTrigger aria-label="Filter"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {data.filters.map((filter) => <SelectItem key={filter.value} value={filter.value}>{filter.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </label>
         <label>
           <span>Sort</span>
-          <select
-            value={data.sortCol}
-            onChange={(event) => updateParam({ sort: event.currentTarget.value, page: 1 })}
-          >
-            {data.sortOptions.map((sort) => (
-              <option key={sort.value} value={sort.value}>{sort.label}</option>
-            ))}
-          </select>
+          <Select value={data.sortCol} onValueChange={(sort) => updateParam({ sort, page: 1 })}>
+            <SelectTrigger aria-label="Sort"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {data.sortOptions.map((sort) => <SelectItem key={sort.value} value={sort.value}>{sort.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </label>
         <label>
           <span>Direction</span>
-          <select
-            value={data.sortDir}
-            onChange={(event) => updateParam({ dir: event.currentTarget.value, page: 1 })}
-          >
-            <option value="desc">Desc</option>
-            <option value="asc">Asc</option>
-          </select>
+          <Select value={data.sortDir} onValueChange={(dir) => updateParam({ dir, page: 1 })}>
+            <SelectTrigger aria-label="Direction"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="desc">Desc</SelectItem>
+              <SelectItem value="asc">Asc</SelectItem>
+            </SelectContent>
+          </Select>
         </label>
       </div>
     </section>
@@ -624,9 +621,10 @@ function BulkBar({
         </label>
         <label>
           <span>Quality</span>
-          <select value={quality} onChange={(event) => setQuality(event.currentTarget.value)}>
-            {QUALITY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
+          <Select value={quality} onValueChange={setQuality}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>{QUALITY_OPTIONS.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
+          </Select>
           <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('quality', { quality })}>Apply</Button>
         </label>
         <label>
@@ -649,10 +647,13 @@ function BulkBar({
         <label>
           <span>TMDB</span>
           <Input value={tmdbId} onChange={(event) => setTmdbId(event.currentTarget.value)} inputMode="numeric" placeholder="id" />
-          <select value={tmdbKind} onChange={(event) => setTmdbKind(event.currentTarget.value as 'tv' | 'movie')}>
-            <option value="tv">TV</option>
-            <option value="movie">Movie</option>
-          </select>
+          <Select value={tmdbKind} onValueChange={(value) => setTmdbKind(value as 'tv' | 'movie')}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="tv">TV</SelectItem>
+              <SelectItem value="movie">Movie</SelectItem>
+            </SelectContent>
+          </Select>
           <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('tmdb-id', { tmdbId, tmdbKind })}>Apply</Button>
         </label>
       </div>
@@ -1079,15 +1080,13 @@ function EditModal({
             <h2 style={{ flex: 1 }}>Edit bin:{messageId}</h2>
             {hasGemini && (
               <div className="edit-ai-row" style={{ margin: 0 }}>
-                <select
-                  className="edit-field-input"
-                  value={form.aiModel}
-                  onChange={(e) => setField('aiModel', e.currentTarget.value)}
-                  disabled={!aiModels.length}
-                >
-                  {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  {!aiModels.length && <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>}
-                </select>
+                <Select value={form.aiModel} onValueChange={(value) => setField('aiModel', value)} disabled={!aiModels.length}>
+                  <SelectTrigger className="edit-field-input"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {aiModels.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                    {!aiModels.length && <SelectItem value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</SelectItem>}
+                  </SelectContent>
+                </Select>
                 <Button type="button" size="sm" onClick={handleAiSuggest} disabled={aiLoading}>
                   {aiLoading ? '⏳ Searching…' : '✨ Suggest'}
                 </Button>
@@ -1226,10 +1225,13 @@ function EditModal({
                       </label>
                       <label className="edit-field">
                         <span className="edit-field-label">Kind</span>
-                        <select className="edit-field-input" value={form.tmdbKind} onChange={(e) => handleTmdbKindChange(e.currentTarget.value as 'movie' | 'tv')}>
-                          <option value="movie">Movie</option>
-                          <option value="tv">TV</option>
-                        </select>
+                        <Select value={form.tmdbKind} onValueChange={(value) => handleTmdbKindChange(value as 'movie' | 'tv')}>
+                          <SelectTrigger className="edit-field-input"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="movie">Movie</SelectItem>
+                            <SelectItem value="tv">TV</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </label>
                     </div>
                     {tmdbPreviewLoading && <p className="edit-field-hint" style={{ marginTop: '0.5rem' }}>Fetching from TMDB…</p>}

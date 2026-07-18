@@ -10825,6 +10825,58 @@ select.edit-field-input {
   background: linear-gradient(110deg, rgba(249, 115, 22, 0.12), rgba(21, 23, 26, 0.92) 34%);
 }
 
+/* shadcn primitives take precedence over the earlier admin-era element rules.
+ * Orange is the action colour; teal is deliberately reserved for success state. */
+.admin-frame [data-slot="button"][data-variant="default"] {
+  border-color: transparent;
+  background: var(--brand);
+  color: #fff;
+}
+
+.admin-frame [data-slot="button"][data-variant="default"]:hover:not(:disabled) {
+  border-color: transparent;
+  background: #ea580c;
+}
+
+.admin-frame [data-slot="button"][data-variant="secondary"],
+.admin-frame [data-slot="button"][data-variant="outline"] {
+  border-color: var(--line-strong);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.admin-frame [data-slot="button"][data-variant="secondary"]:hover:not(:disabled),
+.admin-frame [data-slot="button"][data-variant="outline"]:hover:not(:disabled) {
+  border-color: rgba(249, 115, 22, 0.48);
+  background: rgba(249, 115, 22, 0.1);
+  color: #fff;
+}
+
+.admin-frame [data-slot="button"][data-variant="ghost"] {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.admin-frame [data-slot="button"][data-variant="ghost"]:hover:not(:disabled) {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.admin-frame [data-slot="button"][data-variant="destructive"] {
+  border-color: transparent;
+  background: #e5484d;
+  color: #fff;
+}
+
+.admin-frame [data-slot="select-trigger"],
+.admin-frame .admin-bulk-fields [data-slot="input"] {
+  min-height: 36px;
+  border-color: rgba(148, 163, 184, 0.16);
+  background: rgba(8, 9, 11, 0.48);
+}
+
 @media (max-width: 1360px) {
   .iptv-admin-layout {
     grid-template-columns: minmax(0, 1fr);
