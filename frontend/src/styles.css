@@ -10692,6 +10692,53 @@ select.edit-field-input {
   color: #fb7185;
 }
 
+/* Admin controls must reflow before their individual fields are squeezed.
+ * The console is routinely used in split windows and at browser zoom. */
+.admin-main,
+.admin-hero,
+.admin-metrics,
+.admin-controls,
+.admin-select-row,
+.iptv-admin-layout,
+.iptv-editor-panel,
+.iptv-import-panel,
+.iptv-list-panel {
+  min-width: 0;
+}
+
+.admin-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+}
+
+.admin-controls {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.admin-select-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(9rem, 1fr));
+  justify-content: stretch;
+}
+
+.admin-select-row label {
+  min-width: 0;
+}
+
+@media (max-width: 1360px) {
+  .iptv-admin-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "editor"
+      "import"
+      "list";
+  }
+
+  .iptv-channel-admin-list {
+    max-height: none;
+  }
+}
+
 @media (max-width: 1180px) {
   .admin-console-layout {
     grid-template-columns: minmax(0, 1fr);
