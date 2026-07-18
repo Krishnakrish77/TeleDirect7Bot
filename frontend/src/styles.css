@@ -10710,7 +10710,9 @@ select.edit-field-input {
 
   .live-channel-rail {
     position: static;
-    max-height: none;
+    /* Keep long category lists directly scrollable on touch layouts instead of
+     * expanding the rail into a multi-thousand-pixel page section. */
+    max-height: min(70svh, 42rem);
   }
 
   .iptv-admin-layout {
