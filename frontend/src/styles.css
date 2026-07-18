@@ -3859,6 +3859,13 @@ img {
   isolation: isolate;
 }
 
+/* The artwork image is absolutely positioned, so give its wrapper the full
+ * flip-card face instead of letting it collapse to the fallback icon height. */
+.lyrics-flip-front > .audio-art-wrap {
+  width: 100%;
+  height: 100%;
+}
+
 .lyrics-flip-inner,
 .lyrics-flip-face {
   position: absolute;
