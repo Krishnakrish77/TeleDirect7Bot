@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
-import { BookmarkIcon, FilmIcon, SearchIcon, XIcon } from '../icons';
+import { BookmarkIcon, FilmIcon, PlayIcon, SearchIcon, XIcon } from '../icons';
 import { localAppHref } from '../navigation';
 import type { HubCard, User, WatchlistItem, WatchlistPageResponse } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { MediaCard } from './mediaCard';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 type WatchlistView = 'all' | 'movies' | 'series' | 'music' | 'videos';
 type WatchlistSort = 'saved' | 'title' | 'year';
@@ -82,6 +85,7 @@ export function watchlistCard(item: WatchlistItem): HubCard {
     detailsHref: href,
     streamHref: '',
     watchKey: '',
+    progressPct: progress,
     eyebrow: item.kind === 'audio' ? 'Music' : item.kind.charAt(0).toUpperCase() + item.kind.slice(1),
     badge: progress ? `${progress}%` : '',
     aspect: isMusic ? 'square' : 'poster',
@@ -115,6 +119,10 @@ export function WatchlistPage({
     return next;
   }, [items]);
   const visibleItems = useMemo(() => filterWatchlistItems(items, query, view, sort), [items, query, sort, view]);
+  const continueItems = useMemo(() => items.filter((item) => {
+    const progress = Number(item.cw_pct || 0) * 100;
+    return progress >= 3 && progress < 95;
+  }).slice(0, 8), [items]);
 
   if (!user) {
     return (
@@ -122,7 +130,7 @@ export function WatchlistPage({
         <div className="empty-state">
           <BookmarkIcon />
           <strong>Sign in to view your watchlist</strong>
-          <button type="button" className="primary-action" onClick={onSignIn}>Sign in</button>
+          <Button type="button" onClick={onSignIn}>Sign in</Button>
         </div>
       </main>
     );
@@ -130,12 +138,17 @@ export function WatchlistPage({
 
   return (
     <main className="page-main">
-      <section className="page-title">
+      <section className="watchlist-hero">
         <div>
           <p className="eyebrow">Saved</p>
           <h1>Watchlist</h1>
+          <p>Your personal shelf for the next great watch or listen.</p>
         </div>
-        <span>{visibleItems.length.toLocaleString()} of {items.length.toLocaleString()} saved</span>
+        <div className="watchlist-hero-stats" aria-label="Watchlist summary">
+          <strong>{items.length.toLocaleString()}</strong>
+          <span>saved title{items.length === 1 ? '' : 's'}</span>
+          {continueItems.length > 0 && <span><PlayIcon /> {continueItems.length} ready to resume</span>}
+        </div>
       </section>
 
       {loading && <LoadingRows variant="grid" />}
@@ -144,18 +157,34 @@ export function WatchlistPage({
       {!loading && !error && data && (
         items.length ? (
           <>
+            {continueItems.length > 0 && !query && view === 'all' && (
+              <section className="watchlist-continue" aria-labelledby="watchlist-continue-title">
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">Pick up where you left off</p>
+                    <h2 id="watchlist-continue-title">Continue watching</h2>
+                  </div>
+                  <span>{continueItems.length} in progress</span>
+                </div>
+                <div className="watchlist-continue-rail">
+                  {continueItems.map((item, index) => (
+                    <MediaCard key={item.item_id} card={watchlistCard(item)} saved priority={index < 4} onToggleSaved={onToggleSaved} />
+                  ))}
+                </div>
+              </section>
+            )}
             <section className="watchlist-tools" aria-label="Watchlist tools">
               <label className="watchlist-search">
                 <SearchIcon />
-                <input
+                <Input
                   value={query}
                   onChange={(event) => setQuery(event.currentTarget.value)}
                   placeholder="Search saved titles"
                 />
                 {query && (
-                  <button type="button" className="icon-button" aria-label="Clear watchlist search" onClick={() => setQuery('')}>
+                  <Button type="button" variant="ghost" size="icon-sm" aria-label="Clear watchlist search" onClick={() => setQuery('')}>
                     <XIcon />
-                  </button>
+                  </Button>
                 )}
               </label>
               <div className="watchlist-filter-row" aria-label="Watchlist types">
@@ -166,27 +195,39 @@ export function WatchlistPage({
                   ['music', 'Music'],
                   ['videos', 'Videos'],
                 ].map(([value, label]) => (
-                  <button
+                  <Button
                     key={value}
                     type="button"
-                    className={view === value ? 'active' : ''}
+                    variant={view === value ? 'default' : 'outline'}
+                    size="sm"
                     onClick={() => setView(value as WatchlistView)}
                   >
                     {label}
                     <span>{counts[value as WatchlistView]}</span>
-                  </button>
+                  </Button>
                 ))}
               </div>
               <label className="watchlist-sort">
                 <span>Sort</span>
-                <select value={sort} onChange={(event) => setSort(event.currentTarget.value as WatchlistSort)}>
-                  <option value="saved">Saved order</option>
-                  <option value="title">Title A-Z</option>
-                  <option value="year">Newest year</option>
-                </select>
+                <Select value={sort} onValueChange={(value) => setSort(value as WatchlistSort)}>
+                  <SelectTrigger aria-label="Sort"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="saved">Saved order</SelectItem>
+                    <SelectItem value="title">Title A-Z</SelectItem>
+                    <SelectItem value="year">Newest year</SelectItem>
+                  </SelectContent>
+                </Select>
               </label>
             </section>
             {visibleItems.length ? (
+              <section className="watchlist-library" aria-labelledby="watchlist-library-title">
+                <div className="section-heading compact-heading">
+                  <div>
+                    <p className="eyebrow">Your collection</p>
+                    <h2 id="watchlist-library-title">Saved titles</h2>
+                  </div>
+                  <span>{visibleItems.length.toLocaleString()} shown</span>
+                </div>
               <div className="media-grid saved-grid">
                 {visibleItems.map((item, index) => {
                   const card = watchlistCard(item);
@@ -201,6 +242,7 @@ export function WatchlistPage({
                   );
                 })}
               </div>
+              </section>
             ) : (
               <div className="empty-state">
                 <FilmIcon />

@@ -115,7 +115,8 @@ describe('WatchlistPage', () => {
     expect(primaryCardLink('Theme')).toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText('Search saved titles'), { target: { value: '' } });
-    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'title' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Sort' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Title A-Z' }));
     const titles = primaryCardLinks().map((link) => link.textContent || '');
     expect(titles[0]).toContain('Dark');
     expect(titles[1]).toContain('Kalki');

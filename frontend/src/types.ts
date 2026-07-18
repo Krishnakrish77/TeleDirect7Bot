@@ -76,6 +76,7 @@ export interface HubCard {
   detailsHref?: string;
   streamHref: string;
   watchKey: string;
+  progressPct?: number;
   eyebrow: string;
   badge: string;
   aspect: CardAspect;

@@ -121,7 +121,7 @@ function MediaCardBase({
   const externalRating = isMusic ? '' : formatExternalRating(card.externalRating);
   const metaItems = getMediaCardMetaItems(card);
   const communityRating = isMusic ? '' : communityRatingLabel(card.ratingCounts);
-  const rawProgress = useMemo(() => card.watchKey ? getLocalCwPct(card.watchKey) : 0, [card.watchKey]);
+  const rawProgress = useMemo(() => card.progressPct ?? (card.watchKey ? getLocalCwPct(card.watchKey) : 0), [card.progressPct, card.watchKey]);
   const watched = !isMusic && card.type !== 'series' && (Boolean(card.watched) || isLocallyWatched(card.watchKey));
   const progressPct = watched ? 0 : rawProgress;
   const newEpisodeText = card.newEpisode
