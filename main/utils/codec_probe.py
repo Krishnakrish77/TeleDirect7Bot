@@ -117,6 +117,23 @@ def needs_probe(item) -> bool:
     return never_probed or missing_duration or missing_artist or missing_subtitle_probe
 
 
+def _apply_probed_duration(item, payload: dict, *, overwrite: bool = False) -> bool:
+    """Copy a valid ffprobe duration to an indexed item.
+
+    Telegram duration metadata is convenient but not authoritative for audio
+    documents: it can be a small non-zero placeholder. For audio probes we
+    therefore overwrite it with ffprobe's container duration.
+    """
+    try:
+        duration = float((payload.get("format") or {}).get("duration") or 0)
+    except (TypeError, ValueError):
+        return False
+    if duration <= 0 or (getattr(item, "duration", 0) and not overwrite):
+        return False
+    item.duration = int(duration)
+    return True
+
+
 async def probe_item(item, *, timeout: float = 30.0) -> bool:
     """Run ffprobe against the BIN entry's stream URL. Returns True
     if a video stream was identified; False on timeout / failure.
@@ -318,6 +335,9 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     streams = payload.get("streams") or []
 
     if is_audio:
+        # Unlike video messages, Telegram can report a non-zero placeholder
+        # duration for audio documents. ffprobe is the source of truth here.
+        _apply_probed_duration(item, payload, overwrite=True)
         # Audio probe returns all streams; split by codec_type.
         # video streams = APIC/cover-art; audio streams = actual audio.
         video_streams = [s for s in streams if s.get("codec_type") == "video"]
@@ -371,14 +391,8 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     item.subtitles_probed_at = time.time()
     item.video_codec = (s.get("codec_name") or "").lower()
     item.pix_fmt = (s.get("pix_fmt") or "").lower()
-    # Fill duration from ffprobe if Telegram didn't extract it (e.g. document uploads)
-    if not item.duration:
-        try:
-            probed_duration = float((payload.get("format") or {}).get("duration") or 0)
-            if probed_duration > 0:
-                item.duration = int(probed_duration)
-        except (TypeError, ValueError):
-            pass
+    # Fill duration from ffprobe if Telegram didn't extract it (e.g. document uploads).
+    _apply_probed_duration(item, payload)
     # Use the embedded title tag as a filename fallback for video-type
     # uploads that Telegram strips the original name from.
     if not item.file_name:
