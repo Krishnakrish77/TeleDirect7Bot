@@ -115,6 +115,16 @@ export function StatsPage({
             <span><PlayIcon /> {data.completion}% completion</span>
             <span><ChartIcon /> {data.active_days} active days</span>
           </div>
+          <div className="stats-media-mix" aria-label={`Your media mix: ${videoPct}% video and ${audioPct}% music`}>
+            <div className="stats-media-mix-head">
+              <span>Your media mix</span>
+              <span>{videoPct}% video · {audioPct}% music</span>
+            </div>
+            <div className="stats-media-mix-bar" aria-hidden="true">
+              <span style={{ width: `${videoPct}%` }} />
+              <span style={{ width: `${audioPct}%` }} />
+            </div>
+          </div>
         </div>
         {titlePoster(data.top_title, data.top_title_label)}
       </section>

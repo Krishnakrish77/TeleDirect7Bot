@@ -35,6 +35,8 @@ export function PlaylistsPage({
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+  const playlistCount = data?.playlists.length ?? 0;
+  const trackCount = useMemo(() => data?.playlists.reduce((total, playlist) => total + playlist.trackCount, 0) ?? 0, [data?.playlists]);
 
   if (!user) {
     return (
@@ -70,7 +72,11 @@ export function PlaylistsPage({
         <div>
           <p className="eyebrow">Music</p>
           <h1>Playlists</h1>
-          <p>Build queues for albums, moods, favorites, and long listening sessions.</p>
+          <p>Build queues for albums, moods, favorites, and long listening sessions—ready whenever you are.</p>
+          <div className="playlist-library-stats" aria-label="Playlist library summary">
+            <span><strong>{playlistCount}</strong> playlist{playlistCount === 1 ? '' : 's'}</span>
+            <span><strong>{trackCount}</strong> saved track{trackCount === 1 ? '' : 's'}</span>
+          </div>
         </div>
         <form className="playlist-create-form library-create" onSubmit={submitCreate}>
           <Input
@@ -98,17 +104,26 @@ export function PlaylistsPage({
         </div>
       )}
       {data?.playlists.length ? (
-        <section className="playlist-grid" aria-label="Playlists">
-          {data.playlists.map((playlist) => (
-            <a key={playlist.playlistId} className="playlist-card" href={`/app/playlist/${playlist.playlistId}`}>
-              <PlaylistCover covers={playlist.coverUrls} name={playlist.name} />
-              <span className="playlist-card-copy">
-                <strong>{playlist.name}</strong>
-                <small>{trackCountLabel(playlist.trackCount)}</small>
-              </span>
-              <ChevronRightIcon />
-            </a>
-          ))}
+        <section className="playlist-library-section" aria-labelledby="playlist-library-title">
+          <div className="section-heading compact-heading">
+            <div>
+              <p className="eyebrow">Your collection</p>
+              <h2 id="playlist-library-title">Made for you</h2>
+            </div>
+            <span>{playlistCount} collection{playlistCount === 1 ? '' : 's'}</span>
+          </div>
+          <div className="playlist-grid" aria-label="Playlists">
+            {data.playlists.map((playlist) => (
+              <a key={playlist.playlistId} className="playlist-card" href={`/app/playlist/${playlist.playlistId}`}>
+                <PlaylistCover covers={playlist.coverUrls} name={playlist.name} />
+                <span className="playlist-card-copy">
+                  <strong>{playlist.name}</strong>
+                  <small>{trackCountLabel(playlist.trackCount)}</small>
+                </span>
+                <ChevronRightIcon />
+              </a>
+            ))}
+          </div>
         </section>
       ) : null}
     </main>
@@ -282,6 +297,10 @@ export function PlaylistDetailPage({
             <h1>{data.name}</h1>
           )}
           <p>{trackCountLabel(data.tracks.length)}</p>
+          <div className="playlist-detail-stats" aria-label="Playlist summary">
+            <span>Curated order</span>
+            <span>{data.tracks.length ? `Starts with ${data.tracks[0].title}` : 'Ready for your first track'}</span>
+          </div>
           <div className="hero-actions">
             <Button type="button" disabled={!firstTrack} onClick={() => firstTrack && playTrack(firstTrack, queue)}>
               <PlayIcon />
