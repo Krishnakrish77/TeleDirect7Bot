@@ -159,33 +159,23 @@ function DetailHero({
         )}
         <div className="hero-actions">
           {playHref && (
-            <a className="primary-action" href={playHref}>
-              <PlayIcon />
-              <span>Play</span>
-            </a>
+            <Button asChild size="lg"><a href={playHref}><PlayIcon /><span>Play</span></a></Button>
           )}
           {trailerKey && (
-            <button ref={trailerButtonRef} type="button" className="secondary-action" onClick={() => setTrailerOpen(true)}>
-              <PlayIcon />
-              <span>Trailer</span>
-            </button>
+            <button ref={trailerButtonRef} type="button" className="secondary-action" onClick={() => setTrailerOpen(true)}><PlayIcon /><span>Trailer</span></button>
           )}
           {onToggleSaved && (
-            <button type="button" className={saved ? 'secondary-action saved-action' : 'secondary-action'} onClick={onToggleSaved}>
+            <Button type="button" variant="secondary" className={saved ? 'saved-action' : ''} onClick={onToggleSaved}>
               {saved ? <CheckIcon /> : <BookmarkIcon />}
               <span>{saved ? 'Saved' : 'Save'}</span>
-            </button>
+            </Button>
           )}
           {extraActions}
           {imdbHref && (
-            <a className="secondary-action" href={imdbHref} target="_blank" rel="noopener noreferrer">
-              <span>IMDb</span>
-            </a>
+            <Button asChild variant="secondary"><a href={imdbHref} target="_blank" rel="noopener noreferrer"><span>IMDb</span></a></Button>
           )}
           {classicHref && (
-            <a className="secondary-action" href={classicHref} title="Open in the original player">
-              <span>Classic player</span>
-            </a>
+            <Button asChild variant="secondary"><a href={classicHref} title="Open in the original player"><span>Classic player</span></a></Button>
           )}
         </div>
         {children}
