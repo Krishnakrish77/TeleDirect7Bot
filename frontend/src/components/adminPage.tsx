@@ -393,15 +393,16 @@ function AdminJobCenter({
               </div>
               <p>{state.error || state.last_title || job.detail(state)}</p>
               {job.action ? (
-                <button
+                <Button
                   type="button"
+                  size="sm"
                   disabled={disabled}
                   onClick={() => onRun(job.action!, job.confirmMessage)}
                 >
                   {busy === job.action ? 'Queueing...' : job.actionLabel || 'Run'}
-                </button>
+                </Button>
               ) : (
-                <button type="button" disabled>Automatic</button>
+                <Button type="button" variant="outline" size="sm" disabled>Automatic</Button>
               )}
             </article>
           );
@@ -527,14 +528,15 @@ function MergeSeriesTool({
 
   return (
     <div className="admin-merge-tool">
-      <button
+      <Button
         type="button"
-        className="secondary-action compact-action"
+        variant="outline"
+        size="sm"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
       >
         Merge series
-      </button>
+      </Button>
       {open && (
         <form className="admin-merge-form" onSubmit={submit}>
           <datalist id="admin-merge-series-list">
@@ -544,7 +546,7 @@ function MergeSeriesTool({
           </datalist>
           <label>
             <span>Source</span>
-            <input
+            <Input
               value={source}
               onChange={(event) => setSource(event.currentTarget.value)}
               list="admin-merge-series-list"
@@ -553,16 +555,16 @@ function MergeSeriesTool({
           </label>
           <label>
             <span>Target</span>
-            <input
+            <Input
               value={target}
               onChange={(event) => setTarget(event.currentTarget.value)}
               list="admin-merge-series-list"
               placeholder="series to keep"
             />
           </label>
-          <button type="submit" disabled={Boolean(busy) || loading}>
+          <Button type="submit" size="sm" disabled={Boolean(busy) || loading}>
             {busy === 'merge-series' ? 'Merging...' : 'Merge'}
-          </button>
+          </Button>
           {error && <p className="admin-merge-error">{error}</p>}
         </form>
       )}
@@ -597,60 +599,61 @@ function BulkBar({
     <section className="admin-bulk">
       <div className="admin-bulk-head">
         <strong>{count} selected</strong>
-        <button type="button" onClick={() => setSelected(new Set())}>Clear</button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
       </div>
       <div className="admin-bulk-actions">
-        <button type="button" disabled={Boolean(busy)} onClick={() => onAction('hide')}>Hide</button>
-        <button type="button" disabled={Boolean(busy)} onClick={() => onAction('unhide')}>Unhide</button>
-        <button type="button" disabled={Boolean(busy)} onClick={() => onAction('enrich')}>Enrich</button>
-        <button type="button" disabled={Boolean(busy)} onClick={() => onAction('probe')}>Probe</button>
-        <button
+        <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('hide')}>Hide</Button>
+        <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('unhide')}>Unhide</Button>
+        <Button type="button" size="sm" disabled={Boolean(busy)} onClick={() => onAction('enrich')}>Enrich</Button>
+        <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('probe')}>Probe</Button>
+        <Button
           type="button"
-          className="danger"
+          variant="destructive"
+          size="sm"
           disabled={Boolean(busy)}
           onClick={() => onAction('delete', {}, `Delete ${count} entries?`)}
         >
           Delete
-        </button>
+        </Button>
       </div>
       <div className="admin-bulk-fields">
         <label>
           <span>Tags</span>
-          <input value={tags} onChange={(event) => setTags(event.currentTarget.value)} placeholder="space separated" />
-          <button type="button" disabled={Boolean(busy)} onClick={() => onAction('retag', { tags })}>Set</button>
+          <Input value={tags} onChange={(event) => setTags(event.currentTarget.value)} placeholder="space separated" />
+          <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('retag', { tags })}>Set</Button>
         </label>
         <label>
           <span>Quality</span>
           <select value={quality} onChange={(event) => setQuality(event.currentTarget.value)}>
             {QUALITY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
-          <button type="button" disabled={Boolean(busy)} onClick={() => onAction('quality', { quality })}>Apply</button>
+          <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('quality', { quality })}>Apply</Button>
         </label>
         <label>
           <span>Series</span>
-          <input
+          <Input
             value={seriesTitle}
             onChange={(event) => setSeriesTitle(event.currentTarget.value)}
             list="admin-known-series"
             placeholder="series title"
           />
-          <input
+          <Input
             className="short"
             value={season}
             onChange={(event) => setSeason(event.currentTarget.value)}
             inputMode="numeric"
             placeholder="S"
           />
-          <button type="button" disabled={Boolean(busy)} onClick={() => onAction('series', { seriesTitle, season })}>Set</button>
+          <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('series', { seriesTitle, season })}>Set</Button>
         </label>
         <label>
           <span>TMDB</span>
-          <input value={tmdbId} onChange={(event) => setTmdbId(event.currentTarget.value)} inputMode="numeric" placeholder="id" />
+          <Input value={tmdbId} onChange={(event) => setTmdbId(event.currentTarget.value)} inputMode="numeric" placeholder="id" />
           <select value={tmdbKind} onChange={(event) => setTmdbKind(event.currentTarget.value as 'tv' | 'movie')}>
             <option value="tv">TV</option>
             <option value="movie">Movie</option>
           </select>
-          <button type="button" disabled={Boolean(busy)} onClick={() => onAction('tmdb-id', { tmdbId, tmdbKind })}>Apply</button>
+          <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('tmdb-id', { tmdbId, tmdbKind })}>Apply</Button>
         </label>
       </div>
       <datalist id="admin-known-series">
@@ -682,9 +685,9 @@ function DuplicateResolutionBanner({
         </p>
       </div>
       <div className="admin-duplicate-guide-actions">
-        <button type="button" className="danger" disabled={Boolean(busy) || extras === 0} onClick={onDedupe}>
+        <Button type="button" variant="destructive" size="sm" disabled={Boolean(busy) || extras === 0} onClick={onDedupe}>
           {busy === 'dedupe' ? 'Running...' : `Run de-dupe${extras ? ` (${extras})` : ''}`}
-        </button>
+        </Button>
         <span>Select rows below to delete individual copies instead.</span>
       </div>
     </section>
@@ -745,10 +748,12 @@ function AdminItemRow({
       </div>
       <span className={item.tmdbId ? 'admin-row-tmdb matched' : 'admin-row-tmdb missing'}>{item.tmdbId ? `TMDB ${item.tmdbId}` : 'No TMDB'}</span>
       <div className="admin-row-actions">
-        <button type="button" onClick={onToggleHidden}>{item.hidden ? 'Unhide' : 'Hide'}</button>
-        <button type="button" onClick={onEdit}>Edit</button>
-        <button
+        <Button type="button" variant="ghost" size="sm" onClick={onToggleHidden}>{item.hidden ? 'Unhide' : 'Hide'}</Button>
+        <Button type="button" variant="outline" size="sm" onClick={onEdit}>Edit</Button>
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           className="admin-row-delete"
           onClick={onDelete}
           title={`${deleteLabel} ${item.title}`}
@@ -756,7 +761,7 @@ function AdminItemRow({
         >
           <TrashIcon />
           <span>{deleteLabel}</span>
-        </button>
+        </Button>
       </div>
     </article>
   );
@@ -1398,9 +1403,9 @@ function AdminList({
         )}
       </div>
       <div className="admin-pagination">
-        <button type="button" disabled={data.page <= 1} onClick={() => updateParam({ page: data.page - 1 })}>Prev</button>
+        <Button type="button" variant="outline" size="sm" disabled={data.page <= 1} onClick={() => updateParam({ page: data.page - 1 })}>Prev</Button>
         <span>{((data.page - 1) * data.pageSize) + 1}-{((data.page - 1) * data.pageSize) + data.items.length} of {data.filteredCount}</span>
-        <button type="button" disabled={data.page >= data.totalPages} onClick={() => updateParam({ page: data.page + 1 })}>Next</button>
+        <Button type="button" variant="outline" size="sm" disabled={data.page >= data.totalPages} onClick={() => updateParam({ page: data.page + 1 })}>Next</Button>
       </div>
     </section>
   );

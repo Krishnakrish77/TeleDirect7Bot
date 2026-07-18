@@ -6,6 +6,7 @@ import { AdminGate } from './adminPage';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
+import { Checkbox } from './ui/checkbox';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import type { AdminIptvResponse, IptvChannel, IptvChannelPayload, User } from '../types';
@@ -228,7 +229,7 @@ export function AdminIptvPage({
               <Input type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.currentTarget.value) || 0 })} />
             </label>
             <label className="iptv-toggle-field">
-              <Input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.currentTarget.checked })} />
+              <Checkbox checked={form.enabled} onCheckedChange={(enabled) => setForm({ ...form, enabled: enabled === true })} />
               <span>Enabled</span>
             </label>
             <div className="iptv-form-actions">
@@ -285,9 +286,9 @@ export function AdminIptvPage({
               <SearchIcon />
               <Input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search channels" />
               {query && (
-                <button type="button" className="icon-button" aria-label="Clear IPTV search" onClick={() => setQuery('')}>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label="Clear IPTV search" onClick={() => setQuery('')}>
                   <XIcon />
-                </button>
+                </Button>
               )}
             </label>
           </div>
@@ -305,11 +306,11 @@ export function AdminIptvPage({
                   <small>Sort {channel.sortOrder || 0}</small>
                 </div>
                 <div className="iptv-row-actions">
-                  <button type="button" onClick={() => setForm(channelToPayload(channel))}>Edit</button>
-                  <button type="button" onClick={() => toggleChannel(channel)} disabled={busy === channel.id}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setForm(channelToPayload(channel))}>Edit</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => toggleChannel(channel)} disabled={busy === channel.id}>
                     {channel.enabled ? 'Disable' : 'Enable'}
-                  </button>
-                  <button type="button" className="danger-text" onClick={() => deleteChannel(channel)} disabled={busy === channel.id}>Delete</button>
+                  </Button>
+                  <Button type="button" variant="destructive" size="sm" onClick={() => deleteChannel(channel)} disabled={busy === channel.id}>Delete</Button>
                 </div>
               </article>
             ))}
