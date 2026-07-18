@@ -10728,35 +10728,32 @@ select.edit-field-input {
 /* Admin workspace shell: a separate, task-oriented navigation system keeps
  * catalogue work from competing with the public browsing chrome. */
 .admin-frame {
-  display: grid;
-  grid-template-columns: 15.5rem minmax(0, 1fr);
-  min-height: calc(100svh - 72px);
-  background: radial-gradient(circle at top left, rgba(20, 184, 166, 0.07), transparent 27rem);
+  min-width: 0;
+  background: radial-gradient(circle at top center, rgba(249, 115, 22, 0.07), transparent 32rem);
 }
 
 .admin-sidebar {
-  position: sticky;
-  top: 72px;
   display: flex;
-  flex-direction: column;
-  align-self: start;
-  min-height: calc(100svh - 72px);
-  padding: 1rem 0.75rem;
-  border-right: 1px solid var(--line);
-  background: rgba(11, 12, 14, 0.9);
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  padding: 0.7rem clamp(1rem, 2vw, 1.5rem);
+  border-bottom: 1px solid var(--line);
+  background: rgba(11, 12, 14, 0.92);
 }
 
 .admin-sidebar-brand {
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  padding: 0.55rem 0.65rem 1.15rem;
+  flex: 0 0 auto;
+  padding: 0.2rem 0.35rem;
 }
 
 .admin-sidebar-brand svg {
   width: 1.4rem;
   height: 1.4rem;
-  color: var(--teal);
+  color: var(--brand);
 }
 
 .admin-sidebar-brand span {
@@ -10777,15 +10774,19 @@ select.edit-field-input {
 }
 
 .admin-sidebar .admin-nav {
-  display: grid;
-  gap: 0.18rem;
-  overflow: visible;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow-x: auto;
   padding: 0;
   border: 0;
+  scrollbar-width: none;
 }
 
 .admin-sidebar .admin-nav a {
-  display: flex;
+  display: inline-flex;
+  flex: 0 0 auto;
   min-height: 2.5rem;
   align-items: center;
   border: 0;
@@ -10802,17 +10803,13 @@ select.edit-field-input {
 
 .admin-sidebar .admin-nav a.active {
   border: 0;
-  background: rgba(20, 184, 166, 0.13);
-  color: #99f6e4;
-  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.2);
+  background: rgba(249, 115, 22, 0.15);
+  color: #fdba74;
+  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.34);
 }
 
 .admin-sidebar-hint {
-  margin: auto 0.35rem 0;
-  padding: 0.8rem;
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  border-radius: 0.65rem;
-  background: rgba(255, 255, 255, 0.025);
+  display: none;
 }
 
 .admin-frame-content {
@@ -10820,7 +10817,12 @@ select.edit-field-input {
 }
 
 .admin-frame .admin-main {
-  width: min(100%, 1720px);
+  width: min(100%, 1760px);
+}
+
+.admin-frame .admin-bulk {
+  border-color: rgba(249, 115, 22, 0.34);
+  background: linear-gradient(110deg, rgba(249, 115, 22, 0.12), rgba(21, 23, 26, 0.92) 34%);
 }
 
 @media (max-width: 1360px) {
@@ -10839,17 +10841,11 @@ select.edit-field-input {
 
 @media (max-width: 1179px) {
   .admin-frame {
-    display: block;
-    min-height: 0;
+    background: var(--bg);
   }
 
   .admin-sidebar {
-    position: static;
-    min-height: 0;
     padding: 0.65rem 0.85rem 0;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-    background: var(--bg);
   }
 
   .admin-sidebar-brand,
@@ -10858,11 +10854,7 @@ select.edit-field-input {
   }
 
   .admin-sidebar .admin-nav {
-    display: flex;
-    gap: 0.35rem;
-    overflow-x: auto;
     padding-bottom: 0.65rem;
-    scrollbar-width: none;
   }
 
   .admin-sidebar .admin-nav a {
