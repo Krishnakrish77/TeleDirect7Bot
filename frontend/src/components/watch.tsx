@@ -13,6 +13,7 @@ import { buildVlcHref } from '../media/vlc';
 import { markLocallyWatched } from '../utils/localWatched';
 import { isContinueSuppressed } from '../utils/continueWatching';
 import { uniqueMetadataParts } from '../utils/metadata';
+import { Button } from './ui/button';
 
 function isWatchTrack(item: WatchResponse['item']): item is WatchTrack {
   return item.type === 'track' && 'appHref' in item;
@@ -148,15 +149,17 @@ function NextEpisodePanel({
         <strong id="next-episode-title" dir="auto">{nextEpisode.title}</strong>
         {label && <span>{label}</span>}
         <div className="next-episode-actions">
-          <a className="primary-action" href={playHref}>
+          <Button asChild>
+            <a href={playHref}>
             <PlayIcon />
             <span>Play now</span>
-          </a>
-          <button type="button" className="secondary-action" onClick={onReplay}>
+            </a>
+          </Button>
+          <Button type="button" variant="secondary" onClick={onReplay}>
             <SkipBackIcon />
             <span>Replay</span>
-          </button>
-          <button type="button" className="secondary-action" onClick={onDismiss}>Stay here</button>
+          </Button>
+          <Button type="button" variant="secondary" onClick={onDismiss}>Stay here</Button>
         </div>
       </div>
       <div className="next-episode-side">
