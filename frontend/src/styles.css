@@ -908,7 +908,7 @@ img {
   white-space: nowrap;
 }
 
-.filter-select-control select {
+.filter-select-control .filter-select-trigger {
   border: 0;
   outline: 0;
   background: transparent;
@@ -920,6 +920,10 @@ img {
   max-width: 9rem;
   cursor: pointer;
   padding: 0;
+}
+
+.filter-select-control .filter-select-trigger:focus-visible {
+  box-shadow: none;
 }
 
 /* Reset button */

@@ -1,6 +1,8 @@
 import { FilterIcon } from '../icons';
 import { appUrl } from '../navigation';
 import type { FilterOption, HubFilters, HubParams, ViewValue } from '../types';
+import { Button } from './ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 type FilterControl = {
   id: string;
@@ -18,11 +20,16 @@ function SelectControl({ control, className = '' }: { control: FilterControl; cl
   return (
     <label className={['filter-select-control', className].filter(Boolean).join(' ')}>
       <span>{control.label}</span>
-      <select value={control.value} onChange={(event) => control.onChange(event.currentTarget.value)} aria-label={control.label}>
-        {control.options.map((option) => (
-          <option key={option.value || 'any'} value={option.value}>{option.label}</option>
-        ))}
-      </select>
+      <Select value={control.value || undefined} onValueChange={(value) => control.onChange(value === '__any' ? '' : value)}>
+        <SelectTrigger className="filter-select-trigger" aria-label={control.label}>
+          <SelectValue placeholder={control.label} />
+        </SelectTrigger>
+        <SelectContent>
+          {control.options.map((option) => (
+            <SelectItem key={option.value || 'any'} value={option.value || '__any'}>{option.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </label>
   );
 }
@@ -195,9 +202,9 @@ export function FilterBar({
       <div className="filter-action-row">
         <SelectControl control={sortControl} className="filter-sort-control" />
         {hasFilters && (
-          <button className="filter-clear-button" type="button" onClick={() => clearAll()}>
+          <Button className="filter-clear-button" variant="outline" size="sm" type="button" onClick={() => clearAll()}>
             Reset
-          </button>
+          </Button>
         )}
         <a className="filter-drawer-button" href={appUrl({ ...params, offset: 0 }, '/filters')}>
           <FilterIcon />
@@ -279,8 +286,8 @@ export function FilterPage({
         )}
 
         <div className="filter-page-actions">
-          <button className="filter-clear-button" type="button" onClick={clearAll} disabled={!hasFilters}>Reset</button>
-          <a className="primary-action" href={appUrl({ ...params, offset: 0 })}>Show results</a>
+          <Button className="filter-clear-button" variant="outline" type="button" onClick={clearAll} disabled={!hasFilters}>Reset</Button>
+          <Button asChild><a href={appUrl({ ...params, offset: 0 })}>Show results</a></Button>
         </div>
       </section>
     </main>

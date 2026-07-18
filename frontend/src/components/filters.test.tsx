@@ -55,7 +55,8 @@ describe('FilterBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Music' }));
     expect(update).toHaveBeenCalledWith({ view: 'music', offset: 0 });
 
-    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'title_az' } });
+    fireEvent.click(screen.getByLabelText('Sort'));
+    fireEvent.click(screen.getByRole('option', { name: 'Title A-Z' }));
     expect(update).toHaveBeenCalledWith({ sort: 'title_az', offset: 0 });
   });
 
@@ -130,7 +131,8 @@ describe('FilterPage', () => {
     expect(screen.getAllByText('1080p').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Action').length).toBeGreaterThan(0);
 
-    fireEvent.change(screen.getByLabelText('Tag'), { target: { value: 'Tamil' } });
+    fireEvent.click(screen.getByLabelText('Tag'));
+    fireEvent.click(screen.getByRole('option', { name: 'Tamil' }));
     expect(navigate.mock.calls[0][0]).toContain('/app/filters?tag=Tamil&quality=1080p&genre=Action&view=movies');
     expect(navigate.mock.calls[0][1]).toBe(true);
 
