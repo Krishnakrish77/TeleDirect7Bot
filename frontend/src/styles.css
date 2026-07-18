@@ -2016,6 +2016,21 @@ img {
   .watchlist-sort [data-slot="select-trigger"] {
     min-width: min(100%, 13rem);
   }
+
+  .audio-player-surface .watch-controls {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.55rem;
+  }
+
+  .audio-transport,
+  .audio-control-utilities {
+    grid-column: 1;
+    justify-content: center;
+  }
+
+  .audio-player-surface-head {
+    font-size: 0.66rem;
+  }
 }
 
 /* ── Live TV ─────────────────────────────────────────────────────────────── */
@@ -4223,12 +4238,28 @@ img {
 
 .audio-player-surface {
   display: grid;
+  gap: 0.9rem;
+  padding: clamp(1rem, 1.8vw, 1.25rem);
+  border: 1px solid rgba(249, 115, 22, 0.2);
+  border-radius: 1rem;
+  background: radial-gradient(circle at 50% 0, rgba(249, 115, 22, 0.11), transparent 20rem), rgba(17, 19, 23, 0.9);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.26);
+}
+
+.audio-player-surface-head {
+  display: flex;
+  justify-content: space-between;
   gap: 0.75rem;
-  padding: clamp(0.8rem, 1.5vw, 1rem);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: rgba(17, 19, 23, 0.82);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.22);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.audio-player-surface-head span:last-child {
+  color: #fdba74;
+  text-align: right;
 }
 
 .watch-controls,
@@ -4243,8 +4274,27 @@ img {
 }
 
 .audio-player-surface .watch-controls {
-  justify-content: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
   margin-top: 0;
+}
+
+.audio-transport,
+.audio-control-utilities {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.audio-transport {
+  grid-column: 2;
+  justify-content: center;
+}
+
+.audio-control-utilities {
+  grid-column: 3;
+  justify-content: end;
 }
 
 .player-play {
@@ -4276,9 +4326,17 @@ img {
 }
 
 .audio-player-surface .player-play {
-  width: 58px;
-  height: 58px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
+  width: 64px;
+  height: 64px;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 12px 26px rgba(249, 115, 22, 0.3);
+}
+
+.audio-player-surface .player-play:hover,
+.audio-player-surface .player-play:focus-visible {
+  background: #ea580c;
+  outline: none;
 }
 
 .player-nav span,

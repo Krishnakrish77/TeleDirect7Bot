@@ -317,59 +317,67 @@ export function WatchPage({
           </div>
 
           <div className="audio-player-surface">
+            <div className="audio-player-surface-head">
+              <span>Now playing</span>
+              <span>{queue.length > 1 ? `${queue.length} tracks in this album` : track.format || 'Audio'}</span>
+            </div>
             <div className="watch-controls">
-              <button
-                type="button"
-                className="icon-button player-nav"
-                onClick={() => (current ? playRelative(-1) : data.prev && playTrack(data.prev, queue))}
-                disabled={!prevAvailable}
-                aria-label="Previous track"
-              >
-                <SkipBackIcon />
-              </button>
-              <button
-                type="button"
-                className="icon-button player-nav"
-                onClick={() => seekAudioBy(-10)}
-                disabled={!current}
-                aria-label="Rewind 10 seconds"
-              >
-                <span aria-hidden="true">-10</span>
-              </button>
-              <button
-                type="button"
-                className="player-play"
-                onClick={() => togglePlayback(track, queue)}
-                aria-label={playing ? 'Pause' : 'Play'}
-              >
-                {playing ? <PauseIcon /> : <PlayIcon />}
-              </button>
-              <button
-                type="button"
-                className="icon-button player-nav"
-                onClick={() => seekAudioBy(10)}
-                disabled={!current}
-                aria-label="Forward 10 seconds"
-              >
-                <span aria-hidden="true">+10</span>
-              </button>
-              <button
-                type="button"
-                className="icon-button player-nav"
-                onClick={() => (current ? playRelative(1) : data.next && playTrack(data.next, queue))}
-                disabled={!nextAvailable}
-                aria-label="Next track"
-              >
-                <SkipForwardIcon />
-              </button>
-              <button
-                type="button"
-                className="icon-button player-nav"
-                onClick={onOpenQueue}
-                aria-label="Open queue"
-              >
-                <ListIcon />
-              </button>
+              <div className="audio-transport" aria-label="Track controls">
+                <button
+                  type="button"
+                  className="icon-button player-nav"
+                  onClick={() => (current ? playRelative(-1) : data.prev && playTrack(data.prev, queue))}
+                  disabled={!prevAvailable}
+                  aria-label="Previous track"
+                >
+                  <SkipBackIcon />
+                </button>
+                <button
+                  type="button"
+                  className="player-play"
+                  onClick={() => togglePlayback(track, queue)}
+                  aria-label={playing ? 'Pause' : 'Play'}
+                >
+                  {playing ? <PauseIcon /> : <PlayIcon />}
+                </button>
+                <button
+                  type="button"
+                  className="icon-button player-nav"
+                  onClick={() => (current ? playRelative(1) : data.next && playTrack(data.next, queue))}
+                  disabled={!nextAvailable}
+                  aria-label="Next track"
+                >
+                  <SkipForwardIcon />
+                </button>
+              </div>
+              <div className="audio-control-utilities" aria-label="Playback utilities">
+                <button
+                  type="button"
+                  className="icon-button player-nav"
+                  onClick={() => seekAudioBy(-10)}
+                  disabled={!current}
+                  aria-label="Rewind 10 seconds"
+                >
+                  <span aria-hidden="true">-10</span>
+                </button>
+                <button
+                  type="button"
+                  className="icon-button player-nav"
+                  onClick={() => seekAudioBy(10)}
+                  disabled={!current}
+                  aria-label="Forward 10 seconds"
+                >
+                  <span aria-hidden="true">+10</span>
+                </button>
+                <button
+                  type="button"
+                  className="icon-button player-nav"
+                  onClick={onOpenQueue}
+                  aria-label="Open queue"
+                >
+                  <ListIcon />
+                </button>
+              </div>
             </div>
 
             <div className="watch-progress">
