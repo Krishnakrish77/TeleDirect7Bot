@@ -561,6 +561,7 @@ function App() {
         player={audio.player}
         playQueueIndex={audio.playQueueIndex}
         togglePlayback={audio.togglePlayback}
+        moveQueueItemToNext={audio.moveQueueItemToNext}
         removeFromQueue={audio.removeFromQueue}
         clearQueue={audio.clearQueue}
         moveQueueItem={audio.moveQueueItem}

@@ -39,6 +39,7 @@ function makeAudio(playerOverrides?: Partial<PlayerState>): AudioPlayerHandle {
     removeFromQueue: vi.fn(),
     clearQueue: vi.fn(),
     moveQueueItem: vi.fn(),
+    moveQueueItemToNext: vi.fn(),
     shuffleQueue: vi.fn(),
     togglePlayback: vi.fn(),
     seek: vi.fn(),

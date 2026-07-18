@@ -747,6 +747,19 @@ export function useAudioPlayer() {
     });
   }, []);
 
+  const moveQueueItemToNext = useCallback((index: number) => {
+    setPlayer((state) => {
+      if (!state.track || index < 0 || index >= state.queue.length || index === state.queueIndex) return state;
+      const queue = state.queue.slice();
+      const [item] = queue.splice(index, 1);
+      const currentIndex = queue.findIndex((track) => track.key === state.track?.key);
+      if (currentIndex < 0) return state;
+      queue.splice(currentIndex + 1, 0, item);
+      return { ...state, queue, queueIndex: currentIndex, queueToast: 'Playing next' };
+    });
+    showQueueToast('Playing next');
+  }, [showQueueToast]);
+
   const shuffleQueue = useCallback((queue: WatchTrack[]) => {
     if (!queue.length) return;
     const shuffled = queue.slice();
@@ -1147,6 +1160,7 @@ export function useAudioPlayer() {
     removeFromQueue,
     clearQueue,
     moveQueueItem,
+    moveQueueItemToNext,
     shuffleQueue,
     togglePlayback,
     seek,

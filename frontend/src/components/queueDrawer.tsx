@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { ChevronDownIcon, ChevronUpIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, XIcon } from '../icons';
+import { ChevronDownIcon, ChevronUpIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, SkipForwardIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 
@@ -28,6 +28,7 @@ type QueueTrackRowProps = {
   canRemove: boolean;
   showReorder: boolean;
   playQueueIndex: (index: number) => void;
+  moveQueueItemToNext: (index: number) => void;
   moveQueueItem: (index: number, direction: -1 | 1) => void;
   removeFromQueue: (index: number) => void;
 };
@@ -40,6 +41,7 @@ const QueueTrackRow = memo(function QueueTrackRow({
   canRemove,
   showReorder,
   playQueueIndex,
+  moveQueueItemToNext,
   moveQueueItem,
   removeFromQueue,
 }: QueueTrackRowProps) {
@@ -67,6 +69,16 @@ const QueueTrackRow = memo(function QueueTrackRow({
       <div className="queue-row-actions">
         {showReorder && (
           <>
+            <button
+              type="button"
+              className="icon-button queue-play-next"
+              onClick={() => moveQueueItemToNext(index)}
+              disabled={!canMoveUp}
+              aria-label={`Play ${track.title} next`}
+              title="Play next"
+            >
+              <SkipForwardIcon />
+            </button>
             <button
               type="button"
               className="icon-button"
@@ -106,6 +118,7 @@ export function QueueDrawer({
   player,
   playQueueIndex,
   togglePlayback,
+  moveQueueItemToNext,
   removeFromQueue,
   clearQueue,
   moveQueueItem,
@@ -115,6 +128,7 @@ export function QueueDrawer({
   player: PlayerState;
   playQueueIndex: (index: number) => void;
   togglePlayback: (track?: WatchTrack) => void;
+  moveQueueItemToNext: (index: number) => void;
   removeFromQueue: (index: number) => void;
   clearQueue: () => void;
   moveQueueItem: (index: number, direction: -1 | 1) => void;
@@ -202,6 +216,7 @@ export function QueueDrawer({
                       canRemove
                       showReorder
                       playQueueIndex={playQueueIndex}
+                      moveQueueItemToNext={moveQueueItemToNext}
                       moveQueueItem={moveQueueItem}
                       removeFromQueue={removeFromQueue}
                     />
@@ -231,6 +246,7 @@ export function QueueDrawer({
                       canRemove
                       showReorder={false}
                       playQueueIndex={playQueueIndex}
+                      moveQueueItemToNext={moveQueueItemToNext}
                       moveQueueItem={moveQueueItem}
                       removeFromQueue={removeFromQueue}
                     />

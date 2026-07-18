@@ -247,6 +247,7 @@ describe('QueueDrawer', () => {
     const second = makeTrack({ key: 'second-theme', title: 'Second Theme', durationLabel: '2:00' });
     const third = makeTrack({ key: 'third-theme', title: 'Third Theme' });
     const playQueueIndex = vi.fn();
+    const moveQueueItemToNext = vi.fn();
     const moveQueueItem = vi.fn();
     const removeFromQueue = vi.fn();
     const clearQueue = vi.fn();
@@ -257,6 +258,7 @@ describe('QueueDrawer', () => {
         player={makePlayer({ track: current, queue: [current, second, third], queueIndex: 0 })}
         playQueueIndex={playQueueIndex}
         togglePlayback={vi.fn()}
+        moveQueueItemToNext={moveQueueItemToNext}
         removeFromQueue={removeFromQueue}
         clearQueue={clearQueue}
         moveQueueItem={moveQueueItem}
@@ -280,6 +282,9 @@ describe('QueueDrawer', () => {
     fireEvent.click(screen.getByLabelText('Move Third Theme up'));
     expect(moveQueueItem).toHaveBeenCalledWith(2, -1);
 
+    fireEvent.click(screen.getByLabelText('Play Third Theme next'));
+    expect(moveQueueItemToNext).toHaveBeenCalledWith(2);
+
     fireEvent.click(screen.getByLabelText('Remove Second Theme'));
     expect(removeFromQueue).toHaveBeenCalledWith(1);
 
@@ -297,6 +302,7 @@ describe('QueueDrawer', () => {
         player={makePlayer({ track: current, queue: [first, current], queueIndex: 1 })}
         playQueueIndex={vi.fn()}
         togglePlayback={vi.fn()}
+        moveQueueItemToNext={vi.fn()}
         removeFromQueue={vi.fn()}
         clearQueue={vi.fn()}
         moveQueueItem={vi.fn()}
