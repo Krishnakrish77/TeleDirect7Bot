@@ -52,7 +52,9 @@ function trackSrc(track: WatchTrack): string {
 
 function readNumber(key: string, fallback: number): number {
   try {
-    const parsed = Number(localStorage.getItem(key));
+    const stored = localStorage.getItem(key);
+    if (stored === null) return fallback;
+    const parsed = Number(stored);
     return Number.isFinite(parsed) ? parsed : fallback;
   } catch (_) {
     return fallback;

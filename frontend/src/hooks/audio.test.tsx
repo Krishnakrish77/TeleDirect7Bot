@@ -118,6 +118,7 @@ describe('useAudioPlayer', () => {
     render(<AudioHarness />);
 
     expect(screen.getByTestId('speed').textContent).toBe('1');
+    expect(screen.getByTestId('volume').textContent).toBe('1');
     expect(localStorage.getItem('td:speed')).toBeNull();
   });
 
