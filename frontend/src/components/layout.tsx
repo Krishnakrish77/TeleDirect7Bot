@@ -39,6 +39,12 @@ export function PrimaryNav({
         <MusicIcon />
         <span>Music</span>
       </a>
+      {user && (
+        <a className={activeSection === 'liked-songs' ? 'active' : ''} href="/app/liked-songs" aria-label="Liked Songs">
+          <HeartIcon />
+          <span>Liked Songs</span>
+        </a>
+      )}
       <a className={activeSection === 'live-tv' ? 'active' : ''} href="/app/live-tv">
         <BroadcastIcon />
         <span>Live TV</span>
@@ -47,12 +53,6 @@ export function PrimaryNav({
         <a className={activeSection === 'watchlist' ? 'active' : ''} href="/app/watchlist">
           <BookmarkIcon />
           <span>Watchlist</span>
-        </a>
-      )}
-      {user && (
-        <a className={activeSection === 'liked-songs' ? 'active' : ''} href="/app/liked-songs">
-          <HeartIcon />
-          <span>Liked</span>
         </a>
       )}
     </nav>

@@ -1,5 +1,5 @@
 import { memo, useMemo, useState, type MouseEvent } from 'react';
-import { BookmarkIcon, CheckIcon, FilmIcon, MusicIcon, PlayIcon, ThumbDownIcon, ThumbUpIcon, XIcon } from '../icons';
+import { BookmarkIcon, CheckIcon, FilmIcon, HeartIcon, MusicIcon, PlayIcon, ThumbDownIcon, ThumbUpIcon, XIcon } from '../icons';
 import type { HubCard, RatingCounts, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
 import { isLocallyWatched } from '../utils/localWatched';
@@ -285,16 +285,16 @@ function MediaCardBase({
         type="button"
         className={saved ? 'save-button saved' : 'save-button'}
         disabled={interactionDisabled}
-        title={saved ? 'Remove from watchlist' : 'Add to watchlist'}
+        title={isMusic ? (saved ? 'Unlike song' : 'Like song') : (saved ? 'Remove from watchlist' : 'Add to watchlist')}
         onClick={(event: MouseEvent<HTMLButtonElement>) => {
           event.preventDefault();
           event.stopPropagation();
           if (interactionDisabled) return;
           onToggleSaved(card);
         }}
-        aria-label={saved ? 'Remove from watchlist' : 'Add to watchlist'}
+        aria-label={isMusic ? (saved ? 'Unlike song' : 'Like song') : (saved ? 'Remove from watchlist' : 'Add to watchlist')}
       >
-        {saved ? <CheckIcon /> : <BookmarkIcon />}
+        {isMusic ? <HeartIcon filled={saved} /> : saved ? <CheckIcon /> : <BookmarkIcon />}
       </button>
       {dismissMeta && onDismiss && (
         <button
