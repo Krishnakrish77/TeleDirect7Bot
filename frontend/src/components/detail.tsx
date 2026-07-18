@@ -10,6 +10,7 @@ import { formatExternalRating } from '../utils/externalRating';
 import { isLocallyWatched, markLocallyWatched } from '../utils/localWatched';
 import { uniqueMetadataParts } from '../utils/metadata';
 import { YOUTUBE_TRAILER_ALLOW, youtubeTrailerEmbedSrc, youtubeTrailerWatchUrl } from '../utils/youtubeTrailer';
+import { Button } from './ui/button';
 
 export function DetailPage({
   route,
@@ -88,6 +89,7 @@ export function DetailPage({
           playTrack={playTrack}
           togglePlayback={togglePlayback}
           addToQueue={addToQueue}
+          shuffleQueue={shuffleQueue}
           player={player}
           onAddToPlaylist={onAddToPlaylist}
           saved={saved}
@@ -856,6 +858,7 @@ function AlbumDetail({
           title={data.title}
           artistHref={data.artistHref}
           artist={data.artist}
+          artistCredits={data.artistCredits || []}
           year={data.year}
           trackCount={data.trackCount}
           overview={data.overview}
@@ -886,6 +889,7 @@ function AlbumHero({
   title,
   artist,
   artistHref,
+  artistCredits,
   year,
   trackCount,
   overview,
@@ -899,6 +903,7 @@ function AlbumHero({
   title: string;
   artist: string;
   artistHref: string;
+  artistCredits: Array<{ name: string; href: string }>;
   year: number | null;
   trackCount: number;
   overview: string;
@@ -918,7 +923,16 @@ function AlbumHero({
       <div className="album-hero-copy">
         <p className="eyebrow">Album</p>
         <h1 dir="auto">{title}</h1>
-        {artistHref && artist && <a className="album-artist-link" href={artistHref}>{artist}</a>}
+        {artistCredits.length > 0 ? (
+          <div className="album-artist-credits" aria-label="Artists">
+            {artistCredits.map((credit, index) => (
+              <span key={credit.href}>
+                {index > 0 && <span className="album-artist-separator" aria-hidden="true">, </span>}
+                <a className="album-artist-link" href={credit.href}>{credit.name}</a>
+              </span>
+            ))}
+          </div>
+        ) : artistHref && artist ? <a className="album-artist-link" href={artistHref}>{artist}</a> : null}
         <div className="album-stats" aria-label="Album metadata">
           {year && <span>{year}</span>}
           <span>{trackCount} track{trackCount === 1 ? '' : 's'}</span>
@@ -952,6 +966,7 @@ function ArtistDetail({
   playTrack,
   togglePlayback,
   addToQueue,
+  shuffleQueue,
   player,
   onAddToPlaylist,
   saved,
@@ -961,24 +976,46 @@ function ArtistDetail({
   playTrack: (track: WatchTrack, queue?: WatchTrack[]) => void;
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
+  shuffleQueue: (queue: WatchTrack[]) => void;
   player: PlayerState;
   onAddToPlaylist?: (track: WatchTrack) => void;
   saved: Set<string>;
   onToggleSaved: (itemId: string) => void;
 }) {
   const first = data.tracks[0];
+  const albumCount = data.albums.length;
   return (
-    <main className="detail-main">
-      <DetailHero
-        title={data.title}
-        subtitle={data.subtitle}
-        overview=""
-        posterUrl={data.posterUrl}
-        backdropUrl={data.backdropUrl}
-        playHref={first?.appHref}
-      />
+    <main className="detail-main music-detail-main artist-detail-main">
+      <section className="artist-hero" aria-label="Artist summary">
+        {(data.backdropUrl || data.posterUrl) && <img className="artist-backdrop" src={data.backdropUrl || data.posterUrl} alt="" decoding="async" fetchPriority="high" />}
+        <div className="artist-hero-art">
+          <img src={data.posterUrl || data.backdropUrl} alt="" decoding="async" fetchPriority="high" />
+        </div>
+        <div className="artist-hero-copy">
+          <p className="eyebrow">Artist</p>
+          <h1 dir="auto">{data.title}</h1>
+          <div className="artist-stats" aria-label="Artist catalogue metadata">
+            {albumCount > 0 && <span>{albumCount} album{albumCount === 1 ? '' : 's'}</span>}
+            <span>{data.tracks.length} track{data.tracks.length === 1 ? '' : 's'}</span>
+          </div>
+          {first && (
+            <div className="artist-hero-actions">
+              <Button type="button" onClick={() => playTrack(first, data.tracks)}>
+                <PlayIcon />
+                <span>Play all</span>
+              </Button>
+              {data.tracks.length > 1 && (
+                <Button type="button" variant="secondary" onClick={() => shuffleQueue(data.tracks)}>
+                  <ShuffleIcon />
+                  <span>Shuffle</span>
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
       {data.albums.length > 0 && (
-        <section className="detail-section">
+        <section className="detail-section artist-albums-section">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Discography</p>
@@ -995,15 +1032,10 @@ function ArtistDetail({
       <section className="detail-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Tracks</p>
+            <p className="eyebrow">Catalogue</p>
             <h2>All songs</h2>
           </div>
-          {first && (
-            <button type="button" className="primary-action" onClick={() => playTrack(first, data.tracks)}>
-              <PlayIcon />
-              <span>Play</span>
-            </button>
-          )}
+          <span className="artist-track-count">{data.tracks.length} tracks</span>
         </div>
         <TrackList tracks={data.tracks} queue={data.tracks} player={player} togglePlayback={togglePlayback} addToQueue={addToQueue} onAddToPlaylist={onAddToPlaylist} />
       </section>

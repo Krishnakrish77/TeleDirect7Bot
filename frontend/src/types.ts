@@ -770,6 +770,7 @@ export interface AlbumDetailResponse {
   title: string;
   artist: string;
   artistHref: string;
+  artistCredits?: PersonLink[];
   year: number | null;
   overview: string;
   posterUrl: string;

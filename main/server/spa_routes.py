@@ -1723,13 +1723,24 @@ def _album_detail_payload(
         display_artist = "Various Artists"
     else:
         display_artist = ""
+    artist_credits = [
+        {
+            "name": _clean_music_tag(credit),
+            "href": f"/app/artist/{media_index._artist_slug(credit)}",
+        }
+        for credit in media_index._artist_credits(display_artist)
+    ] if display_artist and display_artist != "Various Artists" else []
     return {
         "kind": "album",
         "key": key,
         "savedId": f"album:{key}",
         "title": _clean_music_tag(rep.album_title or rep.title or key),
         "artist": _clean_music_tag(display_artist),
-        "artistHref": f"/app/artist/{media_index._artist_slug(display_artist)}" if display_artist and display_artist != "Various Artists" else "",
+        # Keep the original field for clients that have not adopted individual
+        # credits yet.  It must resolve to a real artist rather than a slug of
+        # the entire multi-artist credit string.
+        "artistHref": artist_credits[0]["href"] if artist_credits else "",
+        "artistCredits": artist_credits,
         "year": rep.year,
         "overview": rep.overview or rep.description or "",
         "posterUrl": _tmdb_image(rep.poster_path) or _thumb(rep),

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlayerState } from '../hooks/audio';
-import type { AlbumDetailResponse, MovieDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
+import type { AlbumDetailResponse, ArtistDetailResponse, MovieDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
 import { DetailPage } from './detail';
 
 const originalRequestFullscreen = HTMLElement.prototype.requestFullscreen;
@@ -52,6 +52,7 @@ function makeAlbum(): AlbumDetailResponse {
     title: 'Album',
     artist: 'Composer',
     artistHref: '/app/artist/composer',
+    artistCredits: [{ name: 'Composer', href: '/app/artist/composer' }],
     year: 2026,
     overview: 'A compact album overview.',
     posterUrl: '/thumb/album.jpg',
@@ -60,6 +61,23 @@ function makeAlbum(): AlbumDetailResponse {
     playHref: '/app/watch/theme',
     tracks: [first, second],
     related: [],
+  };
+}
+
+function makeArtist(): ArtistDetailResponse {
+  const first = makeTrack({ artist: 'Composer, Singer' });
+  const second = makeTrack({ key: 'second', itemId: 'item-second', title: 'Second Theme', trackNumber: 2, artist: 'Composer' });
+  return {
+    kind: 'artist',
+    key: 'composer',
+    title: 'Composer',
+    subtitle: '2 tracks',
+    artist: 'Composer',
+    posterUrl: '/thumb/composer.jpg',
+    backdropUrl: '/thumb/composer-backdrop.jpg',
+    tracks: [first, second],
+    albums: [],
+    singles: [],
   };
 }
 
@@ -249,6 +267,7 @@ describe('Album detail', () => {
     expect(screen.getByRole('heading', { name: 'Album' })).toBeTruthy();
     expect(screen.getAllByText('2 tracks').length).toBeGreaterThan(0);
     expect(screen.getByText('2026')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Composer' }).getAttribute('href')).toBe('/app/artist/composer');
 
     fireEvent.click(screen.getByRole('button', { name: 'Play all' }));
     expect(playTrack).toHaveBeenCalledWith(album.tracks[0], album.tracks);
@@ -264,6 +283,41 @@ describe('Album detail', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Theme to playlist' }));
     expect(onAddToPlaylist).toHaveBeenCalledWith(album.tracks[0]);
+  });
+});
+
+describe('Artist detail', () => {
+  it('offers artist-wide playback from a dedicated music library view', () => {
+    const artist = makeArtist();
+    const playTrack = vi.fn();
+    const shuffleQueue = vi.fn();
+
+    render(
+      <DetailPage
+        route={{ kind: 'detail', detailKind: 'artist', key: 'composer' }}
+        data={artist}
+        loading={false}
+        error=""
+        saved={new Set()}
+        onToggleSaved={vi.fn()}
+        navigate={vi.fn()}
+        playTrack={playTrack}
+        togglePlayback={vi.fn()}
+        addToQueue={vi.fn()}
+        shuffleQueue={shuffleQueue}
+        player={makePlayer()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Artist summary')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Composer' })).toBeTruthy();
+    expect(screen.getAllByText('2 tracks')).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play all' }));
+    expect(playTrack).toHaveBeenCalledWith(artist.tracks[0], artist.tracks);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shuffle' }));
+    expect(shuffleQueue).toHaveBeenCalledWith(artist.tracks);
   });
 });
 

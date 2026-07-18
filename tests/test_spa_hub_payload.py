@@ -12,6 +12,7 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 from main.server.spa_routes import (
+    _album_detail_payload,
     _app_download_redirect,
     _budget_home_shelves,
     _compact_hub_card_payload,
@@ -58,6 +59,33 @@ def _video_item(
 
 
 class SpaHubPayloadTest(unittest.TestCase):
+    def test_album_payload_links_each_artist_credit_individually(self):
+        track = HubItem(
+            message_id=1,
+            secure_hash="hash",
+            title="Pattampoochi",
+            year=2026,
+            description="",
+            tags=[],
+            duration=120,
+            file_size=1024,
+            has_thumb=False,
+            media_kind="audio",
+            artist="G. V. Prakash Kumar, Sublahshini",
+            album_title="Vishwanath & Sons",
+            album_key="vishwanath-sons",
+        )
+        with patch.object(media_index, "tracks_for_album", return_value=[track]), patch(
+            "main.server.spa_routes._related_rows", return_value=[]
+        ):
+            payload = _album_detail_payload("vishwanath-sons")
+
+        self.assertEqual(payload["artistHref"], "/app/artist/g-v-prakash-kumar")
+        self.assertEqual(payload["artistCredits"], [
+            {"name": "G. V. Prakash Kumar", "href": "/app/artist/g-v-prakash-kumar"},
+            {"name": "Sublahshini", "href": "/app/artist/sublahshini"},
+        ])
+
     def test_app_watch_download_redirects_to_raw_stream(self):
         request = SimpleNamespace(
             rel_url=SimpleNamespace(query={"download": "1"}),
