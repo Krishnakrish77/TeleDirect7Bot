@@ -27,6 +27,7 @@ from main.utils.hub_query import HubItem, MovieGroup, SeriesGroup
 
 hub_routes = importlib.import_module("main.server.hub_routes")
 admin_routes = importlib.import_module("main.server.admin_routes")
+watchlist_routes = importlib.import_module("main.server.watchlist_routes")
 
 
 def _video_item(
@@ -59,6 +60,24 @@ def _video_item(
 
 
 class SpaHubPayloadTest(unittest.TestCase):
+    def test_watchlist_excludes_audio_saved_items(self):
+        video = {"item_id": "101", "kind": "video", "title": "Film"}
+        audio = {"item_id": "202", "kind": "audio", "title": "Song"}
+        album = {"item_id": "album:record", "kind": "album", "title": "Record"}
+
+        async def get_ids(_user_id):
+            return ["101", "202", "album:record"]
+
+        async def get_continue(_user_id):
+            return {}
+
+        with patch.object(watchlist_routes.watchlist_store, "get_ids", get_ids), patch.object(
+            watchlist_routes, "_resolve_item", side_effect=[video, audio, album]
+        ), patch.object(watchlist_routes.cw_store, "get_all", get_continue):
+            items = asyncio.run(watchlist_routes._items_for_user(1))
+
+        self.assertEqual(items, [{**video, "cw_pct": None}])
+
     def test_album_payload_links_each_artist_credit_individually(self):
         track = HubItem(
             message_id=1,

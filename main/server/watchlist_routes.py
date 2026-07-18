@@ -121,7 +121,14 @@ def _resolve_item(item_id: str) -> Optional[dict]:
 
 async def _items_for_user(user_id: int) -> list[dict]:
     ids = await watchlist_store.get_ids(user_id)
-    items = [r for iid in ids if (r := _resolve_item(iid)) is not None]
+    # The shared saved store also backs Liked Songs.  Watchlist is the
+    # video library, so audio tracks and albums belong exclusively there.
+    items = [
+        resolved
+        for iid in ids
+        if (resolved := _resolve_item(iid)) is not None
+        and resolved.get("kind") not in ("audio", "album")
+    ]
 
     # Attach watch progress for individual items (cw_key = secure_hash + message_id).
     # Build a message_id → progress-fraction dict from CW data.
