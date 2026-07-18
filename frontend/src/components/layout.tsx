@@ -21,6 +21,8 @@ export function PrimaryNav({
   activeView: ViewValue | '';
   activeSection: 'home' | 'movies' | 'series' | 'music' | 'live-tv' | 'watchlist' | 'liked-songs' | '';
 }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreActive = ['live-tv', 'watchlist', 'liked-songs'].includes(activeSection);
   return (
     <nav className="primary-nav" aria-label="Primary">
       <a className={activeSection === 'home' ? 'active' : ''} href="/app">
@@ -40,20 +42,39 @@ export function PrimaryNav({
         <span>Music</span>
       </a>
       {user && (
-        <a className={activeSection === 'liked-songs' ? 'active' : ''} href="/app/liked-songs" aria-label="Liked Songs">
+        <a className={activeSection === 'liked-songs' ? 'mobile-secondary active' : 'mobile-secondary'} href="/app/liked-songs" aria-label="Liked Songs">
           <HeartIcon />
           <span>Liked Songs</span>
         </a>
       )}
-      <a className={activeSection === 'live-tv' ? 'active' : ''} href="/app/live-tv">
+      <a className={activeSection === 'live-tv' ? 'mobile-secondary active' : 'mobile-secondary'} href="/app/live-tv">
         <BroadcastIcon />
         <span>Live TV</span>
       </a>
       {user && (
-        <a className={activeSection === 'watchlist' ? 'active' : ''} href="/app/watchlist">
+        <a className={activeSection === 'watchlist' ? 'mobile-secondary active' : 'mobile-secondary'} href="/app/watchlist">
           <BookmarkIcon />
           <span>Watchlist</span>
         </a>
+      )}
+      <button
+        type="button"
+        className={moreActive ? 'mobile-nav-more active' : 'mobile-nav-more'}
+        aria-expanded={moreOpen}
+        aria-controls="mobile-nav-more-sheet"
+        onClick={() => setMoreOpen((open) => !open)}
+      >
+        <ListIcon />
+        <span>More</span>
+      </button>
+      {moreOpen && (
+        <div className="mobile-nav-sheet" id="mobile-nav-more-sheet" role="dialog" aria-label="More navigation">
+          <a href="/app/live-tv" onClick={() => setMoreOpen(false)}><BroadcastIcon /><span>Live TV</span></a>
+          {user && <a href="/app/watchlist" onClick={() => setMoreOpen(false)}><BookmarkIcon /><span>Watchlist</span></a>}
+          {user && <a href="/app/liked-songs" onClick={() => setMoreOpen(false)}><HeartIcon /><span>Liked Songs</span></a>}
+          {user && <a href="/app/playlists" onClick={() => setMoreOpen(false)}><ListIcon /><span>Playlists</span></a>}
+          {user && <a href="/app/stats" onClick={() => setMoreOpen(false)}><ChartIcon /><span>Stats</span></a>}
+        </div>
       )}
     </nav>
   );
