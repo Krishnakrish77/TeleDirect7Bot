@@ -5,6 +5,9 @@ import type { PlayerState } from '../hooks/audio';
 import type { PlaylistDetailResponse, PlaylistsResponse, User, WatchTrack } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { PlaylistCover } from './addToPlaylistSheet';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 function trackSubtitle(track: WatchTrack) {
   return [track.artist, track.albumTitle, track.qualityLabel].filter(Boolean).join(' - ');
@@ -39,7 +42,7 @@ export function PlaylistsPage({
         <div className="empty-state">
           <ListPlusIcon />
           <strong>Sign in to create playlists</strong>
-          <button type="button" className="primary-action" onClick={onSignIn}>Sign in</button>
+          <Button type="button" onClick={onSignIn}>Sign in</Button>
         </div>
       </main>
     );
@@ -70,16 +73,16 @@ export function PlaylistsPage({
           <p>Build queues for albums, moods, favorites, and long listening sessions.</p>
         </div>
         <form className="playlist-create-form library-create" onSubmit={submitCreate}>
-          <input
+          <Input
             value={name}
             onChange={(event) => setName(event.currentTarget.value)}
             placeholder="New playlist"
             maxLength={100}
           />
-          <button type="submit" className="primary-action" disabled={creating || !name.trim()}>
+          <Button type="submit" disabled={creating || !name.trim()}>
             <ListPlusIcon />
             <span>{creating ? 'Creating' : 'Create'}</span>
-          </button>
+          </Button>
         </form>
       </div>
 
@@ -175,7 +178,7 @@ export function PlaylistDetailPage({
         <div className="empty-state">
           <ListPlusIcon />
           <strong>Sign in to view playlists</strong>
-          <button type="button" className="primary-action" onClick={onSignIn}>Sign in</button>
+          <Button type="button" onClick={onSignIn}>Sign in</Button>
         </div>
       </main>
     );
@@ -265,38 +268,38 @@ export function PlaylistDetailPage({
           <p className="eyebrow">Playlist</p>
           {renaming ? (
             <form className="playlist-rename-form" onSubmit={submitRename}>
-              <input value={name} onChange={(event) => setName(event.currentTarget.value)} maxLength={100} autoFocus />
-              <button type="submit" className="primary-action" disabled={working === 'rename' || !name.trim()}>
+              <Input value={name} onChange={(event) => setName(event.currentTarget.value)} maxLength={100} autoFocus />
+              <Button type="submit" disabled={working === 'rename' || !name.trim()}>
                 <CheckIcon />
                 <span>Save</span>
-              </button>
-              <button type="button" className="secondary-action" onClick={() => { setRenaming(false); setName(data.name); }}>
+              </Button>
+              <Button type="button" variant="outline" onClick={() => { setRenaming(false); setName(data.name); }}>
                 <XIcon />
                 <span>Cancel</span>
-              </button>
+              </Button>
             </form>
           ) : (
             <h1>{data.name}</h1>
           )}
           <p>{trackCountLabel(data.tracks.length)}</p>
           <div className="hero-actions">
-            <button type="button" className="primary-action" disabled={!firstTrack} onClick={() => firstTrack && playTrack(firstTrack, queue)}>
+            <Button type="button" disabled={!firstTrack} onClick={() => firstTrack && playTrack(firstTrack, queue)}>
               <PlayIcon />
               <span>Play</span>
-            </button>
-            <button type="button" className="secondary-action" disabled={queue.length < 2} onClick={() => shuffleQueue(queue)}>
+            </Button>
+            <Button type="button" variant="outline" disabled={queue.length < 2} onClick={() => shuffleQueue(queue)}>
               <ShuffleIcon />
               <span>Shuffle</span>
-            </button>
+            </Button>
             {!renaming && (
-              <button type="button" className="secondary-action" onClick={() => setRenaming(true)}>
+              <Button type="button" variant="outline" onClick={() => setRenaming(true)}>
                 <span>Rename</span>
-              </button>
+              </Button>
             )}
-            <button type="button" className="secondary-action danger-action" onClick={deleteCurrentPlaylist} disabled={working === 'delete'}>
+            <Button type="button" variant="destructive" onClick={deleteCurrentPlaylist} disabled={working === 'delete'}>
               <XIcon />
               <span>Delete</span>
-            </button>
+            </Button>
           </div>
           {status && <p className="playlist-status" role="status"><span>{status}</span></p>}
         </div>
@@ -305,7 +308,7 @@ export function PlaylistDetailPage({
       <section className="playlist-tools" aria-label="Playlist tools">
         <label className="playlist-search">
           <SearchIcon />
-          <input
+          <Input
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
             placeholder="Search this playlist"
@@ -313,12 +316,15 @@ export function PlaylistDetailPage({
         </label>
         <label className="playlist-sort">
           <span>Sort</span>
-          <select value={sort} onChange={(event) => setSort(event.currentTarget.value)}>
-            <option value="playlist">Playlist order</option>
-            <option value="title">Title</option>
-            <option value="artist">Artist</option>
-            <option value="duration">Duration</option>
-          </select>
+          <Select value={sort} onValueChange={setSort}>
+            <SelectTrigger aria-label="Sort playlist"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="playlist">Playlist order</SelectItem>
+              <SelectItem value="title">Title</SelectItem>
+              <SelectItem value="artist">Artist</SelectItem>
+              <SelectItem value="duration">Duration</SelectItem>
+            </SelectContent>
+          </Select>
         </label>
       </section>
 
@@ -348,9 +354,11 @@ export function PlaylistDetailPage({
                   <span>{trackSubtitle(track)}</span>
                 </span>
                 <span className="track-duration">{track.durationLabel}</span>
-                <button
+                <Button
                   type="button"
-                  className="icon-button"
+                  variant="ghost"
+                  size="icon"
+                  className="playlist-track-action"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -359,10 +367,12 @@ export function PlaylistDetailPage({
                   aria-label={active && player.playing ? `Pause ${track.title}` : `Play ${track.title}`}
                 >
                   {active && player.playing ? <PauseIcon /> : <PlayIcon />}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button"
+                  variant="ghost"
+                  size="icon"
+                  className="playlist-track-action"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -371,10 +381,12 @@ export function PlaylistDetailPage({
                   aria-label={`Play ${track.title} next`}
                 >
                   <ListIcon />
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button"
+                  variant="ghost"
+                  size="icon"
+                  className="playlist-track-action"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -383,10 +395,12 @@ export function PlaylistDetailPage({
                   aria-label={`Add ${track.title} to queue`}
                 >
                   <span aria-hidden="true">+</span>
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button"
+                  variant="ghost"
+                  size="icon"
+                  className="playlist-track-action"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -395,10 +409,12 @@ export function PlaylistDetailPage({
                   aria-label={`Add ${track.title} to playlist`}
                 >
                   <ListPlusIcon />
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button reorder-button"
+                  variant="ghost"
+                  size="icon"
+                  className="playlist-track-action reorder-button"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -408,10 +424,12 @@ export function PlaylistDetailPage({
                   aria-label={`Move ${track.title} up`}
                 >
                   <ChevronUpIcon />
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button reorder-button"
+                  variant="ghost"
+                  size="icon"
+                  className="playlist-track-action reorder-button"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -421,10 +439,12 @@ export function PlaylistDetailPage({
                   aria-label={`Move ${track.title} down`}
                 >
                   <ChevronDownIcon />
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="icon-button danger-icon"
+                  variant="destructive"
+                  size="icon"
+                  className="playlist-track-action"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -434,7 +454,7 @@ export function PlaylistDetailPage({
                   aria-label={`Remove ${track.title} from playlist`}
                 >
                   <XIcon />
-                </button>
+                </Button>
               </a>
             );
           })}

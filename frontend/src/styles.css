@@ -5553,6 +5553,10 @@ img {
   padding: 0 2rem 0 0.75rem;
 }
 
+.playlist-sort [data-slot="select-trigger"] {
+  min-width: 160px;
+}
+
 .playlist-track-list {
   display: grid;
   border: 1px solid var(--line);
@@ -5587,6 +5591,15 @@ img {
   border-radius: 8px;
   object-fit: cover;
   background: var(--panel-strong);
+}
+
+.playlist-track-action {
+  width: 40px;
+  height: 40px;
+}
+
+.playlist-track-action[data-variant="destructive"] {
+  color: #fff;
 }
 
 .reorder-button:disabled {

@@ -2,6 +2,8 @@ import { ChartIcon, FilmIcon, MusicIcon, PlayIcon, TvIcon, UserIcon } from '../i
 import { localAppHref } from '../navigation';
 import type { StatsHistoryItem, StatsResponse, StatsTitle, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
+import { Button } from './ui/button';
+import { Card } from './ui/card';
 
 function appHref(url: string): string {
   if (url.startsWith('/watch/')) return url.replace(/^\/watch\//, '/app/watch/');
@@ -50,7 +52,7 @@ export function StatsPage({
         <div className="empty-state">
           <ChartIcon />
           <strong>Sign in to view your stats</strong>
-          <button type="button" className="primary-action" onClick={onSignIn}>Sign in</button>
+          <Button type="button" onClick={onSignIn}>Sign in</Button>
         </div>
       </main>
     );
@@ -119,30 +121,30 @@ export function StatsPage({
 
       {/* ── Summary cards ── */}
       <section className="stats-grid" aria-label="Summary">
-        <article className="stat-card">
+        <Card className="stat-card">
           <FilmIcon />
           <span>Video</span>
           <strong>{durationLabel(data.video_hours, data.video_mins)}</strong>
           <small>{videoPct}% of plays</small>
-        </article>
-        <article className="stat-card">
+        </Card>
+        <Card className="stat-card">
           <MusicIcon />
           <span>Music</span>
           <strong>{durationLabel(data.audio_hours, data.audio_mins)}</strong>
           <small>{audioPct}% of plays</small>
-        </article>
-        <article className="stat-card">
+        </Card>
+        <Card className="stat-card">
           <UserIcon />
           <span>Current streak</span>
           <strong>{data.current_streak} days</strong>
           <small>Longest {data.longest_streak}</small>
-        </article>
-        <article className="stat-card">
+        </Card>
+        <Card className="stat-card">
           <ChartIcon />
           <span>Finished</span>
           <strong>{data.finished}</strong>
           <small>of {data.started} started</small>
-        </article>
+        </Card>
       </section>
 
       {/* ── Watch history ── */}
@@ -171,7 +173,7 @@ export function StatsPage({
 
       <section className="stats-panels">
         {/* ── Weekly rhythm ── */}
-        <article className="stats-panel">
+        <Card className="stats-panel">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Rhythm</p>
@@ -188,10 +190,10 @@ export function StatsPage({
               </div>
             ))}
           </div>
-        </article>
+        </Card>
 
         {/* ── Heatmap ── */}
-        <article className="stats-panel">
+        <Card className="stats-panel">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Last 12 weeks</p>
@@ -209,11 +211,11 @@ export function StatsPage({
               />
             ))}
           </div>
-        </article>
+        </Card>
 
         {/* ── Most replayed ── */}
         {data.most_replayed.length > 0 && (
-          <article className="stats-panel stats-list-panel">
+          <Card className="stats-panel stats-list-panel">
             <div className="section-heading">
               <div>
                 <p className="eyebrow">Replay</p>
@@ -231,11 +233,11 @@ export function StatsPage({
                 </a>
               ))}
             </div>
-          </article>
+          </Card>
         )}
 
         {/* ── Taste ── */}
-        <article className="stats-panel">
+        <Card className="stats-panel">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Taste</p>
@@ -281,7 +283,7 @@ export function StatsPage({
               </span>
             )}
           </div>
-        </article>
+        </Card>
       </section>
     </main>
   );
