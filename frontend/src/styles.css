@@ -10725,6 +10725,104 @@ select.edit-field-input {
   min-width: 0;
 }
 
+/* Admin workspace shell: a separate, task-oriented navigation system keeps
+ * catalogue work from competing with the public browsing chrome. */
+.admin-frame {
+  display: grid;
+  grid-template-columns: 15.5rem minmax(0, 1fr);
+  min-height: calc(100svh - 72px);
+  background: radial-gradient(circle at top left, rgba(20, 184, 166, 0.07), transparent 27rem);
+}
+
+.admin-sidebar {
+  position: sticky;
+  top: 72px;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  min-height: calc(100svh - 72px);
+  padding: 1rem 0.75rem;
+  border-right: 1px solid var(--line);
+  background: rgba(11, 12, 14, 0.9);
+}
+
+.admin-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.65rem 1.15rem;
+}
+
+.admin-sidebar-brand svg {
+  width: 1.4rem;
+  height: 1.4rem;
+  color: var(--teal);
+}
+
+.admin-sidebar-brand span {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.admin-sidebar-brand strong {
+  color: #fff;
+  font-size: 0.92rem;
+}
+
+.admin-sidebar-brand small,
+.admin-sidebar-hint {
+  color: var(--dim);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.admin-sidebar .admin-nav {
+  display: grid;
+  gap: 0.18rem;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+}
+
+.admin-sidebar .admin-nav a {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  border: 0;
+  border-radius: 0.55rem;
+  padding: 0 0.7rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.admin-sidebar .admin-nav a:hover {
+  background: rgba(255, 255, 255, 0.045);
+  color: #fff;
+}
+
+.admin-sidebar .admin-nav a.active {
+  border: 0;
+  background: rgba(20, 184, 166, 0.13);
+  color: #99f6e4;
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.2);
+}
+
+.admin-sidebar-hint {
+  margin: auto 0.35rem 0;
+  padding: 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.admin-frame-content {
+  min-width: 0;
+}
+
+.admin-frame .admin-main {
+  width: min(100%, 1720px);
+}
+
 @media (max-width: 1360px) {
   .iptv-admin-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -10736,6 +10834,41 @@ select.edit-field-input {
 
   .iptv-channel-admin-list {
     max-height: none;
+  }
+}
+
+@media (max-width: 1179px) {
+  .admin-frame {
+    display: block;
+    min-height: 0;
+  }
+
+  .admin-sidebar {
+    position: static;
+    min-height: 0;
+    padding: 0.65rem 0.85rem 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+
+  .admin-sidebar-brand,
+  .admin-sidebar-hint {
+    display: none;
+  }
+
+  .admin-sidebar .admin-nav {
+    display: flex;
+    gap: 0.35rem;
+    overflow-x: auto;
+    padding-bottom: 0.65rem;
+    scrollbar-width: none;
+  }
+
+  .admin-sidebar .admin-nav a {
+    flex: 0 0 auto;
+    min-height: 2.25rem;
+    padding: 0 0.75rem;
   }
 }
 

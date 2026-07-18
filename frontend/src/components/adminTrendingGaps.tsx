@@ -3,6 +3,9 @@ import { fetchAdminTrendingGaps, refreshAdminTrendingGaps } from '../api';
 import { ChevronRightIcon, FilmIcon } from '../icons';
 import type { User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Card, CardContent } from './ui/card';
 
 interface TrendingGap {
   title: string;
@@ -51,7 +54,7 @@ export function AdminTrendingGaps({ user, onSignIn }: { user: User | null; onSig
       <main className="admin-main">
         <div className="empty-state">
           <strong>{user ? 'Admin access required' : 'Sign in required'}</strong>
-          <button type="button" className="primary-action" onClick={onSignIn}>Sign in</button>
+          <Button type="button" onClick={onSignIn}>Sign in</Button>
         </div>
       </main>
     );
@@ -68,13 +71,10 @@ export function AdminTrendingGaps({ user, onSignIn }: { user: User | null; onSig
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <button type="button" className="secondary-action" onClick={handleRefresh} disabled={refreshing}>
-            <span>{refreshing ? 'Refreshing…' : '↺ Refresh cache'}</span>
-          </button>
-          <a className="secondary-action" href="/app/admin">
-            <ChevronRightIcon />
-            <span>Admin console</span>
-          </a>
+          <Button type="button" variant="secondary" onClick={handleRefresh} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh cache'}</Button>
+          <Button asChild variant="secondary">
+            <a href="/app/admin"><ChevronRightIcon />Admin console</a>
+          </Button>
         </div>
       </div>
 
@@ -96,30 +96,29 @@ export function AdminTrendingGaps({ user, onSignIn }: { user: User | null; onSig
           </p>
           <div className="trending-grid">
             {gaps.map((g) => (
-              <a
+              <Card
                 key={g.tmdb_url}
-                href={g.tmdb_url}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="trending-card"
               >
-                <div className="trending-card-art">
-                  {g.poster ? (
-                    <img src={g.poster} alt="" loading="lazy" />
-                  ) : (
-                    <div className="trending-card-placeholder"><FilmIcon /></div>
-                  )}
-                  <span className={`trending-kind-badge ${g.kind === 'tv' ? 'tv' : 'movie'}`}>{g.kind}</span>
-                  {g.vote && <span className="trending-vote">★ {g.vote}</span>}
-                </div>
-                <div className="trending-card-copy">
-                  <p className="trending-card-title">
-                    {g.title}
-                    {g.year && <span className="trending-card-year"> ({g.year})</span>}
-                  </p>
-                  <p className="trending-card-link">View on TMDB ↗</p>
-                </div>
-              </a>
+                <a href={g.tmdb_url} target="_blank" rel="noopener noreferrer" className="trending-card-link-wrap">
+                  <div className="trending-card-art">
+                    {g.poster ? (
+                      <img src={g.poster} alt="" loading="lazy" />
+                    ) : (
+                      <div className="trending-card-placeholder"><FilmIcon /></div>
+                    )}
+                    <Badge className={`trending-kind-badge ${g.kind === 'tv' ? 'tv' : 'movie'}`} variant="muted">{g.kind}</Badge>
+                    {g.vote && <Badge className="trending-vote">★ {g.vote}</Badge>}
+                  </div>
+                  <CardContent className="trending-card-copy">
+                    <p className="trending-card-title">
+                      {g.title}
+                      {g.year && <span className="trending-card-year"> ({g.year})</span>}
+                    </p>
+                    <p className="trending-card-link">View on TMDB ↗</p>
+                  </CardContent>
+                </a>
+              </Card>
             ))}
           </div>
         </>

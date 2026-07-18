@@ -35,7 +35,7 @@ const AddToPlaylistSheet = lazy(() => loadAddToPlaylistSheet().then((module) => 
 const PlaylistDetailPage = lazy(() => loadPlaylistsPage().then((module) => ({ default: module.PlaylistDetailPage })));
 const PlaylistsPage = lazy(() => loadPlaylistsPage().then((module) => ({ default: module.PlaylistsPage })));
 const StatsPage = lazy(() => loadStatsPage().then((module) => ({ default: module.StatsPage })));
-const AdminNav = lazy(() => loadAdminPage().then((module) => ({ default: module.AdminNav })));
+const AdminFrame = lazy(() => loadAdminPage().then((module) => ({ default: module.AdminFrame })));
 const AdminPage = lazy(() => loadAdminPage().then((module) => ({ default: module.AdminPage })));
 const AdminDashboard = lazy(() => loadAdminDashboard().then((module) => ({ default: module.AdminDashboard })));
 const AdminTrendingGaps = lazy(() => loadAdminTrendingGaps().then((module) => ({ default: module.AdminTrendingGaps })));
@@ -470,18 +470,15 @@ function App() {
             error={liveTv.error}
           />
         ) : route.kind === 'admin-dashboard' ? (
-          <>
-            <AdminNav routeKind={route.kind} locationSearch={location.search} />
+          <AdminFrame routeKind={route.kind} locationSearch={location.search}>
             <AdminDashboard user={user} onSignIn={() => setSignInOpen(true)} />
-          </>
+          </AdminFrame>
         ) : route.kind === 'admin-trending' ? (
-          <>
-            <AdminNav routeKind={route.kind} locationSearch={location.search} />
+          <AdminFrame routeKind={route.kind} locationSearch={location.search}>
             <AdminTrendingGaps user={user} onSignIn={() => setSignInOpen(true)} />
-          </>
+          </AdminFrame>
         ) : route.kind === 'admin-iptv' ? (
-          <>
-            <AdminNav routeKind={route.kind} locationSearch={location.search} />
+          <AdminFrame routeKind={route.kind} locationSearch={location.search}>
             <AdminIptvPage
               user={user}
               data={adminIptv.data}
@@ -491,10 +488,9 @@ function App() {
               reload={adminIptv.reload}
               setData={adminIptv.setData}
             />
-          </>
+          </AdminFrame>
         ) : route.kind === 'admin' ? (
-          <>
-            <AdminNav routeKind={route.kind} locationSearch={location.search} />
+          <AdminFrame routeKind={route.kind} locationSearch={location.search}>
             <AdminPage
               user={user}
               data={adminPage.data}
@@ -506,7 +502,7 @@ function App() {
               reload={adminPage.reload}
               updateData={adminPage.updateData}
             />
-          </>
+          </AdminFrame>
         ) : (
           <WatchPage
             watchKey={watchKey}

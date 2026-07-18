@@ -1,6 +1,10 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { aiSuggestItem, clearAdminItemTmdb, deleteAdminSubtitle, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem, uploadAdminSubtitle } from '../api';
 import { FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TrashIcon, XIcon } from '../icons';
+import { Checkbox } from './ui/checkbox';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Progress } from './ui/progress';
 
 export function AdminNav({
   routeKind,
@@ -20,6 +24,33 @@ export function AdminNav({
       <a role="tab" aria-selected={routeKind === 'admin-trending'} className={routeKind === 'admin-trending' ? 'active' : ''} href="/app/admin/trending">Trending</a>
       <a role="tab" aria-selected={routeKind === 'admin-iptv'} className={routeKind === 'admin-iptv' ? 'active' : ''} href="/app/admin/iptv">IPTV</a>
     </nav>
+  );
+}
+
+export function AdminFrame({
+  routeKind,
+  locationSearch,
+  children,
+}: {
+  routeKind: string;
+  locationSearch: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="admin-frame">
+      <aside className="admin-sidebar" aria-label="Admin navigation">
+        <a className="admin-sidebar-brand" href="/app/admin">
+          <ShieldIcon />
+          <span>
+            <strong>TeleDirect</strong>
+            <small>Admin workspace</small>
+          </span>
+        </a>
+        <AdminNav routeKind={routeKind} locationSearch={locationSearch} />
+        <p className="admin-sidebar-hint">Changes affect the shared catalogue. Review destructive actions before running them.</p>
+      </aside>
+      <div className="admin-frame-content">{children}</div>
+    </div>
   );
 }
 import type { AdminItem, AdminItemEditPayload, AdminProgressState, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
@@ -273,13 +304,13 @@ function AdminControls({
     <section className="admin-controls">
       <form className="admin-search" role="search" onSubmit={onSubmit}>
         <SearchIcon />
-        <input
+        <Input
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
           placeholder="Search title, file, tag, artist, bin id"
           autoComplete="off"
         />
-        <button type="submit">Search</button>
+        <Button type="submit" size="sm">Search</Button>
       </form>
 
       <div className="admin-select-row">
@@ -357,7 +388,7 @@ function AdminJobCenter({
                 <span>{jobStateLabel(state)}</span>
               </div>
               <div className="admin-job-progress" aria-label={`${job.label} progress`}>
-                <i><b style={{ width: `${running && pct === 0 ? 12 : pct}%` }} /></i>
+                <Progress value={running && pct === 0 ? 12 : pct} />
                 <em>{pct ? `${pct}%` : running ? 'Starting' : 'No active run'}</em>
               </div>
               <p>{state.error || state.last_title || job.detail(state)}</p>
@@ -683,10 +714,9 @@ function AdminItemRow({
   return (
     <article className={['admin-row', item.hidden ? 'hidden-row' : '', item.duplicate ? 'duplicate-row' : ''].filter(Boolean).join(' ')}>
       <label className="admin-row-check">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={selected}
-          onChange={(event) => onSelect(event.currentTarget.checked)}
+          onCheckedChange={(checked) => onSelect(checked === true)}
           aria-label={`Select ${item.title}`}
         />
       </label>
@@ -1330,7 +1360,7 @@ function AdminList({
     <section className="admin-panel admin-list-panel">
       <div className="admin-list-head">
         <label>
-          <input type="checkbox" checked={allPageSelected} onChange={(event) => toggleAll(event.currentTarget.checked)} />
+          <Checkbox checked={allPageSelected} onCheckedChange={(checked) => toggleAll(checked === true)} aria-label="Select all visible catalogue items" />
           <span>{data.filteredCount.toLocaleString()} results</span>
         </label>
         <span>Page {data.page} of {data.totalPages}</span>
