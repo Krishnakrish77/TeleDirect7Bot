@@ -547,7 +547,6 @@ function App() {
         playRelative={audio.playRelative}
         togglePlayback={audio.togglePlayback}
         seek={audio.seek}
-        setSpeed={audio.setSpeed}
         cycleRepeatMode={audio.cycleRepeatMode}
         setVolume={audio.setVolume}
         toggleMute={audio.toggleMute}

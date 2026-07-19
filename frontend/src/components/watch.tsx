@@ -200,7 +200,7 @@ export function WatchPage({
   canDownload?: boolean;
 }) {
   const { player, playTrack, playRelative, playQueueIndex, addToQueue, shuffleQueue,
-    togglePlayback, seek, setSpeed, cycleRepeatMode, setVolume, toggleMute,
+    togglePlayback, seek, cycleRepeatMode, setVolume, toggleMute,
     confirmNext, cancelNext } = audio;
   const [data, setData] = useState<WatchResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -277,11 +277,6 @@ export function WatchPage({
   const nextAvailable = current
     ? player.queueIndex + 1 < player.queue.length
     : Boolean(data.next);
-  const seekAudioBy = (delta: number) => {
-    if (!current) return;
-    const upperBound = duration > 0 ? duration : Number.POSITIVE_INFINITY;
-    seek(Math.max(0, Math.min(upperBound, currentTime + delta)));
-  };
   const shareAudio = async () => {
     const payload = { title: track.title, url: window.location.href };
     if (navigator.share) {
@@ -357,24 +352,6 @@ export function WatchPage({
                 <button
                   type="button"
                   className="icon-button player-nav"
-                  onClick={() => seekAudioBy(-10)}
-                  disabled={!current}
-                  aria-label="Rewind 10 seconds"
-                >
-                  <span aria-hidden="true">-10</span>
-                </button>
-                <button
-                  type="button"
-                  className="icon-button player-nav"
-                  onClick={() => seekAudioBy(10)}
-                  disabled={!current}
-                  aria-label="Forward 10 seconds"
-                >
-                  <span aria-hidden="true">+10</span>
-                </button>
-                <button
-                  type="button"
-                  className="icon-button player-nav"
                   onClick={onOpenQueue}
                   aria-label="Open queue"
                 >
@@ -438,7 +415,6 @@ export function WatchPage({
                 <AudioSettingsDisclosure open={audioSettingsOpen} onToggle={() => setAudioSettingsOpen((value) => !value)}>
                   <AudioSettingsControls
                     player={player}
-                    setSpeed={setSpeed}
                     cycleRepeatMode={cycleRepeatMode}
                     setVolume={setVolume}
                     toggleMute={toggleMute}
@@ -448,7 +424,6 @@ export function WatchPage({
               ) : (
                 <AudioSettingsControls
                   player={player}
-                  setSpeed={setSpeed}
                   cycleRepeatMode={cycleRepeatMode}
                   setVolume={setVolume}
                   toggleMute={toggleMute}
@@ -1770,9 +1745,6 @@ function VideoWatchPage({
           <button type="button" className="player-play video-play" onClick={toggleVideo} aria-label={playing ? 'Pause' : 'Play'}>
             {playing ? <PauseIcon /> : <PlayIcon />}
           </button>
-          <button type="button" className="icon-button video-step" onClick={() => seekVideoBy(-10)} aria-label="Rewind 10 seconds">
-            <span aria-hidden="true">-10</span>
-          </button>
           <div className="video-time">
             <span>{formatClock(currentTime)}</span>
             <div className="video-scrub-wrap">
@@ -1797,9 +1769,6 @@ function VideoWatchPage({
             </div>
             <span>{formatClock(duration)}</span>
           </div>
-          <button type="button" className="icon-button video-step" onClick={() => seekVideoBy(10)} aria-label="Forward 10 seconds">
-            <span aria-hidden="true">+10</span>
-          </button>
           <button type="button" className="icon-button" onClick={() => setMuted((isMuted) => !isMuted)} aria-label={muted ? 'Unmute' : 'Mute'}>
             <VolumeIcon />
           </button>
@@ -1834,6 +1803,14 @@ function VideoWatchPage({
             >
               <span>Autoplay next</span>
               <strong>{autoplayNext ? 'On' : 'Off'}</strong>
+            </button>
+            <button type="button" className="video-menu-row" role="menuitem" onClick={() => seekVideoBy(-10)}>
+              <span>Rewind 10 seconds</span>
+              <strong>-10</strong>
+            </button>
+            <button type="button" className="video-menu-row" role="menuitem" onClick={() => seekVideoBy(10)}>
+              <span>Forward 10 seconds</span>
+              <strong>+10</strong>
             </button>
             <label className="video-menu-row">
               <span>Captions</span>

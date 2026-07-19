@@ -51,7 +51,6 @@ function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
     currentTime: 35,
     duration: 100,
     error: '',
-    speed: 1,
     repeatMode: 'off',
     volume: 1,
     muted: false,
@@ -108,36 +107,7 @@ describe('MiniPlayer', () => {
 });
 
 describe('NowPlayingSheet', () => {
-  it('exposes quick seek controls for the audio player', () => {
-    const seek = vi.fn();
-
-    render(
-      <NowPlayingSheet
-        open
-        player={makePlayer()}
-        playRelative={vi.fn()}
-        togglePlayback={vi.fn()}
-        seek={seek}
-        setSpeed={vi.fn()}
-        cycleRepeatMode={vi.fn()}
-        setVolume={vi.fn()}
-        toggleMute={vi.fn()}
-        confirmNext={vi.fn()}
-        cancelNext={vi.fn()}
-        onClose={vi.fn()}
-        onOpenQueue={vi.fn()}
-      />,
-    );
-
-    fireEvent.click(screen.getByLabelText('Rewind 10 seconds'));
-    expect(seek).toHaveBeenCalledWith(25);
-
-    fireEvent.click(screen.getByLabelText('Forward 10 seconds'));
-    expect(seek).toHaveBeenCalledWith(45);
-  });
-
-  it('exposes speed, repeat, volume, and pending next-track actions', () => {
-    const setSpeed = vi.fn();
+  it('exposes repeat, volume, and pending next-track actions', () => {
     const cycleRepeatMode = vi.fn();
     const setVolume = vi.fn();
     const confirmNext = vi.fn();
@@ -151,7 +121,6 @@ describe('NowPlayingSheet', () => {
         playRelative={vi.fn()}
         togglePlayback={vi.fn()}
         seek={vi.fn()}
-        setSpeed={setSpeed}
         cycleRepeatMode={cycleRepeatMode}
         setVolume={setVolume}
         toggleMute={vi.fn()}
@@ -161,9 +130,6 @@ describe('NowPlayingSheet', () => {
         onOpenQueue={vi.fn()}
       />,
     );
-
-    fireEvent.click(screen.getByText('1.5x'));
-    expect(setSpeed).toHaveBeenCalledWith(1.5);
 
     fireEvent.click(screen.getByLabelText('Repeat off'));
     expect(cycleRepeatMode).toHaveBeenCalledTimes(1);
@@ -192,7 +158,6 @@ describe('NowPlayingSheet', () => {
         playRelative={vi.fn()}
         togglePlayback={vi.fn()}
         seek={vi.fn()}
-        setSpeed={vi.fn()}
         cycleRepeatMode={vi.fn()}
         setVolume={vi.fn()}
         toggleMute={vi.fn()}
@@ -204,11 +169,10 @@ describe('NowPlayingSheet', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Playback settings' }).getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByText('1.5x')).toBeNull();
+    expect(screen.queryByLabelText('Audio volume')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Playback settings' }));
 
-    expect(screen.getByText('1.5x')).toBeTruthy();
     expect(screen.getByLabelText('Audio volume')).toBeTruthy();
     vi.unstubAllGlobals();
   });
@@ -223,7 +187,6 @@ describe('NowPlayingSheet', () => {
         playRelative={vi.fn()}
         togglePlayback={togglePlayback}
         seek={vi.fn()}
-        setSpeed={vi.fn()}
         cycleRepeatMode={vi.fn()}
         setVolume={vi.fn()}
         toggleMute={vi.fn()}

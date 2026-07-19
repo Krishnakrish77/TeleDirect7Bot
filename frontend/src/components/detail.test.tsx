@@ -90,7 +90,6 @@ function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
     currentTime: 0,
     duration: 0,
     error: '',
-    speed: 1,
     repeatMode: 'off',
     volume: 1,
     muted: false,

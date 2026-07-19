@@ -4,8 +4,6 @@ import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 import { LyricsPanel } from './lyrics';
 
-const SPEEDS = [0.75, 1, 1.5, 2];
-
 export function useCompactAudioLayout(): boolean {
   const getValue = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(max-width: 680px)').matches);
   const [compact, setCompact] = useState(getValue);
@@ -24,14 +22,12 @@ export function useCompactAudioLayout(): boolean {
 
 export function AudioSettingsControls({
   player,
-  setSpeed,
   cycleRepeatMode,
   setVolume,
   toggleMute,
   className = '',
 }: {
   player: PlayerState;
-  setSpeed: (speed: number) => void;
   cycleRepeatMode: () => void;
   setVolume: (volume: number) => void;
   toggleMute: () => void;
@@ -39,18 +35,6 @@ export function AudioSettingsControls({
 }) {
   return (
     <div className={`player-settings ${className}`.trim()} aria-label="Playback settings">
-      <div className="speed-controls" aria-label="Playback speed">
-        {SPEEDS.map((speed) => (
-          <button
-            key={speed}
-            type="button"
-            className={player.speed === speed ? 'active' : ''}
-            onClick={() => setSpeed(speed)}
-          >
-            {speed === 0.75 ? '3/4x' : `${speed}x`}
-          </button>
-        ))}
-      </div>
       <button
         type="button"
         className={player.repeatMode === 'off' ? 'icon-button repeat-button' : 'icon-button repeat-button active'}
@@ -223,7 +207,6 @@ export function NowPlayingSheet({
   playRelative,
   togglePlayback,
   seek,
-  setSpeed,
   cycleRepeatMode,
   setVolume,
   toggleMute,
@@ -237,7 +220,6 @@ export function NowPlayingSheet({
   playRelative: (delta: number) => void;
   togglePlayback: (track?: WatchTrack) => void;
   seek: (seconds: number) => void;
-  setSpeed: (speed: number) => void;
   cycleRepeatMode: () => void;
   setVolume: (volume: number) => void;
   toggleMute: () => void;
@@ -252,9 +234,6 @@ export function NowPlayingSheet({
   if (!open || !track) return null;
   const duration = player.duration || track.duration || 0;
   const rangeMax = Math.max(1, Math.round(duration));
-  const seekBy = (delta: number) => {
-    seek(Math.max(0, Math.min(rangeMax, player.currentTime + delta)));
-  };
   return (
     <div className="sheet-layer" role="dialog" aria-modal="true" aria-label="Now playing">
       <button type="button" className="modal-scrim" onClick={onClose} aria-label="Close" />
@@ -287,14 +266,8 @@ export function NowPlayingSheet({
           <button type="button" className="icon-button player-nav" onClick={() => playRelative(-1)} disabled={player.queueIndex <= 0} aria-label="Previous track">
             <SkipBackIcon />
           </button>
-          <button type="button" className="icon-button player-nav" onClick={() => seekBy(-10)} aria-label="Rewind 10 seconds">
-            <span aria-hidden="true">-10</span>
-          </button>
           <button type="button" className="player-play" onClick={() => togglePlayback()} aria-label={player.playing ? 'Pause' : 'Play'}>
             {player.playing ? <PauseIcon /> : <PlayIcon />}
-          </button>
-          <button type="button" className="icon-button player-nav" onClick={() => seekBy(10)} aria-label="Forward 10 seconds">
-            <span aria-hidden="true">+10</span>
           </button>
           <button type="button" className="icon-button player-nav" onClick={() => playRelative(1)} disabled={player.queueIndex + 1 >= player.queue.length} aria-label="Next track">
             <SkipForwardIcon />
@@ -307,7 +280,6 @@ export function NowPlayingSheet({
           <AudioSettingsDisclosure open={settingsOpen} onToggle={() => setSettingsOpen((value) => !value)}>
             <AudioSettingsControls
               player={player}
-              setSpeed={setSpeed}
               cycleRepeatMode={cycleRepeatMode}
               setVolume={setVolume}
               toggleMute={toggleMute}
@@ -316,7 +288,6 @@ export function NowPlayingSheet({
         ) : (
           <AudioSettingsControls
             player={player}
-            setSpeed={setSpeed}
             cycleRepeatMode={cycleRepeatMode}
             setVolume={setVolume}
             toggleMute={toggleMute}

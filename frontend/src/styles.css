@@ -4553,36 +4553,6 @@ img {
   background: rgba(249, 115, 22, 0.13);
 }
 
-.speed-controls {
-  display: inline-flex;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(21, 23, 26, 0.66);
-}
-
-.speed-controls button {
-  min-width: 42px;
-  min-height: 36px;
-  border: 0;
-  border-right: 1px solid var(--line);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 850;
-}
-
-.speed-controls button:last-child {
-  border-right: 0;
-}
-
-.speed-controls button.active {
-  background: rgba(249, 115, 22, 0.18);
-  color: #fdba74;
-}
-
 .compact-action {
   min-height: 38px;
   padding: 0 0.75rem;
@@ -6783,7 +6753,7 @@ img {
   bottom: 0.75rem;
   z-index: 5;
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) repeat(6, auto);
+  grid-template-columns: auto minmax(0, 1fr) repeat(5, auto);
   gap: 0.6rem;
   align-items: center;
   padding: 0.55rem;
@@ -9566,15 +9536,6 @@ select.edit-field-input {
     gap: 0.45rem;
   }
 
-  .audio-watch-settings .speed-controls {
-    width: 100%;
-  }
-
-  .audio-watch-settings .speed-controls button {
-    flex: 1 1 0;
-    min-width: 0;
-  }
-
   .audio-watch-settings .compact-action {
     min-height: 36px;
     padding-inline: 0.6rem;
@@ -9789,15 +9750,6 @@ select.edit-field-input {
     gap: 0.45rem;
   }
 
-  .now-sheet .speed-controls {
-    width: 100%;
-  }
-
-  .now-sheet .speed-controls button {
-    flex: 1 1 0;
-    min-width: 0;
-  }
-
   .now-sheet .audio-settings-disclosure .audio-volume-control {
     display: inline-flex;
     grid-column: 1 / -1;
@@ -9823,7 +9775,7 @@ select.edit-field-input {
     left: 0.45rem;
     right: 0.45rem;
     bottom: 0.45rem;
-    grid-template-columns: auto auto minmax(0, 1fr) repeat(5, auto);
+    grid-template-columns: auto minmax(0, 1fr) repeat(5, auto);
     gap: 0.38rem;
     padding: 0.45rem;
   }
@@ -10084,7 +10036,7 @@ select.edit-field-input {
     left: 0.4rem;
     right: 0.4rem;
     bottom: 0.4rem;
-    grid-template-columns: auto auto minmax(5rem, 1fr) repeat(6, auto);
+    grid-template-columns: auto minmax(5rem, 1fr) repeat(5, auto);
     gap: 0.32rem;
     padding: 0.35rem;
   }
@@ -10280,7 +10232,7 @@ select.edit-field-input {
   }
 
   .video-controls {
-    grid-template-columns: auto auto minmax(0, 1fr) repeat(5, auto);
+    grid-template-columns: auto minmax(0, 1fr) repeat(5, auto);
   }
 
   .video-pip-control {

@@ -43,7 +43,6 @@ function makeAudio(playerOverrides?: Partial<PlayerState>): AudioPlayerHandle {
     shuffleQueue: vi.fn(),
     togglePlayback: vi.fn(),
     seek: vi.fn(),
-    setSpeed: vi.fn(),
     cycleRepeatMode: vi.fn(),
     setVolume: vi.fn(),
     toggleMute: vi.fn(),
@@ -61,7 +60,6 @@ const emptyPlayer: PlayerState = {
   currentTime: 0,
   duration: 0,
   error: '',
-  speed: 1,
   repeatMode: 'off',
   volume: 1,
   muted: false,
@@ -606,16 +604,17 @@ describe('WatchPage video player', () => {
     await waitFor(() => expect(webkitEnterFullscreen).toHaveBeenCalledTimes(1));
   });
 
-  it('supports visible skip controls and mute in the video controls', async () => {
+  it('keeps skip controls in video options and mute in the video controls', async () => {
     const view = renderWatchPage();
 
     await screen.findByRole('heading', { name: 'Pilot' });
     const video = view.container.querySelector('video') as HTMLVideoElement;
 
-    fireEvent.click(screen.getByLabelText('Forward 10 seconds'));
+    fireEvent.click(screen.getByLabelText('More video options'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Forward 10 seconds/ }));
     expect(video.currentTime).toBe(10);
 
-    fireEvent.click(screen.getByLabelText('Rewind 10 seconds'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Rewind 10 seconds/ }));
     expect(video.currentTime).toBe(0);
 
     fireEvent.click(screen.getByLabelText('Mute'));

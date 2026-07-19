@@ -14,7 +14,6 @@ export interface PlayerState {
   currentTime: number;
   duration: number;
   error: string;
-  speed: number;
   repeatMode: RepeatMode;
   volume: number;
   muted: boolean;
@@ -23,7 +22,7 @@ export interface PlayerState {
   queueToast: string;
 }
 
-const SPEED_KEY = 'td:speed';
+const LEGACY_SPEED_KEY = 'td:speed';
 const REPEAT_KEY = 'td:repeat';
 const VOLUME_KEY = 'td:volume';
 const MUTED_KEY = 'td:muted';
@@ -80,10 +79,10 @@ function readRepeatMode(): RepeatMode {
 }
 
 function initialPlayerState(): PlayerState {
-  // Music should start at normal speed. Remove the legacy persisted setting
-  // so a past 0.75x choice cannot unexpectedly affect a later session.
+  // Playback-rate controls do not belong in music playback. Clear the old
+  // preference so a prior version can never affect a new listening session.
   try {
-    localStorage.removeItem(SPEED_KEY);
+    localStorage.removeItem(LEGACY_SPEED_KEY);
   } catch (_) {
     // Storage is optional in private or quota-limited browsing modes.
   }
@@ -95,7 +94,6 @@ function initialPlayerState(): PlayerState {
     currentTime: 0,
     duration: 0,
     error: '',
-    speed: 1,
     repeatMode: readRepeatMode(),
     volume: clamp(readNumber(VOLUME_KEY, DEFAULT_VOLUME), 0, 1),
     muted: localStorage.getItem(MUTED_KEY) === '1',
@@ -195,7 +193,6 @@ function persistNowPlaying(player: PlayerState): void {
       queueIndex: player.queueIndex,
       currentTime: Math.floor(player.currentTime),
       duration: Math.floor(player.duration || player.track.duration || 0),
-      speed: player.speed,
       repeatMode: player.repeatMode,
       volume: player.volume,
       muted: player.muted,
@@ -263,7 +260,7 @@ export function useAudioPlayer() {
   const applyOutputSettings = useCallback((audio: HTMLAudioElement | null, fadeVolume?: number) => {
     if (!audio) return;
     const current = playerRef.current;
-    audio.playbackRate = current.speed;
+    audio.playbackRate = 1;
     audio.muted = current.muted;
     audio.volume = current.muted ? 0 : clamp(fadeVolume ?? current.volume, 0, 1);
   }, []);
@@ -335,7 +332,7 @@ export function useAudioPlayer() {
     try {
       navigator.mediaSession.setPositionState({
         duration,
-        playbackRate: state.speed,
+        playbackRate: 1,
         position: clamp(state.currentTime, 0, duration),
       });
     } catch (_) {
@@ -636,7 +633,6 @@ export function useAudioPlayer() {
       nextTrack: null,
       nextCountdown: NEXT_COUNTDOWN_SECONDS,
       queueToast: '',
-      speed: 1,
     }));
   }, [cancelPlaybackAttempt, setMediaSessionPlaybackState]);
 
@@ -819,13 +815,6 @@ export function useAudioPlayer() {
   const seek = useCallback((seconds: number) => {
     seekActiveAudioTo(seconds);
   }, [seekActiveAudioTo]);
-
-  const setSpeed = useCallback((speed: number) => {
-    const next = clamp(speed, 0.5, 3);
-    setPlayer((state) => ({ ...state, speed: next }));
-    if (audioRef.current) audioRef.current.playbackRate = next;
-    if (bufferRef.current) bufferRef.current.playbackRate = next;
-  }, []);
 
   const setRepeatMode = useCallback((mode: RepeatMode) => {
     try {
@@ -1109,7 +1098,7 @@ export function useAudioPlayer() {
   useEffect(() => {
     persistNowPlaying(player);
     setMediaSessionMetadata(player);
-  }, [player.queue, player.queueIndex, player.repeatMode, player.speed, player.track, player.volume, player.muted, setMediaSessionMetadata]);
+  }, [player.queue, player.queueIndex, player.repeatMode, player.track, player.volume, player.muted, setMediaSessionMetadata]);
 
   useEffect(() => {
     if (!player.track || !player.playing) return undefined;
@@ -1128,7 +1117,7 @@ export function useAudioPlayer() {
 
   useEffect(() => {
     setMediaSessionPosition(player);
-  }, [player.duration, player.speed, player.track, setMediaSessionPosition]);
+  }, [player.duration, player.track, setMediaSessionPosition]);
 
   useEffect(() => {
     if (!player.nextTrack) return undefined;
@@ -1164,7 +1153,6 @@ export function useAudioPlayer() {
     shuffleQueue,
     togglePlayback,
     seek,
-    setSpeed,
     cycleRepeatMode,
     setVolume,
     toggleMute,
