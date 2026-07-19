@@ -160,7 +160,7 @@ function DetailHero({
             <Button asChild size="lg"><a href={playHref}><PlayIcon /><span>Play</span></a></Button>
           )}
           {trailerKey && (
-            <button ref={trailerButtonRef} type="button" className="secondary-action" onClick={() => setTrailerOpen(true)}><PlayIcon /><span>Trailer</span></button>
+            <Button ref={trailerButtonRef} type="button" variant="secondary" onClick={() => setTrailerOpen(true)}><PlayIcon /><span>Trailer</span></Button>
           )}
           {onToggleSaved && (
             <Button type="button" variant="secondary" className={saved ? 'saved-action' : ''} onClick={onToggleSaved}>
@@ -245,9 +245,10 @@ function MarkWatchedAction({
 
   if (!keys.length) return null;
   return (
-    <button
+    <Button
       type="button"
-      className={watched ? 'secondary-action detail-watched-action watched' : 'secondary-action detail-watched-action'}
+      variant="secondary"
+      className={watched ? 'detail-watched-action watched' : 'detail-watched-action'}
       onClick={handleMarkWatched}
       disabled={watched}
       title={watched ? watchedLabel : label}
@@ -255,7 +256,7 @@ function MarkWatchedAction({
     >
       <CheckIcon />
       <span>{watched ? watchedLabel : label}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -566,16 +567,17 @@ function SeriesDetail({
               </select>
             )}
             {downloadTargets.length > 0 && (
-              <button
+              <Button
                 type="button"
-                className="secondary-action season-download-all"
+                variant="secondary"
+                className="season-download-all"
                 onClick={handleDownloadAll}
                 disabled={Boolean(downloadBatch)}
                 aria-label="Download all shown episodes"
               >
                 <DownloadIcon />
                 <span>{downloadButtonLabel}</span>
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -785,21 +787,21 @@ function AlbumHero({
         {overview && <p className="album-overview">{overview}</p>}
         <div className="hero-actions">
           {onPlayAll && (
-            <button type="button" className="primary-action" onClick={onPlayAll}>
+            <Button type="button" onClick={onPlayAll}>
               <PlayIcon />
               <span>Play all</span>
-            </button>
+            </Button>
           )}
           {onShuffle && (
-            <button type="button" className="secondary-action" onClick={onShuffle}>
+            <Button type="button" variant="secondary" onClick={onShuffle}>
               <ShuffleIcon />
               <span>Shuffle</span>
-            </button>
+            </Button>
           )}
-          <button type="button" className={saved ? 'secondary-action saved-action' : 'secondary-action'} onClick={onToggleSaved}>
+          <Button type="button" variant="secondary" className={saved ? 'saved-action' : ''} onClick={onToggleSaved}>
             {saved ? <CheckIcon /> : <BookmarkIcon />}
             <span>{saved ? 'Saved' : 'Save'}</span>
-          </button>
+          </Button>
         </div>
       </div>
     </section>
@@ -957,8 +959,10 @@ function TrackList({
               <span>{subtitleForTrack(track)}</span>
             </a>
             <span className="track-duration">{track.durationLabel}</span>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               className="icon-button"
               onClick={(event) => {
                 event.preventDefault();
@@ -968,9 +972,11 @@ function TrackList({
               aria-label={active && player.playing ? `Pause ${track.title}` : `Play ${track.title}`}
             >
               {active && player.playing ? <PauseIcon /> : <PlayIcon />}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               className="icon-button"
               onClick={(event) => {
                 event.preventDefault();
@@ -980,9 +986,11 @@ function TrackList({
               aria-label={`Play ${track.title} next`}
             >
               <ListIcon />
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               className="icon-button"
               onClick={(event) => {
                 event.preventDefault();
@@ -992,10 +1000,12 @@ function TrackList({
               aria-label={`Add ${track.title} to queue`}
             >
               <span aria-hidden="true">+</span>
-            </button>
+            </Button>
             {onAddToPlaylist && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 className="icon-button"
                 onClick={(event) => {
                   event.preventDefault();
@@ -1005,7 +1015,7 @@ function TrackList({
                 aria-label={`Add ${track.title} to playlist`}
               >
                 <ListPlusIcon />
-              </button>
+              </Button>
             )}
           </div>
         );
