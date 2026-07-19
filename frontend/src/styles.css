@@ -677,33 +677,44 @@ img {
   min-height: 40px;
 }
 
+/* Legacy action buttons (audio/watch pages) — kept token-matched to the
+   shadcn Button component so primary is brand-orange and secondary is panel
+   everywhere, instead of the old white/teal look that differed per page. */
 .primary-action,
 .secondary-action {
-  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 40px;
   padding: 0 1rem;
+  border: 1px solid transparent;
   border-radius: 8px;
-  font-weight: 800;
+  font-weight: 600;
+  transition: background-color 0.15s, border-color 0.15s;
 }
 
 .primary-action {
-  background: #fff;
-  color: #0b0c0e;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(249, 115, 22, 0.24);
 }
 
 .primary-action:hover,
 .primary-action:focus-visible {
+  background: #ea580c;
   outline: none;
 }
 
 .secondary-action {
   border-color: var(--line-strong);
-  background: rgba(21, 23, 26, 0.72);
+  background: var(--panel);
+  color: var(--text);
 }
 
 .secondary-action:hover,
 .secondary-action:focus-visible {
-  border-color: rgba(20, 184, 166, 0.56);
-  background: rgba(20, 184, 166, 0.16);
+  background: var(--panel-strong);
   outline: none;
 }
 
