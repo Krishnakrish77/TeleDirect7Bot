@@ -1088,20 +1088,19 @@ function TrackList({
       {tracks.map((track, index) => {
         const active = player.track?.key === track.key;
         return (
-          <a
+          <div
             key={track.key}
             className={[
               'track-row',
               onAddToPlaylist ? 'has-playlist' : '',
               active ? 'active' : '',
             ].filter(Boolean).join(' ')}
-            href={track.appHref}
           >
             <span className="track-number">{track.trackNumber || index + 1}</span>
-            <span className="track-title">
+            <a className="track-title" href={track.appHref}>
               <strong>{track.title}</strong>
               <span>{subtitleForTrack(track)}</span>
-            </span>
+            </a>
             <span className="track-duration">{track.durationLabel}</span>
             <button
               type="button"
@@ -1153,7 +1152,7 @@ function TrackList({
                 <ListPlusIcon />
               </button>
             )}
-          </a>
+          </div>
         );
       })}
     </div>

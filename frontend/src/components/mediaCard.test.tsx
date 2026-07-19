@@ -123,7 +123,8 @@ describe('MediaCard', () => {
     expect(screen.getByText('Castle')).toBeTruthy();
     expect(screen.getByLabelText('Castle has new episode S01E02 · Nanny McDead')).toBeTruthy();
     expect(screen.getByText('12 episodes - 1 season')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open Castle from poster' }).getAttribute('href')).toBe('/app/series/castle');
+    expect(document.querySelector('.media-card-poster-link')?.getAttribute('tabindex')).toBe('-1');
+    expect(screen.getByRole('link', { name: /Castle/ }).getAttribute('href')).toBe('/app/series/castle');
   });
 
   it('does not duplicate the new episode fallback label', () => {
@@ -269,8 +270,9 @@ describe('MediaCard', () => {
   it('opens inline trailer previews only when a trailer key is present', () => {
     render(<MediaCard card={card({ trailerKey: 'abc123' })} saved={false} onToggleSaved={vi.fn()} />);
 
-    const posterLink = screen.getByRole('link', { name: 'Open Kalki 2898-AD from poster' });
-    expect(posterLink.getAttribute('aria-hidden')).toBeNull();
+    const posterLink = document.querySelector<HTMLAnchorElement>('.media-card-poster-link');
+    expect(posterLink?.getAttribute('aria-hidden')).toBe('true');
+    expect(posterLink?.getAttribute('tabindex')).toBe('-1');
 
     const previewButton = screen.getByRole('button', { name: /Preview Kalki/i });
     expect(previewButton.closest('.poster-frame')).toBeTruthy();
@@ -302,10 +304,11 @@ describe('MediaCard', () => {
       />,
     );
 
-    const posterLink = screen.getByRole('link', { name: 'Open Kalki 2898-AD from poster' });
+    const posterLink = document.querySelector<HTMLAnchorElement>('.media-card-poster-link');
     const textLink = Array.from(document.querySelectorAll<HTMLAnchorElement>('.media-card-link'))[0];
-    expect(posterLink.getAttribute('aria-disabled')).toBe('true');
-    expect(posterLink.getAttribute('tabindex')).toBe('-1');
+    expect(posterLink).toBeTruthy();
+    expect(posterLink?.getAttribute('aria-disabled')).toBe('true');
+    expect(posterLink?.getAttribute('tabindex')).toBe('-1');
     expect(textLink.getAttribute('aria-disabled')).toBe('true');
     expect(textLink.getAttribute('tabindex')).toBe('-1');
     expect(fireEvent.click(textLink)).toBe(false);

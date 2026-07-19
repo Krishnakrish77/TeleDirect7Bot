@@ -32,14 +32,14 @@ const seriesItem: WatchlistItem = {
   subtitle: '3 seasons',
 };
 
-const audioItem: WatchlistItem = {
-  item_id: 'audio:theme',
-  url: '/watch/theme42',
-  title: 'Theme',
+const videoItem: WatchlistItem = {
+  item_id: 'video:trailer',
+  url: '/watch/trailer42',
+  title: 'Trailer',
   year: 2023,
-  poster: '/thumb/theme.jpg',
-  kind: 'audio',
-  subtitle: 'Anirudh',
+  poster: '/thumb/trailer.jpg',
+  kind: 'video',
+  subtitle: 'Featurette',
 };
 
 const response: WatchlistPageResponse = {
@@ -97,7 +97,7 @@ describe('WatchlistPage', () => {
     render(
       <WatchlistPage
         user={user}
-        data={{ ...response, items: [movieItem, seriesItem, audioItem] }}
+        data={{ ...response, items: [movieItem, seriesItem, videoItem] }}
         loading={false}
         error=""
         onToggleSaved={vi.fn()}
@@ -105,14 +105,14 @@ describe('WatchlistPage', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Music/i }));
-    expect(primaryCardLink('Theme')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Videos/i }));
+    expect(primaryCardLink('Trailer')).toBeTruthy();
     expect(primaryCardLink('Kalki')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /All/i }));
     fireEvent.change(screen.getByPlaceholderText('Search saved titles'), { target: { value: 'dark' } });
     expect(primaryCardLink('Dark')).toBeTruthy();
-    expect(primaryCardLink('Theme')).toBeNull();
+    expect(primaryCardLink('Trailer')).toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText('Search saved titles'), { target: { value: '' } });
     fireEvent.click(screen.getByRole('combobox', { name: 'Sort' }));
@@ -120,7 +120,7 @@ describe('WatchlistPage', () => {
     const titles = primaryCardLinks().map((link) => link.textContent || '');
     expect(titles[0]).toContain('Dark');
     expect(titles[1]).toContain('Kalki');
-    expect(titles[2]).toContain('Theme');
+    expect(titles[2]).toContain('Trailer');
   });
 });
 

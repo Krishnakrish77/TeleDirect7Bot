@@ -141,9 +141,9 @@ function MediaCardBase({
         <a
           className="media-card-poster-link"
           href={card.href}
-          aria-label={`Open ${display.title} from poster`}
+          aria-hidden="true"
           aria-disabled={interactionDisabled || undefined}
-          tabIndex={interactionDisabled ? -1 : undefined}
+          tabIndex={-1}
           onClick={preventDisabledNavigation}
         >
           <span className="poster-wrap">

@@ -8,7 +8,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
-type WatchlistView = 'all' | 'movies' | 'series' | 'music' | 'videos';
+type WatchlistView = 'all' | 'movies' | 'series' | 'videos';
 type WatchlistSort = 'saved' | 'title' | 'year';
 
 function watchHref(url: string): string {
@@ -17,21 +17,17 @@ function watchHref(url: string): string {
 }
 
 function itemType(kind: string): HubCard['type'] {
-  if (kind === 'movie' || kind === 'series' || kind === 'album') return kind;
-  if (kind === 'audio') return 'track';
+  if (kind === 'movie' || kind === 'series') return kind;
   return 'item';
 }
 
 function itemView(item: WatchlistItem): WatchlistView {
   if (item.kind === 'movie') return 'movies';
   if (item.kind === 'series') return 'series';
-  if (item.kind === 'album' || item.kind === 'audio') return 'music';
   return 'videos';
 }
 
 function itemKindLabel(item: WatchlistItem): string {
-  if (item.kind === 'audio') return 'Music';
-  if (item.kind === 'album') return 'Album';
   if (!item.kind) return 'Saved';
   return item.kind.charAt(0).toUpperCase() + item.kind.slice(1);
 }
@@ -57,7 +53,6 @@ function filterWatchlistItems(
 
 export function watchlistCard(item: WatchlistItem): HubCard {
   const href = watchHref(item.url);
-  const isMusic = item.kind === 'album' || item.kind === 'audio';
   const progress = item.cw_pct ? Math.round(item.cw_pct * 100) : 0;
   return {
     type: itemType(item.kind),
@@ -65,7 +60,7 @@ export function watchlistCard(item: WatchlistItem): HubCard {
     title: item.title,
     subtitle: item.subtitle || '',
     year: item.year ?? null,
-    mediaKind: isMusic ? 'audio' : 'video',
+    mediaKind: 'video',
     posterUrl: item.poster,
     thumbUrl: item.poster,
     backdropUrl: item.poster,
@@ -86,9 +81,9 @@ export function watchlistCard(item: WatchlistItem): HubCard {
     streamHref: '',
     watchKey: '',
     progressPct: progress,
-    eyebrow: item.kind === 'audio' ? 'Music' : item.kind.charAt(0).toUpperCase() + item.kind.slice(1),
+    eyebrow: item.kind.charAt(0).toUpperCase() + item.kind.slice(1),
     badge: progress ? `${progress}%` : '',
-    aspect: isMusic ? 'square' : 'poster',
+    aspect: 'poster',
   };
 }
 
@@ -112,7 +107,7 @@ export function WatchlistPage({
   const [sort, setSort] = useState<WatchlistSort>('saved');
   const items = data?.items ?? [];
   const counts = useMemo(() => {
-    const next: Record<WatchlistView, number> = { all: items.length, movies: 0, series: 0, music: 0, videos: 0 };
+    const next: Record<WatchlistView, number> = { all: items.length, movies: 0, series: 0, videos: 0 };
     for (const item of items) {
       next[itemView(item)] += 1;
     }
@@ -142,7 +137,7 @@ export function WatchlistPage({
         <div>
           <p className="eyebrow">Saved</p>
           <h1>Watchlist</h1>
-          <p>Your personal shelf for the next great watch or listen.</p>
+          <p>Your personal shelf for the next great watch.</p>
         </div>
         <div className="watchlist-hero-stats" aria-label="Watchlist summary">
           <strong>{items.length.toLocaleString()}</strong>
@@ -192,7 +187,6 @@ export function WatchlistPage({
                   ['all', 'All'],
                   ['movies', 'Movies'],
                   ['series', 'Series'],
-                  ['music', 'Music'],
                   ['videos', 'Videos'],
                 ].map(([value, label]) => (
                   <Button

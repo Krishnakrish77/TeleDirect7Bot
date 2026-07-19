@@ -19,10 +19,32 @@ export function PrimaryNav({
 }: {
   user: User | null;
   activeView: ViewValue | '';
-  activeSection: 'home' | 'movies' | 'series' | 'music' | 'live-tv' | 'watchlist' | 'liked-songs' | '';
+  activeSection: 'home' | 'movies' | 'series' | 'music' | 'live-tv' | 'watchlist' | 'liked-songs' | 'playlists' | 'stats' | '';
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const moreActive = ['live-tv', 'watchlist', 'liked-songs'].includes(activeSection);
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  const moreActive = ['series', 'live-tv', 'watchlist', 'liked-songs', 'playlists', 'stats'].includes(activeSection);
+
+  useEffect(() => {
+    if (!moreOpen) return undefined;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!moreMenuRef.current?.contains(target) && !moreButtonRef.current?.contains(target)) setMoreOpen(false);
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMoreOpen(false);
+        moreButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePress);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [moreOpen]);
   return (
     <nav className="primary-nav" aria-label="Primary">
       <a className={activeSection === 'home' ? 'active' : ''} href="/app">
@@ -33,7 +55,7 @@ export function PrimaryNav({
         <FilmIcon />
         <span>Movies</span>
       </a>
-      <a className={activeView === 'series' && activeSection === 'series' ? 'active' : ''} href="/app?view=series">
+      <a className={activeView === 'series' && activeSection === 'series' ? 'mobile-secondary active' : 'mobile-secondary'} href="/app?view=series">
         <TvIcon />
         <span>Series</span>
       </a>
@@ -59,21 +81,24 @@ export function PrimaryNav({
       )}
       <button
         type="button"
+        ref={moreButtonRef}
         className={moreActive ? 'mobile-nav-more active' : 'mobile-nav-more'}
         aria-expanded={moreOpen}
         aria-controls="mobile-nav-more-sheet"
+        aria-haspopup="menu"
         onClick={() => setMoreOpen((open) => !open)}
       >
         <ListIcon />
         <span>More</span>
       </button>
       {moreOpen && (
-        <div className="mobile-nav-sheet" id="mobile-nav-more-sheet" role="dialog" aria-label="More navigation">
-          <a href="/app/live-tv" onClick={() => setMoreOpen(false)}><BroadcastIcon /><span>Live TV</span></a>
-          {user && <a href="/app/watchlist" onClick={() => setMoreOpen(false)}><BookmarkIcon /><span>Watchlist</span></a>}
-          {user && <a href="/app/liked-songs" onClick={() => setMoreOpen(false)}><HeartIcon /><span>Liked Songs</span></a>}
-          {user && <a href="/app/playlists" onClick={() => setMoreOpen(false)}><ListIcon /><span>Playlists</span></a>}
-          {user && <a href="/app/stats" onClick={() => setMoreOpen(false)}><ChartIcon /><span>Stats</span></a>}
+        <div ref={moreMenuRef} className="mobile-nav-sheet" id="mobile-nav-more-sheet" role="menu" aria-label="More navigation">
+          <a href="/app?view=series" role="menuitem" onClick={() => setMoreOpen(false)}><TvIcon /><span>Series</span></a>
+          <a href="/app/live-tv" role="menuitem" onClick={() => setMoreOpen(false)}><BroadcastIcon /><span>Live TV</span></a>
+          {user && <a href="/app/watchlist" role="menuitem" onClick={() => setMoreOpen(false)}><BookmarkIcon /><span>Watchlist</span></a>}
+          {user && <a href="/app/liked-songs" role="menuitem" onClick={() => setMoreOpen(false)}><HeartIcon /><span>Liked Songs</span></a>}
+          {user && <a href="/app/playlists" role="menuitem" onClick={() => setMoreOpen(false)}><ListIcon /><span>Playlists</span></a>}
+          {user && <a href="/app/stats" role="menuitem" onClick={() => setMoreOpen(false)}><ChartIcon /><span>Stats</span></a>}
         </div>
       )}
     </nav>

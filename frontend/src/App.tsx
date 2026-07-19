@@ -245,6 +245,10 @@ function App() {
       ? 'liked-songs'
       : route.kind === 'live-tv'
         ? 'live-tv'
+        : route.kind === 'playlists' || route.kind === 'playlist'
+          ? 'playlists'
+          : route.kind === 'stats'
+            ? 'stats'
         : isHubRoute
           ? (activeView === 'movies' || activeView === 'series' || activeView === 'music' ? activeView : 'home')
           : '';

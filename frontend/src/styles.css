@@ -4937,6 +4937,12 @@ img {
   min-width: 0;
 }
 
+.track-title:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
 .track-title strong,
 .track-title span,
 .mini-track strong,
@@ -8506,7 +8512,7 @@ select.edit-field-input {
     font: inherit;
     font-size: 0.68rem;
     font-weight: 800;
-    min-width: 4.6rem;
+    min-width: 0;
   }
 
   .primary-nav .mobile-secondary {
