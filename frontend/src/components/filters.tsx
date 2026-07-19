@@ -16,19 +16,43 @@ function optionLabel(options: FilterOption[], value: string) {
   return options.find((option) => option.value === value)?.label || '';
 }
 
-function SelectControl({ control, className = '' }: { control: FilterControl; className?: string }) {
+function SelectControl({ control, className = '', compact = false }: { control: FilterControl; className?: string; compact?: boolean }) {
+  const options = (
+    <SelectContent>
+      {control.options.map((option) => (
+        <SelectItem key={option.value || 'any'} value={option.value || '__any'}>{option.label}</SelectItem>
+      ))}
+    </SelectContent>
+  );
+  const onValueChange = (value: string) => control.onChange(value === '__any' ? '' : value);
+
+  // Compact pill (browse bar): one control reading the field name until a value
+  // is picked, then the value — no redundant "Year Any" prefix. Highlights when
+  // a value is active.
+  if (compact) {
+    const active = Boolean(control.value);
+    return (
+      <Select value={control.value || undefined} onValueChange={onValueChange}>
+        <SelectTrigger
+          className={['filter-pill', active ? 'active' : '', className].filter(Boolean).join(' ')}
+          aria-label={control.label}
+        >
+          <SelectValue placeholder={control.label} />
+        </SelectTrigger>
+        {options}
+      </Select>
+    );
+  }
+
+  // Full layout (Filters page): labelled row with room to breathe.
   return (
     <label className={['filter-select-control', className].filter(Boolean).join(' ')}>
       <span>{control.label}</span>
-      <Select value={control.value || undefined} onValueChange={(value) => control.onChange(value === '__any' ? '' : value)}>
+      <Select value={control.value || undefined} onValueChange={onValueChange}>
         <SelectTrigger className="filter-select-trigger" aria-label={control.label}>
           <SelectValue placeholder="Any" />
         </SelectTrigger>
-        <SelectContent>
-          {control.options.map((option) => (
-            <SelectItem key={option.value || 'any'} value={option.value || '__any'}>{option.label}</SelectItem>
-          ))}
-        </SelectContent>
+        {options}
       </Select>
     </label>
   );
@@ -196,13 +220,13 @@ export function FilterBar({
       {/* Inline controls: Year / Quality / Genre / Tag — desktop only */}
       <div className="filter-inline-controls" aria-label="Advanced filters">
         {metadataControls.map((control) => (
-          <SelectControl key={control.id} control={control} />
+          <SelectControl key={control.id} control={control} compact />
         ))}
       </div>
 
       {/* Right side: Sort + Reset (desktop) or Sort + Filters link (mobile) */}
       <div className="filter-action-row">
-        <SelectControl control={sortControl} className="filter-sort-control" />
+        <SelectControl control={sortControl} className="filter-sort-control" compact />
         {hasFilters && (
           <Button className="filter-clear-button" variant="outline" size="sm" type="button" onClick={() => clearAll()}>
             Reset
