@@ -377,6 +377,32 @@ class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.episode_tmdb_vote_count, 12)
         self.assertGreater(item.episode_tmdb_vote_checked_at, 0)
 
+    async def test_episode_metadata_does_not_map_missing_later_season_to_season_one(self):
+        item = video_item(
+            message_id=204,
+            title="JUJUTSU KAISEN S03E01",
+            year=None,
+            file_name="JUJUTSU.KAISEN.S03E01.mkv",
+            movie_key="",
+            series_key="jujutsu-kaisen",
+            series_title="JUJUTSU KAISEN",
+            season=3,
+            episode=1,
+            tmdb_id=95479,
+            tmdb_kind="tv",
+        )
+
+        with (
+            patch.object(media_index.tmdb, "fetch_season", new=AsyncMock(return_value=None)) as fetch_season,
+            patch.object(media_index, "_resolve_absolute_episode", new=AsyncMock()) as resolve_absolute,
+        ):
+            changed = await media_index._fill_episode_metadata(item)
+
+        self.assertFalse(changed)
+        fetch_season.assert_awaited_once_with(95479, 3)
+        resolve_absolute.assert_not_awaited()
+        self.assertEqual(item.episode_title, "")
+
     def test_episode_rating_serialization_round_trip(self):
         item = video_item(
             episode_tmdb_vote_average=7.4,

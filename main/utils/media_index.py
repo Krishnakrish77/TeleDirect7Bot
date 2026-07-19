@@ -3030,9 +3030,19 @@ async def _fill_episode_metadata(item: HubItem) -> bool:
     payload = await tmdb.fetch_season(item.tmdb_id, item.season)
     if payload:
         ep = tmdb.episode_from_season(payload, item.episode)
-    if ep is None:
-        # Fallback to absolute episode numbering.
-        ep = await _resolve_absolute_episode(item.tmdb_id, item.episode)
+    if ep is None and payload:
+        # Only fall back when TMDB did return the requested season but the
+        # release uses an unusually large, absolute episode number.  A
+        # missing season must never turn an explicit S03E01 into S01E01:
+        # resolving ``1`` as an absolute episode would silently stamp season
+        # one's title and artwork on every later season.
+        episode_numbers = [
+            int(candidate.get("episode_number") or 0)
+            for candidate in (payload.get("episodes") or [])
+            if str(candidate.get("episode_number") or "").isdigit()
+        ]
+        if episode_numbers and item.episode > max(episode_numbers):
+            ep = await _resolve_absolute_episode(item.tmdb_id, item.episode)
     if not ep:
         return False
     new_title = (ep.get("name") or "").strip()
