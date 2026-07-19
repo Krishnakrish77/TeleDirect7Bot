@@ -3,7 +3,7 @@ import importlib
 import os
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 
 os.environ.setdefault("API_ID", "1")
@@ -16,6 +16,7 @@ from main.server.spa_routes import (
     _app_download_redirect,
     _budget_home_shelves,
     _compact_hub_card_payload,
+    _home_recommendation_shelf,
     _hub_card,
     _home_shelf_limit,
     _related_rows,
@@ -26,6 +27,7 @@ from main.utils import media_index
 from main.utils.hub_query import HubItem, MovieGroup, SeriesGroup
 
 hub_routes = importlib.import_module("main.server.hub_routes")
+spa_routes = importlib.import_module("main.server.spa_routes")
 admin_routes = importlib.import_module("main.server.admin_routes")
 watchlist_routes = importlib.import_module("main.server.watchlist_routes")
 
@@ -972,6 +974,50 @@ class SpaHubPayloadTest(unittest.TestCase):
             self.assertEqual(_home_shelf_limit(), 12)
         with patch.dict(os.environ, {"HUB_HOME_SHELVES": "bad"}):
             self.assertEqual(_home_shelf_limit(), 7)
+
+
+class HomeRecommendationShelfTest(unittest.IsolatedAsyncioTestCase):
+    async def test_reuses_one_profile_for_rows_and_card_reasons(self):
+        profile = {"seed_genres": {"Drama": 4.0}}
+        dismissed = {(10, "movie")}
+        rec_items = [object()]
+        personal_shelves = [{"name": "Because you like Drama", "items": [object()]}]
+
+        with (
+            patch.object(
+                spa_routes.rec_engine,
+                "_collect_signal_profile",
+                new=AsyncMock(return_value=profile),
+            ) as collect_profile,
+            patch.object(
+                spa_routes.rec_engine.dismissed_store,
+                "get_dismissed_ids",
+                new=AsyncMock(return_value=dismissed),
+            ) as get_dismissed,
+            patch.object(
+                spa_routes.rec_engine,
+                "get_recommendations",
+                new=AsyncMock(return_value=rec_items),
+            ) as get_recommendations,
+            patch.object(
+                spa_routes.rec_engine,
+                "get_personal_shelves",
+                new=AsyncMock(return_value=personal_shelves),
+            ) as get_personal_shelves,
+            patch.object(
+                spa_routes.rec_engine,
+                "get_recommendation_reasons",
+                new=AsyncMock(return_value=["Because you like Drama"]),
+            ) as get_reasons,
+        ):
+            result = await _home_recommendation_shelf(7)
+
+        self.assertEqual(result, (rec_items, personal_shelves, ["Because you like Drama"]))
+        collect_profile.assert_awaited_once_with(7)
+        get_dismissed.assert_awaited_once_with(7)
+        get_recommendations.assert_awaited_once_with(7, profile=profile, dismissed=dismissed)
+        get_personal_shelves.assert_awaited_once_with(7, profile=profile, dismissed=dismissed)
+        get_reasons.assert_awaited_once_with(7, rec_items, profile=profile)
 
 
 if __name__ == "__main__":

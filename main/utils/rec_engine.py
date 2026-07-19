@@ -104,21 +104,18 @@ async def _collect_signal_profile(user_id: int) -> dict:
     )
 
     seeds: List[Tuple[int, str]] = []
+    seed_weights: Counter = Counter()
     seen_seed_tmdb: set[TmdbKey] = set()
     seed_genres: Counter = Counter()
     negative_genres: Counter = Counter()
     exclude_tmdb: set[TmdbKey] = set()
     liked_tmdb: set[TmdbKey] = set()
     partial_tmdb: set[TmdbKey] = set()
-    # Only completed watches may feed "Because you watched ..." copy.
-    recent_titles: list[str] = []
-
     def add_seed(
         item,
         weight: float,
         *,
         exclude: bool = True,
-        include_recent_title: bool = False,
     ) -> None:
         tid, kind = _tmdb_for_item(item)
         if not tid:
@@ -128,18 +125,15 @@ async def _collect_signal_profile(user_id: int) -> dict:
         if (tid, kind) not in seen_seed_tmdb:
             seen_seed_tmdb.add((tid, kind))
             seeds.append((tid, kind))
+        seed_weights[(tid, kind)] += weight
         for genre in getattr(item, "tmdb_genres", None) or []:
             seed_genres[genre] += weight
-        if include_recent_title:
-            title = getattr(item, "series_title", "") or getattr(item, "title", "")
-            if title and len(recent_titles) < 4:
-                recent_titles.append(title)
 
     for index, entry in enumerate(history):
         item = _item_for_cw_key(entry.get("cw_key", ""))
         play_count = min(5, int(entry.get("play_count") or 1))
         recency = max(0.25, 1.0 - (index * 0.035))
-        add_seed(item, (2.2 + play_count * 0.35) * recency, include_recent_title=True)
+        add_seed(item, (2.2 + play_count * 0.35) * recency)
 
     for key, entry in list(continue_map.items())[:40]:
         item = _item_for_cw_key(key)
@@ -175,13 +169,15 @@ async def _collect_signal_profile(user_id: int) -> dict:
                 negative_genres[genre] += 3.0
 
     return {
-        "seeds": seeds[:_MAX_SEEDS],
+        # TMDB calls are deliberately capped.  Select the strongest distinct
+        # signals rather than whichever source happened to be read first: a
+        # large watch history must not crowd out an explicit like.
+        "seeds": sorted(seeds, key=lambda key: seed_weights[key], reverse=True)[:_MAX_SEEDS],
         "seed_genres": seed_genres,
         "negative_genres": negative_genres,
         "exclude_tmdb": exclude_tmdb,
         "liked_tmdb": liked_tmdb,
         "partial_tmdb": partial_tmdb,
-        "recent_titles": recent_titles,
     }
 
 
@@ -260,7 +256,12 @@ def _rank_candidate_cards(candidates: List[Tuple[int, str, int]], profile: dict)
     return selected
 
 
-async def get_recommendations(user_id: int) -> Optional[List]:
+async def get_recommendations(
+    user_id: int,
+    *,
+    profile: Optional[dict] = None,
+    dismissed: Optional[set[TmdbKey]] = None,
+) -> Optional[List]:
     """Return up to 12 catalogue cards, or None if nothing available."""
     if not tmdb.is_configured():
         return None
@@ -276,10 +277,13 @@ async def get_recommendations(user_id: int) -> Optional[List]:
         # next path regenerates rather than paying this dead-cache miss every load.
         await rec_store.clear_cached(user_id)
 
-    profile, dismissed = await asyncio.gather(
-        _collect_signal_profile(user_id),
-        dismissed_store.get_dismissed_ids(user_id),
-    )
+    if profile is None or dismissed is None:
+        collected_profile, collected_dismissed = await asyncio.gather(
+            _collect_signal_profile(user_id),
+            dismissed_store.get_dismissed_ids(user_id),
+        )
+        profile = profile if profile is not None else collected_profile
+        dismissed = dismissed if dismissed is not None else collected_dismissed
     seeds = profile["seeds"]
     if not seeds:
         return None
@@ -297,17 +301,24 @@ async def get_recommendations(user_id: int) -> Optional[List]:
     return None
 
 
-async def get_personal_shelves(user_id: int, limit: int = 18) -> list[dict]:
-    profile, dismissed = await asyncio.gather(
-        _collect_signal_profile(user_id),
-        dismissed_store.get_dismissed_ids(user_id),
-    )
+async def get_personal_shelves(
+    user_id: int,
+    limit: int = 18,
+    *,
+    profile: Optional[dict] = None,
+    dismissed: Optional[set[TmdbKey]] = None,
+) -> list[dict]:
+    if profile is None or dismissed is None:
+        collected_profile, collected_dismissed = await asyncio.gather(
+            _collect_signal_profile(user_id),
+            dismissed_store.get_dismissed_ids(user_id),
+        )
+        profile = profile if profile is not None else collected_profile
+        dismissed = dismissed if dismissed is not None else collected_dismissed
     seed_genres: Counter = profile.get("seed_genres") or Counter()
     exclude_tmdb = set(profile.get("exclude_tmdb") or set()) | dismissed
     shelves: list[dict] = []
     used_names: set[str] = set()
-    recent_label = profile.get("recent_titles", [""])[0] if profile.get("recent_titles") else ""
-
     for genre, _weight in seed_genres.most_common(2):
         cards, _total = media_index.query_grouped(
             genre=genre,
@@ -330,10 +341,6 @@ async def get_personal_shelves(user_id: int, limit: int = 18) -> list[dict]:
         if len(filtered) < 3:
             continue
         name = f"Because you like {genre}"
-        if recent_label and not shelves:
-            clean_title = re.sub(r"\s+", " ", recent_label).strip()
-            if clean_title:
-                name = f"Because you watched {clean_title[:42]}"
         if name in used_names:
             continue
         used_names.add(name)
@@ -347,7 +354,12 @@ async def get_personal_shelves(user_id: int, limit: int = 18) -> list[dict]:
     return shelves
 
 
-async def get_recommendation_reasons(user_id: int, cards: List) -> List[str]:
+async def get_recommendation_reasons(
+    user_id: int,
+    cards: List,
+    *,
+    profile: Optional[dict] = None,
+) -> List[str]:
     """Explain recommendation cards using the user's local seed genres.
 
     This intentionally avoids additional TMDB calls: the recommendations have
@@ -356,11 +368,12 @@ async def get_recommendation_reasons(user_id: int, cards: List) -> List[str]:
     """
     if not cards:
         return []
-    try:
-        profile = await _collect_signal_profile(user_id)
-    except Exception:
-        logging.exception("rec_engine: reason seed collection failed")
-        profile = {}
+    if profile is None:
+        try:
+            profile = await _collect_signal_profile(user_id)
+        except Exception:
+            logging.exception("rec_engine: reason seed collection failed")
+            profile = {}
 
     seed_genres: Counter = profile.get("seed_genres") or Counter()
 

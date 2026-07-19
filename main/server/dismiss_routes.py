@@ -50,6 +50,9 @@ async def api_undismiss(request: web.Request) -> web.Response:
     try:
         body = await request.json()
         tmdb_id = int(body["tmdb_id"])
+        kind = str(body.get("kind", ""))
+        if kind and kind not in ("movie", "tv"):
+            return _json({"error": "invalid kind"}, status=400)
     except Exception:
         return _json({"error": "invalid body"}, status=400)
 

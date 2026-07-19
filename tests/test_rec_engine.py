@@ -77,7 +77,7 @@ class RecEngineSignalTest(unittest.IsolatedAsyncioTestCase):
             rec_engine.media_index._items.clear()
             rec_engine.media_index._items.update(previous)
 
-    async def test_partial_continue_entry_is_seed_but_not_watched_label(self):
+    async def test_partial_continue_entry_is_a_seed(self):
         item = make_item()
 
         async def continue_map(_user_id: int) -> dict:
@@ -94,24 +94,32 @@ class RecEngineSignalTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(profile["seeds"], [(123, "movie")])
         self.assertGreater(profile["seed_genres"]["Mystery"], 0)
-        self.assertEqual(profile["recent_titles"], [])
 
-    async def test_completed_history_can_feed_watched_label(self):
-        item = make_item()
+    async def test_explicit_like_is_selected_when_history_exceeds_seed_cap(self):
+        history_items = [make_item(index + 1, tmdb_id=100 + index) for index in range(8)]
+        liked_item = make_item(99, tmdb_id=999, genres=["Drama"])
 
         async def history(_user_id: int, limit: int = 80) -> list:
-            return [{"cw_key": "movie1", "play_count": 1}]
+            return [{"cw_key": f"movie{index + 1}", "play_count": 1} for index in range(8)]
+
+        async def ratings(_user_id: int, limit: int = 200) -> list:
+            return [{"message_id": 99, "rating": "up"}]
+
+        def item_for_key(key: str):
+            return history_items[int(key.removeprefix("movie")) - 1]
 
         with (
             patch.object(rec_engine.wh_store, "get_recent", history),
             patch.object(rec_engine.watchlist_store, "get_ids", empty_watchlist),
-            patch.object(rec_engine.ratings_store, "get_user_ratings", empty_ratings),
+            patch.object(rec_engine.ratings_store, "get_user_ratings", ratings),
             patch.object(rec_engine.cw_store, "get_all", empty_continue),
-            patch.object(rec_engine, "_item_for_cw_key", return_value=item),
+            patch.object(rec_engine, "_item_for_cw_key", side_effect=item_for_key),
+            patch.object(rec_engine.media_index, "get_item", return_value=liked_item),
         ):
             profile = await rec_engine._collect_signal_profile(7)
 
-        self.assertEqual(profile["recent_titles"], ["The Invisible Guest"])
+        self.assertIn((999, "movie"), profile["seeds"])
+        self.assertEqual(len(profile["seeds"]), 8)
 
     async def test_partial_only_shelf_uses_like_copy(self):
         cards = [
@@ -137,6 +145,31 @@ class RecEngineSignalTest(unittest.IsolatedAsyncioTestCase):
             patch.object(rec_engine, "_collect_signal_profile", collect_profile),
             patch.object(rec_engine.dismissed_store, "get_dismissed_ids", dismissed),
             patch.object(rec_engine.media_index, "query_grouped", query_grouped),
+        ):
+            shelves = await rec_engine.get_personal_shelves(7, limit=3)
+
+        self.assertEqual(shelves[0]["name"], "Because you like Mystery")
+
+    async def test_completed_history_shelf_uses_genre_copy(self):
+        cards = [
+            make_item(10, title="Mystery One", tmdb_id=201),
+            make_item(11, title="Mystery Two", tmdb_id=202),
+            make_item(12, title="Mystery Three", tmdb_id=203),
+        ]
+
+        async def collect_profile(_user_id: int) -> dict:
+            return {
+                "seed_genres": Counter({"Mystery": 2.0}),
+                "exclude_tmdb": set(),
+            }
+
+        async def dismissed(_user_id: int) -> set:
+            return set()
+
+        with (
+            patch.object(rec_engine, "_collect_signal_profile", collect_profile),
+            patch.object(rec_engine.dismissed_store, "get_dismissed_ids", dismissed),
+            patch.object(rec_engine.media_index, "query_grouped", return_value=(cards, len(cards))),
         ):
             shelves = await rec_engine.get_personal_shelves(7, limit=3)
 

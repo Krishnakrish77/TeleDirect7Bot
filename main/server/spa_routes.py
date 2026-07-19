@@ -170,19 +170,29 @@ def _home_shelf_limit() -> int:
 
 async def _home_recommendation_shelf(user_id: int) -> tuple[list, list, list]:
     mark = time.monotonic()
-    rec_items, personal_shelves = await asyncio.wait_for(
+    profile, dismissed = await asyncio.wait_for(
         asyncio.gather(
-            rec_engine.get_recommendations(user_id),
-            rec_engine.get_personal_shelves(user_id),
+            rec_engine._collect_signal_profile(user_id),
+            rec_engine.dismissed_store.get_dismissed_ids(user_id),
         ),
         timeout=_HOME_RECOMMENDATIONS_TIMEOUT,
+    )
+    remaining = _HOME_RECOMMENDATIONS_TIMEOUT - (time.monotonic() - mark)
+    if remaining <= 0.05:
+        raise asyncio.TimeoutError
+    rec_items, personal_shelves = await asyncio.wait_for(
+        asyncio.gather(
+            rec_engine.get_recommendations(user_id, profile=profile, dismissed=dismissed),
+            rec_engine.get_personal_shelves(user_id, profile=profile, dismissed=dismissed),
+        ),
+        timeout=remaining,
     )
     rec_reasons = []
     remaining = _HOME_RECOMMENDATIONS_TIMEOUT - (time.monotonic() - mark)
     if rec_items and remaining > 0.05:
         try:
             rec_reasons = await asyncio.wait_for(
-                rec_engine.get_recommendation_reasons(user_id, rec_items),
+                rec_engine.get_recommendation_reasons(user_id, rec_items, profile=profile),
                 timeout=min(_HOME_REC_REASONS_TIMEOUT, remaining),
             )
         except asyncio.TimeoutError:
