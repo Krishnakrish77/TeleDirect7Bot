@@ -324,7 +324,7 @@ export function WatchPage({
           <div>
             <p className="eyebrow">{card.mediaKind || 'Media'}</p>
             <h1 dir="auto">{card.title}</h1>
-            <p>{card.overview || card.subtitle || 'Open this item in the classic player.'}</p>
+            <p>{card.overview || card.subtitle || 'Open this item to start watching.'}</p>
             <a className="primary-action" href={data.classicHref || card.href}>
               <PlayIcon />
               <span>Open player</span>
@@ -531,10 +531,6 @@ export function WatchPage({
               seek(seconds);
             }}
           />
-          <a className="section-link classic-link" href={track.classicHref}>
-            <span>Classic player</span>
-            <ChevronRightIcon />
-          </a>
         </div>
       </section>
 
@@ -1160,7 +1156,7 @@ function VideoWatchPage({
       } else {
         setPlaying(false);
         setVideoMediaSessionPlaybackState(false);
-        setError('Browser playback failed. The classic player and VLC links are available.');
+        setError('Browser playback failed. Try VLC or download the file.');
       }
     };
     const onPlay = () => {
@@ -1223,7 +1219,7 @@ function VideoWatchPage({
       }
       setPlaying(false);
       setVideoMediaSessionPlaybackState(false);
-      setError('Browser playback started but no video frames decoded. The classic player and VLC links are available.');
+      setError('Browser playback started but no video frames decoded. Try VLC or download the file.');
     };
     const onPlaying = () => {
       clearStallTimer();
@@ -1290,7 +1286,7 @@ function VideoWatchPage({
       promise.catch(() => {
         setPlaying(false);
         setVideoMediaSessionPlaybackState(false);
-        setError('Tap play again or open the classic player.');
+        setError('Tap play again or try VLC.');
       });
     }
   }, [noteStillWatchingActivity, setVideoMediaSessionPlaybackState, video.knownUnplayable]);
@@ -1695,10 +1691,6 @@ function VideoWatchPage({
           {displaySubtitle && <p>{displaySubtitle}</p>}
           <RatingControls messageId={video.messageId || video.itemId} />
         </div>
-        <a className="section-link" href={video.classicHref}>
-          <span>Classic player</span>
-          <ChevronRightIcon />
-        </a>
       </section>
 
       <section
@@ -1788,9 +1780,8 @@ function VideoWatchPage({
           <div className="video-overlay-message">
             <FilmIcon />
             <strong>This video needs another player</strong>
-            <span>{error || 'Open it in VLC or the classic player.'}</span>
+            <span>{error || 'Open it in VLC or download the file.'}</span>
             <div>
-              <a className="primary-action" href={video.classicHref}>Classic player</a>
               <a className="secondary-action" href={vlcHref}>VLC</a>
             </div>
           </div>
@@ -2031,10 +2022,6 @@ function VideoWatchPage({
               <strong>Open</strong>
             </button>
             {subtitleStatus && <div className="video-menu-status" role="status">{subtitleStatus}</div>}
-            <a className="video-menu-row" role="menuitem" href={video.classicHref}>
-              <span>Classic player</span>
-              <strong>Open</strong>
-            </a>
             <a className="video-menu-row" role="menuitem" href={vlcHref}>
               <span>VLC</span>
               <strong>Open</strong>

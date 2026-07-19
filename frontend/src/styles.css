@@ -1409,32 +1409,6 @@ img {
   }
 }
 
-.card-preview-panel {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  overflow: hidden;
-  border: 1px solid rgba(20, 184, 166, 0.42);
-  border-radius: 8px;
-  background: #050607;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.36);
-}
-
-.card-preview-panel iframe {
-  width: 100%;
-  height: 100%;
-  border: 0;
-}
-
-.card-preview-close {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-  z-index: 7;
-  background: rgba(0, 0, 0, 0.68);
-  color: #fff;
-}
-
 .save-button svg,
 .dismiss-button svg,
 .forget-button svg {

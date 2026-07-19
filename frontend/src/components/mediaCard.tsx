@@ -1,10 +1,10 @@
-import { memo, useMemo, useState, type MouseEvent } from 'react';
+import { memo, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { BookmarkIcon, CheckIcon, FilmIcon, HeartIcon, MusicIcon, PlayIcon, ThumbDownIcon, ThumbUpIcon, XIcon } from '../icons';
 import type { HubCard, RatingCounts, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
 import { isLocallyWatched } from '../utils/localWatched';
 import { joinMetadata } from '../utils/metadata';
-import { YOUTUBE_TRAILER_ALLOW, youtubeTrailerEmbedSrc } from '../utils/youtubeTrailer';
+import { TrailerModal } from './trailerModal';
 
 // Parsed once per render cycle; microtask clears it so the next render reads fresh.
 let _cwCache: Record<string, { pos: number; dur: number }> | null = null;
@@ -128,6 +128,7 @@ function MediaCardBase({
     ? [card.newEpisode.label, card.newEpisode.title].filter(Boolean).join(' · ')
     : '';
   const [previewOpen, setPreviewOpen] = useState(false);
+  const previewButtonRef = useRef<HTMLButtonElement | null>(null);
   const canPreview = Boolean(card.trailerKey) && !isMusic;
   const preventDisabledNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
     if (!interactionDisabled) return;
@@ -189,6 +190,7 @@ function MediaCardBase({
         </a>
         {canPreview && (
           <button
+            ref={previewButtonRef}
             type="button"
             className="preview-button"
             title={`Preview ${display.title}`}
@@ -203,29 +205,6 @@ function MediaCardBase({
           >
             <PlayIcon />
           </button>
-        )}
-        {previewOpen && card.trailerKey && (
-          <div className="card-preview-panel" role="dialog" aria-label={`${display.title} trailer preview`}>
-            <iframe
-              src={youtubeTrailerEmbedSrc(card.trailerKey)}
-              title={`${display.title} trailer preview`}
-              allow={YOUTUBE_TRAILER_ALLOW}
-              allowFullScreen
-            />
-            <button
-              type="button"
-              className="icon-button card-preview-close"
-              title="Close preview"
-              onClick={(event: MouseEvent<HTMLButtonElement>) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setPreviewOpen(false);
-              }}
-              aria-label="Close preview"
-            >
-              <XIcon />
-            </button>
-          </div>
         )}
       </span>
       <a
@@ -277,6 +256,9 @@ function MediaCardBase({
           {card.recReason && <em className="card-reason">{card.recReason}</em>}
         </span>
       </a>
+      {previewOpen && card.trailerKey && (
+        <TrailerModal trailerKey={card.trailerKey} title={display.title} returnFocusTo={previewButtonRef} onClose={() => setPreviewOpen(false)} />
+      )}
       {/*
         Save and dismiss controls stay as article-level siblings so they are not nested
         inside card links, but remain anchored to the poster's top edge.

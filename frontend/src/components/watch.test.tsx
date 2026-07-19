@@ -904,7 +904,7 @@ describe('WatchPage video player', () => {
 
     const titlebar = view.container.querySelector('.video-titlebar') as HTMLElement;
     expect(titlebar.firstElementChild?.querySelector('h1')?.textContent).toBe('Pilot');
-    expect(titlebar.lastElementChild?.textContent).toContain('Classic player');
+    expect(titlebar.querySelector('a')).toBeNull();
     expect(view.container.querySelector('.video-titlebar p:not(.eyebrow)')).toBeNull();
     expect(view.container.querySelector('.video-topbar-copy span')).toBeNull();
   });
@@ -1064,7 +1064,7 @@ describe('WatchPage audio player', () => {
 
     fireEvent.click(screen.getByText('Retry'));
     expect(audio.togglePlayback).toHaveBeenCalledWith(track, [track]);
-    expect(screen.getAllByRole('link', { name: /Classic/i })[0].getAttribute('href')).toBe('/watch/track-key');
+    expect(screen.queryByRole('link', { name: /Classic/i })).toBeNull();
   });
 
   it('hides the audio download action when downloads are disabled', async () => {

@@ -109,10 +109,6 @@ export function AudioPlaybackIssue({
             <span>Retry</span>
           </button>
         )}
-        <a className="playback-issue-action" href={track.classicHref}>
-          <ChevronRightIcon />
-          <span>Classic</span>
-        </a>
         {!compact && downloadHref && (
           <a className="playback-issue-action" href={downloadHref} download>
             <DownloadIcon />
@@ -314,10 +310,6 @@ export function NowPlayingSheet({
           track={track}
           onRetry={() => togglePlayback()}
         />
-        <a className="section-link classic-link" href={track.classicHref}>
-          <span>Classic player</span>
-          <ChevronRightIcon />
-        </a>
         <LyricsPanel
           className="now-lyrics"
           track={track}

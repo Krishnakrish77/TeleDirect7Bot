@@ -477,7 +477,7 @@ describe('Movie detail', () => {
     expect(info.getByText('Director', { selector: 'dt' })).toBeTruthy();
     expect(info.getByRole('link', { name: 'Actor' }).getAttribute('href')).toBe('/app/person/actor');
     expect(screen.getByRole('link', { name: 'Play' }).getAttribute('href')).toBe('/app/watch/very-long-title');
-    expect(screen.getByRole('link', { name: 'Classic player' }).getAttribute('href')).toBe('/watch/very-long-title');
+    expect(screen.queryByRole('link', { name: 'Classic player' })).toBeNull();
     const versionLink = screen.getByRole('link', { name: 'Play Kalki 1080p' });
     expect(versionLink.className).toBe('playback-option');
     expect(versionLink.getAttribute('href')).toBe('/app/watch/kalki');

@@ -141,7 +141,7 @@ function playbackFormatLabel(track: WatchTrack | null): string {
 }
 
 function unsupportedPlaybackMessage(track: WatchTrack | null): string {
-  return `This browser could not play the ${playbackFormatLabel(track)} stream. It may be unsupported or returning an error page. Try the classic player or download it.`;
+  return `This browser could not play the ${playbackFormatLabel(track)} stream. It may be unsupported or returning an error page. Try downloading the track.`;
 }
 
 export function describeAudioPlaybackFailure(
@@ -160,9 +160,9 @@ export function describeAudioPlaybackFailure(
     case MEDIA_ERR_ABORTED:
       return 'Playback was interrupted before the audio started. Tap play to try again.';
     case MEDIA_ERR_NETWORK:
-      return 'Network issue while loading the audio stream. Try again, open the classic player, or download the track.';
+      return 'Network issue while loading the audio stream. Try again or download the track.';
     case MEDIA_ERR_DECODE:
-      return 'This track loaded but could not be decoded by the browser. Try the classic player or download it.';
+      return 'This track loaded but could not be decoded by the browser. Try downloading it.';
     case MEDIA_ERR_SRC_NOT_SUPPORTED:
       return unsupportedPlaybackMessage(track);
     default:
@@ -175,7 +175,7 @@ export function describeAudioPlaybackFailure(
   if (name === 'AbortError') {
     return 'Playback was interrupted before the audio started. Tap play to try again.';
   }
-  return 'Audio playback failed. Try again, open the classic player, or download the track.';
+  return 'Audio playback failed. Try again or download the track.';
 }
 
 function persistNowPlaying(player: PlayerState): void {
@@ -433,7 +433,7 @@ export function useAudioPlayer() {
         return {
           ...state,
           playing: false,
-          error: 'Still waiting for audio data. The stream may be slow or blocked; try again, open the classic player, or download the track.',
+          error: 'Still waiting for audio data. The stream may be slow or blocked; try again or download the track.',
         };
       });
     }, PLAYBACK_START_TIMEOUT_MS);

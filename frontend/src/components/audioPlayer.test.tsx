@@ -102,7 +102,7 @@ describe('MiniPlayer', () => {
     expect(screen.getByRole('alert').textContent).toContain('Network issue');
     fireEvent.click(screen.getByText('Retry'));
     expect(togglePlayback).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('link', { name: /Classic/i }).getAttribute('href')).toBe('/watch/track-key');
+    expect(screen.queryByRole('link', { name: /Classic/i })).toBeNull();
   });
 });
 

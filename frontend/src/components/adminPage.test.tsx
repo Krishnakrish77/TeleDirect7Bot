@@ -230,6 +230,10 @@ describe('AdminPage', () => {
     renderAdmin({ reload });
 
     fireEvent.click(screen.getByLabelText('Select Kalki'));
+    const checkbox = screen.getByLabelText('Select Kalki');
+    expect(checkbox.className).toContain('inline-grid');
+    const indicator = checkbox.querySelector('[data-state="checked"]');
+    expect(indicator?.className).toContain('size-full');
     fireEvent.click(screen.getAllByRole('button', { name: 'Hide' })[0]);
 
     await waitFor(() => {
