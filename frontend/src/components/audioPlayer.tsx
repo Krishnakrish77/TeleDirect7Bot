@@ -3,6 +3,8 @@ import { ChevronRightIcon, DownloadIcon, ListIcon, MoreVerticalIcon, MusicIcon, 
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 import { LyricsPanel } from './lyrics';
+import { Button } from './ui/button';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
 
 export function useCompactAudioLayout(): boolean {
   const getValue = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(max-width: 680px)').matches);
@@ -35,8 +37,10 @@ export function AudioSettingsControls({
 }) {
   return (
     <div className={`player-settings ${className}`.trim()} aria-label="Playback settings">
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         className={player.repeatMode === 'off' ? 'icon-button repeat-button' : 'icon-button repeat-button active'}
         onClick={cycleRepeatMode}
         aria-label={`Repeat ${player.repeatMode}`}
@@ -44,11 +48,11 @@ export function AudioSettingsControls({
       >
         <RepeatIcon />
         {player.repeatMode === 'one' && <span aria-hidden="true">1</span>}
-      </button>
+      </Button>
       <label className="volume-control audio-volume-control">
-        <button type="button" className="icon-button" onClick={toggleMute} aria-label={player.muted ? 'Unmute audio' : 'Mute audio'}>
+        <Button type="button" variant="ghost" size="icon-sm" className="icon-button" onClick={toggleMute} aria-label={player.muted ? 'Unmute audio' : 'Mute audio'}>
           <VolumeIcon />
-        </button>
+        </Button>
         <input
           type="range"
           min="0"
@@ -75,10 +79,10 @@ export function AudioSettingsDisclosure({
   const settingsId = useId();
   return (
     <div className="audio-settings-disclosure">
-      <button type="button" className="secondary-action" onClick={onToggle} aria-expanded={open} aria-controls={settingsId}>
+      <Button type="button" variant="secondary" size="sm" onClick={onToggle} aria-expanded={open} aria-controls={settingsId}>
         <MoreVerticalIcon />
         <span>Playback settings</span>
-      </button>
+      </Button>
       {open && <div id={settingsId}>{children}</div>}
     </div>
   );
@@ -104,10 +108,10 @@ export function AudioPlaybackIssue({
       <p>{message}</p>
       <div className="playback-issue-actions">
         {onRetry && (
-          <button type="button" className="playback-issue-action" onClick={onRetry}>
+          <Button type="button" variant="outline" size="sm" className="playback-issue-action" onClick={onRetry}>
             <PlayIcon />
             <span>Retry</span>
-          </button>
+          </Button>
         )}
         {!compact && downloadHref && (
           <a className="playback-issue-action" href={downloadHref} download>
@@ -231,12 +235,10 @@ export function NowPlayingSheet({
   const duration = player.duration || track.duration || 0;
   const rangeMax = Math.max(1, Math.round(duration));
   return (
-    <div className="sheet-layer" role="dialog" aria-modal="true" aria-label="Now playing">
-      <button type="button" className="modal-scrim" onClick={onClose} aria-label="Close" />
-      <section className="now-sheet">
-        <button type="button" className="icon-button modal-close" onClick={onClose} aria-label="Close">
-          <XIcon />
-        </button>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="now-sheet" aria-describedby={undefined}>
+        <DialogTitle className="sr-only">Now playing</DialogTitle>
+        <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button modal-close" aria-label="Close"><XIcon /></Button></DialogClose>
         <div className="audio-art-wrap now-art-wrap">
           <MusicIcon />
           <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" onError={(e) => { e.currentTarget.hidden = true; }} />
@@ -259,18 +261,18 @@ export function NowPlayingSheet({
           <span>{formatClock(duration)}</span>
         </div>
         <div className="watch-controls now-controls">
-          <button type="button" className="icon-button player-nav" onClick={() => playRelative(-1)} disabled={player.queueIndex <= 0} aria-label="Previous track">
+          <Button type="button" variant="ghost" size="icon-sm" className="icon-button player-nav" onClick={() => playRelative(-1)} disabled={player.queueIndex <= 0} aria-label="Previous track">
             <SkipBackIcon />
-          </button>
-          <button type="button" className="player-play" onClick={() => togglePlayback()} aria-label={player.playing ? 'Pause' : 'Play'}>
+          </Button>
+          <Button type="button" variant="ghost" size="icon" className="player-play" onClick={() => togglePlayback()} aria-label={player.playing ? 'Pause' : 'Play'}>
             {player.playing ? <PauseIcon /> : <PlayIcon />}
-          </button>
-          <button type="button" className="icon-button player-nav" onClick={() => playRelative(1)} disabled={player.queueIndex + 1 >= player.queue.length} aria-label="Next track">
+          </Button>
+          <Button type="button" variant="ghost" size="icon-sm" className="icon-button player-nav" onClick={() => playRelative(1)} disabled={player.queueIndex + 1 >= player.queue.length} aria-label="Next track">
             <SkipForwardIcon />
-          </button>
-          <button type="button" className="icon-button player-nav" onClick={onOpenQueue} aria-label="Open queue">
+          </Button>
+          <Button type="button" variant="ghost" size="icon-sm" className="icon-button player-nav" onClick={onOpenQueue} aria-label="Open queue">
             <ListIcon />
-          </button>
+          </Button>
         </div>
         {compact ? (
           <AudioSettingsDisclosure open={settingsOpen} onToggle={() => setSettingsOpen((value) => !value)}>
@@ -295,11 +297,11 @@ export function NowPlayingSheet({
             <strong>{player.nextTrack.title}</strong>
             <span>{[player.nextTrack.artist, player.nextTrack.albumTitle].filter(Boolean).join(' - ')}</span>
             <div>
-              <button type="button" className="primary-action" onClick={confirmNext}>
+              <Button type="button" onClick={confirmNext}>
                 <PlayIcon />
                 <span>Play now</span>
-              </button>
-              <button type="button" className="secondary-action" onClick={cancelNext}>Cancel</button>
+              </Button>
+              <Button type="button" variant="secondary" onClick={cancelNext}>Cancel</Button>
             </div>
           </div>
         )}
@@ -316,7 +318,7 @@ export function NowPlayingSheet({
           currentTime={player.currentTime}
           seek={seek}
         />
-      </section>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
