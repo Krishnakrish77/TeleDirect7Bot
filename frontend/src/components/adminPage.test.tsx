@@ -353,16 +353,16 @@ describe('AdminPage', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it('surfaces the safer credits and ratings backfill action', async () => {
+  it('surfaces the safer TMDB detail backfill action', async () => {
     const reload = vi.fn();
     renderAdmin({ reload, locationSearch: '?tab=ops' });
 
-    fireEvent.click(screen.getAllByRole('button', { name: /Backfill credits & ratings/ })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /Backfill TMDB details/ })[0]);
 
     await waitFor(() => {
       expect(runAdminMaintenance).toHaveBeenCalledWith('backfill-credits');
     });
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('ratings'));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('detail fields'));
     expect(reload).toHaveBeenCalledTimes(1);
   });
 

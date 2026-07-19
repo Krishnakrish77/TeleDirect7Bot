@@ -3748,12 +3748,12 @@ def _apply_credits_backfill(item: HubItem, hit: "tmdb.TMDBHit") -> bool:
 
 
 async def backfill_missing_credits(bot=None) -> dict:
-    """Fill missing cast/director/rating data from existing TMDB IDs only.
+    """Fill missing TMDB details from existing IDs only.
 
     Unlike ``enrich_all(force=True)``, this never searches by title and
     never updates titles, years, grouping keys, posters, backdrops,
-    overview, or genres. It is intended as the low-risk operational pass
-    that repairs already-enriched items without rematching them.
+    overview, or genres. It is the low-risk operational pass that repairs
+    already-enriched items without rematching them.
     """
     if _credits_state["running"]:
         return {"already_running": True, "total": len(_items)}

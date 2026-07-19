@@ -2779,12 +2779,12 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
             or media_index.credits_backfill_state().get("running")
         ):
             return _admin_json_message(
-                "Credits backfill is already running",
+                "TMDB detail backfill is already running",
                 status=_admin_status_payload(),
             )
         asyncio.create_task(media_index.backfill_missing_credits(bot=StreamBot))
         return _admin_json_message(
-            "Credits and ratings backfill queued",
+            "TMDB detail backfill queued",
             status=_admin_status_payload(),
         )
 

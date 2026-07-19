@@ -169,7 +169,7 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
             </StatCard>
 
             {metadata && (
-              <StatCard label="Credits coverage">
+              <StatCard label="TMDB coverage">
                 <StatRow label="TMDB video items" value={`${metadata.tmdb_enriched_video_items.toLocaleString()} / ${metadata.video_items.toLocaleString()}`} />
                 <StatRow label="Backfillable now" value={backfillableMetadata ? backfillableMetadata.toLocaleString() : 'none'} warn={backfillableMetadata > 0} />
                 <StatRow label="Missing ratings" value={missingRatings ? missingRatings.toLocaleString() : 'none'} warn={missingRatings > 0} />
@@ -189,7 +189,7 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
                     disabled={Boolean(cleanupBusy)}
                     onClick={() => void runCleanup('backfill-credits')}
                   >
-                    {cleanupBusy === 'backfill-credits' ? 'Queuing...' : 'Backfill credits & ratings'}
+                    {cleanupBusy === 'backfill-credits' ? 'Queuing...' : 'Backfill TMDB details'}
                   </Button>
                 </div>
               </StatCard>

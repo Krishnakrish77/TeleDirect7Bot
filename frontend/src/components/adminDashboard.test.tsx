@@ -94,7 +94,7 @@ describe('AdminDashboard', () => {
 
     render(<AdminDashboard user={adminUser} onSignIn={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByText('Credits coverage')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('TMDB coverage')).toBeTruthy());
     expect(screen.getByText('8 / 10')).toBeTruthy();
     expect(within(screen.getByText('Backfillable now').closest('.dash-stat-row') as HTMLElement).getByText('4')).toBeTruthy();
     expect(within(screen.getByText('Missing ratings').closest('.dash-stat-row') as HTMLElement).getByText('2')).toBeTruthy();
@@ -115,15 +115,15 @@ describe('AdminDashboard', () => {
     expect(await screen.findByText('Metadata cleanup queued')).toBeTruthy();
   });
 
-  it('queues credits backfill from the coverage card', async () => {
+  it('queues TMDB detail backfill from the coverage card', async () => {
     vi.mocked(fetchAdminDashboard).mockResolvedValue(dashboard);
-    vi.mocked(runAdminMaintenance).mockResolvedValue({ ok: true, message: 'Credits backfill queued' });
+    vi.mocked(runAdminMaintenance).mockResolvedValue({ ok: true, message: 'TMDB detail backfill queued' });
 
     render(<AdminDashboard user={adminUser} onSignIn={vi.fn()} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Backfill credits & ratings' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Backfill TMDB details' }));
 
     await waitFor(() => expect(runAdminMaintenance).toHaveBeenCalledWith('backfill-credits'));
-    expect(await screen.findByText('Credits backfill queued')).toBeTruthy();
+    expect(await screen.findByText('TMDB detail backfill queued')).toBeTruthy();
   });
 });
