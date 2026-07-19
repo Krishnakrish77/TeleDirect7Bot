@@ -2,6 +2,8 @@ import { memo, useMemo } from 'react';
 import { ChevronDownIcon, ChevronUpIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, SkipForwardIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
+import { Button } from './ui/button';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
 
 function trackSubtitle(track: WatchTrack) {
   return [track.artist, track.albumTitle].filter(Boolean).join(' - ') || track.format || track.qualityLabel || 'Track';
@@ -51,9 +53,10 @@ const QueueTrackRow = memo(function QueueTrackRow({
     <div className="queue-row">
       <span className="queue-position">{index + 1}</span>
       <img className="queue-row-art" src={trackArtwork(track)} alt="" loading="lazy" decoding="async" />
-      <button
+      <Button
         type="button"
-        className="queue-title-button"
+        variant="ghost"
+        className="queue-title-button h-auto p-0"
         onClick={() => playQueueIndex(index)}
         aria-label={`Play ${track.title}`}
       >
@@ -64,13 +67,15 @@ const QueueTrackRow = memo(function QueueTrackRow({
         <span className="queue-row-play" aria-hidden="true">
           <PlayIcon />
         </span>
-      </button>
+      </Button>
       <span className="queue-duration">{durationLabel}</span>
       <div className="queue-row-actions">
         {showReorder && (
           <>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               className="icon-button queue-play-next"
               onClick={() => moveQueueItemToNext(index)}
               disabled={!canMoveUp}
@@ -78,36 +83,42 @@ const QueueTrackRow = memo(function QueueTrackRow({
               title="Play next"
             >
               <SkipForwardIcon />
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               className="icon-button"
               onClick={() => moveQueueItem(index, -1)}
               disabled={!canMoveUp}
               aria-label={`Move ${track.title} up`}
             >
               <ChevronUpIcon />
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               className="icon-button"
               onClick={() => moveQueueItem(index, 1)}
               disabled={!canMoveDown}
               aria-label={`Move ${track.title} down`}
             >
               <ChevronDownIcon />
-            </button>
+            </Button>
           </>
         )}
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-sm"
           className="icon-button"
           onClick={() => removeFromQueue(index)}
           disabled={!canRemove}
           aria-label={`Remove ${track.title}`}
         >
           <XIcon />
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -155,20 +166,17 @@ export function QueueDrawer({
   if (!open) return null;
 
   return (
-    <div className="sheet-layer" role="dialog" aria-modal="true" aria-label="Queue">
-      <button type="button" className="modal-scrim" onClick={onClose} aria-label="Close" />
-      <aside className="queue-drawer">
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="queue-drawer" aria-describedby={undefined}>
         <div className="drawer-heading">
           <div>
             <p className="eyebrow">Now playing</p>
-            <h2>Queue</h2>
+            <DialogTitle asChild><h2>Queue</h2></DialogTitle>
             <p className="queue-count">{totalLabel}</p>
           </div>
           <div className="drawer-actions">
-            <button type="button" className="text-button" onClick={clearQueue} disabled={queue.length < 2}>Clear queue</button>
-            <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
-              <XIcon />
-            </button>
+            <Button type="button" variant="ghost" size="sm" className="text-button" onClick={clearQueue} disabled={queue.length < 2}>Clear queue</Button>
+            <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button" aria-label="Close"><XIcon /></Button></DialogClose>
           </div>
         </div>
         {currentTrack ? (
@@ -180,14 +188,16 @@ export function QueueDrawer({
               <span>{trackSubtitle(currentTrack)}</span>
               {progressLabel && <small>{progressLabel}</small>}
             </div>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               className="player-play queue-current-play"
               onClick={() => togglePlayback()}
               aria-label={player.playing ? 'Pause current track' : 'Play current track'}
             >
               {player.playing ? <PauseIcon /> : <PlayIcon />}
-            </button>
+            </Button>
           </section>
         ) : null}
         {queue.length ? (
@@ -262,7 +272,7 @@ export function QueueDrawer({
             <span>Start playback from an album to fill this list.</span>
           </div>
         )}
-      </aside>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
