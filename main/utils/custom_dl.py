@@ -9,6 +9,7 @@ from pyrogram.crypto import aes
 from pyrogram.errors import (
     AuthBytesInvalid,
     CDNFileHashMismatch,
+    FloodWait,
     Timeout as TelegramTimeout,
     VolumeLocNotFound,
 )
@@ -21,10 +22,19 @@ from pyrogram.file_id import FileId, FileType, ThumbnailSource
 
 CACHE_TTL = 30 * 60
 CACHE_SWEEP_INTERVAL = 5 * 60
+_FLOOD_WAIT_RETRIES = 3
 
 
 class MediaSessionUnavailable(RuntimeError):
     pass
+
+
+def _flood_wait_seconds(error: FloodWait) -> float:
+    """Pyrogram variants expose the wait as either ``value`` or ``x``."""
+    try:
+        return max(1.0, float(getattr(error, "value", None) or getattr(error, "x", 0) or 1))
+    except (TypeError, ValueError):
+        return 1.0
 
 
 class ByteStreamer:
@@ -183,7 +193,7 @@ class ByteStreamer:
 
             async def _send_get_file(current_offset: int):
                 last_err: Union[BaseException, None] = None
-                for attempt in range(3):
+                for attempt in range(_FLOOD_WAIT_RETRIES):
                     try:
                         return await media_session.send(
                             raw.functions.upload.GetFile(
@@ -192,19 +202,29 @@ class ByteStreamer:
                                 limit=chunk_size,
                             ),
                         )
+                    except FloodWait as error:
+                        last_err = error
+                        wait = _flood_wait_seconds(error)
+                        logging.warning(
+                            "yield_file: GetFile flood wait %.1fs (attempt %d/%d) "
+                            "media_id=%s offset=%d",
+                            wait, attempt + 1, _FLOOD_WAIT_RETRIES,
+                            getattr(file_id, "media_id", "?"), current_offset,
+                        )
+                        await asyncio.sleep(wait)
                     except (TimeoutError, asyncio.TimeoutError, TelegramTimeout) as e:
                         last_err = e
                         logging.warning(
-                            "yield_file: GetFile timeout (attempt %d/3) "
+                            "yield_file: GetFile timeout (attempt %d/%d) "
                             "media_id=%s offset=%d limit=%d",
-                            attempt + 1,
+                            attempt + 1, _FLOOD_WAIT_RETRIES,
                             getattr(file_id, "media_id", "?"),
                             current_offset,
                             chunk_size,
                         )
                         await asyncio.sleep(0.5 * (attempt + 1))
                 logging.warning(
-                    "yield_file: giving up after GetFile timeouts "
+                    "yield_file: giving up after GetFile retries "
                     "media_id=%s offset=%d (last error: %r)",
                     getattr(file_id, "media_id", "?"),
                     current_offset,
@@ -214,7 +234,7 @@ class ByteStreamer:
 
             async def _send_get_cdn_file(current_offset: int):
                 last_err: Union[BaseException, None] = None
-                for attempt in range(3):
+                for attempt in range(_FLOOD_WAIT_RETRIES):
                     try:
                         return await cdn_session.send(
                             raw.functions.upload.GetCdnFile(
@@ -223,19 +243,29 @@ class ByteStreamer:
                                 limit=chunk_size,
                             )
                         )
+                    except FloodWait as error:
+                        last_err = error
+                        wait = _flood_wait_seconds(error)
+                        logging.warning(
+                            "yield_file: GetCdnFile flood wait %.1fs (attempt %d/%d) "
+                            "media_id=%s offset=%d",
+                            wait, attempt + 1, _FLOOD_WAIT_RETRIES,
+                            getattr(file_id, "media_id", "?"), current_offset,
+                        )
+                        await asyncio.sleep(wait)
                     except (TimeoutError, asyncio.TimeoutError, TelegramTimeout) as e:
                         last_err = e
                         logging.warning(
-                            "yield_file: GetCdnFile timeout (attempt %d/3) "
+                            "yield_file: GetCdnFile timeout (attempt %d/%d) "
                             "media_id=%s offset=%d limit=%d",
-                            attempt + 1,
+                            attempt + 1, _FLOOD_WAIT_RETRIES,
                             getattr(file_id, "media_id", "?"),
                             current_offset,
                             chunk_size,
                         )
                         await asyncio.sleep(0.5 * (attempt + 1))
                 logging.warning(
-                    "yield_file: giving up after GetCdnFile timeouts "
+                    "yield_file: giving up after GetCdnFile retries "
                     "media_id=%s offset=%d (last error: %r)",
                     getattr(file_id, "media_id", "?"),
                     current_offset,
@@ -328,7 +358,7 @@ class ByteStreamer:
                     "(media_id=%s offset=%d)",
                     type(r).__name__, getattr(file_id, "media_id", "?"), offset,
                 )
-        except (TimeoutError, asyncio.TimeoutError, TelegramTimeout, AttributeError) as e:
+        except (TimeoutError, asyncio.TimeoutError, TelegramTimeout, AttributeError, FloodWait) as e:
             # Mid-stream timeout or detached session — log so we can tell this
             # apart from "everything finished" in the diagnostics.
             logging.warning(
