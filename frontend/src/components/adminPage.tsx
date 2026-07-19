@@ -6,6 +6,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Progress } from './ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 
 export function AdminNav({
   routeKind,
@@ -1065,19 +1067,12 @@ function EditModal({
     }
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   return (
-    <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Edit item">
-      <button className="modal-scrim" type="button" onClick={onClose} aria-label="Close" />
-      <div className="edit-modal-panel">
+    <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="edit-modal-panel" aria-describedby={undefined}>
         <div className="edit-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <h2 style={{ flex: 1 }}>Edit bin:{messageId}</h2>
+            <DialogTitle style={{ flex: 1 }}>Edit bin:{messageId}</DialogTitle>
             {hasGemini && (
               <div className="edit-ai-row" style={{ margin: 0 }}>
                 <Select value={form.aiModel} onValueChange={(value) => setField('aiModel', value)} disabled={!aiModels.length}>
@@ -1092,23 +1087,23 @@ function EditModal({
                 </Button>
               </div>
             )}
-            <Button className="modal-close" variant="ghost" size="icon-sm" type="button" onClick={onClose} aria-label="Close"><XIcon /></Button>
+            <DialogClose asChild><Button className="modal-close" variant="ghost" size="icon-sm" type="button" aria-label="Close"><XIcon /></Button></DialogClose>
           </div>
         </div>
-        <div className="edit-modal-tabs" role="tablist" aria-label="Edit sections">
+        <Tabs value={activeSection} onValueChange={(value) => setActiveSection(value as typeof activeSection)}>
+        <TabsList className="edit-modal-tabs" aria-label="Edit sections">
           {(['identity', 'metadata', 'advanced'] as const).map((s) => (
-            <button
+            <TabsTrigger
               key={s}
-              type="button"
-              role="tab"
-              aria-selected={activeSection === s}
-              className={activeSection === s ? 'edit-modal-tab-btn active' : 'edit-modal-tab-btn'}
+              value={s}
+              className="edit-modal-tab-btn"
               onClick={() => setActiveSection(s)}
             >
               {s === 'identity' ? 'Identity' : s === 'metadata' ? (isAudio ? 'Music' : 'Metadata') : 'Advanced'}
-            </button>
+            </TabsTrigger>
           ))}
-        </div>
+        </TabsList>
+        </Tabs>
 
         <div className="edit-modal-body">
           {loading && <LoadingRows />}
@@ -1335,8 +1330,8 @@ function EditModal({
             {saving ? 'Saving…' : 'Save'}
           </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
