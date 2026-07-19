@@ -6304,6 +6304,175 @@ img {
   border-radius: 999px;
 }
 
+/* ---- AI recommendation FAB + panel ---- */
+.ai-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  z-index: 82;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(140deg, var(--brand), #b45309);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 10px 26px rgba(249, 115, 22, 0.42);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ai-fab:hover,
+.ai-fab:focus-visible {
+  transform: translateY(-2px) scale(1.04);
+}
+
+.ai-fab:focus-visible {
+  outline: none;
+  box-shadow: 0 10px 26px rgba(249, 115, 22, 0.42),
+    0 0 0 3px var(--bg), 0 0 0 5px var(--brand);
+}
+
+.ai-fab svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Lift above the mini-player when a track is loaded. */
+.has-player .ai-fab {
+  bottom: calc(158px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 681px) {
+  .ai-fab {
+    right: 24px;
+    bottom: 24px;
+  }
+  .has-player .ai-fab {
+    bottom: 108px;
+  }
+}
+
+.ai-rec-panel {
+  position: fixed;
+  z-index: 91;
+  left: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  width: min(96vw, 560px);
+  max-height: calc(100svh - 1rem - env(safe-area-inset-top, 0px));
+  padding: 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse 90% 40% at 50% 0%, rgba(249, 115, 22, 0.14), transparent 70%),
+    #111317;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+@media (min-width: 681px) {
+  .ai-rec-panel {
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    max-height: min(86svh, 760px);
+  }
+}
+
+.ai-rec-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ai-rec-heading .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #fdba74;
+}
+
+.ai-rec-heading .eyebrow svg {
+  width: 15px;
+  height: 15px;
+}
+
+.ai-rec-heading h2 {
+  margin: 0.1rem 0 0;
+  font-size: 1.35rem;
+}
+
+.ai-rec-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.ai-rec-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.ai-rec-body {
+  overflow-y: auto;
+  scrollbar-width: none;
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.ai-rec-body::-webkit-scrollbar {
+  display: none;
+}
+
+.ai-rec-note {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.ai-rec-section {
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.ai-rec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 0.85rem;
+}
+
+.ai-rec-empty {
+  margin: 1.5rem 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+.ai-rec-ask {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.ai-rec-ask input {
+  flex: 1;
+  min-width: 0;
+}
+
 .now-lyrics {
   width: 100%;
   margin-top: 0;

@@ -1004,6 +1004,8 @@ async def api_me(request: web.Request) -> web.Response:
     return _json({
         "user": user,
         "botUsername": Var.BOT_USERNAME,
+        # AI recommendation FAB shows only for signed-in users when Gemini is configured.
+        "gemini": bool(Var.GEMINI_API_KEY) and bool(user),
         "app": {
             "name": "TeleDirect",
             "spaPath": "/app",

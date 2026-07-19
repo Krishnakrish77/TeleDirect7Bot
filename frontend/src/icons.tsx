@@ -73,6 +73,15 @@ export function ShuffleIcon(props: Props) {
   );
 }
 
+export function SparkleIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+      <path d="M18.5 14.5l.9 2.3 2.3.9-2.3.9-.9 2.3-.9-2.3-2.3-.9 2.3-.9z" />
+    </IconBase>
+  );
+}
+
 export function AutoplayIcon(props: Props) {
   // Infinity — the recognizable "keep playing similar music" mark.
   return (
