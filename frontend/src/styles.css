@@ -418,6 +418,25 @@ img {
   text-align: left;
 }
 
+.account-menu-identity {
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.55rem 0.7rem 0.65rem;
+  color: var(--text);
+}
+
+.account-menu-identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+}
+
+.account-menu-identity span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 .account-menu a:hover,
 .account-menu a:focus-visible,
 .account-menu button:hover,

@@ -279,14 +279,10 @@ export function Header({
             </button>
             {accountOpen && (
               <div className="account-menu" role="menu">
-                <a href="/app/stats" role="menuitem" onClick={() => setAccountOpen(false)}>
-                  <ChartIcon />
-                  <span>Stats</span>
-                </a>
-                <a href="/app/playlists" role="menuitem" onClick={() => setAccountOpen(false)}>
-                  <ListIcon />
-                  <span>Playlists</span>
-                </a>
+                <div className="account-menu-identity" aria-hidden="true">
+                  <strong>{user.name || user.username || 'Signed in'}</strong>
+                  {user.username && <span>@{user.username}</span>}
+                </div>
                 {user.is_admin && (
                   <a href="/app/admin" role="menuitem" onClick={() => setAccountOpen(false)}>
                     <ShieldIcon />
