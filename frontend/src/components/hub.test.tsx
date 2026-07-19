@@ -219,7 +219,7 @@ describe('RecommendationTeaser', () => {
 });
 
 describe('HeroStage', () => {
-  it('uses brand-led actions and exposes the active featured position', () => {
+  it('uses brand-led actions and keeps featured selection accessible', () => {
     const heroes: HeroItem[] = [
       {
         ...card(),
@@ -245,10 +245,9 @@ describe('HeroStage', () => {
 
     expect(screen.getByRole('link', { name: 'Play' }).getAttribute('data-variant')).toBe('default');
     expect(screen.getByRole('link', { name: 'Details' }).getAttribute('data-variant')).toBe('secondary');
-    expect(screen.getByText('1/2')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Second feature' }));
-    expect(screen.getByText('2/2')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Second feature' }).getAttribute('aria-selected')).toBe('true');
   });
 });
 

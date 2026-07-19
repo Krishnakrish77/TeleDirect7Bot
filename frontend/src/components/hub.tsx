@@ -110,7 +110,6 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
       </div>
       {heroes.length > 1 && (
         <div className="hero-featured-nav" aria-label="Featured titles">
-          <span className="hero-featured-label">Featured <strong>{active + 1}/{heroes.length}</strong></span>
           <div className="hero-strip" role="tablist">
           {heroes.map((item, index) => (
             <button

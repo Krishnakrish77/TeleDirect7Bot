@@ -717,19 +717,7 @@ img {
   left: clamp(1rem, 7vw, 6rem);
   right: clamp(1rem, 7vw, 6rem);
   bottom: 1rem;
-  display: grid;
-  gap: 0.35rem;
-}
-
-.hero-featured-label {
-  color: rgba(226, 232, 240, 0.76);
-  font-size: 0.72rem;
-  font-weight: 750;
-}
-
-.hero-featured-label strong {
-  color: #fff;
-  font-variant-numeric: tabular-nums;
+  display: block;
 }
 
 .hero-strip {
