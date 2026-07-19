@@ -1388,7 +1388,16 @@ async def hub_thumb(request: web.Request) -> web.Response:
 
     data = await thumb_cache.cached_or_fetch(cache_key, fetch)
     if data is None:
-        raise web.HTTPNotFound(text="thumb not found")
+        # No embedded / Telegram / ffmpeg-grabbable art. Serve a neutral
+        # placeholder instead of a 404 so <img> tags that lack their own
+        # fallback (mini-player, queue, now-playing) don't show the browser's
+        # broken-image icon. Short cache so art extracted later can replace it.
+        from main.server.tmdb_images import _TMDB_IMAGE_PLACEHOLDER_SVG
+        return web.Response(
+            body=_TMDB_IMAGE_PLACEHOLDER_SVG,
+            content_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=300"},
+        )
 
     return _thumb_response(
         data,
