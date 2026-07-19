@@ -1885,8 +1885,15 @@ function VideoWatchPage({
           <button type="button" className="icon-button" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
             <MaximizeIcon />
           </button>
-          <button type="button" className="icon-button" onClick={() => setMenuOpen((open) => !open)} aria-label="More video options" aria-expanded={menuOpen}>
+          <button
+            type="button"
+            className={menuOpen ? 'icon-button video-more-control active' : 'icon-button video-more-control'}
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label="More video options"
+            aria-expanded={menuOpen}
+          >
             <MoreVerticalIcon />
+            <span>More</span>
           </button>
         </div>
 
