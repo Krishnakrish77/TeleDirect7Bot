@@ -76,6 +76,13 @@ const stats: StatsResponse = {
   current_streak: 2,
   longest_streak: 5,
   recent_history: [],
+  decades: [{ label: '2010s', count: 8 }, { label: '2020s', count: 6 }],
+  rewatch_pct: 57,
+  rewatch_label: 'Comfort re-watcher',
+  genres_explored: 7,
+  diversity_label: 'Balanced',
+  longest_binge: 4,
+  binge_sessions: 2,
 };
 
 describe('StatsPage', () => {
