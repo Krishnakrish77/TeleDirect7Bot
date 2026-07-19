@@ -354,12 +354,12 @@ Large batch shipped since the last audit. Validated against the live deployment 
 
 | # | Feature | Effort | Why it matters |
 |---|---------|--------|----------------|
-| 6 | **Language/regional metadata facet** | M | Important if the catalogue has Hindi/regional/international depth. India OTT apps make language a primary browse axis; tags are not enough long-term. |
-| 7 | **Music station chips + smart queue requests** | M | Related radio exists. Add visible mood/genre/artist station starts and eventually let AI build a queue from a prompt. |
-| 8 | **In-app reminders before push notifications** | M | Use EPG/new-content digest first. Native push remains complex and permission-heavy; prove reminder value in-app. |
-| 9 | **Subtitle appearance/accessibility settings** | S/M | Captions work, but user control over size/contrast/background is an accessibility gap versus mature players. |
-| 10 | **Usage telemetry for prioritization** | S/M | Track feature starts/completions for AI picks, radio, Live TV, subtitle search, playlists, and admin jobs. Avoid prioritizing by feature envy. |
-| 11 | **Shared playlists/lists** | M/L | Spotify Jam and Apple Music collaboration make this mainstream for music, but it only matters if TeleDirect has real multi-user usage. |
+| 7 | **Language/regional metadata facet** | M | Important if the catalogue has Hindi/regional/international depth. India OTT apps make language a primary browse axis; tags are not enough long-term. |
+| 8 | **Music station chips + smart queue requests** | M | Related radio exists. Add visible mood/genre/artist station starts and eventually let AI build a queue from a prompt. |
+| 9 | **In-app reminders before push notifications** | M | Use EPG/new-content digest first. Native push remains complex and permission-heavy; prove reminder value in-app. |
+| 10 | **Subtitle appearance/accessibility settings** | S/M | Captions work, but user control over size/contrast/background is an accessibility gap versus mature players. |
+| 11 | **Usage telemetry for prioritization** | S/M | Track feature starts/completions for AI picks, radio, Live TV, subtitle search, playlists, and admin jobs. Avoid prioritizing by feature envy. |
+| 12 | **Shared playlists/lists** | M/L | Spotify Jam and Apple Music collaboration make this mainstream for music, but it only matters if TeleDirect has real multi-user usage. |
 
 ### ⚪ Low — Nice-to-have or constrained by scope/architecture
 
