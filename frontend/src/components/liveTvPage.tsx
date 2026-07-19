@@ -5,6 +5,7 @@ import { ErrorPanel, LoadingRows } from './common';
 import type { IptvChannel, LiveTvResponse } from '../types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 
 const HLS_RE = /\.m3u8(?:[?#]|$)|[?&](?:type|format)=m3u8/i;
 const FAVORITES_KEY = 'td:live-tv:favorites';
@@ -338,8 +339,10 @@ export function LiveTvPage({
                 </div>
               </div>
               <div className="live-now-actions">
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   className={selectedFavorite ? 'icon-button live-favorite-button active' : 'icon-button live-favorite-button'}
                   disabled={!selected}
                   onClick={toggleSelectedFavorite}
@@ -347,7 +350,7 @@ export function LiveTvPage({
                   title={selectedFavorite ? 'Remove favorite' : 'Add favorite'}
                 >
                   <HeartIcon filled={selectedFavorite} />
-                </button>
+                </Button>
                 {playbackError && <p role="status">{playbackError}</p>}
               </div>
             </div>
@@ -374,45 +377,45 @@ export function LiveTvPage({
                   placeholder="Search channels"
                 />
                 {query && (
-                  <button type="button" className="icon-button" aria-label="Clear channel search" onClick={() => setQuery('')}>
+                  <Button type="button" variant="ghost" size="icon-sm" className="icon-button" aria-label="Clear channel search" onClick={() => setQuery('')}>
                     <XIcon />
-                  </button>
+                  </Button>
                 )}
               </label>
-              <div className="live-category-tabs" role="tablist" aria-label="Channel categories">
-                <button type="button" role="tab" aria-selected={activeCategory === ALL_CHANNELS} className={activeCategory === ALL_CHANNELS ? 'active' : ''} onClick={() => setActiveCategory(ALL_CHANNELS)}>
+              <Tabs value={activeCategory} onValueChange={setActiveCategory}>
+                <TabsList className="live-category-tabs" aria-label="Channel categories">
+                <TabsTrigger value={ALL_CHANNELS} onClick={() => setActiveCategory(ALL_CHANNELS)}>
                   All
                   <span>{channels.length}</span>
-                </button>
-                <button type="button" role="tab" aria-selected={activeCategory === FAVORITE_CHANNELS} className={activeCategory === FAVORITE_CHANNELS ? 'active' : ''} onClick={() => setActiveCategory(FAVORITE_CHANNELS)}>
+                </TabsTrigger>
+                <TabsTrigger value={FAVORITE_CHANNELS} onClick={() => setActiveCategory(FAVORITE_CHANNELS)}>
                   Favorites
                   <span>{favoriteChannels.length}</span>
-                </button>
-                <button type="button" role="tab" aria-selected={activeCategory === RECENT_CHANNELS} className={activeCategory === RECENT_CHANNELS ? 'active' : ''} onClick={() => setActiveCategory(RECENT_CHANNELS)}>
+                </TabsTrigger>
+                <TabsTrigger value={RECENT_CHANNELS} onClick={() => setActiveCategory(RECENT_CHANNELS)}>
                   Recent
                   <span>{recentChannels.length}</span>
-                </button>
+                </TabsTrigger>
                 {categories.map(([category, count]) => (
-                  <button
+                  <TabsTrigger
                     key={category}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeCategory === category}
-                    className={activeCategory === category ? 'active' : ''}
+                    value={category}
                     onClick={() => setActiveCategory(category)}
                   >
                     {category}
                     <span>{count}</span>
-                  </button>
+                  </TabsTrigger>
                 ))}
-              </div>
+                </TabsList>
+              </Tabs>
             </div>
             <div className="live-channel-list">
               {visibleChannels.map((channel) => (
-                <button
+                <Button
                   key={channel.id}
                   type="button"
-                  className={selected?.id === channel.id ? 'live-channel-row active' : 'live-channel-row'}
+                  variant="ghost"
+                  className={selected?.id === channel.id ? 'live-channel-row active h-auto justify-start p-0' : 'live-channel-row h-auto justify-start p-0'}
                   onClick={() => selectAndPlay(channel.id)}
                 >
                   <ChannelLogo channel={channel} failedLogoKeys={failedLogoKeys} onLogoError={markLogoFailed} />
@@ -422,17 +425,18 @@ export function LiveTvPage({
                     {favoriteIds.has(channel.id) && <HeartIcon filled />}
                     <PlayIcon />
                   </em>
-                </button>
+                </Button>
               ))}
               {remainingChannelCount > 0 && (
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   className="live-channel-more"
                   onClick={() => setVisibleChannelCount((current) => Math.min(filteredChannels.length, current + CHANNEL_RENDER_INCREMENT))}
                 >
                   Show more
                   <span>{remainingChannelCount.toLocaleString()} hidden</span>
-                </button>
+                </Button>
               )}
               {!filteredChannels.length && (
                 <div className="live-channel-empty">

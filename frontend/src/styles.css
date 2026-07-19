@@ -2349,7 +2349,7 @@ img {
   white-space: nowrap;
 }
 
-.live-category-tabs button.active {
+.live-category-tabs button[data-state="active"] {
   border-color: rgba(20, 184, 166, 0.4);
   background: rgba(20, 184, 166, 0.12);
   color: #ccfbf1;
