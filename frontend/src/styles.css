@@ -2368,8 +2368,13 @@ img {
 }
 
 .live-category-tabs span {
-  color: var(--dim);
+  /* --dim (#64748b) was too low-contrast on the dark chips. */
+  color: var(--muted);
   font-size: 0.72rem;
+}
+
+.live-category-tabs button[data-state="active"] span {
+  color: rgba(17, 19, 23, 0.72);
 }
 
 .live-channel-list {
@@ -2380,7 +2385,10 @@ img {
   overscroll-behavior: contain;
 }
 
-.live-channel-row {
+/* Scoped selector (0,2,0) so the grid layout beats the Button component's
+   inline-flex utility — otherwise the heart/play icons wrap to a second row
+   on narrow mobile widths. */
+.live-channel-list .live-channel-row {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
   grid-template-rows: auto auto;
