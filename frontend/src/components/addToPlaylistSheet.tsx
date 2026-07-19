@@ -4,6 +4,9 @@ import { usePlaylists } from '../hooks/data';
 import { CheckIcon, ListPlusIcon, XIcon } from '../icons';
 import type { User, WatchTrack } from '../types';
 import { LoadingRows } from './common';
+import { Button } from './ui/button';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from './ui/dialog';
+import { Input } from './ui/input';
 
 export function AddToPlaylistSheet({
   open,
@@ -68,39 +71,38 @@ export function AddToPlaylistSheet({
   };
 
   return (
-    <div className="sheet-layer" role="dialog" aria-modal="true" aria-label="Add to playlist">
-      <button type="button" className="modal-scrim" onClick={onClose} aria-label="Close" />
-      <aside className="playlist-sheet">
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="playlist-sheet" aria-describedby="playlist-sheet-track">
         <div className="drawer-heading">
           <div>
             <p className="eyebrow">Playlist</p>
-            <h2>Add song</h2>
-            <p className="playlist-sheet-track">{track.title}</p>
+            <DialogTitle>Add song</DialogTitle>
+            <DialogDescription id="playlist-sheet-track" className="playlist-sheet-track">{track.title}</DialogDescription>
           </div>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
-            <XIcon />
-          </button>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost" size="icon-sm" className="icon-button" aria-label="Close"><XIcon /></Button>
+          </DialogClose>
         </div>
 
         {!user ? (
           <div className="playlist-sheet-empty">
             <ListPlusIcon />
             <strong>Sign in to save playlists</strong>
-            <button type="button" className="primary-action" onClick={onSignIn}>Sign in</button>
+            <Button type="button" onClick={onSignIn}>Sign in</Button>
           </div>
         ) : (
           <>
             <form className="playlist-create-form" onSubmit={submitCreate}>
-              <input
+              <Input
                 value={name}
                 onChange={(event) => setName(event.currentTarget.value)}
                 placeholder="New playlist name"
                 maxLength={100}
               />
-              <button type="submit" className="primary-action" disabled={creating || !name.trim()}>
+              <Button type="submit" disabled={creating || !name.trim()}>
                 <ListPlusIcon />
                 <span>{creating ? 'Creating' : 'Create'}</span>
-              </button>
+              </Button>
             </form>
 
             {playlists.loading && <LoadingRows />}
@@ -118,9 +120,10 @@ export function AddToPlaylistSheet({
             {playlists.data?.playlists.length ? (
               <div className="playlist-picker-list">
                 {playlists.data.playlists.map((playlist) => (
-                  <button
+                  <Button
                     key={playlist.playlistId}
                     type="button"
+                    variant="outline"
                     className="playlist-picker-row"
                     onClick={() => addToExisting(playlist.playlistId, playlist.name)}
                     disabled={Boolean(busyId)}
@@ -131,7 +134,7 @@ export function AddToPlaylistSheet({
                       <small>{playlist.trackCount} {playlist.trackCount === 1 ? 'track' : 'tracks'}</small>
                     </span>
                     {busyId === playlist.playlistId ? <small>Adding</small> : <ListPlusIcon />}
-                  </button>
+                  </Button>
                 ))}
               </div>
             ) : null}
@@ -143,8 +146,8 @@ export function AddToPlaylistSheet({
             )}
           </>
         )}
-      </aside>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
