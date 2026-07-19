@@ -3043,6 +3043,13 @@ async def _fill_episode_metadata(item: HubItem) -> bool:
         ]
         if episode_numbers and item.episode > max(episode_numbers):
             ep = await _resolve_absolute_episode(item.tmdb_id, item.episode)
+    if ep is None and payload is None:
+        # Some providers flatten a multi-season show into season 1. TMDB does
+        # this for Jujutsu Kaisen (all 59 episodes are returned from S01;
+        # S02/S03 return 404). Map our explicit local season/episode to that
+        # flattened sequence only when the catalogue has complete prior
+        # seasons to establish a trustworthy offset.
+        ep = await _resolve_flattened_season_episode(item)
     if not ep:
         return False
     new_title = (ep.get("name") or "").strip()
@@ -3074,6 +3081,40 @@ async def _fill_episode_metadata(item: HubItem) -> bool:
     item.episode_tmdb_vote_count = new_vote_count
     item.episode_tmdb_vote_checked_at = time.time()
     return changed
+
+
+async def _resolve_flattened_season_episode(item: HubItem) -> Optional[dict]:
+    """Map a local SxxEyy to a provider's single flattened season.
+
+    This is deliberately conservative: we need a known series key and every
+    preceding local season must have at least one numbered episode. Without
+    that evidence, a missing TMDB season is left unresolved rather than being
+    silently mapped to an unrelated season-one episode.
+    """
+    if (
+        not item.tmdb_id
+        or not item.series_key
+        or item.season is None
+        or item.season <= 1
+        or item.episode is None
+    ):
+        return None
+
+    season_lengths: dict[int, int] = {}
+    for sibling in _items.values():
+        if sibling.series_key != item.series_key or sibling.season is None or sibling.episode is None:
+            continue
+        if sibling.season >= item.season:
+            continue
+        season_lengths[sibling.season] = max(season_lengths.get(sibling.season, 0), sibling.episode)
+
+    previous_seasons = range(1, item.season)
+    if any(season_lengths.get(season, 0) <= 0 for season in previous_seasons):
+        return None
+
+    flattened_payload = await tmdb.fetch_season(item.tmdb_id, 1)
+    flattened_episode = sum(season_lengths[season] for season in range(1, item.season)) + item.episode
+    return tmdb.episode_from_season(flattened_payload or {}, flattened_episode)
 
 
 async def _resolve_absolute_episode(tmdb_id: int, abs_episode: int) -> Optional[dict]:

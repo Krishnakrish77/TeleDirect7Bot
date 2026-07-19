@@ -403,6 +403,53 @@ class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
         resolve_absolute.assert_not_awaited()
         self.assertEqual(item.episode_title, "")
 
+    async def test_episode_metadata_maps_flattened_tmdb_seasons_using_catalogue_offsets(self):
+        first_season = video_item(
+            message_id=205,
+            title="JUJUTSU KAISEN S01E24",
+            year=None,
+            file_name="JUJUTSU.KAISEN.S01E24.mkv",
+            movie_key="",
+            series_key="jujutsu-kaisen",
+            series_title="JUJUTSU KAISEN",
+            season=1,
+            episode=24,
+            tmdb_id=95479,
+            tmdb_kind="tv",
+        )
+        item = video_item(
+            message_id=206,
+            title="JUJUTSU KAISEN S02E01",
+            year=None,
+            file_name="JUJUTSU.KAISEN.S02E01.mkv",
+            movie_key="",
+            series_key="jujutsu-kaisen",
+            series_title="JUJUTSU KAISEN",
+            season=2,
+            episode=1,
+            tmdb_id=95479,
+            tmdb_kind="tv",
+        )
+        media_index._items.update({first_season.message_id: first_season, item.message_id: item})
+        flattened = {
+            "episodes": [
+                {"episode_number": 1, "name": "Ryomen Sukuna"},
+                {"episode_number": 25, "name": "Hidden Inventory", "overview": "Gojo's past."},
+            ],
+        }
+
+        async def fetch_season(_tmdb_id, season):
+            return None if season == 2 else flattened if season == 1 else None
+
+        with patch.object(media_index.tmdb, "fetch_season", side_effect=fetch_season) as mocked_fetch:
+            changed = await media_index._fill_episode_metadata(item)
+
+        self.assertTrue(changed)
+        self.assertEqual(item.episode_title, "Hidden Inventory")
+        self.assertEqual(item.episode_overview, "Gojo's past.")
+        self.assertEqual(mocked_fetch.await_args_list[0].args, (95479, 2))
+        self.assertEqual(mocked_fetch.await_args_list[1].args, (95479, 1))
+
     def test_episode_rating_serialization_round_trip(self):
         item = video_item(
             episode_tmdb_vote_average=7.4,
