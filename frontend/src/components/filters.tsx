@@ -179,15 +179,17 @@ export function FilterBar({
       {/* Category chips — always visible, scroll on mobile */}
       <div className="filter-view-row" role="group" aria-label="Content type">
         {viewOptions.map((option) => (
-          <button
+          <Button
             key={option.value || 'all'}
             type="button"
+            variant="ghost"
+            size="sm"
             className={params.view === option.value ? 'filter-view-chip active' : 'filter-view-chip'}
             aria-pressed={params.view === option.value}
             onClick={() => update({ view: option.value as ViewValue, offset: 0 })}
           >
             {option.label}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -206,13 +208,15 @@ export function FilterBar({
             Reset
           </Button>
         )}
-        <a className="filter-drawer-button" href={appUrl({ ...params, offset: 0 }, '/filters')}>
-          <FilterIcon />
-          <span>Filters</span>
-          {(activeFilterCount > 0 || params.sort !== 'newest') && (
-            <small>{activeFilterCount + (params.sort !== 'newest' ? 1 : 0)}</small>
-          )}
-        </a>
+        <Button asChild variant="outline" size="sm" className="filter-drawer-button">
+          <a href={appUrl({ ...params, offset: 0 }, '/filters')}>
+            <FilterIcon />
+            <span>Filters</span>
+            {(activeFilterCount > 0 || params.sort !== 'newest') && (
+              <small>{activeFilterCount + (params.sort !== 'newest' ? 1 : 0)}</small>
+            )}
+          </a>
+        </Button>
       </div>
     </section>
   );
@@ -258,15 +262,17 @@ export function FilterPage({
       <section className="filter-page-panel" aria-label="Content type">
         <div className="filter-view-row">
           {viewOptions.map((option) => (
-            <button
+            <Button
               key={option.value || 'all'}
               type="button"
+              variant="ghost"
+              size="sm"
               className={params.view === option.value ? 'filter-view-chip active' : 'filter-view-chip'}
               aria-pressed={params.view === option.value}
               onClick={() => updateFilterRoute({ view: option.value as ViewValue, offset: 0 }, true)}
             >
               {option.label}
-            </button>
+            </Button>
           ))}
         </div>
 

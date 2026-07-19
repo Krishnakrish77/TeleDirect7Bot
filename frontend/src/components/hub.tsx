@@ -275,9 +275,9 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
           <p className="eyebrow">Resume</p>
           <h2>Continue playing</h2>
         </div>
-        <button type="button" className="secondary-action compact-action" onClick={forgetAll}>
+        <Button type="button" variant="secondary" size="sm" className="compact-action" onClick={forgetAll}>
           Clear all
-        </button>
+        </Button>
       </div>
       <div className="continue-row">
         {entries.map((entry) => {
@@ -298,8 +298,10 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
           return (
             <a key={entry.key} href={displayUrl} className={showNext ? 'continue-card up-next-card' : 'continue-card'}>
               <img src={displayPoster} alt="" loading="lazy" decoding="async" />
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 className="forget-button"
                 onClick={(event) => {
                   event.preventDefault();
@@ -308,7 +310,7 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
                 aria-label="Remove"
               >
                 <XIcon />
-              </button>
+              </Button>
               {showNext ? (
                 <>
                   <span className="progress-track"><span style={{ width: '0%' }} /></span>
@@ -404,18 +406,20 @@ export function ShelfRow({
         </div>
         <div className="section-actions">
           {shelf.href && (
-            <a className="section-link" href={localAppHref(shelf.href) || shelf.href}>
+            <Button asChild variant="ghost" size="sm" className="section-link">
+              <a href={localAppHref(shelf.href) || shelf.href}>
               <span>See all</span>
               <ChevronRightIcon />
-            </a>
+              </a>
+            </Button>
           )}
           <div className="rail-controls" aria-label={`${shelf.name} carousel controls`}>
-            <button type="button" className="icon-button" onClick={() => scrollByPage(-1)} disabled={!canScrollBack} aria-label="Scroll back">
+            <Button type="button" variant="ghost" size="icon-sm" className="icon-button" onClick={() => scrollByPage(-1)} disabled={!canScrollBack} aria-label="Scroll back">
               <ChevronRightIcon />
-            </button>
-            <button type="button" className="icon-button" onClick={() => scrollByPage(1)} disabled={!canScrollForward} aria-label="Scroll forward">
+            </Button>
+            <Button type="button" variant="ghost" size="icon-sm" className="icon-button" onClick={() => scrollByPage(1)} disabled={!canScrollForward} aria-label="Scroll forward">
               <ChevronRightIcon />
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -497,15 +501,15 @@ export function GridView({
           </div>
           {data.nextOffset !== null && (!loading || isLoadingMore) && (
             <div className="load-more-wrap">
-              <button
+              <Button
                 type="button"
-                className="secondary-action"
+                variant="secondary"
                 disabled={loading}
                 onClick={() => update({ offset: data.nextOffset || 0 }, true)}
               >
                 <span>{isLoadingMore ? 'Loading...' : 'More'}</span>
                 <ChevronRightIcon />
-              </button>
+              </Button>
             </div>
           )}
           {data.nextOffset === null && !loading && (

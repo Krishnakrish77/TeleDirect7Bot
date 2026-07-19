@@ -5,6 +5,7 @@ import { formatExternalRating } from '../utils/externalRating';
 import { isLocallyWatched } from '../utils/localWatched';
 import { joinMetadata } from '../utils/metadata';
 import { TrailerModal } from './trailerModal';
+import { Button } from './ui/button';
 
 // Parsed once per render cycle; microtask clears it so the next render reads fresh.
 let _cwCache: Record<string, { pos: number; dur: number }> | null = null;
@@ -189,9 +190,11 @@ function MediaCardBase({
           </span>
         </a>
         {canPreview && (
-          <button
+          <Button
             ref={previewButtonRef}
             type="button"
+            variant="ghost"
+            size="icon-sm"
             className="preview-button"
             title={`Preview ${display.title}`}
             disabled={interactionDisabled}
@@ -204,7 +207,7 @@ function MediaCardBase({
             aria-label={`Preview ${display.title}`}
           >
             <PlayIcon />
-          </button>
+          </Button>
         )}
       </span>
       <a
@@ -263,8 +266,10 @@ function MediaCardBase({
         Save and dismiss controls stay as article-level siblings so they are not nested
         inside card links, but remain anchored to the poster's top edge.
       */}
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         className={saved ? 'save-button saved' : 'save-button'}
         disabled={interactionDisabled}
         title={isMusic ? (saved ? 'Unlike song' : 'Like song') : (saved ? 'Remove from watchlist' : 'Add to watchlist')}
@@ -277,10 +282,12 @@ function MediaCardBase({
         aria-label={isMusic ? (saved ? 'Unlike song' : 'Like song') : (saved ? 'Remove from watchlist' : 'Add to watchlist')}
       >
         {isMusic ? <HeartIcon filled={saved} /> : saved ? <CheckIcon /> : <BookmarkIcon />}
-      </button>
+      </Button>
       {dismissMeta && onDismiss && (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-sm"
           className="dismiss-button"
           disabled={interactionDisabled}
           title="Not for me"
@@ -293,7 +300,7 @@ function MediaCardBase({
           aria-label="Not for me"
         >
           <XIcon />
-        </button>
+        </Button>
       )}
     </article>
   );
