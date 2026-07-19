@@ -77,6 +77,8 @@ async def generate_json(
     except asyncio.TimeoutError:
         logging.warning("gemini: timeout on %s", model)
         return None
-    except Exception:
-        logging.debug("gemini: call failed", exc_info=True)
+    except Exception as exc:
+        # Log the exception type only — never exc_info: some aiohttp errors embed
+        # the request URL, which carries the API key as a query param.
+        logging.debug("gemini: call failed (%s)", type(exc).__name__)
         return None

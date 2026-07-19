@@ -20,7 +20,9 @@ import logging
 import random
 from typing import Optional
 
-from main.utils import ai_rec_store, cw_store, gemini, media_index, rec_engine, wh_store
+from main.utils import (
+    ai_rec_store, cw_store, dismissed_store, gemini, media_index, rec_engine, wh_store,
+)
 
 _MAX_CANDIDATES = 50
 
@@ -86,6 +88,8 @@ def _apply_picks(picks: list, index: dict, limit: int) -> list:
     out = []
     seen: set = set()
     for pick in picks or []:
+        if not isinstance(pick, dict):  # defend against a stray non-object pick
+            continue
         cid = str(pick.get("id") or "")
         payload = index.get(cid)
         if payload is None:  # hallucinated / stale id — drop it
@@ -105,6 +109,24 @@ def _apply_picks(picks: list, index: dict, limit: int) -> list:
     return out
 
 
+def _validate_cached(items: list) -> list:
+    """Drop cached cards whose underlying item was hidden/removed since caching.
+
+    Only individual items/tracks (digit itemId) are cheaply re-checkable;
+    grouped cards (movie/series/album keys) pass through — a rare stale-group
+    is acceptable within the short cache window.
+    """
+    out = []
+    for item in items or []:
+        iid = str(item.get("itemId") or "")
+        if iid.isdigit():
+            obj = media_index.get_item(int(iid))
+            if obj is None or getattr(obj, "hidden", False):
+                continue
+        out.append(item)
+    return out
+
+
 def _is_cold(profile: dict, stats: dict, payloads: list) -> bool:
     has_signal = bool(profile.get("seeds")) or bool(stats.get("top_genres")) or bool(stats.get("top_artists"))
     return (not has_signal) or len(payloads) < 6
@@ -115,8 +137,11 @@ def _taste_summary(profile: dict, stats: dict) -> str:
     genres = [g for g, _ in (stats.get("top_genres") or [])][:5]
     if genres:
         parts.append("Top genres: " + ", ".join(genres))
-    if stats.get("top_director"):
-        parts.append("Favourite director: " + str(stats["top_director"]))
+    director = stats.get("top_director")
+    if isinstance(director, (list, tuple)):  # stats stores ("Name", count)
+        director = director[0] if director else None
+    if director:
+        parts.append("Favourite director: " + str(director))
     artists = [a for a, _ in (stats.get("top_artists") or [])][:3]
     if artists:
         parts.append("Top artists: " + ", ".join(artists))
@@ -162,14 +187,16 @@ async def _safe_stats(user_id: int) -> dict:
         return {}
 
 
-async def _gather_candidates(user_id: int, profile: dict, stats: dict) -> list:
+async def _gather_candidates(user_id: int, profile: dict, stats: dict, dismissed) -> list:
     """Assemble a diverse pool of catalogue objects: TMDB-based recs (comfort),
     fresh titles in top genres (discovery), top-artist tracks + fresh music, and
     globally popular items."""
     objs: list = []
 
     try:
-        recs = await rec_engine.get_recommendations(user_id, profile=profile)
+        # Pass profile AND dismissed so get_recommendations doesn't recompute the
+        # (4-Mongo-call) signal profile internally.
+        recs = await rec_engine.get_recommendations(user_id, profile=profile, dismissed=dismissed)
         if recs:
             objs += list(recs)
     except Exception:
@@ -229,46 +256,70 @@ async def get_ai_recommendations(
     limit: int = 12,
     refresh: bool = False,
 ) -> dict:
-    """Return ``{items, message, coldStart}`` — catalogue-grounded AI picks."""
-    query = (query or "").strip()
-    use_cache = not query and not refresh
+    """Return ``{items, message, coldStart}`` — catalogue-grounded AI picks.
 
-    if use_cache:
+    Any unexpected failure degrades to trending so the endpoint never 500s.
+    """
+    try:
+        return await _generate(user_id, query=query, limit=limit, refresh=refresh)
+    except Exception:
+        logging.exception("ai_rec: generation failed, serving trending fallback")
+        return {"items": await _trending_items(limit), "message": "", "coldStart": True}
+
+
+async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: bool) -> dict:
+    query = (query or "").strip()
+    read_cache = not query and not refresh
+    write_cache = not query  # refresh recomputes AND refreshes the stored cache
+
+    if read_cache:
         cached = await ai_rec_store.get_cached(user_id)
         if cached:
-            return {"items": cached, "message": "", "coldStart": False, "cached": True}
+            valid = _validate_cached(cached)
+            if len(valid) >= 3:  # else the cache is too stale — regenerate below
+                return {"items": valid, "message": "", "coldStart": False, "cached": True}
 
     from main.server import spa_routes as _spa  # lazy: card builders
 
-    profile, history, cw_map = await asyncio.gather(
+    profile, history, cw_map, dismissed = await asyncio.gather(
         rec_engine._collect_signal_profile(user_id),
         wh_store.get_recent(user_id, limit=80),
         cw_store.get_all(user_id),
+        dismissed_store.get_dismissed_ids(user_id),
     )
     stats = await _safe_stats(user_id)
-    seen_keys = {e.get("cw_key") for e in history} | set(cw_map.keys())
 
-    objs = await _gather_candidates(user_id, profile, stats)
-    payloads = _dedup_payloads([_spa._card(o) for o in objs], seen_keys)
+    async def _finish(result: dict) -> dict:
+        if write_cache and result.get("items"):
+            await ai_rec_store.set_cached(user_id, result["items"])
+        return result
+
+    # Cold start / no key: skip the expensive candidate gather entirely.
+    has_signal = bool(profile.get("seeds")) or bool(stats.get("top_genres")) or bool(stats.get("top_artists"))
+    if not has_signal or not gemini.available():
+        return await _finish({"items": await _trending_items(limit), "message": "", "coldStart": True})
+
+    seen_keys = {e.get("cw_key") for e in history} | set(cw_map.keys())
+    objs = await _gather_candidates(user_id, profile, stats, dismissed)
+    art_cache: dict = {}
+    payloads = _dedup_payloads([_spa._card(o, art_cache=art_cache) for o in objs], seen_keys)
     random.shuffle(payloads)  # reduce the LLM's position bias
     payloads = payloads[:_MAX_CANDIDATES]
 
-    if _is_cold(profile, stats, payloads) or not gemini.available():
-        return {"items": await _trending_items(limit), "message": "", "coldStart": True}
+    if len(payloads) < 6:
+        return await _finish({"items": await _trending_items(limit), "message": "", "coldStart": True})
+
+    def _raw_fallback() -> list:
+        return [{**p, "recReason": "From your library", "bucket": "comfort"} for p in payloads[:limit]]
 
     index, prompt_items = _index_candidates(payloads)
     prompt = _build_prompt(_taste_summary(profile, stats), prompt_items, query, limit)
     result = await gemini.generate_json(prompt, schema=_PICK_SCHEMA, timeout=45)
 
-    if not result or not result.get("picks"):
-        fallback = [{**p, "recReason": "From your library", "bucket": "comfort"} for p in payloads[:limit]]
-        return {"items": fallback, "message": "", "coldStart": False}
+    picks = result.get("picks") if isinstance(result, dict) else None
+    if not isinstance(picks, list) or not picks:
+        return await _finish({"items": _raw_fallback(), "message": "", "coldStart": False})
 
-    items = _apply_picks(result["picks"], index, limit)
-    if not items:
-        items = [{**p, "recReason": "From your library", "bucket": "comfort"} for p in payloads[:limit]]
+    items = _apply_picks(picks, index, limit) or _raw_fallback()
     message = (result.get("message") or "").strip()
-
-    if use_cache and items:
-        await ai_rec_store.set_cached(user_id, items)
-    return {"items": items, "message": message, "coldStart": False}
+    return await _finish({"items": items, "message": message, "coldStart": False})

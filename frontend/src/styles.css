@@ -6326,7 +6326,12 @@ img {
 .ai-fab:hover,
 .ai-fab:focus-visible {
   transform: translateY(-2px) scale(1.04);
+}
+
+.ai-fab:focus-visible {
   outline: none;
+  box-shadow: 0 10px 26px rgba(249, 115, 22, 0.42),
+    0 0 0 3px var(--bg), 0 0 0 5px var(--brand);
 }
 
 .ai-fab svg {

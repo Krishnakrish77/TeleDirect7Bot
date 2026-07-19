@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { askAiRecommendations, fetchAiRecommendations } from '../api';
 import type { AiRecItem, HubCard } from '../types';
 import { SparkleIcon, XIcon } from '../icons';
@@ -26,22 +26,29 @@ export function AiRecPanel({
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const ctrl = useRef<AbortController | null>(null);
+
+  const isAbort = (err: unknown) => err instanceof DOMException && err.name === 'AbortError';
 
   const load = (refresh = false) => {
+    ctrl.current?.abort();
+    const controller = new AbortController();
+    ctrl.current = controller;
     setLoading(true);
     setError('');
-    fetchAiRecommendations(refresh)
+    fetchAiRecommendations(refresh, controller.signal)
       .then((res) => {
         setItems(res.items || []);
         setMessage(res.message || '');
         setColdStart(Boolean(res.coldStart));
       })
-      .catch(() => setError('Could not load recommendations right now.'))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (!isAbort(err)) setError('Could not load recommendations right now.'); })
+      .finally(() => { if (ctrl.current === controller) setLoading(false); });
   };
 
   useEffect(() => {
     load(false);
+    return () => ctrl.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -49,16 +56,19 @@ export function AiRecPanel({
     event.preventDefault();
     const q = query.trim();
     if (!q || asking) return;
+    ctrl.current?.abort();
+    const controller = new AbortController();
+    ctrl.current = controller;
     setAsking(true);
     setError('');
-    askAiRecommendations(q)
+    askAiRecommendations(q, controller.signal)
       .then((res) => {
         setItems(res.items || []);
         setMessage(res.message || '');
         setColdStart(false);
       })
-      .catch(() => setError('Could not process that request.'))
-      .finally(() => setAsking(false));
+      .catch((err) => { if (!isAbort(err)) setError('Could not process that request.'); })
+      .finally(() => { if (ctrl.current === controller) setAsking(false); });
   };
 
   const busy = loading || asking;

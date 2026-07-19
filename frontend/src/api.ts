@@ -132,11 +132,12 @@ export async function fetchAiRecommendations(refresh = false, signal?: AbortSign
   return request<AiRecResponse>(`/api/app/ai/recommendations${refresh ? '?refresh=1' : ''}`, { signal });
 }
 
-export async function askAiRecommendations(query: string): Promise<AiRecResponse> {
+export async function askAiRecommendations(query: string, signal?: AbortSignal): Promise<AiRecResponse> {
   return request<AiRecResponse>('/api/app/ai/recommendations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
+    signal,
   });
 }
 

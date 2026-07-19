@@ -46,6 +46,19 @@ def _run():
     normed = ai_rec._apply_picks([{"id": "c0", "reason": "x", "bucket": "weird"}], index, 10)
     assert normed[0]["bucket"] == "comfort"
 
+    # a non-dict pick (malformed model output) is skipped, not crashed on
+    mixed = ai_rec._apply_picks(["oops", {"id": "c0", "reason": "ok", "bucket": "comfort"}], index, 10)
+    assert [i["href"] for i in mixed] == ["/a"], mixed
+
+    # cache validation drops removed items (digit itemId that no longer resolves)
+    # but keeps grouped cards (non-digit itemId).
+    valid = ai_rec._validate_cached([
+        {"itemId": "999999", "href": "/gone"},   # not in empty _items -> dropped
+        {"itemId": "movie:x", "href": "/kept"},  # grouped card -> kept
+        {"itemId": "", "href": "/nokeyt"},        # no id -> kept
+    ])
+    assert [i["href"] for i in valid] == ["/kept", "/nokeyt"], valid
+
     # cold-start detection
     assert ai_rec._is_cold({}, {}, []) is True
     assert ai_rec._is_cold({"seeds": [(1, "movie")]}, {}, deduped * 3) is False
