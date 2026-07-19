@@ -63,6 +63,13 @@ def _run():
     assert ai_rec._is_cold({}, {}, []) is True
     assert ai_rec._is_cold({"seeds": [(1, "movie")]}, {}, deduped * 3) is False
 
+    # Regression: the __init__ route aliases must not shadow the spa_routes
+    # submodule — ai_rec lazily does `from main.server import spa_routes` and
+    # needs the module's _card, not a RouteTableDef.
+    import main.server  # noqa: F401 (runs package __init__)
+    from main.server import spa_routes as _sp
+    assert hasattr(_sp, "_card"), "spa_routes submodule is shadowed by __init__ alias"
+
     print("ai_rec self-check OK")
 
 
