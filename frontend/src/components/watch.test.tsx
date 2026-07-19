@@ -266,7 +266,7 @@ beforeEach(() => {
   fetchAudioTracksMock.mockResolvedValue([]);
   fetchContinueMapMock.mockResolvedValue({});
   fetchRatingMock.mockResolvedValue({ rating: null, counts: { up: 0, down: 0 } });
-  saveContinueEntryMock.mockResolvedValue(undefined);
+  saveContinueEntryMock.mockResolvedValue(true);
   deleteContinueEntryMock.mockResolvedValue(undefined);
   recordWatchHistoryMock.mockResolvedValue(undefined);
   setRatingMock.mockResolvedValue({ rating: null, counts: { up: 0, down: 0 } });

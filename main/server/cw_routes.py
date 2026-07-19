@@ -59,6 +59,8 @@ async def api_upsert(request: web.Request) -> web.Response:
         t = int(body.get("t", 0))
         started_at = int(body.get("startedAt", t))
         title = str(body.get("title", ""))[:200]
+        device_id = str(body.get("deviceId", ""))[:64]
+        device_label = str(body.get("deviceLabel", ""))[:64]
     except Exception:
         return _json({"error": "invalid body"}, status=400)
     if not all(math.isfinite(value) for value in (pos, dur)) or dur <= 0 or pos < 0:
@@ -73,10 +75,15 @@ async def api_upsert(request: web.Request) -> web.Response:
     # Completion is authoritative on the server too.  This prevents stale
     # near-finished entries being displayed or later synced by another device.
     if pos / dur >= 0.95:
+        # Completed: drop it. accepted=False tells the client to remove its
+        # local copy too (cross-device completion propagation).
         await cw_store.delete_one(int(user["sub"]), key)
-        return _json({"ok": True})
-    await cw_store.upsert(int(user["sub"]), key, pos, dur, t, title, started_at)
-    return _json({"ok": True})
+        return _json({"ok": True, "accepted": False})
+    accepted = await cw_store.upsert(int(user["sub"]), key, pos, dur, t, title, started_at,
+                                     device_id=device_id, device_label=device_label)
+    # accepted=False means a stale/tombstoned write was rejected — the client
+    # uses this to drop a locally-stale or deleted-elsewhere entry.
+    return _json({"ok": True, "accepted": bool(accepted)})
 
 
 @routes.delete("/api/cw/{key}")

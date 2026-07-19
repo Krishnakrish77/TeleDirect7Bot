@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FocusEvent, MouseEvent } from 'react';
 import { deleteContinueEntry, dismissRecommendation, fetchRadio, recordWatchHistory, setServerSyncEnabled, signOut } from './api';
+import { syncContinueWatching } from './utils/continueWatching';
 import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useArtColor } from './hooks/artColor';
@@ -140,6 +141,20 @@ function App() {
   // so anonymous playback doesn't 401 every 30s — local td:cw still persists.
   useEffect(() => {
     setServerSyncEnabled(Boolean(user));
+  }, [user]);
+  // Multi-device continue-watching: two-way sync on sign-in (robust login merge,
+  // not shelf-dependent) and whenever the tab regains focus (eventual freshness
+  // that feeds both video and audio resume from the merged local td:cw).
+  useEffect(() => {
+    if (!user) return undefined;
+    void syncContinueWatching();
+    const onFocus = () => { if (document.visibilityState === 'visible') void syncContinueWatching(); };
+    document.addEventListener('visibilitychange', onFocus);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [user]);
   const { saved, toggle, remove: removeSaved } = useWatchlist(user);
   const watchlistPage = useWatchlistItems(user, route.kind === 'watchlist');

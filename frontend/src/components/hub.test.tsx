@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAllContinue, deleteContinueEntry, fetchContinueItems, fetchContinueMap, saveContinueEntry } from '../api';
 import type { HeroItem, HubCard, HubParams, HubResponse } from '../types';
@@ -318,33 +318,39 @@ describe('ContinueWatching', () => {
     expect(screen.queryAllByText('Kalki')).toHaveLength(0);
   });
 
-  it('preserves local entries missing from the server snapshot without resurrecting them', async () => {
+  const kalkiItem = {
+    key: 'hash1',
+    title: 'Kalki',
+    series_title: '',
+    episode_label: '',
+    year: 2024,
+    poster_path: '',
+    thumb_url: '/thumb/hash1.jpg',
+    watch_url: '/watch/hash1',
+    kind: 'movie',
+    media_kind: 'video',
+    next_episode: null,
+  } as const;
+
+  it('merges local entries missing from the server snapshot (login merge)', async () => {
+    // A local entry the server has never seen is pushed up on sign-in — the
+    // robust login merge. Resurrection of *deleted* entries is prevented by
+    // tombstones (local isContinueSuppressed + the server tombstone guard),
+    // not by staying conservative here.
     localStorage.setItem('td:cw', JSON.stringify({
       hash1: { pos: 120, dur: 1200, t: 20, title: 'Kalki' },
     }));
     vi.mocked(fetchContinueMap).mockResolvedValue({});
-    vi.mocked(fetchContinueItems).mockResolvedValue([
-      {
-        key: 'hash1',
-        title: 'Kalki',
-        series_title: '',
-        episode_label: '',
-        year: 2024,
-        poster_path: '',
-        thumb_url: '/thumb/hash1.jpg',
-        watch_url: '/watch/hash1',
-        kind: 'movie',
-        media_kind: 'video',
-        next_episode: null,
-      },
-    ]);
-    vi.mocked(saveContinueEntry).mockResolvedValue(undefined);
+    vi.mocked(fetchContinueItems).mockResolvedValue([{ ...kalkiItem }]);
+    vi.mocked(saveContinueEntry).mockResolvedValue(true);
 
     render(<ContinueWatching serverSyncEnabled />);
 
     expect(await screen.findAllByText('Kalki')).toHaveLength(2);
-    await waitFor(() => expect(fetchContinueItems).toHaveBeenCalled());
-    expect(saveContinueEntry).not.toHaveBeenCalled();
+    await waitFor(() => expect(saveContinueEntry).toHaveBeenCalledWith(
+      'hash1',
+      { pos: 120, dur: 1200, t: 20, title: 'Kalki', startedAt: 20 },
+    ));
     expect(JSON.parse(localStorage.getItem('td:cw') || '{}').hash1).toMatchObject({ pos: 120, dur: 1200 });
   });
 
@@ -355,108 +361,56 @@ describe('ContinueWatching', () => {
     vi.mocked(fetchContinueMap).mockResolvedValue({
       hash1: { pos: 120, dur: 1200, t: 20, title: 'Kalki' },
     });
-    vi.mocked(fetchContinueItems).mockResolvedValue([
-      {
-        key: 'hash1',
-        title: 'Kalki',
-        series_title: '',
-        episode_label: '',
-        year: 2024,
-        poster_path: '',
-        thumb_url: '/thumb/hash1.jpg',
-        watch_url: '/watch/hash1',
-        kind: 'movie',
-        media_kind: 'video',
-        next_episode: null,
-      },
-    ]);
-    vi.mocked(saveContinueEntry).mockResolvedValue(undefined);
+    vi.mocked(fetchContinueItems).mockResolvedValue([{ ...kalkiItem }]);
+    vi.mocked(saveContinueEntry).mockResolvedValue(true);
 
     render(<ContinueWatching serverSyncEnabled />);
 
     expect(await screen.findAllByText('Kalki')).toHaveLength(2);
     await waitFor(() => expect(saveContinueEntry).toHaveBeenCalledWith(
       'hash1',
-      { pos: 180, dur: 1200, t: 30, title: 'Kalki' },
+      { pos: 180, dur: 1200, t: 30, title: 'Kalki', startedAt: 30 },
     ));
   });
 
-  it('orders dismiss deletes after any in-flight local progress sync', async () => {
+  it('removes a dismissed entry and does not re-push it on the next sync', async () => {
     localStorage.setItem('td:cw', JSON.stringify({
       hash1: { pos: 180, dur: 1200, t: 30, title: 'Kalki' },
     }));
-    vi.mocked(fetchContinueMap).mockResolvedValue({
-      hash1: { pos: 120, dur: 1200, t: 20, title: 'Kalki' },
-    });
-    vi.mocked(fetchContinueItems).mockResolvedValue([
-      {
-        key: 'hash1',
-        title: 'Kalki',
-        series_title: '',
-        episode_label: '',
-        year: 2024,
-        poster_path: '',
-        thumb_url: '/thumb/hash1.jpg',
-        watch_url: '/watch/hash1',
-        kind: 'movie',
-        media_kind: 'video',
-        next_episode: null,
-      },
-    ]);
-    let resolveSave!: () => void;
-    vi.mocked(saveContinueEntry).mockReturnValue(new Promise<void>((resolve) => { resolveSave = resolve; }));
+    vi.mocked(fetchContinueMap).mockResolvedValue({});
+    vi.mocked(fetchContinueItems).mockResolvedValue([{ ...kalkiItem }]);
+    vi.mocked(saveContinueEntry).mockResolvedValue(true);
     vi.mocked(deleteContinueEntry).mockResolvedValue(undefined);
 
     const view = render(<ContinueWatching serverSyncEnabled />);
-
     expect(await screen.findAllByText('Kalki')).toHaveLength(2);
-    await waitFor(() => expect(saveContinueEntry).toHaveBeenCalledWith(
-      'hash1',
-      { pos: 180, dur: 1200, t: 30, title: 'Kalki' },
-    ));
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(deleteContinueEntry).toHaveBeenCalledWith('hash1'));
 
-    expect(deleteContinueEntry).not.toHaveBeenCalled();
+    // After dismissal the entry is gone locally + tombstoned, so a fresh mount
+    // neither shows nor re-pushes it.
+    vi.mocked(saveContinueEntry).mockClear();
     view.unmount();
     render(<ContinueWatching serverSyncEnabled />);
-
-    await waitFor(() => expect(fetchContinueMap).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchContinueMap).toHaveBeenCalled());
     expect(screen.queryAllByText('Kalki')).toHaveLength(0);
-
-    await act(async () => {
-      resolveSave();
-      await Promise.resolve();
-    });
-    await waitFor(() => expect(deleteContinueEntry).toHaveBeenCalledWith('hash1'));
+    expect(saveContinueEntry).not.toHaveBeenCalledWith('hash1', expect.anything());
   });
 
-  it('does not resurrect stale local entries missing from the server snapshot', async () => {
+  it('does not resurrect a locally tombstoned entry', async () => {
     localStorage.setItem('td:cw', JSON.stringify({
       hash1: { pos: 120, dur: 1200, t: 1, title: 'Kalki' },
     }));
+    localStorage.setItem('td:cw:tombstones', JSON.stringify({ hash1: 5 })); // newer than entry.t
     vi.mocked(fetchContinueMap).mockResolvedValue({});
-    vi.mocked(fetchContinueItems).mockResolvedValue([
-      {
-        key: 'hash1',
-        title: 'Kalki',
-        series_title: '',
-        episode_label: '',
-        year: 2024,
-        poster_path: '',
-        thumb_url: '/thumb/hash1.jpg',
-        watch_url: '/watch/hash1',
-        kind: 'movie',
-        media_kind: 'video',
-        next_episode: null,
-      },
-    ]);
-    vi.mocked(saveContinueEntry).mockResolvedValue(undefined);
+    vi.mocked(fetchContinueItems).mockResolvedValue([]);
+    vi.mocked(saveContinueEntry).mockResolvedValue(true);
 
     render(<ContinueWatching serverSyncEnabled />);
 
-    expect(await screen.findAllByText('Kalki')).toHaveLength(2);
-    await waitFor(() => expect(fetchContinueItems).toHaveBeenCalled());
+    await waitFor(() => expect(fetchContinueMap).toHaveBeenCalled());
     expect(saveContinueEntry).not.toHaveBeenCalled();
+    expect(screen.queryAllByText('Kalki')).toHaveLength(0);
   });
 });
