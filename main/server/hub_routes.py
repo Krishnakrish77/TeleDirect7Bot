@@ -1260,8 +1260,7 @@ _AUDIO_PLACEHOLDER_SVG = (
     b'<g fill="none" stroke="#475569" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">'
     b'<path d="M150 210V112"/><path d="M226 190V94"/><path d="M150 112 226 94"/></g>'
     b'<circle cx="132" cy="212" r="20" fill="#475569"/>'
-    b'<circle cx="208" cy="192" r="20" fill="#475569"/>'
-    b'<circle cx="250" cy="118" r="9" fill="#14b8a6"/></svg>'
+    b'<circle cx="208" cy="192" r="20" fill="#475569"/></svg>'
 )
 
 

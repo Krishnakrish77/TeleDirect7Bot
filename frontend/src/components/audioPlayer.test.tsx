@@ -107,9 +107,8 @@ describe('MiniPlayer', () => {
 });
 
 describe('NowPlayingSheet', () => {
-  it('exposes repeat, volume, and pending next-track actions', () => {
+  it('exposes repeat and pending next-track actions', () => {
     const cycleRepeatMode = vi.fn();
-    const setVolume = vi.fn();
     const confirmNext = vi.fn();
     const cancelNext = vi.fn();
     const nextTrack = makeTrack({ key: 'next-track', title: 'Next Theme' });
@@ -122,10 +121,11 @@ describe('NowPlayingSheet', () => {
         togglePlayback={vi.fn()}
         seek={vi.fn()}
         cycleRepeatMode={cycleRepeatMode}
-        setVolume={setVolume}
+        setVolume={vi.fn()}
         toggleMute={vi.fn()}
         confirmNext={confirmNext}
         cancelNext={cancelNext}
+        shuffleUpNext={vi.fn()}
         onClose={vi.fn()}
         onOpenQueue={vi.fn()}
       />,
@@ -134,9 +134,6 @@ describe('NowPlayingSheet', () => {
     fireEvent.click(screen.getByLabelText('Repeat off'));
     expect(cycleRepeatMode).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByLabelText('Audio volume'), { target: { value: '0.4' } });
-    expect(setVolume).toHaveBeenCalledWith(0.4);
-
     fireEvent.click(screen.getByText('Play now'));
     expect(confirmNext).toHaveBeenCalledTimes(1);
 
@@ -144,37 +141,36 @@ describe('NowPlayingSheet', () => {
     expect(cancelNext).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps advanced playback settings collapsed on mobile until requested', () => {
-    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    }));
+  it('shows inline transport controls instead of a hidden settings menu', () => {
+    const shuffleUpNext = vi.fn();
+    const toggleMute = vi.fn();
 
     render(
       <NowPlayingSheet
         open
-        player={makePlayer()}
+        player={makePlayer({ queue: [makeTrack(), makeTrack({ key: 'b' }), makeTrack({ key: 'c' })], queueIndex: 0 })}
         playRelative={vi.fn()}
         togglePlayback={vi.fn()}
         seek={vi.fn()}
         cycleRepeatMode={vi.fn()}
         setVolume={vi.fn()}
-        toggleMute={vi.fn()}
+        toggleMute={toggleMute}
         confirmNext={vi.fn()}
         cancelNext={vi.fn()}
+        shuffleUpNext={shuffleUpNext}
         onClose={vi.fn()}
         onOpenQueue={vi.fn()}
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Playback settings' }).getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByLabelText('Audio volume')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Playback settings' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Queue' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Playback settings' }));
+    fireEvent.click(screen.getByLabelText('Shuffle up next'));
+    expect(shuffleUpNext).toHaveBeenCalledTimes(1);
 
-    expect(screen.getByLabelText('Audio volume')).toBeTruthy();
-    vi.unstubAllGlobals();
+    fireEvent.click(screen.getByLabelText('Mute'));
+    expect(toggleMute).toHaveBeenCalledTimes(1);
   });
 
   it('shows expanded playback failure recovery actions', () => {
@@ -192,6 +188,7 @@ describe('NowPlayingSheet', () => {
         toggleMute={vi.fn()}
         confirmNext={vi.fn()}
         cancelNext={vi.fn()}
+        shuffleUpNext={vi.fn()}
         onClose={vi.fn()}
         onOpenQueue={vi.fn()}
       />,

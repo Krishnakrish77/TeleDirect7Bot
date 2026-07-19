@@ -613,6 +613,7 @@ function App() {
         toggleMute={audio.toggleMute}
         confirmNext={audio.confirmNext}
         cancelNext={audio.cancelNext}
+        shuffleUpNext={audio.shuffleUpNext}
         onClose={() => setNowPlayingOpen(false)}
         onOpenQueue={() => setQueueOpen(true)}
       />

@@ -1,10 +1,11 @@
 import { type ReactNode, useEffect, useId, useState } from 'react';
-import { ChevronRightIcon, DownloadIcon, ListIcon, MoreVerticalIcon, MusicIcon, PauseIcon, PlayIcon, RepeatIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
+import { ChevronDownIcon, ChevronRightIcon, DownloadIcon, ListIcon, MoreVerticalIcon, MusicIcon, PauseIcon, PlayIcon, RepeatIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 import { LyricsPanel } from './lyrics';
 import { Button } from './ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
+import { Slider } from './ui/slider';
 
 export function useCompactAudioLayout(): boolean {
   const getValue = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(max-width: 680px)').matches);
@@ -214,6 +215,7 @@ export function NowPlayingSheet({
   cancelNext,
   onClose,
   onOpenQueue,
+  shuffleUpNext,
 }: {
   open: boolean;
   player: PlayerState;
@@ -227,18 +229,18 @@ export function NowPlayingSheet({
   cancelNext: () => void;
   onClose: () => void;
   onOpenQueue: () => void;
+  shuffleUpNext: () => void;
 }) {
-  const compact = useCompactAudioLayout();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const track = player.track;
   if (!open || !track) return null;
   const duration = player.duration || track.duration || 0;
   const rangeMax = Math.max(1, Math.round(duration));
+  const repeatActive = player.repeatMode !== 'off';
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
       <DialogContent className="now-sheet" aria-describedby={undefined}>
         <DialogTitle className="sr-only">Now playing</DialogTitle>
-        <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button modal-close" aria-label="Close"><XIcon /></Button></DialogClose>
+        <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button modal-close" aria-label="Close"><ChevronDownIcon /></Button></DialogClose>
         <div className="audio-art-wrap now-art-wrap">
           <MusicIcon />
           <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" onError={(e) => { e.currentTarget.hidden = true; }} />
@@ -248,19 +250,25 @@ export function NowPlayingSheet({
           <h2>{track.title}</h2>
           <p>{[track.artist, track.albumTitle].filter(Boolean).join(' - ')}</p>
         </div>
-        <div className="watch-progress now-progress">
-          <span>{formatClock(player.currentTime)}</span>
-          <input
-            type="range"
-            min="0"
+        <div className="now-progress">
+          <Slider
+            className="now-scrubber"
+            min={0}
             max={rangeMax}
-            value={Math.min(rangeMax, Math.round(player.currentTime))}
-            onChange={(event) => seek(Number(event.currentTarget.value))}
+            step={1}
+            value={[Math.min(rangeMax, Math.round(player.currentTime))]}
+            onValueChange={([value]) => seek(value)}
             aria-label="Playback position"
           />
-          <span>{formatClock(duration)}</span>
+          <div className="now-times">
+            <span>{formatClock(player.currentTime)}</span>
+            <span>{formatClock(duration)}</span>
+          </div>
         </div>
-        <div className="watch-controls now-controls">
+        <div className="now-transport">
+          <Button type="button" variant="ghost" size="icon-sm" className="icon-button now-side-btn" onClick={shuffleUpNext} disabled={player.queue.length - player.queueIndex <= 2} aria-label="Shuffle up next" title="Shuffle up next">
+            <ShuffleIcon />
+          </Button>
           <Button type="button" variant="ghost" size="icon-sm" className="icon-button player-nav" onClick={() => playRelative(-1)} disabled={player.queueIndex <= 0} aria-label="Previous track">
             <SkipBackIcon />
           </Button>
@@ -270,27 +278,31 @@ export function NowPlayingSheet({
           <Button type="button" variant="ghost" size="icon-sm" className="icon-button player-nav" onClick={() => playRelative(1)} disabled={player.queueIndex + 1 >= player.queue.length} aria-label="Next track">
             <SkipForwardIcon />
           </Button>
-          <Button type="button" variant="ghost" size="icon-sm" className="icon-button player-nav" onClick={onOpenQueue} aria-label="Open queue">
-            <ListIcon />
+          <Button type="button" variant="ghost" size="icon-sm" className={repeatActive ? 'icon-button now-side-btn repeat-button active' : 'icon-button now-side-btn repeat-button'} onClick={cycleRepeatMode} aria-label={`Repeat ${player.repeatMode}`} title={`Repeat ${player.repeatMode}`}>
+            <RepeatIcon />
+            {player.repeatMode === 'one' && <span aria-hidden="true">1</span>}
           </Button>
         </div>
-        {compact ? (
-          <AudioSettingsDisclosure open={settingsOpen} onToggle={() => setSettingsOpen((value) => !value)}>
-            <AudioSettingsControls
-              player={player}
-              cycleRepeatMode={cycleRepeatMode}
-              setVolume={setVolume}
-              toggleMute={toggleMute}
+        <div className="now-utility">
+          <div className="now-volume">
+            <Button type="button" variant="ghost" size="icon-sm" className="icon-button" onClick={toggleMute} aria-label={player.muted ? 'Unmute' : 'Mute'}>
+              <VolumeIcon />
+            </Button>
+            <Slider
+              className="now-volume-slider"
+              min={0}
+              max={1}
+              step={0.01}
+              value={[player.muted ? 0 : player.volume]}
+              onValueChange={([value]) => setVolume(value)}
+              aria-label="Volume"
             />
-          </AudioSettingsDisclosure>
-        ) : (
-          <AudioSettingsControls
-            player={player}
-            cycleRepeatMode={cycleRepeatMode}
-            setVolume={setVolume}
-            toggleMute={toggleMute}
-          />
-        )}
+          </div>
+          <Button type="button" variant="secondary" size="sm" className="now-queue-btn" onClick={onOpenQueue}>
+            <ListIcon />
+            <span>Queue</span>
+          </Button>
+        </div>
         {player.nextTrack && (
           <div className="next-track-card">
             <p className="eyebrow">Up next - {player.nextCountdown}s</p>

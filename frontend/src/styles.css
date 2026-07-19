@@ -6223,19 +6223,6 @@ img {
   text-align: center;
 }
 
-/* Center the Playback-settings disclosure (button + expanded controls) so it
-   doesn't sit awkwardly against the left edge of the centered sheet. */
-.now-sheet .audio-settings-disclosure {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.now-sheet .audio-settings-disclosure > div {
-  width: 100%;
-}
-
 .now-copy h2 {
   margin: 0.25rem 0 0;
   color: #fff;
@@ -6251,10 +6238,70 @@ img {
 .now-progress {
   width: 100%;
   margin-top: 0;
+  display: grid;
+  gap: 0.4rem;
 }
 
-.now-controls {
-  margin-top: 0;
+.now-scrubber {
+  cursor: pointer;
+}
+
+.now-times {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Transport: shuffle · prev · play · next · repeat, centered */
+.now-transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.now-side-btn {
+  color: var(--muted);
+}
+
+.now-side-btn:hover,
+.now-side-btn:focus-visible {
+  color: var(--text);
+}
+
+.now-side-btn.active {
+  color: var(--brand);
+}
+
+/* Utility row: volume slider + queue */
+.now-utility {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.now-volume {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.now-volume-slider {
+  flex: 1;
+  min-width: 0;
+}
+
+.now-queue-btn {
+  flex: 0 0 auto;
+  gap: 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
 }
 
 .now-lyrics {
@@ -7786,14 +7833,12 @@ img {
     grid-area: progress;
   }
 
-  .now-controls {
+  .now-transport {
     grid-area: controls;
-    justify-content: center;
   }
 
-  .now-sheet .player-settings {
+  .now-utility {
     grid-area: settings;
-    justify-content: center;
   }
 
   .now-sheet .next-track-card {

@@ -797,6 +797,23 @@ export function useAudioPlayer() {
     playTrack(shuffled[0], shuffled);
   }, [playTrack]);
 
+  // Now-playing shuffle: keep the current track playing, reshuffle only the
+  // tracks queued after it (unlike shuffleQueue, which restarts from a random
+  // track). No-op when there's nothing meaningful to reorder ahead.
+  const shuffleUpNext = useCallback(() => {
+    setPlayer((state) => {
+      if (state.queue.length - state.queueIndex <= 2) return state;
+      const head = state.queue.slice(0, state.queueIndex + 1);
+      const tail = state.queue.slice(state.queueIndex + 1);
+      for (let index = tail.length - 1; index > 0; index -= 1) {
+        const swap = Math.floor(Math.random() * (index + 1));
+        [tail[index], tail[swap]] = [tail[swap], tail[index]];
+      }
+      return { ...state, queue: [...head, ...tail], queueToast: 'Shuffled up next' };
+    });
+    showQueueToast('Shuffled up next');
+  }, [showQueueToast]);
+
   const togglePlayback = useCallback((track?: WatchTrack, queue?: WatchTrack[]) => {
     const current = playerRef.current;
     if (track && current.track?.key !== track.key) {
@@ -1182,6 +1199,7 @@ export function useAudioPlayer() {
     moveQueueItem,
     moveQueueItemToNext,
     shuffleQueue,
+    shuffleUpNext,
     togglePlayback,
     seek,
     cycleRepeatMode,
