@@ -6212,14 +6212,28 @@ img {
 }
 
 .now-art-wrap {
-  width: min(64vw, 240px);
+  width: min(68vw, 264px);
   aspect-ratio: 1 / 1;
-  border-radius: 8px;
+  border-radius: 14px;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.5);
 }
 
 .now-copy {
   min-width: 0;
   text-align: center;
+}
+
+/* Center the Playback-settings disclosure (button + expanded controls) so it
+   doesn't sit awkwardly against the left edge of the centered sheet. */
+.now-sheet .audio-settings-disclosure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.now-sheet .audio-settings-disclosure > div {
+  width: 100%;
 }
 
 .now-copy h2 {

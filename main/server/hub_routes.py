@@ -1251,6 +1251,20 @@ async def hub_person(request: web.Request) -> web.Response:
     return _html(body)
 
 
+# Square music-note placeholder for audio tracks with no extractable art —
+# looks intentional (unlike a broken image) and matches the in-app music icon.
+_AUDIO_PLACEHOLDER_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="342" height="342" viewBox="0 0 342 342" '
+    b'role="img" aria-label="Music">'
+    b'<rect width="342" height="342" rx="26" fill="#0b0f14"/>'
+    b'<g fill="none" stroke="#475569" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">'
+    b'<path d="M150 210V112"/><path d="M226 190V94"/><path d="M150 112 226 94"/></g>'
+    b'<circle cx="132" cy="212" r="20" fill="#475569"/>'
+    b'<circle cx="208" cy="192" r="20" fill="#475569"/>'
+    b'<circle cx="250" cy="118" r="9" fill="#14b8a6"/></svg>'
+)
+
+
 @routes.get(r"/thumb/{hash:[A-Za-z0-9_-]*[A-Za-z_-]}{id:\d+}.jpg")
 async def hub_thumb(request: web.Request) -> web.Response:
     secure_hash = request.match_info["hash"]
@@ -1392,9 +1406,13 @@ async def hub_thumb(request: web.Request) -> web.Response:
         # placeholder instead of a 404 so <img> tags that lack their own
         # fallback (mini-player, queue, now-playing) don't show the browser's
         # broken-image icon. Short cache so art extracted later can replace it.
-        from main.server.tmdb_images import _TMDB_IMAGE_PLACEHOLDER_SVG
+        if is_audio_item:
+            placeholder = _AUDIO_PLACEHOLDER_SVG
+        else:
+            from main.server.tmdb_images import _TMDB_IMAGE_PLACEHOLDER_SVG
+            placeholder = _TMDB_IMAGE_PLACEHOLDER_SVG
         return web.Response(
-            body=_TMDB_IMAGE_PLACEHOLDER_SVG,
+            body=placeholder,
             content_type="image/svg+xml",
             headers={"Cache-Control": "public, max-age=300"},
         )
