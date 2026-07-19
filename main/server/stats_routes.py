@@ -89,6 +89,10 @@ def _binge_stats(timestamps: list, gap_hours: int = 3, min_len: int = 3) -> tupl
     A "session" is a run of completions each within ``gap_hours`` of the last;
     a "binge" is a session of at least ``min_len`` completions. longest_binge
     is the largest session size (0 if none reaches min_len).
+
+    ponytail: same-second duplicate completion events (a double-fire, or looping
+    a very short track) can over-count a session by a unit. Not worth de-duping
+    on (cw_key, second) unless it ever shows up as wrong.
     """
     stamps = sorted(t for t in timestamps if t is not None)
     if not stamps:
@@ -539,10 +543,18 @@ async def _stats_payload(user_id: int) -> dict:
     # ── New metrics: decade mix, rewatch ratio, genre diversity, binges ────
     decades = [{"label": f"{d}s", "count": c} for d, c in sorted(decade_counts.items())]
 
-    total_title_plays = sum(title_counts.values())
-    distinct_titles = len(title_counts)
-    rewatch_plays = max(0, total_title_plays - distinct_titles)
-    rewatch_pct = round(rewatch_plays / total_title_plays * 100) if total_title_plays else 0
+    # Rewatch ratio at ITEM granularity (per cw_key). Grouping by series/album
+    # would count a fresh multi-episode/track binge as ~90% "rewatches"; a
+    # per-episode/per-track count correctly reports that as 0% until something
+    # is actually replayed.
+    item_plays: Counter = Counter()
+    for h in history:
+        ck = h.get("cw_key", "")
+        if ck:
+            item_plays[ck] += _play_count(h)
+    total_item_plays = sum(item_plays.values())
+    rewatch_plays = max(0, total_item_plays - len(item_plays))
+    rewatch_pct = round(rewatch_plays / total_item_plays * 100) if total_item_plays else 0
     rewatch_label = (
         "Comfort re-watcher" if rewatch_pct >= 40
         else "Always something new" if rewatch_pct <= 15
