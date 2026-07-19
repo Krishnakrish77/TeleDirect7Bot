@@ -85,6 +85,7 @@ _HUB_CARD_PAYLOAD_KEYS = (
     "year",
     "mediaKind",
     "posterUrl",
+    "posterSrcSet",
     "durationLabel",
     "quality",
     "genres",
