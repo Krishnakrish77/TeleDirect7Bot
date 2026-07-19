@@ -1826,9 +1826,9 @@ function VideoWatchPage({
         )}
 
         <div className="video-controls">
-          <button type="button" className="player-play video-play" onClick={toggleVideo} aria-label={playing ? 'Pause' : 'Play'}>
+          <Button type="button" variant="ghost" size="icon" className="player-play video-play" onClick={toggleVideo} aria-label={playing ? 'Pause' : 'Play'}>
             {playing ? <PauseIcon /> : <PlayIcon />}
-          </button>
+          </Button>
           <div className="video-time">
             <span>{formatClock(currentTime)}</span>
             <div className="video-scrub-wrap">
@@ -1853,25 +1853,29 @@ function VideoWatchPage({
             </div>
             <span>{formatClock(duration)}</span>
           </div>
-          <button type="button" className="icon-button" onClick={() => setMuted((isMuted) => !isMuted)} aria-label={muted ? 'Unmute' : 'Mute'}>
+          <Button type="button" variant="ghost" size="icon" onClick={() => setMuted((isMuted) => !isMuted)} aria-label={muted ? 'Unmute' : 'Mute'}>
             <VolumeIcon />
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className={activeSub ? 'icon-button active' : 'icon-button'}
+            variant="ghost"
+            size="icon"
+            className={activeSub ? 'active' : ''}
             onClick={toggleCaptions}
             disabled={!allSubtitles.length}
             aria-label={activeSub ? 'Turn captions off' : 'Turn captions on'}
           >
             <CaptionsIcon />
-          </button>
-          <button type="button" className="icon-button video-pip-control" onClick={togglePip} aria-label="Picture in picture">
+          </Button>
+          <Button type="button" variant="ghost" size="icon" className="video-pip-control" onClick={togglePip} aria-label="Picture in picture">
             <PictureInPictureIcon />
-          </button>
+          </Button>
           {video.episodeNavigator && (
-            <button
+            <Button
               type="button"
-              className={episodesOpen ? 'icon-button active' : 'icon-button'}
+              variant="ghost"
+              size="icon"
+              className={episodesOpen ? 'active' : ''}
               onClick={() => {
                 setMenuOpen(false);
                 setEpisodesOpen((open) => !open);
@@ -1880,21 +1884,23 @@ function VideoWatchPage({
               aria-expanded={episodesOpen}
             >
               <ListIcon />
-            </button>
+            </Button>
           )}
-          <button type="button" className="icon-button" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+          <Button type="button" variant="ghost" size="icon" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
             <MaximizeIcon />
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className={menuOpen ? 'icon-button video-more-control active' : 'icon-button video-more-control'}
+            variant="ghost"
+            size="icon"
+            className={menuOpen ? 'video-more-control active' : 'video-more-control'}
             onClick={() => setMenuOpen((open) => !open)}
             aria-label="More video options"
             aria-expanded={menuOpen}
           >
             <MoreVerticalIcon />
             <span>More</span>
-          </button>
+          </Button>
         </div>
 
         {menuOpen && (

@@ -6763,7 +6763,7 @@ img {
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
-.video-controls .icon-button.active {
+.video-controls [data-slot="button"].active {
   border-color: rgba(249, 115, 22, 0.5);
   background: rgba(249, 115, 22, 0.16);
   color: #fff;
@@ -9953,7 +9953,7 @@ select.edit-field-input {
     padding-inline: 0.62rem;
   }
 
-  .video-controls .icon-button {
+  .video-controls [data-slot="button"][data-size="icon"] {
     width: 36px;
     height: 36px;
   }
