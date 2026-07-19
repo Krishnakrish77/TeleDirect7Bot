@@ -5,6 +5,16 @@ import { localAppHref } from '../navigation';
 import { BookmarkIcon, BroadcastIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HeartIcon, HomeIcon, ListIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, UserIcon, XIcon } from '../icons';
 import type { MeResponse, Suggestion, TelegramAuthUser, User, ViewValue } from '../types';
 import { tmdbImageUrl } from '../utils/tmdb';
+import { Button } from './ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
 
 declare global {
   interface Window {
@@ -79,7 +89,6 @@ export function Header({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [avatarFailed, setAvatarFailed] = useState(false);
-  const accountRef = useRef<HTMLDivElement | null>(null);
   const searchWrapRef = useRef<HTMLFormElement | null>(null);
   const suggestions = useSuggestions(query.trim());
   const suggestionsOpen = open && suggestions.length > 0;
@@ -88,24 +97,6 @@ export function Header({
   // Telegram Login Widget photo URLs can expire before the session JWT does.
   // Reset the fallback if a different account/photo is received.
   useEffect(() => setAvatarFailed(false), [user?.photo, user?.sub]);
-
-  useEffect(() => {
-    if (!accountOpen) return;
-    const closeOnPointer = (event: PointerEvent) => {
-      if (!accountRef.current?.contains(event.target as Node)) {
-        setAccountOpen(false);
-      }
-    };
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setAccountOpen(false);
-    };
-    document.addEventListener('pointerdown', closeOnPointer);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', closeOnPointer);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [accountOpen, setAccountOpen]);
 
   useEffect(() => {
     setActiveIndex((current) => {
@@ -226,67 +217,74 @@ export function Header({
           <span>Classic UI</span>
         </a>
         {user ? (
-          <div className="account-menu-wrap" ref={accountRef}>
-            <button
+          <DropdownMenu open={accountOpen} onOpenChange={setAccountOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
               className="profile-chip"
               type="button"
-              onClick={() => setAccountOpen((current) => !current)}
-              aria-haspopup="menu"
-              aria-expanded={accountOpen}
-            >
-              <span className="profile-avatar">
-                {user.photo && !avatarFailed ? (
-                  <img src={user.photo} alt="" onError={() => setAvatarFailed(true)} />
-                ) : (
-                  <span>{(user.name || 'U')[0].toUpperCase()}</span>
-                )}
-              </span>
-              <strong>{user.name || user.username || 'User'}</strong>
-              <ChevronDownIcon className="profile-chevron" />
-            </button>
-            {accountOpen && (
-              <div className="account-menu" role="menu">
-                <div className="account-menu-identity" aria-hidden="true">
+              >
+                <span className="profile-avatar">
+                  {user.photo && !avatarFailed ? (
+                    <img src={user.photo} alt="" onError={() => setAvatarFailed(true)} />
+                  ) : (
+                    <span>{(user.name || 'U')[0].toUpperCase()}</span>
+                  )}
+                </span>
+                <strong>{user.name || user.username || 'User'}</strong>
+                <ChevronDownIcon className="profile-chevron" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="account-menu" align="end">
+              <DropdownMenuLabel className="account-menu-identity">
                   <strong>{user.name || user.username || 'Signed in'}</strong>
                   {user.username && <span>@{user.username}</span>}
-                </div>
-                <a href="/app/watchlist" role="menuitem" onClick={() => setAccountOpen(false)}>
+              </DropdownMenuLabel>
+              <DropdownMenuItem asChild>
+                <a href="/app/watchlist">
                   <BookmarkIcon />
                   <span>Watchlist</span>
                 </a>
-                <a href="/app/liked-songs" role="menuitem" onClick={() => setAccountOpen(false)}>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href="/app/liked-songs">
                   <HeartIcon />
                   <span>Liked songs</span>
                 </a>
-                <a href="/app/playlists" role="menuitem" onClick={() => setAccountOpen(false)}>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href="/app/playlists">
                   <ListIcon />
                   <span>Playlists</span>
                 </a>
-                <a href="/app/stats" role="menuitem" onClick={() => setAccountOpen(false)}>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href="/app/stats">
                   <ChartIcon />
                   <span>Stats</span>
                 </a>
-                <span className="account-menu-divider" aria-hidden="true" />
-                {user.is_admin && (
-                  <a href="/app/admin" role="menuitem" onClick={() => setAccountOpen(false)}>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="account-menu-divider" />
+              {user.is_admin && (
+                <DropdownMenuItem asChild>
+                  <a href="/app/admin">
                     <ShieldIcon />
                     <span>Admin panel</span>
                   </a>
-                )}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem asChild>
                 <button
                   type="button"
-                  role="menuitem"
                   onClick={() => {
-                    setAccountOpen(false);
                     onSignOut();
                   }}
                 >
                   <LogOutIcon />
                   <span>Sign out</span>
                 </button>
-              </div>
-            )}
-          </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : (
           <button className="signin-button" type="button" onClick={onSignIn} disabled={me === null}>
             <UserIcon />
@@ -409,20 +407,19 @@ export function SignInModal({
     };
   }, [botUsername, open]);
 
-  if (!open) return null;
-
   return (
-    <div className="modal-layer" role="dialog" aria-modal="true" aria-label="Sign in">
-      <button className="modal-scrim" type="button" onClick={onClose} aria-label="Close" />
-      <div className="modal-panel">
-        <button className="icon-button modal-close" type="button" onClick={onClose} aria-label="Close">
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="modal-panel fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" aria-describedby={undefined}>
+        <DialogTitle>Sign in</DialogTitle>
+        <DialogClose asChild>
+          <Button type="button" variant="ghost" size="icon-sm" className="modal-close" aria-label="Close">
           <XIcon />
-        </button>
-        <h2>Sign in</h2>
+          </Button>
+        </DialogClose>
         <div className="telegram-slot" ref={rootRef} />
         {!botUsername && <p className="form-error">Telegram login unavailable</p>}
         {error && <p className="form-error">{error}</p>}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

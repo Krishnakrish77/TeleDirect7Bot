@@ -349,10 +349,6 @@ img {
   cursor: pointer;
 }
 
-.account-menu-wrap {
-  position: relative;
-}
-
 .profile-avatar {
   display: grid;
   place-items: center;
@@ -387,10 +383,6 @@ img {
 }
 
 .account-menu {
-  position: absolute;
-  top: calc(100% + 0.55rem);
-  right: 0;
-  z-index: 60;
   display: grid;
   min-width: 13.5rem;
   padding: 0.35rem;
@@ -7780,7 +7772,8 @@ img {
   contain: layout paint style;
 }
 
-.modal-panel h2 {
+.modal-panel h2,
+.modal-panel [data-slot="dialog-title"] {
   margin: 0;
   font-size: 1.45rem;
 }
