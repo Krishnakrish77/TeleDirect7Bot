@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FocusEvent, MouseEvent } from 'react';
-import { deleteContinueEntry, dismissRecommendation, recordWatchHistory, signOut } from './api';
+import { deleteContinueEntry, dismissRecommendation, recordWatchHistory, setServerSyncEnabled, signOut } from './api';
 import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useArtColor } from './hooks/artColor';
@@ -131,6 +131,11 @@ function App() {
   const detail = useDetail(route, location.search);
   const { me, reload } = useMe();
   const user = me?.user ?? null;
+  // Gate all server-side progress writes (continue-watching, history) on auth
+  // so anonymous playback doesn't 401 every 30s — local td:cw still persists.
+  useEffect(() => {
+    setServerSyncEnabled(Boolean(user));
+  }, [user]);
   const { saved, toggle, remove: removeSaved } = useWatchlist(user);
   const watchlistPage = useWatchlistItems(user, route.kind === 'watchlist');
   const likedSongs = useLikedSongs(user, route.kind === 'liked-songs');

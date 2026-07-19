@@ -338,7 +338,17 @@ export async function fetchContinueMap(signal?: AbortSignal): Promise<ContinueMa
   return request<ContinueMap>('/api/cw', { signal });
 }
 
+// Server-side progress sync is only meaningful for signed-in users.
+// Anonymous viewers keep their resume state locally (td:cw); firing these
+// writes for them just 401s on every 30s tick and on unload. App sets this
+// once /api/me resolves.
+let _serverSyncEnabled = false;
+export function setServerSyncEnabled(on: boolean): void {
+  _serverSyncEnabled = on;
+}
+
 export async function saveContinueEntry(key: string, entry: Omit<ContinueEntry, 'key'>): Promise<void> {
+  if (!_serverSyncEnabled) return;
   await request<{ ok: boolean }>(`/api/cw/${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -348,6 +358,7 @@ export async function saveContinueEntry(key: string, entry: Omit<ContinueEntry, 
 }
 
 export async function deleteContinueEntry(key: string): Promise<void> {
+  if (!_serverSyncEnabled) return;
   await request<{ ok: boolean }>(`/api/cw/${encodeURIComponent(key)}`, {
     method: 'DELETE',
     keepalive: true,
@@ -355,6 +366,7 @@ export async function deleteContinueEntry(key: string): Promise<void> {
 }
 
 export async function clearAllContinue(): Promise<void> {
+  if (!_serverSyncEnabled) return;
   await request<{ ok: boolean }>('/api/cw', { method: 'DELETE', keepalive: true });
 }
 
@@ -417,6 +429,7 @@ export async function resolveTmdbImdb(imdbInput: string, signal?: AbortSignal): 
 }
 
 export async function recordWatchHistory(key: string, title: string): Promise<void> {
+  if (!_serverSyncEnabled) return;
   await request<{ ok: boolean }>(`/api/wh/${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
