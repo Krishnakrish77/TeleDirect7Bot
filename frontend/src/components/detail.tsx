@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookmarkIcon, CheckIcon, ChevronRightIcon, DownloadIcon, ListIcon, ListPlusIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
+import { BookmarkIcon, CheckIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, ListPlusIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
 import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
 import type { AppRoute } from '../navigation';
@@ -164,7 +164,7 @@ function DetailHero({
             <Button asChild><a href={playHref}><PlayIcon /><span>Play</span></a></Button>
           )}
           {trailerKey && (
-            <Button ref={trailerButtonRef} type="button" variant="secondary" size="icon" onClick={() => setTrailerOpen(true)} aria-label="Trailer" title="Watch trailer"><PlayIcon /></Button>
+            <Button ref={trailerButtonRef} type="button" variant="secondary" onClick={() => setTrailerOpen(true)} title="Watch trailer"><FilmIcon /><span>Trailer</span></Button>
           )}
           {onToggleSaved && (
             <Button type="button" variant="secondary" size="icon" className={saved ? 'saved-action' : ''} onClick={onToggleSaved} aria-label={saved ? 'Saved' : 'Save'} title={saved ? 'Remove from saved' : 'Save'}>
@@ -172,9 +172,6 @@ function DetailHero({
             </Button>
           )}
           {extraActions}
-          {imdbHref && (
-            <Button asChild variant="secondary"><a href={imdbHref} target="_blank" rel="noopener noreferrer">IMDb</a></Button>
-          )}
         </div>
         {children}
       </div>
