@@ -353,6 +353,18 @@ def _tmdb_image(path: str, size: str = "w342") -> str:
     return tmdb_image_url(path, size)
 
 
+# Poster srcset for grid/shelf cards so the browser fetches a size that fits
+# the device (w185 for low-DPI, up to w500 for retina) instead of one fixed
+# w342 for everyone.  Empty for thumb-backed posters (no resizable source).
+_POSTER_SRCSET_SIZES = (("w185", 185), ("w342", 342), ("w500", 500))
+
+
+def _tmdb_srcset(path: str) -> str:
+    if not path:
+        return ""
+    return ", ".join(f"{tmdb_image_url(path, size)} {w}w" for size, w in _POSTER_SRCSET_SIZES)
+
+
 def _thumb(item: HubItem) -> str:
     suffix = "?v=audio3" if (item.media_kind or "") == "audio" else ""
     return f"/thumb/{item.secure_hash}{item.message_id}.jpg{suffix}"
@@ -594,6 +606,7 @@ def _item_common(item: HubItem) -> dict:
         "year": item.year,
         "mediaKind": item.media_kind or "video",
         "posterUrl": poster,
+        "posterSrcSet": _tmdb_srcset(item.poster_path),
         "thumbUrl": _thumb(item),
         "backdropUrl": backdrop,
         "duration": item.duration or 0,
@@ -730,6 +743,7 @@ def _common_with_group_art(identity_item: HubItem, art_item: HubItem | None) -> 
         art_common = _item_common(art_item)
         for key in (
             "posterUrl",
+            "posterSrcSet",
             "backdropUrl",
             "genres",
             "overview",

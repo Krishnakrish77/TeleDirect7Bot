@@ -146,9 +146,11 @@ function DetailHero({
   return (
     <section className="detail-hero">
       {(backdropUrl || posterUrl) && <img className="detail-backdrop" src={backdropUrl || posterUrl} alt="" decoding="async" fetchPriority="high" />}
+      {/* Poster loads at default priority so it doesn't compete with the
+          backdrop (the LCP element) for the first-paint fetch budget. */}
       <div className="detail-gradient" />
       <div className="detail-poster">
-        <img src={posterUrl || backdropUrl} alt="" decoding="async" fetchPriority="high" />
+        <img src={posterUrl || backdropUrl} alt="" decoding="async" />
       </div>
       <div className="detail-copy">
         <p className="eyebrow">{subtitle}</p>
@@ -781,7 +783,7 @@ function AlbumHero({
     <section className="album-hero" aria-label="Album summary">
       {(backdropUrl || posterUrl) && <img className="album-backdrop" src={backdropUrl || posterUrl} alt="" decoding="async" fetchPriority="high" />}
       <div className="album-hero-art">
-        <img src={posterUrl || backdropUrl} alt="" decoding="async" fetchPriority="high" />
+        <img src={posterUrl || backdropUrl} alt="" decoding="async" />
       </div>
       <div className="album-hero-copy">
         <p className="eyebrow">Album</p>
@@ -852,7 +854,7 @@ function ArtistDetail({
       <section className="artist-hero" aria-label="Artist summary">
         {(data.backdropUrl || data.posterUrl) && <img className="artist-backdrop" src={data.backdropUrl || data.posterUrl} alt="" decoding="async" fetchPriority="high" />}
         <div className="artist-hero-art">
-          <img src={data.posterUrl || data.backdropUrl} alt="" decoding="async" fetchPriority="high" />
+          <img src={data.posterUrl || data.backdropUrl} alt="" decoding="async" />
         </div>
         <div className="artist-hero-copy">
           <p className="eyebrow">Artist</p>

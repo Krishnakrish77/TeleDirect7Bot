@@ -52,6 +52,7 @@ export interface HubCard {
   year: number | null;
   mediaKind: string;
   posterUrl: string;
+  posterSrcSet?: string;
   thumbUrl: string;
   backdropUrl: string;
   duration: number;

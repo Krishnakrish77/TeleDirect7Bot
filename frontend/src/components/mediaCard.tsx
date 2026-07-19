@@ -155,6 +155,8 @@ function MediaCardBase({
             <img
               className="poster-image"
               src={card.posterUrl}
+              srcSet={card.posterSrcSet || undefined}
+              sizes={card.posterSrcSet ? '(max-width: 680px) 45vw, 200px' : undefined}
               alt=""
               width={width}
               height={height}
