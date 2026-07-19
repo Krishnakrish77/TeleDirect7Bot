@@ -6,6 +6,7 @@ import type {
   AdminMergeSeriesResponse,
   AdminSeriesOption,
   AdminStatusResponse,
+  AiRecResponse,
   AiSuggestResponse,
   ContinueItem,
   DetailResponse,
@@ -125,6 +126,18 @@ export async function fetchHub(
 
 export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
   return request<MeResponse>('/api/me', { signal });
+}
+
+export async function fetchAiRecommendations(refresh = false, signal?: AbortSignal): Promise<AiRecResponse> {
+  return request<AiRecResponse>(`/api/app/ai/recommendations${refresh ? '?refresh=1' : ''}`, { signal });
+}
+
+export async function askAiRecommendations(query: string): Promise<AiRecResponse> {
+  return request<AiRecResponse>('/api/app/ai/recommendations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
 }
 
 export async function fetchWatch(key: string, signal?: AbortSignal): Promise<WatchResponse> {

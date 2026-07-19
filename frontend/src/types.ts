@@ -407,10 +407,23 @@ export interface User {
 export interface MeResponse {
   user: User | null;
   botUsername: string;
+  gemini?: boolean;
   app: {
     name: string;
     spaPath: string;
   };
+}
+
+export interface AiRecItem extends HubCard {
+  recReason?: string;
+  bucket?: 'comfort' | 'discovery';
+}
+
+export interface AiRecResponse {
+  items: AiRecItem[];
+  message: string;
+  coldStart: boolean;
+  cached?: boolean;
 }
 
 export interface Suggestion {

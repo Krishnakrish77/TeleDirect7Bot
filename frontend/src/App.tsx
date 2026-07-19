@@ -12,6 +12,7 @@ import { MiniPlayer, NowPlayingSheet } from './components/audioPlayer';
 import { LoadingRows, ErrorPanel } from './components/common';
 import { QueueDrawer } from './components/queueDrawer';
 import { InstallPrompt } from './components/installPrompt';
+import { AiRecFab } from './components/aiRecFab';
 import type { HubCard, HubFilters, RecommendationMeta, WatchTrack } from './types';
 
 // Refill the radio station once the playing track is within this many of the
@@ -641,6 +642,7 @@ function App() {
           />
         </Suspense>
       )}
+      {user && me?.gemini && <AiRecFab saved={saved} onToggleSaved={onToggleSaved} />}
       <ScrollToTop />
     </div>
   );
