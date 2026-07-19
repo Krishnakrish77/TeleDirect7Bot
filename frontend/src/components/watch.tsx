@@ -1763,14 +1763,14 @@ function VideoWatchPage({
               <h2 id="still-watching-title">Still watching?</h2>
               <p>We paused the stream to save bandwidth.</p>
               <div className="still-watching-actions">
-                <button type="button" className="primary-action" onClick={keepWatching}>
+                <Button type="button" onClick={keepWatching}>
                   <PlayIcon />
                   <span>Keep watching</span>
-                </button>
-                <button type="button" className="secondary-action" onClick={stayPaused}>
+                </Button>
+                <Button type="button" variant="secondary" onClick={stayPaused}>
                   <PauseIcon />
                   <span>Stay paused</span>
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -1788,17 +1788,17 @@ function VideoWatchPage({
         )}
 
         {showSkipIntro && (
-          <button type="button" className="skip-intro" onClick={() => seekVideo(video.introEnd)}>
+          <Button type="button" variant="secondary" size="sm" className="skip-intro" onClick={() => seekVideo(video.introEnd)}>
             Skip intro
             <SkipForwardIcon />
-          </button>
+          </Button>
         )}
 
         {showSkipRecap && (
-          <button type="button" className="skip-intro skip-recap" onClick={() => seekVideo(video.recapEnd)}>
+          <Button type="button" variant="secondary" size="sm" className="skip-intro skip-recap" onClick={() => seekVideo(video.recapEnd)}>
             Skip recap
             <SkipForwardIcon />
-          </button>
+          </Button>
         )}
 
         {showNext && video.nextEpisode && (
@@ -1927,8 +1927,10 @@ function VideoWatchPage({
                 <span>10 seconds</span>
               </Button>
             </div>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               className="video-menu-row"
               role="menuitemcheckbox"
               aria-checked={autoplayNext}
@@ -1936,7 +1938,7 @@ function VideoWatchPage({
             >
               <span>Autoplay next</span>
               <strong>{autoplayNext ? 'On' : 'Off'}</strong>
-            </button>
+            </Button>
             <label className="video-menu-row">
               <span>Captions</span>
               <select value={activeSub} onChange={(event) => setActiveSub(event.currentTarget.value)} disabled={!allSubtitles.length} aria-label="Captions">
@@ -1958,19 +1960,19 @@ function VideoWatchPage({
                 aria-label="Video volume"
               />
             </label>
-            <button type="button" className="video-menu-row" role="menuitem" onClick={() => subInputRef.current?.click()}>
+            <Button type="button" variant="ghost" size="sm" className="video-menu-row" role="menuitem" onClick={() => subInputRef.current?.click()}>
               <span>Load subtitles</span>
               <strong>SRT/VTT</strong>
-            </button>
-            <button type="button" className="video-menu-row" role="menuitem" onClick={() => void findSubtitles()} disabled={subtitleSearching}>
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="video-menu-row" role="menuitem" onClick={() => void findSubtitles()} disabled={subtitleSearching}>
               <span>Find subtitles</span>
               <strong>{subtitleSearching ? 'Searching…' : 'Online'}</strong>
-            </button>
+            </Button>
             {subtitleResults.map((result) => (
-              <button key={result.id} type="button" className="video-menu-row" role="menuitem" onClick={() => void attachSubtitle(result)} disabled={Boolean(subtitleAttaching)}>
+              <Button key={result.id} type="button" variant="ghost" size="sm" className="video-menu-row" role="menuitem" onClick={() => void attachSubtitle(result)} disabled={Boolean(subtitleAttaching)}>
                 <span>{result.label}{result.release ? ` · ${result.release}` : ''}</span>
                 <strong>{subtitleAttaching === result.id ? 'Adding…' : 'Add'}</strong>
-              </button>
+              </Button>
             ))}
             {hasHls && (
               <label className="video-menu-row">
@@ -1989,10 +1991,10 @@ function VideoWatchPage({
               </label>
             )}
             {hasHls && (
-              <button type="button" className="video-menu-row" role="menuitem" onClick={toggleSourceMode}>
+              <Button type="button" variant="ghost" size="sm" className="video-menu-row" role="menuitem" onClick={toggleSourceMode}>
                 <span>Source</span>
                 <strong>{sourceMode === 'direct' ? 'Direct' : 'HLS'}</strong>
-              </button>
+              </Button>
             )}
             <label className="video-menu-row">
               <span>Speed</span>
@@ -2017,10 +2019,10 @@ function VideoWatchPage({
                 ))}
               </>
             )}
-            <button type="button" className="video-menu-row" role="menuitem" onClick={openAirPlay}>
+            <Button type="button" variant="ghost" size="sm" className="video-menu-row" role="menuitem" onClick={openAirPlay}>
               <span>AirPlay</span>
               <strong>Open</strong>
-            </button>
+            </Button>
             {subtitleStatus && <div className="video-menu-status" role="status">{subtitleStatus}</div>}
             <a className="video-menu-row" role="menuitem" href={vlcHref}>
               <span>VLC</span>
@@ -2032,10 +2034,10 @@ function VideoWatchPage({
                 <strong>File</strong>
               </a>
             )}
-            <button type="button" className="video-menu-row" role="menuitem" onClick={shareVideo}>
+            <Button type="button" variant="ghost" size="sm" className="video-menu-row" role="menuitem" onClick={shareVideo}>
               <span>Share</span>
               <strong>Link</strong>
-            </button>
+            </Button>
           </div>
         )}
       </section>
@@ -2054,15 +2056,16 @@ function VideoWatchPage({
             {chapters.map((chapter, index) => {
               const active = activeChapter?.start === chapter.start;
               return (
-                <button
+                <Button
                   key={`${chapter.start}:${chapter.title}`}
                   type="button"
+                  variant="ghost"
                   className={active ? 'chapter-button active' : 'chapter-button'}
                   onClick={() => seekVideo(chapter.start)}
                 >
                   <span>{formatClock(chapter.start)}</span>
                   <strong>{chapter.title || `Chapter ${index + 1}`}</strong>
-                </button>
+                </Button>
               );
             })}
           </div>
