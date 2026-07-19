@@ -135,7 +135,6 @@ export function HeroStage({ heroes }: { heroes: HeroItem[] }) {
 export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnabled?: boolean }) {
   const [entries, setEntries] = useState<Array<ContinueEntry & ContinueItem>>([]);
   const pendingSyncRef = useRef<Promise<void>>(Promise.resolve());
-  const suppressedSyncKeysRef = useRef<Set<string>>(new Set());
 
   const queueServerMutation = (mutation: () => Promise<unknown>) => {
     const task = pendingSyncRef.current
@@ -211,7 +210,6 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
   if (!entries.length) return null;
 
   const forget = (key: string) => {
-    suppressedSyncKeysRef.current.add(key);
     addContinueTombstone(key);
     try {
       const data = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
@@ -226,8 +224,6 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
 
   const forgetAll = () => {
     const now = Date.now();
-    const localKeys = Object.keys(readLocalContinue());
-    [...localKeys, ...entries.map((entry) => entry.key)].forEach((key) => suppressedSyncKeysRef.current.add(key));
     addContinueClearTombstone(now);
     setEntries([]);
     try {

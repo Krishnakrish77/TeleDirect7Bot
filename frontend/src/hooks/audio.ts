@@ -6,17 +6,22 @@ import type { WatchTrack } from '../types';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
-const AUDIO_RESUME_MIN_POS = 5; // don't bother resuming a track barely started
+const AUDIO_RESUME_MIN_POS = 30; // don't resume a track barely started
+// Only long-form audio (podcasts, mixes, audiobooks, DJ sets) auto-resumes —
+// normal songs restart, matching how music players behave. Cross-device resume
+// of short tracks isn't worth the "why did it start mid-song" surprise.
+const AUDIO_RESUME_MIN_DUR = 20 * 60;
 
-// Cross-device audio resume: the local td:cw map is kept fresh from the server
-// (App merges server→local on load/focus), so reading it here resumes progress
-// made on another device without the hook fetching anything itself.
+// The local td:cw map is kept fresh from the server (App merges server→local on
+// load/focus), so reading it here resumes progress made on another device
+// without the hook fetching anything itself.
 function resumeForTrack(track: WatchTrack): number {
   try {
     const entry = readLocalContinue()[track.key];
     if (!entry || isContinueSuppressed(track.key, entry)) return 0;
     const dur = entry.dur || track.duration || 0;
-    if (entry.pos > AUDIO_RESUME_MIN_POS && (!dur || entry.pos < dur * 0.95)) return entry.pos;
+    if (dur < AUDIO_RESUME_MIN_DUR) return 0; // short track → start over
+    if (entry.pos > AUDIO_RESUME_MIN_POS && entry.pos < dur * 0.95) return entry.pos;
   } catch (_) {
     // best-effort resume
   }
@@ -523,7 +528,13 @@ export function useAudioPlayer() {
       const resumePos = resumeForTrack(track);
       audio.currentTime = 0;
       if (resumePos > 0) {
-        const applySeek = () => { try { audio.currentTime = resumePos; } catch (_) { /* not seekable yet */ } };
+        const startedKey = track.key;
+        const applySeek = () => {
+          // Guard against a stale pending listener seeking a *different* track
+          // that reused this element during rapid next/prev.
+          if (playerRef.current.track?.key !== startedKey) return;
+          try { audio.currentTime = resumePos; } catch (_) { /* not seekable yet */ }
+        };
         if (audio.readyState >= 1) applySeek();
         else audio.addEventListener('loadedmetadata', applySeek, { once: true });
       }

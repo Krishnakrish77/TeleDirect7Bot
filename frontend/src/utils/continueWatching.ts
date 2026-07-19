@@ -117,12 +117,16 @@ export async function syncContinueWatching(): Promise<LocalContinueMap> {
       }
     }
     writeLocalContinue(merged);
+    // Cap the login-merge burst to the newest few (server keeps 50, shelf shows
+    // 10) so a music-heavy library doesn't fire hundreds of parallel POSTs.
+    toPush.sort((a, b) => (b[1].t || 0) - (a[1].t || 0));
+    const capped = toPush.slice(0, 20);
     // Push local-newer entries; if the server rejects one (stale, or
     // deleted/completed on another device) drop it locally + tombstone so the
     // deletion propagates here and we stop re-pushing it. Preserve the TRUE
     // session start so a stale session can't sneak past the server tombstone.
     let changed = false;
-    await Promise.all(toPush.map(async ([key, entry]) => {
+    await Promise.all(capped.map(async ([key, entry]) => {
       let accepted = true;
       try {
         accepted = await saveContinueEntry(key, { ...entry, startedAt: entry.startedAt || entry.t });
