@@ -2027,25 +2027,32 @@ def _director_credits(director_str: str) -> List[str]:
 
 
 def items_by_cast_slug(slug: str) -> List[HubItem]:
-    """Return all non-hidden items where any cast member matches the slug."""
+    """Return one item per title where any cast member matches the slug.
+
+    Deduped by group so a movie/series with several quality variants shows
+    once on the person page rather than once per uploaded file.
+    """
     matches = [
         it for it in _items.values()
         if it.cast and not it.hidden
         and any(_person_slug(name) == slug for name in it.cast)
     ]
     matches.sort(key=lambda it: (-(it.year or 0), it.title or ""))
-    return matches
+    return _dedup_by_group(matches)
 
 
 def items_by_director_slug(slug: str) -> List[HubItem]:
-    """Return all non-hidden items where any credited director matches the slug."""
+    """Return one item per title where any credited director matches the slug.
+
+    Deduped by group (see items_by_cast_slug) to collapse multi-variant titles.
+    """
     matches = [
         it for it in _items.values()
         if it.director and not it.hidden
         and any(_person_slug(name) == slug for name in _director_credits(it.director))
     ]
     matches.sort(key=lambda it: (-(it.year or 0), it.title or ""))
-    return matches
+    return _dedup_by_group(matches)
 
 
 def person_display_name(slug: str) -> str:
