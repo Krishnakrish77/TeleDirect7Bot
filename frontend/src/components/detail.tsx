@@ -164,17 +164,16 @@ function DetailHero({
             <Button asChild size="lg"><a href={playHref}><PlayIcon /><span>Play</span></a></Button>
           )}
           {trailerKey && (
-            <Button ref={trailerButtonRef} type="button" variant="secondary" onClick={() => setTrailerOpen(true)}><PlayIcon /><span>Trailer</span></Button>
+            <Button ref={trailerButtonRef} type="button" variant="secondary" size="icon" onClick={() => setTrailerOpen(true)} aria-label="Trailer" title="Watch trailer"><PlayIcon /></Button>
           )}
           {onToggleSaved && (
-            <Button type="button" variant="secondary" className={saved ? 'saved-action' : ''} onClick={onToggleSaved}>
+            <Button type="button" variant="secondary" size="icon" className={saved ? 'saved-action' : ''} onClick={onToggleSaved} aria-label={saved ? 'Saved' : 'Save'} title={saved ? 'Remove from saved' : 'Save'}>
               {saved ? <CheckIcon /> : <BookmarkIcon />}
-              <span>{saved ? 'Saved' : 'Save'}</span>
             </Button>
           )}
           {extraActions}
           {imdbHref && (
-            <Button asChild variant="secondary"><a href={imdbHref} target="_blank" rel="noopener noreferrer"><span>IMDb</span></a></Button>
+            <Button asChild variant="secondary" size="sm" className="detail-imdb-action"><a href={imdbHref} target="_blank" rel="noopener noreferrer">IMDb</a></Button>
           )}
         </div>
         {children}
@@ -547,8 +546,8 @@ function SeriesDetail({
             initiallyWatched={visibleEntriesWatched}
             onMarkWatched={onMarkWatched}
             onMarked={handleShownMarked}
-            label="Mark shown watched"
-            watchedLabel="Shown watched"
+            label="Watched"
+            watchedLabel="Watched"
           />
         )}
       >

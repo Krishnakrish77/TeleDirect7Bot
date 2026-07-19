@@ -440,7 +440,7 @@ describe('Series detail', () => {
 
     expect(onMarkWatched).toHaveBeenCalledWith(['hash101', 'hash102'], series.title);
     expect(JSON.parse(localStorage.getItem('td:cw') || '{}')).toEqual({});
-    expect(screen.getByRole('button', { name: `${series.title} watched` }).textContent).toContain('Shown watched');
+    expect(screen.getByRole('button', { name: `${series.title} watched` }).textContent).toContain('Watched');
     expect(screen.queryByLabelText('42% watched')).toBeNull();
     expect(screen.getAllByLabelText('Watched')).toHaveLength(2);
   });
