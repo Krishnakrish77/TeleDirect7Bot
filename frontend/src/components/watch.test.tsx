@@ -662,6 +662,20 @@ describe('WatchPage video player', () => {
     expect(screen.getByLabelText('Unmute')).toBeTruthy();
   });
 
+  it('shows a timestamp preview while seeking', async () => {
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const position = screen.getByLabelText('Playback position');
+    fireEvent.pointerDown(position);
+    fireEvent.change(position, { target: { value: '30' } });
+
+    expect(view.container.querySelector('.video-seek-preview')?.textContent).toBe('0:30');
+
+    fireEvent.pointerUp(position);
+    expect(view.container.querySelector('.video-seek-preview')).toBeNull();
+  });
+
   it('shows skip recap during the recap window and jumps to recap end', async () => {
     const view = renderWatchPage(makeVideo({ recapStart: 30, recapEnd: 45 }));
 

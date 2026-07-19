@@ -644,6 +644,7 @@ function VideoWatchPage({
   const subInputRef = useRef<HTMLInputElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [seekPreview, setSeekPreview] = useState<number | null>(null);
   const [duration, setDuration] = useState(video.duration || 0);
   // Start with the original stream. Modern devices can hardware-decode some
   // formats (including this library's 10-bit HEVC uploads) that a static
@@ -1826,18 +1827,35 @@ function VideoWatchPage({
         )}
 
         <div className="video-controls">
-          <Button type="button" variant="ghost" size="icon" className="player-play video-play" onClick={toggleVideo} aria-label={playing ? 'Pause' : 'Play'}>
+          <Button type="button" variant="ghost" size="icon" className="player-play video-play video-control-button" onClick={toggleVideo} aria-label={playing ? 'Pause' : 'Play'}>
             {playing ? <PauseIcon /> : <PlayIcon />}
           </Button>
           <div className="video-time">
             <span>{formatClock(currentTime)}</span>
             <div className="video-scrub-wrap">
+              {seekPreview !== null && (
+                <output
+                  className="video-seek-preview"
+                  style={{ '--seek-preview-position': `${Math.max(0, Math.min(100, (seekPreview / rangeMax) * 100))}%` } as CSSProperties}
+                >
+                  {formatClock(seekPreview)}
+                </output>
+              )}
               <input
                 type="range"
                 min="0"
                 max={rangeMax}
                 value={Math.min(rangeMax, Math.round(currentTime))}
-                onChange={(event) => seekVideo(Number(event.currentTarget.value))}
+                onFocus={() => setSeekPreview(currentTime)}
+                onBlur={() => setSeekPreview(null)}
+                onPointerDown={() => setSeekPreview(currentTime)}
+                onPointerUp={() => setSeekPreview(null)}
+                onPointerCancel={() => setSeekPreview(null)}
+                onChange={(event) => {
+                  const next = Number(event.currentTarget.value);
+                  setSeekPreview(next);
+                  seekVideo(next);
+                }}
                 aria-label="Playback position"
               />
               {chapters.length > 0 && (
@@ -1853,21 +1871,21 @@ function VideoWatchPage({
             </div>
             <span>{formatClock(duration)}</span>
           </div>
-          <Button type="button" variant="ghost" size="icon" onClick={() => setMuted((isMuted) => !isMuted)} aria-label={muted ? 'Unmute' : 'Mute'}>
+          <Button type="button" variant="ghost" size="icon" className="video-control-button" onClick={() => setMuted((isMuted) => !isMuted)} aria-label={muted ? 'Unmute' : 'Mute'}>
             <VolumeIcon />
           </Button>
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className={activeSub ? 'active' : ''}
+            className={activeSub ? 'video-control-button active' : 'video-control-button'}
             onClick={toggleCaptions}
             disabled={!allSubtitles.length}
             aria-label={activeSub ? 'Turn captions off' : 'Turn captions on'}
           >
             <CaptionsIcon />
           </Button>
-          <Button type="button" variant="ghost" size="icon" className="video-pip-control" onClick={togglePip} aria-label="Picture in picture">
+          <Button type="button" variant="ghost" size="icon" className="video-control-button video-pip-control" onClick={togglePip} aria-label="Picture in picture">
             <PictureInPictureIcon />
           </Button>
           {video.episodeNavigator && (
@@ -1875,7 +1893,7 @@ function VideoWatchPage({
               type="button"
               variant="ghost"
               size="icon"
-              className={episodesOpen ? 'active' : ''}
+              className={episodesOpen ? 'video-control-button active' : 'video-control-button'}
               onClick={() => {
                 setMenuOpen(false);
                 setEpisodesOpen((open) => !open);
@@ -1886,25 +1904,38 @@ function VideoWatchPage({
               <ListIcon />
             </Button>
           )}
-          <Button type="button" variant="ghost" size="icon" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+          <Button type="button" variant="ghost" size="icon" className="video-control-button" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
             <MaximizeIcon />
           </Button>
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className={menuOpen ? 'video-more-control active' : 'video-more-control'}
+            className={menuOpen ? 'video-control-button video-more-control active' : 'video-control-button video-more-control'}
             onClick={() => setMenuOpen((open) => !open)}
             aria-label="More video options"
             aria-expanded={menuOpen}
           >
             <MoreVerticalIcon />
-            <span>More</span>
           </Button>
         </div>
 
         {menuOpen && (
           <div className="video-options-menu" role="menu" aria-label="Video options">
+            <div className="video-menu-header" role="presentation">
+              <span>Playback</span>
+              <small>{playbackRate === 1 ? 'Normal speed' : `${playbackRate}× speed`}</small>
+            </div>
+            <div className="video-menu-transport" role="group" aria-label="Seek controls">
+              <Button type="button" variant="ghost" size="sm" className="video-menu-transport-button" role="menuitem" onClick={() => seekVideoBy(-10)} aria-label="Rewind 10 seconds">
+                <SkipBackIcon />
+                <span>10 seconds</span>
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="video-menu-transport-button" role="menuitem" onClick={() => seekVideoBy(10)} aria-label="Forward 10 seconds">
+                <SkipForwardIcon />
+                <span>10 seconds</span>
+              </Button>
+            </div>
             <button
               type="button"
               className="video-menu-row"
@@ -1914,14 +1945,6 @@ function VideoWatchPage({
             >
               <span>Autoplay next</span>
               <strong>{autoplayNext ? 'On' : 'Off'}</strong>
-            </button>
-            <button type="button" className="video-menu-row" role="menuitem" onClick={() => seekVideoBy(-10)}>
-              <span>Rewind 10 seconds</span>
-              <strong>-10</strong>
-            </button>
-            <button type="button" className="video-menu-row" role="menuitem" onClick={() => seekVideoBy(10)}>
-              <span>Forward 10 seconds</span>
-              <strong>+10</strong>
             </button>
             <label className="video-menu-row">
               <span>Captions</span>

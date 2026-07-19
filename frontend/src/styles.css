@@ -6769,15 +6769,39 @@ img {
   color: #fff;
 }
 
+.video-controls .video-control-button[data-variant="ghost"] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.video-controls .video-control-button[data-variant="ghost"]:hover:not(:disabled),
+.video-controls .video-control-button[data-variant="ghost"]:focus-visible {
+  background: rgba(249, 115, 22, 0.12);
+  color: #fff;
+}
+
+.video-controls .video-control-button[data-variant="ghost"].active {
+  border-color: rgba(249, 115, 22, 0.5);
+  background: rgba(249, 115, 22, 0.16);
+  color: #fff;
+}
+
+.video-controls .player-play.video-control-button[data-variant="ghost"] {
+  background: #fff;
+  color: #0b0c0e;
+}
+
+.video-controls .player-play.video-control-button[data-variant="ghost"]:hover:not(:disabled),
+.video-controls .player-play.video-control-button[data-variant="ghost"]:focus-visible {
+  background: #fff;
+  color: #0b0c0e;
+}
+
 .video-more-control {
-  width: auto;
-  min-width: 4.6rem;
-  padding-inline: 0.55rem;
   border-color: rgba(249, 115, 22, 0.3);
   background: rgba(249, 115, 22, 0.08);
   color: #fed7aa;
-  font-size: 0.78rem;
-  font-weight: 850;
 }
 
 .video-more-control:hover,
@@ -6785,10 +6809,6 @@ img {
   border-color: rgba(249, 115, 22, 0.58);
   background: rgba(249, 115, 22, 0.17);
   color: #fff;
-}
-
-.video-more-control span {
-  line-height: 1;
 }
 
 .video-shell.controls-hidden .video-topbar {
@@ -6892,6 +6912,27 @@ img {
   z-index: 2;
 }
 
+.video-seek-preview {
+  position: absolute;
+  z-index: 3;
+  bottom: calc(100% + 0.4rem);
+  left: var(--seek-preview-position);
+  min-width: 3.2rem;
+  padding: 0.28rem 0.42rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 5px;
+  background: rgba(8, 9, 11, 0.94);
+  color: #fff;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  text-align: center;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
 .video-chapter-markers {
   position: absolute;
   left: 0;
@@ -6920,8 +6961,8 @@ img {
   bottom: 5rem;
   z-index: 9;
   display: grid;
-  gap: 0.25rem;
-  width: min(19rem, calc(100% - 1.5rem));
+  gap: 0.35rem;
+  width: min(22rem, calc(100% - 1.5rem));
   max-height: min(24rem, calc(100% - 6rem));
   overflow: auto;
   padding: 0.35rem;
@@ -6930,6 +6971,52 @@ img {
   background: rgba(15, 17, 21, 0.97);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
   scrollbar-width: none;
+}
+
+.video-menu-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0.55rem 0.2rem;
+  color: #fff;
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+.video-menu-header small {
+  color: var(--dim);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.video-menu-transport {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0 0.2rem 0.35rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.video-menu-transport-button {
+  min-height: 38px;
+  padding-inline: 0.55rem;
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font-size: 0.76rem;
+}
+
+.video-menu-transport-button:hover:not(:disabled),
+.video-menu-transport-button:focus-visible {
+  border-color: rgba(249, 115, 22, 0.5);
+  background: rgba(249, 115, 22, 0.12);
+  color: #fff;
+}
+
+.video-menu-transport-button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .video-options-menu::-webkit-scrollbar {
@@ -7663,16 +7750,15 @@ img {
   }
 
   .video-options-menu {
-    width: min(44rem, calc(100% - 1.5rem));
+    width: min(22rem, calc(100% - 1.5rem));
     max-height: none;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.35rem;
     overflow: visible;
   }
 
   .video-menu-label,
   .video-menu-status {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 
   .video-menu-row {
@@ -9959,24 +10045,10 @@ select.edit-field-input {
   }
 
   .video-controls .video-more-control {
-    min-width: 36px;
-    padding-inline: 0;
-  }
-
-  .video-more-control span {
-    display: none;
+    min-width: 0;
   }
 
   .video-pip-control {
-    display: none;
-  }
-
-  .video-more-control {
-    min-width: 36px;
-    padding-inline: 0;
-  }
-
-  .video-more-control span {
     display: none;
   }
 
@@ -10206,7 +10278,7 @@ select.edit-field-input {
     left: 0.4rem;
     right: 0.4rem;
     bottom: 0.4rem;
-    grid-template-columns: auto minmax(5rem, 1fr) repeat(5, auto);
+    grid-template-columns: auto minmax(5rem, 1fr) repeat(6, auto);
     gap: 0.32rem;
     padding: 0.35rem;
   }
@@ -10402,7 +10474,7 @@ select.edit-field-input {
   }
 
   .video-controls {
-    grid-template-columns: auto minmax(0, 1fr) repeat(5, auto);
+    grid-template-columns: auto minmax(0, 1fr) repeat(6, auto);
   }
 
   .video-pip-control {
