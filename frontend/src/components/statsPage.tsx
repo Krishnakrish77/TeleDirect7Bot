@@ -89,6 +89,7 @@ export function StatsPage({
   }
 
   const maxHeat = Math.max(1, ...data.heatmap.map((cell) => cell.count));
+  const maxDecade = Math.max(1, ...data.decades.map((d) => d.count));
   const audioPct = data.n_audio + data.n_video ? Math.round((data.n_audio / (data.n_audio + data.n_video)) * 100) : 0;
   const videoPct = data.n_audio + data.n_video ? 100 - audioPct : 0;
 
@@ -155,6 +156,26 @@ export function StatsPage({
           <strong>{data.finished}</strong>
           <small>of {data.started} started</small>
         </Card>
+        <Card className="stat-card">
+          <PlayIcon />
+          <span>Rewatches</span>
+          <strong>{data.rewatch_pct}%</strong>
+          <small>{data.rewatch_label}</small>
+        </Card>
+        <Card className="stat-card">
+          <FilmIcon />
+          <span>Genres explored</span>
+          <strong>{data.genres_explored}</strong>
+          <small>{data.diversity_label}</small>
+        </Card>
+        {data.longest_binge > 0 && (
+          <Card className="stat-card">
+            <TvIcon />
+            <span>Longest binge</span>
+            <strong>{data.longest_binge} in a row</strong>
+            <small>{data.binge_sessions} binge session{data.binge_sessions === 1 ? '' : 's'}</small>
+          </Card>
+        )}
       </section>
 
       {/* ── Watch history ── */}
@@ -201,6 +222,27 @@ export function StatsPage({
             ))}
           </div>
         </Card>
+
+        {/* ── By decade ── */}
+        {data.decades.length > 0 && (
+          <Card className="stats-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Era</p>
+                <h2>By decade</h2>
+              </div>
+            </div>
+            <div className="dow-bars">
+              {data.decades.map((d) => (
+                <div key={d.label} className="dow-row">
+                  <span>{d.label}</span>
+                  <i><b style={{ width: `${Math.round((d.count / maxDecade) * 100)}%` }} /></i>
+                  <strong>{d.count}</strong>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* ── Heatmap ── */}
         <Card className="stats-panel">

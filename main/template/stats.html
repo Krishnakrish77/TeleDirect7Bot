@@ -146,6 +146,24 @@
   </div>
   {% endif %}
 
+  {% if decades %}
+  <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6">
+    <p class="text-xs text-slate-500 uppercase tracking-widest mb-4">By decade</p>
+    <div class="space-y-3">
+      {% set max_d = (decades | sort(attribute='count', reverse=true))[0].count %}
+      {% for d in decades %}
+        <div class="flex items-center gap-3">
+          <span class="text-sm text-slate-300 w-16 flex-shrink-0 font-medium">{{ d.label }}</span>
+          <div class="flex-1 bg-ink-700 rounded-full h-2 overflow-hidden">
+            <div class="h-full rounded-full bg-brand-600" style="width:{{ ((d.count / max_d) * 100) | int }}%"></div>
+          </div>
+          <span class="text-xs text-slate-500 tabular-nums w-6 text-right">{{ d.count }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-6
               {% if not top_genres %}lg:col-span-2{% endif %}">
     <p class="text-xs text-slate-500 uppercase tracking-widest mb-1">Schedule</p>
@@ -280,6 +298,25 @@
     <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-4 text-center">
       <p class="text-3xl font-black text-white">{{ active_days }}</p>
       <p class="text-[10px] text-slate-500 mt-1">Active days (12 wk)</p>
+    </div>
+  </div>
+
+  {# ── INSIGHTS: rewatch ratio / genre diversity / binges ───────────────── #}
+  <div class="lg:col-span-2 grid grid-cols-3 gap-3">
+    <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-4 text-center">
+      <p class="text-3xl font-black text-white">{{ rewatch_pct }}%</p>
+      <p class="text-[10px] text-slate-500 mt-1">Rewatches</p>
+      <p class="text-[9px] text-slate-700 mt-0.5">{{ rewatch_label }}</p>
+    </div>
+    <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-4 text-center">
+      <p class="text-3xl font-black text-white">{{ genres_explored }}</p>
+      <p class="text-[10px] text-slate-500 mt-1">Genres explored</p>
+      <p class="text-[9px] text-slate-700 mt-0.5">{{ diversity_label }}</p>
+    </div>
+    <div class="rounded-2xl bg-ink-800/80 border border-white/5 p-4 text-center">
+      <p class="text-3xl font-black text-white">{% if longest_binge > 0 %}{{ longest_binge }}{% else %}&mdash;{% endif %}</p>
+      <p class="text-[10px] text-slate-500 mt-1">Longest binge</p>
+      <p class="text-[9px] text-slate-700 mt-0.5">{{ binge_sessions }} session{{ '' if binge_sessions == 1 else 's' }}</p>
     </div>
   </div>
 

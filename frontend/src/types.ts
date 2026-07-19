@@ -570,6 +570,13 @@ export interface StatsResponse {
   current_streak: number;
   longest_streak: number;
   recent_history: StatsHistoryItem[];
+  decades: Array<{ label: string; count: number }>;
+  rewatch_pct: number;
+  rewatch_label: string;
+  genres_explored: number;
+  diversity_label: string;
+  longest_binge: number;
+  binge_sessions: number;
 }
 
 export interface AdminFilterOption {

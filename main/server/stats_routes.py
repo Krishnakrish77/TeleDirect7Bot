@@ -83,6 +83,32 @@ def _play_count(entry: dict) -> int:
     return max(1, min(count, 500))
 
 
+def _binge_stats(timestamps: list, gap_hours: int = 3, min_len: int = 3) -> tuple[int, int]:
+    """Given completion timestamps, return (longest_binge, binge_sessions).
+
+    A "session" is a run of completions each within ``gap_hours`` of the last;
+    a "binge" is a session of at least ``min_len`` completions. longest_binge
+    is the largest session size (0 if none reaches min_len).
+    """
+    stamps = sorted(t for t in timestamps if t is not None)
+    if not stamps:
+        return 0, 0
+    gap = timedelta(hours=gap_hours)
+    longest = current = 1
+    sessions = 0
+    for prev, nxt in zip(stamps, stamps[1:]):
+        if nxt - prev <= gap:
+            current += 1
+        else:
+            if current >= min_len:
+                sessions += 1
+            current = 1
+        longest = max(longest, current)
+    if current >= min_len:
+        sessions += 1
+    return (longest if longest >= min_len else 0), sessions
+
+
 def _personality(top_genre: str, night_pct: int, weekend_pct: int,
                   completion: int, audio_pct: int) -> str:
     if audio_pct >= 60:
@@ -214,6 +240,7 @@ async def _stats_payload(user_id: int) -> dict:
     artist_counts:   Counter = Counter()
     kind_counts:     Counter = Counter()
     title_counts:    Counter = Counter()
+    decade_counts:   Counter = Counter()   # plays by release decade (from item.year)
     title_meta:      dict    = {}
 
     for h in history:
@@ -240,6 +267,8 @@ async def _stats_payload(user_id: int) -> dict:
         for g in genres:
             genre_counts[g] += plays
         kind_counts[item.media_kind or "video"] += plays
+        if item.year:
+            decade_counts[(int(item.year) // 10) * 10] += plays
         if item.director:
             for d in item.director.split(","):
                 d = d.strip()
@@ -507,6 +536,30 @@ async def _stats_payload(user_id: int) -> dict:
         if total_plays >= 10 or total_hours >= 3 else ""
     )
 
+    # ── New metrics: decade mix, rewatch ratio, genre diversity, binges ────
+    decades = [{"label": f"{d}s", "count": c} for d, c in sorted(decade_counts.items())]
+
+    total_title_plays = sum(title_counts.values())
+    distinct_titles = len(title_counts)
+    rewatch_plays = max(0, total_title_plays - distinct_titles)
+    rewatch_pct = round(rewatch_plays / total_title_plays * 100) if total_title_plays else 0
+    rewatch_label = (
+        "Comfort re-watcher" if rewatch_pct >= 40
+        else "Always something new" if rewatch_pct <= 15
+        else "A bit of both"
+    )
+
+    genres_explored = len(genre_counts)
+    diversity_label = (
+        "Explorer" if genres_explored >= 12
+        else "Focused" if genres_explored <= 4
+        else "Balanced"
+    )
+
+    longest_binge, binge_sessions = _binge_stats(
+        [_utc_naive(e.get("watched_at")) for e in events]
+    )
+
     return {
         "total_seconds": total_seconds,
         "video_seconds": video_seconds,
@@ -547,6 +600,13 @@ async def _stats_payload(user_id: int) -> dict:
         "current_streak": current_streak,
         "longest_streak": longest_streak,
         "recent_history": recent_history,
+        "decades": decades,
+        "rewatch_pct": rewatch_pct,
+        "rewatch_label": rewatch_label,
+        "genres_explored": genres_explored,
+        "diversity_label": diversity_label,
+        "longest_binge": longest_binge,
+        "binge_sessions": binge_sessions,
     }
 
 
