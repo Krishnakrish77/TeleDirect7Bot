@@ -23,6 +23,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import re
 import time
 from collections import Counter
@@ -2084,6 +2085,80 @@ def tracks_by_artist_slug(slug: str) -> List[HubItem]:
     ]
     matches.sort(key=lambda t: (t.album_title or "", t.track_number or 999, t.title or ""))
     return matches
+
+
+def radio_tracks(
+    seed: HubItem | None,
+    artist_slug: str | None,
+    exclude_ids: set[int],
+    limit: int = 40,
+) -> List[HubItem]:
+    """Build a radio station: audio tracks related to a seed track or artist.
+
+    We have no audio-feature embeddings, so "related" is composed from the
+    metadata we do have — shared artist, TMDB genres and tags — scored per
+    candidate.  Same-artist repetition is capped so the station feels like a
+    mix rather than the seed's discography, and results are lightly shuffled
+    within score bands so successive refills (same seed, growing exclude set)
+    don't return the same order.  When the metadata pool is thin the station
+    is padded with other audio so playback keeps going on small catalogues.
+    """
+    if seed is not None:
+        seed_artists = {_artist_slug(a) for a in _artist_credits(seed.artist or "")}
+        seed_genres = set(seed.tmdb_genres or [])
+        seed_tags = set(seed.tags or [])
+    else:
+        seed_artists = {artist_slug} if artist_slug else set()
+        seed_genres, seed_tags = set(), set()
+        for t in (tracks_by_artist_slug(artist_slug) if artist_slug else []):
+            seed_genres.update(t.tmdb_genres or [])
+            seed_tags.update(t.tags or [])
+
+    def _artists_of(it) -> set:
+        return {_artist_slug(a) for a in _artist_credits(it.artist or "")}
+
+    scored: list[tuple[float, HubItem]] = []
+    filler: list[HubItem] = []
+    for it in _items.values():
+        if (it.media_kind or "") != "audio" or it.hidden:
+            continue
+        if it.message_id in exclude_ids:
+            continue
+        score = 0.0
+        if _artists_of(it) & seed_artists:
+            score += 4
+        score += 2 * len(seed_genres & set(it.tmdb_genres or []))
+        score += 1 * len(seed_tags & set(it.tags or []))
+        if score > 0:
+            scored.append((score, it))
+        else:
+            filler.append(it)
+
+    random.shuffle(scored)
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    out: List[HubItem] = []
+    artist_count = 0
+    artist_cap = max(3, int(limit * 0.35))
+    overflow: List[HubItem] = []
+    for _score, it in scored:
+        if _artists_of(it) & seed_artists:
+            if artist_count >= artist_cap:
+                overflow.append(it)
+                continue
+            artist_count += 1
+        out.append(it)
+        if len(out) >= limit:
+            return out
+    # Ran short on scored tracks — top up from capped same-artist overflow,
+    # then unrelated audio, so the station never dies on a small library.
+    random.shuffle(filler)
+    for pool in (overflow, filler):
+        for it in pool:
+            out.append(it)
+            if len(out) >= limit:
+                return out
+    return out
 
 
 def artist_display_name(slug: str) -> str:

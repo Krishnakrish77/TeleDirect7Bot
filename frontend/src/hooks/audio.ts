@@ -244,6 +244,9 @@ export function useAudioPlayer() {
   const persistLastRef = useRef(0);
   const [player, setPlayer] = useState<PlayerState>(() => initialPlayerState());
   const playerRef = useRef(player);
+  // Radio mode: the queue auto-refills with related tracks (orchestrated in
+  // App). Not persisted — a reload plays out the restored queue normally.
+  const [radioActive, setRadioActive] = useState(false);
 
   useEffect(() => {
     playerRef.current = player;
@@ -514,8 +517,10 @@ export function useAudioPlayer() {
     inactive.load();
   }, [getInactiveAudio]);
 
-  const playTrack = useCallback((track: WatchTrack, queue?: WatchTrack[]) => {
+  const playTrack = useCallback((track: WatchTrack, queue?: WatchTrack[], radio = false) => {
     ensureAudibleOutput();
+    // Starting a fresh queue ends any radio session; playRadio re-arms it.
+    setRadioActive(radio);
     const current = playerRef.current;
     const nextQueue = queue?.length ? queue : current.queue.length ? current.queue : [track];
     const found = nextQueue.findIndex((item) => item.key === track.key);
@@ -714,6 +719,27 @@ export function useAudioPlayer() {
     });
     showQueueToast(message);
   }, [playTrack, showQueueToast]);
+
+  // Start an autoplay station: play the fetched queue and arm auto-refill.
+  const playRadio = useCallback((track: WatchTrack, queue: WatchTrack[]) => {
+    playTrack(track, queue, true);
+  }, [playTrack]);
+
+  // Toggle autoplay on the *existing* queue (Apple-style) without replacing it.
+  const armRadio = useCallback(() => setRadioActive(true), []);
+  const stopRadio = useCallback(() => setRadioActive(false), []);
+
+  // Silent bulk append used by radio refill — no toast, no index change,
+  // dedupes against what's already queued.
+  const appendToQueue = useCallback((tracks: WatchTrack[]) => {
+    if (!tracks.length) return;
+    setPlayer((state) => {
+      const seen = new Set(state.queue.map((item) => item.key));
+      const fresh = tracks.filter((item) => !seen.has(item.key));
+      if (!fresh.length) return state;
+      return { ...state, queue: [...state.queue, ...fresh] };
+    });
+  }, []);
 
   const removeFromQueue = useCallback((index: number) => {
     setPlayer((state) => {
@@ -1142,7 +1168,12 @@ export function useAudioPlayer() {
     audioRef,
     bufferRef,
     player,
+    radioActive,
     playTrack,
+    playRadio,
+    armRadio,
+    stopRadio,
+    appendToQueue,
     playRelative,
     playQueueIndex,
     addToQueue,

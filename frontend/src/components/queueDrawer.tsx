@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { ChevronDownIcon, ChevronUpIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, SkipForwardIcon, XIcon } from '../icons';
+import { AutoplayIcon, ChevronDownIcon, ChevronUpIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, SkipForwardIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
 import { Button } from './ui/button';
@@ -133,6 +133,8 @@ export function QueueDrawer({
   removeFromQueue,
   clearQueue,
   moveQueueItem,
+  autoplayActive,
+  onToggleAutoplay,
   onClose,
 }: {
   open: boolean;
@@ -143,6 +145,8 @@ export function QueueDrawer({
   removeFromQueue: (index: number) => void;
   clearQueue: () => void;
   moveQueueItem: (index: number, direction: -1 | 1) => void;
+  autoplayActive: boolean;
+  onToggleAutoplay: () => void;
   onClose: () => void;
 }) {
   const queue = useMemo(() => (
@@ -175,6 +179,19 @@ export function QueueDrawer({
             <p className="queue-count">{totalLabel}</p>
           </div>
           <div className="drawer-actions">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={autoplayActive ? 'queue-autoplay-toggle active' : 'queue-autoplay-toggle'}
+              onClick={onToggleAutoplay}
+              disabled={!currentTrack}
+              aria-pressed={autoplayActive}
+              title="Keep playing similar music when the queue ends"
+            >
+              <AutoplayIcon />
+              <span>Autoplay{autoplayActive ? ' on' : ''}</span>
+            </Button>
             <Button type="button" variant="ghost" size="sm" className="text-button" onClick={clearQueue} disabled={queue.length < 2}>Clear queue</Button>
             <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button" aria-label="Close"><XIcon /></Button></DialogClose>
           </div>

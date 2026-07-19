@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookmarkIcon, CheckIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, ListPlusIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
+import { AutoplayIcon, BookmarkIcon, CheckIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, ListPlusIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
 import type { PlayerState } from '../hooks/audio';
 import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
 import type { AppRoute } from '../navigation';
@@ -24,6 +24,7 @@ export function DetailPage({
   togglePlayback,
   addToQueue,
   shuffleQueue,
+  startRadio,
   player,
   onAddToPlaylist,
   onMarkWatched,
@@ -40,6 +41,7 @@ export function DetailPage({
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
   shuffleQueue: (queue: WatchTrack[]) => void;
+  startRadio?: (seed: { track?: string; artist?: string }) => void;
   player: PlayerState;
   onAddToPlaylist?: (track: WatchTrack) => void;
   onMarkWatched?: (keys: string[], title: string) => void;
@@ -78,6 +80,7 @@ export function DetailPage({
           togglePlayback={togglePlayback}
           addToQueue={addToQueue}
           shuffleQueue={shuffleQueue}
+          startRadio={startRadio}
           player={player}
           onAddToPlaylist={onAddToPlaylist}
         />
@@ -90,6 +93,7 @@ export function DetailPage({
           togglePlayback={togglePlayback}
           addToQueue={addToQueue}
           shuffleQueue={shuffleQueue}
+          startRadio={startRadio}
           player={player}
           onAddToPlaylist={onAddToPlaylist}
           saved={saved}
@@ -702,6 +706,7 @@ function AlbumDetail({
   togglePlayback,
   addToQueue,
   shuffleQueue,
+  startRadio,
   player,
   onAddToPlaylist,
 }: {
@@ -712,6 +717,7 @@ function AlbumDetail({
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
   shuffleQueue: (queue: WatchTrack[]) => void;
+  startRadio?: (seed: { track?: string; artist?: string }) => void;
   player: PlayerState;
   onAddToPlaylist?: (track: WatchTrack) => void;
 }) {
@@ -731,6 +737,7 @@ function AlbumDetail({
           backdropUrl={data.backdropUrl}
           onPlayAll={first ? () => playTrack(first, data.tracks) : undefined}
           onShuffle={data.tracks.length > 1 ? () => shuffleQueue(data.tracks) : undefined}
+          onAutoplay={first && startRadio ? () => startRadio({ track: first.key }) : undefined}
           saved={saved.has(data.savedId)}
           onToggleSaved={() => onToggleSaved(data.savedId)}
         />
@@ -762,6 +769,7 @@ function AlbumHero({
   backdropUrl,
   onPlayAll,
   onShuffle,
+  onAutoplay,
   saved,
   onToggleSaved,
 }: {
@@ -776,6 +784,7 @@ function AlbumHero({
   backdropUrl: string;
   onPlayAll?: () => void;
   onShuffle?: () => void;
+  onAutoplay?: () => void;
   saved: boolean;
   onToggleSaved: () => void;
 }) {
@@ -816,6 +825,12 @@ function AlbumHero({
               <span>Shuffle</span>
             </Button>
           )}
+          {onAutoplay && (
+            <Button type="button" variant="secondary" onClick={onAutoplay}>
+              <AutoplayIcon />
+              <span>Autoplay</span>
+            </Button>
+          )}
           <Button type="button" variant="secondary" className={saved ? 'saved-action' : ''} onClick={onToggleSaved}>
             {saved ? <CheckIcon /> : <BookmarkIcon />}
             <span>{saved ? 'Saved' : 'Save'}</span>
@@ -832,6 +847,7 @@ function ArtistDetail({
   togglePlayback,
   addToQueue,
   shuffleQueue,
+  startRadio,
   player,
   onAddToPlaylist,
   saved,
@@ -842,6 +858,7 @@ function ArtistDetail({
   togglePlayback: (track?: WatchTrack, queue?: WatchTrack[]) => void;
   addToQueue: (track: WatchTrack, playNext?: boolean) => void;
   shuffleQueue: (queue: WatchTrack[]) => void;
+  startRadio?: (seed: { track?: string; artist?: string }) => void;
   player: PlayerState;
   onAddToPlaylist?: (track: WatchTrack) => void;
   saved: Set<string>;
@@ -873,6 +890,12 @@ function ArtistDetail({
                 <Button type="button" variant="secondary" onClick={() => shuffleQueue(data.tracks)}>
                   <ShuffleIcon />
                   <span>Shuffle</span>
+                </Button>
+              )}
+              {startRadio && (
+                <Button type="button" variant="secondary" onClick={() => startRadio({ artist: data.key })}>
+                  <AutoplayIcon />
+                  <span>Autoplay</span>
                 </Button>
               )}
             </div>

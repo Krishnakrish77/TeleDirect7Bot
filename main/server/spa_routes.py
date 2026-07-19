@@ -1981,6 +1981,53 @@ async def api_app_artist(request: web.Request) -> web.Response:
     return _json(payload)
 
 
+_RADIO_LIMIT = 40
+
+
+def _radio_exclude_ids(raw: str) -> set[int]:
+    """Parse the comma-separated track keys the client already has queued."""
+    ids: set[int] = set()
+    for key in (raw or "").split(","):
+        parsed = _parse_watch_key(key.strip())
+        if parsed:
+            ids.add(parsed[1])
+    return ids
+
+
+@routes.get("/api/app/radio")
+async def api_app_radio(request: web.Request) -> web.Response:
+    """Autoplay station: a continuously-extending mix of tracks related to a
+    seed track (?seed=<trackKey>) or an artist (?artist=<slug>).  The client
+    passes ?exclude=<keys> on refill so we don't repeat what's already queued.
+    """
+    q = request.query
+    exclude = _radio_exclude_ids(q.get("exclude", ""))
+    seed_key = (q.get("seed") or "").strip()
+    artist_slug = (q.get("artist") or "").strip()
+
+    seed_item = None
+    include_seed = False
+    if seed_key:
+        parsed = _parse_watch_key(seed_key)
+        seed_item = media_index.get_item(parsed[1]) if parsed else None
+        if seed_item is None or (seed_item.media_kind or "") != "audio":
+            return _json({"error": "Seed track not found"}, status=404)
+        include_seed = seed_item.message_id not in exclude
+        exclude = exclude | {seed_item.message_id}
+    elif artist_slug:
+        if not media_index.tracks_by_artist_slug(artist_slug):
+            return _json({"error": "Artist not found"}, status=404)
+    else:
+        return _json({"error": "seed or artist required"}, status=400)
+
+    related = media_index.radio_tracks(seed_item, artist_slug or None, exclude, limit=_RADIO_LIMIT)
+    tracks = []
+    if include_seed and seed_item is not None:
+        tracks.append(_track_payload(seed_item))
+    tracks.extend(_track_payload(it) for it in related)
+    return _json({"tracks": tracks})
+
+
 @routes.get(r"/api/app/person/{slug:[a-z0-9][a-z0-9\-]*}")
 async def api_app_person(request: web.Request) -> web.Response:
     payload = _person_detail_payload(request.match_info["slug"])

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FocusEvent, MouseEvent } from 'react';
-import { deleteContinueEntry, dismissRecommendation, recordWatchHistory, setServerSyncEnabled, signOut } from './api';
+import { deleteContinueEntry, dismissRecommendation, fetchRadio, recordWatchHistory, setServerSyncEnabled, signOut } from './api';
 import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useArtColor } from './hooks/artColor';
@@ -13,6 +13,10 @@ import { LoadingRows, ErrorPanel } from './components/common';
 import { QueueDrawer } from './components/queueDrawer';
 import { InstallPrompt } from './components/installPrompt';
 import type { HubCard, HubFilters, RecommendationMeta, WatchTrack } from './types';
+
+// Refill the radio station once the playing track is within this many of the
+// queue tail, so fresh tracks are ready before the current one ends.
+const RADIO_REFILL_AHEAD = 3;
 
 const loadDetailPage = () => import('./components/detail');
 const loadWatchPage = () => import('./components/watch');
@@ -243,6 +247,57 @@ function App() {
     setPlaylistTrack(track);
   }, [requireAuth, user]);
 
+  // Radio: seed a station from a track or artist, then keep it topped up.
+  const radioSeedRef = useRef<{ track?: string; artist?: string } | null>(null);
+  const radioBusyRef = useRef(false);
+  const radioDryRef = useRef(false);
+  const startRadio = useCallback(async (seed: { track?: string; artist?: string }) => {
+    try {
+      const { tracks } = await fetchRadio(seed);
+      if (!tracks.length) return;
+      radioSeedRef.current = seed;
+      radioBusyRef.current = false;
+      radioDryRef.current = false;
+      audioRef.current.playRadio(tracks[0], tracks);
+    } catch (_) {
+      // Radio is best-effort — a failed seed just doesn't start a station.
+    }
+  }, []);
+  // Autoplay toggle on the current queue (from the queue drawer): arm/disarm
+  // endless refill seeded from whatever is playing now.
+  const toggleAutoplay = useCallback(() => {
+    const a = audioRef.current;
+    if (a.radioActive) {
+      a.stopRadio();
+      radioSeedRef.current = null;
+      return;
+    }
+    const current = a.player.track;
+    if (!current) return;
+    radioSeedRef.current = { track: current.key };
+    radioBusyRef.current = false;
+    radioDryRef.current = false;
+    a.armRadio();
+  }, []);
+  const radioActive = audio.radioActive;
+  const radioIndex = audio.player.queueIndex;
+  const radioLength = audio.player.queue.length;
+  useEffect(() => {
+    if (!radioActive || radioBusyRef.current || radioDryRef.current) return;
+    if (!radioSeedRef.current) return;
+    if (radioIndex < radioLength - RADIO_REFILL_AHEAD) return;
+    radioBusyRef.current = true;
+    const seed = radioSeedRef.current;
+    const exclude = audioRef.current.player.queue.map((track) => track.key);
+    fetchRadio({ ...seed, exclude })
+      .then(({ tracks }) => {
+        if (tracks.length) audioRef.current.appendToQueue(tracks);
+        else radioDryRef.current = true; // station exhausted — stop retrying
+      })
+      .catch(() => undefined)
+      .finally(() => { radioBusyRef.current = false; });
+  }, [radioActive, radioIndex, radioLength]);
+
   const activeView = params.view || '';
   const activeSection = route.kind === 'watchlist'
     ? 'watchlist'
@@ -412,6 +467,7 @@ function App() {
             togglePlayback={audio.togglePlayback}
             addToQueue={audio.addToQueue}
             shuffleQueue={audio.shuffleQueue}
+            startRadio={startRadio}
             player={audio.player}
             onAddToPlaylist={onAddToPlaylist}
             onMarkWatched={onMarkWatched}
@@ -569,6 +625,8 @@ function App() {
         removeFromQueue={audio.removeFromQueue}
         clearQueue={audio.clearQueue}
         moveQueueItem={audio.moveQueueItem}
+        autoplayActive={audio.radioActive}
+        onToggleAutoplay={toggleAutoplay}
         onClose={() => setQueueOpen(false)}
       />
       {playlistTrack && (

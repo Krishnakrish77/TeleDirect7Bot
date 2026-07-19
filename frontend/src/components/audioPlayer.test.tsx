@@ -225,6 +225,8 @@ describe('QueueDrawer', () => {
         removeFromQueue={removeFromQueue}
         clearQueue={clearQueue}
         moveQueueItem={moveQueueItem}
+        autoplayActive={false}
+        onToggleAutoplay={vi.fn()}
         onClose={vi.fn()}
       />,
     );
@@ -269,6 +271,8 @@ describe('QueueDrawer', () => {
         removeFromQueue={vi.fn()}
         clearQueue={vi.fn()}
         moveQueueItem={vi.fn()}
+        autoplayActive={false}
+        onToggleAutoplay={vi.fn()}
         onClose={vi.fn()}
       />,
     );

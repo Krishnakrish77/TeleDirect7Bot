@@ -131,6 +131,19 @@ export async function fetchWatch(key: string, signal?: AbortSignal): Promise<Wat
   return request<WatchResponse>(`/api/watch/${encodeURIComponent(key)}`, { signal });
 }
 
+// Radio station: related tracks seeded by a track key or an artist slug.
+// `exclude` (track keys already queued) keeps refills from repeating.
+export async function fetchRadio(
+  seed: { track?: string; artist?: string; exclude?: string[] },
+  signal?: AbortSignal,
+): Promise<{ tracks: WatchTrack[] }> {
+  const qs = new URLSearchParams();
+  if (seed.track) qs.set('seed', seed.track);
+  if (seed.artist) qs.set('artist', seed.artist);
+  if (seed.exclude?.length) qs.set('exclude', seed.exclude.join(','));
+  return request<{ tracks: WatchTrack[] }>(`/api/app/radio?${qs.toString()}`, { signal });
+}
+
 export async function fetchDetail(
   kind: 'movie' | 'series' | 'album' | 'artist' | 'person',
   key: string,

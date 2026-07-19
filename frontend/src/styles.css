@@ -6314,6 +6314,27 @@ img {
   white-space: nowrap;
 }
 
+/* Autoplay toggle in the queue header — orange when the station is armed. */
+.queue-autoplay-toggle {
+  min-height: 34px;
+  gap: 0.35rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.queue-autoplay-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.queue-autoplay-toggle.active {
+  border-color: var(--brand);
+  background: rgba(249, 115, 22, 0.14);
+  color: #fdba74;
+}
+
 .queue-current-card {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr) auto;
