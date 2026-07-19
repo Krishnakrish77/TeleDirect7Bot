@@ -284,7 +284,7 @@ export function AdminIptvPage({
             </div>
             <label className="iptv-list-search">
               <SearchIcon />
-              <Input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search channels" />
+              <Input name="iptv-channel-search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search channels" />
               {query && (
                 <Button type="button" variant="ghost" size="icon-sm" aria-label="Clear IPTV search" onClick={() => setQuery('')}>
                   <XIcon />

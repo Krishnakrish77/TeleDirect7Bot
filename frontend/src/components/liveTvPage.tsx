@@ -372,6 +372,7 @@ export function LiveTvPage({
               <label className="live-search">
                 <SearchIcon />
                 <Input
+                  name="channel-search"
                   value={query}
                   onChange={(event) => setQuery(event.currentTarget.value)}
                   placeholder="Search channels"
