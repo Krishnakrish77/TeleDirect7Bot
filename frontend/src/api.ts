@@ -33,6 +33,7 @@ import type {
   WatchTrack,
   WatchlistPageResponse,
 } from './types';
+import { getDeviceId, getDeviceLabel } from './utils/device';
 
 export class ApiError extends Error {
   status: number;
@@ -379,7 +380,8 @@ export async function saveContinueEntry(key: string, entry: Omit<ContinueEntry, 
   await request<{ ok: boolean }>(`/api/cw/${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(entry),
+    // Stamp the writing device so other devices can show "watched on <label>".
+    body: JSON.stringify({ ...entry, deviceId: getDeviceId(), deviceLabel: getDeviceLabel() }),
     keepalive: true,
   });
 }

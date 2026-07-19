@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, fetchContinueMap, saveContinueEntry } from '../api';
+import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems } from '../api';
 import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, PlayIcon, UserIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
 import { tmdbImageUrl } from '../utils/tmdb';
 import { formatExternalRating } from '../utils/externalRating';
-import { addContinueClearTombstone, addContinueTombstone, isContinueSuppressed, readContinueClearTombstone, readContinueTombstones, readLocalContinue } from '../utils/continueWatching';
+import { addContinueClearTombstone, addContinueTombstone, isContinueSuppressed, readContinueClearTombstone, readContinueTombstones, readLocalContinue, syncContinueWatching } from '../utils/continueWatching';
 import { MediaCard } from './mediaCard';
 import { Button } from './ui/button';
 
@@ -157,49 +157,12 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
     });
 
     const hydrate = async () => {
-      if (serverSyncEnabled) {
-        try {
-          const server = await fetchContinueMap(controller.signal);
-          const pendingLocalSync: Array<[string, Omit<ContinueEntry, 'key'>]> = [];
-          const latestTombstones = readContinueTombstones();
-          const latestClearAt = readContinueClearTombstone();
-
-          Object.keys(raw).forEach((key) => {
-            if (isContinueSuppressed(key, raw[key], latestTombstones, latestClearAt)) delete raw[key];
-          });
-
-          Object.entries(server).forEach(([key, value]) => {
-            if (isContinueSuppressed(key, value, latestTombstones, latestClearAt)) return;
-            if (!raw[key] || (value.t || 0) > (raw[key].t || 0)) raw[key] = value;
-          });
-          Object.entries(raw).forEach(([key, value]) => {
-            if (isContinueSuppressed(key, value, latestTombstones, latestClearAt)) return;
-            const serverValue = server[key];
-            const localIsNewer = !serverValue || (value.t || 0) > (serverValue.t || 0);
-            const pct = value.dur > 0 ? value.pos / value.dur : 0;
-            if (localIsNewer && serverValue && pct >= 0.02 && pct < 0.95) {
-              pendingLocalSync.push([key, value]);
-            }
-          });
-          localStorage.setItem('td:cw', JSON.stringify(raw));
-          const syncBatch = pendingLocalSync.slice(0, 10);
-          if (syncBatch.length) {
-            void queueServerMutation(async () => {
-              await Promise.all(syncBatch.map(([key, value]) => {
-                if (suppressedSyncKeysRef.current.has(key)) return Promise.resolve();
-                const latestLocal = readLocalContinue()[key];
-                if (isContinueSuppressed(key, latestLocal)) return Promise.resolve();
-                if (!latestLocal || (latestLocal.t || 0) !== (value.t || 0)) return Promise.resolve();
-                return saveContinueEntry(key, value).catch(() => undefined);
-              }));
-            });
-          }
-        } catch (_) {
-          // Offline signed-in sessions use local resume data.
-        }
-      }
-
-      const local = Object.entries(raw)
+      // Two-way server<->local sync (deduped/throttled; anon → returns local).
+      const merged = serverSyncEnabled ? await syncContinueWatching() : raw;
+      const latestTombstones = readContinueTombstones();
+      const latestClearAt = readContinueClearTombstone();
+      const local = Object.entries(merged)
+        .filter(([key, value]) => !isContinueSuppressed(key, value, latestTombstones, latestClearAt))
         .map(([key, value]) => ({ key, ...value }))
         .filter((entry) => entry.dur > 0 && entry.pos / entry.dur > 0.02 && entry.pos / entry.dur < 0.95)
         .sort((a, b) => (b.t || 0) - (a.t || 0))
@@ -231,10 +194,17 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
       if (event.key && event.key !== 'td:cw') return;
       load();
     };
+    // Cross-device freshness: rebuild when the tab regains focus (App re-syncs
+    // server<->local on the same signal). 'storage' only covers same-browser tabs.
+    const onFocus = () => { if (document.visibilityState === 'visible') load(); };
     window.addEventListener('storage', onStorage);
+    document.addEventListener('visibilitychange', onFocus);
+    window.addEventListener('focus', onFocus);
     return () => {
       if (cleanup) cleanup();
       window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('focus', onFocus);
     };
   }, [load]);
 

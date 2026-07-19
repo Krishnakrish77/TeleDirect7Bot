@@ -59,6 +59,8 @@ async def api_upsert(request: web.Request) -> web.Response:
         t = int(body.get("t", 0))
         started_at = int(body.get("startedAt", t))
         title = str(body.get("title", ""))[:200]
+        device_id = str(body.get("deviceId", ""))[:64]
+        device_label = str(body.get("deviceLabel", ""))[:64]
     except Exception:
         return _json({"error": "invalid body"}, status=400)
     if not all(math.isfinite(value) for value in (pos, dur)) or dur <= 0 or pos < 0:
@@ -75,7 +77,8 @@ async def api_upsert(request: web.Request) -> web.Response:
     if pos / dur >= 0.95:
         await cw_store.delete_one(int(user["sub"]), key)
         return _json({"ok": True})
-    await cw_store.upsert(int(user["sub"]), key, pos, dur, t, title, started_at)
+    await cw_store.upsert(int(user["sub"]), key, pos, dur, t, title, started_at,
+                          device_id=device_id, device_label=device_label)
     return _json({"ok": True})
 
 

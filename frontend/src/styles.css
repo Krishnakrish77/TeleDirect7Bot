@@ -6861,6 +6861,52 @@ img {
   align-items: start;
 }
 
+/* Cross-device resume handoff banner */
+.handoff-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--brand);
+  border-radius: 10px;
+  background: rgba(249, 115, 22, 0.12);
+  color: #fdba74;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.handoff-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.handoff-resume,
+.handoff-dismiss {
+  min-height: 32px;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.handoff-resume {
+  border: 0;
+  background: var(--brand);
+  color: #111317;
+}
+
+.handoff-dismiss {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--muted);
+}
+
 .video-titlebar > div {
   min-width: 0;
 }

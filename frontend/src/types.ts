@@ -444,6 +444,8 @@ export interface ContinueEntry {
   t: number;
   title: string;
   startedAt?: number;
+  deviceId?: string;
+  deviceLabel?: string;
 }
 
 export type ContinueMap = Record<string, Omit<ContinueEntry, 'key'>>;

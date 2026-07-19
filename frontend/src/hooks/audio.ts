@@ -1,9 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { deleteContinueEntry, recordWatchHistory, saveContinueEntry } from '../api';
+import { isContinueSuppressed, readLocalContinue, upsertLocalContinue } from '../utils/continueWatching';
 import { preloadLyrics } from './lyrics';
 import type { WatchTrack } from '../types';
 
 export type RepeatMode = 'off' | 'all' | 'one';
+
+const AUDIO_RESUME_MIN_POS = 5; // don't bother resuming a track barely started
+
+// Cross-device audio resume: the local td:cw map is kept fresh from the server
+// (App merges server→local on load/focus), so reading it here resumes progress
+// made on another device without the hook fetching anything itself.
+function resumeForTrack(track: WatchTrack): number {
+  try {
+    const entry = readLocalContinue()[track.key];
+    if (!entry || isContinueSuppressed(track.key, entry)) return 0;
+    const dur = entry.dur || track.duration || 0;
+    if (entry.pos > AUDIO_RESUME_MIN_POS && (!dur || entry.pos < dur * 0.95)) return entry.pos;
+  } catch (_) {
+    // best-effort resume
+  }
+  return 0;
+}
 export const RESTORE_AUDIO_MEDIA_SESSION_EVENT = 'td:restore-audio-media-session';
 
 export interface PlayerState {
@@ -499,7 +517,17 @@ export function useAudioPlayer() {
       preloadedKeyRef.current = '';
       audio.load();
     }
-    if (reset) audio.currentTime = 0;
+    if (reset) {
+      // Resume where this track left off (possibly on another device) rather
+      // than restarting at 0. Apply once metadata is ready so the seek sticks.
+      const resumePos = resumeForTrack(track);
+      audio.currentTime = 0;
+      if (resumePos > 0) {
+        const applySeek = () => { try { audio.currentTime = resumePos; } catch (_) { /* not seekable yet */ } };
+        if (audio.readyState >= 1) applySeek();
+        else audio.addEventListener('loadedmetadata', applySeek, { once: true });
+      }
+    }
     applyOutputSettings(audio);
     const attemptId = beginPlaybackAttempt(track);
     const promise = audio.play();
@@ -1013,11 +1041,17 @@ export function useAudioPlayer() {
           cwSessionStartedRef.current = now;
         }
         cwLastSyncRef.current = now;
-        void saveContinueEntry(current.track.key, {
+        const entry = {
           pos: Math.floor(currentTime),
           dur: Math.floor(duration),
           t: now,
           title: current.track.title,
+        };
+        // Local mirror so anonymous + cross-tab + this-device resume work; the
+        // server copy carries startedAt for cross-device conflict resolution.
+        upsertLocalContinue(current.track.key, entry);
+        void saveContinueEntry(current.track.key, {
+          ...entry,
           startedAt: cwSessionStartedRef.current || now,
         }).catch(() => undefined);
       }

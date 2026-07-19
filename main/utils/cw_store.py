@@ -19,7 +19,29 @@ _indexed = False
 _TOMBSTONES = "continue_watching_tombstones"
 _CLEAR_KEY = "*"
 _COMPLETE_RATIO = 0.95
+_REWIND_GRACE = 5.0  # seconds of jitter allowed before a backward move counts as a rewind
 _mutation_lock = asyncio.Lock()
+
+
+def _accept_write(current: dict | None, incoming: dict) -> bool:
+    """Decide whether an incoming progress write should replace the stored one.
+
+    Cross-device rule (pure, unit-tested):
+      * first write always wins;
+      * an older-or-equal timestamp loses (recency wins, as before);
+      * a backward jump (pos well behind stored) from an OLDER session is
+        rejected — this is a stale/concurrent device that synced late and would
+        otherwise rewind your progress. A same-session or newer-session rewind
+        (you actually scrubbed back on the device you're using) is honoured.
+    """
+    if not current:
+        return True
+    if int(current.get("t", 0)) >= int(incoming.get("t", 0)):
+        return False
+    if (float(incoming.get("pos", 0)) < float(current.get("pos", 0)) - _REWIND_GRACE
+            and int(incoming.get("started_at", 0)) < int(current.get("started_at", 0))):
+        return False
+    return True
 
 
 def _get_db():
@@ -62,7 +84,8 @@ async def get_all(user_id: int) -> Dict[str, dict]:
     try:
         docs = await db["continue_watching"].find(
             {"user_id": user_id},
-            projection={"cw_key": 1, "pos": 1, "dur": 1, "t": 1, "title": 1, "started_at": 1, "_id": 0},
+            projection={"cw_key": 1, "pos": 1, "dur": 1, "t": 1, "title": 1,
+                        "started_at": 1, "device_id": 1, "device_label": 1, "_id": 0},
             sort=[("t", -1)],
         ).to_list(length=_CW_CAP)
         return {
@@ -72,6 +95,8 @@ async def get_all(user_id: int) -> Dict[str, dict]:
                 "t": d.get("t", 0),
                 "title": d.get("title", ""),
                 "startedAt": d.get("started_at", d.get("t", 0)),
+                "deviceId": d.get("device_id", ""),
+                "deviceLabel": d.get("device_label", ""),
             }
             for d in docs
         }
@@ -81,7 +106,8 @@ async def get_all(user_id: int) -> Dict[str, dict]:
 
 
 async def upsert(user_id: int, cw_key: str, pos: float, dur: float,
-                 t: int, title: str, started_at: int = 0) -> bool:
+                 t: int, title: str, started_at: int = 0,
+                 device_id: str = "", device_label: str = "") -> bool:
     """Save newer in-progress state, rejecting stale writes after deletion.
 
     Tombstones are essential for cross-device sync: a device that was offline
@@ -107,14 +133,19 @@ async def upsert(user_id: int, cw_key: str, pos: float, dur: float,
             if session_started <= deleted_at:
                 return False
             current = await db["continue_watching"].find_one(
-                {"user_id": user_id, "cw_key": cw_key}, projection={"t": 1},
+                {"user_id": user_id, "cw_key": cw_key},
+                projection={"t": 1, "pos": 1, "started_at": 1},
             )
-            if current and int(current.get("t", 0)) >= t:
+            if not _accept_write(current, {"t": t, "pos": pos, "started_at": session_started}):
                 return False
+            fields = {"pos": pos, "dur": dur, "t": t,
+                      "title": title, "started_at": session_started, "updated_at": now}
+            if device_id:
+                fields["device_id"] = device_id
+                fields["device_label"] = device_label
             await db["continue_watching"].update_one(
                 {"user_id": user_id, "cw_key": cw_key},
-                {"$set": {"pos": pos, "dur": dur, "t": t,
-                          "title": title, "started_at": session_started, "updated_at": now}},
+                {"$set": fields},
                 upsert=True,
             )
         # Evict entries beyond the cap: fetch the (_CW_CAP+1)th oldest id and

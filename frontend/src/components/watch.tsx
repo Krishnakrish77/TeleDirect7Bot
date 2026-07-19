@@ -662,6 +662,9 @@ function VideoWatchPage({
   const [error, setError] = useState(video.knownUnplayable ? 'This file is marked as difficult for browser playback.' : '');
   const [showNext, setShowNext] = useState(false);
   const [nextCountdown, setNextCountdown] = useState(5);
+  // Cross-device handoff: when this tab regains focus and another device has
+  // advanced this title, offer to jump forward instead of yanking the playhead.
+  const [handoff, setHandoff] = useState<{ pos: number; label: string } | null>(null);
   const [toast, setToast] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [episodesOpen, setEpisodesOpen] = useState(false);
@@ -1682,6 +1685,46 @@ function VideoWatchPage({
     void loadSubtitleFile(event.dataTransfer.files?.[0]);
   };
 
+  useEffect(() => {
+    if (!serverSyncEnabled || !video.resumeKey) return undefined;
+    let cancelled = false;
+    const MIN_AHEAD = 30; // seconds another device must lead by to prompt
+    const check = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const map = await fetchContinueMap();
+        if (cancelled) return;
+        const entry = map[video.resumeKey];
+        if (!entry || isContinueSuppressed(video.resumeKey, entry)) return;
+        const el = videoRef.current;
+        const here = el?.currentTime || 0;
+        const dur = el?.duration || video.duration || entry.dur || 0;
+        if (entry.pos > here + MIN_AHEAD && (!dur || entry.pos < dur * 0.95)) {
+          setHandoff({ pos: Math.floor(entry.pos), label: entry.deviceLabel || '' });
+        }
+      } catch (_) {
+        // best-effort handoff
+      }
+    };
+    const onVis = () => { if (document.visibilityState === 'visible') void check(); };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onVis);
+    };
+  }, [serverSyncEnabled, video.resumeKey, video.duration]);
+
+  const applyHandoff = () => {
+    const el = videoRef.current;
+    if (el && handoff) {
+      el.currentTime = handoff.pos;
+      setCurrentTime(handoff.pos);
+    }
+    setHandoff(null);
+  };
+
   return (
     <main className="video-main">
       <section className="video-titlebar">
@@ -1692,6 +1735,19 @@ function VideoWatchPage({
           <RatingControls messageId={video.messageId || video.itemId} />
         </div>
       </section>
+
+      {handoff && (
+        <div className="handoff-banner" role="status">
+          <span>
+            Resume from {formatClock(handoff.pos)}
+            {handoff.label ? ` · watched on ${handoff.label}` : ''}
+          </span>
+          <div className="handoff-actions">
+            <button type="button" className="handoff-resume" onClick={applyHandoff}>Resume</button>
+            <button type="button" className="handoff-dismiss" onClick={() => setHandoff(null)}>Dismiss</button>
+          </div>
+        </div>
+      )}
 
       <section
         className={shellClass}
