@@ -1448,6 +1448,11 @@ def _search_score(q: str, item: HubItem) -> float:
             return 0.95
         if ql in artist or ql in album:
             return 0.9
+    # Keywords are intentionally lower-weighted than all visible metadata:
+    # they improve recall without a generic TMDB tag displacing a title,
+    # genre, cast, or synopsis match.
+    if ql in " ".join(keyword.lower() for keyword in (item.tmdb_keywords or [])):
+        return 0.42
     if ql in _haystack(item):
         return 0.6
     if len(ql) >= 3:

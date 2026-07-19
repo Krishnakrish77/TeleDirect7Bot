@@ -19,6 +19,7 @@ def make_item(
     title: str = "The Invisible Guest",
     tmdb_id: int = 123,
     genres: list[str] | None = None,
+    keywords: list[str] | None = None,
     series_key: str = "",
 ) -> HubItem:
     return HubItem(
@@ -34,6 +35,7 @@ def make_item(
         tmdb_id=tmdb_id,
         tmdb_kind="movie",
         tmdb_genres=genres or ["Mystery", "Thriller"],
+        tmdb_keywords=keywords or [],
         series_key=series_key,
         series_title=title if series_key else "",
     )
@@ -56,6 +58,24 @@ async def empty_continue(_user_id: int) -> dict:
 
 
 class RecEngineSignalTest(unittest.IsolatedAsyncioTestCase):
+    async def test_keywords_are_a_low_weight_recommendation_tiebreaker(self):
+        previous = dict(rec_engine.media_index._items)
+        try:
+            plain = make_item(8, tmdb_id=88, genres=["Drama"])
+            keyword_match = make_item(9, tmdb_id=99, genres=["Drama"], keywords=["heist"])
+            rec_engine.media_index._items.clear()
+            rec_engine.media_index._items.update({8: plain, 9: keyword_match})
+
+            cards = rec_engine._rank_candidate_cards(
+                [(88, "movie", 1), (99, "movie", 1)],
+                {"seed_genres": Counter(), "seed_keywords": Counter({"heist": 1.0}), "negative_genres": Counter()},
+            )
+
+            self.assertEqual(rec_engine._card_tmdb(cards[0]), (99, "movie"))
+        finally:
+            rec_engine.media_index._items.clear()
+            rec_engine.media_index._items.update(previous)
+
     async def test_movie_and_tv_with_same_tmdb_id_remain_distinct_candidates(self):
         previous = dict(rec_engine.media_index._items)
         try:

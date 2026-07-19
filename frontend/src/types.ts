@@ -729,7 +729,6 @@ export interface MovieDetailResponse {
   posterUrl: string;
   backdropUrl: string;
   genres: string[];
-  keywords?: string[];
   runtimeMinutes?: number;
   certification?: string;
   logoUrl?: string;
@@ -768,7 +767,6 @@ export interface SeriesDetailResponse {
   posterUrl: string;
   backdropUrl: string;
   genres: string[];
-  keywords?: string[];
   runtimeMinutes?: number;
   certification?: string;
   logoUrl?: string;

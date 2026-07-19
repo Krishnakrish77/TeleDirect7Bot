@@ -73,6 +73,26 @@ class MediaIndexSearchTests(unittest.TestCase):
         self.assertIsNone(next_cursor)
         self.assertEqual([item.message_id for item in items], [101, 202])
 
+    def test_tmdb_keywords_expand_search_without_outranking_visible_metadata(self):
+        synopsis_match = video_item(
+            211,
+            title="Garden Drama",
+            description="A documentary set in a greenhouse.",
+        )
+        keyword_match = video_item(
+            212,
+            title="Quiet Film",
+            tmdb_keywords=["greenhouse", "botany"],
+        )
+        media_index._items.update({
+            synopsis_match.message_id: synopsis_match,
+            keyword_match.message_id: keyword_match,
+        })
+
+        items, _ = media_index.query(q="greenhouse", sort="newest", limit=10)
+
+        self.assertEqual([item.message_id for item in items], [211, 212])
+
     def test_series_title_search_does_not_bypass_quality_filter(self):
         castle_720 = video_item(
             301,

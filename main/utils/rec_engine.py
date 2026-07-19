@@ -1,7 +1,7 @@
 """TMDB-based recommendation engine.
 
 Algorithm:
-1. Collect seed (tmdb_id, kind) tuples and genre weights from watch
+1. Collect seed (tmdb_id, kind) tuples plus genre and keyword weights from watch
    history, continue-watching progress, watchlist entries, and ratings.
 2. Call /movie|tv/{id}/recommendations for each seed (max 5 calls).
 3. Score candidate tmdb_ids by TMDB frequency, liked/down-rated genres,
@@ -107,6 +107,7 @@ async def _collect_signal_profile(user_id: int) -> dict:
     seed_weights: Counter = Counter()
     seen_seed_tmdb: set[TmdbKey] = set()
     seed_genres: Counter = Counter()
+    seed_keywords: Counter = Counter()
     negative_genres: Counter = Counter()
     exclude_tmdb: set[TmdbKey] = set()
     liked_tmdb: set[TmdbKey] = set()
@@ -128,6 +129,8 @@ async def _collect_signal_profile(user_id: int) -> dict:
         seed_weights[(tid, kind)] += weight
         for genre in getattr(item, "tmdb_genres", None) or []:
             seed_genres[genre] += weight
+        for keyword in getattr(item, "tmdb_keywords", None) or []:
+            seed_keywords[keyword.lower()] += weight
 
     for index, entry in enumerate(history):
         item = _item_for_cw_key(entry.get("cw_key", ""))
@@ -174,6 +177,7 @@ async def _collect_signal_profile(user_id: int) -> dict:
         # large watch history must not crowd out an explicit like.
         "seeds": sorted(seeds, key=lambda key: seed_weights[key], reverse=True)[:_MAX_SEEDS],
         "seed_genres": seed_genres,
+        "seed_keywords": seed_keywords,
         "negative_genres": negative_genres,
         "exclude_tmdb": exclude_tmdb,
         "liked_tmdb": liked_tmdb,
@@ -212,6 +216,7 @@ def _rank_candidate_cards(candidates: List[Tuple[int, str, int]], profile: dict)
     }
     max_message_id = max((it.message_id for it in media_index._items.values()), default=1)
     seed_genres: Counter = profile.get("seed_genres") or Counter()
+    seed_keywords: Counter = profile.get("seed_keywords") or Counter()
     negative_genres: Counter = profile.get("negative_genres") or Counter()
     scored: list[tuple[float, int, str, object, list[str]]] = []
 
@@ -222,8 +227,12 @@ def _rank_candidate_cards(candidates: List[Tuple[int, str, int]], profile: dict)
         if card is None:
             continue
         genres = _genres_for_card(card)
+        keywords = [keyword.lower() for keyword in (getattr(_card_item(card), "tmdb_keywords", None) or [])]
         score = float(tmdb_count) * 7.5
         score += sum(seed_genres.get(genre, 0) * 1.4 for genre in genres)
+        # Keywords are a gentle tie-breaker after TMDB's own related-title
+        # signal and genres; never use them as an independent recommendation.
+        score += sum(seed_keywords.get(keyword, 0) * 0.18 for keyword in keywords)
         score -= sum(negative_genres.get(genre, 0) * 1.8 for genre in genres)
         score += (_card_message_id(card) / max_message_id) * 2.0
         if kind == "tv":

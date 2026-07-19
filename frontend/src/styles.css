@@ -662,32 +662,6 @@ img {
   object-position: left center;
 }
 
-.detail-keywords {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 1rem;
-}
-
-.detail-keywords > span {
-  margin-right: 0.15rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.detail-keywords em {
-  padding: 0.22rem 0.48rem;
-  border: 1px solid color-mix(in srgb, var(--brand) 32%, transparent);
-  border-radius: 999px;
-  color: color-mix(in srgb, var(--brand) 72%, white);
-  font-size: 0.78rem;
-  font-style: normal;
-  font-weight: 700;
-}
 
 .hero-actions {
   display: flex;

@@ -270,7 +270,6 @@ function DetailInfoSection({
   overview,
   facts,
   genres,
-  keywords = [],
   directors,
   cast,
   imdbHref,
@@ -280,13 +279,11 @@ function DetailInfoSection({
   overview: string;
   facts: string[];
   genres: string[];
-  keywords?: string[];
   directors: Array<{ name: string; href: string }>;
   cast: Array<{ name: string; href: string }>;
   imdbHref: string;
 }) {
   const visibleGenres = genres.slice(0, 5);
-  const visibleKeywords = keywords.slice(0, 8);
   const visibleDirectors = directors.slice(0, 3);
   const visibleCast = cast.slice(0, 6);
   if (!overview && !facts.length && !visibleGenres.length && !visibleDirectors.length && !visibleCast.length && !imdbHref) {
@@ -303,12 +300,6 @@ function DetailInfoSection({
           <div className="video-info-chips" aria-label="Media details">
             {facts.map((fact) => <span key={fact}>{fact}</span>)}
             {visibleGenres.map((genre) => <span key={genre}>{genre}</span>)}
-          </div>
-        )}
-        {visibleKeywords.length > 0 && (
-          <div className="detail-keywords" aria-label="Topics">
-            <span>Topics</span>
-            {visibleKeywords.map((keyword) => <em key={keyword}>{keyword}</em>)}
           </div>
         )}
       </div>
@@ -414,7 +405,6 @@ function MovieDetail({
         overview={data.overview}
         facts={movieFacts}
         genres={data.genres}
-        keywords={data.keywords ?? []}
         directors={data.directors}
         cast={data.cast}
         imdbHref={data.imdbHref}
@@ -571,7 +561,6 @@ function SeriesDetail({
         overview={data.overview}
         facts={seriesFacts}
         genres={data.genres}
-        keywords={data.keywords ?? []}
         directors={data.directors}
         cast={data.cast}
         imdbHref={data.imdbHref}
