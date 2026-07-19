@@ -1022,6 +1022,23 @@ img {
   gap: 0.6rem;
 }
 
+/* On the full Filters page each control is a form row: fixed label column +
+   full-width select so every chevron lines up on the right edge. */
+.filter-page-selects .filter-select-control {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  align-items: center;
+  height: 48px;
+  padding: 0 0.95rem;
+}
+
+.filter-page-selects .filter-select-control .filter-select-trigger {
+  max-width: none;
+  width: 100%;
+  height: 48px;
+  justify-content: space-between;
+}
+
 .applied-filter-row {
   display: flex;
   flex-wrap: wrap;
