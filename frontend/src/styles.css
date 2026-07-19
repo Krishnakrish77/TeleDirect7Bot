@@ -2362,9 +2362,9 @@ img {
 }
 
 .live-category-tabs button[data-state="active"] {
-  border-color: rgba(20, 184, 166, 0.4);
-  background: rgba(20, 184, 166, 0.12);
-  color: #ccfbf1;
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #111317;
 }
 
 .live-category-tabs span {

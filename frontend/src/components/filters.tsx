@@ -22,7 +22,7 @@ function SelectControl({ control, className = '' }: { control: FilterControl; cl
       <span>{control.label}</span>
       <Select value={control.value || undefined} onValueChange={(value) => control.onChange(value === '__any' ? '' : value)}>
         <SelectTrigger className="filter-select-trigger" aria-label={control.label}>
-          <SelectValue placeholder={control.label} />
+          <SelectValue placeholder="Any" />
         </SelectTrigger>
         <SelectContent>
           {control.options.map((option) => (

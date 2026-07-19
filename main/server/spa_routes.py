@@ -711,7 +711,7 @@ def _card_from_item(item: HubItem, art_cache: dict | None = None) -> dict:
         "type": "track" if is_audio else "item",
         "itemId": str(item.message_id),
         "subtitle": subtitle,
-        "eyebrow": "Music" if is_audio else (item.quality or "Video"),
+        "eyebrow": "Music" if is_audio else (item.quality or "Movie"),
         "badge": item.quality or common["durationLabel"],
         "href": _detail_url(item),
         "playHref": _play_url(item),
