@@ -74,18 +74,23 @@ beforeEach(() => {
 });
 
 describe('PrimaryNav', () => {
-  it('keeps watchlist unavailable from guest navigation', () => {
+  it('shows the five public destinations without a more menu', () => {
     render(<PrimaryNav user={null} activeView="" activeSection="home" />);
 
     expect(screen.queryByRole('link', { name: /Watchlist/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /Search/i })).toBeNull();
     expect(screen.getByRole('link', { name: /Live TV/i }).getAttribute('href')).toBe('/app/live-tv');
+    expect(screen.getByRole('link', { name: /Series/i }).getAttribute('href')).toBe('/app?view=series');
+    expect(screen.queryByRole('button', { name: 'More' })).toBeNull();
   });
 
-  it('shows watchlist only for signed-in users', () => {
-    render(<PrimaryNav user={user} activeView="" activeSection="watchlist" />);
+  it('keeps the personal library in the signed-in account menu', () => {
+    renderHeader({ accountOpen: true });
 
-    expect(screen.getByRole('link', { name: /Watchlist/i }).getAttribute('href')).toBe('/app/watchlist');
+    expect(screen.getByRole('menuitem', { name: /Watchlist/i }).getAttribute('href')).toBe('/app/watchlist');
+    expect(screen.getByRole('menuitem', { name: /Liked songs/i }).getAttribute('href')).toBe('/app/liked-songs');
+    expect(screen.getByRole('menuitem', { name: /Playlists/i }).getAttribute('href')).toBe('/app/playlists');
+    expect(screen.getByRole('menuitem', { name: /Stats/i }).getAttribute('href')).toBe('/app/stats');
   });
 });
 
@@ -122,8 +127,8 @@ describe('Header search', () => {
     });
 
     expect(screen.getByRole('menuitem', { name: /Admin panel/i }).getAttribute('href')).toBe('/app/admin');
-    expect(screen.queryByRole('menuitem', { name: /Playlists/i })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: /Stats/i })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: /Playlists/i }).getAttribute('href')).toBe('/app/playlists');
+    expect(screen.getByRole('menuitem', { name: /Stats/i }).getAttribute('href')).toBe('/app/stats');
   });
 
   it('supports keyboard navigation through search suggestions', () => {

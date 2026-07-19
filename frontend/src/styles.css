@@ -8235,11 +8235,6 @@ select.edit-field-input {
 }
 
 @media (min-width: 1180px) {
-  .mobile-nav-more,
-  .mobile-nav-sheet {
-    display: none;
-  }
-
   .app-shell {
     padding-left: 0;
   }
@@ -8483,78 +8478,6 @@ select.edit-field-input {
     font-size: 0.68rem;
     font-weight: 800;
     min-width: 0;
-  }
-
-  .primary-nav .mobile-secondary {
-    display: none;
-  }
-
-  .mobile-nav-more {
-    display: grid;
-    justify-items: center;
-    align-content: center;
-    gap: 0.2rem;
-    min-width: 0;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    font: inherit;
-    font-size: 0.68rem;
-    font-weight: 800;
-  }
-
-  .mobile-nav-more svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .mobile-nav-more.active,
-  .mobile-nav-more:focus-visible {
-    background: rgba(249, 115, 22, 0.12);
-    color: #fff;
-    outline: none;
-  }
-
-  .mobile-nav-sheet {
-    position: fixed;
-    right: 0.65rem;
-    bottom: calc(70px + env(safe-area-inset-bottom, 0px));
-    z-index: 76;
-    display: grid;
-    min-width: min(15rem, calc(100vw - 1.3rem));
-    padding: 0.45rem;
-    border: 1px solid var(--line-strong);
-    border-radius: 12px;
-    background: rgba(17, 19, 23, 0.98);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
-    backdrop-filter: blur(18px);
-  }
-
-  .mobile-nav-sheet a {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-height: 44px;
-    padding: 0 0.75rem;
-    border-radius: 8px;
-    color: var(--text);
-    font-size: 0.9rem;
-    font-weight: 800;
-  }
-
-  .mobile-nav-sheet a:hover,
-  .mobile-nav-sheet a:focus-visible {
-    background: rgba(249, 115, 22, 0.14);
-    color: #fdba74;
-    outline: none;
-  }
-
-  .mobile-nav-sheet svg {
-    width: 19px;
-    height: 19px;
-    color: var(--brand);
   }
 
   .primary-nav svg {

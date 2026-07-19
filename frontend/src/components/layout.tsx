@@ -21,30 +21,6 @@ export function PrimaryNav({
   activeView: ViewValue | '';
   activeSection: 'home' | 'movies' | 'series' | 'music' | 'live-tv' | 'watchlist' | 'liked-songs' | 'playlists' | 'stats' | '';
 }) {
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
-  const moreMenuRef = useRef<HTMLDivElement | null>(null);
-  const moreActive = ['series', 'live-tv', 'watchlist', 'liked-songs', 'playlists', 'stats'].includes(activeSection);
-
-  useEffect(() => {
-    if (!moreOpen) return undefined;
-    const closeOnOutsidePress = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!moreMenuRef.current?.contains(target) && !moreButtonRef.current?.contains(target)) setMoreOpen(false);
-    };
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setMoreOpen(false);
-        moreButtonRef.current?.focus();
-      }
-    };
-    document.addEventListener('pointerdown', closeOnOutsidePress);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutsidePress);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [moreOpen]);
   return (
     <nav className="primary-nav" aria-label="Primary">
       <a className={activeSection === 'home' ? 'active' : ''} href="/app">
@@ -55,7 +31,7 @@ export function PrimaryNav({
         <FilmIcon />
         <span>Movies</span>
       </a>
-      <a className={activeView === 'series' && activeSection === 'series' ? 'mobile-secondary active' : 'mobile-secondary'} href="/app?view=series">
+      <a className={activeView === 'series' && activeSection === 'series' ? 'active' : ''} href="/app?view=series">
         <TvIcon />
         <span>Series</span>
       </a>
@@ -63,44 +39,10 @@ export function PrimaryNav({
         <MusicIcon />
         <span>Music</span>
       </a>
-      {user && (
-        <a className={activeSection === 'liked-songs' ? 'mobile-secondary active' : 'mobile-secondary'} href="/app/liked-songs" aria-label="Liked Songs">
-          <HeartIcon />
-          <span>Liked Songs</span>
-        </a>
-      )}
-      <a className={activeSection === 'live-tv' ? 'mobile-secondary active' : 'mobile-secondary'} href="/app/live-tv">
+      <a className={activeSection === 'live-tv' ? 'active' : ''} href="/app/live-tv">
         <BroadcastIcon />
         <span>Live TV</span>
       </a>
-      {user && (
-        <a className={activeSection === 'watchlist' ? 'mobile-secondary active' : 'mobile-secondary'} href="/app/watchlist">
-          <BookmarkIcon />
-          <span>Watchlist</span>
-        </a>
-      )}
-      <button
-        type="button"
-        ref={moreButtonRef}
-        className={moreActive ? 'mobile-nav-more active' : 'mobile-nav-more'}
-        aria-expanded={moreOpen}
-        aria-controls="mobile-nav-more-sheet"
-        aria-haspopup="menu"
-        onClick={() => setMoreOpen((open) => !open)}
-      >
-        <ListIcon />
-        <span>More</span>
-      </button>
-      {moreOpen && (
-        <div ref={moreMenuRef} className="mobile-nav-sheet" id="mobile-nav-more-sheet" role="menu" aria-label="More navigation">
-          <a href="/app?view=series" role="menuitem" onClick={() => setMoreOpen(false)}><TvIcon /><span>Series</span></a>
-          <a href="/app/live-tv" role="menuitem" onClick={() => setMoreOpen(false)}><BroadcastIcon /><span>Live TV</span></a>
-          {user && <a href="/app/watchlist" role="menuitem" onClick={() => setMoreOpen(false)}><BookmarkIcon /><span>Watchlist</span></a>}
-          {user && <a href="/app/liked-songs" role="menuitem" onClick={() => setMoreOpen(false)}><HeartIcon /><span>Liked Songs</span></a>}
-          {user && <a href="/app/playlists" role="menuitem" onClick={() => setMoreOpen(false)}><ListIcon /><span>Playlists</span></a>}
-          {user && <a href="/app/stats" role="menuitem" onClick={() => setMoreOpen(false)}><ChartIcon /><span>Stats</span></a>}
-        </div>
-      )}
     </nav>
   );
 }
@@ -308,13 +250,29 @@ export function Header({
                   <strong>{user.name || user.username || 'Signed in'}</strong>
                   {user.username && <span>@{user.username}</span>}
                 </div>
+                <a href="/app/watchlist" role="menuitem" onClick={() => setAccountOpen(false)}>
+                  <BookmarkIcon />
+                  <span>Watchlist</span>
+                </a>
+                <a href="/app/liked-songs" role="menuitem" onClick={() => setAccountOpen(false)}>
+                  <HeartIcon />
+                  <span>Liked songs</span>
+                </a>
+                <a href="/app/playlists" role="menuitem" onClick={() => setAccountOpen(false)}>
+                  <ListIcon />
+                  <span>Playlists</span>
+                </a>
+                <a href="/app/stats" role="menuitem" onClick={() => setAccountOpen(false)}>
+                  <ChartIcon />
+                  <span>Stats</span>
+                </a>
+                <span className="account-menu-divider" aria-hidden="true" />
                 {user.is_admin && (
                   <a href="/app/admin" role="menuitem" onClick={() => setAccountOpen(false)}>
                     <ShieldIcon />
                     <span>Admin panel</span>
                   </a>
                 )}
-                <span className="account-menu-divider" aria-hidden="true" />
                 <button
                   type="button"
                   role="menuitem"
