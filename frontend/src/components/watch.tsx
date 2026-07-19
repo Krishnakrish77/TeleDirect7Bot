@@ -645,9 +645,10 @@ function VideoWatchPage({
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(video.duration || 0);
-  const [sourceMode, setSourceMode] = useState<'direct' | 'hls'>(() => (
-    video.preferHls && video.hlsSrc ? 'hls' : 'direct'
-  ));
+  // Start with the original stream. Modern devices can hardware-decode some
+  // formats (including this library's 10-bit HEVC uploads) that a static
+  // codec allow-list would reject. HLS remains an automatic fallback.
+  const [sourceMode, setSourceMode] = useState<'direct' | 'hls'>('direct');
   const [audioIndex, setAudioIndex] = useState(0);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
   const [activeSub, setActiveSub] = useState('');
@@ -672,6 +673,7 @@ function VideoWatchPage({
   const [stillWatchingPrompt, setStillWatchingPrompt] = useState(false);
   const [stillWatchingActivity, setStillWatchingActivity] = useState(0);
   const hlsFailedRef = useRef(false);
+  const directFallbackTriedRef = useRef(false);
   const controlsTimerRef = useRef<number | null>(null);
   const clickTimerRef = useRef<number | null>(null);
   const stillWatchingTimerRef = useRef<number | null>(null);
@@ -817,6 +819,7 @@ function VideoWatchPage({
 
   useEffect(() => {
     hlsFailedRef.current = false;
+    directFallbackTriedRef.current = false;
   }, [video.hlsSrc, video.key]);
 
   useEffect(() => {
@@ -849,9 +852,7 @@ function VideoWatchPage({
       attachHls(el, sourceSrc, video.directSrc, () => {
         if (!cancelled) {
           hlsFailedRef.current = true;
-          if (video.preferHls) {
-            // The direct source is known to use a browser-incompatible codec;
-            // falling back to it would only replace one error with another.
+          if (directFallbackTriedRef.current) {
             setError('Browser playback could not start. Try VLC.');
             showToast('HLS playback failed.');
           } else {
@@ -881,7 +882,7 @@ function VideoWatchPage({
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [hasHls, showToast, sourceMode, sourceSrc, video.directSrc, video.knownUnplayable, video.preferHls]);
+  }, [hasHls, showToast, sourceMode, sourceSrc, video.directSrc, video.knownUnplayable]);
 
   useEffect(() => {
     try {
@@ -1151,7 +1152,8 @@ function VideoWatchPage({
       if (video.nextEpisode) setShowNext(true);
     };
     const onError = () => {
-      if (sourceMode === 'direct' && hasHls && !hlsFailedRef.current) {
+      if (sourceMode === 'direct' && hasHls && !hlsFailedRef.current && !directFallbackTriedRef.current) {
+        directFallbackTriedRef.current = true;
         setSourceMode('hls');
         setError('');
       } else {
@@ -1212,6 +1214,12 @@ function VideoWatchPage({
     const showDecodeError = () => {
       if (shown || everDecoded) return;
       shown = true;
+      if (sourceMode === 'direct' && hasHls && !hlsFailedRef.current && !directFallbackTriedRef.current) {
+        directFallbackTriedRef.current = true;
+        setSourceMode('hls');
+        showToast('Using compatible playback.');
+        return;
+      }
       setPlaying(false);
       setVideoMediaSessionPlaybackState(false);
       setError('Browser playback started but no video frames decoded. The classic player and VLC links are available.');
@@ -1246,7 +1254,7 @@ function VideoWatchPage({
       });
       el.removeEventListener('playing', onPlaying);
     };
-  }, [setVideoMediaSessionPlaybackState, sourceSrc, video.knownUnplayable]);
+  }, [hasHls, setVideoMediaSessionPlaybackState, showToast, sourceMode, sourceSrc, video.knownUnplayable]);
 
   const playNextEpisode = useCallback(() => {
     const href = video.nextEpisode?.playHref || video.nextEpisode?.classicHref;

@@ -2287,8 +2287,9 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
     # override that when the contents are not browser-decodable (for example
     # an HEVC/AV1 MP4): the HLS route will encode AVC/AAC on demand.
     source_codec = (item.video_codec or "").lower()
-    # HEVC may work on selected hardware, but it is not portable through
-    # hls.js/MSE. Prefer the AVC fallback whenever a probe identifies it.
+    # Keep a compatible HLS rendition available for devices that cannot
+    # decode the original upload. The web player tries direct hardware
+    # playback first and switches to this source only on a real failure.
     needs_hls_transcode = (
         codec_probe.known_unplayable(item)
         or (bool(source_codec) and source_codec not in {"h264", "avc1"})
@@ -2363,7 +2364,7 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
         # A known-bad source is playable through the transcode HLS fallback;
         # reserve the blocking overlay for the (rare) case with no fallback.
         "knownUnplayable": needs_hls_transcode and not hls_src,
-        "preferHls": bool(needs_hls_transcode and hls_src),
+        "preferHls": False,
         "videoCodec": item.video_codec or "",
         "pixFmt": item.pix_fmt or "",
         "qualityVariants": [_video_choice_payload(variant) for variant in quality_variants],

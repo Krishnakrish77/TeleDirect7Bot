@@ -538,6 +538,13 @@ describe('WatchPage video player', () => {
     expect(screen.queryByText('Source')).toBeNull();
   });
 
+  it('tries the direct stream first even when a compatible HLS fallback exists', async () => {
+    const view = renderWatchPage(makeVideo({ preferHls: true }));
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/stream/video-key');
+  });
+
   it('does not duplicate the default audio track option', async () => {
     fetchAudioTracksMock.mockResolvedValue([
       { index: 0, language: 'en', label: 'English', codec: 'aac' },
@@ -588,8 +595,8 @@ describe('WatchPage video player', () => {
     expect(screen.queryByText('This video needs another player')).toBeNull();
   });
 
-  it('shows a fallback overlay when playback advances without decoded video frames', async () => {
-    const view = renderWatchPage();
+  it('shows a fallback overlay when playback advances without decoded video frames and HLS is unavailable', async () => {
+    const view = renderWatchPage(makeVideo({ hlsSrc: '', audioTrackBase: '' }));
 
     await screen.findByRole('heading', { name: 'Pilot' });
     vi.useFakeTimers();
