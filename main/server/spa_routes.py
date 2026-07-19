@@ -1404,6 +1404,56 @@ def _video_choice_payload(item: HubItem, watched_keys: set[str] | None = None) -
     return payload
 
 
+def _episode_navigator_payload(item: HubItem) -> dict | None:
+    """Return compact, variant-deduplicated episode choices for the player."""
+    if not item.series_key:
+        return None
+    episodes = media_index.episodes_for_series(item.series_key)
+    if len(episodes) < 2:
+        return None
+
+    grouped: dict[tuple[object, object, object], list[HubItem]] = {}
+    for episode in episodes:
+        grouped.setdefault((episode.season, episode.episode, episode.episode_end), []).append(episode)
+
+    seasons: dict[object, list[dict]] = {}
+    for (season, episode_number, episode_end), variants in grouped.items():
+        # Prefer the uploaded variant already being played; otherwise use the
+        # largest available file, matching the series detail-page convention.
+        preferred = next((variant for variant in variants if variant.message_id == item.message_id), None)
+        if preferred is None:
+            preferred = max(variants, key=lambda variant: variant.file_size or 0)
+        seasons.setdefault(season, []).append({
+            "key": f"{preferred.secure_hash}{preferred.message_id}",
+            "title": preferred.episode_title or preferred.title or _episode_label(preferred) or "Episode",
+            "label": _episode_label(preferred) or "Episode",
+            "posterUrl": _tmdb_image(preferred.episode_still_path, "w300") or _thumb(preferred),
+            "durationLabel": _duration(preferred.duration or 0),
+            "quality": preferred.quality or "",
+            "playHref": _app_watch_url(preferred),
+            "current": preferred.message_id == item.message_id,
+            "_order": (episode_number is None, episode_number or 0, episode_end or 0),
+        })
+
+    season_payload = []
+    for season, entries in sorted(seasons.items(), key=lambda pair: (pair[0] is None, pair[0] or 0)):
+        entries.sort(key=lambda entry: entry["_order"])
+        for entry in entries:
+            entry.pop("_order", None)
+        season_payload.append({
+            "key": "misc" if season is None else str(season),
+            "label": "Other episodes" if season is None else f"Season {season}",
+            "entries": entries,
+        })
+
+    return {
+        "title": item.series_title or item.title or "Series",
+        "seriesHref": f"/app/series/{item.series_key}",
+        "currentSeason": "misc" if item.season is None else str(item.season),
+        "seasons": season_payload,
+    }
+
+
 def _cw_progress_pct(entry: dict | None) -> int:
     if not entry:
         return 0
@@ -2317,6 +2367,7 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
         "videoCodec": item.video_codec or "",
         "pixFmt": item.pix_fmt or "",
         "qualityVariants": [_video_choice_payload(variant) for variant in quality_variants],
+        "episodeNavigator": _episode_navigator_payload(item),
         "nextEpisode": next_ep,
         "introStart": float(item.intro_start or 0),
         "introEnd": float(item.intro_end or 0),

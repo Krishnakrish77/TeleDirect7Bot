@@ -6914,6 +6914,213 @@ img {
   display: none;
 }
 
+.episode-navigator-panel {
+  position: fixed;
+  z-index: 51;
+  right: 50%;
+  bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  transform: translateX(50%);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(44rem, calc(100% - 1.5rem));
+  max-height: min(82%, 38rem);
+  overflow: hidden;
+  padding: 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(29, 32, 38, 0.99), rgba(11, 12, 14, 0.99));
+  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.52);
+}
+
+.episode-navigator-grabber {
+  display: none;
+}
+
+.episode-navigator-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.25rem 0.25rem 0.6rem;
+}
+
+.episode-navigator-header h2 {
+  margin: 0.12rem 0 0;
+  color: #fff;
+  font-size: 1.1rem;
+}
+
+.episode-navigator-header [data-slot="button"] {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.episode-season-tabs {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.15rem 0.25rem 0.7rem;
+  scrollbar-width: none;
+}
+
+.episode-season-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.episode-season-tabs button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  padding: 0 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.episode-season-tabs button.active {
+  border-color: color-mix(in srgb, var(--brand) 58%, transparent);
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  color: #fed7aa;
+}
+
+.episode-navigator-list {
+  display: grid;
+  gap: 0.35rem;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 0.25rem 0.45rem;
+}
+
+.episode-navigator-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 64px;
+  padding: 0.38rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.episode-navigator-row:hover,
+.episode-navigator-row:focus-visible {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.055);
+  outline: none;
+}
+
+.episode-navigator-row.current {
+  border-color: color-mix(in srgb, var(--brand) 48%, transparent);
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+.episode-navigator-row img {
+  width: 76px;
+  height: 48px;
+  border-radius: 6px;
+  background: var(--panel-strong);
+  object-fit: cover;
+}
+
+.episode-navigator-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+}
+
+.episode-navigator-copy strong,
+.episode-navigator-copy span,
+.episode-navigator-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.episode-navigator-copy strong {
+  color: #fff;
+  font-size: 0.78rem;
+}
+
+.episode-navigator-copy span {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.episode-navigator-copy small {
+  color: var(--muted);
+  font-size: 0.73rem;
+}
+
+.episode-navigator-row > svg {
+  width: 18px;
+  color: var(--muted);
+}
+
+.episode-navigator-now {
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.episode-navigator-series {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 38px;
+  margin: 0.15rem 0.25rem 0.1rem;
+  border-top: 1px solid var(--line);
+  color: #fdba74;
+  font-size: 0.84rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.episode-navigator-series svg {
+  width: 16px;
+}
+
+@media (max-width: 40rem) {
+  .episode-navigator-panel {
+    bottom: 0;
+    width: 100%;
+    max-height: min(84svh, 42rem);
+    padding: 0.55rem 0.55rem max(0.55rem, env(safe-area-inset-bottom, 0px));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .episode-navigator-grabber {
+    display: block;
+    width: 2.5rem;
+    height: 0.25rem;
+    margin: 0.05rem auto 0.35rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.28);
+  }
+
+  .episode-navigator-row {
+    grid-template-columns: 68px minmax(0, 1fr) auto;
+    gap: 0.6rem;
+  }
+
+  .episode-navigator-row img {
+    width: 68px;
+    height: 44px;
+  }
+}
+
 .video-menu-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -107,6 +107,56 @@ class SpaHubPayloadTest(unittest.TestCase):
             {"name": "Sublahshini", "href": "/app/artist/sublahshini"},
         ])
 
+    def test_episode_navigator_groups_variants_and_marks_current_episode(self):
+        previous = dict(media_index._items)
+        try:
+            current = _video_item(
+                101,
+                secure_hash="episode-one",
+                title="Pilot",
+                series_key="example-series",
+                series_title="Example Series",
+                season=1,
+                episode=1,
+                episode_title="Pilot",
+            )
+            alternate = _video_item(
+                102,
+                secure_hash="episode-one-720",
+                title="Pilot",
+                series_key="example-series",
+                series_title="Example Series",
+                season=1,
+                episode=1,
+                episode_title="Pilot",
+                quality="720p",
+            )
+            next_episode = _video_item(
+                103,
+                secure_hash="episode-two",
+                title="Second episode",
+                series_key="example-series",
+                series_title="Example Series",
+                season=1,
+                episode=2,
+                episode_title="Second episode",
+            )
+            media_index._items.clear()
+            media_index._items.update({item.message_id: item for item in (current, alternate, next_episode)})
+
+            payload = spa_routes._episode_navigator_payload(current)
+
+            self.assertEqual(payload["seriesHref"], "/app/series/example-series")
+            self.assertEqual(payload["currentSeason"], "1")
+            self.assertEqual(len(payload["seasons"]), 1)
+            entries = payload["seasons"][0]["entries"]
+            self.assertEqual([entry["label"] for entry in entries], ["S01E01", "S01E02"])
+            self.assertTrue(entries[0]["current"])
+            self.assertEqual(entries[1]["playHref"], "/app/watch/episode-two103")
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
     def test_app_watch_download_redirects_to_raw_stream(self):
         request = SimpleNamespace(
             rel_url=SimpleNamespace(query={"download": "1"}),

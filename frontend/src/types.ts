@@ -309,6 +309,25 @@ export interface WatchVideo {
   videoCodec: string;
   pixFmt: string;
   qualityVariants: VideoChoice[];
+  episodeNavigator?: {
+    title: string;
+    seriesHref: string;
+    currentSeason: string;
+    seasons: Array<{
+      key: string;
+      label: string;
+      entries: Array<{
+        key: string;
+        title: string;
+        label: string;
+        posterUrl: string;
+        durationLabel: string;
+        quality: string;
+        playHref: string;
+        current: boolean;
+      }>;
+    }>;
+  } | null;
   nextEpisode?: {
     key: string;
     url: string;

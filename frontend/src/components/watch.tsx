@@ -14,6 +14,7 @@ import { markLocallyWatched } from '../utils/localWatched';
 import { isContinueSuppressed } from '../utils/continueWatching';
 import { uniqueMetadataParts } from '../utils/metadata';
 import { Button } from './ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog';
 
 function isWatchTrack(item: WatchResponse['item']): item is WatchTrack {
   return item.type === 'track' && 'appHref' in item;
@@ -27,10 +28,11 @@ export const STILL_WATCHING_TIMEOUT_MS = 45 * 60 * 1000;
 const NEXT_EPISODE_COUNTDOWN_SECONDS = 8;
 
 type NextEpisode = NonNullable<WatchVideo['nextEpisode']>;
+type EpisodeNavigator = NonNullable<WatchVideo['episodeNavigator']>;
 
 function isVideoChromeTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest(
-    'button, a, input, select, textarea, label, .video-controls, .video-options-menu, .skip-intro, .next-episode-card, .video-overlay-message, .still-watching-overlay',
+    'button, a, input, select, textarea, label, .video-controls, .video-options-menu, .episode-navigator, .skip-intro, .next-episode-card, .video-overlay-message, .still-watching-overlay',
   ));
 }
 
@@ -180,6 +182,75 @@ function NextEpisodePanel({
   );
 }
 
+function EpisodeNavigatorSheet({
+  navigator,
+  onClose,
+  container,
+}: {
+  navigator: EpisodeNavigator;
+  onClose: () => void;
+  container?: HTMLElement | null;
+}) {
+  const [seasonKey, setSeasonKey] = useState(navigator.currentSeason);
+  const season = navigator.seasons.find((entry) => entry.key === seasonKey) || navigator.seasons[0];
+
+  useEffect(() => setSeasonKey(navigator.currentSeason), [navigator.currentSeason]);
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="episode-navigator-panel" aria-labelledby="episode-navigator-title" container={container}>
+        <div className="episode-navigator-grabber" aria-hidden="true" />
+        <header className="episode-navigator-header">
+          <div>
+            <p className="eyebrow">Now watching</p>
+            <DialogTitle asChild><h2 id="episode-navigator-title" dir="auto">{navigator.title}</h2></DialogTitle>
+            <DialogDescription className="sr-only">Choose an episode to play.</DialogDescription>
+          </div>
+          <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Close episode picker">×</Button>
+        </header>
+        <div className="episode-season-tabs" role="tablist" aria-label="Seasons">
+          {navigator.seasons.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              role="tab"
+              aria-selected={season?.key === option.key}
+              className={season?.key === option.key ? 'active' : ''}
+              onClick={() => setSeasonKey(option.key)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {season && (
+          <div className="episode-navigator-list" role="tabpanel" aria-label={season.label}>
+            {season.entries.map((episode) => {
+              const body = <>
+                <img src={episode.posterUrl} alt="" loading="lazy" decoding="async" />
+                <span className="episode-navigator-copy">
+                  <strong>{episode.label}</strong>
+                  <span dir="auto">{episode.title}</span>
+                  <small>{[episode.durationLabel, episode.quality].filter(Boolean).join(' · ')}</small>
+                </span>
+                {episode.current ? <span className="episode-navigator-now">Playing</span> : <PlayIcon />}
+              </>;
+              return episode.current ? (
+                <div key={episode.key} className="episode-navigator-row current" aria-current="true">{body}</div>
+              ) : (
+                <a key={episode.key} className="episode-navigator-row" href={episode.playHref}>{body}</a>
+              );
+            })}
+          </div>
+        )}
+        <a className="episode-navigator-series" href={navigator.seriesHref}>
+          <span>View all episodes</span>
+          <ChevronRightIcon />
+        </a>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function WatchPage({
   watchKey,
   audio,
@@ -241,7 +312,7 @@ export function WatchPage({
   }
 
   if (isWatchVideo(data.item)) {
-    return <VideoWatchPage video={data.item} serverSyncEnabled={serverSyncEnabled} canDownload={canDownload} />;
+    return <VideoWatchPage key={data.item.key} video={data.item} serverSyncEnabled={serverSyncEnabled} canDownload={canDownload} />;
   }
 
   if (!isWatchTrack(data.item)) {
@@ -595,6 +666,7 @@ function VideoWatchPage({
   const [nextCountdown, setNextCountdown] = useState(5);
   const [toast, setToast] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [episodesOpen, setEpisodesOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [stillWatchingPrompt, setStillWatchingPrompt] = useState(false);
@@ -657,7 +729,7 @@ function VideoWatchPage({
   }, [chapters, currentTime]);
   const displaySubtitle = video.subtitle && video.subtitle !== video.quality ? video.subtitle : '';
   const shellClass = [
-    controlsVisible || menuOpen || stillWatchingPrompt ? 'video-shell controls-visible' : 'video-shell controls-hidden',
+    controlsVisible || menuOpen || episodesOpen || stillWatchingPrompt ? 'video-shell controls-visible' : 'video-shell controls-hidden',
     video.knownUnplayable ? 'video-unplayable' : '',
   ].filter(Boolean).join(' ');
 
@@ -723,12 +795,12 @@ function VideoWatchPage({
 
   const scheduleControlsHide = useCallback(() => {
     clearControlsTimer();
-    if (!playing || menuOpen || error || showNext || stillWatchingPrompt) return;
+    if (!playing || menuOpen || episodesOpen || error || showNext || stillWatchingPrompt) return;
     controlsTimerRef.current = window.setTimeout(() => {
       setControlsVisible(false);
       controlsTimerRef.current = null;
     }, 2200);
-  }, [clearControlsTimer, error, menuOpen, playing, showNext, stillWatchingPrompt]);
+  }, [clearControlsTimer, episodesOpen, error, menuOpen, playing, showNext, stillWatchingPrompt]);
 
   const revealVideoControls = useCallback(() => {
     if (playing) noteStillWatchingActivity();
@@ -826,14 +898,14 @@ function VideoWatchPage({
   }, []);
 
   useEffect(() => {
-    if (!playing || menuOpen || error || showNext || stillWatchingPrompt) {
+    if (!playing || menuOpen || episodesOpen || error || showNext || stillWatchingPrompt) {
       clearControlsTimer();
       setControlsVisible(true);
       return undefined;
     }
     scheduleControlsHide();
     return clearControlsTimer;
-  }, [clearControlsTimer, error, menuOpen, playing, scheduleControlsHide, showNext, stillWatchingPrompt]);
+  }, [clearControlsTimer, episodesOpen, error, menuOpen, playing, scheduleControlsHide, showNext, stillWatchingPrompt]);
 
   useEffect(() => {
     clearStillWatchingTimer();
@@ -1741,6 +1813,10 @@ function VideoWatchPage({
           />
         )}
 
+        {episodesOpen && video.episodeNavigator && (
+          <EpisodeNavigatorSheet navigator={video.episodeNavigator} container={shellRef.current} onClose={() => setEpisodesOpen(false)} />
+        )}
+
         <div className="video-controls">
           <button type="button" className="player-play video-play" onClick={toggleVideo} aria-label={playing ? 'Pause' : 'Play'}>
             {playing ? <PauseIcon /> : <PlayIcon />}
@@ -1784,6 +1860,20 @@ function VideoWatchPage({
           <button type="button" className="icon-button video-pip-control" onClick={togglePip} aria-label="Picture in picture">
             <PictureInPictureIcon />
           </button>
+          {video.episodeNavigator && (
+            <button
+              type="button"
+              className={episodesOpen ? 'icon-button active' : 'icon-button'}
+              onClick={() => {
+                setMenuOpen(false);
+                setEpisodesOpen((open) => !open);
+              }}
+              aria-label="Browse episodes"
+              aria-expanded={episodesOpen}
+            >
+              <ListIcon />
+            </button>
+          )}
           <button type="button" className="icon-button" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
             <MaximizeIcon />
           </button>

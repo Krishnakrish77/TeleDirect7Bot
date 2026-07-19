@@ -493,6 +493,39 @@ describe('WatchPage video player', () => {
     expect(screen.queryByRole('dialog', { name: 'Next episode' })).toBeNull();
   });
 
+  it('opens the shadcn episode picker and links to another episode', async () => {
+    renderWatchPage(makeVideo({
+      episodeNavigator: {
+        title: 'Example Series',
+        seriesHref: '/app/series/example-series',
+        currentSeason: '1',
+        seasons: [
+          {
+            key: '1', label: 'Season 1', entries: [
+              { key: 'video-key', title: 'Pilot', label: 'S01E01', posterUrl: '/thumb/one.jpg', durationLabel: '42m', quality: '1080p', playHref: '/app/watch/video-key', current: true },
+              { key: 'video-key-2', title: 'The next chapter', label: 'S01E02', posterUrl: '/thumb/two.jpg', durationLabel: '43m', quality: '1080p', playHref: '/app/watch/video-key-2', current: false },
+            ],
+          },
+          {
+            key: '2', label: 'Season 2', entries: [
+              { key: 'video-key-3', title: 'A new beginning', label: 'S02E01', posterUrl: '/thumb/three.jpg', durationLabel: '45m', quality: '1080p', playHref: '/app/watch/video-key-3', current: false },
+            ],
+          },
+        ],
+      },
+    }));
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    fireEvent.click(screen.getByLabelText('Browse episodes'));
+
+    const picker = await screen.findByRole('dialog', { name: 'Example Series' });
+    expect(within(picker).getByText('Playing')).toBeTruthy();
+    expect(within(picker).getByRole('link', { name: /S01E02.*The next chapter/i }).getAttribute('href')).toBe('/app/watch/video-key-2');
+    fireEvent.click(within(picker).getByRole('tab', { name: 'Season 2' }));
+    expect(within(picker).getByText('S02E01')).toBeTruthy();
+    expect(within(picker).getByRole('link', { name: 'View all episodes' }).getAttribute('href')).toBe('/app/series/example-series');
+  });
+
   it('hides HLS-only controls when the API omits an HLS source', async () => {
     renderWatchPage(makeVideo({ hlsSrc: '', audioTrackBase: '' }));
 
