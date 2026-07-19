@@ -55,6 +55,10 @@ class TMDBHit:
     vote_count: int = 0
     cast: List[str] = field(default_factory=list)
     director: str = ""
+    runtime_minutes: int = 0
+    certification: str = ""
+    keywords: List[str] = field(default_factory=list)
+    logo_path: str = ""
 
 
 # Tuple keys: (kind, lowercased normalized title, year-or-0).
@@ -178,9 +182,15 @@ def _best_match(results: List[dict], title: str, year: Optional[int],
 
 async def _enrich_details(session: aiohttp.ClientSession,
                           kind: str, tmdb_id: int) -> Optional[dict]:
+    appended = ["external_ids", "credits", "keywords", "images"]
+    appended.append("release_dates" if kind == "movie" else "content_ratings")
     return await _get(
         session, f"/{kind}/{tmdb_id}",
-        append_to_response="external_ids,credits",
+        # These are small, stable detail resources which let one enrichment
+        # request populate the useful on-screen facts.  Avoid watch-provider
+        # data: it is irrelevant to a self-hosted library and has attribution
+        # requirements.
+        append_to_response=",".join(appended),
     )
 
 
@@ -193,6 +203,75 @@ def _extract_credits(details: dict) -> tuple:
         if p.get("job") == "Director" and p.get("name")
     ]
     return cast, ", ".join(directors[:2])
+
+
+def _extract_keywords(details: dict) -> List[str]:
+    """TMDB uses ``keywords`` for movies and ``results`` for TV."""
+    payload = details.get("keywords") or {}
+    values = payload.get("keywords") or payload.get("results") or []
+    return [str(entry["name"]).strip() for entry in values if entry.get("name")][:12]
+
+
+def _extract_certification(details: dict, kind: str) -> str:
+    """Prefer the familiar US rating, then use the first supplied rating."""
+    if kind == "movie":
+        regions = (details.get("release_dates") or {}).get("results") or []
+        candidates = [r for r in regions if r.get("iso_3166_1") == "US"] + regions
+        for region in candidates:
+            for release in region.get("release_dates") or []:
+                rating = str(release.get("certification") or "").strip()
+                if rating:
+                    return rating
+        return ""
+    ratings = (details.get("content_ratings") or {}).get("results") or []
+    candidates = [r for r in ratings if r.get("iso_3166_1") == "US"] + ratings
+    for rating in candidates:
+        value = str(rating.get("rating") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _extract_runtime(details: dict, kind: str) -> int:
+    if kind == "movie":
+        return _int_or_zero(details.get("runtime"))
+    last_episode = details.get("last_episode_to_air") or {}
+    return _int_or_zero(last_episode.get("runtime")) or _int_or_zero((details.get("episode_run_time") or [0])[0])
+
+
+def _extract_logo_path(details: dict) -> str:
+    logos = (details.get("images") or {}).get("logos") or []
+    preferred = [logo for logo in logos if logo.get("iso_639_1") == "en"]
+    for logo in preferred + logos:
+        if logo.get("file_path"):
+            return str(logo["file_path"])
+    return ""
+
+
+def _hit_from_details(kind: str, tmdb_id: int, details: dict, fallback: Optional[dict] = None) -> TMDBHit:
+    """Normalize both searched and explicit TMDB detail responses."""
+    fallback = fallback or {}
+    year_field = "release_date" if kind == "movie" else "first_air_date"
+    cast, director = _extract_credits(details)
+    return TMDBHit(
+        tmdb_id=int(details.get("id") or tmdb_id),
+        kind=kind,
+        title=details.get("title") or details.get("name") or "",
+        year=_parse_year(details.get(year_field)),
+        overview=(details.get("overview") or "").strip(),
+        poster_path=details.get("poster_path") or "",
+        backdrop_path=details.get("backdrop_path") or "",
+        genres=[g["name"] for g in (details.get("genres") or []) if g.get("name")],
+        imdb_id=(details.get("external_ids") or {}).get("imdb_id") or "",
+        vote_average=_float_or_zero(details.get("vote_average", fallback.get("vote_average"))),
+        vote_count=_int_or_zero(details.get("vote_count", fallback.get("vote_count"))),
+        cast=cast,
+        director=director,
+        runtime_minutes=_extract_runtime(details, kind),
+        certification=_extract_certification(details, kind),
+        keywords=_extract_keywords(details),
+        logo_path=_extract_logo_path(details),
+    )
 
 
 async def _lookup(kind: str, title: str, year: Optional[int]) -> Optional[TMDBHit]:
@@ -232,22 +311,7 @@ async def _lookup(kind: str, title: str, year: Optional[int]) -> Optional[TMDBHi
             if details is None:
                 details = match
 
-            _cast, _director = _extract_credits(details)
-            hit = TMDBHit(
-                tmdb_id=int(match["id"]),
-                kind=kind,
-                title=details.get("title") or details.get("name") or "",
-                year=_parse_year(details.get(year_field)),
-                overview=(details.get("overview") or "").strip(),
-                poster_path=details.get("poster_path") or "",
-                backdrop_path=details.get("backdrop_path") or "",
-                genres=[g["name"] for g in (details.get("genres") or []) if g.get("name")],
-                imdb_id=(details.get("external_ids") or {}).get("imdb_id") or "",
-                vote_average=_float_or_zero(details.get("vote_average", match.get("vote_average"))),
-                vote_count=_int_or_zero(details.get("vote_count", match.get("vote_count"))),
-                cast=_cast,
-                director=_director,
-            )
+            hit = _hit_from_details(kind, int(match["id"]), details, fallback=match)
             _cache[cache_key] = (_now(), hit)
             return hit
 
@@ -303,27 +367,11 @@ async def fetch_by_id(tmdb_id: int, kind: str) -> Optional[TMDBHit]:
     """
     if not is_configured() or not tmdb_id or kind not in ("movie", "tv"):
         return None
-    year_field = "release_date" if kind == "movie" else "first_air_date"
     async with aiohttp.ClientSession() as session:
         details = await _enrich_details(session, kind, int(tmdb_id))
         if details is None:
             return None
-        _cast, _director = _extract_credits(details)
-        return TMDBHit(
-            tmdb_id=int(details.get("id") or tmdb_id),
-            kind=kind,
-            title=details.get("title") or details.get("name") or "",
-            year=_parse_year(details.get(year_field)),
-            overview=(details.get("overview") or "").strip(),
-            poster_path=details.get("poster_path") or "",
-            backdrop_path=details.get("backdrop_path") or "",
-            genres=[g["name"] for g in (details.get("genres") or []) if g.get("name")],
-            imdb_id=(details.get("external_ids") or {}).get("imdb_id") or "",
-            vote_average=_float_or_zero(details.get("vote_average")),
-            vote_count=_int_or_zero(details.get("vote_count")),
-            cast=_cast,
-            director=_director,
-        )
+        return _hit_from_details(kind, int(tmdb_id), details)
 
 
 async def fetch_recommendations(

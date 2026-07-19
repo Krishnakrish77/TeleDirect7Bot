@@ -114,6 +114,8 @@ function DetailHero({
   playHref,
   imdbHref,
   trailerKey,
+  facts = [],
+  logoUrl = '',
   saved,
   onToggleSaved,
   extraActions,
@@ -129,6 +131,8 @@ function DetailHero({
   playHref?: string;
   imdbHref?: string;
   trailerKey?: string;
+  facts?: string[];
+  logoUrl?: string;
   saved?: boolean;
   onToggleSaved?: () => void;
   extraActions?: ReactNode;
@@ -138,7 +142,7 @@ function DetailHero({
   const trailerButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeTrailer = useCallback(() => setTrailerOpen(false), []);
   const ratingLabel = formatExternalRating(externalRating);
-  const metaItems = [...(ratingLabel ? [ratingLabel] : []), ...genres.slice(0, 5)];
+  const metaItems = [...facts, ...(ratingLabel ? [ratingLabel] : []), ...genres.slice(0, 5)];
   return (
     <section className="detail-hero">
       {(backdropUrl || posterUrl) && <img className="detail-backdrop" src={backdropUrl || posterUrl} alt="" decoding="async" fetchPriority="high" />}
@@ -148,7 +152,7 @@ function DetailHero({
       </div>
       <div className="detail-copy">
         <p className="eyebrow">{subtitle}</p>
-        <h1 dir="auto">{title}</h1>
+        {logoUrl ? <img className="detail-title-logo" src={logoUrl} alt={title} /> : <h1 dir="auto">{title}</h1>}
         {overview && <p className="detail-overview">{overview}</p>}
         {metaItems.length > 0 && (
           <div className="hero-meta">
@@ -266,6 +270,7 @@ function DetailInfoSection({
   overview,
   facts,
   genres,
+  keywords = [],
   directors,
   cast,
   imdbHref,
@@ -275,11 +280,13 @@ function DetailInfoSection({
   overview: string;
   facts: string[];
   genres: string[];
+  keywords?: string[];
   directors: Array<{ name: string; href: string }>;
   cast: Array<{ name: string; href: string }>;
   imdbHref: string;
 }) {
   const visibleGenres = genres.slice(0, 5);
+  const visibleKeywords = keywords.slice(0, 8);
   const visibleDirectors = directors.slice(0, 3);
   const visibleCast = cast.slice(0, 6);
   if (!overview && !facts.length && !visibleGenres.length && !visibleDirectors.length && !visibleCast.length && !imdbHref) {
@@ -296,6 +303,12 @@ function DetailInfoSection({
           <div className="video-info-chips" aria-label="Media details">
             {facts.map((fact) => <span key={fact}>{fact}</span>)}
             {visibleGenres.map((genre) => <span key={genre}>{genre}</span>)}
+          </div>
+        )}
+        {visibleKeywords.length > 0 && (
+          <div className="detail-keywords" aria-label="Topics">
+            <span>Topics</span>
+            {visibleKeywords.map((keyword) => <em key={keyword}>{keyword}</em>)}
           </div>
         )}
       </div>
@@ -335,6 +348,13 @@ function DetailInfoSection({
   );
 }
 
+function runtimeLabel(minutes: number): string {
+  if (!minutes || minutes < 1) return '';
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours ? `${hours}h${remainder ? ` ${remainder}m` : ''}` : `${remainder}m`;
+}
+
 function MovieDetail({
   data,
   saved,
@@ -352,6 +372,8 @@ function MovieDetail({
   const movieWatched = data.variants.some((variant) => Boolean(variant.watched) || isLocallyWatched(choiceWatchKey(variant)));
   const movieFacts = uniqueMetadataParts([
     data.year,
+    runtimeLabel(data.runtimeMinutes ?? 0),
+    data.certification ?? '',
     detailCountLabel(data.variants.length, 'version'),
     firstVariant?.durationLabel,
     firstVariant?.fileSizeLabel,
@@ -370,6 +392,8 @@ function MovieDetail({
         playHref={data.playHref}
         imdbHref={data.imdbHref}
         trailerKey={data.trailerKey}
+        facts={uniqueMetadataParts([runtimeLabel(data.runtimeMinutes ?? 0), data.certification ?? ''])}
+        logoUrl={data.logoUrl ?? ''}
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
         extraActions={(
@@ -390,6 +414,7 @@ function MovieDetail({
         overview={data.overview}
         facts={movieFacts}
         genres={data.genres}
+        keywords={data.keywords ?? []}
         directors={data.directors}
         cast={data.cast}
         imdbHref={data.imdbHref}
@@ -458,6 +483,8 @@ function SeriesDetail({
   }, []);
   const seriesFacts = uniqueMetadataParts([
     data.year,
+    runtimeLabel(data.runtimeMinutes ?? 0),
+    data.certification ?? '',
     detailCountLabel(data.seasonCount, 'season'),
     detailCountLabel(data.totalEpisodeCount, 'episode'),
   ]);
@@ -519,6 +546,8 @@ function SeriesDetail({
         playHref={data.playHref}
         imdbHref={data.imdbHref}
         trailerKey={data.trailerKey}
+        facts={uniqueMetadataParts([runtimeLabel(data.runtimeMinutes ?? 0), data.certification ?? ''])}
+        logoUrl={data.logoUrl ?? ''}
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
         extraActions={(
@@ -542,6 +571,7 @@ function SeriesDetail({
         overview={data.overview}
         facts={seriesFacts}
         genres={data.genres}
+        keywords={data.keywords ?? []}
         directors={data.directors}
         cast={data.cast}
         imdbHref={data.imdbHref}

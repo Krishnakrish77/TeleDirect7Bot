@@ -68,6 +68,11 @@ class HubItem:
     tmdb_genres: List[str] = field(default_factory=list)
     cast: List[str] = field(default_factory=list)   # top billed actors (TMDB)
     director: str = ""                              # director(s), comma-separated
+    tmdb_runtime_minutes: int = 0
+    tmdb_certification: str = ""
+    tmdb_keywords: List[str] = field(default_factory=list)
+    tmdb_logo_path: str = ""
+    tmdb_details_checked_at: float = 0.0
     enriched_at: float = 0.0       # unix ts; 0 means never attempted
     # --- ffprobe-derived codec info (optional; populated by codec_probe) -----
     # ``video_codec`` is e.g. "h264" / "hevc" / "av1"; ``pix_fmt`` is the

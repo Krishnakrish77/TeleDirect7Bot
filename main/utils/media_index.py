@@ -288,6 +288,11 @@ def _to_serializable(item: HubItem) -> dict:
         "tmdb_genres": item.tmdb_genres,
         "cast": item.cast,
         "director": item.director,
+        "tmdb_runtime_minutes": item.tmdb_runtime_minutes,
+        "tmdb_certification": item.tmdb_certification,
+        "tmdb_keywords": item.tmdb_keywords,
+        "tmdb_logo_path": item.tmdb_logo_path,
+        "tmdb_details_checked_at": item.tmdb_details_checked_at,
         "enriched_at": item.enriched_at,
         "video_codec": item.video_codec,
         "pix_fmt": item.pix_fmt,
@@ -360,6 +365,11 @@ def _from_serializable(d: dict) -> HubItem:
         tmdb_genres=d.get("tmdb_genres", []) or [],
         cast=d.get("cast", []) or [],
         director=d.get("director", "") or "",
+        tmdb_runtime_minutes=int(d.get("tmdb_runtime_minutes") or 0),
+        tmdb_certification=d.get("tmdb_certification", "") or "",
+        tmdb_keywords=d.get("tmdb_keywords", []) or [],
+        tmdb_logo_path=d.get("tmdb_logo_path", "") or "",
+        tmdb_details_checked_at=float(d.get("tmdb_details_checked_at") or 0),
         enriched_at=float(d.get("enriched_at", 0) or 0),
         video_codec=d.get("video_codec", "") or "",
         pix_fmt=d.get("pix_fmt", "") or "",
@@ -1214,6 +1224,11 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
                         # fields.  Carry forward only the fields that are
                         # never in captions.
                         new_item.tmdb_genres  = existing.tmdb_genres  or new_item.tmdb_genres
+                        new_item.tmdb_runtime_minutes = existing.tmdb_runtime_minutes or new_item.tmdb_runtime_minutes
+                        new_item.tmdb_certification = existing.tmdb_certification or new_item.tmdb_certification
+                        new_item.tmdb_keywords = existing.tmdb_keywords or new_item.tmdb_keywords
+                        new_item.tmdb_logo_path = existing.tmdb_logo_path or new_item.tmdb_logo_path
+                        new_item.tmdb_details_checked_at = existing.tmdb_details_checked_at or new_item.tmdb_details_checked_at
                         new_item.tmdb_vote_average = existing.tmdb_vote_average or new_item.tmdb_vote_average
                         new_item.tmdb_vote_count = existing.tmdb_vote_count or new_item.tmdb_vote_count
                         new_item.tmdb_vote_checked_at = existing.tmdb_vote_checked_at or new_item.tmdb_vote_checked_at
@@ -2920,6 +2935,11 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
     item.tmdb_genres = list(hit.genres)
     item.cast = list(hit.cast)
     item.director = hit.director
+    item.tmdb_runtime_minutes = int(hit.runtime_minutes or 0)
+    item.tmdb_certification = hit.certification
+    item.tmdb_keywords = list(hit.keywords)
+    item.tmdb_logo_path = hit.logo_path
+    item.tmdb_details_checked_at = time.time()
     item.enriched_at = time.time()
 
     # Title and year: skip if the admin manually locked them.
@@ -3265,6 +3285,11 @@ async def enrich_one(message_id: int, bot=None) -> bool:
                 sib.poster_path  = item.poster_path  or sib.poster_path
                 sib.backdrop_path= item.backdrop_path or sib.backdrop_path
                 sib.tmdb_genres  = list(item.tmdb_genres) or sib.tmdb_genres
+                sib.tmdb_runtime_minutes = item.tmdb_runtime_minutes or sib.tmdb_runtime_minutes
+                sib.tmdb_certification = item.tmdb_certification or sib.tmdb_certification
+                sib.tmdb_keywords = list(item.tmdb_keywords) or sib.tmdb_keywords
+                sib.tmdb_logo_path = item.tmdb_logo_path or sib.tmdb_logo_path
+                sib.tmdb_details_checked_at = item.tmdb_details_checked_at or sib.tmdb_details_checked_at
                 sib.overview     = sib.overview or item.overview
                 sib.series_title = item.series_title or sib.series_title
                 sib.enriched_at  = time.time()
@@ -3351,6 +3376,11 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
                 sib.poster_path  = item.poster_path  or sib.poster_path
                 sib.backdrop_path= item.backdrop_path or sib.backdrop_path
                 sib.tmdb_genres  = list(item.tmdb_genres) or sib.tmdb_genres
+                sib.tmdb_runtime_minutes = item.tmdb_runtime_minutes or sib.tmdb_runtime_minutes
+                sib.tmdb_certification = item.tmdb_certification or sib.tmdb_certification
+                sib.tmdb_keywords = list(item.tmdb_keywords) or sib.tmdb_keywords
+                sib.tmdb_logo_path = item.tmdb_logo_path or sib.tmdb_logo_path
+                sib.tmdb_details_checked_at = item.tmdb_details_checked_at or sib.tmdb_details_checked_at
                 sib.overview     = sib.overview or item.overview
                 sib.series_title = item.series_title or sib.series_title
                 sib.enriched_at  = time.time()
@@ -3565,6 +3595,11 @@ async def clear_audio_tmdb_mismatches() -> int:
                 item.backdrop_path = ""
                 item.overview = ""
                 item.tmdb_genres = []
+                item.tmdb_runtime_minutes = 0
+                item.tmdb_certification = ""
+                item.tmdb_keywords = []
+                item.tmdb_logo_path = ""
+                item.tmdb_details_checked_at = 0.0
                 item.enriched_at = 0.0
                 to_upsert.append(item)
                 fixed += 1
@@ -3669,7 +3704,13 @@ def needs_credits_backfill(item: HubItem) -> bool:
 
 
 def _needs_tmdb_metadata_backfill(item: HubItem) -> bool:
-    return _needs_credits_backfill(item) or _needs_tmdb_vote_backfill(item)
+    if not item.tmdb_id or item.tmdb_kind not in ("movie", "tv"):
+        return False
+    return (
+        _needs_credits_backfill(item)
+        or _needs_tmdb_vote_backfill(item)
+        or not item.tmdb_details_checked_at
+    )
 
 
 def _apply_credits_backfill(item: HubItem, hit: "tmdb.TMDBHit") -> bool:
@@ -3687,6 +3728,21 @@ def _apply_credits_backfill(item: HubItem, hit: "tmdb.TMDBHit") -> bool:
         item.tmdb_vote_average = float(hit.vote_average or 0)
         item.tmdb_vote_count = int(hit.vote_count or 0)
         item.tmdb_vote_checked_at = time.time()
+        changed = True
+    if not item.tmdb_runtime_minutes and hit.runtime_minutes:
+        item.tmdb_runtime_minutes = int(hit.runtime_minutes)
+        changed = True
+    if not item.tmdb_certification and hit.certification:
+        item.tmdb_certification = hit.certification
+        changed = True
+    if not item.tmdb_keywords and hit.keywords:
+        item.tmdb_keywords = list(hit.keywords)
+        changed = True
+    if not item.tmdb_logo_path and hit.logo_path:
+        item.tmdb_logo_path = hit.logo_path
+        changed = True
+    if not item.tmdb_details_checked_at:
+        item.tmdb_details_checked_at = time.time()
         changed = True
     return changed
 

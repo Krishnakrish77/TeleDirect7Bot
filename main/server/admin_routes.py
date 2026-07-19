@@ -1936,6 +1936,11 @@ def _clear_tmdb_fields(item: HubItem) -> None:
     item.tmdb_genres = []
     item.cast = []
     item.director = ""
+    item.tmdb_runtime_minutes = 0
+    item.tmdb_certification = ""
+    item.tmdb_keywords = []
+    item.tmdb_logo_path = ""
+    item.tmdb_details_checked_at = 0.0
     item.enriched_at = 0.0
     media_index.clear_episode_tmdb_fields(item)
     item.trailer_key = ""
