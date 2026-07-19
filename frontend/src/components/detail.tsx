@@ -359,10 +359,11 @@ function MovieDetail({
   const movieWatched = data.variants.some((variant) => Boolean(variant.watched) || isLocallyWatched(choiceWatchKey(variant)));
   const movieFacts = uniqueMetadataParts([
     data.year,
-    runtimeLabel(data.runtimeMinutes ?? 0),
+    // One runtime only — prefer the actual file duration, fall back to TMDB.
+    firstVariant?.durationLabel || runtimeLabel(data.runtimeMinutes ?? 0),
     data.certification ?? '',
-    detailCountLabel(data.variants.length, 'version'),
-    firstVariant?.durationLabel,
+    // "1 version" is noise; only show when there are alternates.
+    data.variants.length > 1 ? detailCountLabel(data.variants.length, 'version') : '',
     firstVariant?.fileSizeLabel,
     firstVariant?.quality,
   ]);

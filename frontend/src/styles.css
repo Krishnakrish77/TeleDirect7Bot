@@ -10145,15 +10145,18 @@ select.edit-field-input {
   }
 
   .detail-hero {
-    grid-template-columns: 86px minmax(0, 1fr);
+    /* Single column on phones — the backdrop already carries the artwork, so
+       the tiny side poster (which crowded the title logo) is dropped and the
+       title + actions stack full-width at the bottom of the hero. */
+    grid-template-columns: 1fr;
     gap: 0.8rem;
     margin-inline: -0.85rem;
-    min-height: 0;
-    padding: 0.65rem 0.85rem;
+    min-height: clamp(260px, 46svh, 380px);
+    padding: 0.85rem;
   }
 
   .detail-poster {
-    width: 86px;
+    display: none;
   }
 
   .detail-copy h1 {
