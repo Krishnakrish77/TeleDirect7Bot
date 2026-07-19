@@ -1,8 +1,70 @@
 # TeleDirect — Feature Audit vs Industry
 _Benchmarked against: Netflix, Disney+, Prime Video, Apple TV+, YouTube, JioHotstar, Spotify, Apple Music, YouTube Music_
-_2026-05-26_
+_Last validated: 2026-07-19_
 
 Legend: 🟢 Table stakes · 🟡 Differentiator · 🔵 Innovative · ✅ Have it · ⚠️ Partial · ❌ Missing
+
+---
+
+## SR PM VALIDATION — 2026-07-19
+
+_Evidence: current `main` branch code audit, latest 25 commits, existing backend/frontend tests, and official competitor docs/help pages._
+
+### Executive read
+
+TeleDirect has crossed from "Telegram file streamer" into a credible private OTT + music + Live TV hub. The strongest shipped surface is no longer just playback; it is the full loop around playback: personalized Home, cross-device resume, watchlist, playlists, stats, ratings, AI picks, Live TV, and an increasingly serious admin/metadata operations console.
+
+The current product is competitive for a private catalogue and power-user deployment. It is not yet trying to be a family-scale consumer streamer, so gaps like profiles, parental controls, native offline, and social co-viewing should stay scoped unless the product direction changes. The highest-return work is now compounding quality: metadata coverage, discovery explainability, Live TV guide/reminders, and proactive "what's new" loops.
+
+### Benchmark corrections
+
+| Area | Sr PM validation | Decision |
+|------|------------------|----------|
+| Personalization copy | The old audit over-indexed on "Because you watched..." as generic copy. Current code now uses `Because you like <genre>` for mixed/partial signals, which is the right trust-preserving move. | Keep. Add explicit tests whenever new recommendation signals are introduced. |
+| AI discovery | Spotify has moved from static recommendations into steerable recommendation controls such as DJ, AI Playlist, Smart Shuffle, hide/snooze, and autoplay controls. TeleDirect's Gemini-backed catalogue-grounded AI picks are now a real differentiator for a private library, not a side experiment. | Invest in polish: feedback, saved prompts, "why this", and better cold-start onboarding. |
+| Co-viewing | Disney+ currently supports SharePlay on eligible Apple devices; Apple Music also supports SharePlay sessions. This is still platform-constrained and not universal table stakes. | Keep low unless TeleDirect grows multi-user household usage. |
+| Music collaboration | Spotify Jam and Apple Music collaborative playlists make shared queue/list editing mainstream in music. | Medium only if TeleDirect becomes social; low for single-user/private use. |
+| Live TV | India benchmarks are stronger than the old audit captured: JioTV/JioTV+ emphasize 7-day catch-up, TV guide, reminders, smart search, Continue Watching, multi-audio/subtitles, PiP, and parental controls. | Add EPG/reminders as the main Live TV gap; catch-up/multi-cam remain source-dependent. |
+| Profiles/parental controls | Netflix/Prime/Disney profiles and maturity controls remain table stakes for household streaming. | Low for current Telegram-user identity model; becomes High if shared family accounts are a goal. |
+| Offline | Netflix still invests in mobile downloads, including season download. TeleDirect has direct download links but no managed offline library. | Low unless mobile-first travel use becomes a target segment. |
+
+### Current shipped capability validation
+
+| Product area | Current TeleDirect status | PM assessment |
+|--------------|---------------------------|---------------|
+| Core OTT playback | React video player with HLS, direct/native fallback, subtitles, uploaded sidecars, user subtitle search, audio-track switching, PiP, speed, AirPlay/VLC/download/share, skip intro/recap, chapters, next episode countdown, still-watching prompt, episode navigator. | Strong. Remaining gaps are ABR architecture and subtitle appearance customization. |
+| Discovery Home | Hero, shelf budget governance, personalized recommendations, personal genre shelves, trending, most-played, new episodes, music entry, filters, autocomplete, compact payloads, same-origin artwork proxy, responsive poster srcsets. | Strong. Main gap is proactive surfacing of newly added content and richer language/provider facets. |
+| AI picks | Gemini-backed, catalogue-grounded RAG reranker; comfort/discovery buckets; chat query; refresh; per-user rate limit; cache; fallback to trending/candidates; hallucinated IDs dropped. | Differentiator. Needs user feedback loop and better empty/cold-start education. |
+| Multi-device resume | Signed-in two-way CW sync, local anonymous fallback, stale write rejection, delete/completion tombstones, device labels, auth-gated server writes. | Table-stakes quality. Keep regression tests around conflict cases. |
+| Music | Mini-player, Now Playing sheet, queue drawer, Play Next/Add to queue, playlist queues, liked songs, artist/album pages, synced lyrics, crossfade, gapless prebuffering, repeat/shuffle, endless related radio. | Strong private-music-library surface. Mood stations/charts/collaboration remain optional gaps. |
+| Live TV / IPTV | Public channel list, channel categories/search/favorites/recents, selected/playing state, admin CRUD, M3U text/URL import, stream test, custom headers/extras, SSRF-safe imports, logo proxy/cache/placeholders. | Useful and much stronger than a basic stream list. Needs EPG/reminders before it feels like a modern TV app. |
+| Admin / catalogue ops | React admin console, dashboard, metadata health score, TMDB coverage, backfill actions, codec/storage health, duplicate/poster/subtitle filters, item editor, TMDB resolve/preview/clear, AI suggest, subtitle upload/delete, series merge, trending gaps. | This is now a product pillar. Prioritize ops quality because it unlocks user-facing discovery. |
+| Performance / reliability | Route-level lazy chunks, compact `/api/hub`, same-origin TMDB and Live TV logo proxying, static immutable cache tests, PWA shell/assets tests, anonymous 401 reduction. | Healthy. Continue to watch Home/Live TV network-waterfall regressions. |
+
+### External benchmark references
+
+- Netflix: [profiles and personalized suggestions](https://help.netflix.com/en/node/10421?ui_action=kb-article-popular-categories), [Top 10 rows](https://help.netflix.com/en/node/116472), ["Are you still watching?"](https://help.netflix.com/en/node/114059), [season download](https://about.netflix.com/en/news/introducing-the-season-download-button).
+- Disney+: [SharePlay](https://help.disneyplus.com/article/disneyplus-share-play), [parental controls](https://www.disneyplus.com/explore/articles/parental-controls-guide-disney-plus).
+- Prime Video: [profiles/help surface](https://www.primevideo.com/help?language=en_US), [X-Ray](https://www.aboutamazon.com/news/entertainment/what-is-x-ray-on-prime-video).
+- YouTube: [chapters](https://support.google.com/youtube/answer/9884579?hl=en), [keyboard shortcuts](https://support.google.com/youtube/answer/7631406?hl=en), [Premium continue watching/download/queue controls](https://support.google.com/youtube/answer/6308116?co=GENIE.Platform%3DDesktop&hl=en).
+- Spotify: [recommendation controls](https://www.spotify.com/us/safetyandprivacy/understanding-recommendations), [Smart Shuffle](https://newsroom.spotify.com/2023-03-08/smart-shuffle-new-life-spotify-playlists/), [Jam](https://newsroom.spotify.com/2023-09-26/spotify-jam-personalized-collaborative-listening-session-free-premium-users/).
+- Apple Music: [collaborative playlists](https://support.apple.com/en-us/118494), [SharePlay music sessions](https://support.apple.com/en-us/108767), [Apple Music Sing](https://support.apple.com/guide/iphone/sing-along-with-apple-music-iphe16e0f316/ios).
+- Jio / JioHotstar live-TV benchmarks: [JioTV features](https://www.jio.com/apps/jiotv/), [JioTV+ features](https://www.jio.com/jiohome/services/jiotvplus/), [JioHotstar streaming/search positioning](https://ads.hotstar.com/about-us/).
+
+---
+
+## LIVE CHROME DEVTOOLS VALIDATION — 2026-07-19
+
+_Tool: Chrome DevTools MCP against production._
+
+| Route | Evidence | Result |
+|-------|----------|--------|
+| `/app/artist/chris-brown` | A11y snapshot showed `h1` = `Chris Brown`, artist summary, `1 track`, `Play all`, `Autoplay`, `All songs`, track link `Forever`, and track actions `Play next`, `Add to queue`, `Add to playlist`. | ✅ Artist route is live and usable. Backfill/music metadata is no longer theoretical for this artist page. |
+| `/api/app/artist/chris-brown` | Live fetch returned `200`, `kind: artist`, `title: Chris Brown`, `tracks.length = 1`, sample track `Forever`, same-origin poster/thumb URLs. | ✅ React route and API contract match. |
+| Desktop layout `1440×900` | DevTools geometry check: header `1440×76`, primary nav `1440×53`, artist hero `1371×310`, `h1` `734×58`, mini-player `1440×72`, `hasHorizontalOverflow=false`. | ✅ No desktop overflow observed on the validated artist route. |
+| Network | 15 total resources. Route document `200`, app chunks `200`, `/api/app/artist/chris-brown` `200`, `/api/me` `200`, thumbnails `200`, audio range request `206`, `directThirdPartyImages=[]`. | ✅ No failed requests and no direct third-party image leakage observed on this route. |
+| Console | No JavaScript errors. One PWA install info message and one DevTools issue: a form field lacks `id`/`name`. DOM check points at the header search input; the range input has `aria-label`. | ⚠️ Minor accessibility/devtools polish: give header search an explicit `id`/`name`/`aria-label`. |
+| State carryover | A persistent mini-player was visible with prior track `Kutti Story (From "Master")` while viewing Chris Brown. | ✅ Confirms persistent audio state, but it adds screenshot noise during route validation. Use fresh/isolated context for release screenshots. |
 
 ---
 
@@ -53,13 +115,17 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 | Feature | Industry | TeleDirect | Priority |
 |---------|----------|------------|----------|
 | Personalized homepage with algorithmic rows | 🟢 All | ✅ Hero + genre shelves | — |
-| "Because you watched…" recommendations | 🟢 All | ✅ TMDB-seeded, auth-gated | — |
-| Continue Watching row | 🟢 All | ✅ Cross-device CW | — |
+| Personalized reason rows | 🟢 All | ✅ TMDB-seeded personal rows with trust-safe "Because you like..." copy | — |
+| AI-guided recommendations | 🟡 Spotify/YouTube direction | ✅ Gemini-backed, catalogue-grounded AI picks with comfort/discovery buckets and chat query | Medium — add feedback, saved prompts, and better cold-start onboarding |
+| Continue Watching row | 🟢 All | ✅ Cross-device CW with tombstones/stale-write protection | — |
 | Search with autocomplete | 🟢 All | ✅ Live suggest, keyboard shortcuts | — |
 | Genre / tag filtering | 🟢 All | ✅ Year / quality / genre dropdowns | — |
 | Trending / Top content charts | 🟡 Netflix, YouTube, JioHotstar | ✅ Trending + Most Played Home shelves | — |
+| "Not interested" / recommendation feedback | 🟡 Spotify, YouTube, Netflix | ✅ Dismiss recommendation + thumbs up/down signals | Medium — expose a clearer undo/history surface later |
+| Language / regional browse | 🟢 India OTT | ⚠️ Tags can approximate it; no normalized language facet | Medium — only if catalogue has meaningful regional/language depth |
+| New-content digest / release alerts | 🟢 All | ❌ No in-app "new since last visit" or notification loop | High — start with in-app digest before native push |
 | Trailer auto-play on browse | 🟢 All | ⚠️ Trailers on movie/series page only, not on cards | Medium |
-| Search by cast / crew name | 🟡 Most | ⚠️ Built, dormant until credits backfill | **Ops** — run Admin → Ops → Backfill credits, then validate live cast/director searches |
+| Search by cast / crew name | 🟡 Most | ⚠️ Backfill run; needs production spot-check | **Ops/QA** — validate live cast/director searches with known catalogue names and clean any misses |
 
 ### Playback
 
@@ -67,6 +133,7 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 |---------|----------|------------|----------|
 | Next episode auto-play + countdown | 🟢 All | ✅ 5s countdown card | — |
 | Subtitles / CC | 🟢 All | ✅ Auto-inject + manual upload | — |
+| User subtitle search / attach | 🟡 Power users | ✅ Backend-proxied Wyzie search with quotas/cache | — |
 | Multiple audio tracks | 🟢 All | ✅ HLS audio track switcher | — |
 | Picture-in-Picture | 🟢 All | ✅ React player PiP control | — |
 | Playback speed | 🟡 Netflix, YouTube, Prime | ✅ React player speed selector | — |
@@ -76,6 +143,9 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 | Video chapters / timestamps | 🟡 YouTube | ✅ Admin line-entry chapters with React progress markers and chapter list | — |
 | Per-title thumbs / rating | 🟡 Prime Video, YouTube | ✅ Up/down, toggle-off, auth-gated, feeds recommendations | — |
 | Keyboard shortcuts | 🟢 All web apps | ✅ React player global keys | — |
+| Episode picker / season navigator | 🟢 OTT series apps | ✅ Season tabs + current episode state in React watch route | — |
+| External playback fallback | 🟡 Power users | ✅ Classic player, VLC, AirPlay, direct download actions | — |
+| Subtitle appearance settings | 🟡 Netflix/YouTube | ❌ Uses browser/player defaults | Low — useful accessibility polish, not core blocker |
 | Adaptive quality selector | 🟢 All | ⚠️ Manual variant picker (not truly adaptive) | Low — architecture limitation |
 | X-Ray style cast overlay during playback | 🔵 Prime Video exclusive | ⚠️ TMDB info section below player | Low — partial coverage adequate |
 
@@ -85,7 +155,7 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 |---------|----------|------------|----------|
 | Watchlist / My List | 🟢 All | ✅ MongoDB-backed, 1000-item cap | — |
 | Watch history | 🟢 All | ✅ Used as recommendation signal | — |
-| Cross-device sync | 🟢 All | ✅ MongoDB for signed-in users | — |
+| Cross-device sync | 🟢 All | ✅ CW, watch history, watchlist, playlists, ratings via MongoDB for signed-in users | — |
 | Viewing stats / activity page | 🟡 Netflix, YouTube | ✅ `/stats` — hours watched, heatmap, streaks, top titles | — |
 | Per-title ratings visible on library | 🟡 Most | ✅ Aggregate thumbs-up/down counts now appear on rated React library cards | — |
 
@@ -94,8 +164,8 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 | Feature | Industry | TeleDirect | Priority |
 |---------|----------|------------|----------|
 | Share link to title | 🟢 All | ✅ Web Share API + clipboard fallback | — |
-| Watch party / co-viewing | 🟡 Disney+ (GroupWatch), Apple TV+ (SharePlay) | ❌ | Low — complex WebSocket infra; not worth it at personal-app scale |
-| Shared / collaborative watchlist | 🟡 Spotify-style (music), some OTT | ❌ | Medium — share a list with a specific user |
+| Watch party / co-viewing | 🟡 Disney+ SharePlay, Apple SharePlay | ❌ | Low — platform/WebSocket complexity; revisit only for household/social usage |
+| Shared / collaborative watchlist | 🟡 Music apps and some OTT | ❌ | Medium — more valuable as shared playlists/lists than synchronized video playback |
 
 ### Notifications
 
@@ -120,6 +190,23 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 
 ---
 
+## LIVE TV / IPTV
+
+| Feature | Industry | TeleDirect | Priority |
+|---------|----------|------------|----------|
+| Channel catalogue | 🟢 Live TV apps | ✅ Public `/app/live-tv` with categories/search/favorites/recents | — |
+| Channel admin CRUD | 🟢 Admin table stakes | ✅ React IPTV admin, add/edit/delete, enable/disable, ordering | — |
+| M3U import | 🟡 Power users | ✅ Text and URL import with size/time limits and SSRF guardrails | — |
+| Stream validation | 🟡 Power users | ✅ Admin test endpoint for stream URL + custom headers | — |
+| Logo handling | 🟡 Performance/security | ✅ Same-origin proxy, image validation, TTL cache, placeholder fallback | — |
+| TV guide / EPG | 🟢 JioTV/JioTV+ | ❌ No programme guide or now/next data | High for Live TV — unlocks reminders, search by show, and richer channel context |
+| Programme reminders | 🟢 Live TV apps | ❌ | Medium — depends on EPG first; can start as in-app reminder, push later |
+| Catch-up TV | 🟡 JioTV | ❌ | Low/Medium — source-provider dependent, not feasible from arbitrary IPTV URLs |
+| Live sports moments / multi-cam | 🔵 JioHotstar/JioTV direction | ❌ | Low — not practical without rights/feed metadata |
+| DVR / recording | 🟡 TV apps | ❌ | Low — storage/legal/source complexity is high |
+
+---
+
 ## MUSIC
 
 ### Discovery & Browse
@@ -127,10 +214,11 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 | Feature | Industry | TeleDirect | Priority |
 |---------|----------|------------|----------|
 | Album / artist pages | 🟢 All | ✅ Album page with track list + art | — |
-| Mood / genre radio stations | 🟢 All | ❌ | Medium — seed from genre tags; shuffle filtered playlist |
+| Mood / genre radio stations | 🟢 All | ⚠️ Related track/artist radio exists; no named mood stations | Medium — add browsable station chips from genres/tags |
 | Artist page (all tracks by one artist) | 🟢 All | ✅ `/artist/{slug}`; splits multi-credit correctly; primary artist linked | — |
-| Recently played row (music) | 🟢 All | ⚠️ Covered by Continue Watching but not music-specific | Medium |
-| Charts (top tracks in library) | 🟡 All streaming apps | ❌ | Medium — play-count from CW events |
+| Recently played row (music) | 🟢 All | ⚠️ Covered by Continue Watching and Stats, not a music-specific Home rail | Medium |
+| Charts (top tracks in library) | 🟡 All streaming apps | ⚠️ Stats has top artists/genres/titles; no music discovery chart surface | Medium |
+| AI music discovery | 🟡 Spotify/YouTube Music | ⚠️ AI picks cover music candidates; not a music-only DJ/playlist builder | Medium — reuse AI picks for "make me a queue" |
 
 ### Playback
 
@@ -138,10 +226,11 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 |---------|----------|------------|----------|
 | Shuffle + repeat modes | 🟢 All | ✅ Per-album shuffle + repeat off/all/one | — |
 | Playback speed selector | 🟡 YouTube Music (full), others podcasts only | ✅ ¾×/1×/1.5×/2× | — |
-| Persistent mini-player | 🟢 All | ✅ hx-preserve bottom bar | — |
+| Persistent mini-player | 🟢 All | ✅ React mini-player + Now Playing sheet | — |
 | Synced lyrics | 🟢 All | ✅ LRCLIB with scroll + tap-to-seek | — |
 | Crossfade between tracks | 🟢 All | ✅ 3s crossfade via dual bgAudio buffers, volume ramp | — |
 | Gapless playback | 🟢 All | ✅ Dual-buffer (bgAudio + bgAudio2), pre-loads 30s before end | — |
+| Endless autoplay / radio | 🟢 Spotify/YouTube Music | ✅ Queue refills near tail from related track/artist radio | — |
 | Equalizer | 🟢 All | ❌ | Low — Web Audio API EQ possible but complex |
 | Karaoke / vocal isolation | 🔵 Apple Music Sing only | ❌ | Low — requires server-side stem separation |
 
@@ -150,13 +239,13 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 | Feature | Industry | TeleDirect | Priority |
 |---------|----------|------------|----------|
 | Manual queue ("Play next" / "Add to queue") | 🟢 All | ✅ "Play next" + "Add to queue" on track rows; playlist queue; toast feedback | — |
-| Smart Shuffle (injects recommendations into queue) | 🟡 Spotify | ❌ | Low — needs recommendation quality to be high first |
+| Smart Shuffle (injects recommendations into queue) | 🟡 Spotify | ⚠️ Endless radio appends related tracks; not explicit Smart Shuffle inside user playlists | Low/Medium — useful once station quality is proven |
 
 ### Personal Library
 
 | Feature | Industry | TeleDirect | Priority |
 |---------|----------|------------|----------|
-| Liked / favourite tracks | 🟢 All | ⚠️ Watchlist covers this but not music-optimised | Medium — dedicated "Liked songs" auto-playlist |
+| Liked / favourite tracks | 🟢 All | ✅ Dedicated Liked Songs page with search, sort, start/shuffle | — |
 | Listening stats (Spotify Wrapped-style) | 🟡 Spotify (iconic) | ✅ `/stats` — streaks, top artists/genres, play counts, personality card | — |
 | Smart playlists from library | 🟡 Spotify, Apple Music | ❌ | Low |
 
@@ -165,7 +254,7 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 | Feature | Industry | TeleDirect | Priority |
 |---------|----------|------------|----------|
 | Share track (Web Share) | 🟢 All | ✅ | — |
-| Collaborative playlist / shared album | 🟡 Spotify, Apple Music | ❌ | Low |
+| Collaborative playlist / shared album | 🟡 Spotify Jam, Apple Music collaborative playlists | ❌ | Medium if multi-user/social; low for private single-user deployment |
 | Friend activity / what's playing | 🟡 Spotify | ❌ | Low |
 
 ### Lyrics
@@ -178,6 +267,34 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 
 ---
 
+## DELIVERY LOG — 2026-07-19 (validated recent deliveries)
+
+| Feature | Status | PM validation |
+|---------|--------|---------------|
+| **Gemini-powered AI picks** | ✅ Shipped | `/api/app/ai/recommendations` ranks only real catalogue candidates, drops hallucinated IDs, splits comfort/discovery, supports user query, refresh, cache, rate limit, and fallback. This is now a differentiator versus static recommendation rails. |
+| **Multi-device Continue Watching** | ✅ Shipped | Local/server two-way sync, tombstones, stale-write rejection, signed-in focus/login merge, completion propagation, device labels, and anonymous server-write suppression. This is table-stakes quality, not just a row on Home. |
+| **Recommendation trust polish** | ✅ Shipped | Partial watches and non-history signals no longer produce misleading "Because you watched..." shelf titles. Personal shelves use "Because you like..." semantics. |
+| **React audio now-playing revamp** | ✅ Shipped | Mini-player + Now Playing sheet use reusable controls/sliders, queue access, lyrics, shuffle/repeat, error recovery, and responsive track art. |
+| **Endless related radio** | ✅ Shipped | Queue refills near the tail from track/artist-related candidates with repeat protection. This covers the first version of autoplay radio, but not named mood stations or Smart Shuffle in playlists. |
+| **Dedicated Liked Songs** | ✅ Shipped | `/app/liked-songs` separates music saves from video watchlist, with search/sort/start/shuffle flows. |
+| **Live TV / IPTV management** | ✅ Shipped | Public Live TV is backed by admin channel CRUD, M3U text/URL import, stream tests, custom headers/extras, logo proxy/cache, favorites/recents/search/category states. EPG is now the clear next layer. |
+| **React admin dashboard** | ✅ Shipped | Metadata health, TMDB coverage, codec/storage health, duplicates/posters/thumbs/unenriched issue links, backfill actions, and cleanup actions give admins an ops cockpit. |
+| **Trending gap radar** | ✅ Shipped | `/app/admin/trending-gaps` compares TMDB trending/popular candidates against the local catalogue and refreshes cache. Strong acquisition/planning tool for a private library. |
+| **Subtitle operations** | ✅ Shipped | User subtitle search/attach exists through the backend provider proxy; admin sidecar upload/delete and subtitle coverage filters exist. |
+| **TMDB details/credits backfill** | ✅ Run | Backfill has been executed. Remaining PM work is coverage validation: known cast/director searches, person pages, detail-page credit links, and metadata health deltas. |
+| **Artwork/performance hardening** | ✅ Shipped | Responsive poster srcsets, same-origin TMDB image proxy, immutable static-asset cache, compact hub payload, and Live TV logo proxy reduce third-party/network churn. |
+| **Route-level SPA maturity** | ✅ Shipped | App chunks are lazy-loaded by route; important routes include Home/filters, detail, watch, watchlist, liked songs, playlists, stats, Live TV, admin, dashboard, trending gaps, and IPTV admin. |
+
+### Remaining validation asks
+
+| Ask | Why |
+|-----|-----|
+| Validate the completed TMDB metadata/credits backfill with real catalogue names. | Confirms person pages, cast/director links, search quality, and recommendation context actually lit up after the run. |
+| Expand the fresh live pass beyond the completed Chrome DevTools artist-page spot check: Home, Watch, Live TV, AI Picks, Liked Songs, Admin Dashboard, and IPTV Admin. | The audit now has live evidence for one route; broader screenshot/network evidence would make it release-note grade. |
+| Add an analytics/light telemetry checkpoint for AI picks, radio starts, Live TV usage, subtitle search, and admin backfill completion. | Next prioritization should be usage-led instead of feature-count-led. |
+
+---
+
 ## DELIVERY LOG — 2026-05-29 (session 2 additions)
 
 Large batch shipped since the last audit. Validated against the live deployment (catalogue ~492 items):
@@ -186,14 +303,14 @@ Large batch shipped since the last audit. Validated against the live deployment 
 |---------|--------|------------|
 | **Playlists** | ✅ Shipped | `/playlists` + `/playlist/{id}` (302 auth-gated), `/api/playlists` 401 unauth. Create/rename/delete, add/remove tracks, Play all/Shuffle, per-track play-from-position, watch-page picker with inline "New playlist". 50 playlists / 500 tracks per user cap. XSS-hardened (name via `|tojson`), secure_hash re-validated on enrich. **Needs signed-in manual pass to confirm UI flows.** |
 | **Stats / listening insights** | ✅ Shipped | `/stats` 302 auth-gated. Current + longest streak, video/audio hours split, 12-week day heatmap (UTC-correct), top-3 artists, genres, play counts, "personality" card (gated ≥10 plays), most-played grouped by title. |
-| **Person (cast/crew) pages** | ⚠️ Built, dormant | `/person/{slug}` route registered (bad slug → 404, not 500). Template + `items_by_cast_slug`/`items_by_director_slug` done. **But every real person 404s and no `/person/` links render — existing catalogue has no enriched cast/crew data.** |
-| **Searchable cast/crew** | ⚠️ Built, dormant | Search index extended for `cast[]`/`director`. Live "nolan"/"arnold"/"dicaprio" → 0 results. Same data blocker as above. |
+| **Person (cast/crew) pages** | ⚠️ Built; backfill now run | Historical finding: `/person/{slug}` route existed but production had no enriched cast/crew data. Superseded by the completed backfill; now needs live spot-check on known people. |
+| **Searchable cast/crew** | ⚠️ Built; backfill now run | Historical finding: search index covered `cast[]`/`director` but live names returned 0 results. Superseded by the completed backfill; now validate representative actor/director searches. |
 | **Admin custom thumbnail** | ✅ Shipped | Edit-modal URL field downloads + stores to thumb cache; `__clear__` sentinel reverts to auto-detect. Modal raised to z-50 so mini-player no longer hides Save. |
 | **Security & perf hardening** | ✅ Shipped & verified | Live response headers confirmed: `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, HSTS `max-age=31536000`. HMAC `compare_digest` for hash check, VLC token 64→128-bit. |
 | **AI suggest (music)** | ✅ Shipped | Music-specific prompt + schema for audio items in admin enrichment. |
 | **App icon + PWA orientation** | ✅ Shipped | Redesigned icon (content-hash versioned URLs, SW bumped to td-v2); portrait manifest + JS landscape lock for fullscreen video. |
 
-**Single biggest unlock:** a one-time **TMDB credits backfill** on the existing catalogue would light up *three* already-built features at once — person pages, cast/crew search, and cast links on detail pages. The code is all shipped and waiting on data.
+**Superseded 2026-07-19:** the one-time **TMDB credits/details backfill has now been run**. The unlock should be validated through person pages, cast/crew search, and cast links on detail pages rather than treated as pending ops work.
 
 ⚠️ **Note on testing:** the app restarts frequently (Koyeb) — I caught it mid-redeploy and saw a transient `/playlists` 500 + missing security headers; both were clean once the deploy settled. Validate during a stable window.
 
@@ -216,56 +333,55 @@ Large batch shipped since the last audit. Validated against the live deployment 
 
 ## PRIORITISED BACKLOG
 
-### 🔴 High — Table stakes gap or very high return for low effort
+### 🔴 High — Highest return / unlocks multiple surfaces
 
 | # | Feature | Effort | Why it matters |
 |---|---------|--------|----------------|
-| 1 | **TMDB credits backfill + validation** | Ops | Admin → Ops → Backfill credits fills missing cast/director from existing TMDB IDs without title rematching. Run after deploy, then verify cast search and person pages with real catalogue names. |
-| 2 | ~~**Skip intro button**~~ | ✅ Done | Admin timestamps + timeupdate JS; button appears only within intro window. |
-| 3 | ~~**Per-title thumbs up/down**~~ | ✅ Done | Up/down toggle, auth-gated, aggregate counts shown, feeds recommendation engine. |
-| 4 | ~~**Artist page**~~ | ✅ Done | `/artist/{slug}` with multi-credit splitting; primary artist linked from player. |
-| 5 | ~~**Trending / Top charts shelf**~~ | ✅ Done | Trending and Most Played Home shelves now cover active discovery from watch/listen signals. |
-| 6 | ⚠️ **Searchable cast / crew** | Code done, **backfill-dependent** | Search index and person pages are implemented. They become useful once existing catalogue items have `cast[]`/`director` from the metadata backfill. |
+| 1 | **TMDB metadata coverage validation + cleanup** | S/Ops | Backfill has been run. Validate known actor/director searches, person pages, detail-page credit links, and metadata health; clean remaining no-cast/no-overview/no-year misses. |
+| 2 | **New-content digest** | M | Build an in-app "New since your last visit" / "Recently added for you" surface before native push. This captures the main value of notifications without VAPID/browser-permission complexity. |
+| 3 | **Live TV EPG foundation** | M/L | EPG/now-next data unlocks guide, programme search, reminders, richer channel rows, and future catch-up eligibility. This is the clearest gap versus JioTV/JioTV+. |
+| 4 | **AI picks feedback loop** | M | Add "more like this", "less like this", saved prompts, and clearer "why this" handling. TeleDirect now has AI discovery; the next step is trust/control. |
+| 5 | **Production evidence pass** | Ops | Run Webwright/screenshots/network checks across Home, Watch, AI Picks, Live TV, Liked Songs, Admin Dashboard, IPTV Admin. The audit is code-validated but should regain live evidence. |
 
 ### 🟡 Medium — Clear user value, moderate effort
 
 | # | Feature | Effort | Why it matters |
 |---|---------|--------|----------------|
-| 7 | ~~**Gapless playback + crossfade**~~ | ✅ Done | Dual-buffer bgAudio/bgAudio2, 3s crossfade, pre-loads 30s before end. |
-| 8 | ~~**Manual queue ("Play next")**~~ | ✅ Done | Play next + Add to queue on track rows; toast feedback. |
-| 9 | ~~**"Are you still watching?" prompt**~~ | ✅ Done | React player pauses unattended playback after 45 minutes, shows a fullscreen-safe prompt, and resumes through the normal video play path. |
-| 10 | ~~**Video chapters**~~ | ✅ Done | Admin line-entry chapters render as progress markers and a seekable chapter list in the React player. |
-| 11 | ~~**Viewing / listening stats page**~~ | ✅ Done | Streaks, video/audio time split, day-of-week heatmap, top artists/genres, play counts, "personality" card. Auth-gated `/stats`. |
-| 12 | ~~**Watchlist remove on mobile**~~ | ✅ Done | Saved cards expose a visible tick/check button with `Remove from watchlist`; mobile CSS keeps card actions visible. |
-| 13 | ~~**Recommendations discoverability**~~ | ✅ Done | Signed-out Home users now see a personalized recommendations teaser that opens sign-in. |
-| 14 | **Push notifications for new content** | Product decision | Not a quick gap: service worker exists for caching/navigation only. Push requires VAPID config, PushManager subscription UI, persistence, opt-out, and server-side delivery. |
+| 6 | **Language/regional metadata facet** | M | Important if the catalogue has Hindi/regional/international depth. India OTT apps make language a primary browse axis; tags are not enough long-term. |
+| 7 | **Music station chips + smart queue requests** | M | Related radio exists. Add visible mood/genre/artist station starts and eventually let AI build a queue from a prompt. |
+| 8 | **In-app reminders before push notifications** | M | Use EPG/new-content digest first. Native push remains complex and permission-heavy; prove reminder value in-app. |
+| 9 | **Subtitle appearance/accessibility settings** | S/M | Captions work, but user control over size/contrast/background is an accessibility gap versus mature players. |
+| 10 | **Usage telemetry for prioritization** | S/M | Track feature starts/completions for AI picks, radio, Live TV, subtitle search, playlists, and admin jobs. Avoid prioritizing by feature envy. |
+| 11 | **Shared playlists/lists** | M/L | Spotify Jam and Apple Music collaboration make this mainstream for music, but it only matters if TeleDirect has real multi-user usage. |
 
-### ⚪ Low — Nice-to-have or constrained by architecture
+### ⚪ Low — Nice-to-have or constrained by scope/architecture
 
 | # | Feature | Why low |
 |---|---------|---------|
-| Adaptive bitrate | Architecture uses Telegram as CDN; true ABR requires a media server |
-| Parental controls | Not a family-oriented use case |
-| Watch party / co-viewing | WebSocket infra complexity not justified at personal-app scale |
-| Karaoke / vocal isolation | Requires server-side stem separation (Demucs etc.) |
-| Equalizer | Web Audio API; high complexity, niche use |
-| Lossless / spatial audio | Depends entirely on source file quality |
-| Offline playback | Stream URLs work without the app; native offline is complex |
-| Collaborative playlists | Low social graph size at personal-app scale |
+| Adaptive bitrate | Architecture uses Telegram as CDN; true ABR requires a media server or pre-transcoded ladder. |
+| Profiles / parental controls | Low under Telegram single-user identity; becomes High only if household/shared-account use is explicit. |
+| Watch party / co-viewing | SharePlay-like value is real but platform/WebSocket complexity is not justified for current private-app scale. |
+| Native offline playback | Direct download exists; managed offline library adds storage, expiry, and platform complexity. |
+| Catch-up TV / DVR | Depends on source rights/stream archive availability; arbitrary IPTV URLs cannot reliably support it. |
+| Karaoke / vocal isolation | Requires server-side stem separation and licensing/product scope clarity. |
+| Equalizer | Possible via Web Audio API, but niche compared with discovery/metadata gaps. |
+| Lossless / spatial audio | Depends mostly on source files and playback devices; not a product UX unlock by itself. |
 
 ---
 
 ## TeleDirect vs Industry Summary
 
-| Dimension | vs Netflix/Disney+ | vs Spotify/Apple Music |
-|-----------|-------------------|----------------------|
-| Core playback | ★★★★★ — Skip intro + PiP + captions + speed | ★★★★★ — Gapless + crossfade + queue + lyrics |
-| Discovery | ★★★★☆ — Trending shipped; cast search built but data-blocked | ★★★★☆ — Artist page shipped; missing radio/charts |
-| Personal library | ★★★★★ — CW + watchlist + playlists + stats + FLAC quality badge | ★★★★★ — Playlists + stats + listening insights shipped |
-| Notifications | ★★☆☆☆ — Zero push notifications | ★★☆☆☆ — Same gap |
-| Social | ★★★☆☆ — Share works, nothing else | ★★★☆☆ — Share works, nothing else |
-| Mobile UX | ★★★★★ — Gestures, PWA, safe-area, no phantom scrollbars | ★★★★★ — Mini-player, landscape, back-nav fixed |
-| Auth / profiles | ★★★★☆ — Telegram Login; single profile | N/A |
+| Dimension | vs OTT / Live TV apps | vs Music apps |
+|-----------|-----------------------|---------------|
+| Core playback | ★★★★★ — HLS, captions, PiP, speed, intro/recap, chapters, next episode, still-watching; ABR remains architectural | ★★★★★ — Gapless, crossfade, queue, lyrics, mini-player, Now Playing sheet |
+| Discovery | ★★★★☆ — AI picks, personal rails, trending, most played, filters; metadata coverage validation and new-content digest are next | ★★★★☆ — Artist/album pages, liked songs, related radio, AI picks; missing mood stations/charts/collab |
+| Personal library | ★★★★★ — CW sync, watchlist, playlists, ratings, stats, direct downloads | ★★★★★ — Playlists, liked songs, stats, listening insights, radio queue |
+| Live TV | ★★★☆☆ — Channel UX and admin IPTV are strong; EPG/reminders/catch-up are the gap | N/A |
+| Admin / ops | ★★★★★ — Metadata dashboard, TMDB tools, AI suggest, subtitles, trending gaps are a real advantage for private catalogues | ★★★★☆ — Music metadata tooling exists; smart playlist ops still light |
+| Notifications | ★★☆☆☆ — No digest, reminders, or push yet | ★★☆☆☆ — Same gap |
+| Social / collaboration | ★★☆☆☆ — Share works; no co-viewing/shared lists | ★★☆☆☆ — Share works; no collaborative playlists/Jam |
+| Mobile UX | ★★★★★ — PWA, safe-area, route chunks, responsive cards/player, Live TV polish | ★★★★★ — Mini-player, queue drawer, now-playing sheet, touch-friendly controls |
+| Auth / profiles | ★★★★☆ — Telegram Login is clean for single-user identity; no household profiles | N/A |
 
 ---
 
@@ -313,7 +429,7 @@ _Tool: Chrome DevTools MCP — live screenshots + DOM inspection_
 
 | # | Issue | Detail |
 |---|---|---|
-| 1 | ⚠️ **Hero title hygiene is data-dependent** | React hero now uses `series_title` for series and `dir="auto"` on the heading. Validate production after metadata backfill; fix catalogue data if dirty `series_title` values remain. |
+| 1 | ⚠️ **Hero title hygiene is data-dependent** | React hero now uses `series_title` for series and `dir="auto"` on the heading. Validate production after the completed metadata backfill; fix catalogue data if dirty `series_title` values remain. |
 | 2 | ✅ **Shelf overflow affordance fixed** | Desktop shelf rows now render rail controls; old scrollbar-only observation is stale. |
 | 3 | ✅ **Duplicate desktop sidebar removed** | Current React shell has one primary nav, not the old left sidebar + top-nav duplication. |
 | 4 | ✅ **Episode identifier removed from hero code path** | Hero payload uses series title for series items; any remaining raw `SxxEyy` display should be treated as dirty indexed data, not missing UI logic. |
@@ -355,6 +471,7 @@ _Tool: Chrome DevTools MCP — live screenshots + DOM inspection_
 | 19 | Hero description has no `line-clamp` on mobile — long descriptions push Play button off-screen |
 | 20 | No active/pressed state on card touch — hover-only feedback doesn't work on touchscreens |
 | 21 | "LIBRARY" label above every shelf is decorative noise; removing it tightens visual rhythm |
+| 22 | Header search input lacks explicit `id`/`name`/`aria-label`; Chrome DevTools flags one form-field issue on the live artist route |
 
 ---
 
