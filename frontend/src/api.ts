@@ -375,15 +375,20 @@ export function setServerSyncEnabled(on: boolean): void {
   _serverSyncEnabled = on;
 }
 
-export async function saveContinueEntry(key: string, entry: Omit<ContinueEntry, 'key'>): Promise<void> {
-  if (!_serverSyncEnabled) return;
-  await request<{ ok: boolean }>(`/api/cw/${encodeURIComponent(key)}`, {
+// Returns whether the server accepted the write. `false` means it was rejected
+// as stale or tombstoned (deleted/completed elsewhere) — callers use this to
+// drop a local entry. Defaults to true on network error / anon (don't delete
+// on a transient failure).
+export async function saveContinueEntry(key: string, entry: Omit<ContinueEntry, 'key'>): Promise<boolean> {
+  if (!_serverSyncEnabled) return true;
+  const res = await request<{ ok: boolean; accepted?: boolean }>(`/api/cw/${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // Stamp the writing device so other devices can show "watched on <label>".
     body: JSON.stringify({ ...entry, deviceId: getDeviceId(), deviceLabel: getDeviceLabel() }),
     keepalive: true,
   });
+  return res.accepted !== false;
 }
 
 export async function deleteContinueEntry(key: string): Promise<void> {

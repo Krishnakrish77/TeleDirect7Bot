@@ -117,9 +117,25 @@ export async function syncContinueWatching(): Promise<LocalContinueMap> {
       }
     }
     writeLocalContinue(merged);
-    for (const [key, entry] of toPush) {
-      void saveContinueEntry(key, { ...entry, startedAt: entry.t }).catch(() => undefined);
-    }
+    // Push local-newer entries; if the server rejects one (stale, or
+    // deleted/completed on another device) drop it locally + tombstone so the
+    // deletion propagates here and we stop re-pushing it. Preserve the TRUE
+    // session start so a stale session can't sneak past the server tombstone.
+    let changed = false;
+    await Promise.all(toPush.map(async ([key, entry]) => {
+      let accepted = true;
+      try {
+        accepted = await saveContinueEntry(key, { ...entry, startedAt: entry.startedAt || entry.t });
+      } catch (_) {
+        accepted = true; // transient failure — don't delete on a network blip
+      }
+      if (!accepted) {
+        delete merged[key];
+        addContinueTombstone(key);
+        changed = true;
+      }
+    }));
+    if (changed) writeLocalContinue(merged);
     return merged;
   })();
   try {

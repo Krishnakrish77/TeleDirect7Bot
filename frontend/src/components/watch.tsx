@@ -12,6 +12,7 @@ import { revokeSubtitleTrack, subtitleFileToTrack, subtitleTextToTrack } from '.
 import { buildVlcHref } from '../media/vlc';
 import { markLocallyWatched } from '../utils/localWatched';
 import { isContinueSuppressed } from '../utils/continueWatching';
+import { getDeviceId } from '../utils/device';
 import { uniqueMetadataParts } from '../utils/metadata';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog';
@@ -1104,6 +1105,9 @@ function VideoWatchPage({
             dur: mediaEl.duration,
             t: now,
             title: video.title,
+            // Persist the TRUE session start so a stale device's later sync
+            // can't masquerade as a new session and slip past the tombstone.
+            startedAt: continueSessionStartedRef.current,
           };
         }
         localStorage.setItem('td:cw', JSON.stringify(data));
@@ -1696,6 +1700,8 @@ function VideoWatchPage({
         if (cancelled) return;
         const entry = map[video.resumeKey];
         if (!entry || isContinueSuppressed(video.resumeKey, entry)) return;
+        // Only a *different* device is a handoff — don't prompt about ourselves.
+        if (entry.deviceId && entry.deviceId === getDeviceId()) return;
         const el = videoRef.current;
         const here = el?.currentTime || 0;
         const dur = el?.duration || video.duration || entry.dur || 0;

@@ -20,6 +20,10 @@ _TOMBSTONES = "continue_watching_tombstones"
 _CLEAR_KEY = "*"
 _COMPLETE_RATIO = 0.95
 _REWIND_GRACE = 5.0  # seconds of jitter allowed before a backward move counts as a rewind
+# ponytail: single-process lock guards the read-decide-write below. The deploy
+# runs one instance, so this is sufficient; if it ever scales to multiple
+# workers/instances, replace the lock with a conditional Mongo update (guard on
+# the stored `t`) or a transaction so two workers can't both pass _accept_write.
 _mutation_lock = asyncio.Lock()
 
 

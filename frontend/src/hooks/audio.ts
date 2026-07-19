@@ -1046,14 +1046,13 @@ export function useAudioPlayer() {
           dur: Math.floor(duration),
           t: now,
           title: current.track.title,
-        };
-        // Local mirror so anonymous + cross-tab + this-device resume work; the
-        // server copy carries startedAt for cross-device conflict resolution.
-        upsertLocalContinue(current.track.key, entry);
-        void saveContinueEntry(current.track.key, {
-          ...entry,
+          // True session start, persisted locally too, so a stale device's late
+          // sync can't slip past the server deletion tombstone (resurrection).
           startedAt: cwSessionStartedRef.current || now,
-        }).catch(() => undefined);
+        };
+        // Local mirror so anonymous + cross-tab + this-device resume work.
+        upsertLocalContinue(current.track.key, entry);
+        void saveContinueEntry(current.track.key, entry).catch(() => undefined);
       }
       if ('mediaSession' in navigator && current.track && duration > 0) {
         setMediaSessionPosition({ ...current, currentTime, duration });

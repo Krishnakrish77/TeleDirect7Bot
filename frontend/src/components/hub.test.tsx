@@ -342,7 +342,7 @@ describe('ContinueWatching', () => {
     }));
     vi.mocked(fetchContinueMap).mockResolvedValue({});
     vi.mocked(fetchContinueItems).mockResolvedValue([{ ...kalkiItem }]);
-    vi.mocked(saveContinueEntry).mockResolvedValue(undefined);
+    vi.mocked(saveContinueEntry).mockResolvedValue(true);
 
     render(<ContinueWatching serverSyncEnabled />);
 
@@ -362,7 +362,7 @@ describe('ContinueWatching', () => {
       hash1: { pos: 120, dur: 1200, t: 20, title: 'Kalki' },
     });
     vi.mocked(fetchContinueItems).mockResolvedValue([{ ...kalkiItem }]);
-    vi.mocked(saveContinueEntry).mockResolvedValue(undefined);
+    vi.mocked(saveContinueEntry).mockResolvedValue(true);
 
     render(<ContinueWatching serverSyncEnabled />);
 
@@ -379,7 +379,7 @@ describe('ContinueWatching', () => {
     }));
     vi.mocked(fetchContinueMap).mockResolvedValue({});
     vi.mocked(fetchContinueItems).mockResolvedValue([{ ...kalkiItem }]);
-    vi.mocked(saveContinueEntry).mockResolvedValue(undefined);
+    vi.mocked(saveContinueEntry).mockResolvedValue(true);
     vi.mocked(deleteContinueEntry).mockResolvedValue(undefined);
 
     const view = render(<ContinueWatching serverSyncEnabled />);
@@ -405,7 +405,7 @@ describe('ContinueWatching', () => {
     localStorage.setItem('td:cw:tombstones', JSON.stringify({ hash1: 5 })); // newer than entry.t
     vi.mocked(fetchContinueMap).mockResolvedValue({});
     vi.mocked(fetchContinueItems).mockResolvedValue([]);
-    vi.mocked(saveContinueEntry).mockResolvedValue(undefined);
+    vi.mocked(saveContinueEntry).mockResolvedValue(true);
 
     render(<ContinueWatching serverSyncEnabled />);
 
