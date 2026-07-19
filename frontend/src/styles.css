@@ -671,24 +671,10 @@ img {
   margin-top: 1.2rem;
 }
 
+/* All hero action buttons share one height so the row aligns. Emphasis on
+   Play comes from the orange fill, not a taller size. */
 .hero-actions [data-slot="button"] {
   min-height: 40px;
-}
-
-.hero-actions [data-slot="button"][data-size="lg"] {
-  min-height: 46px;
-  padding-inline: 1.15rem;
-}
-
-.hero-actions .detail-watched-action {
-  min-height: 40px;
-  padding-inline: 0.7rem;
-}
-
-.detail-imdb-action {
-  min-width: auto;
-  padding-inline: 0.65rem;
-  font-size: 0.78rem;
 }
 
 .primary-action,
@@ -721,19 +707,8 @@ img {
   outline: none;
 }
 
-.detail-watched-action {
-  border-color: rgba(20, 184, 166, 0.34);
-  background: rgba(20, 184, 166, 0.12);
-  color: #ccfbf1;
-}
-
-.detail-watched-action:hover,
-.detail-watched-action:focus-visible {
-  border-color: rgba(20, 184, 166, 0.68);
-  background: rgba(20, 184, 166, 0.22);
-  color: #f8fafc;
-}
-
+/* Teal only signals the already-watched state; the unwatched "Mark watched"
+   button is a plain secondary so the action row reads as one set. */
 .detail-watched-action.watched,
 .detail-watched-action:disabled {
   border-color: rgba(20, 184, 166, 0.24);

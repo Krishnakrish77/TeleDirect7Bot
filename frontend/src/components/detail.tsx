@@ -161,7 +161,7 @@ function DetailHero({
         )}
         <div className="hero-actions">
           {playHref && (
-            <Button asChild size="lg"><a href={playHref}><PlayIcon /><span>Play</span></a></Button>
+            <Button asChild><a href={playHref}><PlayIcon /><span>Play</span></a></Button>
           )}
           {trailerKey && (
             <Button ref={trailerButtonRef} type="button" variant="secondary" size="icon" onClick={() => setTrailerOpen(true)} aria-label="Trailer" title="Watch trailer"><PlayIcon /></Button>
@@ -173,7 +173,7 @@ function DetailHero({
           )}
           {extraActions}
           {imdbHref && (
-            <Button asChild variant="secondary" size="sm" className="detail-imdb-action"><a href={imdbHref} target="_blank" rel="noopener noreferrer">IMDb</a></Button>
+            <Button asChild variant="secondary"><a href={imdbHref} target="_blank" rel="noopener noreferrer">IMDb</a></Button>
           )}
         </div>
         {children}
@@ -251,7 +251,7 @@ function MarkWatchedAction({
     <Button
       type="button"
       variant="secondary"
-      className={watched ? 'detail-watched-action watched' : 'detail-watched-action'}
+      className={watched ? 'detail-watched-action watched' : ''}
       onClick={handleMarkWatched}
       disabled={watched}
       title={watched ? watchedLabel : label}
