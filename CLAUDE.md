@@ -13,7 +13,13 @@ python3 -m main          # entry point is main/__main__.py
 
 Runtime is pinned to **Python 3.9.20** (`runtime.txt`). The Procfile launches the same command on Heroku/Koyeb (`web: python -m main`).
 
-There is no test suite, linter config, or build step — changes are validated by running the bot against real Telegram credentials configured via `.env` (see README for the full var list; `API_ID`, `API_HASH`, `BOT_TOKEN`, `BIN_CHANNEL`, `OWNER_ID` are mandatory).
+### Tests
+
+Python: lightweight `unittest` self-checks live in `tests/` (no pytest config; they set dummy mandatory env vars, then import and exercise pure helpers — no Mongo/network). Run all with `python -m unittest discover -s tests`, or one with `python -m unittest tests.test_<name>`. Put new backend self-checks here, not at the repo root.
+
+Frontend: `cd frontend && npm run build` (runs `tsc` then Vite; build output under `main/server/static/app` is gitignored and rebuilt on deploy) and `npx vitest run` for the component/unit suite.
+
+Beyond that, changes are validated by running the bot against real Telegram credentials configured via `.env` (see README for the full var list; `API_ID`, `API_HASH`, `BOT_TOKEN`, `BIN_CHANNEL`, `OWNER_ID` are mandatory).
 
 ## Architecture
 

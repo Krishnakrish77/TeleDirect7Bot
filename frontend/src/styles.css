@@ -6360,8 +6360,10 @@ img {
   left: 50%;
   bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  /* Flex column (not a fixed grid): the message row is conditional, so a fixed
+     4-track grid mis-assigned the 1fr to the ask bar when no message showed. */
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
   width: min(96vw, 560px);
   max-height: calc(100svh - 1rem - env(safe-area-inset-top, 0px));
@@ -6388,6 +6390,7 @@ img {
   align-items: start;
   justify-content: space-between;
   gap: 1rem;
+  flex-shrink: 0;
 }
 
 .ai-rec-heading .eyebrow {
@@ -6416,11 +6419,14 @@ img {
 
 .ai-rec-message {
   margin: 0;
+  flex-shrink: 0;
   color: var(--muted);
   font-size: 0.9rem;
 }
 
 .ai-rec-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-width: none;
   display: grid;
@@ -6465,7 +6471,11 @@ img {
 
 .ai-rec-ask {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
+  flex-shrink: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
 }
 
 .ai-rec-ask input {
