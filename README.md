@@ -174,6 +174,10 @@ you may also add as many as bots you want. (max limit is not tested yet)
 
 `MONGO_META_COLLECTION` : Meta (singleton key/values like `latest_seen_id`) collection name. Defaults to `meta`.
 
+`MEDIA_INDEX_SEED_OVERLAP` : Number of recent BIN message IDs rechecked on a normal startup after the durable catalogue is restored. Defaults to `32`. This catches upload/write-through races and recent deletions without rescanning the full recovery window on every deploy.
+
+`MEDIA_INDEX_SEED_DEPTH` : Bounded BIN history window used only for cold recovery or an explicit full reconciliation. Defaults to `800`.
+
 **Migration flow**: set `MONGO_URI` first (leave `STORE_BACKEND` unset), boot the bot, click **Migrate → Mongo** on `/admin`. After the count is verified in Atlas, set `STORE_BACKEND=mongo` and redeploy. Snapshots-to-BIN-channel become a no-op from then on.
 
 

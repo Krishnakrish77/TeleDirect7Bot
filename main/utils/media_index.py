@@ -68,6 +68,10 @@ def _extract_quality(*texts: str) -> str:
 
 _INDEX_FILE = Path(os.environ.get("MEDIA_INDEX_PATH", "/tmp/media_index.json"))
 _SEED_DEPTH = int(os.environ.get("MEDIA_INDEX_SEED_DEPTH", "800"))
+# Re-read a small tail on a warm start. It covers uploads that raced the
+# previous write-through and lets us reconcile recent deletions without
+# turning every deploy into a fixed-depth Telegram history scan.
+_SEED_OVERLAP = int(os.environ.get("MEDIA_INDEX_SEED_OVERLAP", "32"))
 _FETCH_BATCH = 100  # get_messages caps around 200; 100 is well within limits.
 
 _items: Dict[int, HubItem] = {}
@@ -85,7 +89,8 @@ _snapshot_msg_id: int = 0
 # In-memory progress state for the two long-running pipelines (seed and
 # enrich). The admin UI polls /admin/status which serialises both.
 _seed_state: dict = {"running": False, "scanned": 0, "total": 0,
-                     "indexed": 0, "started_at": 0.0, "finished_at": 0.0}
+                     "indexed": 0, "started_at": 0.0, "finished_at": 0.0,
+                     "mode": "idle", "failed": False}
 _enrich_state: dict = {"running": False, "done": 0, "total": 0,
                        "enriched": 0, "failed": 0,
                        "started_at": 0.0, "finished_at": 0.0,
@@ -997,7 +1002,7 @@ async def _delete_probe(bot, channel_id: int, probe_id: int) -> None:
     )
 
 
-async def seed(bot, channel_id: int) -> None:
+async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
     """Populate the index from BIN_CHANNEL history.
 
     Bots can't call ``messages.getHistory``, so we discover the channel's
@@ -1005,20 +1010,18 @@ async def seed(bot, channel_id: int) -> None:
     Telegram returns, then immediately deleting it. The probe IS the only
     way for a bot to learn the high-water mark.
 
-    We used to skip the probe on warm restarts (``_latest_seen_id`` was
-    persisted to /tmp and the pinned snapshot), but that turned out to
-    LOSE entries: uploads made between the last snapshot and a restart
-    leave ``_latest_seen_id`` stale, and seed would then walk only DOWN
-    from the stale value — missing every new upload above it. With a
-    debounced snapshot save (up to 30s after a mutation), this race is
-    realistic for users who upload a batch and restart soon after.
+    A warm start restores the durable catalogue first, then scans only the
+    new range plus a small overlap. This catches uploads that raced a prior
+    write-through without repeatedly re-reading a fixed recent-history
+    window. Cold recovery (or ``full_reconcile=True``) retains the bounded
+    full window for catalogue reconstruction and deletion reconciliation.
 
     Probing every seed adds one ``.`` send + delete per startup, which
     the retry logic in ``_delete_probe`` cleans up so the dot never
     stays visible.
     """
     global _seeded, _latest_seen_id
-    if _seeded:
+    if _seeded and not full_reconcile:
         return
 
     # Only load from /tmp JSON when Mongo isn't active. With Mongo, /tmp is
@@ -1075,6 +1078,12 @@ async def seed(bot, channel_id: int) -> None:
                 "media_index: telegram-snapshot restore failed (non-fatal)"
             )
 
+    # Capture the restored high-water mark before probing. Do not advance it
+    # until the complete scan succeeds: a partially fetched range must be
+    # retried on the next boot rather than silently skipped.
+    previous_latest = _latest_seen_id
+    has_restored_catalogue = bool(_items) and previous_latest > 0
+
     # Always probe — we can't trust _latest_seen_id to reflect the
     # actual channel state after a /tmp wipe + stale snapshot.
     try:
@@ -1086,10 +1095,13 @@ async def seed(bot, channel_id: int) -> None:
     latest_id = probe.id
     await _delete_probe(bot, channel_id, probe.id)
 
-    if latest_id > _latest_seen_id:
-        _latest_seen_id = latest_id
-
-    floor = max(1, latest_id - _SEED_DEPTH)
+    is_delta = has_restored_catalogue and not full_reconcile
+    if is_delta:
+        floor = max(1, previous_latest - _SEED_OVERLAP)
+        mode = "delta"
+    else:
+        floor = max(1, latest_id - _SEED_DEPTH)
+        mode = "full"
     high = latest_id
     total_to_scan = high - floor + 1
     # Track which message ids the BIN actually still has — at end of
@@ -1107,10 +1119,13 @@ async def seed(bot, channel_id: int) -> None:
         indexed=len(_items),
         started_at=time.time(),
         finished_at=0.0,
+        mode=mode,
+        failed=False,
     )
     logging.info(
-        "media_index: seeding %d…%d (depth=%d)", high, floor, _SEED_DEPTH
+        "media_index: %s seed %d…%d (%d ids)", mode, high, floor, total_to_scan,
     )
+    scan_complete = True
     try:
         while high >= floor:
             ids = list(range(high, max(floor - 1, high - _FETCH_BATCH), -1))
@@ -1118,6 +1133,7 @@ async def seed(bot, channel_id: int) -> None:
                 batch = await bot.get_messages(channel_id, ids)
             except Exception:
                 logging.exception("media_index: get_messages failed for %d..%d", ids[-1], ids[0])
+                scan_complete = False
                 break
             if not isinstance(batch, list):
                 batch = [batch]
@@ -1261,13 +1277,21 @@ async def seed(bot, channel_id: int) -> None:
             high -= _FETCH_BATCH
             # Yield to the loop so a long seed doesn't starve other work.
             await asyncio.sleep(0)
+    except BaseException:
+        # Cancellation and unexpected processing errors must not commit the
+        # cursor either. Preserve the exception for the caller after the
+        # cleanup below, but force a safe retry on the next seed.
+        scan_complete = False
+        raise
     finally:
-        # Stale-prune pass: any _items entry whose message_id sits
-        # within the walked range [floor, latest_id] but wasn't seen
-        # in the seen_ids set is a deleted BIN message. Drop it so
-        # the catalogue reflects offline deletions.
+        # A failed batch gives us an incomplete view of the range. In that
+        # case, neither prune unseen entries nor advance the durable cursor;
+        # the next boot will safely retry from the previous high-water mark.
         pruned = 0
-        if seen_ids:
+        stale_ids: list[int] = []
+        if scan_complete and seen_ids:
+            # Any item in the fully walked range that was not seen has been
+            # deleted from BIN while the bot was offline.
             async with _lock:
                 stale_ids = [
                     mid for mid in list(_items.keys())
@@ -1291,6 +1315,22 @@ async def seed(bot, channel_id: int) -> None:
             for mid in stale_ids:
                 await _store_remove(mid)
             schedule_snapshot(bot)
+        if scan_complete:
+            _latest_seen_id = max(previous_latest, latest_id)
+            _persist_unlocked()
+            if _store_active():
+                try:
+                    await _store.set_meta("latest_seen_id", _latest_seen_id)
+                except Exception:
+                    # Leave the old durable cursor in place. A later restart
+                    # will scan an overlapping (possibly larger) safe range.
+                    logging.exception("media_index: failed to persist seed high-water mark")
+        else:
+            _seed_state["failed"] = True
+            logging.warning(
+                "media_index: %s seed incomplete; keeping high-water mark at %d",
+                mode, previous_latest,
+            )
         _seeded = True
         _seed_state["running"] = False
         _seed_state["finished_at"] = time.time()
