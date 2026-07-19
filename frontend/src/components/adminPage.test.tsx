@@ -239,6 +239,19 @@ describe('AdminPage', () => {
     expect((await screen.findByRole('status')).textContent).toContain('Done');
   });
 
+  it('queues TMDB enrichment for selected rows', async () => {
+    const reload = vi.fn();
+    renderAdmin({ reload });
+
+    fireEvent.click(screen.getByLabelText('Select Kalki'));
+    fireEvent.click(screen.getByRole('button', { name: 'Enrich' }));
+
+    await waitFor(() => {
+      expect(runAdminAction).toHaveBeenCalledWith({ action: 'enrich', ids: [101] });
+    });
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   it('deletes a single row from the row actions', async () => {
     const reload = vi.fn();
     renderAdmin({ reload });
