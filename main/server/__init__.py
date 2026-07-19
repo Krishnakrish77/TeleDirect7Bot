@@ -21,7 +21,11 @@ from .ratings_routes import routes as ratings_routes
 from .dismiss_routes import routes as dismiss_routes
 from .stats_routes import routes as stats_routes
 from .iptv_routes import routes as iptv_routes
-from .spa_routes import routes as spa_routes
+# NB: alias the route table to a distinct name — binding it to `spa_routes`
+# would shadow the `main.server.spa_routes` submodule, so `from main.server
+# import spa_routes` elsewhere would return this RouteTableDef instead of the
+# module (breaking spa_routes._card / .invalidate_api_cache lookups).
+from .spa_routes import routes as spa_route_table
 from .ai_rec_routes import routes as ai_rec_routes
 
 
@@ -257,7 +261,7 @@ def web_server():
     web_app.add_routes(dismiss_routes)
     web_app.add_routes(stats_routes)
     web_app.add_routes(iptv_routes)
-    web_app.add_routes(spa_routes)
+    web_app.add_routes(spa_route_table)
     web_app.add_routes(ai_rec_routes)
     web_app.add_routes(admin_routes)
     web_app.add_routes(hub_routes)
