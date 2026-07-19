@@ -2903,8 +2903,13 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
         sm = series_parse.parse(item.file_name) or series_parse.parse(item.title)
         if sm:
             # Filename or title carries an SxxEyy / 1x03 / Season N pattern.
-            item.series_key = sm.key
-            item.series_title = hit.title if hit.kind == "tv" and hit.title else sm.title
+            # TMDB is authoritative for a recognised TV show.  The release
+            # filename is only authoritative for season/episode numbers;
+            # deriving the key from it split forwards with slightly different
+            # labels into separate cards despite sharing one TMDB ID.
+            canonical_title = hit.title if hit.kind == "tv" and hit.title else sm.title
+            item.series_key = series_parse.slugify(canonical_title) or sm.key
+            item.series_title = canonical_title
             # Preserve admin-set season/episode (when non-None). Only fall back
             # to the filename parser's values when the item doesn't already
             # have an explicit number — otherwise an admin edit gets silently
@@ -3728,8 +3733,15 @@ async def reindex_all(bot=None) -> dict:
                     cleaned_series_title = (
                         clean_for_search(sm.raw_title or sm.title) or sm.title
                     )
-                    new_series_key = series_parse.slugify(cleaned_series_title) or sm.key
-                    new_series_title = cleaned_series_title
+                    # Existing TV enrichment is the stable identity.  Keep
+                    # filename parsing for episode coordinates, but do not
+                    # let a release-specific title fork the series key.
+                    new_series_title = (
+                        it.series_title
+                        if it.tmdb_kind == "tv" and it.series_title
+                        else cleaned_series_title
+                    )
+                    new_series_key = series_parse.slugify(new_series_title) or sm.key
                     new_season = sm.season
                     new_episode = sm.episode
                     new_movie_key = ""
