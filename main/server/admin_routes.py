@@ -1056,11 +1056,11 @@ async def admin_series_list(request: web.Request) -> web.Response:
     _require_session(request)
     series: dict = {}
     for it in media_index._items.values():
-        if it.series_key and it.series_title:
+        if it.series_key:
             if it.series_key not in series:
                 series[it.series_key] = {
                     "key": it.series_key,
-                    "title": it.series_title,
+                    "title": it.series_title or it.series_key,
                     "count": 0,
                 }
             series[it.series_key]["count"] += 1

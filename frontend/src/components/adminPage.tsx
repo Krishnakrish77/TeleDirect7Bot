@@ -538,7 +538,7 @@ function MergeSeriesTool({
         <form className="admin-merge-form" onSubmit={submit}>
           <datalist id="admin-merge-series-list">
             {series.map((item) => (
-              <option key={item.key} value={item.title}>{`${item.key} - ${item.count}`}</option>
+              <option key={item.key} value={item.key} label={`${item.title} · ${item.count} episodes`} />
             ))}
           </datalist>
           <label>
@@ -547,7 +547,7 @@ function MergeSeriesTool({
               value={source}
               onChange={(event) => setSource(event.currentTarget.value)}
               list="admin-merge-series-list"
-              placeholder={loading ? 'Loading series...' : 'series to merge'}
+              placeholder={loading ? 'Loading series...' : 'source series key'}
             />
           </label>
           <label>
@@ -556,7 +556,7 @@ function MergeSeriesTool({
               value={target}
               onChange={(event) => setTarget(event.currentTarget.value)}
               list="admin-merge-series-list"
-              placeholder="series to keep"
+              placeholder="target series key"
             />
           </label>
           <Button type="submit" size="sm" disabled={Boolean(busy) || loading}>
