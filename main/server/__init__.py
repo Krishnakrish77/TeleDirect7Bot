@@ -175,6 +175,17 @@ async def security_middleware(request: web.Request, handler):
     """
     from main.vars import Var as _Var
     response = await handler(request)
+    # Cache-Control for static assets — web.static() serves these as
+    # FileResponse (a StreamResponse), so they'd otherwise fall through the
+    # isinstance guard below with no caching hint and revalidate (304) on
+    # every navigation.  Vite content-hashes files under /static/app/assets/,
+    # so those URLs never change → cache them for a year, immutable.  Other
+    # static files (icons, manifest) get a short revalidation window.
+    if request.path.startswith("/static/"):
+        if "/assets/" in request.path:
+            response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            response.headers.setdefault("Cache-Control", "public, max-age=3600")
     # Don't modify streaming or binary responses.
     if not isinstance(response, web.Response):
         return response
