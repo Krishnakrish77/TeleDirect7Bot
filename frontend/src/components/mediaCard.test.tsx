@@ -267,7 +267,7 @@ describe('MediaCard', () => {
     expect(onDismiss).toHaveBeenCalledWith({ tmdbId: 123, kind: 'movie' }, media);
   });
 
-  it('opens card trailers in the immersive player with a fullscreen action', () => {
+  it('opens card trailers in a focused preview dialog', () => {
     render(<MediaCard card={card({ trailerKey: 'abc123' })} saved={false} onToggleSaved={vi.fn()} />);
 
     const posterLink = document.querySelector<HTMLAnchorElement>('.media-card-poster-link');
@@ -290,7 +290,8 @@ describe('MediaCard', () => {
     expect(preview.getAttribute('allow')).toContain('encrypted-media');
     expect(preview.hasAttribute('allowfullscreen')).toBe(true);
     expect(screen.getByRole('dialog', { name: 'Kalki 2898-AD trailer' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open trailer on YouTube for fullscreen' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /youtube/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /fullscreen/i })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Close trailer' }));
     expect(screen.queryByTitle('Trailer')).toBeNull();
   });

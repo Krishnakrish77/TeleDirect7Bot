@@ -488,13 +488,8 @@ describe('Movie detail', () => {
     expect(onToggleSaved).toHaveBeenCalledWith('movie:very-long-title');
   });
 
-  it('opens trailers with visible controls, audio enabled, and fullscreen permissions', async () => {
+  it('opens trailers in a focused preview dialog without external actions', async () => {
     const movie = { ...makeMovie(), trailerKey: 'abc123' };
-    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
-      configurable: true,
-      value: requestFullscreen,
-    });
 
     render(
       <DetailPage
@@ -527,56 +522,18 @@ describe('Movie detail', () => {
     expect(trailer.getAttribute('allow')).toContain('encrypted-media');
     expect(trailer.hasAttribute('allowfullscreen')).toBe(true);
     expect(screen.getByRole('dialog', { name: `${movie.title} (${movie.year}) trailer` })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'YouTube' }).getAttribute('href')).toBe('https://www.youtube.com/watch?v=abc123');
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open trailer fullscreen' })));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open trailer fullscreen' }));
-    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('link', { name: /youtube/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /fullscreen/i })).toBeNull();
 
     const closeButton = screen.getByRole('button', { name: 'Close trailer' });
-    closeButton.focus();
+    await waitFor(() => expect(document.activeElement).toBe(closeButton));
     fireEvent.keyDown(window, { key: 'Tab' });
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open trailer fullscreen' }));
-
-    const fullscreenButton = screen.getByRole('button', { name: 'Open trailer fullscreen' });
-    fullscreenButton.focus();
-    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(closeButton);
     expect(trailer.getAttribute('tabindex')).toBe('-1');
 
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTitle('Trailer')).toBeNull());
     expect(document.activeElement).toBe(trailerButton);
-  });
-
-  it('falls back to a YouTube fullscreen link when browser fullscreen is unavailable', () => {
-    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
-      configurable: true,
-      value: undefined,
-    });
-    const movie = { ...makeMovie(), trailerKey: 'abc123' };
-
-    render(
-      <DetailPage
-        route={{ kind: 'detail', detailKind: 'movie', key: 'very-long-title' }}
-        data={movie}
-        loading={false}
-        error=""
-        saved={new Set()}
-        onToggleSaved={vi.fn()}
-        navigate={vi.fn()}
-        playTrack={vi.fn()}
-        togglePlayback={vi.fn()}
-        addToQueue={vi.fn()}
-        shuffleQueue={vi.fn()}
-        player={makePlayer()}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Trailer' }));
-
-    expect(screen.queryByRole('button', { name: 'Open trailer fullscreen' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open trailer on YouTube for fullscreen' }).getAttribute('href')).toBe('https://www.youtube.com/watch?v=abc123');
   });
 
   it('marks a movie watched from the detail page', () => {
