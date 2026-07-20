@@ -74,10 +74,11 @@ export function ShuffleIcon(props: Props) {
 }
 
 export function SparkleIcon(props: Props) {
+  // A single 4-point star centered on (12,12) so it sits dead-centre in a
+  // circular FAB — a second off-centre accent star made the mark look skewed.
   return (
     <IconBase {...props}>
-      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
-      <path d="M18.5 14.5l.9 2.3 2.3.9-2.3.9-.9 2.3-.9-2.3-2.3-.9 2.3-.9z" />
+      <path d="M12 4l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" />
     </IconBase>
   );
 }

@@ -231,9 +231,9 @@ describe('AdminPage', () => {
 
     fireEvent.click(screen.getByLabelText('Select Kalki'));
     const checkbox = screen.getByLabelText('Select Kalki');
-    expect(checkbox.className).toContain('inline-grid');
-    const indicator = checkbox.querySelector('[data-state="checked"]');
-    expect(indicator?.className).toContain('size-full');
+    // Assert behaviour (checked), not the exact utility classes.
+    expect(checkbox.getAttribute('data-state')).toBe('checked');
+    expect(checkbox.querySelector('[data-state="checked"]')).toBeTruthy();
     fireEvent.click(screen.getAllByRole('button', { name: 'Hide' })[0]);
 
     await waitFor(() => {
