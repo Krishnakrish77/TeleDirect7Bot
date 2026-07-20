@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchAdminSeriesList, fetchAdminStatus, mergeAdminSeries, runAdminAction, runAdminMaintenance } from '../api';
+import { fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, mergeAdminSeries, runAdminAction, runAdminMaintenance } from '../api';
 import type { AdminResponse, User } from '../types';
 import { AdminPage } from './adminPage';
 
@@ -241,6 +241,19 @@ describe('AdminPage', () => {
     });
     expect(reload).toHaveBeenCalledTimes(1);
     expect((await screen.findByRole('status')).textContent).toContain('Done');
+  });
+
+  it('opens the edit modal from a row', async () => {
+    vi.mocked(fetchAdminItem).mockResolvedValue({
+      title: 'Kalki', mediaKind: 'video', tags: [], year: 2024, adminLocked: [], sidecars: [],
+    } as unknown as Record<string, unknown>);
+    vi.mocked(fetchAiModels).mockResolvedValue([]);
+    renderAdmin();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
+
+    expect(await screen.findByText(/Edit bin:101/)).toBeTruthy();
+    await waitFor(() => expect(fetchAdminItem).toHaveBeenCalledWith(101, expect.anything()));
   });
 
   it('queues TMDB enrichment for selected rows', async () => {
