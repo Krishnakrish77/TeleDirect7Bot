@@ -158,9 +158,9 @@ export function StatsPage({
         </Card>
         <Card className="stat-card">
           <PlayIcon />
-          <span>Rewatches</span>
+          <span>Rewatched</span>
           <strong>{data.rewatch_pct}%</strong>
-          <small>{data.rewatch_label}</small>
+          <small>{data.rewatched_titles} of {data.total_titles} titles</small>
         </Card>
         <Card className="stat-card">
           <FilmIcon />

@@ -573,6 +573,7 @@ export interface StatsResponse {
   decades: Array<{ label: string; count: number }>;
   rewatch_pct: number;
   rewatch_label: string;
+  rewatched_titles: number;
   genres_explored: number;
   diversity_label: string;
   longest_binge: number;

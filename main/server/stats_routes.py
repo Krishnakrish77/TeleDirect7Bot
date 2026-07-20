@@ -83,6 +83,13 @@ def _play_count(entry: dict) -> int:
     return max(1, min(count, 500))
 
 
+def _rewatched_titles(title_counts: dict, group_items: dict) -> int:
+    """Count title groups where total plays exceed distinct parts — i.e. at
+    least one episode/track/film was replayed. One looped song -> 1 rewatched
+    title; a fresh multi-part binge -> 0."""
+    return sum(1 for g, plays in title_counts.items() if plays > len(group_items.get(g, ())))
+
+
 def _binge_stats(timestamps: list, gap_hours: int = 3, min_len: int = 3) -> tuple[int, int]:
     """Given completion timestamps, return (longest_binge, binge_sessions).
 
@@ -245,6 +252,7 @@ async def _stats_payload(user_id: int) -> dict:
     kind_counts:     Counter = Counter()
     title_counts:    Counter = Counter()
     decade_counts:   Counter = Counter()   # plays by release decade (from item.year)
+    group_items:     defaultdict = defaultdict(set)  # title group -> distinct cw_keys (for rewatch)
     title_meta:      dict    = {}
 
     for h in history:
@@ -287,6 +295,7 @@ async def _stats_payload(user_id: int) -> dict:
         # Title grouping — album_key groups music (movie_key is "" for audio).
         group = item.series_key or item.album_key or item.movie_key or ck
         title_counts[group] += plays
+        group_items[group].add(ck)
         if group not in title_meta:
             if item.series_key:
                 title = item.series_title or item.title
@@ -543,18 +552,13 @@ async def _stats_payload(user_id: int) -> dict:
     # ── New metrics: decade mix, rewatch ratio, genre diversity, binges ────
     decades = [{"label": f"{d}s", "count": c} for d, c in sorted(decade_counts.items())]
 
-    # Rewatch ratio at ITEM granularity (per cw_key). Grouping by series/album
-    # would count a fresh multi-episode/track binge as ~90% "rewatches"; a
-    # per-episode/per-track count correctly reports that as 0% until something
-    # is actually replayed.
-    item_plays: Counter = Counter()
-    for h in history:
-        ck = h.get("cw_key", "")
-        if ck:
-            item_plays[ck] += _play_count(h)
-    total_item_plays = sum(item_plays.values())
-    rewatch_plays = max(0, total_item_plays - len(item_plays))
-    rewatch_pct = round(rewatch_plays / total_item_plays * 100) if total_item_plays else 0
+    # Rewatch ratio = share of your distinct TITLES (movie / series / album)
+    # that you went back to. A title counts as rewatched when its total plays
+    # exceed its distinct parts — i.e. you replayed at least one episode/track/
+    # the film. Counting titles (not plays) means a song looped 20× is one
+    # rewatched title, not twenty, and a fresh multi-episode binge is zero.
+    rewatched_titles = _rewatched_titles(title_counts, group_items)
+    rewatch_pct = round(rewatched_titles / len(title_counts) * 100) if title_counts else 0
     rewatch_label = (
         "Comfort re-watcher" if rewatch_pct >= 40
         else "Always something new" if rewatch_pct <= 15
@@ -615,6 +619,7 @@ async def _stats_payload(user_id: int) -> dict:
         "decades": decades,
         "rewatch_pct": rewatch_pct,
         "rewatch_label": rewatch_label,
+        "rewatched_titles": rewatched_titles,
         "genres_explored": genres_explored,
         "diversity_label": diversity_label,
         "longest_binge": longest_binge,
