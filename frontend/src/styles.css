@@ -2307,9 +2307,16 @@ img {
 
 .live-channel-tools {
   display: grid;
+  /* Constrain to a shrinkable column so the horizontally-scrolling category
+     strip (dozens of categories) can't blow out the rail + channel list width. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.65rem;
   padding: 0.75rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.live-channel-tools > * {
+  min-width: 0;
 }
 
 .live-channel-summary {
@@ -2396,6 +2403,7 @@ img {
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
+  flex: 0 0 auto;
   min-height: 34px;
   padding: 0 0.62rem;
   border: 1px solid rgba(148, 163, 184, 0.14);
@@ -12092,9 +12100,15 @@ select.edit-field-input {
 
   .live-channel-rail {
     position: static;
-    /* Keep long category lists directly scrollable on touch layouts instead of
-     * expanding the rail into a multi-thousand-pixel page section. */
-    max-height: min(70svh, 42rem);
+    /* Let the channel list flow into the page on touch layouts — a fixed-height
+     * inner scroll region here traps the page scroll. The list already caps its
+     * render (Show more), so a single natural page scroll is the better feel. */
+    max-height: none;
+    overflow: visible;
+  }
+
+  .live-channel-list {
+    overflow: visible;
   }
 
   .iptv-admin-layout {
