@@ -5702,32 +5702,35 @@ img {
   font-weight: 800;
 }
 
-.episode-card-actions {
+.episode-card-topline {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  margin-top: 0.6rem;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.episode-card-topline .eyebrow {
+  min-width: 0;
+  margin: 0;
 }
 
 .episode-download-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  min-height: 30px;
-  padding: 0 0.6rem;
-  border: 1px solid rgba(20, 184, 166, 0.35);
-  border-radius: 6px;
-  background: rgba(20, 184, 166, 0.1);
-  color: #99f6e4;
-  font-size: 0.75rem;
-  font-weight: 850;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
 }
 
 .episode-download-action:hover,
 .episode-download-action:focus-visible {
-  border-color: rgba(20, 184, 166, 0.62);
-  background: rgba(20, 184, 166, 0.18);
+  border-color: var(--line-strong);
+  background: var(--panel-strong);
   color: #fff;
   outline: none;
 }

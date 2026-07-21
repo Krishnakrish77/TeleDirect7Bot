@@ -620,14 +620,27 @@ function SeriesDetail({
                         {entry.rep.durationLabel && <span className="card-badge">{entry.rep.durationLabel}</span>}
                       </a>
                       <div>
-                        <p className="eyebrow">
-                          {entry.rep.episodeLabel || 'Episode'}
-                          {entry.rep.firstAired && (
-                            <time className="episode-airdate" dateTime={entry.rep.firstAired}>
-                              {entry.rep.firstAired.slice(0, 4)}
-                            </time>
+                        <div className="episode-card-topline">
+                          <p className="eyebrow">
+                            {entry.rep.episodeLabel || 'Episode'}
+                            {entry.rep.firstAired && (
+                              <time className="episode-airdate" dateTime={entry.rep.firstAired}>
+                                {entry.rep.firstAired.slice(0, 4)}
+                              </time>
+                            )}
+                          </p>
+                          {canDownload && entry.rep.downloadHref && (
+                            <a
+                              className="episode-download-action"
+                              href={entry.rep.downloadHref}
+                              download
+                              aria-label={`Download ${episodeDownloadTitle(entry.rep)}`}
+                              title={`Download ${episodeDownloadTitle(entry.rep)}`}
+                            >
+                              <DownloadIcon />
+                            </a>
                           )}
-                        </p>
+                        </div>
                         <h4><a href={entry.rep.playHref}>{entry.rep.title}</a></h4>
                         {entry.rep.episodeOverview && <p>{entry.rep.episodeOverview}</p>}
                         {entry.variants.length > 1 && (
@@ -635,19 +648,6 @@ function SeriesDetail({
                             {entry.variants.map((variant) => (
                               <a key={variant.key} href={variant.playHref}>{variant.quality || variant.durationLabel || 'Version'}</a>
                             ))}
-                          </div>
-                        )}
-                        {canDownload && entry.rep.downloadHref && (
-                          <div className="episode-card-actions">
-                            <a
-                              className="episode-download-action"
-                              href={entry.rep.downloadHref}
-                              download
-                              aria-label={`Download ${episodeDownloadTitle(entry.rep)}`}
-                            >
-                              <DownloadIcon />
-                              <span>Download</span>
-                            </a>
                           </div>
                         )}
                       </div>
