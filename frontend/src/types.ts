@@ -295,6 +295,11 @@ export interface WatchVideo {
   streamHref: string;
   watchKey: string;
   episodeLabel: string;
+  episodeTitle?: string;
+  episodeOverview?: string;
+  firstAired?: string;
+  episodeStillUrl?: string;
+  episodeExternalRating?: ExternalRating | null;
   classicHref: string;
   appHref: string;
   directSrc: string;

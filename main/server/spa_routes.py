@@ -2423,6 +2423,13 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
             item.quality or "",
         ] if part),
         "episodeLabel": _episode_label(item),
+        # Keep per-episode metadata distinct from the series-level `metadata`
+        # object so the watch screen can describe the episode being played.
+        "episodeTitle": item.episode_title or "",
+        "episodeOverview": item.episode_overview or "",
+        "firstAired": item.episode_air_date or "",
+        "episodeStillUrl": _tmdb_image(item.episode_still_path, "w780") or "",
+        "episodeExternalRating": _episode_external_rating(item),
         "classicHref": _watch_url(item),
         "appHref": _app_watch_url(item),
         "directSrc": _stream_url(item),

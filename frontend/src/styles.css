@@ -7652,6 +7652,18 @@ img {
   line-height: 1.16;
 }
 
+.video-info-series-context {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.video-info-series-context a {
+  color: #fed7aa;
+  font-weight: 800;
+}
+
 .video-info-overview {
   max-width: 78ch;
   margin: 0.65rem 0 0;

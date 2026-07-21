@@ -39,10 +39,12 @@ function isVideoChromeTarget(target: EventTarget | null): boolean {
 
 function VideoInfoSection({ video }: { video: WatchVideo }) {
   const meta = video.metadata;
+  const isEpisode = Boolean(video.episodeLabel);
   const genres = (video.genres.length ? video.genres : meta.genres).slice(0, 5);
-  const overview = (video.overview || meta.overview || '').trim();
+  const overview = (video.episodeOverview || video.overview || meta.overview || '').trim();
   const facts = uniqueMetadataParts([
     video.episodeLabel,
+    formatEpisodeAirDate(video.firstAired),
     video.year || meta.year,
     video.durationLabel,
     video.fileSizeLabel,
@@ -55,10 +57,14 @@ function VideoInfoSection({ video }: { video: WatchVideo }) {
       : [];
   const cast = meta.cast.slice(0, 6);
   const infoTitle = (meta.title || video.title).trim();
-  const kindLabel = video.episodeLabel || video.subtitle.toLowerCase().includes('s0')
+  const kindLabel = isEpisode || video.subtitle.toLowerCase().includes('s0')
     ? 'About this episode'
     : 'About this title';
-  const sectionTitle = infoTitle && infoTitle !== video.title ? infoTitle : 'Overview';
+  const sectionTitle = isEpisode
+    ? (video.episodeTitle && video.episodeTitle !== video.title ? video.episodeTitle : 'Episode details')
+    : infoTitle && infoTitle !== video.title ? infoTitle : 'Overview';
+  const series = isEpisode ? (video.episodeNavigator?.title || meta.title) : '';
+  const seriesHref = isEpisode ? video.episodeNavigator?.seriesHref : '';
 
   if (!overview && !facts.length && !genres.length && !directors.length && !cast.length && !meta.imdbHref) {
     return null;
@@ -69,6 +75,11 @@ function VideoInfoSection({ video }: { video: WatchVideo }) {
       <div className="video-info-copy">
         <p className="eyebrow">{kindLabel}</p>
         <h2 dir="auto">{sectionTitle}</h2>
+        {series && series !== sectionTitle && (
+          <p className="video-info-series-context">
+            From {seriesHref ? <a href={seriesHref} dir="auto">{series}</a> : <span dir="auto">{series}</span>}
+          </p>
+        )}
         {overview && <p className="video-info-overview">{overview}</p>}
         {(facts.length > 0 || genres.length > 0) && (
           <div className="video-info-chips" aria-label="Media details">
@@ -111,6 +122,15 @@ function VideoInfoSection({ video }: { video: WatchVideo }) {
       )}
     </section>
   );
+}
+
+function formatEpisodeAirDate(value?: string): string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return '';
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat(undefined, {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  }).format(date);
 }
 
 function nextEpisodeLabel(nextEpisode: NextEpisode): string {

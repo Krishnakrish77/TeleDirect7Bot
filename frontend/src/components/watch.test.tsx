@@ -102,6 +102,9 @@ function makeVideo(overrides: Partial<WatchVideo> = {}): WatchVideo {
     streamHref: '/stream/video-key',
     watchKey: 'video-key',
     episodeLabel: 'S01E01',
+    episodeTitle: 'Pilot',
+    episodeOverview: 'Episode overview',
+    firstAired: '2026-01-15',
     classicHref: '/watch/video-key',
     appHref: '/app/watch/video-key',
     directSrc: '/stream/video-key',
@@ -937,9 +940,11 @@ describe('WatchPage video player', () => {
     await screen.findByRole('heading', { name: 'Pilot' });
 
     const info = within(screen.getByLabelText('Movie and series information'));
-    expect(screen.getByRole('heading', { name: 'The Pilot' })).toBeTruthy();
+    expect(info.getByRole('heading', { name: 'Episode details' })).toBeTruthy();
     expect(info.getByText('Episode overview')).toBeTruthy();
     expect(info.getByText('S01E01')).toBeTruthy();
+    expect(info.getByText(/Jan.*2026|2026.*Jan/)).toBeTruthy();
+    expect(info.getByText(/From/).textContent).toContain('From The Pilot');
     expect(info.getByText('Drama')).toBeTruthy();
     expect(info.getByRole('link', { name: 'Jane Director' }).getAttribute('href')).toBe('/app/person/jane-director');
     expect(info.getByRole('link', { name: 'Lead Actor' }).getAttribute('href')).toBe('/app/person/lead-actor');
