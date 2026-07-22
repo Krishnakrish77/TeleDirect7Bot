@@ -26,6 +26,7 @@ import os
 import random
 import re
 import time
+import unicodedata
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
@@ -108,6 +109,17 @@ _group_enrich_locks: dict[tuple[str, str], asyncio.Lock] = {}
 _group_art_tasks: dict[tuple[str, str], asyncio.Task] = {}
 _art_recovery_negative_until: dict[tuple[str, str], float] = {}
 _ART_RECOVERY_NEGATIVE_TTL = 60 * 60 * 6
+
+# Search is deliberately in-process: at the current catalogue size it avoids
+# an operational dependency while keeping type-ahead off the O(items × fuzzy)
+# path. Mutations mark it stale; the next search rebuilds it synchronously
+# before serving results.
+_search_index: dict[str, set[int]] = {}
+_search_docs: dict[int, dict[str, object]] = {}
+_search_title_tokens: set[str] = set()
+_search_index_stale = True
+_SEARCH_TOKEN_RE = re.compile(r"[\w]+", re.UNICODE)
+_SEARCH_STOP_WORDS = frozenset({"a", "an", "and", "at", "for", "from", "in", "of", "on", "the", "to", "with"})
 
 # --- Durable store (Mongo when configured) ---------------------------------
 # When ``STORE_BACKEND=mongo``, every mutation also writes-through to
@@ -924,7 +936,14 @@ def _invalidate_hub_caches() -> None:
         pass
 
 
+def _invalidate_search_index() -> None:
+    """Mark the derived index stale after any catalogue mutation."""
+    global _search_index_stale
+    _search_index_stale = True
+
+
 def _persist_unlocked() -> None:
+    _invalidate_search_index()
     _invalidate_hub_caches()
     # When MongoDB is the durable store every mutation is already written
     # through there. Writing to /tmp JSON is redundant — Koyeb wipes /tmp
@@ -1368,99 +1387,174 @@ _SORT_KEYS = {
 }
 
 
-def _haystack(item: HubItem) -> str:
-    """Searchable text pulled from every field a user might query against.
+def _normalise_search_text(value: str) -> str:
+    """Case-fold, remove diacritics, and make punctuation search-neutral."""
+    decomposed = unicodedata.normalize("NFKD", value or "")
+    plain = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(_SEARCH_TOKEN_RE.findall(plain.casefold()))
 
-    Lowercased once at search time — cheap on a single-thousand-item
-    catalogue and avoids paying for it per substring comparison.
-    """
-    episode_label = ""
+
+def _episode_search_aliases(item: HubItem) -> str:
     if item.season is not None and item.episode is not None:
-        episode_label = f"s{item.season:02d}e{item.episode:02d}"
-    elif item.episode is not None:
-        episode_label = f"episode {item.episode}"
-    return " ".join([
-        item.title.lower(),
-        item.series_title.lower(),
-        item.description.lower(),
-        item.overview.lower(),
-        item.episode_title.lower(),
-        item.episode_overview.lower(),
-        item.file_name.lower(),
-        item.imdb_id.lower(),
-        str(item.year or ""),
-        item.quality.lower(),
-        episode_label,
-        " ".join(t.lower() for t in item.tags),
-        " ".join(g.lower() for g in item.tmdb_genres),
-        # Cast + director — lets users find titles by actor or director name
-        " ".join(a.lower() for a in item.cast),
-        item.director.lower(),
-        # Music fields — artist and album so music is searchable by name
-        (item.artist or "").lower(),
-        (item.album_title or "").lower(),
-    ])
+        season, episode = int(item.season), int(item.episode)
+        return " ".join((
+            f"s{season:02d}e{episode:02d}", f"s{season}e{episode}",
+            f"{season}x{episode:02d}", f"{season}x{episode}",
+            f"season {season} episode {episode}",
+        ))
+    if item.episode is not None:
+        return f"episode {int(item.episode)} ep {int(item.episode)}"
+    return ""
 
 
-def _fuzzy_score(q: str, item: HubItem) -> float:
-    """Word-level fuzzy ratio against the item's most-display-relevant
-    title fields. Returns 0 if no token clears the 0.75 threshold so
-    misspellings stay forgiving but unrelated titles don't leak in.
-    """
-    import difflib
-    candidates = [item.title.lower(), item.series_title.lower()]
-    best = 0.0
-    for cand in candidates:
-        if not cand:
+def _search_fields(item: HubItem) -> dict[str, str]:
+    """Normalized searchable fields. Keep field boundaries for ranking."""
+    return {
+        "title": _normalise_search_text(item.title),
+        "series": _normalise_search_text(item.series_title),
+        "artist": _normalise_search_text(item.artist),
+        "album": _normalise_search_text(item.album_title),
+        "cast": _normalise_search_text(" ".join(item.cast)),
+        "director": _normalise_search_text(item.director),
+        "genres": _normalise_search_text(" ".join(item.tmdb_genres)),
+        "keywords": _normalise_search_text(" ".join(item.tmdb_keywords)),
+        "episode": _normalise_search_text(" ".join((
+            item.episode_title, item.episode_overview, _episode_search_aliases(item),
+        ))),
+        "metadata": _normalise_search_text(" ".join((
+            item.description, item.overview, item.file_name, item.imdb_id,
+            str(item.year or ""), item.quality, " ".join(item.tags),
+        ))),
+    }
+
+
+def _rebuild_search_index() -> None:
+    global _search_index, _search_docs, _search_title_tokens, _search_index_stale
+    postings: dict[str, set[int]] = {}
+    docs: dict[int, dict[str, object]] = {}
+    title_tokens: set[str] = set()
+    for item in _items.values():
+        if item.hidden:
             continue
-        # Whole-string ratio first — catches "samsram" vs "samsaram".
-        score = difflib.SequenceMatcher(None, q, cand).ratio()
-        if score > best:
-            best = score
-        # Then token-level — catches "minsaram" in "samsaram adhu minsaram".
-        for word in cand.split():
-            if len(word) < 3:
-                continue
-            score = difflib.SequenceMatcher(None, q, word).ratio()
-            if score > best:
-                best = score
-    return best if best >= 0.75 else 0.0
+        fields = _search_fields(item)
+        token_sets = {name: set(text.split()) for name, text in fields.items()}
+        for tokens in token_sets.values():
+            for token in tokens:
+                postings.setdefault(token, set()).add(item.message_id)
+        title_tokens.update(token_sets["title"])
+        title_tokens.update(token_sets["series"])
+        docs[item.message_id] = {"fields": fields, "tokens": token_sets}
+    _search_index = postings
+    _search_docs = docs
+    _search_title_tokens = title_tokens
+    _search_index_stale = False
+
+
+def _ensure_search_index() -> None:
+    if _search_index_stale:
+        _rebuild_search_index()
+
+
+def _query_tokens(q: str) -> list[str]:
+    normalized = _normalise_search_text((q or "").lstrip("#"))
+    # A small, deterministic synonym layer handles common catalogue wording
+    # without turning search into an opaque semantic system.
+    normalized = re.sub(r"\bsci fi\b|\bscifi\b", "science fiction", normalized)
+    tokens = normalized.split()
+    meaningful = [token for token in tokens if token not in _SEARCH_STOP_WORDS]
+    return meaningful or tokens
+
+
+def _token_matches(token: str) -> set[int]:
+    """Exact-token lookup first, prefix lookup for type-ahead second."""
+    exact = _search_index.get(token)
+    if exact:
+        return set(exact)
+    if len(token) < 2:
+        return set()
+    matches: set[int] = set()
+    # Search over vocabulary rather than every catalogue record. Bound it so
+    # pathological one-character-ish prefixes cannot produce unbounded work.
+    for indexed_token, ids in _search_index.items():
+        if indexed_token.startswith(token):
+            matches.update(ids)
+            if len(matches) >= 160:
+                break
+    return matches
+
+
+def _fuzzy_candidates(tokens: list[str]) -> set[int]:
+    """Typo recovery over title vocabulary only, never every document."""
+    import difflib
+    candidates: set[int] = set()
+    for token in tokens:
+        if len(token) < 3:
+            continue
+        close = difflib.get_close_matches(token, _search_title_tokens, n=8, cutoff=0.78)
+        for match in close:
+            candidates.update(_search_index.get(match, set()))
+    return candidates
+
+
+def _search_candidate_ids(q: str) -> set[int]:
+    _ensure_search_index()
+    tokens = _query_tokens(q)
+    if not tokens:
+        return set()
+    groups = [_token_matches(token) for token in tokens]
+    groups = [group for group in groups if group]
+    if len(groups) == len(tokens):
+        return set.intersection(*groups) if groups else set()
+    # No exact AND result: retain partial matches, then allow typo recovery for
+    # title terms. Ranking strongly favours complete matches below.
+    candidates = set().union(*groups) if groups else set()
+    candidates.update(_fuzzy_candidates(tokens))
+    return candidates
+
+
+_FIELD_WEIGHTS = {
+    "title": 6.0, "series": 6.0, "artist": 5.5, "album": 5.0,
+    "cast": 4.2, "director": 3.8, "genres": 3.2, "keywords": 1.0,
+    "episode": 2.8, "metadata": 1.2,
+}
 
 
 def _search_score(q: str, item: HubItem) -> float:
-    """Return a relevance score for a user search query.
-
-    Scores are intentionally coarse: exact/title matches should outrank
-    artist/album matches, which should outrank broad metadata hits.
-    """
-    ql = (q or "").strip().lower().lstrip("#")
-    if not ql:
+    """Field-weighted, multi-term relevance score backed by the index."""
+    _ensure_search_index()
+    normalized = _normalise_search_text((q or "").lstrip("#"))
+    tokens = _query_tokens(q)
+    if not normalized or not tokens:
         return 0.0
-    title = item.title.lower()
-    series_title = item.series_title.lower()
-    if ql == title or ql == series_title:
-        return 1.2
-    if ql in title or ql in series_title:
-        return 1.0
-    if item.media_kind == "audio":
-        artist = (item.artist or "").lower()
-        album = (item.album_title or "").lower()
-        if ql == artist or ql == album:
-            return 0.95
-        if ql in artist or ql in album:
-            return 0.9
-    # Keywords are intentionally lower-weighted than all visible metadata:
-    # they improve recall without a generic TMDB tag displacing a title,
-    # genre, cast, or synopsis match.
-    if ql in " ".join(keyword.lower() for keyword in (item.tmdb_keywords or [])):
-        return 0.42
-    if ql in _haystack(item):
-        return 0.6
-    if len(ql) >= 3:
-        fuzzy = _fuzzy_score(ql, item)
-        if fuzzy > 0:
-            return fuzzy * 0.8
-    return 0.0
+    doc = _search_docs.get(item.message_id)
+    if doc is None:
+        return 0.0
+    fields: dict[str, str] = doc["fields"]  # type: ignore[assignment]
+    token_sets: dict[str, set[str]] = doc["tokens"]  # type: ignore[assignment]
+    title = fields["title"]
+    series = fields["series"]
+    score = 0.0
+    if normalized == title or normalized == series:
+        score += 30.0
+    elif normalized in title or normalized in series:
+        score += 18.0
+
+    matched = 0
+    for token in tokens:
+        best = 0.0
+        for field, field_tokens in token_sets.items():
+            if token in field_tokens:
+                best = max(best, _FIELD_WEIGHTS[field])
+            elif len(token) >= 2 and any(indexed.startswith(token) for indexed in field_tokens):
+                best = max(best, _FIELD_WEIGHTS[field] * 0.78)
+        if best:
+            matched += 1
+            score += best
+    if matched == len(tokens):
+        score += len(tokens) * 2.5  # reward complete multi-term matches
+    elif len(tokens) > 1:
+        score -= (len(tokens) - matched) * 4.0
+    return max(0.0, score)
 
 
 def _matches(item: HubItem, q: str, year: Optional[int], quality: str,
@@ -1494,12 +1588,17 @@ def query(
     """Unified filter + sort + paginate over the in-process catalogue."""
     q = (q or "").strip()
     key_fn, reverse = _SORT_KEYS.get(sort, _SORT_KEYS["newest"])
+    candidate_ids = _search_candidate_ids(q) if q else None
     items_all = sorted(_items.values(), key=key_fn, reverse=reverse)
 
     # Exclude hidden items from all public library views
     items_all = [it for it in items_all if not it.hidden]
-    items_all = [it for it in items_all if _matches(it, q, year, quality, tag, genre)]
-    if q and sort == "newest":
+    items_all = [
+        it for it in items_all
+        if (candidate_ids is None or it.message_id in candidate_ids)
+        and _matches(it, q, year, quality, tag, genre)
+    ]
+    if q:
         items_all.sort(
             key=lambda item: (-_search_score(q, item), -item.message_id)
         )
@@ -1837,15 +1936,17 @@ def query_grouped(
     can build a Load More button without an extra query.
     """
     q = (q or "").strip()
+    candidate_ids = _search_candidate_ids(q) if q else None
     items_all = [
         it for it in _items.values()
         if not it.hidden
+        and (candidate_ids is None or it.message_id in candidate_ids)
         and _matches(it, q, year, quality, tag, genre)
     ]
     search_scores = {
         it.message_id: _search_score(q, it)
         for it in items_all
-    } if q and sort == "newest" else {}
+    } if q else {}
 
     series_groups: dict = {}
     movie_groups: dict = {}
@@ -1900,7 +2001,7 @@ def query_grouped(
         combined = sorted(
             combined,
             key=(
-                (lambda card: _grouped_search_key(card, search_scores))
+                (lambda card: _grouped_search_key(card, search_scores, sort))
                 if search_scores else _grouped_sort_key(sort)
             ),
         )
@@ -1912,7 +2013,7 @@ def query_grouped(
     combined = sorted(
         combined,
         key=(
-            (lambda card: _grouped_search_key(card, search_scores))
+            (lambda card: _grouped_search_key(card, search_scores, sort))
             if search_scores else _grouped_sort_key(sort)
         ),
     )
@@ -1961,7 +2062,7 @@ def _grouped_sort_key(sort: str):
     return lambda card: -_card_message_id(card)
 
 
-def _grouped_search_key(card, scores: dict[int, float]):
+def _grouped_search_key(card, scores: dict[int, float], sort: str = "newest"):
     if isinstance(card, SeriesGroup):
         score = max(
             (scores.get(e.message_id, 0.0) for e in episodes_for_series(card.series_key)),
@@ -1979,7 +2080,9 @@ def _grouped_search_key(card, scores: dict[int, float]):
         )
     else:
         score = scores.get(card.message_id, 0.0)
-    return (-score, -_card_message_id(card))
+    # Relevance remains primary for every selected sort; the requested sort
+    # only breaks ties so a query never turns into an unrelated browse order.
+    return (-score, _grouped_sort_key(sort)(card))
 
 
 def episodes_for_series(series_key: str) -> List[HubItem]:
@@ -2332,13 +2435,16 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
     """
     if not q or len(q.strip()) < 1:
         return []
-    ql = q.strip().lower().lstrip("#")
+    candidate_ids = _search_candidate_ids(q)
+    if not candidate_ids:
+        return []
 
     scored: List = []
-    for it in _items.values():
-        if it.hidden:
+    for message_id in candidate_ids:
+        it = _items.get(message_id)
+        if it is None or it.hidden:
             continue
-        score = _search_score(ql, it)
+        score = _search_score(q, it)
         if score > 0:
             scored.append((score, it))
 

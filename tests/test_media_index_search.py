@@ -34,10 +34,12 @@ class MediaIndexSearchTests(unittest.TestCase):
     def setUp(self):
         self._items = dict(media_index._items)
         media_index._items.clear()
+        media_index._invalidate_search_index()
 
     def tearDown(self):
         media_index._items.clear()
         media_index._items.update(self._items)
+        media_index._invalidate_search_index()
 
     def test_default_search_prefers_exact_title_over_newer_metadata_hit(self):
         exact = video_item(101, title="Castle")
@@ -52,6 +54,17 @@ class MediaIndexSearchTests(unittest.TestCase):
         })
 
         cards, total = media_index.query_grouped(q="Castle", sort="newest", limit=10)
+
+        self.assertEqual(total, 2)
+        self.assertEqual(cards[0].message_id, exact.message_id)
+
+    def test_relevance_stays_primary_when_a_sort_is_selected(self):
+        exact = video_item(101, title="Castle")
+        weak_old = video_item(1, title="Unrelated", description="Castle archive")
+        media_index._items.update({exact.message_id: exact, weak_old.message_id: weak_old})
+        media_index._invalidate_search_index()
+
+        cards, total = media_index.query_grouped(q="Castle", sort="oldest", limit=10)
 
         self.assertEqual(total, 2)
         self.assertEqual(cards[0].message_id, exact.message_id)
@@ -140,6 +153,39 @@ class MediaIndexSearchTests(unittest.TestCase):
         self.assertEqual(quality_cards[0].series_key, "castle")
         self.assertEqual(year_cards[0].series_key, "castle")
         self.assertEqual(episode_cards[0].series_key, "castle")
+
+    def test_multiterm_search_matches_across_title_cast_and_genre(self):
+        target = video_item(
+            360,
+            title="Edge of Tomorrow",
+            cast=["Tom Cruise"],
+            tmdb_genres=["Science Fiction", "Action"],
+        )
+        unrelated = video_item(361, title="Tom and Jerry", tmdb_genres=["Comedy"])
+        media_index._items.update({target.message_id: target, unrelated.message_id: unrelated})
+        media_index._invalidate_search_index()
+
+        cards, total = media_index.query_grouped(q="Tom sci-fi", limit=10)
+
+        self.assertEqual(total, 1)
+        self.assertEqual(cards[0].message_id, target.message_id)
+
+    def test_episode_aliases_and_diacritics_are_normalized(self):
+        episode = video_item(
+            370,
+            title="Pokémon Horizons",
+            series_key="pokemon-horizons",
+            series_title="Pokémon Horizons",
+            season=2,
+            episode=3,
+        )
+        media_index._items[episode.message_id] = episode
+        media_index._invalidate_search_index()
+
+        for query in ("pokemon", "2x03", "Season 2 Episode 3"):
+            cards, total = media_index.query_grouped(q=query, limit=10)
+            self.assertEqual(total, 1, query)
+            self.assertEqual(cards[0].series_key, "pokemon-horizons", query)
 
     def test_suggestions_borrow_group_tmdb_poster(self):
         plain_newer = video_item(
