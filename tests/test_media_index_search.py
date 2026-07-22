@@ -187,6 +187,38 @@ class MediaIndexSearchTests(unittest.TestCase):
             self.assertEqual(total, 1, query)
             self.assertEqual(cards[0].series_key, "pokemon-horizons", query)
 
+    def test_search_splits_release_name_underscores_and_preserves_tamil(self):
+        release = video_item(
+            380,
+            title="Unrelated",
+            file_name="One_Piece_S02E01.mkv",
+            description="தமிழ் திரைப்படம்",
+        )
+        media_index._items[release.message_id] = release
+        media_index._invalidate_search_index()
+
+        for query in ("Piece", "தமிழ்"):
+            cards, total = media_index.query_grouped(q=query, limit=10)
+            self.assertEqual(total, 1, query)
+            self.assertEqual(cards[0].message_id, release.message_id, query)
+
+    def test_one_character_typeahead_is_bounded_but_usable(self):
+        item = video_item(390, title="One Piece")
+        media_index._items[item.message_id] = item
+        media_index._invalidate_search_index()
+
+        self.assertEqual([entry["message_id"] for entry in media_index.suggest("O", limit=5)], [390])
+
+    def test_raw_query_uses_requested_sort_to_break_relevance_ties(self):
+        zulu = video_item(401, title="Zulu", description="Castle")
+        alpha = video_item(402, title="Alpha", description="Castle")
+        media_index._items.update({zulu.message_id: zulu, alpha.message_id: alpha})
+        media_index._invalidate_search_index()
+
+        items, _ = media_index.query(q="Castle", sort="title_az", limit=10)
+
+        self.assertEqual([item.message_id for item in items], [402, 401])
+
     def test_suggestions_borrow_group_tmdb_poster(self):
         plain_newer = video_item(
             402,

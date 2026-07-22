@@ -63,6 +63,18 @@ class AiRecGroundingTest(unittest.TestCase):
         filtered = ai_rec._exclude_tmdb_payloads(payloads, {(10, "movie")})
         self.assertEqual([payload["href"] for payload in filtered], ["/kept", "/music"])
 
+    def test_explicit_query_candidates_survive_candidate_pool_shuffle(self):
+        query_matches = [_card(f"/query-{index}") for index in range(30)]
+        other_matches = [_card(f"/other-{index}") for index in range(60)]
+
+        selected = ai_rec._select_candidate_payloads(
+            query_matches + other_matches,
+            {item["href"] for item in query_matches},
+        )
+
+        self.assertEqual([item["href"] for item in selected[:24]], [f"/query-{index}" for index in range(24)])
+        self.assertEqual(len(selected), ai_rec._MAX_CANDIDATES)
+
     def test_spa_routes_submodule_not_shadowed(self):
         # ai_rec lazily does `from main.server import spa_routes` and needs the
         # module's _card, not the RouteTableDef the __init__ aliases export.

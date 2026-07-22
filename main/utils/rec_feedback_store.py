@@ -7,10 +7,13 @@ their own library. Raw events expire automatically after 180 days.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 _TTL_SECONDS = 180 * 24 * 3600
+_MAX_EVENTS_PER_MINUTE = 120
 _indexed = False
 
 
@@ -36,6 +39,13 @@ async def _ensure_indexes() -> None:
         collection = db["recommendation_feedback"]
         await collection.create_index([("user_id", 1), ("created_at", -1)])
         await collection.create_index([("user_id", 1), ("action", 1), ("created_at", -1)])
+        # Existing pre-idempotency documents have no event_key. A partial index
+        # keeps this migration safe while enforcing uniqueness for new writes.
+        await collection.create_index(
+            [("user_id", 1), ("event_key", 1)],
+            unique=True,
+            partialFilterExpression={"event_key": {"$type": "string"}},
+        )
         await collection.create_index("created_at", expireAfterSeconds=_TTL_SECONDS)
         _indexed = True
     except Exception:
@@ -43,7 +53,7 @@ async def _ensure_indexes() -> None:
 
 
 async def record_many(user_id: int, events: list[dict]) -> int:
-    """Persist validated feedback events, returning the accepted count."""
+    """Persist bounded, idempotent feedback events and return new-event count."""
     if not events:
         return 0
     await _ensure_indexes()
@@ -51,10 +61,30 @@ async def record_many(user_id: int, events: list[dict]) -> int:
     if db is None:
         return 0
     now = datetime.now(timezone.utc)
-    docs = [{**event, "user_id": user_id, "created_at": now} for event in events]
+    collection = db["recommendation_feedback"]
     try:
-        result = await db["recommendation_feedback"].insert_many(docs, ordered=False)
-        return len(result.inserted_ids)
+        recent = await collection.count_documents({
+            "user_id": user_id,
+            "created_at": {"$gte": now - timedelta(minutes=1)},
+        })
+        remaining = max(0, _MAX_EVENTS_PER_MINUTE - recent)
+        if not remaining:
+            return 0
+        accepted = 0
+        for event in events[:remaining]:
+            # Position is presentation data, not a distinct engagement. It
+            # changes when cards are dismissed and would defeat deduplication.
+            fingerprint = {key: value for key, value in event.items() if key != "position"}
+            canonical = json.dumps(fingerprint, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+            event_key = hashlib.sha256(f"{user_id}:{canonical}".encode()).hexdigest()
+            result = await collection.update_one(
+                {"user_id": user_id, "event_key": event_key},
+                {"$setOnInsert": {**event, "user_id": user_id, "event_key": event_key, "created_at": now}},
+                upsert=True,
+            )
+            if result.upserted_id is not None:
+                accepted += 1
+        return accepted
     except Exception:
         logging.exception("rec_feedback_store: record_many failed uid=%d", user_id)
         return 0

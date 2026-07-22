@@ -118,7 +118,6 @@ _search_index: dict[str, set[int]] = {}
 _search_docs: dict[int, dict[str, object]] = {}
 _search_title_tokens: set[str] = set()
 _search_index_stale = True
-_SEARCH_TOKEN_RE = re.compile(r"[\w]+", re.UNICODE)
 _SEARCH_STOP_WORDS = frozenset({"a", "an", "and", "at", "for", "from", "in", "of", "on", "the", "to", "with"})
 
 # --- Durable store (Mongo when configured) ---------------------------------
@@ -1388,10 +1387,39 @@ _SORT_KEYS = {
 
 
 def _normalise_search_text(value: str) -> str:
-    """Case-fold, remove diacritics, and make punctuation search-neutral."""
-    decomposed = unicodedata.normalize("NFKD", value or "")
-    plain = "".join(char for char in decomposed if not unicodedata.combining(char))
-    return " ".join(_SEARCH_TOKEN_RE.findall(plain.casefold()))
+    """Case-fold and tokenize without corrupting non-Latin scripts.
+
+    Release names commonly use underscores, so those must behave as spaces.
+    Accent-folded aliases are added only for all-Latin tokens (``Pokémon`` →
+    ``pokemon``).  Removing combining marks globally corrupts Indic scripts,
+    where marks are an essential part of the spelling.
+    """
+    text = unicodedata.normalize("NFKC", value or "").casefold()
+    tokens: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if not current:
+            return
+        token = "".join(current)
+        tokens.append(token)
+        decomposed = unicodedata.normalize("NFKD", token)
+        letters = [char for char in decomposed if unicodedata.category(char).startswith("L")]
+        if letters and all("LATIN" in unicodedata.name(char, "") for char in letters):
+            folded = "".join(char for char in decomposed if not unicodedata.combining(char))
+            if folded and folded != token:
+                tokens.append(folded)
+        current.clear()
+
+    for char in text:
+        # Keep marks attached to their base character. Underscores and all
+        # other punctuation are deliberate token boundaries.
+        if unicodedata.category(char)[0] in {"L", "M", "N"}:
+            current.append(char)
+        else:
+            flush()
+    flush()
+    return " ".join(tokens)
 
 
 def _episode_search_aliases(item: HubItem) -> str:
@@ -1470,11 +1498,9 @@ def _token_matches(token: str) -> set[int]:
     exact = _search_index.get(token)
     if exact:
         return set(exact)
-    if len(token) < 2:
-        return set()
     matches: set[int] = set()
     # Search over vocabulary rather than every catalogue record. Bound it so
-    # pathological one-character-ish prefixes cannot produce unbounded work.
+    # even a one-character type-ahead prefix cannot produce unbounded work.
     for indexed_token, ids in _search_index.items():
         if indexed_token.startswith(token):
             matches.update(ids)
@@ -1599,9 +1625,9 @@ def query(
         and _matches(it, q, year, quality, tag, genre)
     ]
     if q:
-        items_all.sort(
-            key=lambda item: (-_search_score(q, item), -item.message_id)
-        )
+        # ``items_all`` is already in the requested browse order. A stable
+        # relevance sort preserves it for equal scores, matching query_grouped.
+        items_all.sort(key=lambda item: -_search_score(q, item))
 
     # Pagination cursor is only meaningful for message_id-ordered sorts.
     if before_id and sort in ("newest",):

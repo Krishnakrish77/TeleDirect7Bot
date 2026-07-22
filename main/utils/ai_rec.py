@@ -26,6 +26,7 @@ from main.utils import (
 )
 
 _MAX_CANDIDATES = 50
+_QUERY_CANDIDATE_RESERVE = 24
 _QUERY_TERM_LIMIT = 5
 _QUERY_STOP_WORDS = frozenset({
     "about", "also", "and", "any", "are", "best", "can", "could", "find",
@@ -89,6 +90,17 @@ def _exclude_tmdb_payloads(payloads: list, excluded: set) -> list:
             continue
         out.append(payload)
     return out
+
+
+def _select_candidate_payloads(payloads: list, query_hrefs: set[str]) -> list:
+    """Bound the prompt while retaining ranked matches for an explicit ask."""
+    query_matches = [payload for payload in payloads if payload.get("href") in query_hrefs]
+    other_matches = [payload for payload in payloads if payload.get("href") not in query_hrefs]
+    # Query matches already come from catalogue relevance ordering. Do not let
+    # diversity shuffling remove the title or genre the user explicitly named.
+    retained_query = query_matches[:_QUERY_CANDIDATE_RESERVE]
+    random.shuffle(other_matches)
+    return (retained_query + other_matches)[:_MAX_CANDIDATES]
 
 
 def _index_candidates(payloads: list) -> tuple[dict, list]:
@@ -238,7 +250,6 @@ async def _gather_candidates(
     profile: dict,
     stats: dict,
     dismissed,
-    query: str = "",
 ) -> list:
     """Assemble a diverse pool of catalogue objects: TMDB-based recs (comfort),
     fresh titles in top genres (discovery), top-artist tracks + fresh music, and
@@ -285,18 +296,18 @@ async def _gather_candidates(
     except Exception:
         pass
 
-    # A chat request should influence *retrieval*, not just Gemini's final
-    # instructions. The library search index covers title, genre, people,
-    # artist/album, and enriched TMDB keywords; individual terms keep natural
-    # language asks such as "something funny with heists" useful.
-    if query:
-        for term in [query, *_query_terms(query)]:
-            try:
-                matches, _ = media_index.query_grouped(q=term, sort="newest", limit=8)
-                objs += matches
-            except Exception:
-                logging.debug("ai_rec: query candidate retrieval failed", exc_info=True)
+    return objs
 
+
+async def _gather_query_candidates(query: str) -> list:
+    """Retrieve ranked catalogue matches for a user's explicit AI request."""
+    objs: list = []
+    for term in [query, *_query_terms(query)]:
+        try:
+            matches, _ = media_index.query_grouped(q=term, sort="newest", limit=8)
+            objs += matches
+        except Exception:
+            logging.debug("ai_rec: query candidate retrieval failed", exc_info=True)
     return objs
 
 
@@ -369,13 +380,17 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
         return await _finish({"items": await _trending_items(limit), "message": "", "coldStart": True})
 
     seen_keys = {e.get("cw_key") for e in history} | set(cw_map.keys())
-    objs = await _gather_candidates(user_id, profile, stats, dismissed, query)
+    objs = await _gather_candidates(user_id, profile, stats, dismissed)
+    query_objs = await _gather_query_candidates(query) if query else []
     art_cache: dict = {}
-    payloads = _dedup_payloads([_spa._card(o, art_cache=art_cache) for o in objs], seen_keys)
+    query_payloads = [_spa._card(obj, art_cache=art_cache) for obj in query_objs]
+    query_hrefs = {payload.get("href") for payload in query_payloads if payload.get("href")}
+    payloads = _dedup_payloads(
+        query_payloads + [_spa._card(obj, art_cache=art_cache) for obj in objs], seen_keys,
+    )
     excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
     payloads = _exclude_tmdb_payloads(payloads, excluded)
-    random.shuffle(payloads)  # reduce the LLM's position bias
-    payloads = payloads[:_MAX_CANDIDATES]
+    payloads = _select_candidate_payloads(payloads, query_hrefs)
 
     if len(payloads) < 6:
         return await _finish({"items": await _trending_items(limit), "message": "", "coldStart": True})

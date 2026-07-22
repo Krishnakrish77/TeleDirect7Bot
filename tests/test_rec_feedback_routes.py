@@ -2,6 +2,7 @@ import importlib
 import json
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 
@@ -11,6 +12,7 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 rec_feedback_routes = importlib.import_module("main.server.rec_feedback_routes")
+rec_feedback_store = importlib.import_module("main.utils.rec_feedback_store")
 
 
 class _Request:
@@ -48,3 +50,33 @@ class RecommendationFeedbackRoutesTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(rec_feedback_routes, "get_user", return_value=None):
             response = await rec_feedback_routes.api_recommendation_events(_Request({"events": []}))
         self.assertEqual(response.status, 401)
+
+
+class RecommendationFeedbackStoreTest(unittest.IsolatedAsyncioTestCase):
+    async def test_duplicate_event_with_a_changed_position_is_recorded_once(self):
+        class Collection:
+            def __init__(self):
+                self.keys = set()
+
+            async def count_documents(self, _query):
+                return 0
+
+            async def update_one(self, query, _update, *, upsert):
+                if not upsert:
+                    raise AssertionError("feedback writes must be upserts")
+                key = (query["user_id"], query["event_key"])
+                if key in self.keys:
+                    return SimpleNamespace(upserted_id=None)
+                self.keys.add(key)
+                return SimpleNamespace(upserted_id=key)
+
+        collection = Collection()
+        event = {"action": "impression", "source": "home", "item_id": "movie:film", "position": 0}
+        moved_event = {**event, "position": 4}
+        with (
+            patch.object(rec_feedback_store, "_ensure_indexes", new=AsyncMock()),
+            patch.object(rec_feedback_store, "_get_db", return_value={"recommendation_feedback": collection}),
+        ):
+            accepted = await rec_feedback_store.record_many(7, [event, moved_event])
+
+        self.assertEqual(accepted, 1)
