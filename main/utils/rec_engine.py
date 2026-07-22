@@ -28,6 +28,7 @@ from main.utils import (
     cw_store,
     dismissed_store,
     media_index,
+    rec_feedback_store,
     ratings_store,
     rec_store,
     tmdb,
@@ -89,6 +90,11 @@ def _item_for_cw_key(cw_key: str):
     return media_index.get_item(int(match.group(2)))
 
 
+def _item_for_tmdb_key(tmdb_id: int, kind: str):
+    card = media_index.card_for_tmdb_id(tmdb_id, kind)
+    return _card_item(card) if card is not None else None
+
+
 def _genre_link(genre: str) -> str:
     from urllib.parse import urlencode
     return "/?" + urlencode({"genre": genre})
@@ -96,11 +102,12 @@ def _genre_link(genre: str) -> str:
 
 async def _collect_signal_profile(user_id: int) -> dict:
     """Collect lightweight local intent signals for ranking and shelves."""
-    history, watchlist_ids, ratings, continue_map = await asyncio.gather(
+    history, watchlist_ids, ratings, continue_map, feedback = await asyncio.gather(
         wh_store.get_recent(user_id, limit=80),
         watchlist_store.get_ids(user_id),
         ratings_store.get_user_ratings(user_id, limit=200),
         cw_store.get_all(user_id),
+        rec_feedback_store.get_recent_opens(user_id, limit=80),
     )
 
     seeds: List[Tuple[int, str]] = []
@@ -170,6 +177,23 @@ async def _collect_signal_profile(user_id: int) -> dict:
         elif entry.get("rating") == "down":
             for genre in getattr(item, "tmdb_genres", None) or []:
                 negative_genres[genre] += 3.0
+
+    # Recommendation engagements are a deliberately gentle, short-lived
+    # signal. A card open/play says "this was interesting" but must never
+    # outweigh an explicit rating or completed watch.
+    feedback_weights = {"open": 0.35, "play": 0.8, "save": 0.2}
+    for index, entry in enumerate(feedback):
+        try:
+            tmdb_id = int(entry.get("tmdb_id") or 0)
+        except (TypeError, ValueError):
+            tmdb_id = 0
+        kind = str(entry.get("tmdb_kind") or "")
+        item = _item_for_tmdb_key(tmdb_id, kind) if tmdb_id and kind else None
+        if item is None:
+            continue
+        weight = feedback_weights.get(str(entry.get("action") or ""), 0)
+        if weight:
+            add_seed(item, weight * max(0.2, 1.0 - index * 0.05), exclude=False)
 
     return {
         # TMDB calls are deliberately capped.  Select the strongest distinct

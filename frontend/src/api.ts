@@ -142,6 +142,35 @@ export async function askAiRecommendations(query: string, signal?: AbortSignal):
   });
 }
 
+export type RecommendationFeedbackEvent = {
+  action: 'impression' | 'open' | 'play' | 'save' | 'unsave' | 'dismiss';
+  source: 'home' | 'ai';
+  itemId: string;
+  tmdbId?: number | null;
+  tmdbKind?: 'movie' | 'tv' | '';
+  shelf?: string;
+  position?: number;
+};
+
+// Best-effort by design: feedback must never delay navigation or make a card
+// interaction feel broken. sendBeacon survives a click-to-navigate; fetch is
+// the fallback for browsers that do not support it.
+export function trackRecommendationEvents(events: RecommendationFeedbackEvent[]): void {
+  if (!events.length) return;
+  const body = JSON.stringify({ events: events.slice(0, 40) });
+  try {
+    if (navigator.sendBeacon?.('/api/app/recommendations/events', new Blob([body], { type: 'application/json' }))) return;
+  } catch (_) {
+    // Fall through to fetch.
+  }
+  void request<{ ok: boolean }>('/api/app/recommendations/events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
 export async function fetchWatch(key: string, signal?: AbortSignal): Promise<WatchResponse> {
   return request<WatchResponse>(`/api/watch/${encodeURIComponent(key)}`, { signal });
 }

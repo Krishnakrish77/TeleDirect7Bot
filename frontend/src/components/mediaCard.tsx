@@ -4,6 +4,7 @@ import type { HubCard, RatingCounts, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
 import { isLocallyWatched } from '../utils/localWatched';
 import { joinMetadata } from '../utils/metadata';
+import { trackRecommendationEvents, type RecommendationFeedbackEvent } from '../api';
 import { TrailerModal } from './trailerModal';
 import { Button } from './ui/button';
 
@@ -33,6 +34,7 @@ interface MediaCardProps {
   onToggleSaved: (card: HubCard) => void;
   dismissMeta?: RecommendationMeta | null;
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
+  recommendation?: Omit<RecommendationFeedbackEvent, 'action' | 'itemId' | 'tmdbId' | 'tmdbKind'>;
   interactionDisabled?: boolean;
 }
 
@@ -113,6 +115,7 @@ function MediaCardBase({
   onToggleSaved,
   dismissMeta,
   onDismiss,
+  recommendation,
   interactionDisabled = false,
 }: MediaCardProps) {
   const isMusic = card.type === 'track' || card.type === 'album';
@@ -136,6 +139,17 @@ function MediaCardBase({
     event.preventDefault();
     event.stopPropagation();
   };
+  const track = (action: RecommendationFeedbackEvent['action']) => {
+    if (!recommendation) return;
+    trackRecommendationEvents([{
+      ...recommendation,
+      action,
+      itemId: card.itemId,
+      tmdbId: card.tmdbId,
+      tmdbKind: card.tmdbKind,
+    }]);
+  };
+  const trackNavigation = () => track(card.href.includes('/watch/') ? 'play' : 'open');
 
   return (
     <article className={`media-card ${card.aspect === 'square' ? 'square' : 'poster'}${previewOpen ? ' previewing' : ''}`}>
@@ -146,7 +160,10 @@ function MediaCardBase({
           aria-hidden="true"
           aria-disabled={interactionDisabled || undefined}
           tabIndex={-1}
-          onClick={preventDisabledNavigation}
+          onClick={(event) => {
+            preventDisabledNavigation(event);
+            if (!interactionDisabled && !event.defaultPrevented) trackNavigation();
+          }}
         >
           <span className="poster-wrap">
             <span className="poster-placeholder">
@@ -217,7 +234,10 @@ function MediaCardBase({
         href={card.href}
         aria-disabled={interactionDisabled || undefined}
         tabIndex={interactionDisabled ? -1 : undefined}
-        onClick={preventDisabledNavigation}
+        onClick={(event) => {
+          preventDisabledNavigation(event);
+          if (!interactionDisabled && !event.defaultPrevented) trackNavigation();
+        }}
       >
         <span className="card-copy">
           <span className="card-eyebrow-row">
@@ -279,6 +299,7 @@ function MediaCardBase({
           event.preventDefault();
           event.stopPropagation();
           if (interactionDisabled) return;
+          track(saved ? 'unsave' : 'save');
           onToggleSaved(card);
         }}
         aria-label={isMusic ? (saved ? 'Unlike song' : 'Like song') : (saved ? 'Remove from watchlist' : 'Add to watchlist')}
@@ -297,6 +318,7 @@ function MediaCardBase({
             event.preventDefault();
             event.stopPropagation();
             if (interactionDisabled) return;
+            track('dismiss');
             onDismiss(dismissMeta, card);
           }}
           aria-label="Not for me"

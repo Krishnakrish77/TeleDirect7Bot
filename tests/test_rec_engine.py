@@ -115,6 +115,25 @@ class RecEngineSignalTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile["seeds"], [(123, "movie")])
         self.assertGreater(profile["seed_genres"]["Mystery"], 0)
 
+    async def test_recommendation_open_is_a_gentle_profile_signal(self):
+        item = make_item(tmdb_id=456, genres=["Comedy"])
+
+        async def feedback(_user_id: int, limit: int = 80) -> list:
+            return [{"tmdb_id": 456, "tmdb_kind": "movie", "action": "open"}]
+
+        with (
+            patch.object(rec_engine.wh_store, "get_recent", empty_history),
+            patch.object(rec_engine.watchlist_store, "get_ids", empty_watchlist),
+            patch.object(rec_engine.ratings_store, "get_user_ratings", empty_ratings),
+            patch.object(rec_engine.cw_store, "get_all", empty_continue),
+            patch.object(rec_engine.rec_feedback_store, "get_recent_opens", feedback),
+            patch.object(rec_engine.media_index, "card_for_tmdb_id", return_value=item),
+        ):
+            profile = await rec_engine._collect_signal_profile(7)
+
+        self.assertEqual(profile["seeds"], [(456, "movie")])
+        self.assertGreater(profile["seed_genres"]["Comedy"], 0)
+
     async def test_explicit_like_is_selected_when_history_exceeds_seed_cap(self):
         history_items = [make_item(index + 1, tmdb_id=100 + index) for index in range(8)]
         liked_item = make_item(99, tmdb_id=999, genres=["Drama"])

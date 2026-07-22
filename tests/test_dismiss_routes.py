@@ -23,9 +23,11 @@ class DismissRoutesTest(unittest.IsolatedAsyncioTestCase):
             patch.object(dismiss_routes, "get_user", return_value={"sub": 7}),
             patch.object(dismiss_routes.dismissed_store, "undismiss", new=AsyncMock()) as undismiss,
             patch.object(dismiss_routes.rec_store, "clear_cached", new=AsyncMock()) as clear_cached,
+            patch.object(dismiss_routes.ai_rec_store, "clear_cached", new=AsyncMock()) as clear_ai_cached,
         ):
             response = await dismiss_routes.api_undismiss(_Request())
 
         self.assertEqual(response.status, 200)
         undismiss.assert_awaited_once_with(7, 123, "tv")
         clear_cached.assert_awaited_once_with(7)
+        clear_ai_cached.assert_awaited_once_with(7)
