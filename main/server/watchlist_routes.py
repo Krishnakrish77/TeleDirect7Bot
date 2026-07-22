@@ -19,7 +19,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main.server.tmdb_images import tmdb_image_url
 from main.utils.user_auth import get_user
-from main.utils import watchlist_store, cw_store, rec_store
+from main.utils import ai_rec_store, watchlist_store, cw_store, rec_store
 from main.utils import media_index
 from main.vars import Var
 
@@ -240,6 +240,7 @@ async def api_add(request: web.Request) -> web.Response:
         return _json({"error": "invalid item_id"}, status=400)
     await watchlist_store.add(int(user["sub"]), iid)
     await rec_store.clear_cached(int(user["sub"]))
+    await ai_rec_store.clear_cached(int(user["sub"]))
     return _json({"saved": True, "item_id": iid})
 
 
@@ -253,4 +254,5 @@ async def api_remove(request: web.Request) -> web.Response:
         return _json({"error": "invalid item_id"}, status=400)
     await watchlist_store.remove(int(user["sub"]), iid)
     await rec_store.clear_cached(int(user["sub"]))
+    await ai_rec_store.clear_cached(int(user["sub"]))
     return _json({"saved": False, "item_id": iid})

@@ -10,7 +10,7 @@ import json
 from aiohttp import web
 
 from main.utils.user_auth import get_user
-from main.utils import dismissed_store, rec_store
+from main.utils import ai_rec_store, dismissed_store, rec_store
 
 routes = web.RouteTableDef()
 
@@ -39,6 +39,7 @@ async def api_dismiss(request: web.Request) -> web.Response:
     await dismissed_store.dismiss(int(user["sub"]), tmdb_id, kind)
     # Clear rec cache so next hub load excludes the dismissed title
     await rec_store.clear_cached(int(user["sub"]))
+    await ai_rec_store.clear_cached(int(user["sub"]))
     return _json({"ok": True})
 
 
@@ -58,4 +59,5 @@ async def api_undismiss(request: web.Request) -> web.Response:
 
     await dismissed_store.undismiss(int(user["sub"]), tmdb_id, kind)
     await rec_store.clear_cached(int(user["sub"]))
+    await ai_rec_store.clear_cached(int(user["sub"]))
     return _json({"ok": True})

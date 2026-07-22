@@ -50,6 +50,19 @@ class AiRecGroundingTest(unittest.TestCase):
         self.assertTrue(ai_rec._is_cold({}, {}, []))
         self.assertFalse(ai_rec._is_cold({"seeds": [(1, "movie")]}, {}, [1, 2, 3, 4, 5, 6]))
 
+    def test_query_terms_and_tmdb_exclusions(self):
+        self.assertEqual(
+            ai_rec._query_terms("Show me something funny with heists like Inception"),
+            ["funny", "heists", "inception"],
+        )
+        payloads = [
+            {"href": "/hidden", "tmdbId": 10, "tmdbKind": "movie"},
+            {"href": "/kept", "tmdbId": 11, "tmdbKind": "movie"},
+            {"href": "/music"},
+        ]
+        filtered = ai_rec._exclude_tmdb_payloads(payloads, {(10, "movie")})
+        self.assertEqual([payload["href"] for payload in filtered], ["/kept", "/music"])
+
     def test_spa_routes_submodule_not_shadowed(self):
         # ai_rec lazily does `from main.server import spa_routes` and needs the
         # module's _card, not the RouteTableDef the __init__ aliases export.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems } from '../api';
+import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, trackRecommendationEvents } from '../api';
 import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, PlayIcon, UserIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
@@ -333,6 +333,27 @@ export function ShelfRow({
   const [canScrollBack, setCanScrollBack] = useState(false);
   const [canScrollForward, setCanScrollForward] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const trackedImpressions = useRef<Set<string>>(new Set());
+  const isPersonalized = shelf.dismissable || /^because you like /i.test(shelf.name);
+
+  useEffect(() => {
+    if (!isPersonalized) return;
+    const unseen = shelf.items.flatMap((card, position) => {
+      const key = `${shelf.name}:${card.itemId}`;
+      if (trackedImpressions.current.has(key)) return [];
+      trackedImpressions.current.add(key);
+      return [{
+        action: 'impression' as const,
+        source: 'home' as const,
+        itemId: card.itemId,
+        tmdbId: card.tmdbId,
+        tmdbKind: card.tmdbKind,
+        shelf: shelf.name,
+        position,
+      }];
+    });
+    trackRecommendationEvents(unseen);
+  }, [isPersonalized, shelf.items, shelf.name]);
 
   const updateScrollState = useCallback(() => {
     const row = rowRef.current;
@@ -405,6 +426,7 @@ export function ShelfRow({
                 if (onDismiss) onDismiss(meta, dismissedCard);
                 else void dismissRecommendation(meta.tmdbId, meta.kind).catch(() => undefined);
               }}
+              recommendation={isPersonalized ? { source: 'home', shelf: shelf.name, position: index } : undefined}
             />
           );
         })}

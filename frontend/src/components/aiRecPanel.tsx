@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { askAiRecommendations, fetchAiRecommendations } from '../api';
+import { askAiRecommendations, dismissRecommendation, fetchAiRecommendations, trackRecommendationEvents } from '../api';
 import type { AiRecItem, HubCard } from '../types';
 import { SparkleIcon, XIcon } from '../icons';
 import { MediaCard } from './mediaCard';
@@ -27,6 +27,7 @@ export function AiRecPanel({
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const ctrl = useRef<AbortController | null>(null);
+  const trackedImpressions = useRef<Set<string>>(new Set());
 
   const isAbort = (err: unknown) => err instanceof DOMException && err.name === 'AbortError';
 
@@ -75,6 +76,41 @@ export function AiRecPanel({
   const comfort = items.filter((item) => item.bucket !== 'discovery');
   const discovery = items.filter((item) => item.bucket === 'discovery');
   const split = discovery.length > 0 && comfort.length > 0;
+  useEffect(() => {
+    if (busy || !items.length) return;
+    const unseen = items.flatMap((item, position) => {
+      const key = item.href;
+      if (trackedImpressions.current.has(key)) return [];
+      trackedImpressions.current.add(key);
+      return [{
+        action: 'impression' as const,
+        source: 'ai' as const,
+        itemId: item.itemId,
+        tmdbId: item.tmdbId,
+        tmdbKind: item.tmdbKind,
+        shelf: 'AI picks',
+        position,
+      }];
+    });
+    trackRecommendationEvents(unseen);
+  }, [busy, items]);
+
+  const dismiss = (item: AiRecItem) => {
+    if (!item.tmdbId || !item.tmdbKind) return;
+    setItems((current) => current.filter((candidate) => candidate.href !== item.href));
+    void dismissRecommendation(item.tmdbId, item.tmdbKind);
+  };
+  const renderCard = (item: AiRecItem, position: number) => (
+    <MediaCard
+      key={item.href}
+      card={item}
+      saved={saved.has(item.itemId)}
+      onToggleSaved={onToggleSaved}
+      dismissMeta={item.tmdbId && item.tmdbKind ? { tmdbId: item.tmdbId, kind: item.tmdbKind } : null}
+      onDismiss={(_meta, dismissedItem) => dismiss(dismissedItem as AiRecItem)}
+      recommendation={{ source: 'ai', shelf: 'AI picks', position }}
+    />
+  );
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
@@ -109,15 +145,15 @@ export function AiRecPanel({
                 <>
                   <section className="ai-rec-group">
                     <h3 className="ai-rec-section">Comfort picks</h3>
-                    <div className="ai-rec-grid">{comfort.map((item) => <MediaCard key={item.href} card={item} saved={saved.has(item.itemId)} onToggleSaved={onToggleSaved} />)}</div>
+                    <div className="ai-rec-grid">{comfort.map((item, index) => renderCard(item, index))}</div>
                   </section>
                   <section className="ai-rec-group">
                     <h3 className="ai-rec-section">Discover something new</h3>
-                    <div className="ai-rec-grid">{discovery.map((item) => <MediaCard key={item.href} card={item} saved={saved.has(item.itemId)} onToggleSaved={onToggleSaved} />)}</div>
+                    <div className="ai-rec-grid">{discovery.map((item, index) => renderCard(item, comfort.length + index))}</div>
                   </section>
                 </>
               ) : (
-                <div className="ai-rec-grid">{items.map((item) => <MediaCard key={item.href} card={item} saved={saved.has(item.itemId)} onToggleSaved={onToggleSaved} />)}</div>
+                <div className="ai-rec-grid">{items.map((item, index) => renderCard(item, index))}</div>
               )}
             </>
           )}
