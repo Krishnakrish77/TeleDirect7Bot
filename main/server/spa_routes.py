@@ -616,6 +616,9 @@ def _item_common(item: HubItem) -> dict:
         "fileSizeLabel": humanbytes(item.file_size) if item.file_size else "",
         "quality": item.quality or "",
         "genres": item.tmdb_genres or [],
+        # Internal card consumers (AI recommendations) use this for better
+        # grounding. The compact hub-card API intentionally omits it.
+        "keywords": item.tmdb_keywords or [],
         "tags": item.tags or [],
         "overview": item.overview or item.description or "",
         "tmdbId": item.tmdb_id,
@@ -747,6 +750,7 @@ def _common_with_group_art(identity_item: HubItem, art_item: HubItem | None) -> 
             "posterSrcSet",
             "backdropUrl",
             "genres",
+            "keywords",
             "overview",
             "tmdbId",
             "tmdbKind",

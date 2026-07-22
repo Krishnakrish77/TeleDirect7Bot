@@ -18,13 +18,22 @@ import asyncio
 import json
 import logging
 import random
+import re
 from typing import Optional
 
 from main.utils import (
-    ai_rec_store, cw_store, dismissed_store, gemini, media_index, rec_engine, wh_store,
+    ai_rec_store, cw_store, dismissed_store, gemini, media_index, rec_engine, rec_store, wh_store,
 )
 
 _MAX_CANDIDATES = 50
+_QUERY_TERM_LIMIT = 5
+_QUERY_STOP_WORDS = frozenset({
+    "about", "also", "and", "any", "are", "best", "can", "could", "find",
+    "for", "from", "give", "good", "i", "in", "like", "me", "media",
+    "movie", "movies", "my", "of", "or", "please", "recommend",
+    "recommendation", "recommendations", "series", "show", "shows", "similar",
+    "something", "that", "the", "to", "want", "watch", "with", "you",
+})
 
 _PICK_SCHEMA = {
     "type": "object",
@@ -64,6 +73,24 @@ def _dedup_payloads(payloads: list, exclude_keys: set) -> list:
     return out
 
 
+def _exclude_tmdb_payloads(payloads: list, excluded: set) -> list:
+    """Keep non-TMDB cards, but never surface a title the user excluded.
+
+    Candidate sources such as newest-by-genre and query matches do not all
+    apply the recommendation engine's exclusion set themselves.
+    """
+    out = []
+    for payload in payloads:
+        try:
+            key = (int(payload.get("tmdbId") or 0), str(payload.get("tmdbKind") or ""))
+        except (TypeError, ValueError):
+            key = (0, "")
+        if key[0] and key in excluded:
+            continue
+        out.append(payload)
+    return out
+
+
 def _index_candidates(payloads: list) -> tuple[dict, list]:
     """Assign each candidate a stable id and build the compact prompt list."""
     index: dict = {}
@@ -78,8 +105,27 @@ def _index_candidates(payloads: list) -> tuple[dict, list]:
             "year": p.get("year"),
             "by": p.get("artist") or p.get("subtitle") or "",
             "genres": (p.get("genres") or [])[:4],
+            "keywords": (p.get("keywords") or [])[:6],
+            "summary": (p.get("overview") or "")[:220],
         })
     return index, prompt_items
+
+
+def _query_terms(query: str) -> list[str]:
+    """Extract useful catalogue-search terms from a natural-language ask.
+
+    This is deliberately a retrieval aid, not an attempt to interpret the
+    request. Gemini still decides relevance, but it now receives candidates
+    that match named titles, genres, people, and TMDB keywords in the query.
+    """
+    terms: list[str] = []
+    for term in re.findall(r"[\w'-]+", (query or "").lower()):
+        if len(term) < 3 or term in _QUERY_STOP_WORDS or term in terms:
+            continue
+        terms.append(term)
+        if len(terms) >= _QUERY_TERM_LIMIT:
+            break
+    return terms
 
 
 def _apply_picks(picks: list, index: dict, limit: int) -> list:
@@ -187,7 +233,13 @@ async def _safe_stats(user_id: int) -> dict:
         return {}
 
 
-async def _gather_candidates(user_id: int, profile: dict, stats: dict, dismissed) -> list:
+async def _gather_candidates(
+    user_id: int,
+    profile: dict,
+    stats: dict,
+    dismissed,
+    query: str = "",
+) -> list:
     """Assemble a diverse pool of catalogue objects: TMDB-based recs (comfort),
     fresh titles in top genres (discovery), top-artist tracks + fresh music, and
     globally popular items."""
@@ -232,6 +284,18 @@ async def _gather_candidates(user_id: int, profile: dict, stats: dict, dismissed
                 objs.append(item)
     except Exception:
         pass
+
+    # A chat request should influence *retrieval*, not just Gemini's final
+    # instructions. The library search index covers title, genre, people,
+    # artist/album, and enriched TMDB keywords; individual terms keep natural
+    # language asks such as "something funny with heists" useful.
+    if query:
+        for term in [query, *_query_terms(query)]:
+            try:
+                matches, _ = media_index.query_grouped(q=term, sort="newest", limit=8)
+                objs += matches
+            except Exception:
+                logging.debug("ai_rec: query candidate retrieval failed", exc_info=True)
 
     return objs
 
@@ -289,6 +353,11 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
     )
     stats = await _safe_stats(user_id)
 
+    # A deliberate refresh should regenerate its TMDB-derived candidate pool,
+    # not ask Gemini to reshuffle the same 24-hour local recommendation cache.
+    if refresh:
+        await rec_store.clear_cached(user_id)
+
     async def _finish(result: dict) -> dict:
         if write_cache and result.get("items"):
             await ai_rec_store.set_cached(user_id, result["items"])
@@ -300,9 +369,11 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
         return await _finish({"items": await _trending_items(limit), "message": "", "coldStart": True})
 
     seen_keys = {e.get("cw_key") for e in history} | set(cw_map.keys())
-    objs = await _gather_candidates(user_id, profile, stats, dismissed)
+    objs = await _gather_candidates(user_id, profile, stats, dismissed, query)
     art_cache: dict = {}
     payloads = _dedup_payloads([_spa._card(o, art_cache=art_cache) for o in objs], seen_keys)
+    excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
+    payloads = _exclude_tmdb_payloads(payloads, excluded)
     random.shuffle(payloads)  # reduce the LLM's position bias
     payloads = payloads[:_MAX_CANDIDATES]
 
