@@ -46,7 +46,17 @@ async def _connect_catalogue_store() -> None:
         logging.warning("Mongo unavailable; retrying in %ss", delay)
         await asyncio.sleep(delay)
         delay = min(delay * 2, 30)
-    asyncio.create_task(media_index.seed(StreamBot, Var.BIN_CHANNEL))
+    async def seed_then_reconcile() -> None:
+        try:
+            await media_index.seed(StreamBot, Var.BIN_CHANNEL)
+        except Exception:
+            logging.exception("Catalogue seed failed")
+        finally:
+            # The scheduler is deliberately started only after recovery. It
+            # checks one bounded batch every interval; it never full-scans at boot.
+            media_index.ensure_reconciliation_running(StreamBot, Var.BIN_CHANNEL)
+
+    asyncio.create_task(seed_then_reconcile())
 
 
 async def start_services():

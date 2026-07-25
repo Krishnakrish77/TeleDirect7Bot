@@ -647,13 +647,20 @@ export interface AdminProgressState {
   finished_at?: number;
   found_incompatible?: number;
   filled?: number;
+  checked?: number;
+  removed?: number;
   phase?: string;
   error?: string;
   last_title?: string;
+  last_error?: string;
+  cursor?: number;
+  interval_seconds?: number;
+  batch_size?: number;
 }
 
 export interface AdminStatusResponse {
   seed: AdminProgressState;
+  reconciliation?: AdminProgressState;
   enrich: AdminProgressState;
   credits: AdminProgressState;
   reindex: AdminProgressState;

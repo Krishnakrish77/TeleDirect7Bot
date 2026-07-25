@@ -52,6 +52,10 @@ async def _resolve(message_id: int, secure_hash: str):
     return file_id, streamer, index
 
 
+async def _handle_missing(message_id: int) -> None:
+    await media_index.confirm_and_remove_missing(StreamBot, Var.BIN_CHANNEL, message_id)
+
+
 @routes.get(r"/hls/{path:[^/]+}/playlist.m3u8")
 async def hls_playlist(request: web.Request) -> web.Response:
     try:
@@ -60,6 +64,7 @@ async def hls_playlist(request: web.Request) -> web.Response:
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
+        await _handle_missing(message_id)
         raise web.HTTPNotFound(text=e.message)
 
     source_url = hls.internal_stream_url(secure_hash, message_id)
@@ -107,6 +112,7 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
+        await _handle_missing(message_id)
         raise web.HTTPNotFound(text=e.message)
 
     n = int(request.match_info["n"])
@@ -163,6 +169,7 @@ async def hls_audio_list(request: web.Request) -> web.Response:
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
+        await _handle_missing(message_id)
         raise web.HTTPNotFound(text=e.message)
 
     probe = await hls.probe(message_id, hls.internal_stream_url(secure_hash, message_id))
@@ -265,6 +272,7 @@ async def hls_sub_list(request: web.Request) -> web.Response:
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
+        await _handle_missing(message_id)
         raise web.HTTPNotFound(text=e.message)
 
     probe = await hls.probe(message_id, hls.internal_stream_url(secure_hash, message_id))
@@ -315,6 +323,7 @@ async def hls_sub_external_vtt(request: web.Request) -> web.Response:
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
+        await _handle_missing(message_id)
         raise web.HTTPNotFound(text=e.message)
 
     bin_id = int(request.match_info["bin_id"])
@@ -371,6 +380,7 @@ async def hls_sub_vtt(request: web.Request) -> web.Response:
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
+        await _handle_missing(message_id)
         raise web.HTTPNotFound(text=e.message)
 
     track = int(request.match_info["track"])

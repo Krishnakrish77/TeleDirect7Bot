@@ -449,6 +449,7 @@ async def _resolve_file(message_id: int, secure_hash: str):
             last_missing = exc
             logging.warning("client %s cannot resolve msg %d", index, message_id)
     if last_missing is not None:
+        await media_index.confirm_and_remove_missing(StreamBot, Var.BIN_CHANNEL, message_id)
         raise last_missing
     raise FIleNotFound
 

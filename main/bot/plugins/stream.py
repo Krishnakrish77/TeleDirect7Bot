@@ -7,7 +7,7 @@ from main.utils.file_properties import gen_link, get_hash, get_media_from_messag
 from main.utils.indexer import schedule_index, schedule_subtitle_pairing
 from main.utils.subtitles import is_subtitle_filename, is_subtitle_mime
 from main.vars import Var
-from pyrogram import filters, Client
+from pyrogram import filters, Client, raw, utils as pyrogram_utils
 from pyrogram.errors import FloodWait
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -153,38 +153,14 @@ async def _clear_copy_reservation_later(
             _pending_bin_copies.pop(key, None)
 
 
-@StreamBot.on_deleted_messages(filters.channel)
-async def bin_message_deleted(client: Client, messages):
-    """Prune the catalogue when messages are deleted from BIN_CHANNEL.
-
-    Uses filters.channel (checks chat.type == CHANNEL only) rather than
-    filters.chat(BIN_CHANNEL): the minimal Chat stub built by kurigram
-    for deleted-message updates only has id+type, and filters.chat() does
-    a set-membership check that silently fails on type mismatches between
-    the string env-var and the integer chat.id.
-
-    Pattern from Telegram-Stremio (weebzone/Telegram-Stremio): use
-    filters.channel to gate on channel updates, then guard the specific
-    channel with an explicit int comparison inside the handler.
-    """
-    bin_id = int(Var.BIN_CHANNEL)
-    removed = 0
-    for msg in messages:
-        chat = getattr(msg, "chat", None)
-        if getattr(chat, "id", None) != bin_id:
-            continue
-        try:
-            mid = int(getattr(msg, "id", 0) or 0)
-        except (TypeError, ValueError):
-            continue
-        if mid <= 0:
-            continue
-        if media_index.get_item(mid) is None:
-            continue
-        await media_index.remove(mid, bot=client)
-        removed += 1
-    if removed:
-        logging.info("media_index: pruned %d entries on BIN deletion", removed)
+@StreamBot.on_raw_update()
+async def bin_message_deleted(client: Client, update, _users, _chats):
+    """Apply raw BIN delete updates without relying on wrapper/filter state."""
+    if not isinstance(update, raw.types.UpdateDeleteChannelMessages):
+        return
+    if pyrogram_utils.get_channel_id(update.channel_id) != int(Var.BIN_CHANNEL):
+        return
+    await media_index.record_bin_deletions(update.messages, bot=client)
 
 
 def _looks_like_subtitle(m: Message) -> bool:

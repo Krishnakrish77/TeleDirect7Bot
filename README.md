@@ -178,6 +178,8 @@ you may also add as many as bots you want. (max limit is not tested yet)
 
 `MEDIA_INDEX_SEED_DEPTH` : Bounded BIN history window used only for cold recovery or an explicit full reconciliation. Defaults to `800`.
 
+`MEDIA_INDEX_RECONCILE_BATCH` / `MEDIA_INDEX_RECONCILE_INTERVAL` : Background safety audit for BIN deletions missed while the app was offline. Defaults to `100` message IDs every `7200` seconds (one Telegram request every two hours); it resumes from a persisted cursor and never full-scans at startup.
+
 **Migration flow**: set `MONGO_URI` first (leave `STORE_BACKEND` unset), boot the bot, click **Migrate → Mongo** on `/admin`. After the count is verified in Atlas, set `STORE_BACKEND=mongo` and redeploy. Snapshots-to-BIN-channel become a no-op from then on.
 
 

@@ -546,6 +546,7 @@ def _admin_status_payload() -> dict:
     from main.utils import codec_probe
     return {
         "seed": media_index.seed_state(),
+        "reconciliation": media_index.reconciliation_state(),
         "enrich": media_index.enrichment_state(),
         "credits": media_index.credits_backfill_state(),
         "reindex": media_index.reindex_state(),

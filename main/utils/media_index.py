@@ -20,6 +20,7 @@ within a container's lifetime.
 from __future__ import annotations
 
 import asyncio
+import bisect
 import json
 import logging
 import os
@@ -75,6 +76,9 @@ _SEED_DEPTH = int(os.environ.get("MEDIA_INDEX_SEED_DEPTH", "800"))
 # turning every deploy into a fixed-depth Telegram history scan.
 _SEED_OVERLAP = int(os.environ.get("MEDIA_INDEX_SEED_OVERLAP", "32"))
 _FETCH_BATCH = 100  # get_messages caps around 200; 100 is well within limits.
+_RECONCILE_BATCH = max(1, min(int(os.environ.get("MEDIA_INDEX_RECONCILE_BATCH", "100")), 100))
+_RECONCILE_INTERVAL = max(60, int(os.environ.get("MEDIA_INDEX_RECONCILE_INTERVAL", "7200")))
+_RECONCILE_META_KEY = "catalogue_reconcile_cursor"
 
 _items: Dict[int, HubItem] = {}
 _hash_map: Dict[str, int] = {}  # secure_hash → message_id for O(1) find_by_hash
@@ -87,6 +91,10 @@ _latest_seen_id: int = 0
 # Persisted so subsequent saves can delete the prior snapshot even when
 # pinning silently failed (bot may lack pin permission).
 _snapshot_msg_id: int = 0
+_reconcile_cursor: int = 0
+_catalogue_ready = False
+_pending_bin_deletions: set[int] = set()
+_reconcile_task: Optional[asyncio.Task] = None
 
 # In-memory progress state for the two long-running pipelines (seed and
 # enrich). The admin UI polls /admin/status which serialises both.
@@ -105,6 +113,9 @@ _reindex_state: dict = {"running": False, "done": 0, "total": 0,
                         "series_changed": 0, "movie_changed": 0,
                         "quality_changed": 0,
                         "started_at": 0.0, "finished_at": 0.0}
+_reconcile_state: dict = {"running": False, "cursor": 0, "checked": 0,
+                          "removed": 0, "last_started_at": 0.0,
+                          "last_finished_at": 0.0, "last_error": ""}
 _group_enrich_locks: dict[tuple[str, str], asyncio.Lock] = {}
 _group_art_tasks: dict[tuple[str, str], asyncio.Task] = {}
 _art_recovery_negative_until: dict[tuple[str, str], float] = {}
@@ -262,6 +273,14 @@ def credits_backfill_state() -> dict:
 
 def reindex_state() -> dict:
     return dict(_reindex_state)
+
+
+def reconciliation_state() -> dict:
+    state = dict(_reconcile_state)
+    state["cursor"] = _reconcile_cursor
+    state["interval_seconds"] = _RECONCILE_INTERVAL
+    state["batch_size"] = _RECONCILE_BATCH
+    return state
 
 
 def _to_serializable(item: HubItem) -> dict:
@@ -813,24 +832,99 @@ async def remove(message_id: int, bot=None) -> None:
     restart; otherwise schedules a Telegram-snapshot save via the
     legacy path.
     """
-    async with _lock:
-        existed = _items.pop(message_id, None)
-        if existed is not None:
-            _hash_map.pop(existed.secure_hash, None)
-            _persist_unlocked()
-    if existed is None:
-        return
-    await _store_remove(message_id)
-    # Drop the cached thumbnail too so the thumbs collection doesn't
-    # accumulate orphans. No-op for non-Mongo stores.
-    if _store_active():
+    await _remove_catalogue_ids([message_id], bot=bot)
+
+
+async def _remove_catalogue_ids(
+    message_ids: Iterable[int], *, bot=None, remove_unknown_from_store: bool = False,
+) -> int:
+    """Remove known catalogue rows in one cache invalidation pass.
+
+    ``remove_unknown_from_store`` is used only for Telegram deletion events:
+    an event can arrive before the in-memory catalogue has completed recovery,
+    but its Mongo row is still safe to remove authoritatively.
+    """
+    ids: list[int] = []
+    for raw_id in message_ids:
         try:
-            await _store.remove_thumb(message_id)
-        except Exception:
-            logging.debug("remove: thumb cleanup failed for bin:%d",
-                          message_id, exc_info=True)
-    if bot is not None:
+            mid = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if mid > 0:
+            ids.append(mid)
+    ids = sorted(set(ids))
+    if not ids:
+        return 0
+    removed_ids: list[int] = []
+    async with _lock:
+        for mid in ids:
+            item = _items.pop(mid, None)
+            if item is not None:
+                _hash_map.pop(item.secure_hash, None)
+                removed_ids.append(mid)
+        if removed_ids:
+            _persist_unlocked()
+
+    durable_ids = ids if remove_unknown_from_store else removed_ids
+    for mid in durable_ids:
+        await _store_remove(mid)
+        if _store_active():
+            try:
+                await _store.remove_thumb(mid)
+            except Exception:
+                logging.debug("remove: thumb cleanup failed for bin:%d", mid, exc_info=True)
+    if removed_ids and bot is not None:
         schedule_snapshot(bot)  # No-op when Mongo is active.
+    return len(removed_ids)
+
+
+async def record_bin_deletions(message_ids: Iterable[int], *, bot=None) -> int:
+    """Apply authoritative BIN deletion IDs, queueing them during recovery."""
+    ids: set[int] = set()
+    for raw_id in message_ids:
+        try:
+            mid = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if mid > 0:
+            ids.add(mid)
+    if not ids:
+        return 0
+    async with _lock:
+        if not _catalogue_ready:
+            _pending_bin_deletions.update(ids)
+            logging.info("media_index: queued %d BIN deletion id(s) during recovery", len(ids))
+            return 0
+    removed = await _remove_catalogue_ids(ids, bot=bot, remove_unknown_from_store=True)
+    logging.info("media_index: applied BIN delete event ids=%d removed=%d", len(ids), removed)
+    return removed
+
+
+async def _mark_catalogue_ready(bot=None) -> None:
+    """Drain deletion events received while the durable catalogue was loading."""
+    global _catalogue_ready
+    async with _lock:
+        _catalogue_ready = True
+        pending = set(_pending_bin_deletions)
+        _pending_bin_deletions.clear()
+    if pending:
+        removed = await _remove_catalogue_ids(
+            pending, bot=bot, remove_unknown_from_store=True,
+        )
+        logging.info("media_index: drained %d queued BIN deletion id(s), removed=%d", len(pending), removed)
+
+
+async def confirm_and_remove_missing(bot, channel_id: int, message_id: int) -> bool:
+    """Confirm a stream-time miss before deleting any catalogue metadata."""
+    try:
+        message = await bot.get_messages(channel_id, int(message_id))
+    except Exception:
+        logging.debug("media_index: missing-file confirmation failed for bin:%d", message_id, exc_info=True)
+        return False
+    if message is None or getattr(message, "empty", False):
+        await record_bin_deletions([message_id], bot=bot)
+        return True
+    return False
 
 
 async def prune_stale(bot, channel_id: int, batch_size: int = 100) -> int:
@@ -856,6 +950,86 @@ async def prune_stale(bot, channel_id: int, batch_size: int = 100) -> int:
     if removed:
         logging.info("media_index.prune_stale: removed %d stale entries", removed)
     return removed
+
+
+async def reconcile_next_batch(bot, channel_id: int) -> int:
+    """Verify one bounded, non-repeating slice of the BIN catalogue.
+
+    This is the safety net for deletion updates missed during restarts. It is
+    deliberately not a startup scan: one call checks at most
+    ``MEDIA_INDEX_RECONCILE_BATCH`` ids, then persists a cursor for the next
+    scheduled run.
+    """
+    global _reconcile_cursor
+    async with _lock:
+        ids = sorted(_items)
+        cursor = _reconcile_cursor
+    if not ids:
+        _reconcile_state.update(running=False, cursor=0, checked=0, removed=0,
+                                last_finished_at=time.time(), last_error="")
+        return 0
+
+    start = bisect.bisect_right(ids, cursor)
+    if start >= len(ids):
+        start = 0
+    batch = ids[start:start + _RECONCILE_BATCH]
+    if not batch:
+        return 0
+
+    _reconcile_state.update(running=True, checked=0, removed=0,
+                            last_started_at=time.time(), last_error="")
+    try:
+        messages = await bot.get_messages(channel_id, batch)
+        if not isinstance(messages, list):
+            messages = [messages]
+    except Exception as exc:
+        _reconcile_state.update(running=False, last_finished_at=time.time(),
+                                last_error=exc.__class__.__name__)
+        logging.exception("media_index: reconciliation batch fetch failed")
+        return 0
+
+    missing_ids = {
+        int(getattr(message, "id", 0) or 0)
+        for message in messages
+        if message is None or getattr(message, "empty", False)
+    }
+    # Some client implementations omit placeholders for unavailable ids.
+    returned_ids = {int(getattr(message, "id", 0) or 0) for message in messages if message is not None}
+    missing_ids.update(set(batch) - returned_ids)
+    removed = await record_bin_deletions(missing_ids, bot=bot) if missing_ids else 0
+
+    next_cursor = batch[-1]
+    async with _lock:
+        _reconcile_cursor = next_cursor
+        _persist_unlocked()
+    if _store_active():
+        try:
+            await _store.set_meta(_RECONCILE_META_KEY, next_cursor)
+        except Exception:
+            logging.exception("media_index: failed to persist reconciliation cursor")
+    _reconcile_state.update(running=False, cursor=next_cursor, checked=len(batch), removed=removed,
+                            last_finished_at=time.time(), last_error="")
+    logging.info("media_index: reconciliation checked=%d removed=%d cursor=%d",
+                 len(batch), removed, next_cursor)
+    return removed
+
+
+async def _reconciliation_loop(bot, channel_id: int) -> None:
+    while True:
+        try:
+            await asyncio.sleep(_RECONCILE_INTERVAL)
+            await reconcile_next_batch(bot, channel_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("media_index: reconciliation loop failed")
+
+
+def ensure_reconciliation_running(bot, channel_id: int) -> None:
+    """Start the bounded reconciliation scheduler once, after seed recovery."""
+    global _reconcile_task
+    if _reconcile_task is None or _reconcile_task.done():
+        _reconcile_task = asyncio.create_task(_reconciliation_loop(bot, channel_id))
 
 
 async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH_BATCH) -> int:
@@ -954,6 +1128,7 @@ def _persist_unlocked() -> None:
         payload = {
             "latest_seen_id": _latest_seen_id,
             "snapshot_msg_id": _snapshot_msg_id,
+            "reconcile_cursor": _reconcile_cursor,
             "items": [_to_serializable(it) for it in _items.values()],
         }
         with _INDEX_FILE.open("w", encoding="utf-8") as f:
@@ -963,7 +1138,7 @@ def _persist_unlocked() -> None:
 
 
 def _load() -> None:
-    global _latest_seen_id, _snapshot_msg_id
+    global _latest_seen_id, _snapshot_msg_id, _reconcile_cursor
     if not _INDEX_FILE.exists():
         return
     try:
@@ -974,10 +1149,12 @@ def _load() -> None:
             data = raw
             persisted_latest = 0
             persisted_snapshot = 0
+            persisted_cursor = 0
         else:
             data = raw.get("items") or []
             persisted_latest = int(raw.get("latest_seen_id") or 0)
             persisted_snapshot = int(raw.get("snapshot_msg_id") or 0)
+            persisted_cursor = int(raw.get("reconcile_cursor") or 0)
         for d in data:
             try:
                 item = _from_serializable(d)
@@ -990,6 +1167,7 @@ def _load() -> None:
         local_max = max((it.message_id for it in _items.values()), default=0)
         _latest_seen_id = max(persisted_latest, local_max)
         _snapshot_msg_id = persisted_snapshot
+        _reconcile_cursor = max(0, persisted_cursor)
         logging.info(
             "media_index: loaded %d entries from %s (latest_seen_id=%d, snapshot=%d)",
             len(_items), _INDEX_FILE, _latest_seen_id, _snapshot_msg_id,
@@ -1049,8 +1227,9 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
     the retry logic in ``_delete_probe`` cleans up so the dot never
     stays visible.
     """
-    global _seeded, _latest_seen_id
+    global _seeded, _latest_seen_id, _reconcile_cursor
     if _seeded and not full_reconcile:
+        await _mark_catalogue_ready(bot)
         return
 
     # Only load from /tmp JSON when Mongo isn't active. With Mongo, /tmp is
@@ -1085,6 +1264,9 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
                     stored_latest = await _store.get_meta("latest_seen_id")
                     if isinstance(stored_latest, int) and stored_latest > _latest_seen_id:
                         _latest_seen_id = stored_latest
+                    stored_cursor = await _store.get_meta(_RECONCILE_META_KEY)
+                    if isinstance(stored_cursor, int) and stored_cursor > 0:
+                        _reconcile_cursor = stored_cursor
                 except Exception:
                     pass
             logging.info(
@@ -1120,6 +1302,7 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
     except Exception:
         logging.exception("media_index: probe send failed; seed skipped")
         _seeded = True
+        await _mark_catalogue_ready(bot)
         return
     latest_id = probe.id
     await _delete_probe(bot, channel_id, probe.id)
@@ -1368,6 +1551,7 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
         _seeded = True
         _seed_state["running"] = False
         _seed_state["finished_at"] = time.time()
+        await _mark_catalogue_ready(bot)
     logging.info(
         "media_index: seed done — scanned %d ids, %d entries indexed",
         _seed_state["scanned"], len(_items),

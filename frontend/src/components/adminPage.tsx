@@ -108,7 +108,7 @@ function progressPct(state: { total?: number; done?: number; scanned?: number } 
   return Math.max(0, Math.min(100, Math.round((done / state.total) * 100)));
 }
 
-type AdminJobKey = 'seed' | 'enrich' | 'credits' | 'reindex' | 'probe' | 'episode_fill' | 'migrate';
+type AdminJobKey = 'seed' | 'reconciliation' | 'enrich' | 'credits' | 'reindex' | 'probe' | 'episode_fill' | 'migrate';
 
 type AdminJobDefinition = {
   key: AdminJobKey;
@@ -126,6 +126,18 @@ const ADMIN_JOBS: AdminJobDefinition[] = [
     label: 'Catalogue seed',
     description: 'Scans BIN history and loads the in-app catalogue.',
     detail: (state) => state.running ? `${state.scanned ?? 0}/${state.total ?? 0} scanned` : 'Automatic on startup',
+  },
+  {
+    key: 'reconciliation',
+    label: 'Deletion safety audit',
+    description: 'Checks a small BIN slice for deletions missed while offline.',
+    detail: (state) => {
+      const interval = Number(state.interval_seconds || 0);
+      const every = interval >= 3600 ? `${Math.round(interval / 3600)}h` : interval ? `${Math.round(interval / 60)}m` : 'the configured interval';
+      if (state.running) return `Checking ${state.checked ?? 0} entries`;
+      if (state.checked) return `Last batch: ${state.checked} checked, ${state.removed ?? 0} removed · every ${every}`;
+      return `Automatic · every ${every}`;
+    },
   },
   {
     key: 'enrich',
@@ -180,14 +192,14 @@ const ADMIN_JOBS: AdminJobDefinition[] = [
 ];
 
 function jobStateLabel(state: AdminProgressState): string {
-  if (state.error || state.phase === 'failed') return 'Failed';
+  if (state.error || state.last_error || state.phase === 'failed') return 'Failed';
   if (state.running) return 'Running';
   if (state.total && progressPct(state) >= 100) return 'Complete';
   return 'Idle';
 }
 
 function jobStateClass(state: AdminProgressState): string {
-  if (state.error || state.phase === 'failed') return 'failed';
+  if (state.error || state.last_error || state.phase === 'failed') return 'failed';
   if (state.running) return 'running';
   if (state.total && progressPct(state) >= 100) return 'complete';
   return 'idle';
@@ -390,7 +402,7 @@ function AdminJobCenter({
                 <Progress value={running && pct === 0 ? 12 : pct} />
                 <em>{pct ? `${pct}%` : running ? 'Starting' : 'No active run'}</em>
               </div>
-              <p>{state.error || state.last_title || job.detail(state)}</p>
+              <p>{state.error || state.last_error || state.last_title || job.detail(state)}</p>
               {job.action ? (
                 <Button
                   type="button"
