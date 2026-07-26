@@ -455,6 +455,7 @@ export function GridView({
     (data.items.length > 0 && data.items.every((card) => card.aspect === 'square'));
   const priorityCount = 8;
   const isLoadingMore = loading && params.offset > 0;
+  const searchQuery = params.q.trim();
   const resultCountLabel = `${data.total.toLocaleString()} result${data.total === 1 ? '' : 's'}`;
   const resultEyebrow = loading && !isLoadingMore
     ? 'Updating results'
@@ -507,8 +508,16 @@ export function GridView({
       ) : (
         <div className="empty-state">
           <FilmIcon />
-          <strong>{data.emptyText}</strong>
-          <span>Try a broader search or clear a filter to see more titles.</span>
+          <strong>{searchQuery ? `No results for “${searchQuery}”` : data.emptyText}</strong>
+          <span>{searchQuery
+            ? 'Try a title, artist, cast member, genre, or a shorter phrase.'
+            : 'Try a broader search or clear a filter to see more titles.'}</span>
+          {searchQuery && (
+            <Button type="button" variant="secondary" size="sm" onClick={() => update({ q: '', offset: 0 })}>
+              <XIcon />
+              Clear search
+            </Button>
+          )}
         </div>
       )}
     </section>

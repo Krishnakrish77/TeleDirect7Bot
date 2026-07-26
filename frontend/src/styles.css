@@ -128,7 +128,7 @@ img {
   outline: none;
   background: rgba(21, 23, 26, 0.86);
   color: #fff;
-  padding: 0 2.75rem;
+  padding: 0 4.75rem 0 2.75rem;
 }
 
 .top-search input:focus {
@@ -172,6 +172,19 @@ img {
   right: 0.35rem;
 }
 
+.search-progress {
+  position: absolute;
+  top: 50%;
+  right: 2.75rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid color-mix(in srgb, var(--muted) 34%, transparent);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  transform: translateY(-50%);
+  animation: search-spin 0.7s linear infinite;
+}
+
 .search-menu {
   position: absolute;
   top: calc(100% + 0.5rem);
@@ -186,6 +199,34 @@ img {
   background: rgba(7, 8, 9, 0.98);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
   contain: layout paint style;
+}
+
+.search-menu-state {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.25rem;
+  padding: 0.7rem 0.85rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.search-menu-empty {
+  line-height: 1.4;
+}
+
+.search-menu-spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--muted) 34%, transparent);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: search-spin 0.7s linear infinite;
+}
+
+@keyframes search-spin {
+  to { transform: rotate(360deg); }
 }
 
 .suggestion {

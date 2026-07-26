@@ -106,6 +106,23 @@ describe('GridView', () => {
     expect(screen.getByText('1 result')).toBeTruthy();
   });
 
+  it('makes an empty search result clear and offers a reset', () => {
+    const update = vi.fn();
+    render(
+      <GridView
+        data={response({ items: [], total: 0 })}
+        params={{ ...params, q: 'unfindable title' }}
+        saved={new Set()}
+        update={update}
+        onToggleSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('No results for “unfindable title”')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(update).toHaveBeenCalledWith({ q: '', offset: 0 });
+  });
+
   it('shows a refresh status without stale load-more pagination during filter updates', () => {
     render(
       <GridView

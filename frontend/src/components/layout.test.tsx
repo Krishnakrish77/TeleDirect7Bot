@@ -70,7 +70,7 @@ const suggestions: Suggestion[] = [
 ];
 
 beforeEach(() => {
-  vi.mocked(useSuggestions).mockReturnValue([]);
+  vi.mocked(useSuggestions).mockReturnValue({ items: [], loading: false, searched: false });
 });
 
 describe('PrimaryNav', () => {
@@ -112,6 +112,25 @@ describe('Header search', () => {
     expect(onSearchSubmit).toHaveBeenCalledTimes(1);
   });
 
+  it('shows that suggestions are still being searched', () => {
+    vi.mocked(useSuggestions).mockReturnValue({ items: [], loading: true, searched: false });
+    renderHeader({ query: 'ka' });
+
+    fireEvent.focus(screen.getByPlaceholderText('Search library'));
+
+    expect(screen.getByText('Searching your library…')).toBeTruthy();
+    expect(screen.getByLabelText('Searching library')).toBeTruthy();
+  });
+
+  it('explains when quick suggestions have no match', () => {
+    vi.mocked(useSuggestions).mockReturnValue({ items: [], loading: false, searched: true });
+    renderHeader({ query: 'ka' });
+
+    fireEvent.focus(screen.getByPlaceholderText('Search library'));
+
+    expect(screen.getByText('No quick matches. Press Enter to search the full library.')).toBeTruthy();
+  });
+
   it('clears search explicitly', () => {
     const onSearchClear = vi.fn();
     renderHeader({ query: 'kalki', onSearchClear });
@@ -133,7 +152,7 @@ describe('Header search', () => {
 
   it('supports keyboard navigation through search suggestions', () => {
     const onSuggestionNavigate = vi.fn();
-    vi.mocked(useSuggestions).mockReturnValue(suggestions);
+    vi.mocked(useSuggestions).mockReturnValue({ items: suggestions, loading: false, searched: true });
     renderHeader({ query: 'ka', onSuggestionNavigate });
 
     const input = screen.getByPlaceholderText('Search library');
@@ -150,7 +169,7 @@ describe('Header search', () => {
   });
 
   it('uses the same-origin TMDB image proxy for search suggestions', () => {
-    vi.mocked(useSuggestions).mockReturnValue(suggestions);
+    vi.mocked(useSuggestions).mockReturnValue({ items: suggestions, loading: false, searched: true });
     const view = renderHeader({ query: 'ka' });
 
     fireEvent.focus(screen.getByPlaceholderText('Search library'));
@@ -161,8 +180,8 @@ describe('Header search', () => {
   });
 
   it('cache-busts audio fallback art in search suggestions', () => {
-    vi.mocked(useSuggestions).mockReturnValue([
-      {
+    vi.mocked(useSuggestions).mockReturnValue({
+      items: [{
         title: 'Indra',
         year: null,
         kind: 'album',
@@ -171,8 +190,10 @@ describe('Header search', () => {
         secure_hash: 'songhash',
         message_id: 99,
         media_kind: 'audio',
-      },
-    ]);
+      }],
+      loading: false,
+      searched: true,
+    });
     const view = renderHeader({ query: 'indra' });
 
     fireEvent.focus(screen.getByPlaceholderText('Search library'));
@@ -182,7 +203,7 @@ describe('Header search', () => {
   });
 
   it('closes search suggestions when clicking outside', () => {
-    vi.mocked(useSuggestions).mockReturnValue(suggestions);
+    vi.mocked(useSuggestions).mockReturnValue({ items: suggestions, loading: false, searched: true });
     renderHeader({ query: 'ka' });
 
     fireEvent.focus(screen.getByPlaceholderText('Search library'));

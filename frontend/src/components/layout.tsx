@@ -90,8 +90,9 @@ export function Header({
   const [activeIndex, setActiveIndex] = useState(-1);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const searchWrapRef = useRef<HTMLFormElement | null>(null);
-  const suggestions = useSuggestions(query.trim());
-  const suggestionsOpen = open && suggestions.length > 0;
+  const { items: suggestions, loading: suggestionsLoading, searched: suggestionsSearched } = useSuggestions(query.trim());
+  const hasSuggestionQuery = query.trim().length >= 2;
+  const suggestionsOpen = open && hasSuggestionQuery;
   const activeSuggestionId = suggestionsOpen && activeIndex >= 0 ? `top-search-suggestion-${activeIndex}` : undefined;
 
   // Telegram Login Widget photo URLs can expire before the session JWT does.
@@ -196,6 +197,9 @@ export function Header({
           aria-controls="top-search-suggestions"
           aria-activedescendant={activeSuggestionId}
         />
+        {suggestionsLoading && (
+          <span className="search-progress" role="status" aria-label="Searching library" />
+        )}
         {query && (
           <button type="button" className="icon-button clear-search" onClick={handleClear} aria-label="Clear search">
             <XIcon />
@@ -204,6 +208,8 @@ export function Header({
         {suggestionsOpen && (
           <SearchMenu
             suggestions={suggestions}
+            loading={suggestionsLoading}
+            searched={suggestionsSearched}
             activeIndex={activeIndex}
             getHref={suggestionHref}
             onActiveIndexChange={setActiveIndex}
@@ -298,12 +304,16 @@ export function Header({
 
 export function SearchMenu({
   suggestions,
+  loading,
+  searched,
   activeIndex,
   getHref,
   onActiveIndexChange,
   onPick,
 }: {
   suggestions: Suggestion[];
+  loading: boolean;
+  searched: boolean;
   activeIndex: number;
   getHref: (item: Suggestion) => string;
   onActiveIndexChange: (index: number) => void;
@@ -311,6 +321,17 @@ export function SearchMenu({
 }) {
   return (
     <div className="search-menu" id="top-search-suggestions" role="listbox">
+      {loading && (
+        <div className="search-menu-state" role="status">
+          <span className="search-menu-spinner" aria-hidden="true" />
+          Searching your library…
+        </div>
+      )}
+      {!loading && searched && suggestions.length === 0 && (
+        <div className="search-menu-state search-menu-empty" role="status">
+          No quick matches. Press Enter to search the full library.
+        </div>
+      )}
       {suggestions.map((item, index) => {
         const isAudio = item.media_kind === 'audio' || item.kind === 'audio' || item.kind === 'album';
         const fallbackArt = `/thumb/${item.secure_hash}${item.message_id}.jpg${isAudio ? '?v=audio3' : ''}`;

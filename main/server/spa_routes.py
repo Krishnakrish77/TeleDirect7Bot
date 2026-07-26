@@ -516,6 +516,24 @@ async def _recover_visible_tmdb_art(cards, timings: dict | None = None) -> int:
     return recovered
 
 
+def _schedule_visible_tmdb_art_recovery(cards) -> None:
+    """Warm missing card art without making search results wait on TMDB."""
+    try:
+        task = asyncio.create_task(_recover_visible_tmdb_art(cards))
+    except RuntimeError:
+        return
+
+    def log_failure(done: asyncio.Task) -> None:
+        if done.cancelled():
+            return
+        try:
+            done.result()
+        except Exception:
+            logging.exception("spa hub: background visible art recovery failed")
+
+    task.add_done_callback(log_failure)
+
+
 def _watch_url(item: HubItem) -> str:
     return f"/watch/{item.secure_hash}{item.message_id}"
 
@@ -1291,27 +1309,10 @@ async def api_hub(request: web.Request) -> web.Response:
         params["offset"] == 0
         and (params["q"] or params["view"] in ("movies", "series"))
     ):
-        recovered = await _recover_visible_tmdb_art(items, timings)
-        if recovered:
-            mark = time.monotonic()
-            items, total = media_index.query_grouped(
-                q=params["q"],
-                year=params["year"],
-                quality=params["quality"],
-                tag=params["tag"],
-                genre=params["genre"],
-                sort=params["sort"],
-                view=params["view"],
-                offset=params["offset"],
-                limit=params["limit"],
-            )
-            timings["query_after_art_recovery_ms"] = round(
-                (time.monotonic() - mark) * 1000,
-                1,
-            )
-            next_offset = params["offset"] + params["limit"]
-            if next_offset >= total:
-                next_offset = None
+        # Card fallbacks render immediately. Any missing TMDB art is enriched
+        # in the background and appears on the next visit, rather than making
+        # a search wait for external provider latency (up to six seconds).
+        _schedule_visible_tmdb_art_recovery(items)
 
     mark = time.monotonic()
     _prewarm_card_thumbs(items)

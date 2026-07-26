@@ -1667,14 +1667,19 @@ def _ensure_search_index() -> None:
         _rebuild_search_index()
 
 
-def _query_tokens(q: str) -> list[str]:
+def _search_terms(q: str) -> tuple[str, list[str]]:
+    """Normalize a query once so relevance work can be shared per request."""
     normalized = _normalise_search_text((q or "").lstrip("#"))
     # A small, deterministic synonym layer handles common catalogue wording
     # without turning search into an opaque semantic system.
-    normalized = re.sub(r"\bsci fi\b|\bscifi\b", "science fiction", normalized)
-    tokens = normalized.split()
+    token_text = re.sub(r"\bsci fi\b|\bscifi\b", "science fiction", normalized)
+    tokens = token_text.split()
     meaningful = [token for token in tokens if token not in _SEARCH_STOP_WORDS]
-    return meaningful or tokens
+    return normalized, meaningful or tokens
+
+
+def _query_tokens(q: str) -> list[str]:
+    return _search_terms(q)[1]
 
 
 def _token_matches(token: str) -> set[int]:
@@ -1729,11 +1734,8 @@ _FIELD_WEIGHTS = {
 }
 
 
-def _search_score(q: str, item: HubItem) -> float:
-    """Field-weighted, multi-term relevance score backed by the index."""
-    _ensure_search_index()
-    normalized = _normalise_search_text((q or "").lstrip("#"))
-    tokens = _query_tokens(q)
+def _search_score_terms(normalized: str, tokens: list[str], item: HubItem) -> float:
+    """Score an item using already-normalized search terms."""
     if not normalized or not tokens:
         return 0.0
     doc = _search_docs.get(item.message_id)
@@ -1765,6 +1767,13 @@ def _search_score(q: str, item: HubItem) -> float:
     elif len(tokens) > 1:
         score -= (len(tokens) - matched) * 4.0
     return max(0.0, score)
+
+
+def _search_score(q: str, item: HubItem) -> float:
+    """Field-weighted, multi-term relevance score backed by the index."""
+    _ensure_search_index()
+    normalized, tokens = _search_terms(q)
+    return _search_score_terms(normalized, tokens, item)
 
 
 def _matches(item: HubItem, q: str, year: Optional[int], quality: str,
@@ -1799,19 +1808,27 @@ def query(
     q = (q or "").strip()
     key_fn, reverse = _SORT_KEYS.get(sort, _SORT_KEYS["newest"])
     candidate_ids = _search_candidate_ids(q) if q else None
+    normalized, tokens = _search_terms(q) if q else ("", [])
     items_all = sorted(_items.values(), key=key_fn, reverse=reverse)
 
     # Exclude hidden items from all public library views
     items_all = [it for it in items_all if not it.hidden]
-    items_all = [
-        it for it in items_all
-        if (candidate_ids is None or it.message_id in candidate_ids)
-        and _matches(it, q, year, quality, tag, genre)
-    ]
+    scored_items: list[tuple[HubItem, float]] = []
+    for item in items_all:
+        if candidate_ids is not None and item.message_id not in candidate_ids:
+            continue
+        if not _matches(item, "", year, quality, tag, genre):
+            continue
+        score = _search_score_terms(normalized, tokens, item) if q else 0.0
+        if q and score <= 0:
+            continue
+        scored_items.append((item, score))
+    items_all = [item for item, _score in scored_items]
     if q:
         # ``items_all`` is already in the requested browse order. A stable
         # relevance sort preserves it for equal scores, matching query_grouped.
-        items_all.sort(key=lambda item: -_search_score(q, item))
+        scores = {item.message_id: score for item, score in scored_items}
+        items_all.sort(key=lambda item: -scores[item.message_id])
 
     # Pagination cursor is only meaningful for message_id-ordered sorts.
     if before_id and sort in ("newest",):
@@ -2147,16 +2164,20 @@ def query_grouped(
     """
     q = (q or "").strip()
     candidate_ids = _search_candidate_ids(q) if q else None
-    items_all = [
-        it for it in _items.values()
-        if not it.hidden
-        and (candidate_ids is None or it.message_id in candidate_ids)
-        and _matches(it, q, year, quality, tag, genre)
-    ]
-    search_scores = {
-        it.message_id: _search_score(q, it)
-        for it in items_all
-    } if q else {}
+    normalized, tokens = _search_terms(q) if q else ("", [])
+    items_all: list[HubItem] = []
+    search_scores: dict[int, float] = {}
+    for item in _items.values():
+        if item.hidden or (candidate_ids is not None and item.message_id not in candidate_ids):
+            continue
+        if not _matches(item, "", year, quality, tag, genre):
+            continue
+        score = _search_score_terms(normalized, tokens, item) if q else 0.0
+        if q and score <= 0:
+            continue
+        items_all.append(item)
+        if q:
+            search_scores[item.message_id] = score
 
     series_groups: dict = {}
     movie_groups: dict = {}

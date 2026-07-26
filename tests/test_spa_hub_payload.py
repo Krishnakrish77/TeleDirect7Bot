@@ -62,6 +62,17 @@ def _video_item(
 
 
 class SpaHubPayloadTest(unittest.TestCase):
+    def test_visible_art_recovery_is_scheduled_without_blocking_the_response(self):
+        async def verify() -> None:
+            recovery = AsyncMock(return_value=0)
+            with patch.object(spa_routes, "_recover_visible_tmdb_art", recovery):
+                spa_routes._schedule_visible_tmdb_art_recovery([object()])
+                recovery.assert_not_awaited()
+                await asyncio.sleep(0)
+                recovery.assert_awaited_once()
+
+        asyncio.run(verify())
+
     def test_watchlist_excludes_audio_saved_items(self):
         video = {"item_id": "101", "kind": "video", "title": "Film"}
         audio = {"item_id": "202", "kind": "audio", "title": "Song"}

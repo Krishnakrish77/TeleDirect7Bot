@@ -394,22 +394,32 @@ export function useAdminIptv(user: User | null | undefined, enabled = true) {
 }
 
 export function useSuggestions(q: string) {
-  const [items, setItems] = useState<Suggestion[]>([]);
+  const [state, setState] = useState({ items: [] as Suggestion[], loading: false, searched: false });
 
   useEffect(() => {
-    if (!q.trim()) {
-      setItems([]);
+    const query = q.trim();
+    if (query.length < 2) {
+      setState({ items: [], loading: false, searched: false });
       return;
     }
+    let active = true;
     const controller = new AbortController();
+    setState({ items: [], loading: true, searched: false });
     const timer = window.setTimeout(() => {
-      fetchSuggestions(q, controller.signal).then(setItems).catch(() => setItems([]));
-    }, 160);
+      fetchSuggestions(query, controller.signal)
+        .then((items) => {
+          if (active) setState({ items, loading: false, searched: true });
+        })
+        .catch(() => {
+          if (active) setState({ items: [], loading: false, searched: true });
+        });
+    }, 180);
     return () => {
+      active = false;
       window.clearTimeout(timer);
       controller.abort();
     };
   }, [q]);
 
-  return items;
+  return state;
 }
