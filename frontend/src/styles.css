@@ -4576,6 +4576,68 @@ img {
   cursor: pointer;
 }
 
+.audio-scrub-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.audio-scrub-wrap input {
+  display: block;
+}
+
+.audio-seek-preview,
+.video-seek-preview {
+  position: absolute;
+  z-index: 3;
+  bottom: calc(100% + 0.4rem);
+  left: var(--seek-preview-position);
+  min-width: 3.2rem;
+  padding: 0.28rem 0.42rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 5px;
+  background: rgba(8, 9, 11, 0.94);
+  color: #fff;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  text-align: center;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+}
+
+.video-seek-preview.has-frame {
+  min-width: 10rem;
+  padding: 0.25rem;
+  overflow: hidden;
+}
+
+.video-seek-preview img {
+  display: block;
+  width: min(10rem, calc(100vw - 2rem));
+  aspect-ratio: 16 / 9;
+  border-radius: 3px;
+  background: #000;
+  object-fit: cover;
+}
+
+.video-seek-preview.has-frame span {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  padding: 0.22rem 0.32rem;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.76);
+  color: #fff;
+  font-size: 0.72rem;
+  line-height: 1;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+
 .audio-actions,
 .player-settings {
   display: flex;

@@ -685,6 +685,31 @@ describe('WatchPage video player', () => {
     expect(view.container.querySelector('.video-seek-preview')).toBeNull();
   });
 
+  it('shows a decoded video frame in the seek preview when the browser exposes one', async () => {
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'videoWidth', { configurable: true, value: 320 });
+    Object.defineProperty(video, 'videoHeight', { configurable: true, value: 180 });
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    const toDataUrl = vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,preview');
+
+    try {
+      const position = screen.getByLabelText('Playback position');
+      fireEvent.pointerDown(position);
+      fireEvent.change(position, { target: { value: '30' } });
+      fireEvent.seeked(video);
+
+      expect(view.container.querySelector('.video-seek-preview img')?.getAttribute('src')).toBe('data:image/jpeg;base64,preview');
+    } finally {
+      getContext.mockRestore();
+      toDataUrl.mockRestore();
+    }
+  });
+
   it('shows skip recap during the recap window and jumps to recap end', async () => {
     const view = renderWatchPage(makeVideo({ recapStart: 30, recapEnd: 45 }));
 
@@ -1023,6 +1048,32 @@ describe('WatchPage video player', () => {
 });
 
 describe('WatchPage audio player', () => {
+  it('shows a timestamp preview while seeking an audio track', async () => {
+    const track = makeTrack();
+    fetchWatchMock.mockResolvedValue({
+      mediaKind: 'music',
+      item: track,
+      albumTracks: [track],
+    });
+    const view = render(
+      <WatchPage
+        watchKey={track.key}
+        audio={makeAudio({ track, queue: [track], queueIndex: 0, currentTime: 12, duration: 100 })}
+        onOpenQueue={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Theme', level: 1 });
+    const position = screen.getByLabelText('Playback position');
+    fireEvent.pointerDown(position);
+    fireEvent.change(position, { target: { value: '30' } });
+
+    expect(view.container.querySelector('.audio-seek-preview')?.textContent).toBe('0:30');
+
+    fireEvent.pointerUp(position);
+    expect(view.container.querySelector('.audio-seek-preview')).toBeNull();
+  });
+
   it('keeps queue available from the audio watch page even for one track', async () => {
     const track = makeTrack();
     const onOpenQueue = vi.fn();

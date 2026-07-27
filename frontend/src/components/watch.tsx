@@ -37,6 +37,13 @@ function isVideoChromeTarget(target: EventTarget | null): boolean {
   ));
 }
 
+function previewTimeAtPointer(target: HTMLInputElement, clientX: number, rangeMax: number): number {
+  const bounds = target.getBoundingClientRect();
+  if (bounds.width <= 0) return 0;
+  const progress = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+  return Math.round(progress * rangeMax);
+}
+
 function VideoInfoSection({ video }: { video: WatchVideo }) {
   const meta = video.metadata;
   const isEpisode = Boolean(video.episodeLabel);
@@ -299,6 +306,8 @@ export function WatchPage({
   const [error, setError] = useState('');
   const compactAudioLayout = useCompactAudioLayout();
   const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
+  const [audioSeekPreview, setAudioSeekPreview] = useState<number | null>(null);
+  const audioScrubbingRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -314,6 +323,11 @@ export function WatchPage({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
+  }, [watchKey]);
+
+  useEffect(() => {
+    audioScrubbingRef.current = false;
+    setAudioSeekPreview(null);
   }, [watchKey]);
 
   if (loading) {
@@ -454,15 +468,50 @@ export function WatchPage({
 
             <div className="watch-progress">
               <span>{formatClock(currentTime)}</span>
-              <input
-                type="range"
-                min="0"
-                max={rangeMax}
-                value={Math.min(rangeMax, Math.round(currentTime))}
-                onChange={(event) => seek(Number(event.currentTarget.value))}
-                disabled={!current}
-                aria-label="Playback position"
-              />
+              <div className="audio-scrub-wrap">
+                {audioSeekPreview !== null && (
+                  <output
+                    className="audio-seek-preview"
+                    style={{ '--seek-preview-position': `${Math.max(0, Math.min(100, (audioSeekPreview / rangeMax) * 100))}%` } as CSSProperties}
+                  >
+                    {formatClock(audioSeekPreview)}
+                  </output>
+                )}
+                <input
+                  type="range"
+                  min="0"
+                  max={rangeMax}
+                  value={Math.min(rangeMax, Math.round(currentTime))}
+                  onFocus={() => setAudioSeekPreview(currentTime)}
+                  onBlur={() => {
+                    audioScrubbingRef.current = false;
+                    setAudioSeekPreview(null);
+                  }}
+                  onPointerDown={(event) => {
+                    audioScrubbingRef.current = true;
+                    setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
+                  }}
+                  onPointerMove={(event) => {
+                    if (!audioScrubbingRef.current) return;
+                    setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
+                  }}
+                  onPointerUp={() => {
+                    audioScrubbingRef.current = false;
+                    setAudioSeekPreview(null);
+                  }}
+                  onPointerCancel={() => {
+                    audioScrubbingRef.current = false;
+                    setAudioSeekPreview(null);
+                  }}
+                  onChange={(event) => {
+                    const next = Number(event.currentTarget.value);
+                    setAudioSeekPreview(next);
+                    seek(next);
+                  }}
+                  disabled={!current}
+                  aria-label="Playback position"
+                />
+              </div>
               <span>{formatClock(duration)}</span>
             </div>
             {player.error && current && (
@@ -662,6 +711,7 @@ function VideoWatchPage({
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [seekPreview, setSeekPreview] = useState<number | null>(null);
+  const [seekPreviewFrame, setSeekPreviewFrame] = useState('');
   const [duration, setDuration] = useState(video.duration || 0);
   // Start with the original stream. Modern devices can hardware-decode some
   // formats (including this library's 10-bit HEVC uploads) that a static
@@ -698,6 +748,8 @@ function VideoWatchPage({
   const controlsTimerRef = useRef<number | null>(null);
   const clickTimerRef = useRef<number | null>(null);
   const stillWatchingTimerRef = useRef<number | null>(null);
+  const seekPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const scrubbingRef = useRef(false);
   const lastStillWatchingActivityRef = useRef<number | null>(null);
   const pendingServerResumeRef = useRef(false);
   const pendingResumeMaxPositionRef = useRef(0);
@@ -755,6 +807,35 @@ function VideoWatchPage({
     controlsVisible || menuOpen || episodesOpen || stillWatchingPrompt ? 'video-shell controls-visible' : 'video-shell controls-hidden',
     video.knownUnplayable ? 'video-unplayable' : '',
   ].filter(Boolean).join(' ');
+
+  const captureSeekPreviewFrame = useCallback((element: HTMLVideoElement) => {
+    if (!scrubbingRef.current || !element.videoWidth || !element.videoHeight) return;
+    try {
+      const canvas = seekPreviewCanvasRef.current || document.createElement('canvas');
+      seekPreviewCanvasRef.current = canvas;
+      const previewWidth = Math.min(192, element.videoWidth);
+      const previewHeight = Math.max(1, Math.round(previewWidth * (element.videoHeight / element.videoWidth)));
+      canvas.width = previewWidth;
+      canvas.height = previewHeight;
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      context.drawImage(element, 0, 0, previewWidth, previewHeight);
+      setSeekPreviewFrame(canvas.toDataURL('image/jpeg', 0.72));
+    } catch (_) {
+      // Streams without a readable video frame still retain the time preview.
+      setSeekPreviewFrame('');
+    }
+  }, []);
+
+  const clearSeekPreview = useCallback(() => {
+    scrubbingRef.current = false;
+    setSeekPreview(null);
+    setSeekPreviewFrame('');
+  }, []);
+
+  useEffect(() => {
+    clearSeekPreview();
+  }, [clearSeekPreview, sourceSrc]);
 
   const setVideoMediaSessionAction = useCallback((action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
     if (!('mediaSession' in navigator)) return;
@@ -1196,11 +1277,13 @@ function VideoWatchPage({
       setVideoMediaSessionPlaybackState(false);
       setVideoMediaSessionPosition(el.currentTime || 0);
     };
+    const onSeeked = () => captureSeekPreviewFrame(el);
     el.addEventListener('timeupdate', onTime);
     el.addEventListener('loadedmetadata', onLoaded);
     el.addEventListener('durationchange', onLoaded);
     el.addEventListener('play', onPlay);
     el.addEventListener('pause', onPause);
+    el.addEventListener('seeked', onSeeked);
     el.addEventListener('ended', onEnded);
     el.addEventListener('error', onError);
     const onBeforeUnload = () => saveResume(true);
@@ -1211,6 +1294,7 @@ function VideoWatchPage({
       el.removeEventListener('durationchange', onLoaded);
       el.removeEventListener('play', onPlay);
       el.removeEventListener('pause', onPause);
+      el.removeEventListener('seeked', onSeeked);
       el.removeEventListener('ended', onEnded);
       el.removeEventListener('error', onError);
       window.removeEventListener('beforeunload', onBeforeUnload);
@@ -1218,7 +1302,7 @@ function VideoWatchPage({
       pendingServerResumeRef.current = false;
       saveResume(true);
     };
-  }, [hasHls, serverSyncEnabled, setVideoMediaSessionPlaybackState, setVideoMediaSessionPosition, sourceMode, sourceSrc, video]);
+  }, [captureSeekPreviewFrame, hasHls, serverSyncEnabled, setVideoMediaSessionPlaybackState, setVideoMediaSessionPosition, sourceMode, sourceSrc, video]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -1908,10 +1992,11 @@ function VideoWatchPage({
             <div className="video-scrub-wrap">
               {seekPreview !== null && (
                 <output
-                  className="video-seek-preview"
+                  className={seekPreviewFrame ? 'video-seek-preview has-frame' : 'video-seek-preview'}
                   style={{ '--seek-preview-position': `${Math.max(0, Math.min(100, (seekPreview / rangeMax) * 100))}%` } as CSSProperties}
                 >
-                  {formatClock(seekPreview)}
+                  {seekPreviewFrame && <img src={seekPreviewFrame} alt="" />}
+                  <span>{formatClock(seekPreview)}</span>
                 </output>
               )}
               <input
@@ -1919,11 +2004,23 @@ function VideoWatchPage({
                 min="0"
                 max={rangeMax}
                 value={Math.min(rangeMax, Math.round(currentTime))}
-                onFocus={() => setSeekPreview(currentTime)}
-                onBlur={() => setSeekPreview(null)}
-                onPointerDown={() => setSeekPreview(currentTime)}
-                onPointerUp={() => setSeekPreview(null)}
-                onPointerCancel={() => setSeekPreview(null)}
+                onFocus={() => {
+                  scrubbingRef.current = true;
+                  setSeekPreviewFrame('');
+                  setSeekPreview(currentTime);
+                }}
+                onBlur={clearSeekPreview}
+                onPointerDown={(event) => {
+                  scrubbingRef.current = true;
+                  setSeekPreviewFrame('');
+                  setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
+                }}
+                onPointerMove={(event) => {
+                  if (!scrubbingRef.current) return;
+                  setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
+                }}
+                onPointerUp={clearSeekPreview}
+                onPointerCancel={clearSeekPreview}
                 onChange={(event) => {
                   const next = Number(event.currentTarget.value);
                   setSeekPreview(next);
