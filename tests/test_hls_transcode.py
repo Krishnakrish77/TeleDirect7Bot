@@ -39,6 +39,20 @@ class HlsTranscodeTest(unittest.TestCase):
         finally:
             session.cleanup_disk()
 
+    def test_session_keeps_continuous_timestamps_when_restarted_from_seek(self):
+        session = HlsSession(
+            123, "http://127.0.0.1/input", 60, "aac", transcode_video=False,
+        )
+        try:
+            args = session._ffmpeg_args(3)
+
+            self.assertNotIn("-reset_timestamps", args)
+            self.assertIn("-output_ts_offset", args)
+            self.assertEqual(args[args.index("-output_ts_offset") + 1], "18.000")
+            self.assertEqual(args[args.index("-avoid_negative_ts") + 1], "disabled")
+        finally:
+            session.cleanup_disk()
+
 
 if __name__ == "__main__":
     unittest.main()

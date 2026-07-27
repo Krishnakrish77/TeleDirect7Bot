@@ -186,11 +186,15 @@ class HlsSession:
             "-segment_time", str(SEGMENT_SECONDS),
             "-segment_format", "mpegts",
             "-segment_start_number", str(from_segment),
-            # Each segment's PTS resets to 0 — gives hls.js clean per-segment
-            # timelines that it stitches via EXTINF, no PTS overlap-handling
-            # quirks. This is the fix for the boundary frame-replay artifact.
-            "-reset_timestamps", "1",
-            "-avoid_negative_ts", "make_zero",
+            # Keep every segment on the playlist's one continuous timeline.
+            # Resetting each .ts to zero makes Chrome's MSE append path reject
+            # later fragments with CHUNK_DEMUXER_ERROR_APPEND_FAILED (DTS not
+            # in sequence), especially when playback enters HLS after a seek
+            # or direct-stream fallback. A restarted producer starts at
+            # `from_segment`, so offset its generated timestamps to that
+            # segment's advertised EXTINF position as well.
+            "-output_ts_offset", f"{start_sec:.3f}",
+            "-avoid_negative_ts", "disabled",
             str(self.work_dir / "%05d.ts"),
         ]
 

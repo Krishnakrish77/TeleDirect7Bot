@@ -722,6 +722,7 @@ function VideoWatchPage({
   const [playbackRate, setPlaybackRate] = useState(1);
   const [brightness, setBrightness] = useState(1);
   const [error, setError] = useState(video.knownUnplayable ? 'This file is marked as difficult for browser playback.' : '');
+  const [playbackAttempt, setPlaybackAttempt] = useState(0);
   const [showNext, setShowNext] = useState(false);
   const [nextCountdown, setNextCountdown] = useState(5);
   // Cross-device handoff: when this tab regains focus and another device has
@@ -739,6 +740,7 @@ function VideoWatchPage({
   const controlsTimerRef = useRef<number | null>(null);
   const clickTimerRef = useRef<number | null>(null);
   const stillWatchingTimerRef = useRef<number | null>(null);
+  const hlsLoadingRef = useRef(false);
   const seekPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scrubbingRef = useRef(false);
   const lastStillWatchingActivityRef = useRef<number | null>(null);
@@ -999,8 +1001,10 @@ function VideoWatchPage({
     const savedTime = el.currentTime || 0;
     let cancelled = false;
     if (sourceMode === 'hls' && hasHls) {
+      hlsLoadingRef.current = true;
       attachHls(el, sourceSrc, video.directSrc, () => {
         if (!cancelled) {
+          hlsLoadingRef.current = false;
           hlsFailedRef.current = true;
           if (directFallbackTriedRef.current) {
             setError('Browser playback could not start. Try VLC.');
@@ -1017,11 +1021,13 @@ function VideoWatchPage({
           return;
         }
         hlsRef.current = instance;
+        hlsLoadingRef.current = false;
         if (savedTime > 0 && Number.isFinite(savedTime)) {
           try { el.currentTime = savedTime; } catch (_) { /* ignore invalid seek */ }
         }
       });
     } else if (video.directSrc) {
+      hlsLoadingRef.current = false;
       el.src = video.directSrc;
       if (savedTime > 0 && Number.isFinite(savedTime)) {
         try { el.currentTime = savedTime; } catch (_) { /* ignore invalid seek */ }
@@ -1029,10 +1035,11 @@ function VideoWatchPage({
     }
     return () => {
       cancelled = true;
+      hlsLoadingRef.current = false;
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [hasHls, showToast, sourceMode, sourceSrc, video.directSrc, video.knownUnplayable]);
+  }, [hasHls, playbackAttempt, showToast, sourceMode, sourceSrc, video.directSrc, video.knownUnplayable]);
 
   useEffect(() => {
     try {
@@ -1305,10 +1312,24 @@ function VideoWatchPage({
       if (video.nextEpisode) setShowNext(true);
     };
     const onError = () => {
-      if (sourceMode === 'direct' && hasHls && !hlsFailedRef.current && !directFallbackTriedRef.current) {
-        directFallbackTriedRef.current = true;
-        setSourceMode('hls');
-        setError('');
+      if (sourceMode === 'direct' && hasHls && !hlsFailedRef.current) {
+        // Browsers can emit a second error while React is applying the HLS
+        // fallback. The first event already owns that transition; consuming
+        // its duplicate keeps a recoverable source change from becoming a
+        // terminal VLC-only error.
+        if (!directFallbackTriedRef.current) {
+          directFallbackTriedRef.current = true;
+          setSourceMode('hls');
+          setError('');
+        }
+        return;
+      }
+      // hls.js reports fatal playback conditions through its own event
+      // callback. During attachment (or while an hls.js instance owns MSE),
+      // native media errors are transitional and must not race that callback
+      // into displaying the terminal overlay.
+      if (sourceMode === 'hls' && hasHls && (hlsLoadingRef.current || hlsRef.current)) {
+        return;
       } else {
         setPlaying(false);
         setVideoMediaSessionPlaybackState(false);
@@ -1350,7 +1371,7 @@ function VideoWatchPage({
       pendingServerResumeRef.current = false;
       saveResume(true);
     };
-  }, [captureSeekPreviewFrame, hasHls, serverSyncEnabled, setVideoMediaSessionPlaybackState, setVideoMediaSessionPosition, sourceMode, sourceSrc, video]);
+  }, [captureSeekPreviewFrame, hasHls, playbackAttempt, serverSyncEnabled, setVideoMediaSessionPlaybackState, setVideoMediaSessionPosition, sourceMode, sourceSrc, video]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -1539,6 +1560,19 @@ function VideoWatchPage({
     if (sourceMode === 'direct') hlsFailedRef.current = false;
     setSourceMode((current) => current === 'direct' ? 'hls' : 'direct');
   }, [hasHls, sourceMode]);
+
+  const retryPlayback = useCallback(() => {
+    hlsRef.current?.destroy();
+    hlsRef.current = null;
+    hlsFailedRef.current = false;
+    directFallbackTriedRef.current = false;
+    setPlaying(false);
+    setError('');
+    setSourceMode('direct');
+    // A failed direct source may already be selected, so make the source
+    // effect run again rather than relying on a same-value state update.
+    setPlaybackAttempt((attempt) => attempt + 1);
+  }, []);
 
   const shareVideo = useCallback(async () => {
     const data = { title: video.title, url: window.location.href };
@@ -1996,6 +2030,7 @@ function VideoWatchPage({
             <strong>This video needs another player</strong>
             <span>{error || 'Open it in VLC or download the file.'}</span>
             <div>
+              <Button type="button" variant="secondary" size="sm" onClick={retryPlayback}>Try again</Button>
               <a className="secondary-action" href={vlcHref}>VLC</a>
             </div>
           </div>

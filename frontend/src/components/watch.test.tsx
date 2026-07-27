@@ -552,7 +552,43 @@ describe('WatchPage video player', () => {
     const view = renderWatchPage(makeVideo({ preferHls: true }));
 
     await screen.findByRole('heading', { name: 'Pilot' });
-    expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/stream/video-key');
+    await waitFor(() => expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/stream/video-key'));
+  });
+
+  it('does not turn a duplicate direct-stream error into a terminal failure while switching to HLS', async () => {
+    class MockHls {
+      static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifest' };
+      static isSupported = () => true;
+      on() {}
+      off() {}
+      loadSource() {}
+      attachMedia() {}
+      destroy() {}
+    }
+    Object.defineProperty(window, 'Hls', { configurable: true, value: MockHls });
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    fireEvent.error(video);
+    fireEvent.error(video);
+
+    await waitFor(() => expect(video.getAttribute('src')).toBe('/hls/video-key/master.m3u8'));
+    expect(screen.queryByText('This video needs another player')).toBeNull();
+  });
+
+  it('lets the viewer retry playback after every source has failed', async () => {
+    const view = renderWatchPage(makeVideo({ hlsSrc: '' }));
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const video = view.container.querySelector('video') as HTMLVideoElement;
+    fireEvent.error(video);
+
+    expect(screen.getByText('This video needs another player')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    await waitFor(() => expect(screen.queryByText('This video needs another player')).toBeNull());
+    expect(video.getAttribute('src')).toBe('/stream/video-key');
   });
 
   it('does not duplicate the default audio track option', async () => {
