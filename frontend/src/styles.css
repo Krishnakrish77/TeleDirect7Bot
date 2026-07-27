@@ -8195,18 +8195,24 @@ img {
 }
 
 .modal-panel {
-  position: relative;
-  z-index: 1;
+  position: fixed;
+  z-index: 51;
+  top: 50%;
+  left: 50%;
   display: grid;
   justify-items: center;
   gap: 1rem;
-  width: min(100%, 360px);
-  min-height: 230px;
+  width: min(calc(100vw - 2rem), 360px);
+  min-height: min(230px, calc(100svh - 2rem));
+  max-height: calc(100svh - 2rem);
+  overflow: auto;
   padding: 2rem 1.5rem;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: #111317;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.48);
   contain: layout paint style;
+  transform: translate(-50%, -50%);
 }
 
 .modal-panel h2,

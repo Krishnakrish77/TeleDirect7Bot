@@ -430,7 +430,7 @@ export function SignInModal({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
-      <DialogContent className="modal-panel fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" aria-describedby={undefined}>
+      <DialogContent className="modal-panel" aria-describedby={undefined}>
         <DialogTitle>Sign in</DialogTitle>
         <DialogClose asChild>
           <Button type="button" variant="ghost" size="icon-sm" className="modal-close" aria-label="Close">
