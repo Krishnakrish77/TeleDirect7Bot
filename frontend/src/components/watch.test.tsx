@@ -559,6 +559,10 @@ describe('WatchPage video player', () => {
     class MockHls {
       static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifest' };
       static isSupported = () => true;
+      static config: Record<string, unknown> | undefined;
+      constructor(config?: Record<string, unknown>) {
+        MockHls.config = config;
+      }
       on() {}
       off() {}
       loadSource() {}
@@ -570,10 +574,12 @@ describe('WatchPage video player', () => {
 
     await screen.findByRole('heading', { name: 'Pilot' });
     const video = view.container.querySelector('video') as HTMLVideoElement;
+    video.currentTime = 42;
     fireEvent.error(video);
     fireEvent.error(video);
 
     await waitFor(() => expect(video.getAttribute('src')).toBe('/hls/video-key/master.m3u8'));
+    expect(MockHls.config?.startPosition).toBe(42);
     expect(screen.queryByText('This video needs another player')).toBeNull();
   });
 

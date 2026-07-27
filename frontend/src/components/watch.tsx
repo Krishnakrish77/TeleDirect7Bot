@@ -1015,7 +1015,7 @@ function VideoWatchPage({
             showToast('HLS failed. Using direct stream.');
           }
         }
-      }).then((instance) => {
+      }, savedTime).then((instance) => {
         if (cancelled) {
           instance?.destroy();
           return;

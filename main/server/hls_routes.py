@@ -138,7 +138,12 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
     session = await hls_session.get_or_start(
         message_id, source_url, probe.duration, probe.audio_codec,
         audio_index=audio_index,
-        transcode_video=probe.needs_video_transcode,
+        # HLS is our browser-compatibility rendition. Even an H.264 source
+        # can carry timestamp discontinuities that are harmless for a direct
+        # file stream but fatal to Chrome's MSE append pipeline. Re-encoding
+        # this fallback guarantees monotonic AVC/AAC segment timestamps and
+        # keyframes at every advertised HLS boundary.
+        transcode_video=True,
     )
     seg_path = await session.request(n)
     if seg_path is None:

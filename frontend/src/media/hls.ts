@@ -62,6 +62,7 @@ export function attachHls(
   source: string,
   fallbackSource: string,
   onFatalError: () => void,
+  startPosition = -1,
 ): Promise<HlsInstance | null> {
   video.src = source;
   if (canPlayNativeHls(video)) return Promise.resolve(null);
@@ -78,6 +79,11 @@ export function attachHls(
       maxBufferLength: 30,
       maxMaxBufferLength: 120,
       maxBufferSize: 60 * 1024 * 1024,
+      // Starting from the saved playhead prevents hls.js from downloading
+      // segments 0/1 before it discovers that the viewer resumed much later.
+      // It also lets the server begin the compatibility rendition at the
+      // relevant HLS boundary instead of needlessly encoding from the start.
+      startPosition: startPosition > 0 ? startPosition : -1,
       manifestLoadingTimeOut: 30000,
       manifestLoadingMaxRetry: 4,
       levelLoadingTimeOut: 30000,
