@@ -8233,6 +8233,24 @@ img {
   place-items: center;
 }
 
+.telegram-widget-root {
+  display: grid;
+  min-width: 1px;
+  min-height: 1px;
+  place-items: center;
+}
+
+.telegram-widget-status {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.telegram-widget-error {
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+}
+
 .trailer-overlay {
   position: fixed;
   inset: 0;

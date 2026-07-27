@@ -1,9 +1,9 @@
 import { createRef } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSuggestions } from '../hooks/data';
 import type { MeResponse, Suggestion, User } from '../types';
-import { Header, PrimaryNav } from './layout';
+import { Header, PrimaryNav, SignInModal } from './layout';
 
 vi.mock('../hooks/data', () => ({
   useSuggestions: vi.fn(),
@@ -211,5 +211,17 @@ describe('Header search', () => {
 
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole('listbox')).toBeNull();
+  });
+});
+
+describe('Telegram sign-in', () => {
+  it('mounts the Telegram widget after the dialog portal is ready', async () => {
+    render(<SignInModal open botUsername="TeleDirect7Bot" onClose={vi.fn()} />);
+
+    expect(await screen.findByText('Loading Telegram sign-in…')).toBeTruthy();
+    await waitFor(() => {
+      expect(document.querySelector('.telegram-widget-root script')).not.toBeNull();
+    });
+    expect(document.querySelector('.telegram-widget-root script')?.getAttribute('data-telegram-login')).toBe('TeleDirect7Bot');
   });
 });

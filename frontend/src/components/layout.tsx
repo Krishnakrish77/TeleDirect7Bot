@@ -394,13 +394,16 @@ export function SignInModal({
   botUsername: string;
   onClose: () => void;
 }) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [telegramRoot, setTelegramRoot] = useState<HTMLDivElement | null>(null);
+  const [widgetState, setWidgetState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+  const [widgetAttempt, setWidgetAttempt] = useState(0);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!open || !botUsername || !rootRef.current) return;
-    rootRef.current.innerHTML = '';
+    if (!open || !botUsername || !telegramRoot) return;
+    telegramRoot.replaceChildren();
     setError('');
+    setWidgetState('loading');
 
     window.onTeleDirectTelegramAuth = async (telegramUser: TelegramAuthUser) => {
       try {
@@ -420,13 +423,26 @@ export function SignInModal({
     script.setAttribute('data-radius', '8');
     script.setAttribute('data-onauth', 'onTeleDirectTelegramAuth(user)');
     script.setAttribute('data-request-access', 'write');
-    rootRef.current.appendChild(script);
+    const observer = new MutationObserver(() => {
+      if (telegramRoot.querySelector('iframe')) {
+        setWidgetState('ready');
+        observer.disconnect();
+      }
+    });
+    observer.observe(telegramRoot, { childList: true, subtree: true });
+    script.onerror = () => setWidgetState('failed');
+    telegramRoot.appendChild(script);
+    const timeout = window.setTimeout(() => {
+      if (!telegramRoot.querySelector('iframe')) setWidgetState('failed');
+    }, 8000);
 
     return () => {
+      window.clearTimeout(timeout);
+      observer.disconnect();
       delete window.onTeleDirectTelegramAuth;
-      if (rootRef.current) rootRef.current.innerHTML = '';
+      telegramRoot.replaceChildren();
     };
-  }, [botUsername, open]);
+  }, [botUsername, open, telegramRoot, widgetAttempt]);
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
@@ -437,8 +453,19 @@ export function SignInModal({
           <XIcon />
           </Button>
         </DialogClose>
-        <div className="telegram-slot" ref={rootRef} />
+        <div className="telegram-slot">
+          <div className="telegram-widget-root" ref={setTelegramRoot} />
+          {widgetState === 'loading' && <span className="telegram-widget-status" role="status">Loading Telegram sign-in…</span>}
+        </div>
         {!botUsername && <p className="form-error">Telegram login unavailable</p>}
+        {widgetState === 'failed' && botUsername && (
+          <div className="telegram-widget-error">
+            <p className="form-error">Telegram sign-in did not load. Check content blockers or your connection.</p>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setWidgetAttempt((value) => value + 1)}>
+              Retry
+            </Button>
+          </div>
+        )}
         {error && <p className="form-error">{error}</p>}
       </DialogContent>
     </Dialog>
