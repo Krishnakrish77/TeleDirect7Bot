@@ -5101,7 +5101,7 @@ img {
     ),
     #111317;
   box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04);
-  contain: layout paint style;
+  contain: layout style;
   transition: background 0.7s ease;
 }
 
@@ -5166,6 +5166,12 @@ img {
 
 .mini-progress span:last-child {
   text-align: right;
+}
+
+.mini-scrub-wrap,
+.now-scrubber-wrap {
+  position: relative;
+  min-width: 0;
 }
 
 .mini-error {

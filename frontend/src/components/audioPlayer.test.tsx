@@ -104,6 +104,28 @@ describe('MiniPlayer', () => {
     expect(togglePlayback).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('link', { name: /Classic/i })).toBeNull();
   });
+
+  it('shows the destination time when hovering the mini-player scrubber', () => {
+    const view = render(
+      <MiniPlayer
+        player={makePlayer()}
+        playRelative={vi.fn()}
+        playQueueIndex={vi.fn()}
+        togglePlayback={vi.fn()}
+        seek={vi.fn()}
+        onExpand={vi.fn()}
+        onOpenQueue={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    const position = screen.getByLabelText('Playback position');
+    fireEvent.pointerEnter(position, { clientX: 20 });
+    expect(view.container.querySelector('.audio-seek-preview')).toBeTruthy();
+
+    fireEvent.pointerLeave(position);
+    expect(view.container.querySelector('.audio-seek-preview')).toBeNull();
+  });
 });
 
 describe('NowPlayingSheet', () => {

@@ -44,6 +44,11 @@ function previewTimeAtPointer(target: HTMLInputElement, clientX: number, rangeMa
   return Math.round(progress * rangeMax);
 }
 
+function retryDelayMs(response: Response): number {
+  const retryAfter = Number(response.headers.get('Retry-After'));
+  return Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 30_000) : 4_000;
+}
+
 function VideoInfoSection({ video }: { video: WatchVideo }) {
   const meta = video.metadata;
   const isEpisode = Boolean(video.episodeLabel);
@@ -307,7 +312,6 @@ export function WatchPage({
   const compactAudioLayout = useCompactAudioLayout();
   const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
   const [audioSeekPreview, setAudioSeekPreview] = useState<number | null>(null);
-  const audioScrubbingRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -326,7 +330,6 @@ export function WatchPage({
   }, [watchKey]);
 
   useEffect(() => {
-    audioScrubbingRef.current = false;
     setAudioSeekPreview(null);
   }, [watchKey]);
 
@@ -483,26 +486,12 @@ export function WatchPage({
                   max={rangeMax}
                   value={Math.min(rangeMax, Math.round(currentTime))}
                   onFocus={() => setAudioSeekPreview(currentTime)}
-                  onBlur={() => {
-                    audioScrubbingRef.current = false;
-                    setAudioSeekPreview(null);
-                  }}
-                  onPointerDown={(event) => {
-                    audioScrubbingRef.current = true;
-                    setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
-                  }}
-                  onPointerMove={(event) => {
-                    if (!audioScrubbingRef.current) return;
-                    setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
-                  }}
-                  onPointerUp={() => {
-                    audioScrubbingRef.current = false;
-                    setAudioSeekPreview(null);
-                  }}
-                  onPointerCancel={() => {
-                    audioScrubbingRef.current = false;
-                    setAudioSeekPreview(null);
-                  }}
+                  onBlur={() => setAudioSeekPreview(null)}
+                  onPointerEnter={(event) => setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
+                  onPointerDown={(event) => setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
+                  onPointerMove={(event) => setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
+                  onPointerCancel={() => setAudioSeekPreview(null)}
+                  onPointerLeave={() => setAudioSeekPreview(null)}
                   onChange={(event) => {
                     const next = Number(event.currentTarget.value);
                     setAudioSeekPreview(next);
@@ -720,6 +709,8 @@ function VideoWatchPage({
   const [audioIndex, setAudioIndex] = useState(0);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
   const [activeSub, setActiveSub] = useState('');
+  const [resolvedSubtitle, setResolvedSubtitle] = useState<{ id: string; url: string } | null>(null);
+  const [subtitleLoadStatus, setSubtitleLoadStatus] = useState('');
   const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
   const [customSubtitles, setCustomSubtitles] = useState<SubtitleTrack[]>([]);
   const [subtitleStatus, setSubtitleStatus] = useState('');
@@ -787,6 +778,9 @@ function VideoWatchPage({
   const showSkipIntro = hasIntro && currentTime >= video.introStart && currentTime < video.introEnd;
   const showSkipRecap = hasRecap && currentTime >= video.recapStart && currentTime < video.recapEnd;
   const activeSubtitle = allSubtitles.find((track) => track.id === activeSub);
+  const playableSubtitle = activeSubtitle && resolvedSubtitle?.id === activeSubtitle.id
+    ? { ...activeSubtitle, url: resolvedSubtitle.url }
+    : null;
   const chapters = useMemo(() => {
     const total = duration || video.duration || 0;
     return (video.chapters || [])
@@ -940,6 +934,60 @@ function VideoWatchPage({
   }, [hasHls, video.audioTrackBase, video.subtitleBase]);
 
   useEffect(() => {
+    if (!activeSubtitle) {
+      setResolvedSubtitle(null);
+      setSubtitleLoadStatus('');
+      return undefined;
+    }
+    if (activeSubtitle.url.startsWith('blob:')) {
+      setResolvedSubtitle({ id: activeSubtitle.id, url: activeSubtitle.url });
+      setSubtitleLoadStatus('');
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let objectUrl = '';
+    const load = async () => {
+      let attempts = 0;
+      setResolvedSubtitle(null);
+      setSubtitleLoadStatus('Preparing captions…');
+      while (!cancelled) {
+        try {
+          const response = await fetch(activeSubtitle.url, { signal: controller.signal });
+          if (response.ok) {
+            const body = await response.blob();
+            if (!body.size) throw new Error('Subtitle file is empty');
+            objectUrl = URL.createObjectURL(new Blob([body], { type: 'text/vtt' }));
+            if (!cancelled) {
+              setResolvedSubtitle({ id: activeSubtitle.id, url: objectUrl });
+              setSubtitleLoadStatus('');
+            }
+            return;
+          }
+          if (response.status === 429 || response.status === 503) {
+            attempts += 1;
+            setSubtitleLoadStatus(`Preparing captions… retrying automatically (${attempts}).`);
+            await new Promise<void>((resolve) => window.setTimeout(resolve, retryDelayMs(response)));
+            continue;
+          }
+          throw new Error(`Captions could not load (${response.status}).`);
+        } catch (err) {
+          if (cancelled || (err instanceof DOMException && err.name === 'AbortError')) return;
+          setSubtitleLoadStatus(err instanceof Error ? err.message : 'Captions could not load.');
+          return;
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [activeSubtitle]);
+
+  useEffect(() => {
     const el = videoRef.current;
     if (!el) return undefined;
     hlsRef.current?.destroy();
@@ -1090,7 +1138,7 @@ function VideoWatchPage({
     }
     textTracks.addEventListener('addtrack', applyMode);
     return () => textTracks.removeEventListener('addtrack', applyMode);
-  }, [activeSub, allSubtitles, sourceSrc]);
+  }, [activeSub, playableSubtitle, sourceSrc]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -1888,17 +1936,17 @@ function VideoWatchPage({
           playsInline
           preload="metadata"
         >
-          {allSubtitles.map((track, index) => (
+          {playableSubtitle && (
             <track
-              key={track.id}
-              id={track.id}
-              data-subtitle-id={track.id}
+              key={playableSubtitle.id}
+              id={playableSubtitle.id}
+              data-subtitle-id={playableSubtitle.id}
               kind="subtitles"
-              src={track.url}
-              srcLang={track.language || 'und'}
-              label={track.label || track.language || `Subtitle ${index + 1}`}
+              src={playableSubtitle.url}
+              srcLang={playableSubtitle.language || 'und'}
+              label={playableSubtitle.label || playableSubtitle.language || 'Subtitles'}
             />
-          ))}
+          )}
         </video>
         <div className="video-brightness-overlay" style={{ opacity: Math.max(0, 1 - brightness) }} />
 
@@ -1911,7 +1959,7 @@ function VideoWatchPage({
             <div className="video-topbar-badges" aria-label="Playback state">
               <span>{sourceMode === 'hls' ? 'HLS' : 'Direct'}</span>
               {video.quality && <span>{video.quality}</span>}
-              {activeSubtitle && <span>{activeSubtitle.label || activeSubtitle.language || 'Captions'}</span>}
+              {activeSubtitle && <span>{subtitleLoadStatus ? 'Captions loading' : activeSubtitle.label || activeSubtitle.language || 'Captions'}</span>}
               {activeChapter && <span>{activeChapter.title}</span>}
             </div>
             <a className="video-topbar-vlc" href={vlcHref} aria-label="Open in VLC" title="Open in VLC">
@@ -2010,17 +2058,22 @@ function VideoWatchPage({
                   setSeekPreview(currentTime);
                 }}
                 onBlur={clearSeekPreview}
+                onPointerEnter={(event) => {
+                  scrubbingRef.current = true;
+                  setSeekPreviewFrame('');
+                  setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
+                }}
                 onPointerDown={(event) => {
                   scrubbingRef.current = true;
                   setSeekPreviewFrame('');
                   setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
                 }}
-                onPointerMove={(event) => {
-                  if (!scrubbingRef.current) return;
-                  setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
+                onPointerMove={(event) => setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
+                onPointerUp={() => {
+                  scrubbingRef.current = true;
                 }}
-                onPointerUp={clearSeekPreview}
                 onPointerCancel={clearSeekPreview}
+                onPointerLeave={clearSeekPreview}
                 onChange={(event) => {
                   const next = Number(event.currentTarget.value);
                   setSeekPreview(next);
@@ -2202,7 +2255,7 @@ function VideoWatchPage({
               <span>AirPlay</span>
               <strong>Open</strong>
             </Button>
-            {subtitleStatus && <div className="video-menu-status" role="status">{subtitleStatus}</div>}
+            {(subtitleLoadStatus || subtitleStatus) && <div className="video-menu-status" role="status">{subtitleLoadStatus || subtitleStatus}</div>}
             <a className="video-menu-row" role="menuitem" href={vlcHref}>
               <span>VLC</span>
               <strong>Open</strong>

@@ -208,9 +208,11 @@ _vtt_locks: dict = {}
 # single request so a client disconnect / gateway 504 doesn't kill ffmpeg —
 # extraction finishes and caches, so a reload serves it instantly.
 _vtt_tasks: dict = {}
-# Wait this long for extraction before returning 503. Kept under Koyeb's ~120s
-# edge timeout so the response flushes; the task keeps running past it.
-_VTT_WAIT_BUDGET = 100
+# Return a retryable response promptly while the detached extraction carries
+# on. The app player polls this endpoint, so it can recover without a manual
+# refresh once the VTT reaches cache; keeping this modest also avoids holding
+# Koyeb edge connections open for a whole probe/extraction cycle.
+_VTT_WAIT_BUDGET = 15
 
 
 def _sub_store_key(message_id: int, track: int) -> str:
@@ -415,8 +417,8 @@ async def hls_sub_vtt(request: web.Request) -> web.Response:
             data = await asyncio.wait_for(asyncio.shield(task), timeout=_VTT_WAIT_BUDGET)
         except asyncio.TimeoutError:
             raise web.HTTPServiceUnavailable(
-                text="subtitle still extracting; reload in a moment",
-                headers={"Retry-After": "20", "Access-Control-Allow-Origin": "*"},
+                text="subtitle still extracting; retry shortly",
+                headers={"Retry-After": "5", "Access-Control-Allow-Origin": "*"},
             )
         if not data:
             raise web.HTTPNotFound(text="subtitle track not found or extraction failed")

@@ -277,6 +277,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   Reflect.deleteProperty(navigator, 'mediaSession');
   Reflect.deleteProperty(window, 'MediaMetadata');
   Reflect.deleteProperty(window, 'Hls');
@@ -681,8 +682,47 @@ describe('WatchPage video player', () => {
 
     expect(view.container.querySelector('.video-seek-preview')?.textContent).toBe('0:30');
 
-    fireEvent.pointerUp(position);
+    fireEvent.pointerLeave(position);
     expect(view.container.querySelector('.video-seek-preview')).toBeNull();
+  });
+
+  it('shows the target timestamp before a video seek is committed', async () => {
+    const view = renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    const position = screen.getByLabelText('Playback position');
+    fireEvent.pointerEnter(position, { clientX: 20 });
+
+    expect(view.container.querySelector('.video-seek-preview')).toBeTruthy();
+
+    fireEvent.pointerLeave(position);
+    expect(view.container.querySelector('.video-seek-preview')).toBeNull();
+  });
+
+  it('retries an embedded subtitle while extraction finishes instead of requiring a refresh', async () => {
+    const subtitles: SubtitleTrack[] = [
+      { id: 'eng', url: '/sub/video-key/en.vtt', language: 'en', label: 'English', codec: 'vtt', kind: 'embedded' },
+    ];
+    fetchSubtitlesMock.mockResolvedValue(subtitles);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('', { status: 503, headers: { 'Retry-After': '0.001' } }))
+      .mockResolvedValueOnce(new Response('WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:english');
+    const view = renderWatchPage();
+
+    try {
+      await screen.findByRole('heading', { name: 'Pilot' });
+      const captionsButton = await screen.findByLabelText('Turn captions on') as HTMLButtonElement;
+      await waitFor(() => expect(captionsButton.disabled).toBe(false));
+      fireEvent.click(captionsButton);
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(view.container.querySelector('track')?.getAttribute('src')).toBe('blob:english'));
+    } finally {
+      createObjectUrl.mockRestore();
+    }
   });
 
   it('shows a decoded video frame in the seek preview when the browser exposes one', async () => {
@@ -703,7 +743,7 @@ describe('WatchPage video player', () => {
       fireEvent.change(position, { target: { value: '30' } });
       fireEvent.seeked(video);
 
-      expect(view.container.querySelector('.video-seek-preview img')?.getAttribute('src')).toBe('data:image/jpeg;base64,preview');
+      await waitFor(() => expect(view.container.querySelector('.video-seek-preview img')?.getAttribute('src')).toBe('data:image/jpeg;base64,preview'));
     } finally {
       getContext.mockRestore();
       toDataUrl.mockRestore();
@@ -886,16 +926,24 @@ describe('WatchPage video player', () => {
       { id: 'eng', url: '/sub/video-key/en.vtt', language: 'en', label: 'English', codec: 'vtt', kind: 'subtitles' },
     ];
     fetchSubtitlesMock.mockResolvedValue(subtitles);
-    renderWatchPage();
+    const fetchMock = vi.fn().mockResolvedValue(new Response('WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:english');
+    const view = renderWatchPage();
 
-    await screen.findByRole('heading', { name: 'Pilot' });
-    const captionsButton = await screen.findByLabelText('Turn captions on') as HTMLButtonElement;
-    await waitFor(() => expect(captionsButton.disabled).toBe(false));
+    try {
+      await screen.findByRole('heading', { name: 'Pilot' });
+      const captionsButton = await screen.findByLabelText('Turn captions on') as HTMLButtonElement;
+      await waitFor(() => expect(captionsButton.disabled).toBe(false));
 
-    fireEvent.click(captionsButton);
+      fireEvent.click(captionsButton);
 
-    expect(screen.getByLabelText('Turn captions off')).toBeTruthy();
-    expect(screen.getAllByText('English').length).toBeGreaterThan(0);
+      expect(screen.getByLabelText('Turn captions off')).toBeTruthy();
+      await waitFor(() => expect(view.container.querySelector('track')?.getAttribute('src')).toBe('blob:english'));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      createObjectUrl.mockRestore();
+    }
   });
 
   it('keeps volume and quality variants available inside the video menu', async () => {
@@ -1070,7 +1118,24 @@ describe('WatchPage audio player', () => {
 
     expect(view.container.querySelector('.audio-seek-preview')?.textContent).toBe('0:30');
 
-    fireEvent.pointerUp(position);
+    fireEvent.pointerLeave(position);
+    expect(view.container.querySelector('.audio-seek-preview')).toBeNull();
+  });
+
+  it('shows the target timestamp when hovering an audio seek bar', async () => {
+    const track = makeTrack();
+    fetchWatchMock.mockResolvedValue({ mediaKind: 'music', item: track, albumTracks: [track] });
+    const view = render(
+      <WatchPage watchKey={track.key} audio={makeAudio({ track, queue: [track], queueIndex: 0, duration: 100 })} onOpenQueue={vi.fn()} />,
+    );
+
+    await screen.findByRole('heading', { name: 'Theme', level: 1 });
+    const position = screen.getByLabelText('Playback position');
+    fireEvent.pointerEnter(position, { clientX: 20 });
+
+    expect(view.container.querySelector('.audio-seek-preview')).toBeTruthy();
+
+    fireEvent.pointerLeave(position);
     expect(view.container.querySelector('.audio-seek-preview')).toBeNull();
   });
 

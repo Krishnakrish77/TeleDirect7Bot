@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useState } from 'react';
+import { type CSSProperties, type ReactNode, useEffect, useId, useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon, DownloadIcon, ListIcon, MoreVerticalIcon, MusicIcon, PauseIcon, PlayIcon, RepeatIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
@@ -6,6 +6,13 @@ import { LyricsPanel } from './lyrics';
 import { Button } from './ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
 import { Slider } from './ui/slider';
+
+function previewTimeAtPointer(target: Element, clientX: number, rangeMax: number): number {
+  const bounds = target.getBoundingClientRect();
+  if (bounds.width <= 0) return 0;
+  const progress = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+  return Math.round(progress * rangeMax);
+}
 
 export function useCompactAudioLayout(): boolean {
   const getValue = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(max-width: 680px)').matches);
@@ -144,6 +151,7 @@ export function MiniPlayer({
   onDismiss: () => void;
 }) {
   const track = player.track;
+  const [seekPreview, setSeekPreview] = useState<number | null>(null);
   if (!track) return null;
   const duration = player.duration || track.duration || 0;
   const rangeMax = Math.max(1, Math.round(duration));
@@ -181,14 +189,34 @@ export function MiniPlayer({
       </button>
       <div className="mini-progress">
         <span>{formatClock(player.currentTime)}</span>
-        <input
-          type="range"
-          min="0"
-          max={rangeMax}
-          value={Math.min(rangeMax, Math.round(player.currentTime))}
-          onChange={(event) => seek(Number(event.currentTarget.value))}
-          aria-label="Playback position"
-        />
+        <div className="audio-scrub-wrap mini-scrub-wrap">
+          {seekPreview !== null && (
+            <output
+              className="audio-seek-preview"
+              style={{ '--seek-preview-position': `${Math.max(0, Math.min(100, (seekPreview / rangeMax) * 100))}%` } as CSSProperties}
+            >
+              {formatClock(seekPreview)}
+            </output>
+          )}
+          <input
+            type="range"
+            min="0"
+            max={rangeMax}
+            value={Math.min(rangeMax, Math.round(player.currentTime))}
+            onFocus={() => setSeekPreview(player.currentTime)}
+            onBlur={() => setSeekPreview(null)}
+            onPointerEnter={(event) => setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
+            onPointerMove={(event) => setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
+            onPointerLeave={() => setSeekPreview(null)}
+            onPointerCancel={() => setSeekPreview(null)}
+            onChange={(event) => {
+              const next = Number(event.currentTarget.value);
+              setSeekPreview(next);
+              seek(next);
+            }}
+            aria-label="Playback position"
+          />
+        </div>
         <span>{formatClock(duration)}</span>
       </div>
       {player.queueToast && <p className="queue-toast" role="status">{player.queueToast}</p>}
@@ -232,6 +260,7 @@ export function NowPlayingSheet({
   shuffleUpNext: () => void;
 }) {
   const track = player.track;
+  const [seekPreview, setSeekPreview] = useState<number | null>(null);
   if (!open || !track) return null;
   const duration = player.duration || track.duration || 0;
   const rangeMax = Math.max(1, Math.round(duration));
@@ -251,15 +280,35 @@ export function NowPlayingSheet({
           <p>{[track.artist, track.albumTitle].filter(Boolean).join(' - ')}</p>
         </div>
         <div className="now-progress">
-          <Slider
-            className="now-scrubber"
-            min={0}
-            max={rangeMax}
-            step={1}
-            value={[Math.min(rangeMax, Math.round(player.currentTime))]}
-            onValueChange={([value]) => seek(value)}
-            aria-label="Playback position"
-          />
+          <div
+            className="now-scrubber-wrap"
+            onPointerEnter={(event) => setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
+            onPointerMove={(event) => setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
+            onPointerLeave={() => setSeekPreview(null)}
+          >
+            {seekPreview !== null && (
+              <output
+                className="audio-seek-preview"
+                style={{ '--seek-preview-position': `${Math.max(0, Math.min(100, (seekPreview / rangeMax) * 100))}%` } as CSSProperties}
+              >
+                {formatClock(seekPreview)}
+              </output>
+            )}
+            <Slider
+              className="now-scrubber"
+              min={0}
+              max={rangeMax}
+              step={1}
+              value={[Math.min(rangeMax, Math.round(player.currentTime))]}
+              onFocus={() => setSeekPreview(player.currentTime)}
+              onBlur={() => setSeekPreview(null)}
+              onValueChange={([value]) => {
+                setSeekPreview(value);
+                seek(value);
+              }}
+              aria-label="Playback position"
+            />
+          </div>
           <div className="now-times">
             <span>{formatClock(player.currentTime)}</span>
             <span>{formatClock(duration)}</span>
