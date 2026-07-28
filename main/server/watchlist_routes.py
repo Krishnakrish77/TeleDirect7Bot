@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -19,7 +20,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main.server.tmdb_images import tmdb_image_url
 from main.utils.user_auth import get_user
-from main.utils import ai_rec_store, watchlist_store, cw_store, rec_store
+from main.utils import ai_rec_store, watchlist_store, cw_store, rec_store, wh_store
 from main.utils import media_index
 from main.vars import Var
 
@@ -46,6 +47,10 @@ def _thumb_url(item) -> str:
     return f"/thumb/{item.secure_hash}{item.message_id}.jpg{suffix}"
 
 
+def _watch_key(item) -> str:
+    return f"{item.secure_hash}{item.message_id}"
+
+
 def _resolve_item(item_id: str) -> Optional[dict]:
     """Turn a stored item_id into a dict suitable for the watchlist page."""
     try:
@@ -65,6 +70,7 @@ def _resolve_item(item_id: str) -> Optional[dict]:
                            else f"/thumb/{p.secure_hash}{p.message_id}.jpg"),
                 "kind": "movie",
                 "subtitle": f"{len(variants)} version{'s' if len(variants) != 1 else ''}",
+                "_watch_keys": [_watch_key(variant) for variant in variants],
             }
         if item_id.startswith("series:"):
             key = item_id[7:]
@@ -83,6 +89,7 @@ def _resolve_item(item_id: str) -> Optional[dict]:
                            else f"/thumb/{p.secure_hash}{p.message_id}.jpg"),
                 "kind": "series",
                 "subtitle": f"{len(eps)} episode{'s' if len(eps) != 1 else ''}",
+                "_watch_keys": [_watch_key(episode) for episode in eps],
             }
         if item_id.startswith("album:"):
             key = item_id[6:]
@@ -113,6 +120,7 @@ def _resolve_item(item_id: str) -> Optional[dict]:
                        else _thumb_url(item)),
             "kind": item.media_kind or "video",
             "subtitle": item.artist if item.media_kind == "audio" else "",
+            "_watch_keys": [_watch_key(item)],
         }
     except Exception:
         logging.exception("watchlist: resolve_item failed for %s", item_id)
@@ -120,7 +128,12 @@ def _resolve_item(item_id: str) -> Optional[dict]:
 
 
 async def _items_for_user(user_id: int) -> list[dict]:
-    ids = await watchlist_store.get_ids(user_id)
+    saved_entries = await watchlist_store.get_entries(user_id)
+    ids = [entry.get("item_id", "") for entry in saved_entries]
+    manually_completed = {
+        entry["item_id"] for entry in saved_entries
+        if entry.get("item_id") and entry.get("completed_at")
+    }
     # The shared saved store also backs Liked Songs.  Watchlist is the
     # video library, so audio tracks and albums belong exclusively there.
     items = [
@@ -132,17 +145,35 @@ async def _items_for_user(user_id: int) -> list[dict]:
 
     # Attach watch progress for individual items (cw_key = secure_hash + message_id).
     # Build a message_id → progress-fraction dict from CW data.
-    cw_data = await cw_store.get_all(user_id)
-    _cw_by_mid: dict = {}
+    cw_data, history = await asyncio.gather(
+        cw_store.get_all(user_id),
+        wh_store.get_recent(user_id, limit=500),
+    )
+    completed_keys = {str(entry.get("cw_key", "")) for entry in history}
+    cw_by_key: dict[str, float] = {}
     for ck, entry in cw_data.items():
         m = _CW_KEY_RE.match(ck)
         if m and entry.get("dur", 0) > 0:
             pct = min(1.0, entry["pos"] / entry["dur"])
             if 0.02 < pct < 0.95:   # only show meaningful progress
-                _cw_by_mid[m.group(1)] = pct
+                cw_by_key[ck] = pct
 
     for it in items:
-        it["cw_pct"] = _cw_by_mid.get(it["item_id"]) if it["item_id"].isdigit() else None
+        keys = list(dict.fromkeys(it.pop("_watch_keys", [])))
+        watched_count = sum(key in completed_keys for key in keys)
+        active_progress = [cw_by_key[key] for key in keys if key in cw_by_key]
+        # A series is complete only once every indexed episode is in history;
+        # movies with alternate uploads are complete once any chosen version
+        # has been watched. An explicit Watchlist action always wins.
+        history_complete = (
+            watched_count == len(keys) if it.get("kind") == "series" else watched_count > 0
+        ) if keys else False
+        watched = it["item_id"] in manually_completed or history_complete
+        it["watchStatus"] = "watched" if watched else ("watching" if active_progress else "unwatched")
+        it["cw_pct"] = None if watched else (max(active_progress) if active_progress else None)
+        if it.get("kind") == "series":
+            it["watchedCount"] = watched_count
+            it["totalCount"] = len(keys)
     return items
 
 
@@ -196,6 +227,19 @@ async def api_app_get(request: web.Request) -> web.Response:
         "items": items,
         "mongoAvailable": watchlist_store.is_available(),
     })
+
+
+@routes.post("/api/app/watchlist/{iid}/watched")
+async def api_mark_completed(request: web.Request) -> web.Response:
+    user = _get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    iid = request.match_info["iid"]
+    if not _VALID_IID.match(iid):
+        return _json({"error": "invalid item_id"}, status=400)
+    if not await watchlist_store.mark_completed(int(user["sub"]), iid):
+        return _json({"error": "saved title not found"}, status=404)
+    return _json({"ok": True, "item_id": iid, "watchStatus": "watched"})
 
 
 @routes.get("/api/app/liked-songs")

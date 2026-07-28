@@ -13,7 +13,7 @@ function DialogOverlay({ className, ...props }: React.ComponentProps<typeof Dial
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
-      className={cn('fixed inset-0 z-50 bg-black/60', className)}
+      className={cn('fixed inset-0 z-[100] bg-black/60', className)}
       {...props}
     />
   );
@@ -30,7 +30,7 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
-        className={cn('fixed z-50 outline-none', className)}
+        className={cn('fixed z-[100] outline-none', className)}
         {...props}
       >
         {children}

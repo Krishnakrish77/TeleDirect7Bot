@@ -35,6 +35,7 @@ def _get_db():
 
 
 _indexed = False
+_WL_CAP = 1000  # max bookmarks per user
 
 
 async def _ensure_indexes() -> None:
@@ -65,14 +66,46 @@ async def get_ids(user_id: int) -> List[str]:
             projection={"item_id": 1, "_id": 0},
             sort=[("added_at", -1)],
         )
-        docs = await cursor.to_list(length=500)
+        docs = await cursor.to_list(length=_WL_CAP)
         return [d["item_id"] for d in docs]
     except Exception:
         logging.exception("watchlist: get_ids failed for user %d", user_id)
         return []
 
 
-_WL_CAP = 1000  # max bookmarks per user
+async def get_entries(user_id: int) -> List[dict]:
+    """Return saved IDs with their optional explicit completed state."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        cursor = db["watchlist"].find(
+            {"user_id": user_id},
+            projection={"item_id": 1, "completed_at": 1, "_id": 0},
+            sort=[("added_at", -1)],
+        )
+        return await cursor.to_list(length=_WL_CAP)
+    except Exception:
+        logging.exception("watchlist: get_entries failed for user %d", user_id)
+        return []
+
+
+async def mark_completed(user_id: int, item_id: str) -> bool:
+    """Mark one saved title completed without inventing individual play events."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return False
+    try:
+        result = await db["watchlist"].update_one(
+            {"user_id": user_id, "item_id": item_id},
+            {"$set": {"completed_at": datetime.now(timezone.utc)}},
+        )
+        return bool(result.matched_count)
+    except Exception:
+        logging.exception("watchlist: mark_completed failed uid=%d iid=%s", user_id, item_id)
+        return False
 
 
 async def add(user_id: int, item_id: str) -> None:

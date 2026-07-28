@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { addWatchlist, fetchAdmin, fetchAdminIptv, fetchAppWatchlist, fetchDetail, fetchHub, fetchLikedSongs, fetchLiveTvChannels, fetchMe, fetchPlaylistDetail, fetchPlaylists, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, removeWatchlist } from '../api';
+import { addWatchlist, fetchAdmin, fetchAdminIptv, fetchAppWatchlist, fetchDetail, fetchHub, fetchLikedSongs, fetchLiveTvChannels, fetchMe, fetchPlaylistDetail, fetchPlaylists, fetchStats, fetchSuggestions, fetchWatchlist, hubParamsKey, markWatchlistWatched, removeWatchlist } from '../api';
 import type { AppRoute } from '../navigation';
 import type { AdminIptvResponse, AdminResponse, DetailResponse, HubParams, HubResponse, LiveTvResponse, MeResponse, PlaylistDetailResponse, PlaylistsResponse, StatsResponse, Suggestion, User, WatchlistPageResponse } from '../types';
 
@@ -184,7 +184,20 @@ function useWatchlistEndpoint(
       : current);
   }, []);
 
-  return { data, loading, error, removeItem };
+  const markItemWatched = useCallback(async (itemId: string) => {
+    await markWatchlistWatched(itemId);
+    setData((current) => current ? {
+      ...current,
+      items: current.items.map((item) => item.item_id === itemId ? {
+        ...item,
+        watchStatus: 'watched' as const,
+        cw_pct: null,
+        watchedCount: item.totalCount ?? item.watchedCount,
+      } : item),
+    } : current);
+  }, []);
+
+  return { data, loading, error, removeItem, markItemWatched };
 }
 
 export function useWatchlistItems(user: User | null | undefined, enabled = true) {

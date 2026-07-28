@@ -248,6 +248,13 @@ function App() {
     watchlistPage.removeItem(card.itemId);
     void removeSaved(card.itemId);
   }, [removeSaved, requireAuth, user, watchlistPage]);
+  const onMarkWatchlistWatched = useCallback(async (card: HubCard) => {
+    if (!user) {
+      requireAuth();
+      return;
+    }
+    await watchlistPage.markItemWatched(card.itemId);
+  }, [requireAuth, user, watchlistPage]);
   const onDismissRecommendation = useCallback((meta: RecommendationMeta) => {
     if (!user) {
       requireAuth();
@@ -496,6 +503,7 @@ function App() {
             loading={watchlistPage.loading}
             error={watchlistPage.error}
             onToggleSaved={onRemoveFromWatchlistPage}
+            onMarkWatched={onMarkWatchlistWatched}
             onSignIn={() => setSignInOpen(true)}
           />
         ) : route.kind === 'liked-songs' ? (

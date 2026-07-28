@@ -93,6 +93,33 @@ describe('WatchlistPage', () => {
     expect(onToggleSaved).toHaveBeenCalledWith(expect.objectContaining({ itemId: 'movie:kalki' }));
   });
 
+  it('shows currently-watching and watched states, then marks a title watched', async () => {
+    const onMarkWatched = vi.fn().mockResolvedValue(undefined);
+    render(
+      <WatchlistPage
+        user={user}
+        data={{
+          ...response,
+          items: [
+            { ...movieItem, watchStatus: 'watching', cw_pct: 0.42 },
+            { ...seriesItem, watchStatus: 'watched', watchedCount: 12, totalCount: 12 },
+          ],
+        }}
+        loading={false}
+        error=""
+        onToggleSaved={vi.fn()}
+        onMarkWatched={onMarkWatched}
+        onSignIn={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByLabelText('Kalki currently watching')[0].textContent).toContain('Watching 42%');
+    expect(screen.getByLabelText('Dark watched')).toBeTruthy();
+    fireEvent.click(screen.getAllByLabelText('Mark Kalki as watched')[0]);
+    await vi.waitFor(() => expect(onMarkWatched).toHaveBeenCalledWith(expect.objectContaining({ itemId: 'movie:kalki' })));
+    expect((await screen.findByRole('status')).textContent).toContain('Kalki marked as watched.');
+  });
+
   it('filters, searches, and sorts saved items', () => {
     render(
       <WatchlistPage

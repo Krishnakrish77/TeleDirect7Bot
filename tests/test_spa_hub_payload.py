@@ -78,18 +78,67 @@ class SpaHubPayloadTest(unittest.TestCase):
         audio = {"item_id": "202", "kind": "audio", "title": "Song"}
         album = {"item_id": "album:record", "kind": "album", "title": "Record"}
 
-        async def get_ids(_user_id):
-            return ["101", "202", "album:record"]
+        async def get_entries(_user_id):
+            return [
+                {"item_id": "101"},
+                {"item_id": "202"},
+                {"item_id": "album:record"},
+            ]
 
         async def get_continue(_user_id):
             return {}
 
-        with patch.object(watchlist_routes.watchlist_store, "get_ids", get_ids), patch.object(
+        async def get_history(_user_id, *, limit):
+            return []
+
+        with patch.object(watchlist_routes.watchlist_store, "get_entries", get_entries), patch.object(
             watchlist_routes, "_resolve_item", side_effect=[video, audio, album]
-        ), patch.object(watchlist_routes.cw_store, "get_all", get_continue):
+        ), patch.object(watchlist_routes.cw_store, "get_all", get_continue), patch.object(
+            watchlist_routes.wh_store, "get_recent", get_history
+        ):
             items = asyncio.run(watchlist_routes._items_for_user(1))
 
-        self.assertEqual(items, [{**video, "cw_pct": None}])
+        self.assertEqual(items, [{**video, "cw_pct": None, "watchStatus": "unwatched"}])
+
+    def test_watchlist_derives_current_and_completed_states(self):
+        series = {
+            "item_id": "series:dark",
+            "kind": "series",
+            "title": "Dark",
+            "_watch_keys": ["episode1", "episode2"],
+        }
+        movie = {
+            "item_id": "movie:kalki",
+            "kind": "movie",
+            "title": "Kalki",
+            "_watch_keys": ["movie1"],
+        }
+
+        async def get_entries(_user_id):
+            return [
+                {"item_id": "series:dark"},
+                {"item_id": "movie:kalki", "completed_at": "2026-07-28T00:00:00Z"},
+            ]
+
+        async def get_continue(_user_id):
+            return {"episode1": {"pos": 120, "dur": 240}}
+
+        async def get_history(_user_id, *, limit):
+            return [{"cw_key": "episode2"}]
+
+        with patch.object(watchlist_routes.watchlist_store, "get_entries", get_entries), patch.object(
+            watchlist_routes, "_resolve_item", side_effect=[series, movie]
+        ), patch.object(watchlist_routes.cw_store, "get_all", get_continue), patch.object(
+            watchlist_routes.wh_store, "get_recent", get_history
+        ):
+            items = asyncio.run(watchlist_routes._items_for_user(1))
+
+        self.assertEqual(items[0]["watchStatus"], "watching")
+        self.assertEqual(items[0]["cw_pct"], 0.5)
+        self.assertEqual(items[0]["watchedCount"], 1)
+        self.assertEqual(items[0]["totalCount"], 2)
+        self.assertEqual(items[1]["watchStatus"], "watched")
+        self.assertIsNone(items[1]["cw_pct"])
 
     def test_album_payload_links_each_artist_credit_individually(self):
         track = HubItem(

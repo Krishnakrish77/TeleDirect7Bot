@@ -32,6 +32,7 @@ interface MediaCardProps {
   saved: boolean;
   priority?: boolean;
   onToggleSaved: (card: HubCard) => void;
+  onMarkWatched?: (card: HubCard) => void;
   dismissMeta?: RecommendationMeta | null;
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
   recommendation?: Omit<RecommendationFeedbackEvent, 'action' | 'itemId' | 'tmdbId' | 'tmdbKind'>;
@@ -113,6 +114,7 @@ function MediaCardBase({
   saved,
   priority = false,
   onToggleSaved,
+  onMarkWatched,
   dismissMeta,
   onDismiss,
   recommendation,
@@ -126,8 +128,9 @@ function MediaCardBase({
   const metaItems = getMediaCardMetaItems(card);
   const communityRating = isMusic ? '' : communityRatingLabel(card.ratingCounts);
   const rawProgress = useMemo(() => card.progressPct ?? (card.watchKey ? getLocalCwPct(card.watchKey) : 0), [card.progressPct, card.watchKey]);
-  const watched = !isMusic && card.type !== 'series' && (Boolean(card.watched) || isLocallyWatched(card.watchKey));
+  const watched = !isMusic && (Boolean(card.watched) || isLocallyWatched(card.watchKey));
   const progressPct = watched ? 0 : rawProgress;
+  const currentlyWatching = !watched && Boolean(card.currentlyWatching || progressPct > 0);
   const newEpisodeText = card.newEpisode
     ? [card.newEpisode.label, card.newEpisode.title].filter(Boolean).join(' · ')
     : '';
@@ -248,6 +251,12 @@ function MediaCardBase({
                 <span>Watched</span>
               </span>
             )}
+            {currentlyWatching && (
+              <span className="card-watching-status" aria-label={`${display.title} currently watching`}>
+                <PlayIcon />
+                <span>Watching{progressPct ? ` ${progressPct}%` : ''}</span>
+              </span>
+            )}
           </span>
           <strong dir="auto">{display.title}</strong>
           {newEpisodeText && (
@@ -306,6 +315,24 @@ function MediaCardBase({
       >
         {isMusic ? <HeartIcon filled={saved} /> : saved ? <CheckIcon /> : <BookmarkIcon />}
       </Button>
+      {onMarkWatched && !isMusic && !watched && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="watch-state-button"
+          disabled={interactionDisabled}
+          title={`Mark ${display.title} as watched`}
+          aria-label={`Mark ${display.title} as watched`}
+          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!interactionDisabled) onMarkWatched(card);
+          }}
+        >
+          <CheckIcon />
+        </Button>
+      )}
       {dismissMeta && onDismiss && (
         <Button
           type="button"

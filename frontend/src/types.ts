@@ -86,6 +86,8 @@ export interface HubCard {
   seasonCount?: number;
   trackCount?: number;
   watched?: boolean;
+  /** Server-derived watchlist state; distinct from a local video completion key. */
+  currentlyWatching?: boolean;
   recMeta?: RecommendationMeta | null;
   recReason?: string;
   newEpisode?: {
@@ -497,6 +499,9 @@ export interface WatchlistItem {
   kind: string;
   subtitle: string;
   cw_pct?: number | null;
+  watchStatus?: 'unwatched' | 'watching' | 'watched';
+  watchedCount?: number;
+  totalCount?: number;
 }
 
 export interface WatchlistPageResponse {

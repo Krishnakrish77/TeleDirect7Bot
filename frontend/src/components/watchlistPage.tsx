@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { BookmarkIcon, FilmIcon, PlayIcon, SearchIcon, XIcon } from '../icons';
+import { BookmarkIcon, CheckIcon, FilmIcon, PlayIcon, SearchIcon, XIcon } from '../icons';
 import { localAppHref } from '../navigation';
 import type { HubCard, User, WatchlistItem, WatchlistPageResponse } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -53,7 +53,9 @@ function filterWatchlistItems(
 
 export function watchlistCard(item: WatchlistItem): HubCard {
   const href = watchHref(item.url);
-  const progress = item.cw_pct ? Math.round(item.cw_pct * 100) : 0;
+  const currentlyWatching = item.watchStatus === 'watching';
+  const watched = item.watchStatus === 'watched';
+  const progress = currentlyWatching && item.cw_pct ? Math.round(item.cw_pct * 100) : 0;
   return {
     type: itemType(item.kind),
     itemId: item.item_id,
@@ -81,6 +83,8 @@ export function watchlistCard(item: WatchlistItem): HubCard {
     streamHref: '',
     watchKey: '',
     progressPct: progress,
+    currentlyWatching,
+    watched,
     eyebrow: item.kind.charAt(0).toUpperCase() + item.kind.slice(1),
     badge: progress ? `${progress}%` : '',
     aspect: 'poster',
@@ -93,6 +97,7 @@ export function WatchlistPage({
   loading,
   error,
   onToggleSaved,
+  onMarkWatched,
   onSignIn,
 }: {
   user: User | null;
@@ -100,11 +105,13 @@ export function WatchlistPage({
   loading: boolean;
   error: string;
   onToggleSaved: (card: HubCard) => void;
+  onMarkWatched?: (card: HubCard) => Promise<void>;
   onSignIn: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [view, setView] = useState<WatchlistView>('all');
   const [sort, setSort] = useState<WatchlistSort>('saved');
+  const [watchStateMessage, setWatchStateMessage] = useState('');
   const items = data?.items ?? [];
   const counts = useMemo(() => {
     const next: Record<WatchlistView, number> = { all: items.length, movies: 0, series: 0, videos: 0 };
@@ -114,10 +121,23 @@ export function WatchlistPage({
     return next;
   }, [items]);
   const visibleItems = useMemo(() => filterWatchlistItems(items, query, view, sort), [items, query, sort, view]);
-  const continueItems = useMemo(() => items.filter((item) => {
-    const progress = Number(item.cw_pct || 0) * 100;
-    return progress >= 3 && progress < 95;
-  }).slice(0, 8), [items]);
+  const continueItems = useMemo(
+    () => items.filter((item) => item.watchStatus === 'watching').slice(0, 8),
+    [items],
+  );
+  const watchedCount = useMemo(
+    () => items.filter((item) => item.watchStatus === 'watched').length,
+    [items],
+  );
+  const markWatched = async (card: HubCard) => {
+    try {
+      if (!onMarkWatched) return;
+      await onMarkWatched(card);
+      setWatchStateMessage(`${card.title} marked as watched.`);
+    } catch {
+      setWatchStateMessage(`Could not update ${card.title}. Please try again.`);
+    }
+  };
 
   if (!user) {
     return (
@@ -142,9 +162,11 @@ export function WatchlistPage({
         <div className="watchlist-hero-stats" aria-label="Watchlist summary">
           <strong>{items.length.toLocaleString()}</strong>
           <span>saved title{items.length === 1 ? '' : 's'}</span>
-          {continueItems.length > 0 && <span><PlayIcon /> {continueItems.length} ready to resume</span>}
+          {continueItems.length > 0 && <span><PlayIcon /> {continueItems.length} watching</span>}
+          {watchedCount > 0 && <span><CheckIcon /> {watchedCount} completed</span>}
         </div>
       </section>
+      {watchStateMessage && <p className="watchlist-status" role="status">{watchStateMessage}</p>}
 
       {loading && <LoadingRows variant="grid" />}
       {error && <ErrorPanel message={error} />}
@@ -163,7 +185,7 @@ export function WatchlistPage({
                 </div>
                 <div className="watchlist-continue-rail">
                   {continueItems.map((item, index) => (
-                    <MediaCard key={item.item_id} card={watchlistCard(item)} saved priority={index < 4} onToggleSaved={onToggleSaved} />
+                    <MediaCard key={item.item_id} card={watchlistCard(item)} saved priority={index < 4} onToggleSaved={onToggleSaved} onMarkWatched={onMarkWatched ? (card) => void markWatched(card) : undefined} />
                   ))}
                 </div>
               </section>
@@ -232,6 +254,7 @@ export function WatchlistPage({
                       saved
                       priority={index < 8}
                       onToggleSaved={onToggleSaved}
+                      onMarkWatched={onMarkWatched ? (card) => void markWatched(card) : undefined}
                     />
                   );
                 })}
