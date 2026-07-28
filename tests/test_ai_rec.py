@@ -63,6 +63,12 @@ class AiRecGroundingTest(unittest.TestCase):
         filtered = ai_rec._exclude_tmdb_payloads(payloads, {(10, "movie")})
         self.assertEqual([payload["href"] for payload in filtered], ["/kept", "/music"])
 
+    def test_reason_prompt_requires_a_concrete_personal_match(self):
+        prompt = ai_rec._build_prompt("Likes crime dramas", [], "", 8)
+        self.assertIn("max 9 words", prompt)
+        self.assertIn("Do not start with", prompt)
+        self.assertIn("from your library", prompt)
+
     def test_explicit_query_candidates_survive_candidate_pool_shuffle(self):
         query_matches = [_card(f"/query-{index}") for index in range(30)]
         other_matches = [_card(f"/other-{index}") for index in range(60)]

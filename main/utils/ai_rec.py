@@ -217,8 +217,9 @@ def _build_prompt(taste: str, prompt_items: list, query: str, limit: int) -> str
         "Recommend ONLY items from the candidate list, using their exact id. Never invent titles.",
         "Return a balanced mix: some 'comfort' picks close to the user's taste and some",
         "'discovery' picks that are more adventurous but still justified by their taste.",
-        "For each pick write ONE short, specific reason (max ~14 words) that references the",
-        "user's actual taste — not generic filler.",
+        "For each pick write ONE concrete, useful 'why for you' reason (max 9 words). Anchor it",
+        "to the user's request, a specific title/creator, mood, or taste signal. Do not start with",
+        "'Fans of' and do not merely restate the item's genres, format, or 'from your library'.",
         "",
         f"User taste: {taste}",
     ]
@@ -315,10 +316,7 @@ async def _trending_items(limit: int) -> list:
     from main.server import spa_routes as _spa
     try:
         items, _ = media_index.query_grouped(sort="newest", limit=limit)
-        return [
-            {**_spa._card(o), "recReason": "Fresh in your library", "bucket": "comfort"}
-            for o in items
-        ]
+        return [{**_spa._card(o), "recReason": "", "bucket": "comfort"} for o in items]
     except Exception:
         logging.debug("ai_rec: trending fallback failed", exc_info=True)
         return []
@@ -396,7 +394,7 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
         return await _finish({"items": await _trending_items(limit), "message": "", "coldStart": True})
 
     def _raw_fallback() -> list:
-        return [{**p, "recReason": "From your library", "bucket": "comfort"} for p in payloads[:limit]]
+        return [{**p, "recReason": "", "bucket": "comfort"} for p in payloads[:limit]]
 
     index, prompt_items = _index_candidates(payloads)
     prompt = _build_prompt(_taste_summary(profile, stats), prompt_items, query, limit)
