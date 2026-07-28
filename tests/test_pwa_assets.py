@@ -98,7 +98,9 @@ class PwaAssetsTest(unittest.TestCase):
         async def handler(_request):
             return web.Response(text="<html></html>", content_type="text/html")
 
-        response = asyncio.run(server.security_middleware(SimpleNamespace(), handler))
+        # security_middleware uses the request path to apply static-asset cache
+        # headers, so the stub needs the attribute aiohttp always provides.
+        response = asyncio.run(server.security_middleware(SimpleNamespace(path="/app"), handler))
 
         self.assertEqual(response.headers["X-Robots-Tag"], "noindex, nofollow, noarchive")
 
