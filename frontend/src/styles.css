@@ -6549,6 +6549,27 @@ img {
   }
 }
 
+/* On phones this is a proper bottom sheet, not a desktop popover squeezed
+   into the viewport.  Its body (and generated mix list) owns scrolling. */
+@media (max-width: 680px) {
+  .ai-rec-panel {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: min(82svh, 42rem);
+    max-height: calc(100svh - env(safe-area-inset-top, 0px));
+    padding: 0.9rem 0.85rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+    border-radius: 18px 18px 0 0;
+    transform: none;
+  }
+
+  .ai-rec-head { align-items: center; gap: 0.5rem; }
+  .ai-rec-heading h2 { font-size: 1.22rem; }
+  .ai-rec-head-actions { gap: 0.15rem; }
+  .ai-rec-body { gap: 0.8rem; }
+}
+
 .ai-rec-head {
   display: flex;
   align-items: start;
@@ -6671,9 +6692,12 @@ img {
 }
 
 .ai-mix {
-  display: grid;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
   gap: 0.9rem;
+  overflow: hidden;
 }
 
 .ai-mix-heading {
@@ -6733,9 +6757,12 @@ img {
 .ai-mix-discovery button { min-width: 5.4rem; }
 
 .ai-mix-draft {
-  display: grid;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
   gap: 0.65rem;
+  overflow: hidden;
 }
 
 .ai-mix-draft-head {
@@ -6753,11 +6780,15 @@ img {
 
 .ai-mix-track-list {
   display: grid;
+  flex: 1 1 auto;
   gap: 0.25rem;
-  max-height: min(38svh, 22rem);
+  min-height: 3.25rem;
   margin: 0;
   padding: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   list-style: none;
 }
 
@@ -6799,13 +6830,29 @@ img {
 .ai-mix-empty { margin: 0; padding: 0.7rem; color: var(--muted); font-size: 0.82rem; text-align: center; }
 
 @media (max-width: 520px) {
-  .ai-mix-heading,
+  .ai-rec-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
+  .ai-rec-panel .card-reason { min-height: 0; font-size: 0.72rem; }
+
+  .ai-mix-heading { align-items: flex-start; }
+  .ai-mix-heading p:not(.eyebrow) { display: none; }
   .ai-mix-draft-head { display: grid; }
-  .ai-mix-heading .text-button { justify-self: start; }
   .ai-mix-play-actions { justify-content: flex-start; }
-  .ai-mix-track-list li { grid-template-columns: 1.35rem 2.2rem minmax(0, 1fr); }
+  .ai-mix-suggestions {
+    flex-wrap: nowrap;
+    margin-inline: -0.1rem;
+    padding-inline: 0.1rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ai-mix-suggestions button { flex: 0 0 auto; }
+  .ai-mix-discovery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ai-mix-discovery button { min-width: 0; width: 100%; }
+  .ai-mix-track-list li { grid-template-columns: 1.2rem 2.2rem minmax(0, 1fr) auto; gap: 0.42rem; }
   .ai-mix-track-list img { width: 2.2rem; height: 2.2rem; }
-  .ai-mix-track-actions { grid-column: 2 / -1; justify-content: flex-end; }
+  .ai-mix-track-actions { grid-column: auto; gap: 0; }
+  .ai-mix-track-actions button { width: 1.65rem; height: 1.65rem; }
+  .ai-mix-save { display: grid; }
+  .ai-mix-save button { width: 100%; }
 }
 
 .now-lyrics {
