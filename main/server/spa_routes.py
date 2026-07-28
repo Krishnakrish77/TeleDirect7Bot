@@ -2234,6 +2234,72 @@ async def api_app_create_playlist(request: web.Request) -> web.Response:
     }), status=201)
 
 
+@routes.post("/api/app/playlists/from-mix")
+async def api_app_create_playlist_from_mix(request: web.Request) -> web.Response:
+    """Persist a reviewed AI mix atomically, retaining its exact order."""
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    if not playlist_store.is_available():
+        return _json({"error": "playlist storage unavailable"}, status=503)
+    body = await _playlist_body(request)
+    name = str(body.get("name") or "").strip()[:100]
+    tracks = body.get("tracks")
+    if not name:
+        return _json({"error": "name required"}, status=400)
+    if not isinstance(tracks, list) or not tracks:
+        return _json({"error": "tracks required"}, status=400)
+    max_tracks = getattr(playlist_store, "_MAX_TRACKS", 500)
+    if len(tracks) > max_tracks:
+        return _json({"error": "playlist is full"}, status=422)
+
+    ordered_tracks: list[dict] = []
+    seen_ids: set[int] = set()
+    changed_ids: list[int] = []
+    for raw in tracks:
+        if not isinstance(raw, dict):
+            return _json({"error": "invalid track"}, status=400)
+        try:
+            message_id = int(raw.get("messageId", raw.get("message_id")))
+        except (TypeError, ValueError):
+            return _json({"error": "invalid messageId"}, status=400)
+        if message_id in seen_ids:
+            continue
+        seen_ids.add(message_id)
+        item = media_index.get_item(message_id)
+        secure_hash = str(raw.get("secureHash", raw.get("secure_hash", "")))
+        if item is None or secure_hash != item.secure_hash or (item.media_kind or "") != "audio":
+            changed_ids.append(message_id)
+            continue
+        ordered_tracks.append({
+            "message_id": item.message_id,
+            "secure_hash": item.secure_hash,
+            "title": _clean_music_tag(item.title or item.file_name or "Untitled")[:200],
+            "artist": _clean_music_tag(item.artist or "")[:200],
+            "added_at": None,
+        })
+    if changed_ids:
+        return _json({"error": "one or more tracks changed", "messageIds": changed_ids}, status=409)
+    if not ordered_tracks:
+        return _json({"error": "no playable tracks"}, status=422)
+
+    # Store a real timestamp for every entry; explicit construction keeps the
+    # store independent from request parsing and makes the write atomic.
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    for track in ordered_tracks:
+        track["added_at"] = now
+    playlist_id = await playlist_store.create_with_tracks(int(user["sub"]), name, ordered_tracks)
+    if playlist_id is None:
+        return _json({"error": "playlist limit reached"}, status=422)
+    playlist = await playlist_store.get_one(int(user["sub"]), playlist_id)
+    return _json(_playlist_detail_payload(playlist or {
+        "playlist_id": playlist_id,
+        "name": name,
+        "tracks": ordered_tracks,
+    }), status=201)
+
+
 @routes.get(r"/api/app/playlists/{playlist_id:[a-f0-9]{32}}")
 async def api_app_playlist_detail(request: web.Request) -> web.Response:
     user = get_user(request)

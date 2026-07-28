@@ -7,6 +7,8 @@ import type {
   AdminSeriesOption,
   AdminStatusResponse,
   AiRecResponse,
+  AiMixDiscovery,
+  AiMixResponse,
   AiSuggestResponse,
   ContinueItem,
   DetailResponse,
@@ -142,6 +144,18 @@ export async function askAiRecommendations(query: string, signal?: AbortSignal):
   });
 }
 
+export async function createAiMix(
+  input: { prompt?: string; discovery: AiMixDiscovery },
+  signal?: AbortSignal,
+): Promise<AiMixResponse> {
+  return request<AiMixResponse>('/api/app/ai/mix', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  });
+}
+
 export type RecommendationFeedbackEvent = {
   action: 'impression' | 'open' | 'play' | 'save' | 'unsave' | 'dismiss';
   source: 'home' | 'ai';
@@ -252,6 +266,17 @@ export async function createPlaylist(name: string): Promise<PlaylistDetailRespon
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
+  });
+}
+
+export async function saveAiMixPlaylist(
+  name: string,
+  tracks: Pick<WatchTrack, 'messageId' | 'secureHash'>[],
+): Promise<PlaylistDetailResponse> {
+  return request<PlaylistDetailResponse>('/api/app/playlists/from-mix', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, tracks: tracks.map((track) => ({ messageId: track.messageId, secureHash: track.secureHash })) }),
   });
 }
 

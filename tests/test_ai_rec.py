@@ -1,5 +1,6 @@
 import os
 import unittest
+from types import SimpleNamespace
 
 os.environ.setdefault("API_ID", "1")
 os.environ.setdefault("API_HASH", "test")
@@ -68,6 +69,38 @@ class AiRecGroundingTest(unittest.TestCase):
         self.assertIn("max 9 words", prompt)
         self.assertIn("Do not start with", prompt)
         self.assertIn("from your library", prompt)
+
+    def test_mix_ranking_stays_audio_only_and_grounded(self):
+        def track(message_id, artist, *, kind="audio", hidden=False, tags=None):
+            return SimpleNamespace(
+                message_id=message_id,
+                media_kind=kind,
+                hidden=hidden,
+                title=f"Track {message_id}",
+                artist=artist,
+                album_title="Album",
+                tags=tags or [],
+                tmdb_genres=[],
+            )
+
+        familiar = track(10, "Anirudh", tags=["night"])
+        fresh = track(11, "New Artist", tags=["night"])
+        video = track(12, "Anirudh", kind="video")
+        hidden = track(13, "Anirudh", hidden=True)
+        ranked = ai_rec._rank_mix_candidates(
+            [fresh, video, hidden, familiar], [familiar], "night", "familiar"
+        )
+        self.assertEqual([item.message_id for item in ranked], [10, 11])
+
+    def test_mix_selection_deduplicates_model_picks(self):
+        first = SimpleNamespace(message_id=1)
+        second = SimpleNamespace(message_id=2)
+        selected = ai_rec._mix_items_from_picks(
+            [{"id": "m0"}, {"id": "m0"}, {"id": "missing"}, {"id": "m1"}],
+            {"m0": first, "m1": second},
+            20,
+        )
+        self.assertEqual(selected, [first, second])
 
     def test_explicit_query_candidates_survive_candidate_pool_shuffle(self):
         query_matches = [_card(f"/query-{index}") for index in range(30)]

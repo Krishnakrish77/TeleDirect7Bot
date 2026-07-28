@@ -82,6 +82,36 @@ async def create(user_id: int, name: str) -> Optional[str]:
         return None
 
 
+async def create_with_tracks(user_id: int, name: str, tracks: list[dict]) -> Optional[str]:
+    """Create an ordered playlist in one write.
+
+    Used for generated mixes so users never receive a named but partially
+    populated playlist if a network request fails midway through saving.
+    """
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return None
+    try:
+        count = await db["playlists"].count_documents({"user_id": user_id})
+        if count >= _MAX_PLAYLISTS or len(tracks) > _MAX_TRACKS:
+            return None
+        now = datetime.now(timezone.utc)
+        playlist_id = uuid.uuid4().hex
+        await db["playlists"].insert_one({
+            "user_id": user_id,
+            "playlist_id": playlist_id,
+            "name": name[:100].strip() or "Untitled",
+            "tracks": tracks,
+            "created_at": now,
+            "updated_at": now,
+        })
+        return playlist_id
+    except Exception:
+        logging.exception("playlist_store: create_with_tracks failed uid=%d", user_id)
+        return None
+
+
 async def get_all(user_id: int) -> list[dict]:
     """Return compact playlist summaries newest-first.
 
