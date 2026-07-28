@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { askAiRecommendations, dismissRecommendation, fetchAiRecommendations, trackRecommendationEvents } from '../api';
 import type { AiRecItem, HubCard } from '../types';
 import { SparkleIcon, XIcon } from '../icons';
+import type { WatchTrack } from '../types';
+import { AiMixPanel } from './aiMixPanel';
 import { MediaCard } from './mediaCard';
 import { LoadingRows } from './common';
 import { Button } from './ui/button';
@@ -13,11 +15,15 @@ export function AiRecPanel({
   onClose,
   saved,
   onToggleSaved,
+  onPlayMix,
+  onShuffleMix,
 }: {
   open: boolean;
   onClose: () => void;
   saved: Set<string>;
   onToggleSaved: (card: HubCard) => void;
+  onPlayMix: (tracks: WatchTrack[]) => void;
+  onShuffleMix: (tracks: WatchTrack[]) => void;
 }) {
   const [items, setItems] = useState<AiRecItem[]>([]);
   const [message, setMessage] = useState('');
@@ -26,6 +32,7 @@ export function AiRecPanel({
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<'picks' | 'mix'>('picks');
   const ctrl = useRef<AbortController | null>(null);
   const trackedImpressions = useRef<Set<string>>(new Set());
 
@@ -121,54 +128,57 @@ export function AiRecPanel({
             <DialogTitle asChild><h2>AI picks</h2></DialogTitle>
           </div>
           <div className="ai-rec-head-actions">
-            <Button type="button" variant="ghost" size="sm" className="text-button" onClick={() => load(true)} disabled={busy}>Refresh</Button>
+            {mode === 'picks' && <Button type="button" variant="ghost" size="sm" className="text-button" onClick={() => load(true)} disabled={busy}>Refresh</Button>}
             <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button" aria-label="Close"><XIcon /></Button></DialogClose>
           </div>
         </div>
 
-        {message && !busy && <p className="ai-rec-message">{message}</p>}
+        {mode === 'mix' ? <AiMixPanel onBack={() => setMode('picks')} onPlay={onPlayMix} onShuffle={onShuffleMix} /> : <>
+          {message && !busy && <p className="ai-rec-message">{message}</p>}
 
-        {/* Any card click navigates via its link — close the panel so it doesn't cover the new page. */}
-        <div className="ai-rec-body" onClickCapture={(event) => { if ((event.target as HTMLElement).closest('a')) onClose(); }}>
-          {busy ? (
-            <LoadingRows variant="grid" />
-          ) : error ? (
-            <p className="ai-rec-empty">{error}</p>
-          ) : items.length === 0 ? (
-            <p className="ai-rec-empty">No recommendations yet — keep watching and listening.</p>
-          ) : (
-            <>
-              {coldStart && (
-                <p className="ai-rec-note">Still learning your taste — here's what's fresh. The more you watch and listen, the sharper these get.</p>
-              )}
-              {split ? (
-                <>
-                  <section className="ai-rec-group">
-                    <h3 className="ai-rec-section">Comfort picks</h3>
-                    <div className="ai-rec-grid">{comfort.map((item, index) => renderCard(item, index))}</div>
-                  </section>
-                  <section className="ai-rec-group">
-                    <h3 className="ai-rec-section">Discover something new</h3>
-                    <div className="ai-rec-grid">{discovery.map((item, index) => renderCard(item, comfort.length + index))}</div>
-                  </section>
-                </>
-              ) : (
-                <div className="ai-rec-grid">{items.map((item, index) => renderCard(item, index))}</div>
-              )}
-            </>
-          )}
-        </div>
+          {/* Any card click navigates via its link — close the panel so it doesn't cover the new page. */}
+          <div className="ai-rec-body" onClickCapture={(event) => { if ((event.target as HTMLElement).closest('a')) onClose(); }}>
+            {busy ? (
+              <LoadingRows variant="grid" />
+            ) : error ? (
+              <p className="ai-rec-empty">{error}</p>
+            ) : items.length === 0 ? (
+              <p className="ai-rec-empty">No recommendations yet — keep watching and listening.</p>
+            ) : (
+              <>
+                {coldStart && (
+                  <p className="ai-rec-note">Still learning your taste — here's what's fresh. The more you watch and listen, the sharper these get.</p>
+                )}
+                {split ? (
+                  <>
+                    <section className="ai-rec-group">
+                      <h3 className="ai-rec-section">Comfort picks</h3>
+                      <div className="ai-rec-grid">{comfort.map((item, index) => renderCard(item, index))}</div>
+                    </section>
+                    <section className="ai-rec-group">
+                      <h3 className="ai-rec-section">Discover something new</h3>
+                      <div className="ai-rec-grid">{discovery.map((item, index) => renderCard(item, comfort.length + index))}</div>
+                    </section>
+                  </>
+                ) : (
+                  <div className="ai-rec-grid">{items.map((item, index) => renderCard(item, index))}</div>
+                )}
+              </>
+            )}
+          </div>
 
-        <form className="ai-rec-ask" onSubmit={submit}>
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Ask for something — 'upbeat', 'like Inception'…"
-            disabled={asking}
-            aria-label="Ask the recommender"
-          />
-          <Button type="submit" disabled={asking || !query.trim()}>Ask</Button>
-        </form>
+          <form className="ai-rec-ask" onSubmit={submit}>
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Ask for something — 'upbeat', 'like Inception'…"
+              disabled={asking}
+              aria-label="Ask the recommender"
+            />
+            <Button type="submit" disabled={asking || !query.trim()}>Ask</Button>
+          </form>
+          <Button type="button" variant="outline" className="ai-rec-mix-launch" onClick={() => setMode('mix')}><SparkleIcon /> Create music mix</Button>
+        </>}
       </DialogContent>
     </Dialog>
   );

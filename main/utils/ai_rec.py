@@ -19,6 +19,7 @@ import json
 import logging
 import random
 import re
+from collections import Counter
 from typing import Optional
 
 from main.utils import (
@@ -28,6 +29,8 @@ from main.utils import (
 _MAX_CANDIDATES = 50
 _QUERY_CANDIDATE_RESERVE = 24
 _QUERY_TERM_LIMIT = 5
+_MIX_SIZE = 20
+_MIX_CANDIDATE_LIMIT = 60
 _QUERY_STOP_WORDS = frozenset({
     "about", "also", "and", "any", "are", "best", "can", "could", "find",
     "for", "from", "give", "good", "i", "in", "like", "me", "media",
@@ -52,6 +55,19 @@ _PICK_SCHEMA = {
             },
         },
         "message": {"type": "string"},
+    },
+    "required": ["picks"],
+}
+
+_MIX_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "picks": {
+            "type": "array",
+            "items": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+        },
     },
     "required": ["picks"],
 }
@@ -138,6 +154,156 @@ def _query_terms(query: str) -> list[str]:
         if len(terms) >= _QUERY_TERM_LIMIT:
             break
     return terms
+
+
+def _mix_title(prompt: str) -> str:
+    cleaned = re.sub(r"\s+", " ", (prompt or "").strip())
+    return f"{cleaned[:58]} Mix" if cleaned else "Your AI Mix"
+
+
+def _mix_text(item) -> str:
+    return " ".join([
+        str(getattr(item, "title", "") or ""),
+        str(getattr(item, "artist", "") or ""),
+        str(getattr(item, "album_title", "") or ""),
+        " ".join(str(value) for value in (getattr(item, "tags", None) or [])),
+        " ".join(str(value) for value in (getattr(item, "tmdb_genres", None) or [])),
+    ]).lower()
+
+
+def _rank_mix_candidates(items: list, history_items: list, prompt: str, discovery: str) -> list:
+    """Rank local audio tracks without trusting the model to invent a result."""
+    artist_weights: Counter = Counter()
+    tag_weights: Counter = Counter()
+    genre_weights: Counter = Counter()
+    listened_ids: set[int] = set()
+    for rank, item in enumerate(history_items):
+        if item is None or getattr(item, "media_kind", "") != "audio":
+            continue
+        weight = max(1.0, 6.0 - rank * 0.08)
+        listened_ids.add(int(getattr(item, "message_id", 0) or 0))
+        for artist in media_index._artist_credits(getattr(item, "artist", "") or ""):
+            artist_weights[media_index._artist_slug(artist)] += weight
+        for tag in getattr(item, "tags", None) or []:
+            tag_weights[str(tag).lower()] += weight
+        for genre in getattr(item, "tmdb_genres", None) or []:
+            genre_weights[str(genre).lower()] += weight
+
+    terms = _query_terms(prompt)
+    scored: list[tuple[float, int, object]] = []
+    newest_id = max((int(getattr(item, "message_id", 0) or 0) for item in items), default=1)
+    for item in items:
+        if getattr(item, "hidden", False) or getattr(item, "media_kind", "") != "audio":
+            continue
+        item_id = int(getattr(item, "message_id", 0) or 0)
+        text = _mix_text(item)
+        query_score = sum(10 for term in terms if term in text)
+        affinity = 0.0
+        for artist in media_index._artist_credits(getattr(item, "artist", "") or ""):
+            affinity += artist_weights[media_index._artist_slug(artist)] * 2.5
+        affinity += sum(tag_weights[str(tag).lower()] for tag in (getattr(item, "tags", None) or []))
+        affinity += sum(genre_weights[str(genre).lower()] for genre in (getattr(item, "tmdb_genres", None) or []))
+        freshness = item_id / newest_id
+        already_known = item_id in listened_ids
+        if discovery == "familiar":
+            score = query_score * 2 + affinity * 2 + (1.5 if already_known else 0) + freshness * 0.2
+        elif discovery == "discover":
+            score = query_score * 2.5 + affinity * 0.65 + (0 if already_known else 2.5) + freshness
+        else:
+            score = query_score * 2.25 + affinity + (0.5 if already_known else 1.2) + freshness * 0.5
+        # A prompt should still produce a pleasant local mix when catalogue
+        # metadata is thin, so each valid track receives a small floor.
+        scored.append((score, item_id, item))
+    random.shuffle(scored)
+    # Keep the shuffle as the tiebreaker so regenerating an otherwise-equal
+    # request can surface a fresh order rather than always the newest IDs.
+    scored.sort(key=lambda row: row[0], reverse=True)
+    return [item for _, _, item in scored[:_MIX_CANDIDATE_LIMIT]]
+
+
+def _mix_prompt_items(items: list) -> tuple[dict, list]:
+    index: dict = {}
+    prompt_items: list = []
+    for number, item in enumerate(items):
+        cid = f"m{number}"
+        index[cid] = item
+        prompt_items.append({
+            "id": cid,
+            "title": getattr(item, "title", "") or "",
+            "artist": getattr(item, "artist", "") or "",
+            "album": getattr(item, "album_title", "") or "",
+            "genres": list(getattr(item, "tmdb_genres", None) or [])[:4],
+            "tags": list(getattr(item, "tags", None) or [])[:6],
+        })
+    return index, prompt_items
+
+
+def _mix_items_from_picks(picks: object, index: dict, limit: int) -> list:
+    selected: list = []
+    seen: set[int] = set()
+    for pick in picks if isinstance(picks, list) else []:
+        if not isinstance(pick, dict):
+            continue
+        item = index.get(str(pick.get("id") or ""))
+        item_id = int(getattr(item, "message_id", 0) or 0) if item is not None else 0
+        if not item_id or item_id in seen:
+            continue
+        seen.add(item_id)
+        selected.append(item)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+async def get_ai_mix(user_id: int, *, prompt: str = "", discovery: str = "balanced") -> dict:
+    """Create one finite, grounded music mix from the user's local catalogue."""
+    prompt = re.sub(r"\s+", " ", (prompt or "").strip())[:240]
+    discovery = discovery if discovery in {"familiar", "balanced", "discover"} else "balanced"
+    history = await wh_store.get_recent(user_id, limit=100)
+    history_items = [rec_engine._item_for_cw_key(str(entry.get("cw_key") or "")) for entry in history]
+    audio_items = [
+        item for item in media_index._items.values()
+        if not getattr(item, "hidden", False) and getattr(item, "media_kind", "") == "audio"
+    ]
+    candidates = _rank_mix_candidates(audio_items, history_items, prompt, discovery)
+    if len(candidates) < 3:
+        return {"error": "Not enough music in your library to build a mix."}
+
+    chosen = candidates[:_MIX_SIZE]
+    title = _mix_title(prompt)
+    description = "A personal mix from your library."
+    generated = False
+    if gemini.available():
+        index, prompt_items = _mix_prompt_items(candidates)
+        generation_prompt = "\n".join([
+            "You are sequencing a finite, personal music mix from a user's private library.",
+            "Use ONLY the candidate ids. Return up to 20 distinct tracks in a satisfying listening order.",
+            f"Listener request: {prompt or 'A mix tuned to their listening history'}",
+            f"Discovery setting: {discovery}.",
+            "Create a concise title (max 60 characters) and a description (max 100 characters).",
+            "Candidates:",
+            json.dumps(prompt_items, ensure_ascii=False),
+        ])
+        result = await gemini.generate_json(generation_prompt, schema=_MIX_SCHEMA, timeout=45)
+        selected = _mix_items_from_picks(result.get("picks") if isinstance(result, dict) else None, index, _MIX_SIZE)
+        if len(selected) >= 3:
+            selected_ids = {item.message_id for item in selected}
+            # Gemini occasionally returns fewer than requested IDs. Keep its
+            # deliberate sequence, then fill from the same grounded pool.
+            chosen = (selected + [item for item in candidates if item.message_id not in selected_ids])[:_MIX_SIZE]
+            title = str(result.get("title") or title).strip()[:60] or title
+            description = str(result.get("description") or description).strip()[:100] or description
+            generated = True
+
+    from main.server import spa_routes as _spa
+    return {
+        "title": title,
+        "description": description,
+        "prompt": prompt,
+        "discovery": discovery,
+        "tracks": [_spa._track_payload(item) for item in chosen],
+        "generated": generated,
+    }
 
 
 def _apply_picks(picks: list, index: dict, limit: int) -> list:

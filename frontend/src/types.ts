@@ -220,6 +220,17 @@ export interface WatchTrack {
   albumHref: string;
 }
 
+export type AiMixDiscovery = 'familiar' | 'balanced' | 'discover';
+
+export interface AiMixResponse {
+  title: string;
+  description: string;
+  prompt: string;
+  discovery: AiMixDiscovery;
+  tracks: WatchTrack[];
+  generated: boolean;
+}
+
 export interface PersonLink {
   name: string;
   href: string;

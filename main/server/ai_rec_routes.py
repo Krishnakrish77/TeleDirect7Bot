@@ -87,3 +87,26 @@ async def ai_recommendations_chat(request: web.Request) -> web.Response:
     query = (str(body.get("query") or "")).strip()[:300]
     result = await ai_rec.get_ai_recommendations(uid, query=query or None)
     return web.json_response(result)
+
+
+@routes.post("/api/app/ai/mix")
+async def ai_mix(request: web.Request) -> web.Response:
+    uid = _uid(request)
+    if uid is None:
+        return web.json_response({"error": "unauthenticated"}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    if gemini.available() and not _take_token(uid):
+        return _rate_limited()
+    result = await ai_rec.get_ai_mix(
+        uid,
+        prompt=str(body.get("prompt") or "")[:240],
+        discovery=str(body.get("discovery") or "balanced"),
+    )
+    if result.get("error"):
+        return web.json_response(result, status=422)
+    return web.json_response(result)

@@ -665,7 +665,9 @@ function App() {
           />
         </Suspense>
       )}
-      {user && me?.gemini && <AiRecFab saved={saved} onToggleSaved={onToggleSaved} />}
+      {user && me?.gemini && <AiRecFab saved={saved} onToggleSaved={onToggleSaved} onPlayMix={(tracks) => {
+        if (tracks[0]) audio.playTrack(tracks[0], tracks);
+      }} onShuffleMix={(tracks) => audio.shuffleQueue(tracks)} />}
       <ScrollToTop />
     </div>
   );
