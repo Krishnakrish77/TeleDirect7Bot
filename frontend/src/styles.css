@@ -6549,18 +6549,20 @@ img {
   }
 }
 
-/* On phones this is a proper bottom sheet, not a desktop popover squeezed
-   into the viewport.  Its body (and generated mix list) owns scrolling. */
+/* Phones get an app-like, full-screen surface. A floating desktop popover is
+   both cramped and hard to scroll once a generated queue is present. */
 @media (max-width: 680px) {
   .ai-rec-panel {
     left: 0;
     right: 0;
+    top: 0;
     bottom: 0;
     width: 100%;
-    height: min(82svh, 42rem);
-    max-height: calc(100svh - env(safe-area-inset-top, 0px));
-    padding: 0.9rem 0.85rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
-    border-radius: 18px 18px 0 0;
+    height: 100svh;
+    max-height: none;
+    padding: max(1rem, env(safe-area-inset-top, 0px)) 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    border: 0;
+    border-radius: 0;
     transform: none;
   }
 
@@ -6568,6 +6570,8 @@ img {
   .ai-rec-heading h2 { font-size: 1.22rem; }
   .ai-rec-head-actions { gap: 0.15rem; }
   .ai-rec-body { gap: 0.8rem; }
+  .ai-rec-panel--mix > .ai-rec-head { display: none; }
+  .ai-rec-panel--mix .ai-mix { height: 100%; }
 }
 
 .ai-rec-head {
@@ -6707,6 +6711,13 @@ img {
   gap: 0.75rem;
 }
 
+.ai-mix-heading-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.2rem;
+}
+
 .ai-mix-heading .eyebrow {
   display: inline-flex;
   align-items: center;
@@ -6833,8 +6844,10 @@ img {
   .ai-rec-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
   .ai-rec-panel .card-reason { min-height: 0; font-size: 0.72rem; }
 
-  .ai-mix-heading { align-items: flex-start; }
+  .ai-mix-heading { align-items: center; }
   .ai-mix-heading p:not(.eyebrow) { display: none; }
+  .ai-mix-heading-actions { gap: 0; }
+  .ai-mix-heading-actions button { padding-inline: 0.45rem; }
   .ai-mix-draft-head { display: grid; }
   .ai-mix-play-actions { justify-content: flex-start; }
   .ai-mix-suggestions {

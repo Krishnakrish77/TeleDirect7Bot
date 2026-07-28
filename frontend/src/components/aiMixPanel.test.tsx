@@ -55,6 +55,10 @@ it('generates, edits, plays, and atomically saves a temporary AI mix', async () 
 
   fireEvent.click(screen.getByRole('button', { name: 'Create mix' }));
   expect(await screen.findByText('Night Drive Mix')).toBeTruthy();
+  expect(screen.queryByLabelText('Mix prompt suggestions')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Tune mix' }));
+  expect(screen.getByLabelText('Mix prompt suggestions')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Done tuning' }));
   fireEvent.click(screen.getByRole('button', { name: 'Remove Track 1' }));
   fireEvent.click(screen.getByRole('button', { name: 'Play' }));
   expect(onPlay).toHaveBeenCalledWith([expect.objectContaining({ messageId: 2 })]);
