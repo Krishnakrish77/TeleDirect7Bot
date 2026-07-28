@@ -6724,13 +6724,13 @@ img {
   gap: 0.42rem;
 }
 
-.ai-mix-suggestions .ui-button { font-size: 0.7rem; }
+.ai-mix-suggestions button { font-size: 0.7rem; }
 
 .ai-mix-discovery {
   padding-top: 0.1rem;
 }
 
-.ai-mix-discovery .ui-button { min-width: 5.4rem; }
+.ai-mix-discovery button { min-width: 5.4rem; }
 
 .ai-mix-draft {
   display: grid;
@@ -6787,7 +6787,7 @@ img {
 .ai-mix-track-copy strong { color: var(--text); font-size: 0.82rem; }
 .ai-mix-track-copy small { color: var(--muted); font-size: 0.73rem; }
 .ai-mix-track-actions { display: inline-flex; align-items: center; gap: 0.08rem; }
-.ai-mix-track-actions .ui-button { width: 1.85rem; height: 1.85rem; }
+.ai-mix-track-actions button { width: 1.85rem; height: 1.85rem; }
 
 .ai-mix-save {
   padding-top: 0.7rem;
