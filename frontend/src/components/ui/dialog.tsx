@@ -23,11 +23,16 @@ function DialogContent({
   className,
   children,
   container,
+  showOverlay = false,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content> & { container?: HTMLElement | null }) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  container?: HTMLElement | null;
+  /** Opt in only where a visual backdrop is genuinely needed. */
+  showOverlay?: boolean;
+}) {
   return (
     <DialogPrimitive.Portal container={container}>
-      <DialogOverlay />
+      {showOverlay && <DialogOverlay />}
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn('fixed z-[100] outline-none', className)}

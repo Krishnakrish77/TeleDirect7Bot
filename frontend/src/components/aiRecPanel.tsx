@@ -113,8 +113,8 @@ export function AiRecPanel({
   );
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="ai-rec-panel" aria-describedby={undefined}>
+    <Dialog modal={false} open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="ai-rec-panel" showOverlay={false} aria-describedby={undefined}>
         <div className="ai-rec-head">
           <div className="ai-rec-heading">
             <p className="eyebrow"><SparkleIcon /> For you</p>

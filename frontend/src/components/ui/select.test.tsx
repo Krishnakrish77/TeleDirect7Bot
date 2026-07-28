@@ -34,3 +34,16 @@ it('renders its portal above modal content', async () => {
   expect(screen.getByRole('dialog', { hidden: true }).className).toContain('z-[100]');
   expect(option.closest('[data-slot="select-content"]')?.className).toContain('z-[110]');
 });
+
+it('renders dialogs without a visual backdrop by default', () => {
+  render(
+    <Dialog open>
+      <DialogContent>
+        <DialogTitle>AI picks</DialogTitle>
+      </DialogContent>
+    </Dialog>,
+  );
+
+  expect(screen.getByRole('dialog', { hidden: true })).toBeTruthy();
+  expect(document.querySelector('[data-slot="dialog-overlay"]')).toBeNull();
+});
