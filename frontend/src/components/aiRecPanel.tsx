@@ -121,13 +121,14 @@ export function AiRecPanel({
 
   return (
     <Dialog modal={false} open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="ai-rec-panel" showOverlay={false} aria-describedby={undefined}>
+      <DialogContent className={`ai-rec-panel${mode === 'mix' ? ' ai-rec-panel--mix' : ''}`} showOverlay={false} aria-describedby={undefined}>
         <div className="ai-rec-head">
           <div className="ai-rec-heading">
             <p className="eyebrow"><SparkleIcon /> For you</p>
             <DialogTitle asChild><h2>AI picks</h2></DialogTitle>
           </div>
           <div className="ai-rec-head-actions">
+            {mode === 'picks' && <Button type="button" variant="outline" size="sm" className="ai-rec-mix-launch" onClick={() => setMode('mix')}><SparkleIcon /> Mix</Button>}
             {mode === 'picks' && <Button type="button" variant="ghost" size="sm" className="text-button" onClick={() => load(true)} disabled={busy}>Refresh</Button>}
             <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button" aria-label="Close"><XIcon /></Button></DialogClose>
           </div>
@@ -177,7 +178,6 @@ export function AiRecPanel({
             />
             <Button type="submit" disabled={asking || !query.trim()}>Ask</Button>
           </form>
-          <Button type="button" variant="outline" className="ai-rec-mix-launch" onClick={() => setMode('mix')}><SparkleIcon /> Create music mix</Button>
         </>}
       </DialogContent>
     </Dialog>

@@ -40,6 +40,7 @@ export function AiMixPanel({
   const [savingName, setSavingName] = useState(() => readDraft()?.title || 'Your AI Mix');
   const [working, setWorking] = useState<'generate' | 'save' | ''>('');
   const [status, setStatus] = useState('');
+  const [showControls, setShowControls] = useState(() => !readDraft());
 
   useEffect(() => {
     try {
@@ -60,6 +61,7 @@ export function AiMixPanel({
       setPrompt(mix.prompt);
       setDiscovery(mix.discovery);
       setSavingName(mix.title);
+      setShowControls(false);
       setStatus(mix.generated ? 'Your mix is ready to review.' : 'Your personalised mix is ready.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not create a mix right now.');
@@ -104,10 +106,13 @@ export function AiMixPanel({
           <h3 id="ai-mix-title">Create an AI Mix</h3>
           <p>Build a temporary listening session from your library, then keep it only if it earns a save.</p>
         </div>
-        <Button type="button" variant="ghost" size="sm" className="text-button" onClick={onBack}>Back to picks</Button>
+        <div className="ai-mix-heading-actions">
+          {draft && <Button type="button" variant="outline" size="sm" onClick={() => setShowControls((visible) => !visible)}>{showControls ? 'Done tuning' : 'Tune mix'}</Button>}
+          <Button type="button" variant="ghost" size="sm" className="text-button" onClick={onBack}>Back to picks</Button>
+        </div>
       </div>
 
-      <div className="ai-mix-controls">
+      {(!draft || showControls) && <div className="ai-mix-controls">
         <label>
           <span>What do you want to hear?</span>
           <Input value={prompt} onChange={(event) => setPrompt(event.currentTarget.value)} maxLength={240} placeholder="For me, or try ‘Tamil night drive’" disabled={working === 'generate'} />
@@ -130,7 +135,7 @@ export function AiMixPanel({
           <SparkleIcon />
           <span>{working === 'generate' ? 'Building mix' : draft ? 'Regenerate mix' : 'Create mix'}</span>
         </Button>
-      </div>
+      </div>}
 
       {draft && (
         <div className="ai-mix-draft">
