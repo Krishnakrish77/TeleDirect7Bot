@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { askAiRecommendations, dismissRecommendation, fetchAiRecommendations, trackRecommendationEvents } from '../api';
-import type { AiRecItem, HubCard } from '../types';
-import { SparkleIcon, XIcon } from '../icons';
+import type { AiRecItem, HubCard, RequestTitle } from '../types';
+import { FilmIcon, ListPlusIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
 import type { WatchTrack } from '../types';
 import { AiMixPanel } from './aiMixPanel';
 import { MediaCard } from './mediaCard';
@@ -9,6 +9,7 @@ import { LoadingRows } from './common';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
+import { tmdbImageUrl } from '../utils/tmdb';
 
 export function AiRecPanel({
   open,
@@ -17,6 +18,7 @@ export function AiRecPanel({
   onToggleSaved,
   onPlayMix,
   onShuffleMix,
+  onRequestTitle,
 }: {
   open: boolean;
   onClose: () => void;
@@ -24,8 +26,10 @@ export function AiRecPanel({
   onToggleSaved: (card: HubCard) => void;
   onPlayMix: (tracks: WatchTrack[]) => void;
   onShuffleMix: (tracks: WatchTrack[]) => void;
+  onRequestTitle: (title: RequestTitle) => void;
 }) {
   const [items, setItems] = useState<AiRecItem[]>([]);
+  const [externalItems, setExternalItems] = useState<RequestTitle[]>([]);
   const [message, setMessage] = useState('');
   const [coldStart, setColdStart] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,6 +51,7 @@ export function AiRecPanel({
     fetchAiRecommendations(refresh, controller.signal)
       .then((res) => {
         setItems(res.items || []);
+        setExternalItems(res.externalItems || []);
         setMessage(res.message || '');
         setColdStart(Boolean(res.coldStart));
       })
@@ -72,6 +77,7 @@ export function AiRecPanel({
     askAiRecommendations(q, controller.signal)
       .then((res) => {
         setItems(res.items || []);
+        setExternalItems(res.externalItems || []);
         setMessage(res.message || '');
         setColdStart(false);
       })
@@ -164,6 +170,13 @@ export function AiRecPanel({
                 ) : (
                   <div className="ai-rec-grid">{items.map((item, index) => renderCard(item, index))}</div>
                 )}
+                {externalItems.length > 0 && <section className="ai-rec-group ai-rec-external">
+                  <div className="ai-rec-external-head"><h3 className="ai-rec-section">Beyond your library</h3><p>Good fits we don’t have yet. Request one if it belongs here.</p></div>
+                  <div className="ai-rec-external-grid">{externalItems.map((item) => <article key={`${item.kind}:${item.tmdbId}`} className="ai-request-card">
+                    {item.posterPath ? <img src={tmdbImageUrl(item.posterPath, 'w342')} alt="" /> : <span className="ai-request-card-art">{item.kind === 'tv' ? <TvIcon /> : <FilmIcon />}</span>}
+                    <div><span>{item.kind === 'tv' ? 'Series' : 'Movie'}</span><h4>{item.title}</h4>{item.year && <small>{item.year}</small>}<Button size="sm" variant="outline" onClick={() => onRequestTitle(item)}><ListPlusIcon /> Request</Button></div>
+                  </article>)}</div>
+                </section>}
               </>
             )}
           </div>

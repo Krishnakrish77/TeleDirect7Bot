@@ -23,7 +23,7 @@ from collections import Counter
 from typing import Optional
 
 from main.utils import (
-    ai_rec_store, cw_store, dismissed_store, gemini, media_index, rec_engine, rec_store, wh_store,
+    ai_rec_store, cw_store, dismissed_store, gemini, media_index, rec_engine, rec_store, request_store, tmdb, wh_store,
 )
 
 _MAX_CANDIDATES = 50
@@ -31,6 +31,8 @@ _QUERY_CANDIDATE_RESERVE = 24
 _QUERY_TERM_LIMIT = 5
 _MIX_SIZE = 20
 _MIX_CANDIDATE_LIMIT = 60
+_EXTERNAL_PICK_TTL = 15 * 60
+_external_pick_cache: dict[int, tuple[float, list[dict]]] = {}
 _QUERY_STOP_WORDS = frozenset({
     "about", "also", "and", "any", "are", "best", "can", "could", "find",
     "for", "from", "give", "good", "i", "in", "like", "me", "media",
@@ -488,6 +490,46 @@ async def _trending_items(limit: int) -> list:
         return []
 
 
+async def _requestable_picks(user_id: int, profile: dict, dismissed: set, query: str) -> list[dict]:
+    """Return a tiny set of verified, requestable titles outside the library.
+
+    Unlike normal AI cards these have no play URL. Direct user asks use TMDB
+    search; passive discovery uses the same TMDB recommendation graph as the
+    local recommender. Both paths are filtered against library, dismissals,
+    and titles the user has already requested.
+    """
+    if not tmdb.is_configured() or not request_store.is_available():
+        return []
+    if not query:
+        cached = _external_pick_cache.get(user_id)
+        if cached and _now() - cached[0] < _EXTERNAL_PICK_TTL:
+            return cached[1]
+    requested = await request_store.requested_keys(user_id)
+    excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set()) | requested
+    if query:
+        rows = await tmdb.search_titles(query, limit=8)
+        candidate_keys = [(int(row["tmdbId"]), str(row["kind"])) for row in rows]
+    else:
+        candidates = await rec_engine._fetch_recs_for_seeds(profile.get("seeds") or [], excluded)
+        candidate_keys = [(tid, kind) for tid, kind, _score in candidates[:16]]
+    chosen: list[tuple[int, str]] = []
+    for tmdb_id, kind in candidate_keys:
+        if (tmdb_id, kind) in excluded or request_store.library_availability(tmdb_id, kind)["inLibrary"]:
+            continue
+        if (tmdb_id, kind) not in chosen:
+            chosen.append((tmdb_id, kind))
+        if len(chosen) >= 3:
+            break
+    details = await asyncio.gather(
+        *(tmdb.fetch_request_title(tmdb_id, kind) for tmdb_id, kind in chosen),
+        return_exceptions=True,
+    )
+    out = [{**detail, "recReason": "A related title beyond your library."} for detail in details if isinstance(detail, dict)]
+    if not query:
+        _external_pick_cache[user_id] = (_now(), out)
+    return out
+
+
 async def get_ai_recommendations(
     user_id: int,
     *,
@@ -503,20 +545,13 @@ async def get_ai_recommendations(
         return await _generate(user_id, query=query, limit=limit, refresh=refresh)
     except Exception:
         logging.exception("ai_rec: generation failed, serving trending fallback")
-        return {"items": await _trending_items(limit), "message": "", "coldStart": True}
+        return {"items": await _trending_items(limit), "externalItems": [], "message": "", "coldStart": True}
 
 
 async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: bool) -> dict:
     query = (query or "").strip()
     read_cache = not query and not refresh
     write_cache = not query  # refresh recomputes AND refreshes the stored cache
-
-    if read_cache:
-        cached = await ai_rec_store.get_cached(user_id)
-        if cached:
-            valid = _validate_cached(cached)
-            if len(valid) >= 3:  # else the cache is too stale — regenerate below
-                return {"items": valid, "message": "", "coldStart": False, "cached": True}
 
     from main.server import spa_routes as _spa  # lazy: card builders
 
@@ -526,6 +561,16 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
         cw_store.get_all(user_id),
         dismissed_store.get_dismissed_ids(user_id),
     )
+    if read_cache:
+        cached = await ai_rec_store.get_cached(user_id)
+        if cached:
+            valid = _validate_cached(cached)
+            if len(valid) >= 3:  # else the cache is too stale — regenerate below
+                return {
+                    "items": valid,
+                    "externalItems": await _requestable_picks(user_id, profile, dismissed, ""),
+                    "message": "", "coldStart": False, "cached": True,
+                }
     stats = await _safe_stats(user_id)
 
     # A deliberate refresh should regenerate its TMDB-derived candidate pool,
@@ -541,7 +586,7 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
     # Cold start / no key: skip the expensive candidate gather entirely.
     has_signal = bool(profile.get("seeds")) or bool(stats.get("top_genres")) or bool(stats.get("top_artists"))
     if not has_signal or not gemini.available():
-        return await _finish({"items": await _trending_items(limit), "message": "", "coldStart": True})
+        return await _finish({"items": await _trending_items(limit), "externalItems": [], "message": "", "coldStart": True})
 
     seen_keys = {e.get("cw_key") for e in history} | set(cw_map.keys())
     objs = await _gather_candidates(user_id, profile, stats, dismissed)
@@ -557,7 +602,7 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
     payloads = _select_candidate_payloads(payloads, query_hrefs)
 
     if len(payloads) < 6:
-        return await _finish({"items": await _trending_items(limit), "message": "", "coldStart": True})
+        return await _finish({"items": await _trending_items(limit), "externalItems": [], "message": "", "coldStart": True})
 
     def _raw_fallback() -> list:
         return [{**p, "recReason": "", "bucket": "comfort"} for p in payloads[:limit]]
@@ -568,8 +613,8 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
 
     picks = result.get("picks") if isinstance(result, dict) else None
     if not isinstance(picks, list) or not picks:
-        return await _finish({"items": _raw_fallback(), "message": "", "coldStart": False})
+        return await _finish({"items": _raw_fallback(), "externalItems": await _requestable_picks(user_id, profile, dismissed, query), "message": "", "coldStart": False})
 
     items = _apply_picks(picks, index, limit) or _raw_fallback()
     message = (result.get("message") or "").strip()
-    return await _finish({"items": items, "message": message, "coldStart": False})
+    return await _finish({"items": items, "externalItems": await _requestable_picks(user_id, profile, dismissed, query), "message": message, "coldStart": False})

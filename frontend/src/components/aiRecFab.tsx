@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { SparkleIcon } from '../icons';
-import type { HubCard, WatchTrack } from '../types';
+import type { HubCard, RequestTitle, WatchTrack } from '../types';
 
 const AiRecPanel = lazy(() => import('./aiRecPanel').then((m) => ({ default: m.AiRecPanel })));
 
@@ -11,11 +11,13 @@ export function AiRecFab({
   onToggleSaved,
   onPlayMix,
   onShuffleMix,
+  onRequestTitle,
 }: {
   saved: Set<string>;
   onToggleSaved: (card: HubCard) => void;
   onPlayMix: (tracks: WatchTrack[]) => void;
   onShuffleMix: (tracks: WatchTrack[]) => void;
+  onRequestTitle: (title: RequestTitle) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -31,7 +33,7 @@ export function AiRecFab({
       </button>
       {open && (
         <Suspense fallback={null}>
-          <AiRecPanel open={open} onClose={() => setOpen(false)} saved={saved} onToggleSaved={onToggleSaved} onPlayMix={onPlayMix} onShuffleMix={onShuffleMix} />
+          <AiRecPanel open={open} onClose={() => setOpen(false)} saved={saved} onToggleSaved={onToggleSaved} onRequestTitle={onRequestTitle} onPlayMix={onPlayMix} onShuffleMix={onShuffleMix} />
         </Suspense>
       )}
     </>

@@ -14,7 +14,8 @@ import { LoadingRows, ErrorPanel } from './components/common';
 import { QueueDrawer } from './components/queueDrawer';
 import { InstallPrompt } from './components/installPrompt';
 import { AiRecFab } from './components/aiRecFab';
-import type { HubCard, HubFilters, RecommendationMeta, WatchTrack } from './types';
+import { RequestTitleDialog } from './components/requestTitleDialog';
+import type { HubCard, HubFilters, RecommendationMeta, RequestTitle, WatchTrack } from './types';
 
 // Refill the radio station once the playing track is within this many of the
 // queue tail, so fresh tracks are ready before the current one ends.
@@ -23,6 +24,7 @@ const RADIO_REFILL_AHEAD = 3;
 const loadDetailPage = () => import('./components/detail');
 const loadWatchPage = () => import('./components/watch');
 const loadWatchlistPage = () => import('./components/watchlistPage');
+const loadRequestsPage = () => import('./components/requestsPage');
 const loadLikedSongsPage = () => import('./components/likedSongsPage');
 const loadAddToPlaylistSheet = () => import('./components/addToPlaylistSheet');
 const loadPlaylistsPage = () => import('./components/playlistsPage');
@@ -31,11 +33,13 @@ const loadAdminPage = () => import('./components/adminPage');
 const loadAdminDashboard = () => import('./components/adminDashboard');
 const loadAdminTrendingGaps = () => import('./components/adminTrendingGaps');
 const loadAdminIptvPage = () => import('./components/adminIptvPage');
+const loadAdminRequestsPage = () => import('./components/adminRequestsPage');
 const loadLiveTvPage = () => import('./components/liveTvPage');
 
 const DetailPage = lazy(() => loadDetailPage().then((module) => ({ default: module.DetailPage })));
 const WatchPage = lazy(() => loadWatchPage().then((module) => ({ default: module.WatchPage })));
 const WatchlistPage = lazy(() => loadWatchlistPage().then((module) => ({ default: module.WatchlistPage })));
+const RequestsPage = lazy(() => loadRequestsPage().then((module) => ({ default: module.RequestsPage })));
 const LikedSongsPage = lazy(() => loadLikedSongsPage().then((module) => ({ default: module.LikedSongsPage })));
 const AddToPlaylistSheet = lazy(() => loadAddToPlaylistSheet().then((module) => ({ default: module.AddToPlaylistSheet })));
 const PlaylistDetailPage = lazy(() => loadPlaylistsPage().then((module) => ({ default: module.PlaylistDetailPage })));
@@ -46,6 +50,7 @@ const AdminPage = lazy(() => loadAdminPage().then((module) => ({ default: module
 const AdminDashboard = lazy(() => loadAdminDashboard().then((module) => ({ default: module.AdminDashboard })));
 const AdminTrendingGaps = lazy(() => loadAdminTrendingGaps().then((module) => ({ default: module.AdminTrendingGaps })));
 const AdminIptvPage = lazy(() => loadAdminIptvPage().then((module) => ({ default: module.AdminIptvPage })));
+const AdminRequestsPage = lazy(() => loadAdminRequestsPage().then((module) => ({ default: module.AdminRequestsPage })));
 const LiveTvPage = lazy(() => loadLiveTvPage().then((module) => ({ default: module.LiveTvPage })));
 
 const preloadedRouteChunks = new Set<string>();
@@ -65,6 +70,9 @@ function preloadAppRoute(pathname: string) {
       break;
     case 'watchlist':
       void loadWatchlistPage();
+      break;
+    case 'requests':
+      void loadRequestsPage();
       break;
     case 'liked-songs':
       void loadLikedSongsPage();
@@ -93,6 +101,10 @@ function preloadAppRoute(pathname: string) {
     case 'admin-iptv':
       void loadAdminPage();
       void loadAdminIptvPage();
+      break;
+    case 'admin-requests':
+      void loadAdminPage();
+      void loadAdminRequestsPage();
       break;
     default:
       break;
@@ -188,6 +200,8 @@ function App() {
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [playlistTrack, setPlaylistTrack] = useState<WatchTrack | null>(null);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestSeed, setRequestSeed] = useState<RequestTitle | null>(null);
   const [query, setQuery] = useState(params.q);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -387,6 +401,11 @@ function App() {
         onSearchSubmit={onSearchSubmit}
         onSearchClear={onSearchClear}
         onSuggestionNavigate={navigate}
+        onRequestTitle={() => {
+          if (!user) { setSignInOpen(true); return; }
+          setRequestSeed(null);
+          setRequestOpen(true);
+        }}
         onSignIn={() => setSignInOpen(true)}
         onSignOut={async () => {
           try {
@@ -504,6 +523,8 @@ function App() {
             onMarkWatched={onMarkWatchlistWatched}
             onSignIn={() => setSignInOpen(true)}
           />
+        ) : route.kind === 'requests' ? (
+          <RequestsPage user={user} onSignIn={() => setSignInOpen(true)} />
         ) : route.kind === 'liked-songs' ? (
           <LikedSongsPage
             user={user}
@@ -564,6 +585,10 @@ function App() {
           <AdminFrame routeKind={route.kind} locationSearch={location.search}>
             <AdminTrendingGaps user={user} onSignIn={() => setSignInOpen(true)} />
           </AdminFrame>
+        ) : route.kind === 'admin-requests' ? (
+          <AdminFrame routeKind={route.kind} locationSearch={location.search}>
+            <AdminRequestsPage user={user} onSignIn={() => setSignInOpen(true)} />
+          </AdminFrame>
         ) : route.kind === 'admin-iptv' ? (
           <AdminFrame routeKind={route.kind} locationSearch={location.search}>
             <AdminIptvPage
@@ -611,6 +636,11 @@ function App() {
         open={signInOpen}
         botUsername={me?.botUsername || ''}
         onClose={() => setSignInOpen(false)}
+      />
+      <RequestTitleDialog
+        open={requestOpen}
+        onOpenChange={setRequestOpen}
+        seed={requestSeed}
       />
       <audio ref={audio.audioRef} preload="metadata" />
       <audio ref={audio.bufferRef} preload="none" />
@@ -663,7 +693,7 @@ function App() {
           />
         </Suspense>
       )}
-      {user && me?.gemini && <AiRecFab saved={saved} onToggleSaved={onToggleSaved} onPlayMix={(tracks) => {
+      {user && me?.gemini && <AiRecFab saved={saved} onToggleSaved={onToggleSaved} onRequestTitle={(title) => { setRequestSeed(title); setRequestOpen(true); }} onPlayMix={(tracks) => {
         if (tracks[0]) audio.playTrack(tracks[0], tracks);
       }} onShuffleMix={(tracks) => audio.shuffleQueue(tracks)} />}
       <ScrollToTop />

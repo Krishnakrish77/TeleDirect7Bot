@@ -437,8 +437,40 @@ export interface AiRecItem extends HubCard {
   bucket?: 'comfort' | 'discovery';
 }
 
+export type RequestStatus = 'pending' | 'planned' | 'partial' | 'available' | 'declined' | 'cancelled';
+
+export interface RequestTitle {
+  tmdbId: number;
+  kind: 'movie' | 'tv';
+  title: string;
+  year: number | null;
+  overview: string;
+  posterPath: string;
+  posterUrl?: string;
+  seasons?: Array<{ number: number; name: string; episodeCount: number; airDate: string }>;
+  inLibrary?: boolean;
+  availableSeasons?: number[];
+}
+
+export interface MediaRequest extends RequestTitle {
+  id: string;
+  requestedSeasons: number[];
+  availableSeasons: number[];
+  status: RequestStatus;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminMediaRequest extends MediaRequest {
+  requestCount: number;
+  states: RequestStatus[];
+  inLibrary: boolean;
+}
+
 export interface AiRecResponse {
   items: AiRecItem[];
+  externalItems?: RequestTitle[];
   message: string;
   coldStart: boolean;
   cached?: boolean;

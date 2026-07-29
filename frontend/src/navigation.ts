@@ -73,7 +73,7 @@ function normalizeAppHref(href: string): string {
 
 function isReactAppPath(pathname: string): boolean {
   return pathname === '/' || pathname === '/app' || pathname.startsWith('/app/') ||
-    /^(?:\/(?:filters|watchlist|liked-songs|playlists|playlist|live-tv|stats|admin|play|movie|series|album|artist|person))(?:\/|$)/.test(pathname);
+    /^(?:\/(?:filters|watchlist|requests|liked-songs|playlists|playlist|live-tv|stats|admin|play|movie|series|album|artist|person))(?:\/|$)/.test(pathname);
 }
 
 export function useAppNavigation() {
@@ -116,6 +116,7 @@ export type AppRoute =
   | { kind: 'hub' }
   | { kind: 'filters' }
   | { kind: 'watchlist' }
+  | { kind: 'requests' }
   | { kind: 'liked-songs' }
   | { kind: 'playlists' }
   | { kind: 'playlist'; playlistId: string }
@@ -125,6 +126,7 @@ export type AppRoute =
   | { kind: 'admin-iptv' }
   | { kind: 'admin-dashboard' }
   | { kind: 'admin-trending' }
+  | { kind: 'admin-requests' }
   | { kind: 'watch'; key: string }
   | { kind: 'detail'; detailKind: 'movie' | 'series' | 'album' | 'artist' | 'person'; key: string };
 
@@ -132,6 +134,7 @@ export function parseRoute(pathname: string): AppRoute {
   const canonicalPath = localAppHref(pathname) || pathname;
   if (canonicalPath === '/filters') return { kind: 'filters' };
   if (canonicalPath === '/watchlist') return { kind: 'watchlist' };
+  if (canonicalPath === '/requests') return { kind: 'requests' };
   if (canonicalPath === '/liked-songs') return { kind: 'liked-songs' };
   if (canonicalPath === '/playlists') return { kind: 'playlists' };
   const playlist = canonicalPath.match(/^\/playlist\/([a-f0-9]{32})/);
@@ -140,6 +143,7 @@ export function parseRoute(pathname: string): AppRoute {
   if (canonicalPath === '/stats') return { kind: 'stats' };
   if (canonicalPath === '/admin/dashboard') return { kind: 'admin-dashboard' };
   if (canonicalPath === '/admin/trending') return { kind: 'admin-trending' };
+  if (canonicalPath === '/admin/requests') return { kind: 'admin-requests' };
   if (canonicalPath === '/admin/iptv') return { kind: 'admin-iptv' };
   if (canonicalPath === '/admin') return { kind: 'admin' };
   const watch = canonicalPath.match(/^\/play\/([^/?#]+)/);

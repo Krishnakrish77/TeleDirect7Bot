@@ -731,6 +731,14 @@ async def add_from_message(message) -> None:
         _persist_unlocked()
     # Write-through to Mongo (outside the lock — network call).
     await _store_upsert(item)
+    # Request reconciliation is a narrow, indexed operation keyed by TMDB id;
+    # it deliberately never scans the full catalogue at startup.
+    if item.tmdb_id and item.tmdb_kind in ("movie", "tv"):
+        try:
+            from main.utils import request_store
+            await request_store.reconcile_item(item)
+        except Exception:
+            logging.debug("request reconciliation failed for bin:%d", item.message_id, exc_info=True)
     if _store_active():
         try:
             await _store.set_meta("latest_seen_id", _latest_seen_id)
@@ -3746,6 +3754,11 @@ async def enrich_one(message_id: int, bot=None) -> bool:
         )
     await persist_now()
     await _store_upsert(item)
+    try:
+        from main.utils import request_store
+        await request_store.reconcile_item(item)
+    except Exception:
+        logging.debug("request reconciliation failed for bin:%d", item.message_id, exc_info=True)
 
     if bot is not None:
         # Best-effort caption write-back. A failure here doesn't undo the
@@ -3823,6 +3836,11 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
             )
     await persist_now()
     await _store_upsert(item)
+    try:
+        from main.utils import request_store
+        await request_store.reconcile_item(item)
+    except Exception:
+        logging.debug("request reconciliation failed for bin:%d", item.message_id, exc_info=True)
     if bot is not None:
         await persist_canonical_to_bin(bot, message_id)
         # Manual admin override — coalesce snapshot like the auto path.
