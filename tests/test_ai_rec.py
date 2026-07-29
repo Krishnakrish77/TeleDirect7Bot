@@ -51,17 +51,17 @@ class AiRecGroundingTest(unittest.TestCase):
     def test_validate_cached_drops_removed_items(self):
         valid = ai_rec._validate_cached([
             {"itemId": "999999", "href": "/gone"},   # not in empty _items -> dropped
-            {"itemId": "movie:x", "href": "/kept"},  # grouped card -> kept
+            {"itemId": "movie:x", "href": "/gone-group"},  # deleted group -> dropped
             {"itemId": "", "href": "/nokeyt"},        # no id -> kept
         ])
-        self.assertEqual([i["href"] for i in valid], ["/kept", "/nokeyt"])
+        self.assertEqual([i["href"] for i in valid], ["/nokeyt"])
 
     def test_validate_cached_never_returns_watched_or_excluded_titles(self):
         valid = ai_rec._validate_cached(
             [
                 {"itemId": "movie:watched", "href": "/watched", "watchKey": "done"},
                 {"itemId": "series:excluded", "href": "/excluded", "tmdbId": 42, "tmdbKind": "tv"},
-                {"itemId": "movie:fresh", "href": "/fresh", "tmdbId": 43, "tmdbKind": "movie"},
+                {"itemId": "", "href": "/fresh", "tmdbId": 43, "tmdbKind": "movie"},
             ],
             exclude_keys={"done"},
             excluded_tmdb={(42, "tv")},
@@ -129,6 +129,57 @@ class AiRecGroundingTest(unittest.TestCase):
         ]
         filtered = ai_rec._exclude_tmdb_payloads(payloads, {(10, "movie")})
         self.assertEqual([payload["href"] for payload in filtered], ["/kept", "/music"])
+
+    def test_agent_tool_arguments_are_constrained(self):
+        self.assertEqual(
+            ai_rec._clean_agent_args("search_library", {
+                "query": "  Neon   crime  ", "kind": "movies", "year": "2020", "sort": "bad",
+            }),
+            {"kind": "movies", "genre": "", "sort": "relevance", "query": "Neon crime", "year": 2020},
+        )
+        self.assertEqual(
+            ai_rec._clean_agent_args("get_title_details", {"ids": ["card_1"] * 20})["ids"],
+            ["card_1"] * ai_rec._AGENT_TOOL_RESULT_LIMIT,
+        )
+
+    def test_agent_loop_only_applies_ids_returned_by_tools(self):
+        class Catalogue:
+            def __init__(self, **_kwargs):
+                self.payloads = {"card_1": _card("/one"), "card_2": _card("/two")}
+
+            def run(self, name, _args):
+                self.last_name = name
+                return [{"id": "card_1", "title": "One", "availability": {"playable": True}}]
+
+            def _compact(self, identifier, payload):
+                return {"id": identifier, "title": payload["title"], "availability": {"playable": True}}
+
+        async def run():
+            function_response = {"candidates": [{"content": {"parts": [{"functionCall": {
+                "name": "search_library", "args": {"query": "one"},
+            }}]}}]}
+            no_call_response = {"candidates": [{"content": {"parts": [{"text": "done"}]}}]}
+            statuses = []
+            with patch.object(ai_rec.rec_engine, "_collect_signal_profile", AsyncMock(return_value={"seeds": []})), patch.object(
+                ai_rec.wh_store, "get_recent", AsyncMock(return_value=[])
+            ), patch.object(ai_rec.cw_store, "get_all", AsyncMock(return_value={})), patch.object(
+                ai_rec.dismissed_store, "get_dismissed_ids", AsyncMock(return_value=set())
+            ), patch.object(ai_rec, "_safe_stats", AsyncMock(return_value={})), patch.object(
+                ai_rec, "_AgentCatalogue", Catalogue
+            ), patch.object(ai_rec.gemini, "generate_content", AsyncMock(side_effect=[function_response, no_call_response])), patch.object(
+                ai_rec.gemini, "generate_json", AsyncMock(return_value={"picks": [{"id": "card_2", "reason": "grounded", "bucket": "comfort"}, {"id": "invented", "reason": "no", "bucket": "comfort"}]})
+            ), patch.object(ai_rec, "_requestable_picks", AsyncMock(return_value=[])):
+                result = await ai_rec._generate_agentic(
+                    7, query="something", refresh=False, limit=12, progress=lambda status: _append(statuses, status),
+                )
+            self.assertEqual([item["href"] for item in result["items"]], ["/two"])
+            self.assertIn("Searching your library", statuses)
+            self.assertIn("Curating picks", statuses)
+
+        async def _append(values, value):
+            values.append(value)
+
+        __import__("asyncio").run(run())
 
     def test_reason_prompt_requires_a_concrete_personal_match(self):
         prompt = ai_rec._build_prompt("Likes crime dramas", [], "", 8)

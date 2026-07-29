@@ -21,13 +21,16 @@ import random
 import re
 import time
 from collections import Counter
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from main.utils import (
     ai_rec_store, cw_store, dismissed_store, gemini, media_index, rec_engine, rec_store, request_store, tmdb, wh_store,
 )
 
 _MAX_CANDIDATES = 50
+_AGENT_MAX_TOOL_CALLS = 3
+_AGENT_TOOL_RESULT_LIMIT = 12
+_AGENT_BUDGET_SECONDS = 25.0
 _QUERY_CANDIDATE_RESERVE = 24
 _QUERY_TERM_LIMIT = 5
 _MIX_SIZE = 20
@@ -74,6 +77,38 @@ _MIX_SCHEMA = {
     },
     "required": ["picks"],
 }
+
+_AGENT_TOOLS = [{"functionDeclarations": [
+    {
+        "name": "search_library",
+        "description": "Search playable titles in the private library. Use this for names, people, moods, genres, and keywords.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string"}, "kind": {"type": "string", "enum": ["movies", "series", "music"]},
+            "year": {"type": "integer"}, "genre": {"type": "string"},
+            "sort": {"type": "string", "enum": ["relevance", "newest", "oldest"]},
+        }},
+    },
+    {
+        "name": "browse_library",
+        "description": "Browse playable library titles by type, genre, and a year range when search is too narrow.",
+        "parameters": {"type": "object", "properties": {
+            "kind": {"type": "string", "enum": ["movies", "series", "music"]}, "genre": {"type": "string"},
+            "year_from": {"type": "integer"}, "year_to": {"type": "integer"},
+            "sort": {"type": "string", "enum": ["newest", "relevance"]},
+        }},
+    },
+    {
+        "name": "get_title_details",
+        "description": "Get compact details only for ids returned by an earlier library tool call.",
+        "parameters": {"type": "object", "properties": {
+            "ids": {"type": "array", "items": {"type": "string"}},
+        }, "required": ["ids"]},
+    },
+]}]
+
+
+class AgentRunError(RuntimeError):
+    """The bounded agent could not produce a grounded result."""
 
 
 # ---- pure helpers (unit-tested in test_ai_rec.py) -------------------------
@@ -139,7 +174,7 @@ def _index_candidates(payloads: list) -> tuple[dict, list]:
         prompt_items.append({
             "id": cid,
             "title": p.get("title") or "",
-            "type": p.get("eyebrow") or ("Music" if p.get("aspect") == "square" else "Video"),
+            "type": p.get("kind") or p.get("eyebrow") or ("Music" if p.get("aspect") == "square" else "Video"),
             "year": p.get("year"),
             "by": p.get("artist") or p.get("subtitle") or "",
             "genres": (p.get("genres") or [])[:4],
@@ -352,11 +387,10 @@ def _validate_cached(
 ) -> list:
     """Drop stale, watched, and explicitly excluded cached cards.
 
-    Only individual items/tracks (digit itemId) are cheaply re-checkable;
-    grouped cards use their TMDB identity where possible. This validation is
-    deliberately repeated on cache reads: a person may finish an item after
-    the recommendation set was written, and an old cache must never suggest
-    that completed title back to them.
+    This validation is deliberately repeated on cache reads: a person may
+    finish a title, or an admin may hide/delete an upload, after the set was
+    written. Grouped movie, series, and album cards are checked against their
+    live members as well as ordinary numeric upload cards.
     """
     exclude_keys = exclude_keys or set()
     exclude_item_ids = exclude_item_ids or set()
@@ -377,6 +411,14 @@ def _validate_cached(
         if iid.isdigit():
             obj = media_index.get_item(int(iid))
             if obj is None or getattr(obj, "hidden", False):
+                continue
+        elif ":" in iid:
+            group_kind, group_key = iid.split(":", 1)
+            group_field = {"movie": "movie_key", "series": "series_key", "album": "album_key"}.get(group_kind)
+            if group_field and not any(
+                getattr(obj, group_field, "") == group_key and not getattr(obj, "hidden", False)
+                for obj in media_index._items.values()
+            ):
                 continue
         out.append(item)
     return out
@@ -617,18 +659,234 @@ async def _requestable_picks(user_id: int, profile: dict, dismissed: set, query:
     return out
 
 
+def _clean_agent_args(name: str, raw: object) -> dict:
+    """Validate model function arguments before they reach catalogue code."""
+    raw = raw if isinstance(raw, dict) else {}
+    text = lambda key, maximum: re.sub(r"\s+", " ", str(raw.get(key) or "").strip())[:maximum]
+    kind = text("kind", 12).lower()
+    if kind not in {"movies", "series", "music"}:
+        kind = ""
+    sort = text("sort", 12).lower()
+    allowed_sorts = {"relevance", "newest", "oldest"} if name == "search_library" else {"relevance", "newest"}
+    if sort not in allowed_sorts:
+        sort = "newest" if name == "browse_library" else "relevance"
+
+    def year(key: str) -> int | None:
+        try:
+            value = int(raw.get(key))
+        except (TypeError, ValueError):
+            return None
+        return value if 1888 <= value <= 2100 else None
+
+    if name == "get_title_details":
+        ids = raw.get("ids")
+        return {"ids": [str(value)[:40] for value in ids[:_AGENT_TOOL_RESULT_LIMIT]] if isinstance(ids, list) else []}
+    args = {"kind": kind, "genre": text("genre", 60), "sort": sort}
+    if name == "search_library":
+        args.update({"query": text("query", 120), "year": year("year")})
+    else:
+        start, end = year("year_from"), year("year_to")
+        if start and end and start > end:
+            start, end = end, start
+        args.update({"year_from": start, "year_to": end})
+    return args
+
+
+class _AgentCatalogue:
+    """A per-request, filtered view of grouped cards exposed to Gemini."""
+
+    def __init__(self, *, seen_keys: set[str], watched_ids: set[str], excluded_tmdb: set[tuple[int, str]]):
+        self.seen_keys = seen_keys
+        self.watched_ids = watched_ids
+        self.excluded_tmdb = excluded_tmdb
+        self._art_cache: dict = {}
+        self._by_href: dict[str, str] = {}
+        self.payloads: dict[str, dict] = {}
+
+    def _compact(self, identifier: str, payload: dict) -> dict:
+        return {
+            "id": identifier,
+            "title": str(payload.get("title") or "")[:140],
+            "kind": str(payload.get("eyebrow") or "Video")[:24],
+            "year": payload.get("year"),
+            "creator": str(payload.get("artist") or payload.get("subtitle") or "")[:120],
+            "genres": list(payload.get("genres") or [])[:4],
+            "keywords": list(payload.get("keywords") or [])[:6],
+            "overview": str(payload.get("overview") or "")[:240],
+            "availability": {"playable": True, "itemId": str(payload.get("itemId") or "")[:80]},
+        }
+
+    def _register(self, cards: list) -> list[dict]:
+        from main.server import spa_routes as _spa
+        payloads = [_spa._card(card, art_cache=self._art_cache) for card in cards]
+        payloads = _dedup_payloads(payloads, self.seen_keys, self.watched_ids)
+        payloads = _exclude_tmdb_payloads(payloads, self.excluded_tmdb)
+        # A second cache-style validation covers hidden/deleted single uploads
+        # and makes all three tools subject to identical eligibility rules.
+        payloads = _validate_cached(
+            payloads, exclude_keys=self.seen_keys, exclude_item_ids=self.watched_ids,
+            excluded_tmdb=self.excluded_tmdb,
+        )
+        result: list[dict] = []
+        for payload in payloads[:_AGENT_TOOL_RESULT_LIMIT]:
+            href = str(payload.get("href") or "")
+            if not href:
+                continue
+            identifier = self._by_href.get(href)
+            if not identifier:
+                identifier = f"card_{len(self.payloads) + 1}"
+                self._by_href[href] = identifier
+                self.payloads[identifier] = payload
+            result.append(self._compact(identifier, self.payloads[identifier]))
+        return result
+
+    def run(self, name: str, raw_args: object) -> list[dict]:
+        args = _clean_agent_args(name, raw_args)
+        if name == "get_title_details":
+            return [self._compact(identifier, self.payloads[identifier]) for identifier in args["ids"] if identifier in self.payloads]
+        if name not in {"search_library", "browse_library"}:
+            return []
+        view = {"movies": "movies", "series": "series", "music": "music"}.get(args["kind"], "")
+        if name == "search_library":
+            cards, _ = media_index.query_grouped(
+                q=args["query"], year=args["year"], genre=args["genre"],
+                view=view, sort="newest" if args["sort"] == "relevance" else args["sort"],
+                limit=_AGENT_TOOL_RESULT_LIMIT,
+            )
+        else:
+            # query_grouped supports exact years; a small newest page is then
+            # range-filtered. The result remains bounded and grouped.
+            cards, _ = media_index.query_grouped(
+                genre=args["genre"], view=view, sort="newest", limit=_AGENT_TOOL_RESULT_LIMIT * 3,
+            )
+            start, end = args["year_from"], args["year_to"]
+            if start or end:
+                def card_year(card) -> int:
+                    return int(getattr(card, "year", None) or getattr(getattr(card, "poster_item", None), "year", 0) or 0)
+                cards = [card for card in cards if (not start or card_year(card) >= start)
+                         and (not end or card_year(card) <= end)]
+        return self._register(list(cards))
+
+
+def _function_calls(response: object) -> tuple[dict | None, list[dict]]:
+    """Extract Gemini function calls without trusting response structure."""
+    try:
+        content = response["candidates"][0]["content"]
+        parts = content.get("parts") or []
+    except (KeyError, IndexError, TypeError):
+        return None, []
+    calls = [part["functionCall"] for part in parts if isinstance(part, dict) and isinstance(part.get("functionCall"), dict)]
+    return content if isinstance(content, dict) else None, calls
+
+
+async def _emit_agent_status(callback: Callable[[str], Awaitable[None]] | None, text: str) -> None:
+    if callback is not None:
+        await callback(text)
+
+
+async def _generate_agentic(
+    user_id: int, *, query: str, refresh: bool, limit: int,
+    progress: Callable[[str], Awaitable[None]] | None = None,
+) -> dict:
+    """Use at most three read-only catalogue tool calls, then rank discovered ids."""
+    started = time.monotonic()
+    profile, history, cw_map, dismissed = await asyncio.gather(
+        rec_engine._collect_signal_profile(user_id), wh_store.get_recent(user_id, limit=80),
+        cw_store.get_all(user_id), dismissed_store.get_dismissed_ids(user_id),
+    )
+    stats = await _safe_stats(user_id)
+    seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map)
+    watched_ids = _watched_card_ids(seen_keys)
+    excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
+    catalogue = _AgentCatalogue(seen_keys=seen_keys, watched_ids=watched_ids, excluded_tmdb=excluded)
+    intent = query or "Refresh the user's library picks with a useful, varied set."
+    contents = [{"role": "user", "parts": [{"text": "\n".join([
+        "You curate a private playable media library.",
+        "Use the read-only tools to find candidates before recommending anything.",
+        "Never ask for or reveal private catalogue data beyond tool results. Do not use unavailable titles.",
+        "You have at most three total tool calls; explore efficiently.",
+        f"User taste summary: {_taste_summary(profile, stats)}",
+        f"User request: {intent}",
+    ])}]}]
+    await _emit_agent_status(progress, "Searching your library")
+    calls_used = 0
+    explored = False
+    while calls_used < _AGENT_MAX_TOOL_CALLS:
+        remaining = _AGENT_BUDGET_SECONDS - (time.monotonic() - started)
+        if remaining <= 0:
+            raise AgentRunError("budget")
+        response = await gemini.generate_content(contents, tools=_AGENT_TOOLS, timeout=remaining)
+        model_content, calls = _function_calls(response)
+        if response is None or model_content is None:
+            raise AgentRunError("model")
+        if not explored:
+            await _emit_agent_status(progress, "Exploring related titles")
+            explored = True
+        if not calls:
+            break
+        contents.append(model_content)
+        answers = []
+        for call in calls[:_AGENT_MAX_TOOL_CALLS - calls_used]:
+            name = str(call.get("name") or "")
+            result = catalogue.run(name, call.get("args"))
+            answers.append({"functionResponse": {"name": name, "response": {"items": result}}})
+            calls_used += 1
+        contents.append({"role": "user", "parts": answers})
+    if not catalogue.payloads:
+        raise AgentRunError("no_candidates")
+    await _emit_agent_status(progress, "Curating picks")
+    remaining = _AGENT_BUDGET_SECONDS - (time.monotonic() - started)
+    if remaining <= 0:
+        raise AgentRunError("budget")
+    candidates = [catalogue._compact(identifier, payload) for identifier, payload in catalogue.payloads.items()]
+    prompt = _build_prompt(_taste_summary(profile, stats), candidates, query, limit)
+    result = await gemini.generate_json(prompt, schema=_PICK_SCHEMA, timeout=remaining)
+    picks = result.get("picks") if isinstance(result, dict) else None
+    items = _apply_picks(picks, catalogue.payloads, limit)
+    # Revalidate after model work in case a deletion/hide/finish raced a tool.
+    items = _validate_cached(items, exclude_keys=seen_keys, exclude_item_ids=watched_ids, excluded_tmdb=excluded)
+    if not items:
+        raise AgentRunError("invalid_picks")
+    if refresh:
+        await rec_store.clear_cached(user_id)
+        await ai_rec_store.set_cached(user_id, items)
+    logging.info("ai_rec_agent tool_count=%d elapsed_ms=%d candidate_count=%d final_pick_count=%d fallback_reason=%s",
+                 calls_used, round((time.monotonic() - started) * 1000), len(catalogue.payloads), len(items), "")
+    return {
+        "items": items,
+        "externalItems": await _requestable_picks(user_id, profile, dismissed, query),
+        "message": str(result.get("message") or "").strip()[:240] if isinstance(result, dict) else "",
+        "coldStart": False,
+    }
+
+
 async def get_ai_recommendations(
     user_id: int,
     *,
     query: Optional[str] = None,
     limit: int = 12,
     refresh: bool = False,
+    agentic: bool = False,
+    progress: Callable[[str], Awaitable[None]] | None = None,
 ) -> dict:
     """Return ``{items, message, coldStart}`` — catalogue-grounded AI picks.
 
     Any unexpected failure degrades to trending so the endpoint never 500s.
     """
     try:
+        if agentic:
+            try:
+                return await _generate_agentic(
+                    user_id, query=(query or "").strip(), refresh=refresh, limit=limit, progress=progress,
+                )
+            except Exception as exc:
+                # The fallback intentionally uses no function calls and no
+                # extra model call. A bad response must feel like a slightly
+                # less tailored shelf, never an error page or endless spinner.
+                logging.info("ai_rec_agent tool_count=%d elapsed_ms=%d candidate_count=%d final_pick_count=%d fallback_reason=%s",
+                             0, 0, 0, 0, type(exc).__name__)
+                await _emit_agent_status(progress, "Curating picks")
+                return await _generate(user_id, query=query, limit=limit, refresh=refresh, rank_with_gemini=False)
         return await _generate(user_id, query=query, limit=limit, refresh=refresh)
     except Exception:
         logging.exception("ai_rec: generation failed, serving trending fallback")
@@ -657,7 +915,10 @@ async def get_ai_recommendations(
         }
 
 
-async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: bool) -> dict:
+async def _generate(
+    user_id: int, *, query: Optional[str], limit: int, refresh: bool,
+    rank_with_gemini: bool = True,
+) -> dict:
     query = (query or "").strip()
     read_cache = not query and not refresh
     write_cache = not query  # refresh recomputes AND refreshes the stored cache
@@ -756,7 +1017,7 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
 
     index, prompt_items = _index_candidates(payloads)
     prompt = _build_prompt(_taste_summary(profile, stats), prompt_items, query, limit)
-    result = await gemini.generate_json(prompt, schema=_PICK_SCHEMA, timeout=45)
+    result = await gemini.generate_json(prompt, schema=_PICK_SCHEMA, timeout=45) if rank_with_gemini else None
 
     picks = result.get("picks") if isinstance(result, dict) else None
     if not isinstance(picks, list) or not picks:

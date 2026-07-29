@@ -5,6 +5,8 @@ Both routes require a logged-in user and a configured GEMINI_API_KEY.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from typing import Optional
 
@@ -65,7 +67,7 @@ async def ai_recommendations(request: web.Request) -> web.Response:
     # Only the (expensive) refresh path spends a token; a plain open is cache-served.
     if refresh and not _take_token(uid):
         return _rate_limited()
-    result = await ai_rec.get_ai_recommendations(uid, refresh=refresh)
+    result = await ai_rec.get_ai_recommendations(uid, refresh=refresh, agentic=refresh)
     return web.json_response(result)
 
 
@@ -85,8 +87,71 @@ async def ai_recommendations_chat(request: web.Request) -> web.Response:
     if not isinstance(body, dict):  # a JSON list/scalar would break body.get()
         body = {}
     query = (str(body.get("query") or "")).strip()[:300]
-    result = await ai_rec.get_ai_recommendations(uid, query=query or None)
+    result = await ai_rec.get_ai_recommendations(uid, query=query or None, agentic=True)
     return web.json_response(result)
+
+
+async def _stream_event(response: web.StreamResponse, event: str, data: dict | str) -> None:
+    body = json.dumps(data, ensure_ascii=False, separators=(",", ":")) if isinstance(data, dict) else json.dumps(str(data))
+    await response.write(f"event: {event}\ndata: {body}\n\n".encode("utf-8"))
+
+
+@routes.post("/api/app/ai/recommendations/stream")
+async def ai_recommendations_stream(request: web.Request) -> web.StreamResponse:
+    """SSE for the bounded Ask/Refresh agent; exactly one terminal event."""
+    if not gemini.available():
+        return web.json_response({"error": "AI recommendations are not enabled"}, status=404)
+    uid = _uid(request)
+    if uid is None:
+        return web.json_response({"error": "unauthenticated"}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    query = str(body.get("query") or "").strip()[:300]
+    refresh = body.get("refresh") is True and not query
+    if not query and not refresh:
+        return web.json_response({"error": "query or refresh is required"}, status=400)
+    if not _take_token(uid):
+        response = web.StreamResponse(status=200, headers={
+            "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive",
+        })
+        await response.prepare(request)
+        await _stream_event(response, "error", {"message": "Too many requests — give the recommender a moment.", "retryable": True, "status": 429})
+        await response.write_eof()
+        return response
+
+    response = web.StreamResponse(status=200, headers={
+        "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    })
+    await response.prepare(request)
+
+    async def progress(status: str) -> None:
+        await _stream_event(response, "status", {"message": status})
+
+    try:
+        # get_ai_recommendations catches agent failures and returns its
+        # deterministic shelf, so a successful stream never hangs on Gemini.
+        result = await asyncio.wait_for(
+            ai_rec.get_ai_recommendations(uid, query=query or None, refresh=refresh, agentic=True, progress=progress),
+            timeout=28,
+        )
+        await _stream_event(response, "result", result)
+    except asyncio.TimeoutError:
+        await _stream_event(response, "error", {"message": "Recommendations took too long. Please try again.", "retryable": True, "status": 504})
+    except (ConnectionResetError, asyncio.CancelledError):
+        raise
+    except Exception:
+        # Do not surface implementation detail or catalogue/user content.
+        await _stream_event(response, "error", {"message": "Could not process that request. Please try again.", "retryable": True, "status": 502})
+    finally:
+        try:
+            await response.write_eof()
+        except ConnectionResetError:
+            pass
+    return response
 
 
 @routes.post("/api/app/ai/mix")
