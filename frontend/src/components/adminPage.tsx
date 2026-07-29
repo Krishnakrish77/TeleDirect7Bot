@@ -21,11 +21,11 @@ export function AdminNav({
     routeKind === kind && (t === undefined ? !tab : tab === t);
   return (
     <nav className="admin-nav" role="tablist" aria-label="Admin sections">
-      <a role="tab" aria-selected={is('admin')} className={is('admin') ? 'active' : ''} href="/app/admin">Catalogue</a>
-      <a role="tab" aria-selected={is('admin', 'ops')} className={is('admin', 'ops') ? 'active' : ''} href="/app/admin?tab=ops">Operations</a>
-      <a role="tab" aria-selected={routeKind === 'admin-dashboard'} className={routeKind === 'admin-dashboard' ? 'active' : ''} href="/app/admin/dashboard">Dashboard</a>
-      <a role="tab" aria-selected={routeKind === 'admin-trending'} className={routeKind === 'admin-trending' ? 'active' : ''} href="/app/admin/trending">Trending</a>
-      <a role="tab" aria-selected={routeKind === 'admin-iptv'} className={routeKind === 'admin-iptv' ? 'active' : ''} href="/app/admin/iptv">IPTV</a>
+      <a role="tab" aria-selected={is('admin')} className={is('admin') ? 'active' : ''} href="/admin">Catalogue</a>
+      <a role="tab" aria-selected={is('admin', 'ops')} className={is('admin', 'ops') ? 'active' : ''} href="/admin?tab=ops">Operations</a>
+      <a role="tab" aria-selected={routeKind === 'admin-dashboard'} className={routeKind === 'admin-dashboard' ? 'active' : ''} href="/admin/dashboard">Dashboard</a>
+      <a role="tab" aria-selected={routeKind === 'admin-trending'} className={routeKind === 'admin-trending' ? 'active' : ''} href="/admin/trending">Trending</a>
+      <a role="tab" aria-selected={routeKind === 'admin-iptv'} className={routeKind === 'admin-iptv' ? 'active' : ''} href="/admin/iptv">IPTV</a>
     </nav>
   );
 }
@@ -42,7 +42,7 @@ export function AdminFrame({
   return (
     <div className="admin-frame">
       <aside className="admin-sidebar" aria-label="Admin navigation">
-        <a className="admin-sidebar-brand" href="/app/admin">
+        <a className="admin-sidebar-brand" href="/admin">
           <ShieldIcon />
           <span>
             <strong>TeleDirect</strong>
@@ -86,7 +86,7 @@ function formatBytes(bytes: number): string {
 
 function adminUrl(params: URLSearchParams): string {
   const qs = params.toString();
-  return qs ? `/app/admin?${qs}` : '/app/admin';
+  return qs ? `/admin?${qs}` : '/admin';
 }
 
 function statusRunning(status: AdminStatusResponse | null | undefined): boolean {
@@ -249,7 +249,7 @@ export function AdminGate({
         <ShieldIcon />
         <strong>{user ? 'Admin access required' : 'Sign in to manage TeleDirect'}</strong>
         {user ? (
-          <a className="secondary-action" href="/app">Back to library</a>
+          <a className="secondary-action" href="/">Back to library</a>
         ) : (
           <Button type="button" onClick={onSignIn}>Sign in</Button>
         )}
@@ -1610,7 +1610,7 @@ export function AdminPage({
                 <div className="admin-pipeline-banner">
                   <span className="pipeline-dot" />
                   Pipeline running —{' '}
-                  <a href="/app/admin?tab=ops">view status</a>
+                  <a href="/admin?tab=ops">view status</a>
                 </div>
               )}
               <AdminControls

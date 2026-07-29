@@ -181,21 +181,8 @@ async def _items_for_user(user_id: int) -> list[dict]:
 
 @routes.get("/watchlist")
 async def watchlist_page(request: web.Request) -> web.Response:
-    if request.cookies.get("td_ui") == "react" and request.headers.get("HX-Request") != "true":
-        raise web.HTTPFound("/app/watchlist")
-
-    user = _get_user(request)
-    if not user:
-        raise web.HTTPFound("/")
-
-    items = await _items_for_user(int(user["sub"]))
-    tpl = _env.get_template("watchlist.html")
-    body = await tpl.render_async(
-        user=user,
-        items=items,
-        mongo_available=watchlist_store.is_available(),
-    )
-    return web.Response(text=body, content_type="text/html")
+    from main.server.spa_routes import _app_index_response
+    return _app_index_response(request)
 
 
 # ── API ──────────────────────────────────────────────────────────────────────

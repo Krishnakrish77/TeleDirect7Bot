@@ -255,8 +255,8 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
           const showNext = pct >= 0.85 && Boolean(entry.next_episode);
           const next = entry.next_episode;
           const displayUrl = showNext && next
-            ? next.watch_url.replace(/^\/watch\//, '/app/watch/')
-            : entry.watch_url.replace(/^\/watch\//, '/app/watch/');
+            ? next.watch_url.replace(/^\/watch\//, '/play/')
+            : entry.watch_url.replace(/^\/watch\//, '/play/');
           const displayPoster = showNext && next
             ? (next.poster_path ? tmdbImageUrl(next.poster_path, 'w342') : next.thumb_url)
             : (entry.poster_path ? tmdbImageUrl(entry.poster_path, 'w342') : entry.thumb_url);

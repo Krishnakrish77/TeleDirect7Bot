@@ -1,7 +1,7 @@
 """
 Media hub routes.
 
-GET /                  → unified hub: browse + filter (year, quality, tag, sort, search)
+GET /                  → React media hub
 GET /tag/{name}        → back-compat shortcut → redirects into / with ?tag=...
 GET /thumb/{hash}{id}.jpg → poster image (Telegram-generated video thumb)
 
@@ -326,9 +326,8 @@ def _empty_text(params: dict) -> str:
 
 @routes.get("/")
 async def hub_home(request: web.Request) -> web.Response:
-    react_redirect = _react_redirect(request, "/app")
-    if react_redirect is not None:
-        raise react_redirect
+    from main.server.spa_routes import _app_index_response
+    return _app_index_response(request)
 
     params = _parse_filters(request)
 
@@ -567,7 +566,7 @@ _MANIFEST_JSON = json.dumps({
     "short_name": "TeleDirect",
     "description": "Your personal media streaming hub",
     "id": "/",
-    "start_url": "/app",
+    "start_url": "/",
     "scope": "/",
     "display": "standalone",
     # orientation intentionally omitted: "any" ignores system portrait lock
@@ -684,7 +683,6 @@ def _load_react_app_shell_assets(manifest_path: Path | None = None) -> list[str]
 
 _SW_SHELL = [
     "/",
-    "/app",
     "/static/tailwind.css",
     "/favicon.svg",
     *_load_react_app_shell_assets(),
@@ -694,7 +692,7 @@ _SW_SHELL = [
 _SW_JS = """\
 /* TeleDirect service worker — network-first for navigation,
    cache-first for static assets, network-only for streams/API. */
-const CACHE = 'td-v4';
+const CACHE = 'td-v5';
 const SHELL = __SHELL__;
 
 self.addEventListener('install', e => {
@@ -727,6 +725,7 @@ self.addEventListener('fetch', e => {
     url.pathname.startsWith('/auth/') ||
     url.pathname.startsWith('/admin') ||
     url.pathname.startsWith('/watch/') ||
+    url.pathname.startsWith('/play/') ||
     url.pathname.startsWith('/hls/')
   ) return;
 
@@ -756,8 +755,7 @@ self.addEventListener('fetch', e => {
   if (e.request.mode === 'navigate') {
     e.respondWith(
       fetch(e.request).catch(() => {
-        const shell = url.pathname === '/app' || url.pathname.startsWith('/app/') ? '/app' : '/';
-        return caches.match(shell).then(r => r || fetch(e.request));
+        return caches.match('/').then(r => r || fetch(e.request));
       })
     );
   }
@@ -890,9 +888,8 @@ async def api_items(request: web.Request) -> web.Response:
 async def hub_movie(request: web.Request) -> web.Response:
     """One movie: list every upload variant so the user picks which to play."""
     key = request.match_info["key"]
-    react_redirect = _react_redirect(request, f"/app/movie/{key}")
-    if react_redirect is not None:
-        raise react_redirect
+    from main.server.spa_routes import _app_index_response
+    return _app_index_response(request)
 
     variants = media_index.variants_for_movie(key)
     if not variants:
@@ -937,9 +934,8 @@ async def hub_series(request: web.Request) -> web.Response:
     100+ episode catalogues.
     """
     key = request.match_info["key"]
-    react_redirect = _react_redirect(request, f"/app/series/{key}")
-    if react_redirect is not None:
-        raise react_redirect
+    from main.server.spa_routes import _app_index_response
+    return _app_index_response(request)
 
     episodes = media_index.episodes_for_series(key)
     if not episodes:
@@ -1129,9 +1125,8 @@ async def hub_series(request: web.Request) -> web.Response:
 async def hub_album(request: web.Request) -> web.Response:
     """One album: track listing."""
     key = request.match_info["key"]
-    react_redirect = _react_redirect(request, f"/app/album/{key}")
-    if react_redirect is not None:
-        raise react_redirect
+    from main.server.spa_routes import _app_index_response
+    return _app_index_response(request)
 
     tracks = media_index.tracks_for_album(key)
     if not tracks:
@@ -1178,9 +1173,8 @@ async def hub_album(request: web.Request) -> web.Response:
 async def hub_artist(request: web.Request) -> web.Response:
     """All tracks by a single artist."""
     slug = request.match_info["slug"]
-    react_redirect = _react_redirect(request, f"/app/artist/{slug}")
-    if react_redirect is not None:
-        raise react_redirect
+    from main.server.spa_routes import _app_index_response
+    return _app_index_response(request)
 
     tracks = media_index.tracks_by_artist_slug(slug)
     if not tracks:
@@ -1199,9 +1193,8 @@ async def hub_artist(request: web.Request) -> web.Response:
 async def hub_person(request: web.Request) -> web.Response:
     """Filmography page: all titles featuring a cast member or director."""
     slug = request.match_info["slug"]
-    react_redirect = _react_redirect(request, f"/app/person/{slug}")
-    if react_redirect is not None:
-        raise react_redirect
+    from main.server.spa_routes import _app_index_response
+    return _app_index_response(request)
 
     # Cache guard FIRST — avoid O(N×M) catalogue scans on every cache hit.
     cache_key = f"person:{slug}"

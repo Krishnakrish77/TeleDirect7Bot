@@ -6,7 +6,7 @@ import { Button } from './ui/button';
 import { Card } from './ui/card';
 
 function appHref(url: string): string {
-  if (url.startsWith('/watch/')) return url.replace(/^\/watch\//, '/app/watch/');
+  if (url.startsWith('/watch/')) return url.replace(/^\/watch\//, '/play/');
   return localAppHref(url) || url;
 }
 

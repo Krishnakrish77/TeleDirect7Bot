@@ -205,7 +205,7 @@ describe('AdminPage', () => {
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Filter' }));
     fireEvent.click(screen.getByRole('option', { name: 'Movies' }));
-    expect(navigate).toHaveBeenCalledWith('/app/admin?filter=movies');
+    expect(navigate).toHaveBeenCalledWith('/admin?filter=movies');
   });
 
   it('renders episode zero as a valid episode label', () => {

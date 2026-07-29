@@ -1,8 +1,7 @@
 """React SPA routes and JSON API for the media hub.
 
-The SPA is intentionally mounted under /app first.  That keeps the existing
-server-rendered UI and raw stream URL catch-all untouched while the React hub
-reaches parity route by route.
+The React UI is the canonical public surface at the site root.  The former
+``/app`` mount is retained only as a compatibility redirect for bookmarks.
 """
 
 from __future__ import annotations
@@ -119,14 +118,14 @@ async def robots_txt(_: web.Request) -> web.Response:
         "Disallow: /hls",
         "Disallow: /sub",
         "Disallow: /thumb",
-        "Disallow: /app/admin",
-        "Disallow: /app/live-tv",
-        "Disallow: /app/watch",
-        "Disallow: /app/watchlist",
-        "Disallow: /app/liked-songs",
-        "Disallow: /app/playlists",
-        "Disallow: /app/stats",
-        "Allow: /app",
+        "Disallow: /live-tv",
+        "Disallow: /play",
+        "Disallow: /watchlist",
+        "Disallow: /liked-songs",
+        "Disallow: /playlists",
+        "Disallow: /stats",
+        "Disallow: /app",
+        "Allow: /",
         "Allow: /manifest.json",
         "Allow: /favicon.svg",
     ]
@@ -535,11 +534,11 @@ def _schedule_visible_tmdb_art_recovery(cards) -> None:
 
 
 def _watch_url(item: HubItem) -> str:
-    return f"/watch/{item.secure_hash}{item.message_id}"
+    return f"/play/{item.secure_hash}{item.message_id}"
 
 
 def _app_watch_url(item: HubItem) -> str:
-    return f"/app/watch/{item.secure_hash}{item.message_id}"
+    return _watch_url(item)
 
 
 def _play_url(item: HubItem) -> str:
@@ -566,29 +565,43 @@ def _ui_redirect(mode: str, next_url: str) -> web.HTTPFound:
     return response
 
 
+def _canonical_ui_url(next_url: str) -> str:
+    if next_url == "/app":
+        return "/"
+    if next_url.startswith("/app/watch/"):
+        return f"/play/{next_url.removeprefix('/app/watch/')}"
+    if next_url.startswith("/app/"):
+        return f"/{next_url.removeprefix('/app/')}"
+    if next_url.startswith("/watch/"):
+        return f"/play/{next_url.removeprefix('/watch/')}"
+    return next_url
+
+
 @routes.get("/ui/react")
 async def use_react_ui(request: web.Request) -> web.Response:
-    next_url = _safe_next_url(request.query.get("next"), "/app")
-    if not next_url.startswith("/app"):
-        next_url = "/app"
-    return _ui_redirect("react", next_url)
+    next_url = _canonical_ui_url(_safe_next_url(request.query.get("next"), "/"))
+    response = web.HTTPPermanentRedirect(next_url)
+    response.del_cookie(_UI_COOKIE, path="/")
+    return response
 
 
 @routes.get("/ui/classic")
 async def use_classic_ui(request: web.Request) -> web.Response:
-    next_url = _safe_next_url(request.query.get("next"), "/")
-    if next_url.startswith("/app"):
-        next_url = "/"
-    return _ui_redirect("classic", next_url)
+    # The classic renderer has been retired; retain this endpoint only so
+    # bookmarks from the old switch land on the equivalent React route.
+    next_url = _canonical_ui_url(_safe_next_url(request.query.get("next"), "/"))
+    response = web.HTTPPermanentRedirect(next_url)
+    response.del_cookie(_UI_COOKIE, path="/")
+    return response
 
 
 def _detail_url(item: HubItem) -> str:
     if item.series_key:
-        return f"/app/series/{item.series_key}"
+        return f"/series/{item.series_key}"
     if item.movie_key:
-        return f"/app/movie/{item.movie_key}"
+        return f"/movie/{item.movie_key}"
     if item.album_key:
-        return f"/app/album/{item.album_key}"
+        return f"/album/{item.album_key}"
     return _app_watch_url(item) if (item.media_kind or "") == "audio" else _play_url(item)
 
 
@@ -798,9 +811,9 @@ def _card_from_series(card: SeriesGroup) -> dict:
         ),
         "eyebrow": "Series",
         "badge": f"{card.episode_count} ep",
-        "href": f"/app/series/{card.series_key}",
+        "href": f"/series/{card.series_key}",
         "playHref": _play_url(poster),
-        "detailsHref": f"/app/series/{card.series_key}",
+        "detailsHref": f"/series/{card.series_key}",
         "aspect": "poster",
         "episodeCount": card.episode_count,
         "seasonCount": card.season_count,
@@ -840,9 +853,9 @@ def _card_from_movie(card: MovieGroup) -> dict:
         ),
         "eyebrow": "Movie",
         "badge": f"{card.variant_count} versions",
-        "href": f"/app/movie/{card.movie_key}",
+        "href": f"/movie/{card.movie_key}",
         "playHref": _play_url(poster),
-        "detailsHref": f"/app/movie/{card.movie_key}",
+        "detailsHref": f"/movie/{card.movie_key}",
         "aspect": "poster",
         "variantCount": card.variant_count,
     }
@@ -863,9 +876,9 @@ def _card_from_album(card: AlbumGroup) -> dict:
         ),
         "eyebrow": "Album",
         "badge": f"{card.track_count} track{'s' if card.track_count != 1 else ''}",
-        "href": f"/app/album/{card.album_key}",
+        "href": f"/album/{card.album_key}",
         "playHref": _app_watch_url(poster),
-        "detailsHref": f"/app/album/{card.album_key}",
+        "detailsHref": f"/album/{card.album_key}",
         "aspect": "square",
         "artist": artist,
         "trackCount": card.track_count,
@@ -1017,7 +1030,7 @@ def _app_query(params: dict, *, offset: Optional[int] = None) -> str:
         qs["sort"] = params["sort"]
     if offset:
         qs["offset"] = offset
-    return "/app" if not qs else f"/app?{urlencode(qs)}"
+    return "/" if not qs else f"/?{urlencode(qs)}"
 
 
 @routes.get("/api/me")
@@ -1030,7 +1043,7 @@ async def api_me(request: web.Request) -> web.Response:
         "gemini": bool(Var.GEMINI_API_KEY) and bool(user),
         "app": {
             "name": "TeleDirect",
-            "spaPath": "/app",
+            "spaPath": "/",
         },
     })
 
@@ -1240,7 +1253,7 @@ async def api_hub(request: web.Request) -> web.Response:
             shelves.append({
                 "name": shelf["name"],
                 "href": (
-                    "/app" + shelf["link"][1:]
+                    "/" + shelf["link"][1:]
                     if shelf.get("link") and shelf["link"].startswith("/?")
                     else shelf.get("link")
                 ),
@@ -1365,7 +1378,7 @@ async def api_hub(request: web.Request) -> web.Response:
 
 
 def _person_link(name: str) -> dict:
-    return {"name": name, "href": f"/app/person/{media_index._person_slug(name)}"}
+    return {"name": name, "href": f"/person/{media_index._person_slug(name)}"}
 
 
 def _meta_payload(item: HubItem) -> dict:
@@ -1473,7 +1486,7 @@ def _episode_navigator_payload(item: HubItem) -> dict | None:
 
     return {
         "title": item.series_title or item.title or "Series",
-        "seriesHref": f"/app/series/{item.series_key}",
+        "seriesHref": f"/series/{item.series_key}",
         "currentSeason": "misc" if item.season is None else str(item.season),
         "seasons": season_payload,
     }
@@ -1817,7 +1830,7 @@ def _album_detail_payload(
     artist_credits = [
         {
             "name": _clean_music_tag(credit),
-            "href": f"/app/artist/{media_index._artist_slug(credit)}",
+            "href": f"/artist/{media_index._artist_slug(credit)}",
         }
         for credit in media_index._artist_credits(display_artist)
     ] if display_artist and display_artist != "Various Artists" else []
@@ -2103,7 +2116,7 @@ def _track_payload(item: HubItem) -> dict:
         "classicHref": _watch_url(item),
         "streamHref": _stream_url(item),
         "downloadHref": _download_url(item),
-        "albumHref": f"/app/album/{item.album_key}" if item.album_key else "",
+        "albumHref": f"/album/{item.album_key}" if item.album_key else "",
     }
 
 
@@ -2667,7 +2680,7 @@ def _app_watch_share_metadata(key: str) -> dict | None:
             fallback=f"Watch {title} on TeleDirect",
         ),
         "image": image,
-        "url": share_meta.absolute_url(f"app/watch/{item.secure_hash}{item.message_id}"),
+        "url": share_meta.absolute_url(f"play/{item.secure_hash}{item.message_id}"),
         "type": share_type,
     }
 
@@ -2688,7 +2701,7 @@ def _app_movie_share_metadata(key: str) -> dict | None:
             fallback=f"Watch {title} on TeleDirect",
         ),
         "image": share_meta.item_image_url(enriched),
-        "url": share_meta.absolute_url(f"app/movie/{key}"),
+        "url": share_meta.absolute_url(f"movie/{key}"),
         "type": "video.movie",
     }
 
@@ -2708,17 +2721,17 @@ def _app_series_share_metadata(key: str) -> dict | None:
             fallback=f"{season_count} season{'s' if season_count != 1 else ''} on TeleDirect",
         ),
         "image": share_meta.item_image_url(enriched),
-        "url": share_meta.absolute_url(f"app/series/{key}"),
+        "url": share_meta.absolute_url(f"series/{key}"),
         "type": "video.tv_show",
     }
 
 
 def _app_share_metadata(path: str) -> dict | None:
-    match = re.match(r"^/app/(watch|movie|series)/([^/?#]+)", path or "")
+    match = re.match(r"^/(?:app/)?(play|watch|movie|series)/([^/?#]+)", path or "")
     if not match:
         return None
     kind, key = match.groups()
-    if kind == "watch":
+    if kind in {"play", "watch"}:
         return _app_watch_share_metadata(key)
     if kind == "movie":
         return _app_movie_share_metadata(key)
@@ -2805,7 +2818,7 @@ def _app_index_response(request: web.Request | None = None) -> web.Response:
   <body>
     <main>
       <h1>SPA build missing</h1>
-      <p>Run <code>npm install</code> and <code>npm run build</code> inside <code>frontend/</code>, then reload <code>/app</code>.</p>
+      <p>Run <code>npm install</code> and <code>npm run build</code> inside <code>frontend/</code>, then reload this page.</p>
     </main>
   </body>
 </html>"""
@@ -2842,9 +2855,17 @@ def _app_download_redirect(request: web.Request) -> web.HTTPFound | None:
     return web.HTTPFound(f"/{key}?{urlencode(query)}")
 
 
+def _canonical_app_path(request: web.Request) -> str:
+    tail = request.match_info.get("tail", "").strip("/")
+    if tail.startswith("watch/"):
+        tail = f"play/{tail.removeprefix('watch/')}"
+    target = f"/{tail}" if tail else "/"
+    return f"{target}?{request.query_string}" if request.query_string else target
+
+
 @routes.get("/app")
 async def spa_app(request: web.Request) -> web.Response:
-    return _app_index_response(request)
+    raise web.HTTPPermanentRedirect(_canonical_app_path(request))
 
 
 @routes.get(r"/app/{tail:.*}")
@@ -2854,4 +2875,19 @@ async def spa_app_fallback(request: web.Request) -> web.Response:
     download_redirect = _app_download_redirect(request)
     if download_redirect is not None:
         return download_redirect
+    raise web.HTTPPermanentRedirect(_canonical_app_path(request))
+
+
+@routes.get("/filters")
+@routes.get("/liked-songs")
+@routes.get("/playlists")
+@routes.get(r"/playlist/{playlist_id:[a-f0-9]{32}}")
+@routes.get("/live-tv")
+@routes.get(r"/play/{key:[A-Za-z0-9_-]+}")
+@routes.get("/admin/iptv")
+@routes.get("/admin/trending")
+async def spa_root_routes(request: web.Request) -> web.Response:
+    if request.path.startswith("/play/") and is_download_query(request.rel_url.query):
+        key = request.match_info["key"]
+        return web.HTTPFound(f"/{key}?{urlencode(dict(request.rel_url.query))}")
     return _app_index_response(request)

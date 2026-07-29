@@ -12,7 +12,7 @@ type WatchlistView = 'all' | 'movies' | 'series' | 'videos';
 type WatchlistSort = 'saved' | 'title' | 'year';
 
 function watchHref(url: string): string {
-  if (url.startsWith('/watch/')) return url.replace(/^\/watch\//, '/app/watch/');
+  if (url.startsWith('/watch/')) return url.replace(/^\/watch\//, '/play/');
   return localAppHref(url) || url;
 }
 

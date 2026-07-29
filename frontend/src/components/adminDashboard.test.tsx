@@ -85,8 +85,8 @@ describe('AdminDashboard', () => {
     render(<AdminDashboard user={adminUser} onSignIn={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByRole('heading', { name: '70% complete' })).toBeTruthy());
-    expect(screen.getByRole('link', { name: /Missing overview2/i }).getAttribute('href')).toBe('/app/admin?filter=no-overview');
-    expect(screen.getByRole('link', { name: /Missing markers5/i }).getAttribute('href')).toBe('/app/admin?filter=no-markers');
+    expect(screen.getByRole('link', { name: /Missing overview2/i }).getAttribute('href')).toBe('/admin?filter=no-overview');
+    expect(screen.getByRole('link', { name: /Missing markers5/i }).getAttribute('href')).toBe('/admin?filter=no-markers');
   });
 
   it('shows credits coverage with quick filters', async () => {
@@ -99,8 +99,8 @@ describe('AdminDashboard', () => {
     expect(within(screen.getByText('Backfillable now').closest('.dash-stat-row') as HTMLElement).getByText('4')).toBeTruthy();
     expect(within(screen.getByText('Missing ratings').closest('.dash-stat-row') as HTMLElement).getByText('2')).toBeTruthy();
     expect(screen.getByText('3 updated · 4 checked · 1 failed')).toBeTruthy();
-    expect(screen.getByRole('link', { name: /Missing credits 3/i }).getAttribute('href')).toBe('/app/admin?filter=no-cast');
-    expect(screen.getByRole('link', { name: /No TMDB ID 2/i }).getAttribute('href')).toBe('/app/admin?filter=unenriched');
+    expect(screen.getByRole('link', { name: /Missing credits 3/i }).getAttribute('href')).toBe('/admin?filter=no-cast');
+    expect(screen.getByRole('link', { name: /No TMDB ID 2/i }).getAttribute('href')).toBe('/admin?filter=unenriched');
   });
 
   it('queues one-click metadata cleanup from the dashboard', async () => {

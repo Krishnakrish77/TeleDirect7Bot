@@ -297,6 +297,12 @@ async def watch_handler(request: web.Request):
             secure_hash = request.rel_url.query.get("hash")
         if is_download_query(request.rel_url.query):
             return await media_streamer(request, message_id, secure_hash)
+        # The server-rendered watch page has been retired. Preserve historic
+        # links by sending them into the canonical React player instead.
+        target = f"/play/{path}"
+        if request.query_string:
+            target = f"{target}?{request.query_string}"
+        raise web.HTTPPermanentRedirect(target)
         # Generate a per-user-per-video VLC tracking token if the user is signed in.
         # The token is included in the rendered page and appended to the VLC URL so
         # that server-side CW/WH tracking works even when VLC bypasses JS.

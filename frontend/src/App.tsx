@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { FocusEvent, MouseEvent } from 'react';
 import { deleteContinueEntry, dismissRecommendation, fetchRadio, recordWatchHistory, setServerSyncEnabled, signOut } from './api';
 import { syncContinueWatching } from './utils/continueWatching';
-import { appUrl, classicPathForApp, parseRoute, uiModeHref, useAppNavigation, useHubParams } from './navigation';
+import { appUrl, parseRoute, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
 import { useArtColor } from './hooks/artColor';
 import { useAdmin, useAdminIptv, useDetail, useHub, useLikedSongs, useLiveTv, useMe, usePlaylistDetail, usePlaylists, useStats, useWatchlist, useWatchlistItems } from './hooks/data';
@@ -346,7 +346,6 @@ function App() {
   const hubLoading = loading && !canRenderHubData;
   const filters = data?.filters ?? DEFAULT_FILTERS;
   const watchKey = route.kind === 'watch' ? route.key : '';
-  const classicUiHref = uiModeHref('classic', classicPathForApp(location.pathname, location.search));
   const shellClass = [
     'app-shell',
     audio.player.track ? 'has-player' : '',
@@ -371,7 +370,7 @@ function App() {
     const anchor = target?.closest<HTMLAnchorElement>('a[href]');
     if (!anchor) return;
     const url = new URL(anchor.href);
-    if (url.origin !== window.location.origin || !url.pathname.startsWith('/app')) return;
+    if (url.origin !== window.location.origin) return;
     preloadAppRoute(url.pathname);
   }, []);
 
@@ -385,7 +384,6 @@ function App() {
         searchRef={searchRef}
         accountOpen={accountOpen}
         setAccountOpen={setAccountOpen}
-        classicUiHref={classicUiHref}
         onSearchSubmit={onSearchSubmit}
         onSearchClear={onSearchClear}
         onSuggestionNavigate={navigate}

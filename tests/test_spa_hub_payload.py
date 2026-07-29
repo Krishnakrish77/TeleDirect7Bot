@@ -161,10 +161,10 @@ class SpaHubPayloadTest(unittest.TestCase):
         ):
             payload = _album_detail_payload("vishwanath-sons")
 
-        self.assertEqual(payload["artistHref"], "/app/artist/g-v-prakash-kumar")
+        self.assertEqual(payload["artistHref"], "/artist/g-v-prakash-kumar")
         self.assertEqual(payload["artistCredits"], [
-            {"name": "G. V. Prakash Kumar", "href": "/app/artist/g-v-prakash-kumar"},
-            {"name": "Sublahshini", "href": "/app/artist/sublahshini"},
+            {"name": "G. V. Prakash Kumar", "href": "/artist/g-v-prakash-kumar"},
+            {"name": "Sublahshini", "href": "/artist/sublahshini"},
         ])
 
     def test_episode_navigator_groups_variants_and_marks_current_episode(self):
@@ -206,13 +206,13 @@ class SpaHubPayloadTest(unittest.TestCase):
 
             payload = spa_routes._episode_navigator_payload(current)
 
-            self.assertEqual(payload["seriesHref"], "/app/series/example-series")
+            self.assertEqual(payload["seriesHref"], "/series/example-series")
             self.assertEqual(payload["currentSeason"], "1")
             self.assertEqual(len(payload["seasons"]), 1)
             entries = payload["seasons"][0]["entries"]
             self.assertEqual([entry["label"] for entry in entries], ["S01E01", "S01E02"])
             self.assertTrue(entries[0]["current"])
-            self.assertEqual(entries[1]["playHref"], "/app/watch/episode-two103")
+            self.assertEqual(entries[1]["playHref"], "/play/episode-two103")
         finally:
             media_index._items.clear()
             media_index._items.update(previous)
@@ -515,14 +515,14 @@ class SpaHubPayloadTest(unittest.TestCase):
         payload = _hub_card(group)
 
         self.assertEqual(payload["type"], "series")
-        self.assertEqual(payload["href"], "/app/series/castle")
-        self.assertEqual(payload["detailsHref"], "/app/series/castle")
-        self.assertEqual(payload["playHref"], "/app/watch/latest452")
+        self.assertEqual(payload["href"], "/series/castle")
+        self.assertEqual(payload["detailsHref"], "/series/castle")
+        self.assertEqual(payload["playHref"], "/play/latest452")
         self.assertEqual(payload["watchKey"], "latest452")
         self.assertEqual(payload["newEpisode"], {
             "label": "S01E02",
             "title": "Nanny McDead",
-            "playHref": "/app/watch/latest452",
+            "playHref": "/play/latest452",
             "watchKey": "latest452",
         })
 
@@ -553,7 +553,7 @@ class SpaHubPayloadTest(unittest.TestCase):
         self.assertEqual(payload["newEpisode"], {
             "label": "",
             "title": "Castle Latest Upload",
-            "playHref": "/app/watch/latest462",
+            "playHref": "/play/latest462",
             "watchKey": "latest462",
         })
 
@@ -584,7 +584,7 @@ class SpaHubPayloadTest(unittest.TestCase):
         self.assertEqual(payload["newEpisode"], {
             "label": "S01E02",
             "title": "",
-            "playHref": "/app/watch/latest463",
+            "playHref": "/play/latest463",
             "watchKey": "latest463",
         })
 
@@ -615,7 +615,7 @@ class SpaHubPayloadTest(unittest.TestCase):
         self.assertEqual(payload["newEpisode"], {
             "label": "S01E02",
             "title": "Nanny McDead",
-            "playHref": "/app/watch/latest464",
+            "playHref": "/play/latest464",
             "watchKey": "latest464",
         })
 

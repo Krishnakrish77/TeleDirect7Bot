@@ -27,7 +27,7 @@ class PwaAssetsTest(unittest.TestCase):
         # Keep the existing installed-app identity stable; only the launch URL
         # moves to the React shell.
         self.assertEqual(manifest["id"], "/")
-        self.assertEqual(manifest["start_url"], "/app")
+        self.assertEqual(manifest["start_url"], "/")
         self.assertEqual(manifest["scope"], "/")
         self.assertEqual(manifest["display"], "standalone")
         self.assertTrue(any(icon["sizes"] == "192x192" for icon in manifest["icons"]))
@@ -35,11 +35,10 @@ class PwaAssetsTest(unittest.TestCase):
     def test_service_worker_keeps_app_shell_cacheable(self):
         worker = hub_routes._SW_JS
 
-        self.assertIn("const CACHE = 'td-v4'", worker)
-        self.assertIn('const SHELL = ["/","/app"', worker)
+        self.assertIn("const CACHE = 'td-v5'", worker)
+        self.assertIn('const SHELL = ["/","/static/tailwind.css"', worker)
         self.assertNotIn("url.pathname.startsWith('/static/app/')", worker)
-        self.assertIn("url.pathname === '/app' || url.pathname.startsWith('/app/')", worker)
-        self.assertIn("caches.match(shell)", worker)
+        self.assertIn("caches.match('/')", worker)
         self.assertIn("url.pathname.startsWith('/api/')", worker)
 
     def test_service_worker_shell_includes_vite_entry_assets(self):
@@ -89,10 +88,21 @@ class PwaAssetsTest(unittest.TestCase):
 
         self.assertIn("Disallow: /api", body)
         self.assertIn("Disallow: /watch", body)
-        self.assertIn("Disallow: /app/watch", body)
-        self.assertIn("Disallow: /app/admin", body)
-        self.assertIn("Allow: /app", body)
-        self.assertNotIn("Allow: /\n", body)
+        self.assertIn("Disallow: /play", body)
+        self.assertIn("Disallow: /admin", body)
+        self.assertIn("Disallow: /app", body)
+        self.assertIn("Allow: /\n", body)
+
+    def test_retired_app_urls_map_to_canonical_root_routes(self):
+        self.assertEqual(
+            spa_routes._canonical_app_path(SimpleNamespace(match_info={"tail": "watch/abc42"}, query_string="")),
+            "/play/abc42",
+        )
+        self.assertEqual(
+            spa_routes._canonical_app_path(SimpleNamespace(match_info={"tail": "admin/iptv"}, query_string="tab=channels")),
+            "/admin/iptv?tab=channels",
+        )
+        self.assertEqual(spa_routes._canonical_ui_url("/watch/abc42"), "/play/abc42")
 
     def test_security_middleware_marks_html_noindex(self):
         async def handler(_request):
