@@ -82,3 +82,43 @@ async def generate_json(
         # the request URL, which carries the API key as a query param.
         logging.debug("gemini: call failed (%s)", type(exc).__name__)
         return None
+
+
+async def generate_content(
+    contents: list[dict],
+    *,
+    tools: Optional[list[dict]] = None,
+    model: str = "gemini-2.5-flash-lite",
+    timeout: float = 25.0,
+) -> Optional[dict]:
+    """Make one raw ``generateContent`` request.
+
+    This intentionally small primitive is for server-owned function calling.
+    Callers keep the conversation and execute tools themselves, which prevents
+    a model response from ever gaining direct access to the catalogue or any
+    other service.  As with :func:`generate_json`, failures are deliberately
+    opaque to callers so product paths can use a safe local fallback.
+    """
+    if not Var.GEMINI_API_KEY or not contents:
+        return None
+    url = _ENDPOINT.format(model=model, key=Var.GEMINI_API_KEY)
+    payload: dict = {"contents": contents}
+    if tools:
+        payload["tools"] = tools
+    try:
+        async with _sem():
+            async with aiohttp.ClientSession() as sess:
+                async with sess.post(
+                    url, json=payload,
+                    timeout=aiohttp.ClientTimeout(total=max(0.1, timeout)),
+                ) as response:
+                    if response.status != 200:
+                        logging.warning("gemini: %s returned HTTP %d", model, response.status)
+                        return None
+                    return await response.json(content_type=None)
+    except asyncio.TimeoutError:
+        logging.warning("gemini: timeout on %s", model)
+        return None
+    except Exception as exc:
+        logging.debug("gemini: raw call failed (%s)", type(exc).__name__)
+        return None

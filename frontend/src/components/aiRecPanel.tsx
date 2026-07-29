@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { askAiRecommendations, dismissRecommendation, fetchAiRecommendations, trackRecommendationEvents } from '../api';
+import { dismissRecommendation, fetchAiRecommendations, streamAiRecommendations, trackRecommendationEvents } from '../api';
 import type { AiRecItem, HubCard, RequestTitle } from '../types';
 import { FilmIcon, ListPlusIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
 import type { WatchTrack } from '../types';
@@ -34,6 +34,9 @@ export function AiRecPanel({
   const [coldStart, setColdStart] = useState(false);
   const [loading, setLoading] = useState(true);
   const [asking, setAsking] = useState(false);
+  const [agentStatus, setAgentStatus] = useState('');
+  const [agentAction, setAgentAction] = useState<'ask' | 'refresh' | null>(null);
+  const [lastAgentInput, setLastAgentInput] = useState<{ query?: string; refresh?: boolean } | null>(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<'picks' | 'mix'>('picks');
@@ -42,7 +45,7 @@ export function AiRecPanel({
 
   const isAbort = (err: unknown) => err instanceof DOMException && err.name === 'AbortError';
 
-  const load = (refresh = false) => {
+  const load = () => {
     ctrl.current?.abort();
     // ``ctrl`` is intentionally shared so an explicit ask cancels a stale
     // initial load (and vice versa). Clear the opposite busy flag at the
@@ -58,7 +61,7 @@ export function AiRecPanel({
     ctrl.current = controller;
     setLoading(true);
     setError('');
-    fetchAiRecommendations(refresh, controller.signal)
+    fetchAiRecommendations(false, controller.signal)
       .then((res) => {
         setItems(res.items || []);
         setExternalItems(res.externalItems || []);
@@ -76,44 +79,53 @@ export function AiRecPanel({
   };
 
   useEffect(() => {
-    load(false);
+    load();
     return () => ctrl.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const runAgent = (input: { query?: string; refresh?: boolean }) => {
+    const isRefresh = Boolean(input.refresh);
+    ctrl.current?.abort();
+    setLoading(false);
+    setAsking(!isRefresh);
+    setAgentAction(isRefresh ? 'refresh' : 'ask');
+    setAgentStatus('Searching your library');
+    setLastAgentInput(input);
+    setError('');
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 30_000);
+    ctrl.current = controller;
+    streamAiRecommendations(input, setAgentStatus, controller.signal)
+      .then((res) => {
+        setItems(res.items || []);
+        setExternalItems(res.externalItems || []);
+        setMessage(res.message || '');
+        setColdStart(Boolean(res.coldStart));
+      })
+      .catch((err) => {
+        if (timedOut) setError('Recommendations took too long. Please try again.');
+        else if (!isAbort(err)) setError(err instanceof Error ? err.message : 'Could not process that request.');
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (ctrl.current === controller) {
+          setAsking(false);
+          setAgentAction(null);
+          setAgentStatus('');
+        }
+      });
+  };
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     const q = query.trim();
     if (!q || asking) return;
-    ctrl.current?.abort();
-    setLoading(false);
-    const controller = new AbortController();
-    let timedOut = false;
-    const timeout = window.setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, 30_000);
-    ctrl.current = controller;
-    setAsking(true);
-    setError('');
-    askAiRecommendations(q, controller.signal)
-      .then((res) => {
-        setItems(res.items || []);
-        setExternalItems(res.externalItems || []);
-        setMessage(res.message || '');
-        setColdStart(false);
-      })
-      .catch((err) => {
-        if (timedOut) setError('That request took too long. Please try again.');
-        else if (!isAbort(err)) setError('Could not process that request.');
-      })
-      .finally(() => {
-        window.clearTimeout(timeout);
-        if (ctrl.current === controller) setAsking(false);
-      });
+    runAgent({ query: q });
   };
 
-  const busy = loading || asking;
+  const busy = loading || asking || agentAction === 'refresh';
   const comfort = items.filter((item) => item.bucket !== 'discovery');
   const discovery = items.filter((item) => item.bucket === 'discovery');
   const split = discovery.length > 0 && comfort.length > 0;
@@ -163,27 +175,30 @@ export function AiRecPanel({
           </div>
           <div className="ai-rec-head-actions">
             {mode === 'picks' && <Button type="button" variant="outline" size="sm" className="ai-rec-mix-launch" onClick={() => setMode('mix')}><SparkleIcon /> Mix</Button>}
-            {mode === 'picks' && <Button type="button" variant="ghost" size="sm" className="text-button" onClick={() => load(true)} disabled={busy}>Refresh</Button>}
+            {mode === 'picks' && <Button type="button" variant="ghost" size="sm" className="text-button" onClick={() => runAgent({ refresh: true })} disabled={busy}>Refresh</Button>}
             <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button" aria-label="Close"><XIcon /></Button></DialogClose>
           </div>
         </div>
 
         {mode === 'mix' ? <AiMixPanel onBack={() => setMode('picks')} onPlay={onPlayMix} onShuffle={onShuffleMix} /> : <>
-          {message && !busy && <p className="ai-rec-message">{message}</p>}
+          {agentStatus ? <p className="ai-rec-message" role="status">{agentStatus}</p> : message && !busy && <p className="ai-rec-message">{message}</p>}
 
           {/* Any card click navigates via its link — close the panel so it doesn't cover the new page. */}
           <div className="ai-rec-body" onClickCapture={(event) => { if ((event.target as HTMLElement).closest('a')) onClose(); }}>
-            {busy ? (
+            {loading || (asking && !items.length) ? (
               <LoadingRows variant="grid" />
-            ) : error ? (
+            ) : error && !items.length ? (
               <div className="ai-rec-empty">
                 <p>{error}</p>
-                <Button type="button" variant="outline" size="sm" onClick={() => load(false)}>Try again</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => lastAgentInput ? runAgent(lastAgentInput) : load()}>Try again</Button>
               </div>
             ) : items.length === 0 ? (
               <p className="ai-rec-empty">No recommendations yet — keep watching and listening.</p>
             ) : (
               <>
+                {error && <div className="ai-rec-message" role="alert">
+                  {error} <Button type="button" variant="outline" size="sm" onClick={() => lastAgentInput ? runAgent(lastAgentInput) : load()}>Try again</Button>
+                </div>}
                 {coldStart && (
                   <p className="ai-rec-note">Still learning your taste — here's what's fresh. The more you watch and listen, the sharper these get.</p>
                 )}
@@ -217,10 +232,10 @@ export function AiRecPanel({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Ask for something — 'upbeat', 'like Inception'…"
-              disabled={asking}
+              disabled={asking || agentAction === 'refresh'}
               aria-label="Ask the recommender"
             />
-            <Button type="submit" disabled={asking || !query.trim()}>Ask</Button>
+            <Button type="submit" disabled={busy || !query.trim()}>Ask</Button>
           </form>
         </>}
       </DialogContent>
