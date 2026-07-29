@@ -110,6 +110,12 @@ _AGENT_TOOLS = [{"functionDeclarations": [
 class AgentRunError(RuntimeError):
     """The bounded agent could not produce a grounded result."""
 
+    def __init__(self, reason: str, *, tool_count: int = 0, candidate_count: int = 0, elapsed_ms: int = 0):
+        super().__init__(reason)
+        self.tool_count = tool_count
+        self.candidate_count = candidate_count
+        self.elapsed_ms = elapsed_ms
+
 
 # ---- pure helpers (unit-tested in test_ai_rec.py) -------------------------
 
@@ -161,6 +167,28 @@ def _video_payloads(payloads: list) -> list:
         and payload.get("aspect") != "square"
         and payload.get("mediaKind") != "audio"
     ]
+
+
+def _balanced_buckets(items: list) -> list:
+    """Guarantee both AI Picks sections whenever at least two cards survive."""
+    if len(items) < 2:
+        return [{**item, "bucket": "comfort"} for item in items]
+    has_comfort = any(item.get("bucket") != "discovery" for item in items)
+    has_discovery = any(item.get("bucket") == "discovery" for item in items)
+    if has_comfort and has_discovery:
+        return items
+    discovery_start = len(items) - max(1, len(items) // 3)
+    return [
+        {**item, "bucket": "discovery" if index >= discovery_start else "comfort"}
+        for index, item in enumerate(items)
+    ]
+
+
+def _fallback_items(payloads: list, limit: int) -> list:
+    return _balanced_buckets([
+        {**item, "recReason": "", "bucket": "comfort"}
+        for item in payloads[:limit]
+    ])
 
 
 def _select_candidate_payloads(payloads: list, query_hrefs: set[str]) -> list:
@@ -612,7 +640,7 @@ async def _trending_items(
         payloads = _video_payloads(payloads)
         payloads = _dedup_payloads(payloads, exclude_keys or set(), exclude_item_ids)
         payloads = _exclude_tmdb_payloads(payloads, excluded_tmdb or set())
-        return [{**item, "recReason": "", "bucket": "comfort"} for item in payloads[:limit]]
+        return _fallback_items(payloads, limit)
     except Exception:
         logging.debug("ai_rec: trending fallback failed", exc_info=True)
         return []
@@ -810,15 +838,24 @@ async def _generate_agentic(
     ])}]}]
     await _emit_agent_status(progress, "Searching your library")
     calls_used = 0
+
+    def failed(reason: str) -> AgentRunError:
+        return AgentRunError(
+            reason,
+            tool_count=calls_used,
+            candidate_count=len(catalogue.payloads),
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+        )
+
     explored = False
     while calls_used < _AGENT_MAX_TOOL_CALLS:
         remaining = _AGENT_BUDGET_SECONDS - (time.monotonic() - started)
         if remaining <= 0:
-            raise AgentRunError("budget")
+            raise failed("budget")
         response = await gemini.generate_content(contents, tools=_AGENT_TOOLS, timeout=remaining)
         model_content, calls = _function_calls(response)
         if response is None or model_content is None:
-            raise AgentRunError("model")
+            raise failed("model")
         if not explored:
             await _emit_agent_status(progress, "Exploring related titles")
             explored = True
@@ -833,20 +870,22 @@ async def _generate_agentic(
             calls_used += 1
         contents.append({"role": "user", "parts": answers})
     if not catalogue.payloads:
-        raise AgentRunError("no_candidates")
+        raise failed("no_candidates")
     await _emit_agent_status(progress, "Curating picks")
     remaining = _AGENT_BUDGET_SECONDS - (time.monotonic() - started)
     if remaining <= 0:
-        raise AgentRunError("budget")
+        raise failed("budget")
     candidates = [catalogue._compact(identifier, payload) for identifier, payload in catalogue.payloads.items()]
     prompt = _build_prompt(_taste_summary(profile, stats), candidates, query, limit)
     result = await gemini.generate_json(prompt, schema=_PICK_SCHEMA, timeout=remaining)
     picks = result.get("picks") if isinstance(result, dict) else None
     items = _apply_picks(picks, catalogue.payloads, limit)
     # Revalidate after model work in case a deletion/hide/finish raced a tool.
-    items = _validate_cached(items, exclude_keys=seen_keys, exclude_item_ids=watched_ids, excluded_tmdb=excluded)
+    items = _balanced_buckets(_validate_cached(
+        items, exclude_keys=seen_keys, exclude_item_ids=watched_ids, excluded_tmdb=excluded,
+    ))
     if not items:
-        raise AgentRunError("invalid_picks")
+        raise failed("invalid_picks")
     if refresh:
         await rec_store.clear_cached(user_id)
         await ai_rec_store.set_cached(user_id, items)
@@ -883,8 +922,11 @@ async def get_ai_recommendations(
                 # The fallback intentionally uses no function calls and no
                 # extra model call. A bad response must feel like a slightly
                 # less tailored shelf, never an error page or endless spinner.
-                logging.info("ai_rec_agent tool_count=%d elapsed_ms=%d candidate_count=%d final_pick_count=%d fallback_reason=%s",
-                             0, 0, 0, 0, type(exc).__name__)
+                logging.info(
+                    "ai_rec_agent tool_count=%d elapsed_ms=%d candidate_count=%d final_pick_count=%d fallback_reason=%s",
+                    getattr(exc, "tool_count", 0), getattr(exc, "elapsed_ms", 0),
+                    getattr(exc, "candidate_count", 0), 0, str(exc) or type(exc).__name__,
+                )
                 await _emit_agent_status(progress, "Curating picks")
                 return await _generate(user_id, query=query, limit=limit, refresh=refresh, rank_with_gemini=False)
         return await _generate(user_id, query=query, limit=limit, refresh=refresh)
@@ -1014,7 +1056,7 @@ async def _generate(
         })
 
     def _raw_fallback() -> list:
-        return [{**p, "recReason": "", "bucket": "comfort"} for p in payloads[:limit]]
+        return _fallback_items(payloads, limit)
 
     index, prompt_items = _index_candidates(payloads)
     prompt = _build_prompt(_taste_summary(profile, stats), prompt_items, query, limit)
@@ -1024,6 +1066,6 @@ async def _generate(
     if not isinstance(picks, list) or not picks:
         return await _finish({"items": _raw_fallback(), "externalItems": await _requestable_picks(user_id, profile, dismissed, query), "message": "", "coldStart": False})
 
-    items = _apply_picks(picks, index, limit) or _raw_fallback()
+    items = _balanced_buckets(_apply_picks(picks, index, limit) or _raw_fallback())
     message = (result.get("message") or "").strip()
     return await _finish({"items": items, "externalItems": await _requestable_picks(user_id, profile, dismissed, query), "message": message, "coldStart": False})
