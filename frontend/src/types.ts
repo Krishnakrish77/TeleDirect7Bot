@@ -542,7 +542,7 @@ export interface WatchlistItem {
   kind: string;
   subtitle: string;
   cw_pct?: number | null;
-  watchStatus?: 'unwatched' | 'watching' | 'watched';
+  watchStatus?: 'unwatched' | 'watching' | 'caught_up' | 'watched';
   watchedCount?: number;
   totalCount?: number;
 }

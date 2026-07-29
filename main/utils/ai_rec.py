@@ -335,15 +335,32 @@ def _apply_picks(picks: list, index: dict, limit: int) -> list:
     return out
 
 
-def _validate_cached(items: list) -> list:
-    """Drop cached cards whose underlying item was hidden/removed since caching.
+def _validate_cached(
+    items: list,
+    *,
+    exclude_keys: set[str] | None = None,
+    excluded_tmdb: set[tuple[int, str]] | None = None,
+) -> list:
+    """Drop stale, watched, and explicitly excluded cached cards.
 
     Only individual items/tracks (digit itemId) are cheaply re-checkable;
-    grouped cards (movie/series/album keys) pass through — a rare stale-group
-    is acceptable within the short cache window.
+    grouped cards use their TMDB identity where possible. This validation is
+    deliberately repeated on cache reads: a person may finish an item after
+    the recommendation set was written, and an old cache must never suggest
+    that completed title back to them.
     """
+    exclude_keys = exclude_keys or set()
+    excluded_tmdb = excluded_tmdb or set()
     out = []
     for item in items or []:
+        if str(item.get("watchKey") or "") in exclude_keys:
+            continue
+        try:
+            tmdb_key = (int(item.get("tmdbId") or 0), str(item.get("tmdbKind") or ""))
+        except (TypeError, ValueError):
+            tmdb_key = (0, "")
+        if tmdb_key[0] and tmdb_key in excluded_tmdb:
+            continue
         iid = str(item.get("itemId") or "")
         if iid.isdigit():
             obj = media_index.get_item(int(iid))
@@ -480,11 +497,26 @@ async def _gather_query_candidates(query: str) -> list:
     return objs
 
 
-async def _trending_items(limit: int) -> list:
+async def _trending_items(
+    limit: int,
+    *,
+    exclude_keys: set[str] | None = None,
+    excluded_tmdb: set[tuple[int, str]] | None = None,
+) -> list:
+    """Return a safe cold-start fallback.
+
+    Trending is a fallback for insufficient taste signals, not an exception
+    to the "don't recommend something already watched" rule.
+    """
     from main.server import spa_routes as _spa
     try:
-        items, _ = media_index.query_grouped(sort="newest", limit=limit)
-        return [{**_spa._card(o), "recReason": "", "bucket": "comfort"} for o in items]
+        # Ask for a small reserve because filters can legitimately remove the
+        # user's recent history from an otherwise short catalogue shelf.
+        items, _ = media_index.query_grouped(sort="newest", limit=max(limit * 3, limit))
+        payloads = [_spa._card(item) for item in items]
+        payloads = _dedup_payloads(payloads, exclude_keys or set())
+        payloads = _exclude_tmdb_payloads(payloads, excluded_tmdb or set())
+        return [{**item, "recReason": "", "bucket": "comfort"} for item in payloads[:limit]]
     except Exception:
         logging.debug("ai_rec: trending fallback failed", exc_info=True)
         return []
@@ -564,7 +596,12 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
     if read_cache:
         cached = await ai_rec_store.get_cached(user_id)
         if cached:
-            valid = _validate_cached(cached)
+            cache_excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
+            valid = _validate_cached(
+                cached,
+                exclude_keys={str(entry.get("cw_key") or "") for entry in history} | set(cw_map),
+                excluded_tmdb=cache_excluded,
+            )
             if len(valid) >= 3:  # else the cache is too stale — regenerate below
                 return {
                     "items": valid,
@@ -585,10 +622,14 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
 
     # Cold start / no key: skip the expensive candidate gather entirely.
     has_signal = bool(profile.get("seeds")) or bool(stats.get("top_genres")) or bool(stats.get("top_artists"))
+    seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map.keys())
+    excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
     if not has_signal or not gemini.available():
-        return await _finish({"items": await _trending_items(limit), "externalItems": [], "message": "", "coldStart": True})
+        return await _finish({
+            "items": await _trending_items(limit, exclude_keys=seen_keys, excluded_tmdb=excluded),
+            "externalItems": [], "message": "", "coldStart": True,
+        })
 
-    seen_keys = {e.get("cw_key") for e in history} | set(cw_map.keys())
     objs = await _gather_candidates(user_id, profile, stats, dismissed)
     query_objs = await _gather_query_candidates(query) if query else []
     art_cache: dict = {}
@@ -597,12 +638,14 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
     payloads = _dedup_payloads(
         query_payloads + [_spa._card(obj, art_cache=art_cache) for obj in objs], seen_keys,
     )
-    excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
     payloads = _exclude_tmdb_payloads(payloads, excluded)
     payloads = _select_candidate_payloads(payloads, query_hrefs)
 
     if len(payloads) < 6:
-        return await _finish({"items": await _trending_items(limit), "externalItems": [], "message": "", "coldStart": True})
+        return await _finish({
+            "items": await _trending_items(limit, exclude_keys=seen_keys, excluded_tmdb=excluded),
+            "externalItems": [], "message": "", "coldStart": True,
+        })
 
     def _raw_fallback() -> list:
         return [{**p, "recReason": "", "bucket": "comfort"} for p in payloads[:limit]]

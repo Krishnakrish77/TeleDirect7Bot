@@ -140,6 +140,33 @@ class SpaHubPayloadTest(unittest.TestCase):
         self.assertEqual(items[1]["watchStatus"], "watched")
         self.assertIsNone(items[1]["cw_pct"])
 
+    def test_watchlist_marks_a_series_caught_up_not_completed(self):
+        series = {
+            "item_id": "series:dark",
+            "kind": "series",
+            "title": "Dark",
+            "_watch_keys": ["episode1", "episode2"],
+        }
+
+        async def get_entries(_user_id):
+            return [{"item_id": "series:dark"}]
+
+        async def get_continue(_user_id):
+            return {}
+
+        async def get_history(_user_id, *, limit):
+            return [{"cw_key": "episode1"}, {"cw_key": "episode2"}]
+
+        with patch.object(watchlist_routes.watchlist_store, "get_entries", get_entries), patch.object(
+            watchlist_routes, "_resolve_item", return_value=series
+        ), patch.object(watchlist_routes.cw_store, "get_all", get_continue), patch.object(
+            watchlist_routes.wh_store, "get_recent", get_history
+        ):
+            items = asyncio.run(watchlist_routes._items_for_user(1))
+
+        self.assertEqual(items[0]["watchStatus"], "caught_up")
+        self.assertIsNone(items[0]["cw_pct"])
+
     def test_album_payload_links_each_artist_credit_individually(self):
         track = HubItem(
             message_id=1,

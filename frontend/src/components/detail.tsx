@@ -225,6 +225,7 @@ function MarkWatchedAction({
   onMarked,
   label = 'Mark watched',
   watchedLabel = 'Watched',
+  ariaLabel,
 }: {
   keys: string[];
   title: string;
@@ -233,6 +234,7 @@ function MarkWatchedAction({
   onMarked?: (keys: string[]) => void;
   label?: string;
   watchedLabel?: string;
+  ariaLabel?: string;
 }) {
   const keySignature = keys.join('|');
   const [marked, setMarked] = useState(false);
@@ -258,7 +260,9 @@ function MarkWatchedAction({
       onClick={handleMarkWatched}
       disabled={watched}
       title={watched ? watchedLabel : label}
-      aria-label={watched ? `${title} watched` : `Mark ${title} as watched`}
+      aria-label={ariaLabel
+        ? (watched ? ariaLabel : `Mark ${title}: ${label.replace(/^Mark\s+/i, '')}`)
+        : (watched ? `${title} watched` : `Mark ${title} as watched`)}
     >
       <CheckIcon />
       <span>{watched ? watchedLabel : label}</span>
@@ -467,6 +471,11 @@ function SeriesDetail({
     [visibleEntries],
   );
   const seriesWatchKeys = useMemo(() => uniqueChoiceKeys(visibleChoices), [visibleChoices]);
+  const shownScopeLabel = data.selectedSeason === 'all'
+    ? 'shown episodes'
+    : data.selectedSeason === 'misc'
+      ? 'other episodes'
+      : `season ${data.selectedSeason}`;
   const visibleEntriesWatched = visibleEntries.length > 0 && visibleEntries.every((entry) => {
     const choices = entry.variants.length ? entry.variants : [entry.rep];
     return entry.watched || choices.some((choice) => isLocallyWatched(choiceWatchKey(choice)));
@@ -550,8 +559,9 @@ function SeriesDetail({
             initiallyWatched={visibleEntriesWatched}
             onMarkWatched={onMarkWatched}
             onMarked={handleShownMarked}
-            label="Watched"
-            watchedLabel="Watched"
+            label={`Mark ${shownScopeLabel} watched`}
+            watchedLabel={`${shownScopeLabel.charAt(0).toUpperCase()}${shownScopeLabel.slice(1)} watched`}
+            ariaLabel={`${data.title}: ${shownScopeLabel} watched`}
           />
         )}
       >

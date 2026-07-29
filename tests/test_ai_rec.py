@@ -47,6 +47,18 @@ class AiRecGroundingTest(unittest.TestCase):
         ])
         self.assertEqual([i["href"] for i in valid], ["/kept", "/nokeyt"])
 
+    def test_validate_cached_never_returns_watched_or_excluded_titles(self):
+        valid = ai_rec._validate_cached(
+            [
+                {"itemId": "movie:watched", "href": "/watched", "watchKey": "done"},
+                {"itemId": "series:excluded", "href": "/excluded", "tmdbId": 42, "tmdbKind": "tv"},
+                {"itemId": "movie:fresh", "href": "/fresh", "tmdbId": 43, "tmdbKind": "movie"},
+            ],
+            exclude_keys={"done"},
+            excluded_tmdb={(42, "tv")},
+        )
+        self.assertEqual([item["href"] for item in valid], ["/fresh"])
+
     def test_cold_start_detection(self):
         self.assertTrue(ai_rec._is_cold({}, {}, []))
         self.assertFalse(ai_rec._is_cold({"seeds": [(1, "movie")]}, {}, [1, 2, 3, 4, 5, 6]))

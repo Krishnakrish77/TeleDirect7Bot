@@ -55,12 +55,13 @@ export function watchlistCard(item: WatchlistItem): HubCard {
   const href = watchHref(item.url);
   const currentlyWatching = item.watchStatus === 'watching';
   const watched = item.watchStatus === 'watched';
+  const caughtUp = item.watchStatus === 'caught_up';
   const progress = currentlyWatching && item.cw_pct ? Math.round(item.cw_pct * 100) : 0;
   return {
     type: itemType(item.kind),
     itemId: item.item_id,
     title: item.title,
-    subtitle: item.subtitle || '',
+    subtitle: [caughtUp ? 'Caught up' : '', item.subtitle].filter(Boolean).join(' · '),
     year: item.year ?? null,
     mediaKind: 'video',
     posterUrl: item.poster,
@@ -86,7 +87,7 @@ export function watchlistCard(item: WatchlistItem): HubCard {
     currentlyWatching,
     watched,
     eyebrow: item.kind.charAt(0).toUpperCase() + item.kind.slice(1),
-    badge: progress ? `${progress}%` : '',
+    badge: caughtUp ? 'Caught up' : (progress ? `${progress}%` : ''),
     aspect: 'poster',
   };
 }
@@ -129,6 +130,10 @@ export function WatchlistPage({
     () => items.filter((item) => item.watchStatus === 'watched').length,
     [items],
   );
+  const caughtUpCount = useMemo(
+    () => items.filter((item) => item.watchStatus === 'caught_up').length,
+    [items],
+  );
   const markWatched = async (card: HubCard) => {
     try {
       if (!onMarkWatched) return;
@@ -163,6 +168,7 @@ export function WatchlistPage({
           <strong>{items.length.toLocaleString()}</strong>
           <span>saved title{items.length === 1 ? '' : 's'}</span>
           {continueItems.length > 0 && <span><PlayIcon /> {continueItems.length} watching</span>}
+          {caughtUpCount > 0 && <span><CheckIcon /> {caughtUpCount} caught up</span>}
           {watchedCount > 0 && <span><CheckIcon /> {watchedCount} completed</span>}
         </div>
       </section>
