@@ -44,7 +44,17 @@ export function AiRecPanel({
 
   const load = (refresh = false) => {
     ctrl.current?.abort();
+    // ``ctrl`` is intentionally shared so an explicit ask cancels a stale
+    // initial load (and vice versa). Clear the opposite busy flag at the
+    // handoff; otherwise its aborted request cannot safely clear state after
+    // the controller has been replaced, leaving the panel stuck loading.
+    setAsking(false);
     const controller = new AbortController();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 30_000);
     ctrl.current = controller;
     setLoading(true);
     setError('');
@@ -55,8 +65,14 @@ export function AiRecPanel({
         setMessage(res.message || '');
         setColdStart(Boolean(res.coldStart));
       })
-      .catch((err) => { if (!isAbort(err)) setError('Could not load recommendations right now.'); })
-      .finally(() => { if (ctrl.current === controller) setLoading(false); });
+      .catch((err) => {
+        if (timedOut) setError('Recommendations took too long. Please try again.');
+        else if (!isAbort(err)) setError('Could not load recommendations right now.');
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (ctrl.current === controller) setLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -70,7 +86,13 @@ export function AiRecPanel({
     const q = query.trim();
     if (!q || asking) return;
     ctrl.current?.abort();
+    setLoading(false);
     const controller = new AbortController();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 30_000);
     ctrl.current = controller;
     setAsking(true);
     setError('');
@@ -81,8 +103,14 @@ export function AiRecPanel({
         setMessage(res.message || '');
         setColdStart(false);
       })
-      .catch((err) => { if (!isAbort(err)) setError('Could not process that request.'); })
-      .finally(() => { if (ctrl.current === controller) setAsking(false); });
+      .catch((err) => {
+        if (timedOut) setError('That request took too long. Please try again.');
+        else if (!isAbort(err)) setError('Could not process that request.');
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (ctrl.current === controller) setAsking(false);
+      });
   };
 
   const busy = loading || asking;
@@ -148,7 +176,10 @@ export function AiRecPanel({
             {busy ? (
               <LoadingRows variant="grid" />
             ) : error ? (
-              <p className="ai-rec-empty">{error}</p>
+              <div className="ai-rec-empty">
+                <p>{error}</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => load(false)}>Try again</Button>
+              </div>
             ) : items.length === 0 ? (
               <p className="ai-rec-empty">No recommendations yet — keep watching and listening.</p>
             ) : (

@@ -19,6 +19,7 @@ import json
 import logging
 import random
 import re
+import time
 from collections import Counter
 from typing import Optional
 
@@ -77,13 +78,20 @@ _MIX_SCHEMA = {
 
 # ---- pure helpers (unit-tested in test_ai_rec.py) -------------------------
 
-def _dedup_payloads(payloads: list, exclude_keys: set) -> list:
-    """Drop duplicate cards (by href) and anything the user already engaged."""
+def _dedup_payloads(
+    payloads: list,
+    exclude_keys: set[str],
+    exclude_item_ids: set[str] | None = None,
+) -> list:
+    """Drop duplicate cards and titles the user already watched/listened to."""
+    exclude_item_ids = exclude_item_ids or set()
     seen: set = set()
     out = []
     for p in payloads:
         href = p.get("href")
         if not href or href in seen:
+            continue
+        if str(p.get("itemId") or "") in exclude_item_ids:
             continue
         if p.get("watchKey") and p.get("watchKey") in exclude_keys:
             continue
@@ -339,6 +347,7 @@ def _validate_cached(
     items: list,
     *,
     exclude_keys: set[str] | None = None,
+    exclude_item_ids: set[str] | None = None,
     excluded_tmdb: set[tuple[int, str]] | None = None,
 ) -> list:
     """Drop stale, watched, and explicitly excluded cached cards.
@@ -350,6 +359,7 @@ def _validate_cached(
     that completed title back to them.
     """
     exclude_keys = exclude_keys or set()
+    exclude_item_ids = exclude_item_ids or set()
     excluded_tmdb = excluded_tmdb or set()
     out = []
     for item in items or []:
@@ -362,6 +372,8 @@ def _validate_cached(
         if tmdb_key[0] and tmdb_key in excluded_tmdb:
             continue
         iid = str(item.get("itemId") or "")
+        if iid and iid in exclude_item_ids:
+            continue
         if iid.isdigit():
             obj = media_index.get_item(int(iid))
             if obj is None or getattr(obj, "hidden", False):
@@ -386,6 +398,35 @@ def _has_user_activity(profile: dict, stats: dict, history: list, cw_map: dict) 
         or stats.get("top_genres")
         or stats.get("top_artists")
     )
+
+
+def _watched_card_ids(watch_keys: set[str]) -> set[str]:
+    """Map watched uploads to the grouped card IDs used by AI Picks.
+
+    Watch history stores a specific upload key, while a recommendation card
+    can represent a whole movie or series and choose another upload as its
+    poster/play source. Comparing only ``watchKey`` can therefore re-suggest
+    a title the user has already watched.
+    """
+    ids: set[str] = set()
+    for key in watch_keys:
+        item = rec_engine._item_for_cw_key(key)
+        if item is None:
+            continue
+        if getattr(item, "series_key", ""):
+            ids.add(f"series:{item.series_key}")
+        elif getattr(item, "movie_key", ""):
+            ids.add(f"movie:{item.movie_key}")
+        else:
+            message_id = int(getattr(item, "message_id", 0) or 0)
+            if message_id:
+                ids.add(str(message_id))
+    return ids
+
+
+def _now() -> float:
+    """Monotonic clock for the short-lived external-picks cache."""
+    return time.monotonic()
 
 
 def _taste_summary(profile: dict, stats: dict) -> str:
@@ -514,6 +555,7 @@ async def _trending_items(
     limit: int,
     *,
     exclude_keys: set[str] | None = None,
+    exclude_item_ids: set[str] | None = None,
     excluded_tmdb: set[tuple[int, str]] | None = None,
 ) -> list:
     """Return a safe cold-start fallback.
@@ -527,7 +569,7 @@ async def _trending_items(
         # user's recent history from an otherwise short catalogue shelf.
         items, _ = media_index.query_grouped(sort="newest", limit=max(limit * 3, limit))
         payloads = [_spa._card(item) for item in items]
-        payloads = _dedup_payloads(payloads, exclude_keys or set())
+        payloads = _dedup_payloads(payloads, exclude_keys or set(), exclude_item_ids)
         payloads = _exclude_tmdb_payloads(payloads, excluded_tmdb or set())
         return [{**item, "recReason": "", "bucket": "comfort"} for item in payloads[:limit]]
     except Exception:
@@ -590,10 +632,29 @@ async def get_ai_recommendations(
         return await _generate(user_id, query=query, limit=limit, refresh=refresh)
     except Exception:
         logging.exception("ai_rec: generation failed, serving trending fallback")
-        # Do not claim a signed-in user is a cold start merely because an
-        # optional recommendation dependency failed. We cannot safely infer
-        # their history here, so avoid the misleading onboarding copy.
-        return {"items": await _trending_items(limit), "externalItems": [], "message": "", "coldStart": False}
+        # An optional ranking dependency must not turn into an endless client
+        # spinner or re-suggest a watched grouped title. Make one bounded
+        # best-effort pass over local activity before serving the fallback.
+        try:
+            history, cw_map = await asyncio.gather(
+                wh_store.get_recent(user_id, limit=80),
+                cw_store.get_all(user_id),
+            )
+            seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map)
+            items = await _trending_items(
+                limit,
+                exclude_keys=seen_keys,
+                exclude_item_ids=_watched_card_ids(seen_keys),
+            )
+        except Exception:
+            logging.exception("ai_rec: fallback activity filter failed")
+            items = await _trending_items(limit)
+        return {
+            "items": items,
+            "externalItems": [],
+            "message": "We couldn't tailor picks just now; showing fresh titles instead. Try Refresh.",
+            "coldStart": False,
+        }
 
 
 async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: bool) -> dict:
@@ -616,6 +677,9 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
             valid = _validate_cached(
                 cached,
                 exclude_keys={str(entry.get("cw_key") or "") for entry in history} | set(cw_map),
+                exclude_item_ids=_watched_card_ids(
+                    {str(entry.get("cw_key") or "") for entry in history} | set(cw_map)
+                ),
                 excluded_tmdb=cache_excluded,
             )
             if len(valid) >= 3:  # else the cache is too stale — regenerate below
@@ -642,10 +706,13 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
     has_activity = _has_user_activity(profile, stats, history, cw_map)
     has_signal = bool(profile.get("seeds")) or bool(stats.get("top_genres")) or bool(stats.get("top_artists"))
     seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map.keys())
+    watched_card_ids = _watched_card_ids(seen_keys)
     excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
     if not has_signal:
         return await _finish({
-            "items": await _trending_items(limit, exclude_keys=seen_keys, excluded_tmdb=excluded),
+            "items": await _trending_items(
+                limit, exclude_keys=seen_keys, exclude_item_ids=watched_card_ids, excluded_tmdb=excluded,
+            ),
             "externalItems": [],
             "message": (
                 "Your activity is saved; some watched titles still need library metadata before picks can be tailored."
@@ -655,7 +722,9 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
         })
     if not gemini.available():
         return await _finish({
-            "items": await _trending_items(limit, exclude_keys=seen_keys, excluded_tmdb=excluded),
+            "items": await _trending_items(
+                limit, exclude_keys=seen_keys, exclude_item_ids=watched_card_ids, excluded_tmdb=excluded,
+            ),
             "externalItems": [],
             "message": "Personalized ranking is temporarily unavailable; here are fresh picks." if has_activity else "",
             "coldStart": not has_activity,
@@ -667,14 +736,16 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
     query_payloads = [_spa._card(obj, art_cache=art_cache) for obj in query_objs]
     query_hrefs = {payload.get("href") for payload in query_payloads if payload.get("href")}
     payloads = _dedup_payloads(
-        query_payloads + [_spa._card(obj, art_cache=art_cache) for obj in objs], seen_keys,
+        query_payloads + [_spa._card(obj, art_cache=art_cache) for obj in objs], seen_keys, watched_card_ids,
     )
     payloads = _exclude_tmdb_payloads(payloads, excluded)
     payloads = _select_candidate_payloads(payloads, query_hrefs)
 
     if len(payloads) < 6:
         return await _finish({
-            "items": await _trending_items(limit, exclude_keys=seen_keys, excluded_tmdb=excluded),
+            "items": await _trending_items(
+                limit, exclude_keys=seen_keys, exclude_item_ids=watched_card_ids, excluded_tmdb=excluded,
+            ),
             "externalItems": [],
             "message": "Your history is applied; here are fresh picks while we find more close matches." if has_activity else "",
             "coldStart": not has_activity,
