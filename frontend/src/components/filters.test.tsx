@@ -76,7 +76,7 @@ describe('FilterBar', () => {
 
     const filtersLink = screen.getByRole('link', { name: /Filters/i });
 
-    expect(filtersLink.getAttribute('href')).toContain('/app/filters?quality=1080p&genre=Action');
+    expect(filtersLink.getAttribute('href')).toContain('/filters?quality=1080p&genre=Action');
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -133,11 +133,11 @@ describe('FilterPage', () => {
 
     fireEvent.click(screen.getByLabelText('Tag'));
     fireEvent.click(screen.getByRole('option', { name: 'Tamil' }));
-    expect(navigate.mock.calls[0][0]).toContain('/app/filters?tag=Tamil&quality=1080p&genre=Action&view=movies');
+    expect(navigate.mock.calls[0][0]).toContain('/filters?tag=Tamil&quality=1080p&genre=Action&view=movies');
     expect(navigate.mock.calls[0][1]).toBe(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'Series' }));
-    expect(navigate.mock.calls[1][0]).toContain('/app/filters?quality=1080p&genre=Action&view=series');
+    expect(navigate.mock.calls[1][0]).toContain('/filters?quality=1080p&genre=Action&view=series');
     expect(navigate.mock.calls[1][1]).toBe(true);
   });
 
@@ -156,10 +156,10 @@ describe('FilterPage', () => {
       />,
     );
 
-    expect(screen.getByRole('link', { name: 'Show results' }).getAttribute('href')).toContain('/app?q=theme&tag=Tamil&year=2026');
+    expect(screen.getByRole('link', { name: 'Show results' }).getAttribute('href')).toContain('/?q=theme&tag=Tamil&year=2026');
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
     expect(setQuery).toHaveBeenCalledWith('');
-    expect(navigate).toHaveBeenCalledWith('/app/filters', true);
+    expect(navigate).toHaveBeenCalledWith('/filters', true);
   });
 });

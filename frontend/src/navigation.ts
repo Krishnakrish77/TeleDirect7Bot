@@ -34,14 +34,9 @@ function parseParams(): HubParams {
   };
 }
 
-function appBase(): string {
-  return window.location.pathname.startsWith('/static/app') ? '/static/app/' : '/app';
-}
-
 export function appUrl(params: Partial<HubParams>, path = ''): string {
   const qs = hubSearchParams(params);
-  const base = appBase().replace(/\/$/, '');
-  const target = `${base}${path}`;
+  const target = path || '/';
   return qs.toString() ? `${target}?${qs}` : target;
 }
 
@@ -51,41 +46,11 @@ function sameParams(left: HubParams, right: HubParams): boolean {
 
 export function localAppHref(href: string | null): string | null {
   if (!href) return null;
-  if (href === '/app') return appBase();
-  if (href.startsWith('/app?')) return `${appBase()}${href.slice('/app'.length)}`;
-  if (href === '/watchlist') return '/app/watchlist';
-  if (href === '/liked-songs') return '/app/liked-songs';
-  if (href === '/playlists') return '/app/playlists';
-  if (/^\/playlist\/[a-f0-9]{32}$/.test(href)) return `/app${href}`;
-  if (href === '/live-tv') return '/app/live-tv';
-  if (href === '/stats') return '/app/stats';
-  if (href === '/admin') return '/app/admin';
-  if (/^\/(movie|series|album|artist|person)\//.test(href)) return `/app${href}`;
+  if (href === '/app') return '/';
+  if (href.startsWith('/app?')) return `/${href.slice('/app?'.length) ? `?${href.slice('/app?'.length)}` : ''}`;
+  if (href.startsWith('/app/watch/')) return `/play/${href.slice('/app/watch/'.length)}`;
+  if (href.startsWith('/app/')) return `/${href.slice('/app/'.length)}`;
   return href;
-}
-
-export function classicPathForApp(pathname: string, search: string): string {
-  if (pathname === '/app' || pathname === '/static/app/app') {
-    return `/${search}`;
-  }
-  const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);
-  if (watch) return `/watch/${watch[1]}${search}`;
-  if (pathname === '/app/watchlist') return `/watchlist${search}`;
-  if (pathname === '/app/liked-songs') return `/watchlist${search}`;
-  if (pathname === '/app/playlists') return '/?view=music';
-  const playlist = pathname.match(/^\/app\/playlist\/([a-f0-9]{32})/);
-  if (playlist) return '/?view=music';
-  if (pathname === '/app/live-tv') return '/live-tv';
-  if (pathname === '/app/stats') return `/stats${search}`;
-  if (pathname === '/app/admin' || pathname.startsWith('/app/admin/')) return `/admin${search}`;
-  if (pathname === '/app/filters') return `/${search}`;
-  const detail = pathname.match(/^\/app\/(movie|series|album|artist|person)\/([^/?#]+)/);
-  if (detail) return `/${detail[1]}/${detail[2]}${search}`;
-  return '/';
-}
-
-export function uiModeHref(mode: 'react' | 'classic', nextPath: string): string {
-  return `/ui/${mode}?next=${encodeURIComponent(nextPath)}`;
 }
 
 interface AppLocation {
@@ -102,11 +67,13 @@ function readLocation(): AppLocation {
 
 function normalizeAppHref(href: string): string {
   const url = new URL(href, window.location.origin);
-  return `${url.pathname}${url.search}${url.hash}`;
+  const path = localAppHref(url.pathname) || url.pathname;
+  return `${path}${url.search}${url.hash}`;
 }
 
 function isReactAppPath(pathname: string): boolean {
-  return pathname === '/app' || pathname.startsWith('/app/');
+  return pathname === '/' || pathname === '/app' || pathname.startsWith('/app/') ||
+    /^(?:\/(?:filters|watchlist|liked-songs|playlists|playlist|live-tv|stats|admin|play|movie|series|album|artist|person))(?:\/|$)/.test(pathname);
 }
 
 export function useAppNavigation() {
@@ -162,21 +129,22 @@ export type AppRoute =
   | { kind: 'detail'; detailKind: 'movie' | 'series' | 'album' | 'artist' | 'person'; key: string };
 
 export function parseRoute(pathname: string): AppRoute {
-  if (pathname === '/app/filters') return { kind: 'filters' };
-  if (pathname === '/app/watchlist') return { kind: 'watchlist' };
-  if (pathname === '/app/liked-songs') return { kind: 'liked-songs' };
-  if (pathname === '/app/playlists') return { kind: 'playlists' };
-  const playlist = pathname.match(/^\/app\/playlist\/([a-f0-9]{32})/);
+  const canonicalPath = localAppHref(pathname) || pathname;
+  if (canonicalPath === '/filters') return { kind: 'filters' };
+  if (canonicalPath === '/watchlist') return { kind: 'watchlist' };
+  if (canonicalPath === '/liked-songs') return { kind: 'liked-songs' };
+  if (canonicalPath === '/playlists') return { kind: 'playlists' };
+  const playlist = canonicalPath.match(/^\/playlist\/([a-f0-9]{32})/);
   if (playlist) return { kind: 'playlist', playlistId: playlist[1] };
-  if (pathname === '/app/live-tv') return { kind: 'live-tv' };
-  if (pathname === '/app/stats') return { kind: 'stats' };
-  if (pathname === '/app/admin/dashboard') return { kind: 'admin-dashboard' };
-  if (pathname === '/app/admin/trending') return { kind: 'admin-trending' };
-  if (pathname === '/app/admin/iptv') return { kind: 'admin-iptv' };
-  if (pathname === '/app/admin') return { kind: 'admin' };
-  const watch = pathname.match(/^\/app\/watch\/([^/?#]+)/);
+  if (canonicalPath === '/live-tv') return { kind: 'live-tv' };
+  if (canonicalPath === '/stats') return { kind: 'stats' };
+  if (canonicalPath === '/admin/dashboard') return { kind: 'admin-dashboard' };
+  if (canonicalPath === '/admin/trending') return { kind: 'admin-trending' };
+  if (canonicalPath === '/admin/iptv') return { kind: 'admin-iptv' };
+  if (canonicalPath === '/admin') return { kind: 'admin' };
+  const watch = canonicalPath.match(/^\/play\/([^/?#]+)/);
   if (watch) return { kind: 'watch', key: decodeURIComponent(watch[1]) };
-  const detail = pathname.match(/^\/app\/(movie|series|album|artist|person)\/([^/?#]+)/);
+  const detail = canonicalPath.match(/^\/(movie|series|album|artist|person)\/([^/?#]+)/);
   if (detail) {
     return {
       kind: 'detail',

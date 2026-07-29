@@ -629,17 +629,8 @@ async def _stats_payload(user_id: int) -> dict:
 
 @routes.get("/stats")
 async def stats_page(request: web.Request) -> web.Response:
-    if request.cookies.get("td_ui") == "react" and request.headers.get("HX-Request") != "true":
-        raise web.HTTPFound("/app/stats")
-
-    user = get_user(request)
-    if not user:
-        raise web.HTTPFound("/")
-
-    payload = await _stats_payload(int(user["sub"]))
-    tpl  = _env.get_template("stats.html")
-    body = await tpl.render_async(user=user, **payload)
-    return web.Response(text=body, content_type="text/html")
+    from main.server.spa_routes import _app_index_response
+    return _app_index_response(request)
 
 
 @routes.get("/api/app/stats")

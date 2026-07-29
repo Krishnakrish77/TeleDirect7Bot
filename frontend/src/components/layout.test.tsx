@@ -37,7 +37,6 @@ function renderHeader(props: Partial<Parameters<typeof Header>[0]> = {}) {
       searchRef={createRef<HTMLInputElement>()}
       accountOpen={false}
       setAccountOpen={vi.fn()}
-      classicUiHref="/ui/classic?next=%2F"
       onSearchSubmit={vi.fn()}
       onSearchClear={vi.fn()}
       onSuggestionNavigate={vi.fn()}
@@ -79,18 +78,18 @@ describe('PrimaryNav', () => {
 
     expect(screen.queryByRole('link', { name: /Watchlist/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /Search/i })).toBeNull();
-    expect(screen.getByRole('link', { name: /Live TV/i }).getAttribute('href')).toBe('/app/live-tv');
-    expect(screen.getByRole('link', { name: /Series/i }).getAttribute('href')).toBe('/app?view=series');
+    expect(screen.getByRole('link', { name: /Live TV/i }).getAttribute('href')).toBe('/live-tv');
+    expect(screen.getByRole('link', { name: /Series/i }).getAttribute('href')).toBe('/?view=series');
     expect(screen.queryByRole('button', { name: 'More' })).toBeNull();
   });
 
   it('keeps the personal library in the signed-in account menu', () => {
     renderHeader({ accountOpen: true });
 
-    expect(screen.getByRole('menuitem', { name: /Watchlist/i }).getAttribute('href')).toBe('/app/watchlist');
-    expect(screen.getByRole('menuitem', { name: /Liked songs/i }).getAttribute('href')).toBe('/app/liked-songs');
-    expect(screen.getByRole('menuitem', { name: /Playlists/i }).getAttribute('href')).toBe('/app/playlists');
-    expect(screen.getByRole('menuitem', { name: /Stats/i }).getAttribute('href')).toBe('/app/stats');
+    expect(screen.getByRole('menuitem', { name: /Watchlist/i }).getAttribute('href')).toBe('/watchlist');
+    expect(screen.getByRole('menuitem', { name: /Liked songs/i }).getAttribute('href')).toBe('/liked-songs');
+    expect(screen.getByRole('menuitem', { name: /Playlists/i }).getAttribute('href')).toBe('/playlists');
+    expect(screen.getByRole('menuitem', { name: /Stats/i }).getAttribute('href')).toBe('/stats');
   });
 });
 
@@ -145,9 +144,9 @@ describe('Header search', () => {
       accountOpen: true,
     });
 
-    expect(screen.getByRole('menuitem', { name: /Admin panel/i }).getAttribute('href')).toBe('/app/admin');
-    expect(screen.getByRole('menuitem', { name: /Playlists/i }).getAttribute('href')).toBe('/app/playlists');
-    expect(screen.getByRole('menuitem', { name: /Stats/i }).getAttribute('href')).toBe('/app/stats');
+    expect(screen.getByRole('menuitem', { name: /Admin panel/i }).getAttribute('href')).toBe('/admin');
+    expect(screen.getByRole('menuitem', { name: /Playlists/i }).getAttribute('href')).toBe('/playlists');
+    expect(screen.getByRole('menuitem', { name: /Stats/i }).getAttribute('href')).toBe('/stats');
   });
 
   it('supports keyboard navigation through search suggestions', () => {
@@ -165,7 +164,7 @@ describe('Header search', () => {
     expect(screen.getByRole('option', { name: /Kaithi/i }).getAttribute('aria-selected')).toBe('true');
 
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(onSuggestionNavigate).toHaveBeenCalledWith('/app/movie/kaithi');
+    expect(onSuggestionNavigate).toHaveBeenCalledWith('/movie/kaithi');
   });
 
   it('uses the same-origin TMDB image proxy for search suggestions', () => {

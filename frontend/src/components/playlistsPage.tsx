@@ -58,7 +58,7 @@ export function PlaylistsPage({
     setCreateError('');
     try {
       const created = await createPlaylist(playlistName);
-      navigate(`/app/playlist/${created.playlistId}`);
+      navigate(`/playlist/${created.playlistId}`);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Unable to create playlist');
     } finally {
@@ -114,7 +114,7 @@ export function PlaylistsPage({
           </div>
           <div className="playlist-grid" aria-label="Playlists">
             {data.playlists.map((playlist) => (
-              <a key={playlist.playlistId} className="playlist-card" href={`/app/playlist/${playlist.playlistId}`}>
+              <a key={playlist.playlistId} className="playlist-card" href={`/playlist/${playlist.playlistId}`}>
                 <PlaylistCover covers={playlist.coverUrls} name={playlist.name} />
                 <span className="playlist-card-copy">
                   <strong>{playlist.name}</strong>
@@ -268,7 +268,7 @@ export function PlaylistDetailPage({
     setStatus('');
     try {
       await deletePlaylist(data.playlistId);
-      navigate('/app/playlists', true);
+      navigate('/playlists', true);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Unable to delete playlist');
       setWorking('');

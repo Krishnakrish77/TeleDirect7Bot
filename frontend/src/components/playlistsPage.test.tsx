@@ -142,12 +142,12 @@ describe('PlaylistsPage', () => {
       />,
     );
 
-    expect(screen.getByRole('link', { name: /Roadtrip/i }).getAttribute('href')).toBe('/app/playlist/1234567890abcdef1234567890abcdef');
+    expect(screen.getByRole('link', { name: /Roadtrip/i }).getAttribute('href')).toBe('/playlist/1234567890abcdef1234567890abcdef');
 
     fireEvent.change(screen.getByPlaceholderText('New playlist'), { target: { value: 'Focus' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/app/playlist/abcdefabcdefabcdefabcdefabcdefab'));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/playlist/abcdefabcdefabcdefabcdefabcdefab'));
   });
 });
 

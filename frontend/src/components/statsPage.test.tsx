@@ -116,7 +116,7 @@ describe('StatsPage', () => {
 
     expect(screen.getByRole('heading', { name: '10h' })).toBeTruthy();
     expect(screen.getByText('14 completed plays across 6 titles')).toBeTruthy();
-    expect(screen.getByRole('link', { name: /Ultimate Spiderman/ }).getAttribute('href')).toBe('/app/series/ultimate-spiderman');
+    expect(screen.getByRole('link', { name: /Ultimate Spiderman/ }).getAttribute('href')).toBe('/series/ultimate-spiderman');
     expect(screen.getByText('Navarasa')).toBeTruthy();
     expect(screen.getByText('Action')).toBeTruthy();
     expect(screen.getByLabelText('Activity heatmap').children.length).toBe(2);

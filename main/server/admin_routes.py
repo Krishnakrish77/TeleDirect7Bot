@@ -685,11 +685,8 @@ def _pop_flash(request: web.Request, resp: web.Response) -> str:
 
 @routes.get("/admin")
 async def admin_home(request: web.Request) -> web.Response:
-    if _prefers_react_admin(request):
-        target = "/app/admin"
-        if request.query_string:
-            target = f"{target}?{request.query_string}"
-        raise web.HTTPFound(target)
+    from main.server.spa_routes import _app_index_response
+    return _app_index_response(request)
 
     user = _get_admin_user(request)
     if user is None:
@@ -792,13 +789,8 @@ async def admin_dashboard(request: web.Request) -> web.Response:
     """Catalogue insights dashboard — health metrics, storage breakdown,
     recent additions, top series, largest files, year distribution.
     """
-    _require_session(request)
-    tpl = _env.get_template("dashboard.html")
-    body = await tpl.render_async(
-        stats=media_index.dashboard_stats(),
-        var=Var,
-    )
-    return _html(body)
+    from main.server.spa_routes import _app_index_response
+    return _app_index_response(request)
 
 
 def _is_htmx(request: web.Request) -> bool:
@@ -876,16 +868,7 @@ async def admin_trending_gaps(request: web.Request) -> web.Response:
     Shows posters, ratings, and TMDB links so the admin can decide what
     to source next. Refreshes from the same 24h cache as the user shelf.
     """
-    _require_session(request)
-    try:
-        tr = await asyncio.wait_for(_trending.get_trending(), timeout=15.0)
-        gaps = tr.get("missing", [])
-    except Exception:
-        logging.exception("admin: trending_gaps fetch failed")
-        gaps = []
-    tpl = _env.get_template("admin/trending_gaps.html")
-    body = await tpl.render_async(gaps=gaps)
-    return web.Response(text=body, content_type="text/html")
+    raise web.HTTPPermanentRedirect("/admin/trending")
 
 
 @routes.post("/admin/trending-gaps/refresh")

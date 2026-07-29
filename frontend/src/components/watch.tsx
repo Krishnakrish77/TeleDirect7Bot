@@ -65,7 +65,7 @@ function VideoInfoSection({ video }: { video: WatchVideo }) {
   const directors = meta.directors.length
     ? meta.directors
     : meta.director
-      ? [{ name: meta.director, href: `/app/person/${encodeURIComponent(meta.director.toLowerCase().replace(/\s+/g, '-'))}` }]
+      ? [{ name: meta.director, href: `/person/${encodeURIComponent(meta.director.toLowerCase().replace(/\s+/g, '-'))}` }]
       : [];
   const cast = meta.cast.slice(0, 6);
   const infoTitle = (meta.title || video.title).trim();

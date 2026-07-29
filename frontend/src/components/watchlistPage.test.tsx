@@ -87,7 +87,7 @@ describe('WatchlistPage', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Watchlist' })).toBeTruthy();
-    expect(primaryCardLink('Kalki')?.getAttribute('href')).toBe('/app/movie/kalki');
+    expect(primaryCardLink('Kalki')?.getAttribute('href')).toBe('/movie/kalki');
 
     fireEvent.click(screen.getByLabelText('Remove from watchlist'));
     expect(onToggleSaved).toHaveBeenCalledWith(expect.objectContaining({ itemId: 'movie:kalki' }));
@@ -160,7 +160,7 @@ describe('watchlistCard', () => {
       kind: 'video',
     });
 
-    expect(card.href).toBe('/app/watch/hash42');
+    expect(card.href).toBe('/play/hash42');
     expect(card.type).toBe('item');
   });
 });

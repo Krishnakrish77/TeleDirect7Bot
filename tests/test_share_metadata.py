@@ -64,7 +64,7 @@ class ShareMetadataTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_movie_page_uses_open_graph_metadata(self):
         item = _video_item(movie_key="youth")
-        request = SimpleNamespace(match_info={"key": "youth"}, cookies={}, query_string="")
+        request = SimpleNamespace(path="/movie/youth", match_info={"key": "youth"}, cookies={}, query_string="")
 
         with (
             patch.object(hub_routes.media_index, "variants_for_movie", return_value=[item]),
@@ -94,6 +94,7 @@ class ShareMetadataTest(unittest.IsolatedAsyncioTestCase):
             overview="A mystery series with many episodes.",
         )
         request = SimpleNamespace(
+            path="/series/castle",
             match_info={"key": "castle"},
             cookies={},
             query_string="",
@@ -133,7 +134,7 @@ class ShareMetadataTest(unittest.IsolatedAsyncioTestCase):
             episode_overview="Castle and Beckett investigate a case tied to a TV star.",
             poster_path="/castle-poster.jpg",
         )
-        request = SimpleNamespace(path="/app/watch/abc42")
+        request = SimpleNamespace(path="/play/abc42")
 
         with (
             patch.object(spa_routes, "_APP_INDEX", self._with_index()),
@@ -147,14 +148,14 @@ class ShareMetadataTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('property="og:title" content="Castle S06E14 · Bad Santa"', html)
         self.assertIn('property="og:description" content="Castle and Beckett investigate a case tied to a TV star."', html)
         self.assertIn('property="og:type" content="video.episode"', html)
-        self.assertIn('property="og:url" content="https://media.example/app/watch/abc42"', html)
+        self.assertIn('property="og:url" content="https://media.example/play/abc42"', html)
         self.assertIn('property="og:image" content="https://image.tmdb.org/t/p/w780/castle-poster.jpg"', html)
         self.assertIn('name="twitter:card" content="summary_large_image"', html)
         self.assertNotIn("Generic TeleDirect app", html)
 
     async def test_react_movie_shell_uses_route_open_graph_metadata(self):
         item = _video_item(movie_key="youth")
-        request = SimpleNamespace(path="/app/movie/youth")
+        request = SimpleNamespace(path="/movie/youth")
 
         with (
             patch.object(spa_routes, "_APP_INDEX", self._with_index()),
@@ -167,7 +168,7 @@ class ShareMetadataTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<title>Youth (2026)</title>", html)
         self.assertIn('property="og:title" content="Youth (2026)"', html)
         self.assertIn('property="og:type" content="video.movie"', html)
-        self.assertIn('property="og:url" content="https://media.example/app/movie/youth"', html)
+        self.assertIn('property="og:url" content="https://media.example/movie/youth"', html)
         self.assertIn('property="og:image" content="https://image.tmdb.org/t/p/w780/youth-poster.jpg"', html)
 
     async def test_react_series_shell_uses_route_open_graph_metadata(self):
@@ -182,7 +183,7 @@ class ShareMetadataTest(unittest.IsolatedAsyncioTestCase):
             poster_path="/castle-poster.jpg",
             overview="A mystery series with many episodes.",
         )
-        request = SimpleNamespace(path="/app/series/castle")
+        request = SimpleNamespace(path="/series/castle")
 
         with (
             patch.object(spa_routes, "_APP_INDEX", self._with_index()),
@@ -196,7 +197,7 @@ class ShareMetadataTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('property="og:title" content="Castle"', html)
         self.assertIn('property="og:description" content="A mystery series with many episodes."', html)
         self.assertIn('property="og:type" content="video.tv_show"', html)
-        self.assertIn('property="og:url" content="https://media.example/app/series/castle"', html)
+        self.assertIn('property="og:url" content="https://media.example/series/castle"', html)
         self.assertIn('property="og:image" content="https://image.tmdb.org/t/p/w780/castle-poster.jpg"', html)
 
     async def test_react_watch_shell_suppresses_hidden_metadata(self):
@@ -208,7 +209,7 @@ class ShareMetadataTest(unittest.IsolatedAsyncioTestCase):
             poster_path="/hidden-poster.jpg",
             hidden=True,
         )
-        request = SimpleNamespace(path="/app/watch/abc42")
+        request = SimpleNamespace(path="/play/abc42")
 
         with (
             patch.object(spa_routes.media_index, "get_item", return_value=item),

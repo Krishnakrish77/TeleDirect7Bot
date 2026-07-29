@@ -184,8 +184,8 @@ export function AdminIptvPage({
             <p>{channels.length.toLocaleString()} configured channels. {data?.mongoAvailable ? 'Mongo storage is active.' : 'JSON fallback storage is active.'}</p>
           </div>
           <div className="admin-hero-actions">
-            <Button asChild variant="secondary" size="sm"><a href="/app/admin"><ShieldIcon />Console</a></Button>
-            <Button asChild variant="secondary" size="sm"><a href="/app/live-tv"><BroadcastIcon />Live TV</a></Button>
+            <Button asChild variant="secondary" size="sm"><a href="/admin"><ShieldIcon />Console</a></Button>
+            <Button asChild variant="secondary" size="sm"><a href="/live-tv"><BroadcastIcon />Live TV</a></Button>
             <Button type="button" variant="secondary" size="sm" onClick={() => reload()} disabled={loading}><CheckIcon />Refresh</Button>
           </div>
         </div>

@@ -122,7 +122,7 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
           {data && <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{data.total.toLocaleString()} items · {data.total_size_label}</p>}
         </div>
         <Button asChild variant="secondary">
-          <a href="/app/admin"><ChevronRightIcon />Admin console</a>
+          <a href="/admin"><ChevronRightIcon />Admin console</a>
         </Button>
       </div>
 
@@ -177,10 +177,10 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
                 <StatRow label="Last run" value={formatRunTime(creditsBackfill?.finished_at)} />
                 <StatRow label="Last result" value={formatCreditsResult(creditsBackfill)} warn={(creditsBackfill?.failed ?? 0) > 0} />
                 <div className="dash-action-row">
-                  <a className="secondary-action compact-action" href="/app/admin?filter=no-cast">
+                  <a className="secondary-action compact-action" href="/admin?filter=no-cast">
                     Missing credits {metadata.missing_credits.toLocaleString()}
                   </a>
-                  <a className="secondary-action compact-action" href="/app/admin?filter=unenriched">
+                  <a className="secondary-action compact-action" href="/admin?filter=unenriched">
                     No TMDB ID {metadata.missing_tmdb_id.toLocaleString()}
                   </a>
                   <Button
@@ -220,7 +220,7 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
                 { label: 'Missing thumbnail', value: data.missing_thumb, filter: 'no-thumb', warn: data.missing_thumb > 0 },
                 { label: 'Unenriched', value: data.enrichment.never_attempted, filter: 'unenriched', warn: data.enrichment.never_attempted > 0 },
               ].map((item) => (
-                <a key={item.filter} className={`dash-issue${item.warn ? ' warn' : ''}`} href={`/app/admin?filter=${item.filter}`}>
+                <a key={item.filter} className={`dash-issue${item.warn ? ' warn' : ''}`} href={`/admin?filter=${item.filter}`}>
                   <span className="dash-issue-label">{item.label}</span>
                   <span>{item.value}</span>
                 </a>
@@ -260,12 +260,12 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
               </div>
               <div className="dash-grid-4">
                 {metadataIssues.map((item) => (
-                  <a key={item.filter} className={`dash-issue${item.value > 0 ? ' warn' : ''}`} href={`/app/admin?filter=${item.filter}`}>
+                  <a key={item.filter} className={`dash-issue${item.value > 0 ? ' warn' : ''}`} href={`/admin?filter=${item.filter}`}>
                     <span className="dash-issue-label">{item.label}</span>
                     <span>{item.value ? item.value.toLocaleString() : 'none'}</span>
                   </a>
                 ))}
-                <a className={`dash-issue${metadata.missing_episode_metadata > 0 ? ' warn' : ''}`} href="/app/admin?filter=series">
+                <a className={`dash-issue${metadata.missing_episode_metadata > 0 ? ' warn' : ''}`} href="/admin?filter=series">
                   <span className="dash-issue-label">Episode metadata</span>
                   <span>{metadata.missing_episode_metadata ? metadata.missing_episode_metadata.toLocaleString() : 'none'}</span>
                 </a>

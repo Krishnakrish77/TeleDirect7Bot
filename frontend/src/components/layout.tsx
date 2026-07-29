@@ -33,23 +33,23 @@ export function PrimaryNav({
 }) {
   return (
     <nav className="primary-nav" aria-label="Primary">
-      <a className={activeSection === 'home' ? 'active' : ''} href="/app">
+      <a className={activeSection === 'home' ? 'active' : ''} href="/">
         <HomeIcon />
         <span>Home</span>
       </a>
-      <a className={activeView === 'movies' && activeSection === 'movies' ? 'active' : ''} href="/app?view=movies">
+      <a className={activeView === 'movies' && activeSection === 'movies' ? 'active' : ''} href="/?view=movies">
         <FilmIcon />
         <span>Movies</span>
       </a>
-      <a className={activeView === 'series' && activeSection === 'series' ? 'active' : ''} href="/app?view=series">
+      <a className={activeView === 'series' && activeSection === 'series' ? 'active' : ''} href="/?view=series">
         <TvIcon />
         <span>Series</span>
       </a>
-      <a className={activeView === 'music' && activeSection === 'music' ? 'active' : ''} href="/app?view=music">
+      <a className={activeView === 'music' && activeSection === 'music' ? 'active' : ''} href="/?view=music">
         <MusicIcon />
         <span>Music</span>
       </a>
-      <a className={activeSection === 'live-tv' ? 'active' : ''} href="/app/live-tv">
+      <a className={activeSection === 'live-tv' ? 'active' : ''} href="/live-tv">
         <BroadcastIcon />
         <span>Live TV</span>
       </a>
@@ -65,7 +65,6 @@ export function Header({
   searchRef,
   accountOpen,
   setAccountOpen,
-  classicUiHref,
   onSearchSubmit,
   onSearchClear,
   onSuggestionNavigate,
@@ -79,7 +78,6 @@ export function Header({
   searchRef: RefObject<HTMLInputElement | null>;
   accountOpen: boolean;
   setAccountOpen: Dispatch<SetStateAction<boolean>>;
-  classicUiHref: string;
   onSearchSubmit: () => void;
   onSearchClear: () => void;
   onSuggestionNavigate: (href: string) => void;
@@ -129,7 +127,7 @@ export function Header({
     closeSuggestions();
     searchRef.current?.blur();
     const href = suggestionHref(item);
-    if (href.startsWith('/app')) {
+    if (href.startsWith('/')) {
       onSuggestionNavigate(href);
     } else {
       window.location.href = href;
@@ -170,7 +168,7 @@ export function Header({
 
   return (
     <header className="app-header">
-      <a className="brand" href="/app" aria-label="TeleDirect">
+      <a className="brand" href="/" aria-label="TeleDirect">
         <span className="brand-mark">
           <PlayIcon />
         </span>
@@ -219,9 +217,6 @@ export function Header({
       </form>
 
       <div className="header-actions">
-        <a className="ui-switch-button" href={classicUiHref}>
-          <span>Classic UI</span>
-        </a>
         {user ? (
           <DropdownMenu open={accountOpen} onOpenChange={setAccountOpen}>
             <DropdownMenuTrigger asChild>
@@ -246,25 +241,25 @@ export function Header({
                   {user.username && <span>@{user.username}</span>}
               </DropdownMenuLabel>
               <DropdownMenuItem asChild>
-                <a href="/app/watchlist">
+                <a href="/watchlist">
                   <BookmarkIcon />
                   <span>Watchlist</span>
                 </a>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <a href="/app/liked-songs">
+                <a href="/liked-songs">
                   <HeartIcon />
                   <span>Liked songs</span>
                 </a>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <a href="/app/playlists">
+                <a href="/playlists">
                   <ListIcon />
                   <span>Playlists</span>
                 </a>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <a href="/app/stats">
+                <a href="/stats">
                   <ChartIcon />
                   <span>Stats</span>
                 </a>
@@ -272,7 +267,7 @@ export function Header({
               <DropdownMenuSeparator className="account-menu-divider" />
               {user.is_admin && (
                 <DropdownMenuItem asChild>
-                  <a href="/app/admin">
+                  <a href="/admin">
                     <ShieldIcon />
                     <span>Admin panel</span>
                   </a>

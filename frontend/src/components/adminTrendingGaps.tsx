@@ -73,7 +73,7 @@ export function AdminTrendingGaps({ user, onSignIn }: { user: User | null; onSig
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <Button type="button" variant="secondary" onClick={handleRefresh} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh cache'}</Button>
           <Button asChild variant="secondary">
-            <a href="/app/admin"><ChevronRightIcon />Admin console</a>
+            <a href="/admin"><ChevronRightIcon />Admin console</a>
           </Button>
         </div>
       </div>

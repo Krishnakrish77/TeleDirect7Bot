@@ -580,7 +580,7 @@ function SeriesDetail({
               <select
                 className="season-select"
                 value={data.selectedSeason}
-                onChange={(event) => navigate(`/app/series/${data.key}?season=${event.currentTarget.value}`)}
+                onChange={(event) => navigate(`/series/${data.key}?season=${event.currentTarget.value}`)}
                 aria-label="Season"
               >
                 {data.seasonOptions.map((option) => (
