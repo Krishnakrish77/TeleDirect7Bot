@@ -130,6 +130,15 @@ class AiRecGroundingTest(unittest.TestCase):
         filtered = ai_rec._exclude_tmdb_payloads(payloads, {(10, "movie")})
         self.assertEqual([payload["href"] for payload in filtered], ["/kept", "/music"])
 
+    def test_ai_picks_exclude_music_from_candidates_and_cache(self):
+        payloads = [
+            {"href": "/movie", "eyebrow": "Movie", "itemId": ""},
+            {"href": "/track", "eyebrow": "Music", "aspect": "square", "itemId": ""},
+        ]
+        self.assertEqual([item["href"] for item in ai_rec._video_payloads(payloads)], ["/movie"])
+        self.assertEqual([item["href"] for item in ai_rec._validate_cached(payloads)], ["/movie"])
+        self.assertEqual(ai_rec._clean_agent_args("search_library", {"kind": "music"})["kind"], "")
+
     def test_agent_tool_arguments_are_constrained(self):
         self.assertEqual(
             ai_rec._clean_agent_args("search_library", {
