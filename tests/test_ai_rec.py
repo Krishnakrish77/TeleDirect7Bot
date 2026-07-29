@@ -40,6 +40,14 @@ class AiRecGroundingTest(unittest.TestCase):
         mixed = ai_rec._apply_picks(["oops", {"id": "c0", "reason": "ok", "bucket": "comfort"}], index, 10)
         self.assertEqual([i["href"] for i in mixed], ["/a"])
 
+    def test_dedup_drops_a_watched_group_even_when_card_uses_another_upload(self):
+        payloads = [
+            {"href": "/series/a", "itemId": "series:a", "watchKey": "latest-upload"},
+            {"href": "/movie/b", "itemId": "movie:b", "watchKey": "unwatched"},
+        ]
+        result = ai_rec._dedup_payloads(payloads, {"older-watched-upload"}, {"series:a"})
+        self.assertEqual([item["href"] for item in result], ["/movie/b"])
+
     def test_validate_cached_drops_removed_items(self):
         valid = ai_rec._validate_cached([
             {"itemId": "999999", "href": "/gone"},   # not in empty _items -> dropped
@@ -59,6 +67,33 @@ class AiRecGroundingTest(unittest.TestCase):
             excluded_tmdb={(42, "tv")},
         )
         self.assertEqual([item["href"] for item in valid], ["/fresh"])
+
+    def test_watched_card_ids_use_movie_and_series_groups(self):
+        def item(*, message_id, movie_key="", series_key=""):
+            return SimpleNamespace(message_id=message_id, movie_key=movie_key, series_key=series_key)
+
+        by_key = {
+            "movie-upload": item(message_id=1, movie_key="kalki"),
+            "series-upload": item(message_id=2, series_key="dark"),
+            "track-upload": item(message_id=3),
+        }
+        with patch.object(ai_rec.rec_engine, "_item_for_cw_key", side_effect=by_key.get):
+            result = ai_rec._watched_card_ids(set(by_key))
+        self.assertEqual(result, {"movie:kalki", "series:dark", "3"})
+
+    def test_external_pick_cache_uses_a_monotonic_clock(self):
+        async def run():
+            ai_rec._external_pick_cache.clear()
+            with patch.object(ai_rec.tmdb, "is_configured", return_value=True), patch.object(
+                ai_rec.request_store, "is_available", return_value=True
+            ), patch.object(ai_rec.request_store, "requested_keys", AsyncMock(return_value=set())), patch.object(
+                ai_rec.rec_engine, "_fetch_recs_for_seeds", AsyncMock(return_value=[])
+            ):
+                result = await ai_rec._requestable_picks(7, {"seeds": []}, set(), "")
+            self.assertEqual(result, [])
+            self.assertIn(7, ai_rec._external_pick_cache)
+
+        __import__("asyncio").run(run())
 
     def test_activity_is_not_cold_when_history_lacks_enrichment(self):
         # Older watches can legitimately have no TMDB seed yet. The fallback
