@@ -436,11 +436,11 @@ describe('Series detail', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: `Mark ${series.title} as watched` }));
+    fireEvent.click(screen.getByRole('button', { name: `Mark ${series.title}: season 1 watched` }));
 
     expect(onMarkWatched).toHaveBeenCalledWith(['hash101', 'hash102'], series.title);
     expect(JSON.parse(localStorage.getItem('td:cw') || '{}')).toEqual({});
-    expect(screen.getByRole('button', { name: `${series.title} watched` }).textContent).toContain('Watched');
+    expect(screen.getByRole('button', { name: `${series.title}: season 1 watched` }).textContent).toContain('Season 1 watched');
     expect(screen.queryByLabelText('42% watched')).toBeNull();
     expect(screen.getAllByLabelText('Watched')).toHaveLength(2);
   });

@@ -162,15 +162,27 @@ async def _items_for_user(user_id: int) -> list[dict]:
         keys = list(dict.fromkeys(it.pop("_watch_keys", [])))
         watched_count = sum(key in completed_keys for key in keys)
         active_progress = [cw_by_key[key] for key in keys if key in cw_by_key]
-        # A series is complete only once every indexed episode is in history;
-        # movies with alternate uploads are complete once any chosen version
-        # has been watched. An explicit Watchlist action always wins.
-        history_complete = (
-            watched_count == len(keys) if it.get("kind") == "series" else watched_count > 0
-        ) if keys else False
-        watched = it["item_id"] in manually_completed or history_complete
-        it["watchStatus"] = "watched" if watched else ("watching" if active_progress else "unwatched")
-        it["cw_pct"] = None if watched else (max(active_progress) if active_progress else None)
+        # Completion history is not enough to call a TV series "watched".
+        # An ongoing show can gain more episodes after the user finishes the
+        # current library copy. Keep the stronger, explicit Watchlist action
+        # as the only way to complete a series; automatic history can say the
+        # user is merely caught up with what is indexed today.
+        series_caught_up = bool(keys) and it.get("kind") == "series" and watched_count == len(keys)
+        movie_complete = bool(keys) and it.get("kind") != "series" and watched_count > 0
+        watched = it["item_id"] in manually_completed or movie_complete
+        if watched:
+            status = "watched"
+        elif series_caught_up:
+            status = "caught_up"
+        elif active_progress or watched_count:
+            # A finished earlier episode still means the series is in
+            # progress even when no individual episode currently has resume
+            # progress.
+            status = "watching"
+        else:
+            status = "unwatched"
+        it["watchStatus"] = status
+        it["cw_pct"] = None if status in {"watched", "caught_up"} else (max(active_progress) if active_progress else None)
         if it.get("kind") == "series":
             it["watchedCount"] = watched_count
             it["totalCount"] = len(keys)
