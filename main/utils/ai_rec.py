@@ -106,6 +106,16 @@ _AGENT_TOOLS = [{"functionDeclarations": [
     },
 ]}]
 
+# Gemini may otherwise answer the initial turn in prose, leaving the agent
+# with no grounded candidates. Title details require ids from a prior catalogue
+# result, so only discovery tools are eligible for this required first call.
+_AGENT_INITIAL_TOOL_CONFIG = {
+    "functionCallingConfig": {
+        "mode": "ANY",
+        "allowedFunctionNames": ["search_library", "browse_library"],
+    },
+}
+
 
 class AgentRunError(RuntimeError):
     """The bounded agent could not produce a grounded result."""
@@ -830,7 +840,7 @@ async def _generate_agentic(
     intent = query or "Refresh the user's library picks with a useful, varied set."
     contents = [{"role": "user", "parts": [{"text": "\n".join([
         "You curate a private playable media library.",
-        "Use the read-only tools to find candidates before recommending anything.",
+        "First call search_library or browse_library to find candidates before recommending anything.",
         "Never ask for or reveal private catalogue data beyond tool results. Do not use unavailable titles.",
         "You have at most three total tool calls; explore efficiently.",
         f"User taste summary: {_taste_summary(profile, stats)}",
@@ -852,7 +862,12 @@ async def _generate_agentic(
         remaining = _AGENT_BUDGET_SECONDS - (time.monotonic() - started)
         if remaining <= 0:
             raise failed("budget")
-        response = await gemini.generate_content(contents, tools=_AGENT_TOOLS, timeout=remaining)
+        response = await gemini.generate_content(
+            contents,
+            tools=_AGENT_TOOLS,
+            tool_config=_AGENT_INITIAL_TOOL_CONFIG if calls_used == 0 else None,
+            timeout=remaining,
+        )
         model_content, calls = _function_calls(response)
         if response is None or model_content is None:
             raise failed("model")

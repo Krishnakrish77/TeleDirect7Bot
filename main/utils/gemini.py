@@ -88,6 +88,7 @@ async def generate_content(
     contents: list[dict],
     *,
     tools: Optional[list[dict]] = None,
+    tool_config: Optional[dict] = None,
     model: str = "gemini-2.5-flash-lite",
     timeout: float = 25.0,
 ) -> Optional[dict]:
@@ -105,6 +106,8 @@ async def generate_content(
     payload: dict = {"contents": contents}
     if tools:
         payload["tools"] = tools
+    if tool_config:
+        payload["toolConfig"] = tool_config
     try:
         async with _sem():
             async with aiohttp.ClientSession() as sess:

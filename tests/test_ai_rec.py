@@ -184,7 +184,9 @@ class AiRecGroundingTest(unittest.TestCase):
                 ai_rec.dismissed_store, "get_dismissed_ids", AsyncMock(return_value=set())
             ), patch.object(ai_rec, "_safe_stats", AsyncMock(return_value={})), patch.object(
                 ai_rec, "_AgentCatalogue", Catalogue
-            ), patch.object(ai_rec.gemini, "generate_content", AsyncMock(side_effect=[function_response, no_call_response])), patch.object(
+            ), patch.object(
+                ai_rec.gemini, "generate_content", AsyncMock(side_effect=[function_response, no_call_response])
+            ) as generate_content, patch.object(
                 ai_rec.gemini, "generate_json", AsyncMock(return_value={"picks": [{"id": "card_2", "reason": "grounded", "bucket": "comfort"}, {"id": "invented", "reason": "no", "bucket": "comfort"}]})
             ), patch.object(ai_rec, "_requestable_picks", AsyncMock(return_value=[])):
                 result = await ai_rec._generate_agentic(
@@ -193,6 +195,11 @@ class AiRecGroundingTest(unittest.TestCase):
             self.assertEqual([item["href"] for item in result["items"]], ["/two"])
             self.assertIn("Searching your library", statuses)
             self.assertIn("Curating picks", statuses)
+            self.assertEqual(
+                generate_content.await_args_list[0].kwargs["tool_config"],
+                ai_rec._AGENT_INITIAL_TOOL_CONFIG,
+            )
+            self.assertIsNone(generate_content.await_args_list[1].kwargs["tool_config"])
 
         async def _append(values, value):
             values.append(value)
