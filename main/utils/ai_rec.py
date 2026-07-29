@@ -83,7 +83,7 @@ _AGENT_TOOLS = [{"functionDeclarations": [
         "name": "search_library",
         "description": "Search playable titles in the private library. Use this for names, people, moods, genres, and keywords.",
         "parameters": {"type": "object", "properties": {
-            "query": {"type": "string"}, "kind": {"type": "string", "enum": ["movies", "series", "music"]},
+            "query": {"type": "string"}, "kind": {"type": "string", "enum": ["movies", "series"]},
             "year": {"type": "integer"}, "genre": {"type": "string"},
             "sort": {"type": "string", "enum": ["relevance", "newest", "oldest"]},
         }},
@@ -92,7 +92,7 @@ _AGENT_TOOLS = [{"functionDeclarations": [
         "name": "browse_library",
         "description": "Browse playable library titles by type, genre, and a year range when search is too narrow.",
         "parameters": {"type": "object", "properties": {
-            "kind": {"type": "string", "enum": ["movies", "series", "music"]}, "genre": {"type": "string"},
+            "kind": {"type": "string", "enum": ["movies", "series"]}, "genre": {"type": "string"},
             "year_from": {"type": "integer"}, "year_to": {"type": "integer"},
             "sort": {"type": "string", "enum": ["newest", "relevance"]},
         }},
@@ -151,6 +151,16 @@ def _exclude_tmdb_payloads(payloads: list, excluded: set) -> list:
             continue
         out.append(payload)
     return out
+
+
+def _video_payloads(payloads: list) -> list:
+    """Keep AI Picks for movies and series; Mix owns music discovery."""
+    return [
+        payload for payload in payloads
+        if payload.get("eyebrow") != "Music"
+        and payload.get("aspect") != "square"
+        and payload.get("mediaKind") != "audio"
+    ]
 
 
 def _select_candidate_payloads(payloads: list, query_hrefs: set[str]) -> list:
@@ -397,6 +407,8 @@ def _validate_cached(
     excluded_tmdb = excluded_tmdb or set()
     out = []
     for item in items or []:
+        if not _video_payloads([item]):
+            continue
         if str(item.get("watchKey") or "") in exclude_keys:
             continue
         try:
@@ -533,9 +545,7 @@ async def _gather_candidates(
     stats: dict,
     dismissed,
 ) -> list:
-    """Assemble a diverse pool of catalogue objects: TMDB-based recs (comfort),
-    fresh titles in top genres (discovery), top-artist tracks + fresh music, and
-    globally popular items."""
+    """Assemble a diverse pool of movie and series candidates."""
     objs: list = []
 
     try:
@@ -557,18 +567,6 @@ async def _gather_candidates(
             objs += items
         except Exception:
             pass
-
-    for name in [a for a, _ in (stats.get("top_artists") or [])][:4]:
-        try:
-            slug = media_index._artist_slug(media_index._primary_artist(name))
-            objs += media_index.tracks_by_artist_slug(slug)[:4]
-        except Exception:
-            pass
-    try:
-        music_items, _ = media_index.query_grouped(view="music", sort="newest", limit=12)
-        objs += music_items
-    except Exception:
-        pass
 
     try:
         for entry in await wh_store.get_top_plays(limit=15):
@@ -611,6 +609,7 @@ async def _trending_items(
         # user's recent history from an otherwise short catalogue shelf.
         items, _ = media_index.query_grouped(sort="newest", limit=max(limit * 3, limit))
         payloads = [_spa._card(item) for item in items]
+        payloads = _video_payloads(payloads)
         payloads = _dedup_payloads(payloads, exclude_keys or set(), exclude_item_ids)
         payloads = _exclude_tmdb_payloads(payloads, excluded_tmdb or set())
         return [{**item, "recReason": "", "bucket": "comfort"} for item in payloads[:limit]]
@@ -664,7 +663,7 @@ def _clean_agent_args(name: str, raw: object) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     text = lambda key, maximum: re.sub(r"\s+", " ", str(raw.get(key) or "").strip())[:maximum]
     kind = text("kind", 12).lower()
-    if kind not in {"movies", "series", "music"}:
+    if kind not in {"movies", "series"}:
         kind = ""
     sort = text("sort", 12).lower()
     allowed_sorts = {"relevance", "newest", "oldest"} if name == "search_library" else {"relevance", "newest"}
@@ -719,6 +718,7 @@ class _AgentCatalogue:
     def _register(self, cards: list) -> list[dict]:
         from main.server import spa_routes as _spa
         payloads = [_spa._card(card, art_cache=self._art_cache) for card in cards]
+        payloads = _video_payloads(payloads)
         payloads = _dedup_payloads(payloads, self.seen_keys, self.watched_ids)
         payloads = _exclude_tmdb_payloads(payloads, self.excluded_tmdb)
         # A second cache-style validation covers hidden/deleted single uploads
@@ -746,7 +746,7 @@ class _AgentCatalogue:
             return [self._compact(identifier, self.payloads[identifier]) for identifier in args["ids"] if identifier in self.payloads]
         if name not in {"search_library", "browse_library"}:
             return []
-        view = {"movies": "movies", "series": "series", "music": "music"}.get(args["kind"], "")
+        view = {"movies": "movies", "series": "series"}.get(args["kind"], "")
         if name == "search_library":
             cards, _ = media_index.query_grouped(
                 q=args["query"], year=args["year"], genre=args["genre"],
@@ -999,6 +999,7 @@ async def _generate(
     payloads = _dedup_payloads(
         query_payloads + [_spa._card(obj, art_cache=art_cache) for obj in objs], seen_keys, watched_card_ids,
     )
+    payloads = _video_payloads(payloads)
     payloads = _exclude_tmdb_payloads(payloads, excluded)
     payloads = _select_candidate_payloads(payloads, query_hrefs)
 
