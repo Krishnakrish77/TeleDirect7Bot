@@ -2,7 +2,7 @@ import { FormEvent, KeyboardEvent, RefObject, useEffect, useRef, useState, type 
 import { signInTelegram } from '../api';
 import { useSuggestions } from '../hooks/data';
 import { localAppHref } from '../navigation';
-import { BookmarkIcon, BroadcastIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HeartIcon, HomeIcon, ListIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, UserIcon, XIcon } from '../icons';
+import { BookmarkIcon, BroadcastIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HeartIcon, HomeIcon, ListIcon, ListPlusIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, UserIcon, XIcon } from '../icons';
 import type { MeResponse, Suggestion, TelegramAuthUser, User, ViewValue } from '../types';
 import { tmdbImageUrl } from '../utils/tmdb';
 import { Button } from './ui/button';
@@ -68,6 +68,7 @@ export function Header({
   onSearchSubmit,
   onSearchClear,
   onSuggestionNavigate,
+  onRequestTitle = () => {},
   onSignIn,
   onSignOut,
 }: {
@@ -81,6 +82,7 @@ export function Header({
   onSearchSubmit: () => void;
   onSearchClear: () => void;
   onSuggestionNavigate: (href: string) => void;
+  onRequestTitle?: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
@@ -212,6 +214,7 @@ export function Header({
             getHref={suggestionHref}
             onActiveIndexChange={setActiveIndex}
             onPick={closeSuggestions}
+            onRequestTitle={onRequestTitle}
           />
         )}
       </form>
@@ -250,6 +253,12 @@ export function Header({
                 <a href="/liked-songs">
                   <HeartIcon />
                   <span>Liked songs</span>
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href="/requests">
+                  <ListPlusIcon />
+                  <span>My requests</span>
                 </a>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
@@ -305,6 +314,7 @@ export function SearchMenu({
   getHref,
   onActiveIndexChange,
   onPick,
+  onRequestTitle,
 }: {
   suggestions: Suggestion[];
   loading: boolean;
@@ -313,6 +323,7 @@ export function SearchMenu({
   getHref: (item: Suggestion) => string;
   onActiveIndexChange: (index: number) => void;
   onPick: () => void;
+  onRequestTitle: () => void;
 }) {
   return (
     <div className="search-menu" id="top-search-suggestions" role="listbox">
@@ -324,7 +335,8 @@ export function SearchMenu({
       )}
       {!loading && searched && suggestions.length === 0 && (
         <div className="search-menu-state search-menu-empty" role="status">
-          No quick matches. Press Enter to search the full library.
+          <span>No quick matches. Press Enter to search the full library.</span>
+          <button type="button" className="search-menu-request" onClick={() => { onPick(); onRequestTitle(); }}><ListPlusIcon /> Request a title</button>
         </div>
       )}
       {suggestions.map((item, index) => {

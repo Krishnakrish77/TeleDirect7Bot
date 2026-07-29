@@ -374,6 +374,89 @@ async def fetch_by_id(tmdb_id: int, kind: str) -> Optional[TMDBHit]:
         return _hit_from_details(kind, int(tmdb_id), details)
 
 
+async def search_titles(query: str, *, limit: int = 8) -> List[dict]:
+    """Return a small, explicit-choice TMDB result set for title requests.
+
+    This is intentionally separate from :func:`lookup_movie` and
+    :func:`lookup_series`: enrichment needs one conservative, high-confidence
+    match, whereas a person requesting a title needs to choose from similarly
+    named films and shows.  Only the canonical provider fields are returned so
+    callers never need to trust client-supplied title/artwork metadata.
+    """
+    query = re.sub(r"\s+", " ", (query or "").strip())[:120]
+    if not is_configured() or len(query) < 2:
+        return []
+    limit = max(1, min(int(limit or 8), 12))
+    async with aiohttp.ClientSession() as session:
+        movie_payload, tv_payload = await asyncio.gather(
+            _get(session, "/search/movie", query=query, include_adult="false"),
+            _get(session, "/search/tv", query=query, include_adult="false"),
+        )
+    results: list[dict] = []
+    for kind, payload, date_field, title_field in (
+        ("movie", movie_payload, "release_date", "title"),
+        ("tv", tv_payload, "first_air_date", "name"),
+    ):
+        for row in (payload or {}).get("results") or []:
+            try:
+                tmdb_id = int(row.get("id") or 0)
+            except (TypeError, ValueError):
+                tmdb_id = 0
+            title = str(row.get(title_field) or "").strip()
+            if not tmdb_id or not title:
+                continue
+            results.append({
+                "tmdbId": tmdb_id,
+                "kind": kind,
+                "title": title,
+                "year": _parse_year(row.get(date_field)),
+                "overview": str(row.get("overview") or "").strip(),
+                "posterPath": str(row.get("poster_path") or ""),
+                "popularity": _float_or_zero(row.get("popularity")),
+            })
+    results.sort(key=lambda row: row["popularity"], reverse=True)
+    return results[:limit]
+
+
+async def fetch_request_title(tmdb_id: int, kind: str) -> Optional[dict]:
+    """Fetch canonical request metadata, including selectable TV seasons."""
+    if not is_configured() or not tmdb_id or kind not in ("movie", "tv"):
+        return None
+    async with aiohttp.ClientSession() as session:
+        details = await _get(session, f"/{kind}/{int(tmdb_id)}")
+    if not details:
+        return None
+    year_field = "release_date" if kind == "movie" else "first_air_date"
+    title = str(details.get("title") or details.get("name") or "").strip()
+    if not title:
+        return None
+    seasons: list[dict] = []
+    if kind == "tv":
+        for season in details.get("seasons") or []:
+            try:
+                number = int(season.get("season_number"))
+            except (TypeError, ValueError):
+                continue
+            # Specials are neither useful nor intuitive in a normal request.
+            if number < 1:
+                continue
+            seasons.append({
+                "number": number,
+                "name": str(season.get("name") or f"Season {number}"),
+                "episodeCount": _int_or_zero(season.get("episode_count")),
+                "airDate": str(season.get("air_date") or ""),
+            })
+    return {
+        "tmdbId": int(details.get("id") or tmdb_id),
+        "kind": kind,
+        "title": title,
+        "year": _parse_year(details.get(year_field)),
+        "overview": str(details.get("overview") or "").strip(),
+        "posterPath": str(details.get("poster_path") or ""),
+        "seasons": seasons,
+    }
+
+
 async def fetch_recommendations(
     tmdb_id: int,
     kind: str,

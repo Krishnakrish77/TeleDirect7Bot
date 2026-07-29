@@ -28,6 +28,10 @@ import type {
   SubtitleTrack,
   SubtitleSearchResult,
   RatingResponse,
+  RequestTitle,
+  MediaRequest,
+  AdminMediaRequest,
+  RequestStatus,
   Suggestion,
   TelegramAuthUser,
   TmdbPreviewResult,
@@ -141,6 +145,43 @@ export async function askAiRecommendations(query: string, signal?: AbortSignal):
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
     signal,
+  });
+}
+
+export async function searchRequestTitles(query: string, signal?: AbortSignal): Promise<RequestTitle[]> {
+  const qs = new URLSearchParams({ q: query });
+  const data = await request<{ items: RequestTitle[] }>(`/api/app/requests/search?${qs}`, { signal });
+  return data.items || [];
+}
+
+export async function fetchRequestTitle(tmdbId: number, kind: 'movie' | 'tv', signal?: AbortSignal): Promise<RequestTitle> {
+  return request<RequestTitle>(`/api/app/requests/title/${kind}/${encodeURIComponent(String(tmdbId))}`, { signal });
+}
+
+export async function createMediaRequest(input: { tmdbId: number; kind: 'movie' | 'tv'; seasons?: number[] }): Promise<{ item: MediaRequest; duplicate: boolean }> {
+  return request('/api/app/requests', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+}
+
+export async function fetchMyRequests(signal?: AbortSignal): Promise<MediaRequest[]> {
+  const data = await request<{ items: MediaRequest[] }>('/api/app/requests', { signal });
+  return data.items || [];
+}
+
+export async function cancelMediaRequest(requestId: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/app/requests/${encodeURIComponent(requestId)}`, { method: 'DELETE' });
+}
+
+export async function fetchAdminRequests(status = '', signal?: AbortSignal): Promise<AdminMediaRequest[]> {
+  const qs = status ? `?${new URLSearchParams({ status })}` : '';
+  const data = await request<{ items: AdminMediaRequest[] }>(`/api/app/admin/requests${qs}`, { signal });
+  return data.items || [];
+}
+
+export async function updateAdminRequest(tmdbId: number, kind: 'movie' | 'tv', state: Extract<RequestStatus, 'planned' | 'declined' | 'available'>, note = ''): Promise<void> {
+  await request<{ ok: boolean }>(`/api/app/admin/requests/${kind}/${encodeURIComponent(String(tmdbId))}/state`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state, note }),
   });
 }
 

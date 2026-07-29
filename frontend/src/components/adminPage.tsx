@@ -25,6 +25,7 @@ export function AdminNav({
       <a role="tab" aria-selected={is('admin', 'ops')} className={is('admin', 'ops') ? 'active' : ''} href="/admin?tab=ops">Operations</a>
       <a role="tab" aria-selected={routeKind === 'admin-dashboard'} className={routeKind === 'admin-dashboard' ? 'active' : ''} href="/admin/dashboard">Dashboard</a>
       <a role="tab" aria-selected={routeKind === 'admin-trending'} className={routeKind === 'admin-trending' ? 'active' : ''} href="/admin/trending">Trending</a>
+      <a role="tab" aria-selected={routeKind === 'admin-requests'} className={routeKind === 'admin-requests' ? 'active' : ''} href="/admin/requests">Requests</a>
       <a role="tab" aria-selected={routeKind === 'admin-iptv'} className={routeKind === 'admin-iptv' ? 'active' : ''} href="/admin/iptv">IPTV</a>
     </nav>
   );
