@@ -1,6 +1,7 @@
 import os
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("API_ID", "1")
 os.environ.setdefault("API_HASH", "test")
@@ -59,9 +60,27 @@ class AiRecGroundingTest(unittest.TestCase):
         )
         self.assertEqual([item["href"] for item in valid], ["/fresh"])
 
-    def test_cold_start_detection(self):
-        self.assertTrue(ai_rec._is_cold({}, {}, []))
-        self.assertFalse(ai_rec._is_cold({"seeds": [(1, "movie")]}, {}, [1, 2, 3, 4, 5, 6]))
+    def test_activity_is_not_cold_when_history_lacks_enrichment(self):
+        # Older watches can legitimately have no TMDB seed yet. The fallback
+        # must not tell a frequent viewer that it is still learning them.
+        self.assertTrue(ai_rec._has_user_activity({}, {}, [{"cw_key": "old-watch"}], {}))
+        self.assertTrue(ai_rec._has_user_activity({}, {}, [], {"in-progress": {}}))
+        self.assertFalse(ai_rec._has_user_activity({}, {}, [], {}))
+
+    def test_metadata_thin_history_is_not_reported_as_cold_start(self):
+        async def run():
+            with patch.object(ai_rec.rec_engine, "_collect_signal_profile", AsyncMock(return_value={})), patch.object(
+                ai_rec.wh_store, "get_recent", AsyncMock(return_value=[{"cw_key": "legacy-watch"}])
+            ), patch.object(ai_rec.cw_store, "get_all", AsyncMock(return_value={})), patch.object(
+                ai_rec.dismissed_store, "get_dismissed_ids", AsyncMock(return_value=set())
+            ), patch.object(ai_rec.ai_rec_store, "get_cached", AsyncMock(return_value=None)), patch.object(
+                ai_rec, "_safe_stats", AsyncMock(return_value={})
+            ), patch.object(ai_rec, "_trending_items", AsyncMock(return_value=[{"href": "/fresh"}])):
+                return await ai_rec._generate(7, query=None, limit=12, refresh=False)
+
+        result = __import__("asyncio").run(run())
+        self.assertFalse(result["coldStart"])
+        self.assertIn("activity is saved", result["message"])
 
     def test_query_terms_and_tmdb_exclusions(self):
         self.assertEqual(

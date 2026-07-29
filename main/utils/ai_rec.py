@@ -370,9 +370,22 @@ def _validate_cached(
     return out
 
 
-def _is_cold(profile: dict, stats: dict, payloads: list) -> bool:
-    has_signal = bool(profile.get("seeds")) or bool(stats.get("top_genres")) or bool(stats.get("top_artists"))
-    return (not has_signal) or len(payloads) < 6
+def _has_user_activity(profile: dict, stats: dict, history: list, cw_map: dict) -> bool:
+    """Whether we have real behaviour, independent of recommendation health.
+
+    A user can have a substantial history whose older uploads have not yet
+    been TMDB-enriched. They are *not* a cold-start user; we may temporarily
+    fall back to fresh titles, but must not tell them that we are still
+    learning their taste. Likewise, Gemini/TMDB availability and candidate
+    pool size describe the ranking pipeline, not the user's activity.
+    """
+    return bool(
+        history
+        or cw_map
+        or profile.get("seeds")
+        or stats.get("top_genres")
+        or stats.get("top_artists")
+    )
 
 
 def _taste_summary(profile: dict, stats: dict) -> str:
@@ -577,7 +590,10 @@ async def get_ai_recommendations(
         return await _generate(user_id, query=query, limit=limit, refresh=refresh)
     except Exception:
         logging.exception("ai_rec: generation failed, serving trending fallback")
-        return {"items": await _trending_items(limit), "externalItems": [], "message": "", "coldStart": True}
+        # Do not claim a signed-in user is a cold start merely because an
+        # optional recommendation dependency failed. We cannot safely infer
+        # their history here, so avoid the misleading onboarding copy.
+        return {"items": await _trending_items(limit), "externalItems": [], "message": "", "coldStart": False}
 
 
 async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: bool) -> dict:
@@ -620,14 +636,29 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
             await ai_rec_store.set_cached(user_id, result["items"])
         return result
 
-    # Cold start / no key: skip the expensive candidate gather entirely.
+    # ``coldStart`` is exclusively about the absence of user activity. A
+    # missing Gemini key or a thin candidate pool is a service/catalogue
+    # fallback, not proof that the user has no watch history.
+    has_activity = _has_user_activity(profile, stats, history, cw_map)
     has_signal = bool(profile.get("seeds")) or bool(stats.get("top_genres")) or bool(stats.get("top_artists"))
     seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map.keys())
     excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
-    if not has_signal or not gemini.available():
+    if not has_signal:
         return await _finish({
             "items": await _trending_items(limit, exclude_keys=seen_keys, excluded_tmdb=excluded),
-            "externalItems": [], "message": "", "coldStart": True,
+            "externalItems": [],
+            "message": (
+                "Your activity is saved; some watched titles still need library metadata before picks can be tailored."
+                if has_activity else ""
+            ),
+            "coldStart": not has_activity,
+        })
+    if not gemini.available():
+        return await _finish({
+            "items": await _trending_items(limit, exclude_keys=seen_keys, excluded_tmdb=excluded),
+            "externalItems": [],
+            "message": "Personalized ranking is temporarily unavailable; here are fresh picks." if has_activity else "",
+            "coldStart": not has_activity,
         })
 
     objs = await _gather_candidates(user_id, profile, stats, dismissed)
@@ -644,7 +675,9 @@ async def _generate(user_id: int, *, query: Optional[str], limit: int, refresh: 
     if len(payloads) < 6:
         return await _finish({
             "items": await _trending_items(limit, exclude_keys=seen_keys, excluded_tmdb=excluded),
-            "externalItems": [], "message": "", "coldStart": True,
+            "externalItems": [],
+            "message": "Your history is applied; here are fresh picks while we find more close matches." if has_activity else "",
+            "coldStart": not has_activity,
         })
 
     def _raw_fallback() -> list:
