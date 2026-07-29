@@ -139,6 +139,15 @@ class AiRecGroundingTest(unittest.TestCase):
         self.assertEqual([item["href"] for item in ai_rec._validate_cached(payloads)], ["/movie"])
         self.assertEqual(ai_rec._clean_agent_args("search_library", {"kind": "music"})["kind"], "")
 
+    def test_ai_picks_fallback_keeps_comfort_and_discovery_when_possible(self):
+        items = ai_rec._fallback_items([_card("/one"), _card("/two"), _card("/three")], 12)
+        self.assertEqual([item["bucket"] for item in items], ["comfort", "comfort", "discovery"])
+        self.assertEqual(ai_rec._fallback_items([_card("/one")], 12)[0]["bucket"], "comfort")
+        mixed = ai_rec._balanced_buckets([
+            {"href": "/one", "bucket": "comfort"}, {"href": "/two", "bucket": "discovery"},
+        ])
+        self.assertEqual([item["bucket"] for item in mixed], ["comfort", "discovery"])
+
     def test_agent_tool_arguments_are_constrained(self):
         self.assertEqual(
             ai_rec._clean_agent_args("search_library", {
