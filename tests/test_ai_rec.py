@@ -1,5 +1,6 @@
 import os
 import unittest
+from collections import Counter
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -214,6 +215,29 @@ class AiRecGroundingTest(unittest.TestCase):
         self.assertIn("max 9 words", prompt)
         self.assertIn("Do not start with", prompt)
         self.assertIn("from your library", prompt)
+
+    def test_taste_summary_shares_compact_positive_and_negative_signals(self):
+        cards = {
+            (1, "movie"): SimpleNamespace(title="Arrival"),
+            (2, "tv"): SimpleNamespace(series_title="Dark"),
+            (3, "movie"): SimpleNamespace(title="Loud Comedy"),
+        }
+        profile = {
+            "seeds": [(1, "movie"), (2, "tv")],
+            "liked_tmdb": {(1, "movie")},
+            "disliked_tmdb": {(3, "movie")},
+            "seed_genres": Counter({"Science Fiction": 8, "Mystery": 5}),
+            "seed_keywords": Counter({"time travel": 6, "existential": 3}),
+            "negative_genres": Counter({"Comedy": 3}),
+        }
+        with patch.object(ai_rec.media_index, "card_for_tmdb_id", side_effect=lambda tid, kind: cards.get((tid, kind))):
+            summary = ai_rec._taste_summary(profile, {})
+        self.assertIn("Explicit likes: Arrival", summary)
+        self.assertIn("Strong viewing signals: Arrival, Dark", summary)
+        self.assertIn("Explicit dislikes (avoid close matches): Loud Comedy", summary)
+        self.assertIn("Strong genres: Science Fiction, Mystery", summary)
+        self.assertIn("Preferred themes: time travel, existential", summary)
+        self.assertIn("Genres to avoid unless requested: Comedy", summary)
 
     def test_taste_match_prompt_and_assessment_require_a_grounded_title(self):
         prompt = ai_rec._build_prompt("Likes dystopian mysteries", [], "Will I like Silo?", 8)

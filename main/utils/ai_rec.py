@@ -540,19 +540,83 @@ def _now() -> float:
     return time.monotonic()
 
 
+def _profile_title_anchors(keys: object, limit: int) -> list[str]:
+    """Resolve a small, ordered set of local TMDB keys to display titles.
+
+    This deliberately turns detailed history into a few bounded taste anchors.
+    Gemini never receives the underlying play/rating records, timestamps, or
+    the rest of a person's viewing history.
+    """
+    if not isinstance(keys, (list, tuple, set)):
+        return []
+    # ``seeds`` keeps its weighted order, while rating sets need a stable
+    # order so the same private profile produces the same model context.
+    values = sorted(keys, key=repr) if isinstance(keys, set) else keys
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for key in values:
+        try:
+            tmdb_id, kind = key
+            card = media_index.card_for_tmdb_id(int(tmdb_id), str(kind))
+        except (TypeError, ValueError):
+            continue
+        if card is None:
+            continue
+        item = getattr(card, "poster_item", card)
+        title = (
+            getattr(card, "series_title", "")
+            or getattr(card, "title", "")
+            or getattr(item, "series_title", "")
+            or getattr(item, "title", "")
+        )
+        title = re.sub(r"\s+", " ", str(title or "")).strip()[:120]
+        normalized = title.casefold()
+        if not title or normalized in seen:
+            continue
+        seen.add(normalized)
+        anchors.append(title)
+        if len(anchors) >= limit:
+            break
+    return anchors
+
+
+def _counter_terms(values: object, limit: int) -> list[str]:
+    """Return the strongest non-empty derived terms from a Counter-like value."""
+    if not hasattr(values, "most_common"):
+        return []
+    return [
+        re.sub(r"\s+", " ", str(term)).strip()[:80]
+        for term, _weight in values.most_common(limit)
+        if str(term).strip()
+    ][:limit]
+
+
 def _taste_summary(profile: dict, stats: dict) -> str:
+    """Build the bounded, privacy-preserving profile shared with Gemini."""
     parts = []
-    genres = [g for g, _ in (stats.get("top_genres") or [])][:5]
+    likes = _profile_title_anchors(profile.get("liked_tmdb"), 4)
+    if likes:
+        parts.append("Explicit likes: " + ", ".join(likes))
+    anchors = _profile_title_anchors(profile.get("seeds"), 6)
+    if anchors:
+        parts.append("Strong viewing signals: " + ", ".join(anchors))
+    dislikes = _profile_title_anchors(profile.get("disliked_tmdb"), 4)
+    if dislikes:
+        parts.append("Explicit dislikes (avoid close matches): " + ", ".join(dislikes))
+    genres = _counter_terms(profile.get("seed_genres"), 5) or [g for g, _ in (stats.get("top_genres") or [])[:5]]
     if genres:
-        parts.append("Top genres: " + ", ".join(genres))
+        parts.append("Strong genres: " + ", ".join(genres))
+    keywords = _counter_terms(profile.get("seed_keywords"), 6)
+    if keywords:
+        parts.append("Preferred themes: " + ", ".join(keywords))
+    avoided_genres = _counter_terms(profile.get("negative_genres"), 4)
+    if avoided_genres:
+        parts.append("Genres to avoid unless requested: " + ", ".join(avoided_genres))
     director = stats.get("top_director")
     if isinstance(director, (list, tuple)):  # stats stores ("Name", count)
         director = director[0] if director else None
     if director:
         parts.append("Favourite director: " + str(director))
-    artists = [a for a, _ in (stats.get("top_artists") or [])][:3]
-    if artists:
-        parts.append("Top artists: " + ", ".join(artists))
     pers = stats.get("personality")
     if isinstance(pers, dict) and pers.get("title"):
         parts.append("Listener type: " + str(pers["title"]))

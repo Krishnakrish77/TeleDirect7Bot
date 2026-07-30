@@ -118,6 +118,7 @@ async def _collect_signal_profile(user_id: int) -> dict:
     negative_genres: Counter = Counter()
     exclude_tmdb: set[TmdbKey] = set()
     liked_tmdb: set[TmdbKey] = set()
+    disliked_tmdb: set[TmdbKey] = set()
     partial_tmdb: set[TmdbKey] = set()
     def add_seed(
         item,
@@ -175,6 +176,7 @@ async def _collect_signal_profile(user_id: int) -> dict:
             liked_tmdb.add((tid, kind))
             add_seed(item, 4.0)
         elif entry.get("rating") == "down":
+            disliked_tmdb.add((tid, kind))
             for genre in getattr(item, "tmdb_genres", None) or []:
                 negative_genres[genre] += 3.0
 
@@ -205,6 +207,7 @@ async def _collect_signal_profile(user_id: int) -> dict:
         "negative_genres": negative_genres,
         "exclude_tmdb": exclude_tmdb,
         "liked_tmdb": liked_tmdb,
+        "disliked_tmdb": disliked_tmdb,
         "partial_tmdb": partial_tmdb,
     }
 
