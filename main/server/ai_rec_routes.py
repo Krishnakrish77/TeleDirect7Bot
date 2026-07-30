@@ -64,10 +64,15 @@ async def ai_recommendations(request: web.Request) -> web.Response:
     if uid is None:
         return web.json_response({"error": "unauthenticated"}, status=401)
     refresh = request.query.get("refresh") in ("1", "true", "yes")
-    # Only the (expensive) refresh path spends a token; a plain open is cache-served.
-    if refresh and not _take_token(uid):
+    if not refresh:
+        cached = await ai_rec.get_cached_ai_recommendations(uid)
+        if cached:
+            return web.json_response(cached)
+    # A valid cache never consumes quota. Refreshes and cache misses make one
+    # bounded agent run, so each actual Gemini request spends one token.
+    if not _take_token(uid):
         return _rate_limited()
-    result = await ai_rec.get_ai_recommendations(uid, refresh=refresh, agentic=refresh)
+    result = await ai_rec.get_ai_recommendations(uid, refresh=refresh, agentic=True)
     return web.json_response(result)
 
 
