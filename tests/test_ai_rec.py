@@ -215,6 +215,18 @@ class AiRecGroundingTest(unittest.TestCase):
         self.assertIn("Do not start with", prompt)
         self.assertIn("from your library", prompt)
 
+    def test_taste_match_prompt_and_assessment_require_a_grounded_title(self):
+        prompt = ai_rec._build_prompt("Likes dystopian mysteries", [], "Will I like Silo?", 8)
+        self.assertTrue(ai_rec._is_taste_match_question("Will I like Silo?"))
+        self.assertIn("taste-match question", prompt)
+        self.assertIn("likely/maybe/unlikely", prompt)
+        payloads = {"card_1": _card("/silo", title="Silo")}
+        self.assertEqual(
+            ai_rec._validated_assessment({"id": "card_1", "verdict": "likely", "reason": "Dystopian mystery matches your usual intrigue."}, payloads),
+            {"title": "Silo", "verdict": "likely", "reason": "Dystopian mystery matches your usual intrigue."},
+        )
+        self.assertIsNone(ai_rec._validated_assessment({"id": "invented", "verdict": "likely", "reason": "Nope"}, payloads))
+
     def test_mix_ranking_stays_audio_only_and_grounded(self):
         def track(message_id, artist, *, kind="audio", hidden=False, tags=None):
             return SimpleNamespace(

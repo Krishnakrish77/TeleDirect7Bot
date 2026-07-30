@@ -472,6 +472,7 @@ export interface AiRecResponse {
   items: AiRecItem[];
   externalItems?: RequestTitle[];
   message: string;
+  assessment?: { title: string; verdict: 'likely' | 'maybe' | 'unlikely'; reason: string } | null;
   coldStart: boolean;
   cached?: boolean;
 }

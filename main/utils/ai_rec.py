@@ -44,6 +44,10 @@ _QUERY_STOP_WORDS = frozenset({
     "recommendation", "recommendations", "series", "show", "shows", "similar",
     "something", "that", "the", "to", "want", "watch", "with", "you",
 })
+_TASTE_MATCH_RE = re.compile(
+    r"\b(?:will|would|should)\s+(?:i|we)\s+(?:like|enjoy|watch)\b|\b(?:for me|my kind of (?:show|movie|series))\b",
+    re.I,
+)
 
 _PICK_SCHEMA = {
     "type": "object",
@@ -61,9 +65,19 @@ _PICK_SCHEMA = {
             },
         },
         "message": {"type": "string"},
+        "assessment": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "verdict": {"type": "string", "enum": ["likely", "maybe", "unlikely"]},
+                "reason": {"type": "string"},
+            },
+            "required": ["id", "verdict", "reason"],
+        },
     },
     "required": ["picks"],
 }
+_DECISION_PICK_SCHEMA = {**_PICK_SCHEMA, "required": ["picks", "assessment"]}
 
 _MIX_SCHEMA = {
     "type": "object",
@@ -247,6 +261,11 @@ def _query_terms(query: str) -> list[str]:
         if len(terms) >= _QUERY_TERM_LIMIT:
             break
     return terms
+
+
+def _is_taste_match_question(query: str) -> bool:
+    """Whether an Ask wants a direct personal fit verdict for a title."""
+    return bool(_TASTE_MATCH_RE.search(query or ""))
 
 
 def _mix_title(prompt: str) -> str:
@@ -556,6 +575,14 @@ def _build_prompt(taste: str, prompt_items: list, query: str, limit: int) -> str
     ]
     if query:
         lines += ["", f"The user asked for: {query!r}. Prioritise picks matching this request."]
+    if _is_taste_match_question(query):
+        lines += [
+            "",
+            "This is a taste-match question, not just a search. Return `assessment` for the named title:",
+            "use its exact candidate id, choose likely/maybe/unlikely, and give one concrete reason (max 18 words)",
+            "grounded only in the candidate fields and User taste. Do not assess a title that is absent from Candidates.",
+            "Put the assessed title first in picks, then add related library choices when available.",
+        ]
     lines += [
         "",
         "Candidates (JSON):",
@@ -564,6 +591,19 @@ def _build_prompt(taste: str, prompt_items: list, query: str, limit: int) -> str
         f"Choose up to {limit} picks. Also set 'message' to one friendly sentence about the set.",
     ]
     return "\n".join(lines)
+
+
+def _validated_assessment(raw: object, payloads: dict) -> dict | None:
+    """Keep a direct verdict grounded to a candidate returned this run."""
+    if not isinstance(raw, dict):
+        return None
+    identifier = str(raw.get("id") or "")
+    payload = payloads.get(identifier)
+    verdict = str(raw.get("verdict") or "")
+    reason = re.sub(r"\s+", " ", str(raw.get("reason") or "")).strip()[:180]
+    if not payload or verdict not in {"likely", "maybe", "unlikely"} or not reason:
+        return None
+    return {"title": str(payload.get("title") or "Title")[:140], "verdict": verdict, "reason": reason}
 
 
 # ---- orchestration -------------------------------------------------------
@@ -875,6 +915,7 @@ async def _generate_agentic(
     contents = [{"role": "user", "parts": [{"text": "\n".join([
         "You curate a private playable media library.",
         "First call search_library or browse_library to find candidates before recommending anything.",
+        "For a question about whether the user will enjoy a named title, find that title first, then explore related library titles for comparison.",
         "Never ask for or reveal private catalogue data beyond tool results. Do not use unavailable titles.",
         "You have at most three total tool calls; explore efficiently.",
         f"User taste summary: {_taste_summary(profile, stats)}",
@@ -926,7 +967,11 @@ async def _generate_agentic(
         raise failed("budget")
     candidates = [catalogue._compact(identifier, payload) for identifier, payload in catalogue.payloads.items()]
     prompt = _build_prompt(_taste_summary(profile, stats), candidates, query, limit)
-    result = await gemini.generate_json(prompt, schema=_PICK_SCHEMA, timeout=remaining)
+    result = await gemini.generate_json(
+        prompt,
+        schema=_DECISION_PICK_SCHEMA if _is_taste_match_question(query) else _PICK_SCHEMA,
+        timeout=remaining,
+    )
     picks = result.get("picks") if isinstance(result, dict) else None
     items = _apply_picks(picks, catalogue.payloads, limit)
     # Revalidate after model work in case a deletion/hide/finish raced a tool.
@@ -945,6 +990,7 @@ async def _generate_agentic(
         "items": items,
         "externalItems": await _requestable_picks(user_id, profile, dismissed, query),
         "message": str(result.get("message") or "").strip()[:240] if isinstance(result, dict) else "",
+        "assessment": _validated_assessment(result.get("assessment"), catalogue.payloads) if _is_taste_match_question(query) and isinstance(result, dict) else None,
         "coldStart": False,
     }
 
