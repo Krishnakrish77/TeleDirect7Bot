@@ -103,7 +103,7 @@ async def _stream_event(response: web.StreamResponse, event: str, data: dict | s
 
 @routes.post("/api/app/ai/recommendations/stream")
 async def ai_recommendations_stream(request: web.Request) -> web.StreamResponse:
-    """SSE for the bounded Ask/Refresh agent; exactly one terminal event."""
+    """SSE for a cache-first panel open or bounded Ask/Refresh agent."""
     if not gemini.available():
         return web.json_response({"error": "AI recommendations are not enabled"}, status=404)
     uid = _uid(request)
@@ -116,16 +116,9 @@ async def ai_recommendations_stream(request: web.Request) -> web.StreamResponse:
     body = body if isinstance(body, dict) else {}
     query = str(body.get("query") or "").strip()[:300]
     refresh = body.get("refresh") is True and not query
-    if not query and not refresh:
-        return web.json_response({"error": "query or refresh is required"}, status=400)
-    if not _take_token(uid):
-        response = web.StreamResponse(status=200, headers={
-            "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive",
-        })
-        await response.prepare(request)
-        await _stream_event(response, "error", {"message": "Too many requests — give the recommender a moment.", "retryable": True, "status": 429})
-        await response.write_eof()
-        return response
+    initial = body.get("initial") is True and not query and not refresh
+    if not query and not refresh and not initial:
+        return web.json_response({"error": "query, refresh, or initial is required"}, status=400)
 
     response = web.StreamResponse(status=200, headers={
         "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive",
@@ -137,6 +130,14 @@ async def ai_recommendations_stream(request: web.Request) -> web.StreamResponse:
         await _stream_event(response, "status", {"message": status})
 
     try:
+        if initial:
+            cached = await ai_rec.get_cached_ai_recommendations(uid)
+            if cached:
+                await _stream_event(response, "result", cached)
+                return response
+        if not _take_token(uid):
+            await _stream_event(response, "error", {"message": "Too many requests — give the recommender a moment.", "retryable": True, "status": 429})
+            return response
         # get_ai_recommendations catches agent failures and returns its
         # deterministic shelf, so a successful stream never hangs on Gemini.
         result = await asyncio.wait_for(

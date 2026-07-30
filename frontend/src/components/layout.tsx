@@ -197,9 +197,6 @@ export function Header({
           aria-controls="top-search-suggestions"
           aria-activedescendant={activeSuggestionId}
         />
-        {suggestionsLoading && (
-          <span className="search-progress" role="status" aria-label="Searching library" />
-        )}
         {query && (
           <button type="button" className="icon-button clear-search" onClick={handleClear} aria-label="Clear search">
             <XIcon />

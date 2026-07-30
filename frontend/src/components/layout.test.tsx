@@ -118,7 +118,7 @@ describe('Header search', () => {
     fireEvent.focus(screen.getByPlaceholderText('Search library'));
 
     expect(screen.getByText('Searching your library…')).toBeTruthy();
-    expect(screen.getByLabelText('Searching library')).toBeTruthy();
+    expect(screen.queryByLabelText('Searching library')).toBeNull();
   });
 
   it('explains when quick suggestions have no match', () => {

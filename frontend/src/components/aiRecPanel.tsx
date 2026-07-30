@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { dismissRecommendation, fetchAiRecommendations, streamAiRecommendations, trackRecommendationEvents } from '../api';
+import { dismissRecommendation, streamAiRecommendations, trackRecommendationEvents } from '../api';
 import type { AiRecItem, HubCard, RequestTitle } from '../types';
 import { FilmIcon, ListPlusIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
 import type { WatchTrack } from '../types';
@@ -10,6 +10,15 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
 import { tmdbImageUrl } from '../utils/tmdb';
+
+const PROGRESS_STEPS = ['Search library', 'Explore matches', 'Curate picks'];
+
+function progressStep(status: string) {
+  const text = status.toLowerCase();
+  if (text.includes('curating')) return 2;
+  if (text.includes('exploring')) return 1;
+  return 0;
+}
 
 export function AiRecPanel({
   open,
@@ -61,7 +70,8 @@ export function AiRecPanel({
     ctrl.current = controller;
     setLoading(true);
     setError('');
-    fetchAiRecommendations(false, controller.signal)
+    setAgentStatus('Searching your library');
+    streamAiRecommendations({ initial: true }, setAgentStatus, controller.signal)
       .then((res) => {
         setItems(res.items || []);
         setExternalItems(res.externalItems || []);
@@ -74,7 +84,10 @@ export function AiRecPanel({
       })
       .finally(() => {
         window.clearTimeout(timeout);
-        if (ctrl.current === controller) setLoading(false);
+        if (ctrl.current === controller) {
+          setLoading(false);
+          setAgentStatus('');
+        }
       });
   };
 
@@ -125,7 +138,17 @@ export function AiRecPanel({
     runAgent({ query: q });
   };
 
+  const stop = () => {
+    ctrl.current?.abort();
+    setLoading(false);
+    setAsking(false);
+    setAgentAction(null);
+    setAgentStatus('');
+    setError('Stopped looking for picks.');
+  };
+
   const busy = loading || asking || agentAction === 'refresh';
+  const activeProgressStep = progressStep(agentStatus);
   const comfort = items.filter((item) => item.bucket !== 'discovery');
   const discovery = items.filter((item) => item.bucket === 'discovery');
   const split = discovery.length > 0 && comfort.length > 0;
@@ -181,7 +204,16 @@ export function AiRecPanel({
         </div>
 
         {mode === 'mix' ? <AiMixPanel onBack={() => setMode('picks')} onPlay={onPlayMix} onShuffle={onShuffleMix} /> : <>
-          {agentStatus ? <p className="ai-rec-message" role="status">{agentStatus}</p> : message && !busy && <p className="ai-rec-message">{message}</p>}
+          {agentStatus ? <section className="ai-rec-progress" role="status" aria-live="polite">
+            <div className="ai-rec-progress-top">
+              <SparkleIcon className="ai-rec-progress-icon" aria-hidden="true" />
+              <div><strong>Finding your next watch</strong><p>{agentStatus}</p></div>
+              <Button type="button" variant="ghost" size="sm" className="ai-rec-stop" onClick={stop}>Stop</Button>
+            </div>
+            <ol className="ai-rec-progress-steps" aria-label="Recommendation progress">
+              {PROGRESS_STEPS.map((step, index) => <li key={step} className={index < activeProgressStep ? 'complete' : index === activeProgressStep ? 'active' : ''}>{step}</li>)}
+            </ol>
+          </section> : message && !busy && <p className="ai-rec-message">{message}</p>}
 
           {/* Any card click navigates via its link — close the panel so it doesn't cover the new page. */}
           <div className="ai-rec-body" onClickCapture={(event) => { if ((event.target as HTMLElement).closest('a')) onClose(); }}>
