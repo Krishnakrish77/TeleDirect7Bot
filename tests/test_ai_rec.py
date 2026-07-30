@@ -188,9 +188,11 @@ class AiRecGroundingTest(unittest.TestCase):
                 ai_rec.gemini, "generate_content", AsyncMock(side_effect=[function_response, no_call_response])
             ) as generate_content, patch.object(
                 ai_rec.gemini, "generate_json", AsyncMock(return_value={"picks": [{"id": "card_2", "reason": "grounded", "bucket": "comfort"}, {"id": "invented", "reason": "no", "bucket": "comfort"}]})
-            ), patch.object(ai_rec, "_requestable_picks", AsyncMock(return_value=[])):
+            ), patch.object(ai_rec, "_requestable_picks", AsyncMock(return_value=[])), patch.object(
+                ai_rec.ai_rec_store, "set_cached", AsyncMock()
+            ) as set_cached:
                 result = await ai_rec._generate_agentic(
-                    7, query="something", refresh=False, limit=12, progress=lambda status: _append(statuses, status),
+                    7, query="", refresh=False, limit=12, progress=lambda status: _append(statuses, status),
                 )
             self.assertEqual([item["href"] for item in result["items"]], ["/two"])
             self.assertIn("Searching your library", statuses)
@@ -200,6 +202,7 @@ class AiRecGroundingTest(unittest.TestCase):
                 ai_rec._AGENT_INITIAL_TOOL_CONFIG,
             )
             self.assertIsNone(generate_content.await_args_list[1].kwargs["tool_config"])
+            set_cached.assert_awaited_once_with(7, result["items"])
 
         async def _append(values, value):
             values.append(value)

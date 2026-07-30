@@ -696,6 +696,40 @@ async def _requestable_picks(user_id: int, profile: dict, dismissed: set, query:
     return out
 
 
+async def _cached_ai_recommendations(
+    user_id: int, *, profile: dict, history: list, cw_map: dict, dismissed: set,
+) -> dict | None:
+    """Return a revalidated AI Picks cache entry, if it is still useful."""
+    cached = await ai_rec_store.get_cached(user_id)
+    if not cached:
+        return None
+    seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map)
+    valid = _validate_cached(
+        cached,
+        exclude_keys=seen_keys,
+        exclude_item_ids=_watched_card_ids(seen_keys),
+        excluded_tmdb=set(profile.get("exclude_tmdb") or set()) | set(dismissed or set()),
+    )
+    if len(valid) < 3:  # Too stale to present as a complete shelf.
+        return None
+    return {
+        "items": valid,
+        "externalItems": await _requestable_picks(user_id, profile, dismissed, ""),
+        "message": "", "coldStart": False, "cached": True,
+    }
+
+
+async def get_cached_ai_recommendations(user_id: int) -> dict | None:
+    """Fast cache check for a panel open, with the usual safety revalidation."""
+    profile, history, cw_map, dismissed = await asyncio.gather(
+        rec_engine._collect_signal_profile(user_id), wh_store.get_recent(user_id, limit=80),
+        cw_store.get_all(user_id), dismissed_store.get_dismissed_ids(user_id),
+    )
+    return await _cached_ai_recommendations(
+        user_id, profile=profile, history=history, cw_map=cw_map, dismissed=dismissed,
+    )
+
+
 def _clean_agent_args(name: str, raw: object) -> dict:
     """Validate model function arguments before they reach catalogue code."""
     raw = raw if isinstance(raw, dict) else {}
@@ -903,6 +937,7 @@ async def _generate_agentic(
         raise failed("invalid_picks")
     if refresh:
         await rec_store.clear_cached(user_id)
+    if refresh or not query:
         await ai_rec_store.set_cached(user_id, items)
     logging.info("ai_rec_agent tool_count=%d elapsed_ms=%d candidate_count=%d final_pick_count=%d fallback_reason=%s",
                  calls_used, round((time.monotonic() - started) * 1000), len(catalogue.payloads), len(items), "")
@@ -989,23 +1024,11 @@ async def _generate(
         dismissed_store.get_dismissed_ids(user_id),
     )
     if read_cache:
-        cached = await ai_rec_store.get_cached(user_id)
+        cached = await _cached_ai_recommendations(
+            user_id, profile=profile, history=history, cw_map=cw_map, dismissed=dismissed,
+        )
         if cached:
-            cache_excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
-            valid = _validate_cached(
-                cached,
-                exclude_keys={str(entry.get("cw_key") or "") for entry in history} | set(cw_map),
-                exclude_item_ids=_watched_card_ids(
-                    {str(entry.get("cw_key") or "") for entry in history} | set(cw_map)
-                ),
-                excluded_tmdb=cache_excluded,
-            )
-            if len(valid) >= 3:  # else the cache is too stale — regenerate below
-                return {
-                    "items": valid,
-                    "externalItems": await _requestable_picks(user_id, profile, dismissed, ""),
-                    "message": "", "coldStart": False, "cached": True,
-                }
+            return cached
     stats = await _safe_stats(user_id)
 
     # A deliberate refresh should regenerate its TMDB-derived candidate pool,
