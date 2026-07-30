@@ -6690,6 +6690,34 @@ img {
   font-size: 0.82rem;
 }
 
+.ai-rec-assessment {
+  margin: 0;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid rgba(45, 212, 191, 0.32);
+  border-radius: 10px;
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.ai-rec-assessment > span {
+  display: block;
+  color: #99f6e4;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ai-rec-assessment > strong { display: block; margin-top: 0.18rem; color: #f0fdfa; font-size: 0.98rem; }
+.ai-rec-assessment > p { margin: 0.2rem 0 0; color: #ccfbf1; font-size: 0.82rem; line-height: 1.35; }
+.ai-rec-assessment--maybe { border-color: rgba(251, 191, 36, 0.32); background: rgba(245, 158, 11, 0.08); }
+.ai-rec-assessment--maybe > span { color: #fde68a; }
+.ai-rec-assessment--maybe > strong { color: #fffbeb; }
+.ai-rec-assessment--maybe > p { color: #fef3c7; }
+.ai-rec-assessment--unlikely { border-color: rgba(251, 113, 133, 0.3); background: rgba(244, 63, 94, 0.08); }
+.ai-rec-assessment--unlikely > span { color: #fda4af; }
+.ai-rec-assessment--unlikely > strong { color: #fff1f2; }
+.ai-rec-assessment--unlikely > p { color: #ffe4e6; }
+
 .ai-rec-section {
   margin: 0 0 0.6rem;
   font-size: 0.82rem;

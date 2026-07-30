@@ -40,6 +40,7 @@ export function AiRecPanel({
   const [items, setItems] = useState<AiRecItem[]>([]);
   const [externalItems, setExternalItems] = useState<RequestTitle[]>([]);
   const [message, setMessage] = useState('');
+  const [assessment, setAssessment] = useState<{ title: string; verdict: 'likely' | 'maybe' | 'unlikely'; reason: string } | null>(null);
   const [coldStart, setColdStart] = useState(false);
   const [loading, setLoading] = useState(true);
   const [asking, setAsking] = useState(false);
@@ -70,12 +71,14 @@ export function AiRecPanel({
     ctrl.current = controller;
     setLoading(true);
     setError('');
+    setAssessment(null);
     setAgentStatus('Searching your library');
     streamAiRecommendations({ initial: true }, setAgentStatus, controller.signal)
       .then((res) => {
         setItems(res.items || []);
         setExternalItems(res.externalItems || []);
         setMessage(res.message || '');
+        setAssessment(res.assessment || null);
         setColdStart(Boolean(res.coldStart));
       })
       .catch((err) => {
@@ -106,6 +109,7 @@ export function AiRecPanel({
     setAgentStatus('Searching your library');
     setLastAgentInput(input);
     setError('');
+    setAssessment(null);
     const controller = new AbortController();
     let timedOut = false;
     const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 30_000);
@@ -115,6 +119,7 @@ export function AiRecPanel({
         setItems(res.items || []);
         setExternalItems(res.externalItems || []);
         setMessage(res.message || '');
+        setAssessment(res.assessment || null);
         setColdStart(Boolean(res.coldStart));
       })
       .catch((err) => {
@@ -234,6 +239,11 @@ export function AiRecPanel({
                 {coldStart && (
                   <p className="ai-rec-note">Still learning your taste — here's what's fresh. The more you watch and listen, the sharper these get.</p>
                 )}
+                {assessment && <section className={`ai-rec-assessment ai-rec-assessment--${assessment.verdict}`} aria-label={`Taste match for ${assessment.title}`}>
+                  <span>{assessment.verdict === 'likely' ? 'Likely a fit' : assessment.verdict === 'maybe' ? 'Could be a fit' : 'Probably not your usual pick'}</span>
+                  <strong>{assessment.title}</strong>
+                  <p>{assessment.reason}</p>
+                </section>}
                 {split ? (
                   <>
                     <section className="ai-rec-group">
@@ -252,7 +262,7 @@ export function AiRecPanel({
                   <div className="ai-rec-external-head"><h3 className="ai-rec-section">Beyond your library</h3><p>Good fits we don’t have yet. Request one if it belongs here.</p></div>
                   <div className="ai-rec-external-grid">{externalItems.map((item) => <article key={`${item.kind}:${item.tmdbId}`} className="ai-request-card">
                     {item.posterPath ? <img src={tmdbImageUrl(item.posterPath, 'w342')} alt="" /> : <span className="ai-request-card-art">{item.kind === 'tv' ? <TvIcon /> : <FilmIcon />}</span>}
-                    <div><span>{item.kind === 'tv' ? 'Series' : 'Movie'}</span><h4>{item.title}</h4>{item.year && <small>{item.year}</small>}<Button size="sm" variant="outline" onClick={() => onRequestTitle(item)}><ListPlusIcon /> Request</Button></div>
+                    <div><span>{item.kind === 'tv' ? 'Series' : 'Movie'}</span><h4>{item.title}</h4>{item.year && <small>{item.year}</small>}<Button size="sm" onClick={() => onRequestTitle(item)}><ListPlusIcon /> Request</Button></div>
                   </article>)}</div>
                 </section>}
               </>
