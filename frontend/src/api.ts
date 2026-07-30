@@ -150,7 +150,7 @@ export async function askAiRecommendations(query: string, signal?: AbortSignal):
 
 /** Read the same-origin AI Picks SSE stream. POST keeps the user's ask out of URLs. */
 export async function streamAiRecommendations(
-  input: { query?: string; refresh?: boolean },
+  input: { initial?: boolean; query?: string; refresh?: boolean },
   onStatus: (status: string) => void,
   signal?: AbortSignal,
 ): Promise<AiRecResponse> {

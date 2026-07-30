@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { aiSuggestItem, ApiError, fetchAiModels, fetchTmdbPreview, resolveTmdbImdb } from './api';
+import { aiSuggestItem, ApiError, fetchAiModels, fetchTmdbPreview, resolveTmdbImdb, streamAiRecommendations } from './api';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -69,5 +69,22 @@ describe('api helpers', () => {
       status: 200,
       message: 'Server returned an HTML page instead of JSON. Sign in again and retry.',
     });
+  });
+
+  it('streams a cache-first AI Picks load and forwards its live status', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      'event: status\ndata: {"message":"Searching your library"}\n\nevent: result\ndata: {"items":[]}\n\n',
+      { headers: { 'content-type': 'text/event-stream' } },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+    const statuses: string[] = [];
+
+    const result = await streamAiRecommendations({ initial: true }, (status) => statuses.push(status));
+
+    expect(result).toEqual({ items: [] });
+    expect(statuses).toEqual(['Searching your library']);
+    expect(fetchMock).toHaveBeenCalledWith('/api/app/ai/recommendations/stream', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ initial: true }),
+    }));
   });
 });
