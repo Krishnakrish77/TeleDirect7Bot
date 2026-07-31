@@ -2324,6 +2324,22 @@ def _grouped_search_key(card, scores: dict[int, float], sort: str = "newest"):
     return (-score, _grouped_sort_key(sort)(card))
 
 
+def card_search_score(card, query: str) -> float:
+    """Return the strongest indexed search relevance score for one card.
+
+    Recommendation retrieval uses this to preserve an explicit title/person
+    query ahead of personalized tie-breaking.  It intentionally shares the
+    exact same indexed field weights as ordinary library search.
+    """
+    if isinstance(card, SeriesGroup):
+        return max((_search_score(query, item) for item in episodes_for_series(card.series_key)), default=0.0)
+    if isinstance(card, MovieGroup):
+        return max((_search_score(query, item) for item in variants_for_movie(card.movie_key)), default=0.0)
+    if isinstance(card, AlbumGroup):
+        return max((_search_score(query, item) for item in tracks_for_album(card.album_key)), default=0.0)
+    return _search_score(query, card)
+
+
 def episodes_for_series(series_key: str) -> List[HubItem]:
     """All episodes for a series, sorted by season then episode."""
     eps = [it for it in _items.values() if it.series_key == series_key and not it.hidden]

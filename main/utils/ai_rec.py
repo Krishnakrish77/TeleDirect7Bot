@@ -445,6 +445,104 @@ def _apply_picks(picks: list, index: dict, limit: int) -> list:
     return out
 
 
+def _local_rec_reason(payload: dict, profile: dict) -> str:
+    """Give deterministic fill-ins a truthful, compact explanation."""
+    preferred = {
+        str(genre).casefold() for genre in (profile.get("seed_genres") or {}).keys()
+    }
+    for genre in payload.get("genres") or []:
+        if str(genre).casefold() in preferred:
+            return f"Matches your {genre} taste."
+    themes = {str(theme).casefold() for theme in (profile.get("seed_keywords") or {}).keys()}
+    for keyword in payload.get("keywords") or []:
+        if str(keyword).casefold() in themes:
+            return f"Shares a theme you often enjoy: {keyword}."
+    return "A strong fit from your library."
+
+
+def _rerank_agent_picks(
+    model_items: list,
+    catalogue,
+    profile: dict,
+    limit: int,
+    *,
+    pinned_id: str = "",
+    metrics: dict | None = None,
+) -> list:
+    """Own the final AI shelf: grounded model choices, then safe local fills.
+
+    Gemini supplies the language and initial buckets; deterministic ranking
+    makes the shelf robust to short responses and prevents one genre/type from
+    swallowing the 60/40 comfort/discovery mix.
+    """
+    pinned = catalogue.payloads.get(pinned_id) if pinned_id else None
+    pinned_href = str(pinned.get("href") or "") if pinned else ""
+    model_hrefs = {str(item.get("href") or "") for item in model_items}
+    pool: list[tuple[dict, int, float, bool]] = []
+    for position, item in enumerate(model_items):
+        href = str(item.get("href") or "")
+        pool.append((item, position, getattr(catalogue, "scores", {}).get(href, 0.0), href == pinned_href))
+    payloads_by_href = catalogue.payloads_by_href() if hasattr(catalogue, "payloads_by_href") else [
+        (str(payload.get("href") or ""), payload) for payload in catalogue.payloads.values()
+    ]
+    for href, payload in payloads_by_href:
+        if href in model_hrefs:
+            continue
+        pool.append(({
+            **payload,
+            "recReason": _local_rec_reason(payload, profile),
+            "bucket": "comfort",
+        }, limit + len(pool), getattr(catalogue, "scores", {}).get(href, 0.0), href == pinned_href))
+    pool.sort(key=lambda entry: (not entry[3], entry[1] >= limit, -entry[2], entry[1]))
+
+    selected: list[dict] = []
+    selected_hrefs: set[str] = set()
+    genre_counts: Counter = Counter()
+    kind_counts: Counter = Counter()
+    for pass_index, (genre_cap, kind_cap) in enumerate(((2, 8), (3, 10), (10_000, 10_000))):
+        before = len(selected)
+        for item, _position, _score, is_pinned in pool:
+            if len(selected) >= limit:
+                break
+            href = str(item.get("href") or "")
+            if not href or href in selected_hrefs:
+                continue
+            genres = [str(genre) for genre in (item.get("genres") or [])[:2]]
+            kind = str(item.get("tmdbKind") or item.get("eyebrow") or "movie")
+            if not is_pinned and (any(genre_counts[genre] >= genre_cap for genre in genres) or kind_counts[kind] >= kind_cap):
+                continue
+            selected.append(item)
+            selected_hrefs.add(href)
+            kind_counts[kind] += 1
+            for genre in genres:
+                genre_counts[genre] += 1
+        if metrics is not None and pass_index and len(selected) > before:
+            metrics["diversity_relaxations"] = int(metrics.get("diversity_relaxations", 0)) + 1
+        if len(selected) >= limit:
+            break
+
+    # A 12-card shelf is deliberately seven familiar picks and five more
+    # adventurous ones.  Preserve model buckets whenever possible, otherwise
+    # move the least-personalized non-pinned picks to satisfy the target.
+    discovery_target = min(len(selected), limit - (limit * 3 // 5))
+    discoveries = [index for index, item in enumerate(selected) if item.get("bucket") == "discovery"]
+    if len(discoveries) < discovery_target:
+        needed = discovery_target - len(discoveries)
+        for index in reversed(range(len(selected))):
+            if needed <= 0:
+                break
+            if str(selected[index].get("href") or "") == pinned_href or selected[index].get("bucket") == "discovery":
+                continue
+            selected[index] = {**selected[index], "bucket": "discovery"}
+            needed -= 1
+    elif len(discoveries) > discovery_target:
+        for index in reversed(discoveries[discovery_target:]):
+            if str(selected[index].get("href") or "") == pinned_href:
+                continue
+            selected[index] = {**selected[index], "bucket": "comfort"}
+    return selected
+
+
 def _validate_cached(
     items: list,
     *,
@@ -870,13 +968,16 @@ def _clean_agent_args(name: str, raw: object) -> dict:
 class _AgentCatalogue:
     """A per-request, filtered view of grouped cards exposed to Gemini."""
 
-    def __init__(self, *, seen_keys: set[str], watched_ids: set[str], excluded_tmdb: set[tuple[int, str]]):
+    def __init__(self, *, profile: dict, seen_keys: set[str], watched_ids: set[str], excluded_tmdb: set[tuple[int, str]]):
+        self.profile = profile
         self.seen_keys = seen_keys
         self.watched_ids = watched_ids
         self.excluded_tmdb = excluded_tmdb
         self._art_cache: dict = {}
         self._by_href: dict[str, str] = {}
         self.payloads: dict[str, dict] = {}
+        self.scores: dict[str, float] = {}
+        self.source_counts: Counter = Counter()
 
     def _compact(self, identifier: str, payload: dict) -> dict:
         return {
@@ -891,9 +992,13 @@ class _AgentCatalogue:
             "availability": {"playable": True, "itemId": str(payload.get("itemId") or "")[:80]},
         }
 
-    def _register(self, cards: list) -> list[dict]:
+    def payloads_by_href(self):
+        return [(str(payload.get("href") or ""), payload) for payload in self.payloads.values()]
+
+    def _register(self, ranked_cards: list[tuple[object, float]]) -> list[dict]:
         from main.server import spa_routes as _spa
-        payloads = [_spa._card(card, art_cache=self._art_cache) for card in cards]
+        card_payloads = [(_spa._card(card, art_cache=self._art_cache), score) for card, score in ranked_cards]
+        payloads = [payload for payload, _score in card_payloads]
         payloads = _video_payloads(payloads)
         payloads = _dedup_payloads(payloads, self.seen_keys, self.watched_ids)
         payloads = _exclude_tmdb_payloads(payloads, self.excluded_tmdb)
@@ -903,6 +1008,7 @@ class _AgentCatalogue:
             payloads, exclude_keys=self.seen_keys, exclude_item_ids=self.watched_ids,
             excluded_tmdb=self.excluded_tmdb,
         )
+        score_by_href = {str(payload.get("href") or ""): score for payload, score in card_payloads}
         result: list[dict] = []
         for payload in payloads[:_AGENT_TOOL_RESULT_LIMIT]:
             href = str(payload.get("href") or "")
@@ -913,6 +1019,7 @@ class _AgentCatalogue:
                 identifier = f"card_{len(self.payloads) + 1}"
                 self._by_href[href] = identifier
                 self.payloads[identifier] = payload
+            self.scores[href] = max(self.scores.get(href, float("-inf")), score_by_href.get(href, 0.0))
             result.append(self._compact(identifier, self.payloads[identifier]))
         return result
 
@@ -927,7 +1034,7 @@ class _AgentCatalogue:
             cards, _ = media_index.query_grouped(
                 q=args["query"], year=args["year"], genre=args["genre"],
                 view=view, sort="newest" if args["sort"] == "relevance" else args["sort"],
-                limit=_AGENT_TOOL_RESULT_LIMIT,
+                limit=_AGENT_TOOL_RESULT_LIMIT * 3,
             )
         else:
             # query_grouped supports exact years; a small newest page is then
@@ -941,7 +1048,12 @@ class _AgentCatalogue:
                     return int(getattr(card, "year", None) or getattr(getattr(card, "poster_item", None), "year", 0) or 0)
                 cards = [card for card in cards if (not start or card_year(card) >= start)
                          and (not end or card_year(card) <= end)]
-        return self._register(list(cards))
+        ranked = rec_engine.rank_catalogue_cards(
+            list(cards), self.profile, query=args.get("query") or "", limit=_AGENT_TOOL_RESULT_LIMIT,
+        )
+        result = self._register(ranked)
+        self.source_counts[name] += len(result)
+        return result
 
 
 def _function_calls(response: object) -> tuple[dict | None, list[dict]]:
@@ -974,7 +1086,7 @@ async def _generate_agentic(
     seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map)
     watched_ids = _watched_card_ids(seen_keys)
     excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
-    catalogue = _AgentCatalogue(seen_keys=seen_keys, watched_ids=watched_ids, excluded_tmdb=excluded)
+    catalogue = _AgentCatalogue(profile=profile, seen_keys=seen_keys, watched_ids=watched_ids, excluded_tmdb=excluded)
     intent = query or "Refresh the user's library picks with a useful, varied set."
     contents = [{"role": "user", "parts": [{"text": "\n".join([
         "You curate a private playable media library.",
@@ -1039,17 +1151,29 @@ async def _generate_agentic(
     picks = result.get("picks") if isinstance(result, dict) else None
     items = _apply_picks(picks, catalogue.payloads, limit)
     # Revalidate after model work in case a deletion/hide/finish raced a tool.
-    items = _balanced_buckets(_validate_cached(
+    assessment_raw = result.get("assessment") if isinstance(result, dict) else None
+    pinned_id = str(assessment_raw.get("id") or "") if isinstance(assessment_raw, dict) else ""
+    model_pick_count = len(items)
+    rerank_metrics: dict = {"diversity_relaxations": 0}
+    items = _rerank_agent_picks(items, catalogue, profile, limit, pinned_id=pinned_id, metrics=rerank_metrics)
+    items = _validate_cached(
         items, exclude_keys=seen_keys, exclude_item_ids=watched_ids, excluded_tmdb=excluded,
-    ))
+    )
     if not items:
         raise failed("invalid_picks")
     if refresh:
         await rec_store.clear_cached(user_id)
     if refresh or not query:
         await ai_rec_store.set_cached(user_id, items)
-    logging.info("ai_rec_agent tool_count=%d elapsed_ms=%d candidate_count=%d final_pick_count=%d fallback_reason=%s",
-                 calls_used, round((time.monotonic() - started) * 1000), len(catalogue.payloads), len(items), "")
+    logging.info(
+        "ai_rec_agent tool_count=%d elapsed_ms=%d candidate_count=%d scored_candidate_count=%d "
+        "model_pick_count=%d final_pick_count=%d comfort_count=%d discovery_count=%d "
+        "source_counts=%s diversity_relaxations=%d fallback_reason=%s",
+        calls_used, round((time.monotonic() - started) * 1000), len(catalogue.payloads), len(getattr(catalogue, "scores", {})),
+        model_pick_count, len(items), sum(item.get("bucket") != "discovery" for item in items),
+        sum(item.get("bucket") == "discovery" for item in items), dict(getattr(catalogue, "source_counts", {})),
+        rerank_metrics["diversity_relaxations"], "",
+    )
     return {
         "items": items,
         "externalItems": await _requestable_picks(user_id, profile, dismissed, query),

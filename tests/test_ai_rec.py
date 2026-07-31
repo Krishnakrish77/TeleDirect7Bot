@@ -10,7 +10,7 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 os.environ.setdefault("OWNER_ID", "1")
 
-from main.utils import ai_rec
+from main.utils import ai_rec, rec_engine
 
 
 def _card(href, watch_key="", title="T", eyebrow="Movie"):
@@ -195,7 +195,7 @@ class AiRecGroundingTest(unittest.TestCase):
                 result = await ai_rec._generate_agentic(
                     7, query="", refresh=False, limit=12, progress=lambda status: _append(statuses, status),
                 )
-            self.assertEqual([item["href"] for item in result["items"]], ["/two"])
+            self.assertEqual([item["href"] for item in result["items"]], ["/two", "/one"])
             self.assertIn("Searching your library", statuses)
             self.assertIn("Curating picks", statuses)
             self.assertEqual(
@@ -238,6 +238,61 @@ class AiRecGroundingTest(unittest.TestCase):
         self.assertIn("Strong genres: Science Fiction, Mystery", summary)
         self.assertIn("Preferred themes: time travel, existential", summary)
         self.assertIn("Genres to avoid unless requested: Comedy", summary)
+
+    def test_personalized_catalogue_ranker_uses_affinities_and_preserves_search_relevance(self):
+        def card(message_id, title, genres, *, director="", keywords=None):
+            return SimpleNamespace(
+                message_id=message_id, title=title, tmdb_id=message_id, tmdb_kind="movie",
+                series_key="", movie_key="", tmdb_genres=genres, director=director,
+                tmdb_keywords=keywords or [], overview="Overview",
+            )
+
+        affinity = card(1, "Affinity", ["Drama"], director="Denis Villeneuve", keywords=["memory"])
+        avoided = card(2, "Avoided", ["Comedy"], director="Other")
+        profile = {
+            "seed_genres": Counter({"Drama": 5}),
+            "seed_keywords": Counter({"memory": 4}),
+            "seed_directors": Counter({"denis villeneuve": 3}),
+            "negative_genres": Counter({"Comedy": 5}),
+        }
+        with patch.object(rec_engine.media_index, "_items", {1: affinity, 2: avoided}):
+            ranked = rec_engine.rank_catalogue_cards([avoided, affinity], profile, limit=2)
+        self.assertEqual([item.title for item, _score in ranked], ["Affinity", "Avoided"])
+
+        with patch.object(rec_engine.media_index, "_items", {1: affinity, 2: avoided}), patch.object(
+            rec_engine.media_index, "card_search_score", side_effect=lambda item, query: 9 if item is avoided else 2
+        ):
+            searched = rec_engine.rank_catalogue_cards([affinity, avoided], profile, query="title", limit=2)
+        self.assertEqual([item.title for item, _score in searched], ["Avoided", "Affinity"])
+
+    def test_agent_final_reranker_fills_and_enforces_a_balanced_shelf(self):
+        payloads = {
+            f"card_{index}": {
+                "href": f"/{index}", "title": f"Title {index}",
+                "genres": ["Drama" if index < 7 else "Mystery"],
+                "tmdbKind": "movie" if index % 2 else "tv",
+            }
+            for index in range(12)
+        }
+
+        class Catalogue:
+            scores = {f"/{index}": float(12 - index) for index in range(12)}
+
+            def __init__(self):
+                self.payloads = payloads
+
+            def payloads_by_href(self):
+                return [(payload["href"], payload) for payload in self.payloads.values()]
+
+        first = {**payloads["card_0"], "recReason": "Model choice", "bucket": "comfort"}
+        result = ai_rec._rerank_agent_picks(
+            [first], Catalogue(), {"seed_genres": Counter({"Drama": 1})}, 12, pinned_id="card_0",
+        )
+        self.assertEqual(len(result), 12)
+        self.assertEqual(result[0]["href"], "/0")
+        self.assertEqual(sum(item["bucket"] == "comfort" for item in result), 7)
+        self.assertEqual(sum(item["bucket"] == "discovery" for item in result), 5)
+        self.assertTrue(all(item["recReason"] for item in result))
 
     def test_taste_match_prompt_and_assessment_require_a_grounded_title(self):
         prompt = ai_rec._build_prompt("Likes dystopian mysteries", [], "Will I like Silo?", 8)
