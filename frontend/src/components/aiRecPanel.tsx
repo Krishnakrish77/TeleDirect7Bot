@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { dismissRecommendation, streamAiRecommendations, trackRecommendationEvents } from '../api';
 import type { AiRecItem, AiRecResponse, HubCard, RequestTitle } from '../types';
-import { FilmIcon, ListPlusIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
+import { FilmIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
 import type { WatchTrack } from '../types';
 import { AiMixPanel } from './aiMixPanel';
 import { MediaCard } from './mediaCard';
@@ -293,7 +293,7 @@ export function AiRecPanel({
                       {item.overview && <p className="ai-request-card-overview">{item.overview}</p>}
                       <div className="ai-request-card-actions">
                         {item.tmdbUrl && <Button asChild variant="secondary" size="sm" className="ai-request-card-details"><a href={item.tmdbUrl} target="_blank" rel="noreferrer">Details <span aria-hidden="true">↗</span></a></Button>}
-                        <Button size="sm" onClick={() => onRequestTitle(item)}><ListPlusIcon /> Request</Button>
+                        <Button size="sm" onClick={() => onRequestTitle(item)}>Request</Button>
                       </div>
                     </div>
                   </article>)}</div>
