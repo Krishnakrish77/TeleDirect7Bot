@@ -1,202 +1,225 @@
-<h1 align="center">TeleDirectBot</h3>
-<p align="center">
-  <a href="https://github.com/TechShreyash/TG-Direct-Link-Generator">
-    <img src="https://socialify.git.ci/Krishnakrish77/TeleDirect7Bot/image?description=1&font=Source%20Code%20Pro&forks=1&issues=1&pattern=Charlie%20Brown&pulls=1&stargazers=1&theme=Dark" alt="TeleDirect7Bot" width="640" height="320" />
-  </a>
-  <p align="center">
-    A Telegram Bot To Get Direct Links Of Telegram Files.<br/>
-    <a href="http://telegram.me/TeleDirect7Bot"><strong>Demo Bot</strong></a>
-    <br />    
-  </p>
-</p>
+<div align="center">
 
-<hr>
+# TeleDirect7Bot
 
-<details open="open">
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#about-this-bot">About this Bot</a>
-      <ul>
-        <li><a href="#original-repository">Original Repository</a></li>
-      </ul>
-    </li>
-    <li>
-      <a href="#how-to-make-your-own">How to make your own</a>
-      <ul>
-        <li><a href="#deploy-on-heroku">Deploy using Heroku</a></li>
-        <li><a href="#deploy-on-koyeb">Deploy using Koyeb</a></li>
-        <li><a href="#host-it-on-vps-or-locally">Run it in a VPS / local</a></li>
-      </ul>
-    </li>
-    <li><a href="#setting-up-things">Setting up things</a></li>
-    <ul>
-      <li><a href="#mandatory-vars">Mandatory Vars</a></li>
-      <li><a href="#optional-vars">Optional Vars</a></li>
-    </ul>
-    <li><a href="#how-to-use-the-bot">How to use the bot</a></li>    
-    <li><a href="#contact-me">Contact me</a></li>    
-  </ol>
-</details>
+**Your Telegram media library, with a proper home on the web.**
 
-## About This Bot
+Save media through Telegram, then browse, stream, search, and manage it from a private library experience.
 
-<p align="center">
-    <a herf="https://github.com/TechShreyash/TG-Direct-Link-Generator">
-        <img src="https://telegra.ph/file/4d124400b985b2fe6ee1c.jpg" height="100" width="100" alt="Telegram Logo">
-    </a>
-</p>
-<p align='center'>
-    This bot will give you stream links for Telegram files without the need of waiting till the download completes
-</p>
+[Getting started](#quick-start) · [Configuration](#configuration) · [Deploy with Docker](#docker) · [Admin guide](#daily-use)
 
-### Original Repository
+</div>
 
-The main working part was taken from [TG-Direct-Link-Generator](https://github.com/TechShreyash/TG-Direct-Link-Generator).
+---
 
-## How to make your own
+## What it does
 
-Either you could locally host or deploy on [Heroku](https://heroku.com) or on [Koyeb](https://www.koyeb.com)
+TeleDirect7Bot keeps media in a Telegram channel while providing a web app for the library around it.
 
-### Deploy on Heroku
+| | Capability |
+| --- | --- |
+| 🎬 | Browse movies and series with TMDB-enriched posters, details, cast, genres, and search. |
+| ▶️ | Stream or download files directly from Telegram, including HLS transcoding when needed. |
+| 📚 | Track watch progress, likes, watchlists, requests, subtitles, and playback statistics. |
+| ✨ | Get library-grounded AI Picks for movies and series, plus music mixes as a separate experience. |
+| 🛠️ | Operate the catalogue from the admin console: enrich metadata, fix titles, inspect health, and remove stale entries. |
 
-Press the below button to fast deploy to Heroku
+The service is intended for a private media library. You are responsible for ensuring that the media you store and stream is lawful to use.
 
-[![Deploy To Heroku](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
+## Architecture at a glance
 
-then goto the <a href="#mandatory-vars">variables tab</a> for more info on setting up environmental variables.
+```text
+Telegram bot / BIN channel
+           │
+           ├── media files + durable catalogue snapshots
+           │
+           ▼
+Python service ──► React web app ──► private library, player & admin tools
+           │
+           ├── optional MongoDB durable catalogue
+           ├── optional TMDB enrichment
+           └── optional Gemini AI Picks / metadata assistance
+```
 
-### Deploy on Koyeb
+## Quick start
 
-Press the below button to fast deploy to Koyeb
+### 1. Create the Telegram pieces
 
-[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?name=link4ubot&repository=Krishnakrish77%2FTeleDirect7Bot&branch=main&instance_type=free&env%5BAPI_HASH%5D=c86621e00844cf2e8954d747afb775df&env%5BAPI_ID%5D=14403871&env%5BBIN_CHANNEL%5D=-1002297825383&env%5BBOT_TOKEN%5D=7893322374%3AAAEY_Fm_nIenrdIug7X7FEyX8pnM6u38GaA&env%5BFQDN%5D=%7B%7B+KOYEB_PUBLIC_DOMAIN+%7D%7D&env%5BHAS_SSL%5D=True&env%5BNO_PORT%5D=True&ports=8080%3Bhttp%3B%2F&hc_protocol%5B8080%5D=tcp&hc_grace_period%5B8080%5D=5&hc_interval%5B8080%5D=30&hc_restart_limit%5B8080%5D=3&hc_timeout%5B8080%5D=5&hc_path%5B8080%5D=%2F&hc_method%5B8080%5D=get)
+1. Create a Telegram API application at [my.telegram.org](https://my.telegram.org).
+2. Create a bot with [@BotFather](https://t.me/BotFather).
+3. Create a private channel to act as the `BIN_CHANNEL`.
+4. Add the bot as an administrator in that channel.
+5. Get your Telegram numeric user ID and set it as `OWNER_ID`.
 
-then goto the <a href="#mandatory-vars">variables tab</a> for more info on setting up environmental variables.
+To find the channel ID, forward a post from the channel to a Telegram ID helper bot and use the reported ID. It usually starts with `-100`.
 
-### Host it on VPS or Locally
+### 2. Configure the service
+
+Create a `.env` file in the repository root. It is ignored by Git—keep it private.
+
+```dotenv
+# Required Telegram configuration
+API_ID=your_telegram_api_id
+API_HASH=your_telegram_api_hash
+BOT_TOKEN=your_bot_token_from_botfather
+BIN_CHANNEL=-1001234567890
+OWNER_ID=your_numeric_telegram_user_id
+
+# Public address used in generated stream links
+FQDN=media.example.com
+HAS_SSL=true
+NO_PORT=true
+
+# Required for persistent web sessions. Generate with:
+# python -c "import secrets; print(secrets.token_hex(32))"
+JWT_SECRET=replace_with_a_long_random_value
+
+# Required only when enabling Telegram Login for the web app
+BOT_USERNAME=your_bot_username_without_at
+
+# Optional integrations
+TMDB_API_KEY=your_tmdb_api_key
+GEMINI_API_KEY=your_gemini_api_key
+WYZIE_API_KEY=your_wyzie_api_key
+```
+
+Never commit `.env`, bot tokens, API keys, session strings, or database URLs. Use your deployment provider's secret/environment-variable settings in production.
+
+### 3. Run it
+
+The local workflow needs Python 3.12+ and Node 22+ for the React web app.
 
 ```sh
 git clone https://github.com/Krishnakrish77/TeleDirect7Bot.git
 cd TeleDirect7Bot
-virtualenv -p /usr/bin/python3 venv
-. ./venv/bin/activate
+
+python3 -m venv .venv
+. .venv/bin/activate
 pip install -r requirements.txt
-python3 -m main
+
+cd frontend
+npm ci
+npm run build
+cd ..
+
+python -m main
 ```
 
-and to stop the whole bot,
- do <kbd>CTRL</kbd>+<kbd>C</kbd>
+Open `http://localhost:8080` for a local run. Set `FQDN` to your public hostname before sharing generated links outside your machine.
 
-## Setting up things
+## Docker
 
-If you're on Heroku or Koyeb, just add these in the Environmental Variables
-or if you're Locally hosting, create a file named `.env` in the root directory and add all the variables there.
-An example of `.env` file:
+Docker is the recommended production path. The image builds the React app and includes `ffmpeg`/`ffprobe` for media playback support.
 
 ```sh
-API_ID=452525
-API_HASH=esx576f8738x883f3sfzx83
-BOT_TOKEN=55838383:yourtbottokenhere
-BIN_CHANNEL=-100
-MULTI_TOKEN1=55838383:yourfirstmulticlientbottokenhere
-MULTI_TOKEN2=55838383:yoursecondmulticlientbottokenhere
-MULTI_TOKEN3=55838383:yourthirdmulticlientbottokenhere
-PORT=8080
-FQDN=yourserverip
-HAS_SSL=False
+docker build -t teledirect7bot .
+docker run --detach \
+  --name teledirect7bot \
+  --env-file .env \
+  --publish 8080:8080 \
+  --restart unless-stopped \
+  teledirect7bot
 ```
 
-### Mandatory Vars
+Put a TLS-enabled reverse proxy in front of the container and set `FQDN`, `HAS_SSL=true`, and `NO_PORT=true`. The application listens on port `8080` by default; change it with `PORT` if needed.
 
-`API_ID` : Goto [my.telegram.org](https://my.telegram.org) to obtain this.
+## Configuration
 
-`API_HASH` : Goto [my.telegram.org](https://my.telegram.org) to obtain this.
+### Required
 
-`BOT_TOKEN` : Get the bot token from [@BotFather](https://telegram.dog/BotFather)
+| Variable | Purpose |
+| --- | --- |
+| `API_ID` | Telegram application ID from [my.telegram.org](https://my.telegram.org). |
+| `API_HASH` | Telegram application hash from the same application. |
+| `BOT_TOKEN` | Token issued by [@BotFather](https://t.me/BotFather). |
+| `BIN_CHANNEL` | Numeric ID of the private Telegram channel that stores the media. |
+| `OWNER_ID` | Your numeric Telegram user ID; controls owner-only actions. |
 
-`BIN_CHANNEL` : Create a new channel (private/public), post something in your channel. Forward that post to [@missrose_bot](https://telegram.dog/MissRose_bot) and **reply** `/id`. Now copy paste the forwarded channel ID in this field. 
+### Web and deployment
 
-`OWNER_ID` : Your Telegram User ID
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `8080` | HTTP port the service listens on. |
+| `WEB_SERVER_BIND_ADDRESS` | `0.0.0.0` | Bind address for the web server. |
+| `FQDN` | bind address | Public hostname used for generated links. |
+| `HAS_SSL` | `false` | Generate HTTPS links when `true`. |
+| `NO_PORT` | `false` | Omit the port from generated links when a proxy serves standard HTTP(S) ports. |
+| `JWT_SECRET` | generated per boot | A persistent, random secret for web sessions. Set this in production. |
+| `BOT_USERNAME` | — | Bot username for Telegram Login; omit `@`. |
+| `ADMIN_TOKEN_TTL_MIN` | `15` | Validity of one-time admin DM links. |
+| `ADMIN_SESSION_TTL_MIN` | `60` | Validity of an admin browser session. |
 
-### For MultiClient
+### Catalogue and metadata
 
-`MULTI_TOKEN1`: Add your first bot token or session strings here.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TMDB_API_KEY` | — | Enables TMDB movie/series metadata, artwork, trailers, and discovery. |
+| `GEMINI_API_KEY` | — | Enables Gemini-backed, library-grounded AI Picks and admin metadata assistance. |
+| `WYZIE_API_KEY` | — | Enables server-side subtitle search. Never expose this key to the browser. |
+| `STORE_BACKEND` | — | Set to `mongo` to use MongoDB for the durable catalogue. |
+| `MONGO_URI` | — | Required when `STORE_BACKEND=mongo`. |
+| `MONGO_DB` | `teledirect` | MongoDB database name. |
+| `MONGO_COLLECTION` | `items` | MongoDB catalogue collection. |
+| `MONGO_META_COLLECTION` | `meta` | MongoDB metadata collection. |
+| `MEDIA_INDEX_SEED_OVERLAP` | `32` | Recent channel messages rechecked at normal startup. |
+| `MEDIA_INDEX_SEED_DEPTH` | `800` | History window for recovery or explicit reconciliation. |
 
-`MULTI_TOKEN2`: Add your second bot token or session strings here.
+### Streaming and throughput
 
-you may also add as many as bots you want. (max limit is not tested yet)
-`MULTI_TOKEN3`, `MULTI_TOKEN4`, etc.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `WORKERS` | `6` | Maximum concurrent update workers. |
+| `SLEEP_THRESHOLD` | `60` | Retry FloodWait exceptions at or below this many seconds. |
+| `INDEX_CONCURRENCY` | `3` | Parallel catalogue indexing/enrichment work. |
+| `CODEC_PROBE_CONCURRENCY` | `3` | Parallel `ffprobe` jobs. Keep modest on small hosts. |
+| `MAX_STREAMS_TOTAL` | `25` | Total concurrent streams allowed. |
+| `MAX_STREAMS_PER_IP` | `8` | Concurrent streams per client IP. |
+| `HLS_MAX_CONCURRENT` | `2` | Parallel HLS segment work. |
+| `HLS_SESSION_MAX` | `2` | Active HLS sessions. |
+| `HLS_TRANSCODE_MAX` | `1` | Concurrent transcoding HLS sessions. |
 
+### Optional bot capabilities
 
+| Variable | Purpose |
+| --- | --- |
+| `MULTI_TOKEN1`, `MULTI_TOKEN2`, … | Extra bot tokens/session strings for multi-client streaming capacity. |
+| `USER_SESSION` | Telegram user session string for protected-channel grabs. |
+| `USER_API_ID`, `USER_API_HASH` | Separate Telegram API application used with `USER_SESSION`. |
+| `BANNED_CHANNELS`, `BANNED_USERS` | Space-separated numeric IDs to block. |
+| `GRAB_URL_MAX_BYTES` | Maximum remote file size accepted by `/grab`; default 1.5 GiB. |
 
-### Optional Vars
+## MongoDB migration
 
-`SLEEP_THRESHOLD` : Set a sleep threshold for flood wait exceptions happening globally in this telegram bot instance, below which any request that raises a flood wait will be automatically invoked again after sleeping for the required amount of time. Flood wait exceptions requiring higher waiting times will be raised. Defaults to 60 seconds.
+The default catalogue is backed by Telegram snapshots. For a large or long-lived library, MongoDB is recommended.
 
-`WORKERS` : Number of maximum concurrent workers for handling incoming updates. Defaults to `3`
+1. Set `MONGO_URI` but leave `STORE_BACKEND` unset.
+2. Start the service and open `/admin`.
+3. Select **Migrate → Mongo** and verify the document count in your database.
+4. Set `STORE_BACKEND=mongo` and restart the service.
 
-`PORT` : The port that you want your webapp to be listened to. Defaults to `8080`
+Mongo mode starts strictly: an invalid or unreachable URI stops the application instead of silently falling back to a temporary local catalogue.
 
-`WEB_SERVER_BIND_ADDRESS` : Your server bind address. Defauls to `0.0.0.0`
+## Daily use
 
-`NO_PORT` : (can be either `True` or `False`) If you don't want your port to be displayed. You should point your `PORT` to `80` (http) or `443` (https) for the links to work. Ignore this if you're on Heroku.
+1. Send or forward supported media to the bot. It stores the media in `BIN_CHANNEL` and replies with a stream/download link.
+2. Open the web app to browse the library, continue playback, manage your watchlist, or request a missing title.
+3. Visit `/admin` through the owner flow to enrich metadata, repair catalogue entries, inspect operational health, and run maintenance tasks.
 
-`FQDN` :  A Fully Qualified Domain Name if present. Defaults to `WEB_SERVER_BIND_ADDRESS`
+If you add multiple bot clients, add every one of them as an administrator in `BIN_CHANNEL`.
 
-`HAS_SSL` : (can be either `True` or `False`) If you want the generated links in https format.
+## Troubleshooting
 
-`PING_INTERVAL` : The time in ms you want the servers to be pinged each time to avoid sleeping (Only for Heroku). Defaults to `1200` or 20 minutes.
+| Symptom | Check |
+| --- | --- |
+| Generated links work only locally | Set `FQDN` to the public hostname and configure `HAS_SSL` / `NO_PORT` to match your proxy. |
+| The bot cannot access stored files | Confirm the bot is an administrator of `BIN_CHANNEL` and the channel ID is correct. |
+| Users are logged out after deploys | Set a stable, high-entropy `JWT_SECRET`. |
+| No posters or metadata | Add a valid `TMDB_API_KEY`, then run enrichment from `/admin`. |
+| AI Picks fall back to library shelves | Check `GEMINI_API_KEY` and server logs; the deterministic library fallback remains available. |
+| Mongo mode will not start | Verify `MONGO_URI`, connectivity, and that `STORE_BACKEND=mongo` is intentional. |
 
-`ADMIN_TOKEN_TTL_MIN` : Minutes the one-time `/admin` DM link stays valid. Defaults to `15`. Bump it (e.g. `120`) during testing so you don't have to keep re-requesting the link.
+## Credits and license
 
-`ADMIN_SESSION_TTL_MIN` : Minutes an admin session cookie stays signed in after the one-time link is opened. Defaults to `60`. Set higher (e.g. `480` for an 8-hour session) when you're iterating on admin features.
+The original streaming implementation was based on [TG-Direct-Link-Generator](https://github.com/TechShreyash/TG-Direct-Link-Generator). See [LICENSE](LICENSE) for licensing details.
 
-`INDEX_CONCURRENCY` : Max number of bin messages the auto-indexer (caption rewrite + TMDB enrich) processes at once. Defaults to `3`. Higher lets bursts of uploads land faster; lower reduces FloodWait risk on busy Telegram accounts.
-
-`CODEC_PROBE_CONCURRENCY` : Max parallel ffprobe subprocesses across both per-upload and the bulk `/admin/probe-codecs` pass. Defaults to `3`. Each probe holds a Telegram range stream + an ffprobe process, so keep this modest unless your container is generously sized.
-
-`HUB_HOME_SHELVES` : Max number of non-empty shelves to render on the React Home page after priority sorting. Defaults to `7`. Clamped to `[1, 12]`.
-
-`HUB_GENRE_SHELVES` : How many TMDB-genre rows to make eligible for the hub landing page in addition to the core rows. Defaults to `3`. Clamped to `[1, 20]`. The final React Home page still respects `HUB_HOME_SHELVES`, so genre rows fill remaining shelf budget after higher-priority rows.
-
-`WYZIE_API_KEY` : Optional server-side key for user-requested subtitle search. Obtain one from Wyzie, store it only in the deployment environment, and never add it to frontend configuration. The player exposes **Find subtitles** only through this backend proxy. Searches are cached for six hours; limits are 50 searches and 10 attachments per user per UTC day, with a global provider budget of 800 requests/day.
-
-### MongoDB (optional — recommended once the catalogue passes a few thousand items)
-
-`STORE_BACKEND` : Set to `mongo` to use MongoDB as the durable catalogue store. Telegram snapshot writes are disabled in this mode. Mongo startup is strict: a missing or unavailable Mongo connection stops the app instead of silently falling back to `/tmp` JSON + pinned Telegram snapshots. Unset keeps the legacy path.
-
-`MONGO_URI` : Atlas SRV connection string (`mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority`). Required when `STORE_BACKEND=mongo`.
-
-`MONGO_DB` : Database name. Defaults to `teledirect`.
-
-`MONGO_COLLECTION` : Items collection name. Defaults to `items`.
-
-`MONGO_META_COLLECTION` : Meta (singleton key/values like `latest_seen_id`) collection name. Defaults to `meta`.
-
-`MEDIA_INDEX_SEED_OVERLAP` : Number of recent BIN message IDs rechecked on a normal startup after the durable catalogue is restored. Defaults to `32`. This catches upload/write-through races and recent deletions without rescanning the full recovery window on every deploy.
-
-`MEDIA_INDEX_SEED_DEPTH` : Bounded BIN history window used only for cold recovery or an explicit full reconciliation. Defaults to `800`.
-
-`MEDIA_INDEX_RECONCILE_BATCH` / `MEDIA_INDEX_RECONCILE_INTERVAL` : Background safety audit for BIN deletions missed while the app was offline. Defaults to `100` message IDs every `7200` seconds (one Telegram request every two hours); it resumes from a persisted cursor and never full-scans at startup.
-
-**Migration flow**: set `MONGO_URI` first (leave `STORE_BACKEND` unset), boot the bot, click **Migrate → Mongo** on `/admin`. After the count is verified in Atlas, set `STORE_BACKEND=mongo` and redeploy. Snapshots-to-BIN-channel become a no-op from then on.
-
-
-
-## How to use the bot
-
-:warning: **Before using the  bot, don't forget to add all the bots (multi-client ones too) to the `BIN_CHANNEL` as an admin**
- 
-`/start` : To check if the bot is alive or not.
-
-To get an instant stream link, just forward any media to the bot and boom! You get a stream link and a direct download link.
-
-## FAQ
-
-- How long the links will remain valid or is there any expiration time for the links generated by the bot?
-> The links will will be valid as longs as your bot is alive and you haven't deleted the log channel.
-
-## Contact me
-
-You can contact on [@Krishnakrish77](https://telegram.me/Krishnakrish77)
+For project contact, reach [@Krishnakrish77](https://t.me/Krishnakrish77) on Telegram.
