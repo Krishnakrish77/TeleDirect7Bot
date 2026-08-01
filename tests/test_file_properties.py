@@ -32,8 +32,8 @@ class LinkMarkupTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[0][0].style, ButtonStyle.PRIMARY)
         self.assertEqual(rows[1][0].text, "↗ GitHub")
         self.assertEqual(rows[1][0].url, PROJECT_REPOSITORY_URL)
-        self.assertEqual(rows[2][0].text, "🗑 Delete link")
-        self.assertEqual(rows[2][0].style, ButtonStyle.DANGER)
+        self.assertEqual(rows[1][1].text, "🗑 Delete link")
+        self.assertEqual(rows[1][1].style, ButtonStyle.DANGER)
 
     async def test_channel_link_message_includes_repository_button_without_delete(self):
         markup, _, _ = await gen_link(_Message(), _Message(), from_channel=True)

@@ -128,13 +128,17 @@ async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
         InlineKeyboardButton("▶ Watch", url=page_link, style=ButtonStyle.PRIMARY),
         InlineKeyboardButton("⬇ Download", url=download_link),
     ]]
-    buttons.append([InlineKeyboardButton("↗ GitHub", url=PROJECT_REPOSITORY_URL)])
     if not from_channel:
-        buttons.append([InlineKeyboardButton(
-            "🗑 Delete link",
-            callback_data=f"msgdelconf2_{log_msg.id}_{get_media_file_unique_id(log_msg)}",
-            style=ButtonStyle.DANGER,
-        )])
+        buttons.append([
+            InlineKeyboardButton("↗ GitHub", url=PROJECT_REPOSITORY_URL),
+            InlineKeyboardButton(
+                "🗑 Delete link",
+                callback_data=f"msgdelconf2_{log_msg.id}_{get_media_file_unique_id(log_msg)}",
+                style=ButtonStyle.DANGER,
+            ),
+        ])
+    else:
+        buttons.append([InlineKeyboardButton("↗ GitHub", url=PROJECT_REPOSITORY_URL)])
     reply_markup = InlineKeyboardMarkup(buttons)
 
     return reply_markup, Stream_Text, download_link
