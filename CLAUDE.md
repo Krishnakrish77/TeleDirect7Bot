@@ -11,7 +11,11 @@ pip install -r requirements.txt
 python3 -m main          # entry point is main/__main__.py
 ```
 
-Runtime is pinned to **Python 3.9.20** (`runtime.txt`). The Procfile launches the same command on Heroku/Koyeb (`web: python -m main`).
+Production uses the **Python 3.12** Docker image in `Dockerfile`; it also
+builds the React app with Node 22 and installs `ffmpeg`/`ffprobe` for HLS
+playback. Use that Dockerfile for every deployment. The legacy Heroku
+buildpack files were intentionally retired because they could not build the
+frontend or provide the media tooling the application needs.
 
 ### Tests
 
@@ -31,7 +35,7 @@ This is a Telegram → HTTP bridge: the bot stores every uploaded file as a mess
 1. `StreamBot` (Pyrogram `Client`) connects and registers plugins from `main/bot/plugins/`.
 2. `initialize_clients()` spins up extra Pyrogram clients from `MULTI_TOKEN1..N` env vars to parallelize streaming load.
 3. `web_server()` (aiohttp) binds `Var.PORT` and serves `main/server/stream_routes.py`.
-4. If `ON_HEROKU`, a `ping_server()` keep-alive task is launched.
+4. On Koyeb, a `ping_server()` keep-alive task is launched.
 
 `pyrogram.idle()` keeps the bot alive; `cleanup()` shuts both down on exit.
 
@@ -69,4 +73,4 @@ When adding a media handler, mirror `stream.py`: forward to `BIN_CHANNEL` first,
 
 ### Config (`main/vars.py`)
 
-All env vars funnel through a single `Var` class. `URL` is computed at import time from `FQDN`/`PORT`/`HAS_SSL`/`NO_PORT`/`ON_HEROKU` — any new env-driven behavior should land here rather than reading `os.environ` directly elsewhere.
+All env vars funnel through a single `Var` class. `URL` is computed at import time from `FQDN`/`PORT`/`HAS_SSL`/`NO_PORT`/`ON_KOYEB` — any new env-driven behavior should land here rather than reading `os.environ` directly elsewhere.

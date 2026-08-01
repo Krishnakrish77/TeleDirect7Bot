@@ -6,6 +6,7 @@ __pycache__
 .env
 .venv
 venv
+.pytest_cache
 .git
 .gitignore
 .dockerignore
@@ -16,3 +17,8 @@ test2.py
 .idea
 .vscode
 .DS_Store
+frontend/node_modules
+frontend/.vite
+main/server/static/app
+outputs
+tests
