@@ -5634,15 +5634,9 @@ img {
   width: min(100%, 760px);
 }
 
-.playback-options-copy {
-  margin: 0.35rem 0 0;
-  color: var(--muted);
-  font-size: 0.84rem;
-}
-
 .playback-option {
   display: grid;
-  grid-template-columns: minmax(4rem, 6rem) minmax(0, 1fr) minmax(5rem, auto) auto;
+  grid-template-columns: minmax(5rem, 1fr) minmax(5rem, auto) auto;
   align-items: center;
   gap: 0.75rem;
   min-height: 52px;

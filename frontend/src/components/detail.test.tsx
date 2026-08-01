@@ -478,10 +478,9 @@ describe('Movie detail', () => {
     expect(info.getByRole('link', { name: 'Actor' }).getAttribute('href')).toBe('/app/person/actor');
     expect(screen.getByRole('link', { name: 'Play' }).getAttribute('href')).toBe('/app/watch/very-long-title');
     expect(screen.queryByRole('link', { name: 'Classic player' })).toBeNull();
-    const versionLink = screen.getByRole('link', { name: 'Play 1080p — Full HD · Kalki' });
+    const versionLink = screen.getByRole('link', { name: 'Play 1080p' });
     expect(versionLink.className).toBe('playback-option');
     expect(versionLink.getAttribute('href')).toBe('/app/watch/kalki');
-    expect(screen.getByText('Full HD · Kalki')).toBeTruthy();
     expect(screen.getByText('2:00:00 - 1 KB')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

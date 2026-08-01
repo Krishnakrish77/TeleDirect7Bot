@@ -423,20 +423,18 @@ function MovieDetail({
           <div>
             <p className="eyebrow">Available files</p>
             <h2>Playback options</h2>
-            <p className="playback-options-copy">Original is the uploaded file. Lower resolutions use less data.</p>
           </div>
         </div>
         <div className="playback-options">
           {data.variants.map((variant) => {
-            const option = playbackOptionInfo(variant, data.title);
+            const option = playbackOptionInfo(variant);
             return <a
               key={variant.key}
               className="playback-option"
               href={variant.playHref}
-              aria-label={`Play ${option.label}${option.description ? ` — ${option.description}` : ''}`}
+              aria-label={`Play ${option.label}`}
             >
               <strong>{option.label}</strong>
-              <span>{option.description}</span>
               <small>{[variant.durationLabel, variant.fileSizeLabel].filter(Boolean).join(' - ')}</small>
               <em>Play</em>
             </a>;

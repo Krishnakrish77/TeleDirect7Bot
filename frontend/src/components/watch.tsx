@@ -2276,12 +2276,12 @@ function VideoWatchPage({
               <>
                 <div className="video-menu-label" role="presentation">Quality</div>
                 <a className="video-menu-row" role="menuitem" href={video.appHref}>
-                  <span>{playbackOptionInfo(video, video.title).label}</span>
+                  <span>{playbackOptionInfo(video).label}</span>
                   <strong>Current</strong>
                 </a>
                 {video.qualityVariants.map((variant) => (
                   <a key={variant.key} className="video-menu-row" role="menuitem" href={variant.playHref}>
-                    <span>{playbackOptionInfo(variant, video.title).label}</span>
+                    <span>{playbackOptionInfo(variant).label}</span>
                     <strong>Open</strong>
                   </a>
                 ))}
@@ -2346,26 +2346,23 @@ function VideoWatchPage({
             <div>
               <p className="eyebrow">Available files</p>
               <h2>Playback options</h2>
-              <p className="playback-options-copy">Original is the uploaded file. Lower resolutions use less data.</p>
             </div>
           </div>
           <div className="playback-options">
-            <a className="playback-option active" href={video.appHref} aria-current="true" aria-label={`Current ${playbackOptionInfo(video, video.title).label}`}>
-              <strong>{playbackOptionInfo(video, video.title).label}</strong>
-              <span>Playing now · {playbackOptionInfo(video, video.title).description}</span>
+            <a className="playback-option active" href={video.appHref} aria-current="true" aria-label={`Current ${playbackOptionInfo(video).label}`}>
+              <strong>{playbackOptionInfo(video).label}</strong>
               <small>{video.durationLabel || 'Now playing'}</small>
               <em>Playing</em>
             </a>
             {video.qualityVariants.map((variant) => {
-              const option = playbackOptionInfo(variant, video.title);
+              const option = playbackOptionInfo(variant);
               return <a
                 key={variant.key}
                 className="playback-option"
                 href={variant.playHref}
-                aria-label={`Open ${option.label}${option.description ? ` — ${option.description}` : ''}`}
+                aria-label={`Open ${option.label}`}
               >
                 <strong>{option.label}</strong>
-                <span>{option.description}</span>
                 <small>{[variant.durationLabel, variant.fileSizeLabel].filter(Boolean).join(' - ')}</small>
                 <em>Open</em>
               </a>;
