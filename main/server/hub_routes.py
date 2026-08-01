@@ -683,7 +683,6 @@ def _load_react_app_shell_assets(manifest_path: Path | None = None) -> list[str]
 
 _SW_SHELL = [
     "/",
-    "/static/tailwind.css",
     "/favicon.svg",
     *_load_react_app_shell_assets(),
 ]

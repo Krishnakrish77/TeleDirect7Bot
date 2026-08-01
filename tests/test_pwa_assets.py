@@ -36,7 +36,8 @@ class PwaAssetsTest(unittest.TestCase):
         worker = hub_routes._SW_JS
 
         self.assertIn("const CACHE = 'td-v5'", worker)
-        self.assertIn('const SHELL = ["/","/static/tailwind.css"', worker)
+        self.assertIn('const SHELL = ["/","/favicon.svg"', worker)
+        self.assertNotIn("tailwind.css", worker)
         self.assertNotIn("url.pathname.startsWith('/static/app/')", worker)
         self.assertIn("caches.match('/')", worker)
         self.assertIn("url.pathname.startsWith('/api/')", worker)
@@ -113,6 +114,14 @@ class PwaAssetsTest(unittest.TestCase):
         response = asyncio.run(server.security_middleware(SimpleNamespace(path="/app"), handler))
 
         self.assertEqual(response.headers["X-Robots-Tag"], "noindex, nofollow, noarchive")
+
+    def test_error_page_is_self_contained_and_escapes_server_messages(self):
+        response = asyncio.run(server.render_error(404, message="<script>alert(1)</script>"))
+
+        self.assertEqual(response.status, 404)
+        self.assertIn("<style>", response.text)
+        self.assertNotIn("tailwind.css", response.text)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", response.text)
 
 
 if __name__ == "__main__":

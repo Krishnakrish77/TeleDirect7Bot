@@ -2,12 +2,11 @@
 # Thanks to Eyaadh <https://github.com/eyaadh>
 
 import gzip
+from html import escape
 import logging
 import os
-from pathlib import Path
 
 from aiohttp import web
-from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .stream_routes import routes as stream_routes
 from .hls_routes import routes as hls_routes
@@ -31,14 +30,6 @@ from .rec_feedback_routes import routes as rec_feedback_routes
 from .request_routes import routes as request_routes
 
 
-_TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
-_error_env = Environment(
-    loader=FileSystemLoader(str(_TEMPLATE_DIR)),
-    autoescape=select_autoescape(["html"]),
-    enable_async=True,
-)
-
-
 # Default copy for each HTTP status we surface. Handlers can override
 # by setting exc.text / exc.reason; the middleware falls back to these
 # when nothing more specific is provided.
@@ -59,16 +50,22 @@ async def render_error(status: int, message: str = "",
                        title: str = "",
                        action_href: str = "",
                        action_label: str = "") -> web.Response:
-    """Render the shared error template at the given status code."""
+    """Render a self-contained error page without the retired Jinja/Tailwind UI."""
     default_title, default_msg = _DEFAULTS.get(status, ("Error", ""))
-    tpl = _error_env.get_template("error.html")
-    body = await tpl.render_async(
-        status=status,
-        title=title or default_title,
-        message=message or default_msg,
-        action_href=action_href,
-        action_label=action_label,
-    )
+    page_title = title or default_title
+    page_message = message or default_msg
+    primary_action = ""
+    if action_href and action_label:
+        primary_action = (
+            f'<a class="error-action error-action-primary" href="{escape(action_href, quote=True)}">'
+            f'{escape(action_label)}</a>'
+        )
+    body = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{escape(page_title)} · TeleDirect</title>
+<style>
+  :root{{color-scheme:dark}}*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#0b0c0e;color:#f8fafc;font:16px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}}main{{width:min(100%,34rem);padding:32px;text-align:center;border:1px solid rgba(255,255,255,.1);border-radius:18px;background:#15171a;box-shadow:0 20px 50px rgba(0,0,0,.3)}}p{{color:#94a3b8}}.error-code{{margin:0 0 8px;color:#64748b;font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase}}h1{{margin:0 0 12px;font-size:1.7rem}}.error-actions{{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:24px}}.error-action{{padding:10px 16px;border:1px solid rgba(255,255,255,.12);border-radius:9px;color:#cbd5e1;text-decoration:none;font-weight:600}}.error-action:hover{{background:#1f2227;color:#fff}}.error-action-primary{{border-color:#f97316;background:#f97316;color:#fff}}.error-action-primary:hover{{background:#ea580c}}
+</style></head><body><main><p class="error-code">Error {status}</p><h1>{escape(page_title)}</h1><p>{escape(page_message)}</p><div class="error-actions">{primary_action}<a class="error-action" href="/">Back to library</a></div></main></body></html>"""
     return web.Response(
         text=body,
         status=status,
