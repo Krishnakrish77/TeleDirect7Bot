@@ -6,15 +6,6 @@
 
 Save media through Telegram, then browse, stream, search, and manage it from a private library experience.
 
-<p>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/Krishnakrish77/TeleDirect7Bot?style=flat-square&color=2563eb" alt="MIT License" /></a>
-  <a href="https://github.com/Krishnakrish77/TeleDirect7Bot/stargazers"><img src="https://img.shields.io/github/stars/Krishnakrish77/TeleDirect7Bot?style=flat-square&color=f59e0b" alt="GitHub stars" /></a>
-  <a href="https://github.com/Krishnakrish77/TeleDirect7Bot/issues"><img src="https://img.shields.io/github/issues/Krishnakrish77/TeleDirect7Bot?style=flat-square&color=8b5cf6" alt="Open GitHub issues" /></a>
-  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React 19" />
-  <img src="https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker ready" />
-</p>
-
 <img src="https://socialify.git.ci/Krishnakrish77/TeleDirect7Bot/image?description=1&amp;font=Source%20Code%20Pro&amp;forks=1&amp;issues=1&amp;pattern=Charlie%20Brown&amp;pulls=1&amp;stargazers=1&amp;theme=Dark" alt="TeleDirect7Bot project overview" width="640" height="320" />
 
 [Quick start](#quick-start) · [Configuration](#configuration) · [Docker deployment](#docker) · [Daily use](#daily-use)
