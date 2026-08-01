@@ -1,11 +1,5 @@
 <div align="center">
 
-# TeleDirect7Bot
-
-**Your Telegram media library, with a proper home on the web.**
-
-Save media through Telegram, then browse, stream, search, and manage it from a private library experience.
-
 <img src="https://socialify.git.ci/Krishnakrish77/TeleDirect7Bot/image?description=1&amp;font=Source%20Code%20Pro&amp;forks=1&amp;issues=1&amp;pattern=Charlie%20Brown&amp;pulls=1&amp;stargazers=1&amp;theme=Dark" alt="TeleDirect7Bot project overview" width="640" height="320" />
 
 [Quick start](#quick-start) · [Configuration](#configuration) · [Docker deployment](#docker) · [Daily use](#daily-use)
