@@ -14,6 +14,7 @@ import { markLocallyWatched } from '../utils/localWatched';
 import { isContinueSuppressed } from '../utils/continueWatching';
 import { getDeviceId } from '../utils/device';
 import { uniqueMetadataParts } from '../utils/metadata';
+import { playbackOptionInfo } from '../utils/playbackOptions';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog';
 
@@ -2275,12 +2276,12 @@ function VideoWatchPage({
               <>
                 <div className="video-menu-label" role="presentation">Quality</div>
                 <a className="video-menu-row" role="menuitem" href={video.appHref}>
-                  <span>{video.quality || 'Current'}</span>
+                  <span>{playbackOptionInfo(video, video.title).label}</span>
                   <strong>Current</strong>
                 </a>
                 {video.qualityVariants.map((variant) => (
                   <a key={variant.key} className="video-menu-row" role="menuitem" href={variant.playHref}>
-                    <span>{variant.quality || variant.label || variant.title}</span>
+                    <span>{playbackOptionInfo(variant, video.title).label}</span>
                     <strong>Open</strong>
                   </a>
                 ))}
@@ -2343,30 +2344,32 @@ function VideoWatchPage({
         <section className="quality-section">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Versions</p>
-              <h2>Quality variants</h2>
+              <p className="eyebrow">Available files</p>
+              <h2>Playback options</h2>
+              <p className="playback-options-copy">Original is the uploaded file. Lower resolutions use less data.</p>
             </div>
           </div>
           <div className="playback-options">
-            <a className="playback-option active" href={video.appHref} aria-current="true" aria-label={`Current ${video.quality || 'version'}`}>
-              <strong>{video.quality || 'Current'}</strong>
-              <span>Current version</span>
+            <a className="playback-option active" href={video.appHref} aria-current="true" aria-label={`Current ${playbackOptionInfo(video, video.title).label}`}>
+              <strong>{playbackOptionInfo(video, video.title).label}</strong>
+              <span>Playing now · {playbackOptionInfo(video, video.title).description}</span>
               <small>{video.durationLabel || 'Now playing'}</small>
               <em>Playing</em>
             </a>
-            {video.qualityVariants.map((variant) => (
-              <a
+            {video.qualityVariants.map((variant) => {
+              const option = playbackOptionInfo(variant, video.title);
+              return <a
                 key={variant.key}
                 className="playback-option"
                 href={variant.playHref}
-                aria-label={`Open ${[variant.title, variant.quality].filter(Boolean).join(' ') || 'version'}`}
+                aria-label={`Open ${option.label}${option.description ? ` — ${option.description}` : ''}`}
               >
-                <strong>{variant.quality || 'Version'}</strong>
-                <span>{variant.title || variant.label || 'Playback version'}</span>
+                <strong>{option.label}</strong>
+                <span>{option.description}</span>
                 <small>{[variant.durationLabel, variant.fileSizeLabel].filter(Boolean).join(' - ')}</small>
                 <em>Open</em>
-              </a>
-            ))}
+              </a>;
+            })}
           </div>
         </section>
       )}

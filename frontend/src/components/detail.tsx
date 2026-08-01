@@ -9,6 +9,7 @@ import { RatingControls } from './rating';
 import { formatExternalRating } from '../utils/externalRating';
 import { isLocallyWatched, markLocallyWatched } from '../utils/localWatched';
 import { uniqueMetadataParts } from '../utils/metadata';
+import { playbackOptionInfo } from '../utils/playbackOptions';
 import { Button } from './ui/button';
 import { TrailerModal } from './trailerModal';
 
@@ -381,7 +382,7 @@ function MovieDetail({
     <main className="detail-main">
       <DetailHero
         title={`${data.title}${data.year ? ` (${data.year})` : ''}`}
-        subtitle={`${data.variants.length} version${data.variants.length === 1 ? '' : 's'}`}
+        subtitle={`${data.variants.length} playable file${data.variants.length === 1 ? '' : 's'}`}
         overview=""
         posterUrl={data.posterUrl}
         backdropUrl={data.backdropUrl}
@@ -420,24 +421,26 @@ function MovieDetail({
       <section className="detail-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Versions</p>
-            <h2>Choose playback</h2>
+            <p className="eyebrow">Available files</p>
+            <h2>Playback options</h2>
+            <p className="playback-options-copy">Original is the uploaded file. Lower resolutions use less data.</p>
           </div>
         </div>
         <div className="playback-options">
-          {data.variants.map((variant) => (
-            <a
+          {data.variants.map((variant) => {
+            const option = playbackOptionInfo(variant, data.title);
+            return <a
               key={variant.key}
               className="playback-option"
               href={variant.playHref}
-              aria-label={`Play ${[variant.title, variant.quality].filter(Boolean).join(' ') || 'version'}`}
+              aria-label={`Play ${option.label}${option.description ? ` — ${option.description}` : ''}`}
             >
-              <strong>{variant.quality || 'Version'}</strong>
-              <span>{variant.title || variant.label || 'Playback version'}</span>
+              <strong>{option.label}</strong>
+              <span>{option.description}</span>
               <small>{[variant.durationLabel, variant.fileSizeLabel].filter(Boolean).join(' - ')}</small>
               <em>Play</em>
-            </a>
-          ))}
+            </a>;
+          })}
         </div>
       </section>
       <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
