@@ -280,7 +280,7 @@ export function StatsPage({
                   <img src={title.poster} alt="" loading="lazy" decoding="async" />
                   <span>
                     <strong>{title.title}</strong>
-                    <small>{title.count || 0} plays</small>
+                    <small>{title.count || 0} {title.count === 1 ? 'replay' : 'replays'}</small>
                   </span>
                 </a>
               ))}

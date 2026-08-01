@@ -34,6 +34,19 @@ def _item() -> HubItem:
     )
 
 
+def _series_episode(message_id: int, episode: int) -> HubItem:
+    item = _item()
+    item.message_id = message_id
+    item.title = f"Example Series S01E{episode:02d}"
+    item.file_name = f"Example.Series.S01E{episode:02d}.mkv"
+    item.series_key = "example-series"
+    item.series_title = "Example Series"
+    item.season = 1
+    item.episode = episode
+    item.movie_key = ""
+    return item
+
+
 class _Request:
     def __init__(self, key: str, body: dict | None = None):
         self.match_info = {"key": key}
@@ -97,6 +110,34 @@ class StatsRoutesTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(payload["total_plays"], 3)
             self.assertEqual(payload["total_seconds"], 3 * 3600)
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
+    async def test_fresh_series_episodes_are_not_listed_as_replays(self):
+        previous = dict(media_index._items)
+        try:
+            media_index._items.clear()
+            media_index._items.update({
+                101: _series_episode(101, 1),
+                102: _series_episode(102, 2),
+                103: _series_episode(103, 3),
+            })
+            with (
+                patch.object(stats_routes.cw_store, "get_all", new=AsyncMock(return_value={})),
+                patch.object(stats_routes.wh_store, "get_recent", new=AsyncMock(return_value=[
+                    {"cw_key": "hash101", "play_count": 1},
+                    {"cw_key": "hash102", "play_count": 1},
+                    {"cw_key": "hash103", "play_count": 1},
+                ])),
+                patch.object(stats_routes.wh_store, "get_events", new=AsyncMock(return_value=[])),
+            ):
+                payload = await stats_routes._stats_payload(1)
+
+            self.assertEqual(payload["top_title"]["title"], "Example Series")
+            self.assertEqual(payload["top_title"]["count"], 3)
+            self.assertEqual(payload["most_replayed"], [])
+            self.assertEqual(payload["rewatched_titles"], 0)
         finally:
             media_index._items.clear()
             media_index._items.update(previous)

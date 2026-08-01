@@ -8,7 +8,7 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 os.environ.setdefault("OWNER_ID", "1")
 
-from main.server.stats_routes import _binge_stats, _rewatched_titles
+from main.server.stats_routes import _binge_stats, _replay_counts, _rewatched_titles
 
 
 class RewatchedTitlesTest(unittest.TestCase):
@@ -27,6 +27,17 @@ class RewatchedTitlesTest(unittest.TestCase):
 
     def test_empty(self):
         self.assertEqual(_rewatched_titles({}, {}), 0)
+
+    def test_replay_counts_exclude_first_watch_of_each_episode(self):
+        counts = _replay_counts(
+            {"series:fresh": 3, "series:rewatched": 4, "movie:looped": 3},
+            {
+                "series:fresh": {"episode-1", "episode-2", "episode-3"},
+                "series:rewatched": {"episode-1", "episode-2", "episode-3"},
+                "movie:looped": {"movie-file"},
+            },
+        )
+        self.assertEqual(counts, {"series:rewatched": 1, "movie:looped": 2})
 
 
 class BingeStatsTest(unittest.TestCase):

@@ -90,6 +90,20 @@ def _rewatched_titles(title_counts: dict, group_items: dict) -> int:
     return sum(1 for g, plays in title_counts.items() if plays > len(group_items.get(g, ())))
 
 
+def _replay_counts(title_counts: dict, group_items: dict) -> Counter:
+    """Return actual replay plays per title group.
+
+    A series is made up of episodes, so its initial run must not appear in
+    "Most replayed" merely because several different episodes were completed.
+    Only plays beyond the number of distinct files/episodes count as replays.
+    """
+    return Counter({
+        group: plays - len(group_items.get(group, ()))
+        for group, plays in title_counts.items()
+        if plays > len(group_items.get(group, ()))
+    })
+
+
 def _binge_stats(timestamps: list, gap_hours: int = 3, min_len: int = 3) -> tuple[int, int]:
     """Given completion timestamps, return (longest_binge, binge_sessions).
 
@@ -329,12 +343,18 @@ async def _stats_payload(user_id: int) -> dict:
     total_k = n_video + n_audio
     audio_pct = int(n_audio / total_k * 100) if total_k else 0
 
-    most_replayed = [
+    most_played = [
         {"count": c, **title_meta[g]}
         for g, c in title_counts.most_common(5)
         if g in title_meta
     ]
-    top_title    = most_replayed[0] if most_replayed else None
+    replay_counts = _replay_counts(title_counts, group_items)
+    most_replayed = [
+        {"count": c, **title_meta[g]}
+        for g, c in replay_counts.most_common(5)
+        if g in title_meta
+    ]
+    top_title    = most_played[0] if most_played else None
     top_title_label = "Most played"
     if top_title is None and in_progress_entries:
         progress_key, _progress = max(in_progress_entries, key=lambda pair: pair[1].get("t", 0))
@@ -557,7 +577,7 @@ async def _stats_payload(user_id: int) -> dict:
     # exceed its distinct parts — i.e. you replayed at least one episode/track/
     # the film. Counting titles (not plays) means a song looped 20× is one
     # rewatched title, not twenty, and a fresh multi-episode binge is zero.
-    rewatched_titles = _rewatched_titles(title_counts, group_items)
+    rewatched_titles = len(replay_counts)
     rewatch_pct = round(rewatched_titles / len(title_counts) * 100) if title_counts else 0
     rewatch_label = (
         "Comfort re-watcher" if rewatch_pct >= 40
@@ -595,7 +615,7 @@ async def _stats_payload(user_id: int) -> dict:
         "equiv_flights": equiv_flights,
         "top_title": top_title,
         "top_title_label": top_title_label,
-        "most_replayed": most_replayed[1:] if len(most_replayed) > 1 else [],
+        "most_replayed": most_replayed,
         "top_genres": top_genres,
         "top_genre": top_genre,
         "top_director": top_director[0] if top_director else None,
