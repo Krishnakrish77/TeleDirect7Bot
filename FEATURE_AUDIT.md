@@ -1,8 +1,65 @@
 # TeleDirect — Feature Audit vs Industry
 _Benchmarked against: Netflix, Disney+, Prime Video, Apple TV+, YouTube, JioHotstar, Spotify, Apple Music, YouTube Music_
-_Last validated: 2026-07-19_
+_Last validated: 2026-08-01 (code, test, and current-main audit; production browser evidence below remains dated 2026-07-19)_
 
 Legend: 🟢 Table stakes · 🟡 Differentiator · 🔵 Innovative · ✅ Have it · ⚠️ Partial · ❌ Missing
+
+---
+
+## CURRENT SR PM UPDATE — 2026-08-01
+
+> **Decision rule:** this section is the current roadmap. The dated validation
+> runs and delivery logs below are retained as useful historical evidence, not
+> as an active list of work.
+
+### Executive read
+
+TeleDirect's product loop is now clearer and more defensible: **playable
+library → play/resume → taste signals → grounded AI Picks → save, dismiss, or
+request → return**. The recent work corrected the two issues most likely to
+damage recommendation trust: old watched titles leaking into picks and fresh
+episodes being counted as series replays.
+
+The next constraint is no longer recommendation capability. It is **trust,
+fulfilment, and measurement**: users need to understand the state of a pick,
+know that requests close the loop, and give the team enough evidence to decide
+what to improve next.
+
+### Critical operating action
+
+| Priority | Finding | Required action |
+|---|---|---|
+| P0 | The deployment example in `README.md` contains credentials in its URL. | Rotate affected bot/API credentials, remove the values from the public deployment link, and assess Git-history remediation before further promotion of the project. |
+
+### Current feature corrections
+
+| Area | Current status | PM assessment |
+|---|---|---|
+| AI Picks scope | ✅ **Movies and series only.** Music discovery lives in AI Mix. The agent has at most three catalogue-tool calls and a bounded backend budget; it returns only playable, revalidated library titles. | This is the right product boundary. Do not mix music into the video recommendation promise. |
+| AI Picks reliability | ✅ The panel now states whether picks are saved, AI-curated, library-matched, or fresh fallback titles; it shows freshness and gives a contextual retry on fallback. | This closes the previous "invisible reliability" gap. Next: validate these states in production and measure fallback rate. |
+| AI recommendation feedback | ✅ Baseline feedback is live: impressions, opens, plays, saves, ratings, and dismissals feed the recommendation system with bounded retention. | The remaining control gap is direct **More like this / Less like this**, saved asks, and a user-visible explanation/history—not a feedback system from zero. |
+| Watch exclusion and history | ✅ AI Picks now uses the full retained 200-title history window and revalidates watched, dismissed, hidden, deleted, and grouped content before display/cache. History is retained for 365 days; immutable completion events are separately capped. | Correct safety baseline. Add a user-facing reset/history control before collecting more personalization signals. |
+| Stats replay semantics | ✅ A first-time multi-episode series watch is **Most played**, not **Most replayed**. Only plays beyond distinct episodes/files are replays. | Corrects a trust-breaking interpretation in the stats surface. |
+| Beyond your library | ✅ Requestable TMDB titles now include overview, genres/runtime/rating, and a TMDB link; requests support season selection and admin state updates. | This is a real acquisition loop. The missing step is notifying requesters when a title/season becomes available. |
+| CSS/build cleanup | ✅ The retired standalone server Tailwind build, `static_src/input.css`, and its Docker dependency are removed. React/Vite is the sole production CSS pipeline. | Lower operational complexity; not a standalone user-facing roadmap item. |
+
+### Active roadmap — ordered by outcome
+
+| Priority | Bet | Success metric | Why now |
+|---|---|---|---|
+| P0 | **Protect deployment secrets and replace the legacy README** | No credentials in public history/docs; current operator guide works from a clean setup. | Security and trust unblock every other investment. |
+| P0 | **Product health instrumentation** | Weekly dashboard for play-start success, playback errors, AI request/fallback/open/play/save rates, search success, request creation, and request fulfilment. | The app records recommendation feedback but lacks the decision dashboard needed to prioritize objectively. |
+| P1 | **Close the request loop** | % of fulfilled requests notified; time from request to available; repeat requester retention. | Requesting a title must produce a proactive outcome, not require users to revisit a status page. |
+| P1 | **Tune my picks + privacy controls** | % of signed-in users setting taste controls; lower dismiss rate; reset/history actions work. | Passive history alone is slow and opaque, especially for households and changing moods. |
+| P1 | **AI Picks production trust pass** | Fallback rate, stale-cache rate, watched-title leak rate, and successful retry rate stay within defined thresholds. | The UI now communicates state; validate that production behavior matches the contract. |
+| P2 | **New since your last visit** | Click-through and completion rate from a concise in-app digest. | Strong retention value without premature push-notification complexity. |
+| P2 | **Live TV EPG foundation** | Programme coverage, guide engagement, reminder creation. | EPG unlocks the largest remaining Live TV experience gap. |
+
+### Deliberate non-bets
+
+Do not add another broad media mode, social co-viewing, managed offline, or
+true adaptive bitrate before the P0/P1 loop is measured and dependable. The
+product already has feature breadth; it needs compounding quality.
 
 ---
 
@@ -21,7 +78,7 @@ The current product is competitive for a private catalogue and power-user deploy
 | Area | Sr PM validation | Decision |
 |------|------------------|----------|
 | Personalization copy | The old audit over-indexed on "Because you watched..." as generic copy. Current code now prefers `Because you like <genre>` for mixed/partial signals, which is the right trust-preserving direction. However, the user-reported live case `Because you watched The Invisible Guest` after a partial play means this needs signed-in production/cache validation before being called fully closed. | Keep affinity/genre copy. Add regression tests and cache invalidation checks so partial starts never explain as completed watches. |
-| AI discovery | Spotify has moved from static recommendations into steerable recommendation controls such as DJ, AI Playlist, Smart Shuffle, hide/snooze, and autoplay controls. TeleDirect's Gemini-backed catalogue-grounded AI picks are now a real differentiator for a private library, not a side experiment. | Invest in polish: feedback, saved prompts, "why this", and better cold-start onboarding. |
+| AI discovery | Spotify has moved from static recommendations into steerable recommendation controls such as DJ, AI Playlist, Smart Shuffle, hide/snooze, and autoplay controls. TeleDirect's Gemini-backed catalogue-grounded AI picks are now a real differentiator for a private library, not a side experiment. | Baseline feedback and reliability status are shipped. Invest next in direct preference controls, saved prompts, "why this", and cold-start onboarding. |
 | Co-viewing | Disney+ currently supports SharePlay on eligible Apple devices; Apple Music also supports SharePlay sessions. This is still platform-constrained and not universal table stakes. | Keep low unless TeleDirect grows multi-user household usage. |
 | Music collaboration | Spotify Jam and Apple Music collaborative playlists make shared queue/list editing mainstream in music. | Medium only if TeleDirect becomes social; low for single-user/private use. |
 | Live TV | India benchmarks are stronger than the old audit captured: JioTV/JioTV+ emphasize 7-day catch-up, TV guide, reminders, smart search, Continue Watching, multi-audio/subtitles, PiP, and parental controls. | Add EPG/reminders as the main Live TV gap; catch-up/multi-cam remain source-dependent. |
@@ -34,7 +91,7 @@ The current product is competitive for a private catalogue and power-user deploy
 |--------------|---------------------------|---------------|
 | Core OTT playback | React video player with HLS, direct/native fallback, subtitles, uploaded sidecars, user subtitle search, audio-track switching, PiP, speed, AirPlay/VLC/download/share, skip intro/recap, chapters, next episode countdown, still-watching prompt, episode navigator. | Strong. Remaining gaps are ABR architecture and subtitle appearance customization. |
 | Discovery Home | Hero, shelf budget governance, personalized recommendations, personal genre shelves, trending, most-played, new episodes, music entry, filters, autocomplete, compact payloads, same-origin artwork proxy, responsive poster srcsets. | Strong. Main gaps are proactive surfacing of newly added content, richer language/provider facets, and signed-in QA for recommendation reason copy. |
-| AI picks | Gemini-backed, catalogue-grounded RAG reranker; comfort/discovery buckets; chat query; refresh; per-user rate limit; cache; fallback to trending/candidates; hallucinated IDs dropped. | Differentiator. Needs user feedback loop and better empty/cold-start education. |
+| AI picks | Gemini-backed, catalogue-grounded reranker for **movies and series**; comfort/discovery buckets; Ask, Refresh, rate limit, cache, safe fallback, hallucinated-ID rejection, feedback signals, and visible saved/AI/library/fallback status. | Differentiator. Next gaps are direct preference controls, saved asks, and cold-start education. |
 | Multi-device resume | Signed-in two-way CW sync, local anonymous fallback, stale write rejection, delete/completion tombstones, device labels, auth-gated server writes. | Table-stakes quality. Keep regression tests around conflict cases. |
 | Music | Mini-player, Now Playing sheet, queue drawer, Play Next/Add to queue, playlist queues, liked songs, artist/album pages, synced lyrics, crossfade, gapless prebuffering, repeat/shuffle, endless related radio. | Strong private-music-library surface. Mood stations/charts/collaboration remain optional gaps. |
 | Live TV / IPTV | Public channel list, channel categories/search/favorites/recents, selected/playing state, admin CRUD, M3U text/URL import, stream test, custom headers/extras, SSRF-safe imports, logo proxy/cache/placeholders. | Useful and much stronger than a basic stream list. Needs EPG/reminders before it feels like a modern TV app. |
@@ -121,7 +178,7 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 |---------|----------|------------|----------|
 | Personalized homepage with algorithmic rows | 🟢 All | ✅ Hero + genre shelves | — |
 | Personalized reason rows | 🟢 All | ⚠️ Current code uses "Because you like..." affinity copy; user-reported live partial-play case still needs signed-in regression validation | High — partial starts must not be explained as completed watches |
-| AI-guided recommendations | 🟡 Spotify/YouTube direction | ✅ Gemini-backed, catalogue-grounded AI picks with comfort/discovery buckets and chat query | Medium — add feedback, saved prompts, and better cold-start onboarding |
+| AI-guided recommendations | 🟡 Spotify/YouTube direction | ✅ Grounded movie/series AI Picks with comfort/discovery, Ask, Refresh, provenance/freshness, safe fallback, and baseline feedback | Medium — add direct preference controls, saved prompts, and better cold-start onboarding |
 | Continue Watching row | 🟢 All | ✅ Cross-device CW with tombstones/stale-write protection | — |
 | Search with autocomplete | 🟢 All | ✅ Live suggest, keyboard shortcuts | — |
 | Genre / tag filtering | 🟢 All | ✅ Year / quality / genre dropdowns | — |
@@ -159,7 +216,7 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 | Feature | Industry | TeleDirect | Priority |
 |---------|----------|------------|----------|
 | Watchlist / My List | 🟢 All | ✅ MongoDB-backed, 1000-item cap | — |
-| Watch history | 🟢 All | ✅ Used as recommendation signal | — |
+| Watch history | 🟢 All | ✅ Used as recommendation signal; 365-day retention, 200-title summary cap, bounded completion events | Medium — add clear/reset controls for the user |
 | Cross-device sync | 🟢 All | ✅ CW, watch history, watchlist, playlists, ratings via MongoDB for signed-in users | — |
 | Viewing stats / activity page | 🟡 Netflix, YouTube | ✅ `/stats` — hours watched, heatmap, streaks, top titles | — |
 | Per-title ratings visible on library | 🟡 Most | ✅ Aggregate thumbs-up/down counts now appear on rated React library cards | — |
@@ -223,7 +280,7 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 | Artist page (all tracks by one artist) | 🟢 All | ✅ `/artist/{slug}`; splits multi-credit correctly; primary artist linked | — |
 | Recently played row (music) | 🟢 All | ⚠️ Covered by Continue Watching and Stats, not a music-specific Home rail | Medium |
 | Charts (top tracks in library) | 🟡 All streaming apps | ⚠️ Stats has top artists/genres/titles; no music discovery chart surface | Medium |
-| AI music discovery | 🟡 Spotify/YouTube Music | ⚠️ AI picks cover music candidates; not a music-only DJ/playlist builder | Medium — reuse AI picks for "make me a queue" |
+| AI music discovery | 🟡 Spotify/YouTube Music | ✅ AI Mix builds music queues; AI Picks intentionally stays movie/series-only | Medium — add saved mixes/prompts and visible mood-station starts |
 
 ### Playback
 
@@ -276,7 +333,7 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 
 | Feature | Status | PM validation |
 |---------|--------|---------------|
-| **Gemini-powered AI picks** | ✅ Shipped | `/api/app/ai/recommendations` ranks only real catalogue candidates, drops hallucinated IDs, splits comfort/discovery, supports user query, refresh, cache, rate limit, and fallback. This is now a differentiator versus static recommendation rails. |
+| **Gemini-powered AI picks** | ✅ Shipped | `/api/app/ai/recommendations` ranks only real, playable movie/series candidates, drops hallucinated IDs, splits comfort/discovery, supports Ask/Refresh/cache/rate limits, records bounded feedback, and visibly distinguishes saved AI curation from resilient library fallback. |
 | **Multi-device Continue Watching** | ✅ Shipped | Local/server two-way sync, tombstones, stale-write rejection, signed-in focus/login merge, completion propagation, device labels, and anonymous server-write suppression. This is table-stakes quality, not just a row on Home. |
 | **Recommendation trust polish** | ⚠️ Improved; verify live | Current code uses "Because you like..." semantics for personal shelves and reasons, but a user-reported live case still showed `Because you watched The Invisible Guest` after a partial play. Treat this as a signed-in/cache regression to reproduce and close. |
 | **React audio now-playing revamp** | ✅ Shipped | Mini-player + Now Playing sheet use reusable controls/sliders, queue access, lyrics, shuffle/repeat, error recovery, and responsive track art. |
@@ -347,7 +404,7 @@ Large batch shipped since the last audit. Validated against the live deployment 
 | 2 | **Recommendation reason trust QA** | S/M | Partial progress can be a valid taste signal, but UI copy must not imply completion. Reproduce the `Because you watched The Invisible Guest` case, clear/update stale recommendation caches if needed, and add tests around partial-play wording. |
 | 3 | **New-content digest** | M | Build an in-app "New since your last visit" / "Recently added for you" surface before native push. This captures the main value of notifications without VAPID/browser-permission complexity. |
 | 4 | **Live TV EPG foundation** | M/L | EPG/now-next data unlocks guide, programme search, reminders, richer channel rows, and future catch-up eligibility. This is the clearest gap versus JioTV/JioTV+. |
-| 5 | **AI picks feedback loop** | M | Add "more like this", "less like this", saved prompts, and clearer "why this" handling. TeleDirect now has AI discovery; the next step is trust/control. |
+| 5 | **AI picks direct controls** | M | Baseline impression/open/play/save/dismiss feedback is shipped. Add "more like this", "less like this", saved prompts, and a user-visible explanation/history surface. |
 | 6 | **Remaining production evidence pass** | Ops | Chrome DevTools now covers Home, Music, Live TV, Search, Person, and Artist. Finish signed-in/auth-gated checks for Watch, AI Picks, Liked Songs, Admin Dashboard, IPTV Admin, and recommendation reason rows. |
 
 ### 🟡 Medium — Clear user value, moderate effort
