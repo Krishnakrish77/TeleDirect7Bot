@@ -6,13 +6,24 @@
 
 Save media through Telegram, then browse, stream, search, and manage it from a private library experience.
 
-[Getting started](#quick-start) · [Configuration](#configuration) · [Deploy with Docker](#docker) · [Admin guide](#daily-use)
+<p>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Krishnakrish77/TeleDirect7Bot?style=flat-square&color=2563eb" alt="MIT License" /></a>
+  <a href="https://github.com/Krishnakrish77/TeleDirect7Bot/stargazers"><img src="https://img.shields.io/github/stars/Krishnakrish77/TeleDirect7Bot?style=flat-square&color=f59e0b" alt="GitHub stars" /></a>
+  <a href="https://github.com/Krishnakrish77/TeleDirect7Bot/issues"><img src="https://img.shields.io/github/issues/Krishnakrish77/TeleDirect7Bot?style=flat-square&color=8b5cf6" alt="Open GitHub issues" /></a>
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React 19" />
+  <img src="https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker ready" />
+</p>
+
+<img src="https://socialify.git.ci/Krishnakrish77/TeleDirect7Bot/image?description=1&amp;font=Source%20Code%20Pro&amp;forks=1&amp;issues=1&amp;pattern=Charlie%20Brown&amp;pulls=1&amp;stargazers=1&amp;theme=Dark" alt="TeleDirect7Bot project overview" width="640" height="320" />
+
+[Quick start](#quick-start) · [Configuration](#configuration) · [Docker deployment](#docker) · [Daily use](#daily-use)
 
 </div>
 
 ---
 
-## What it does
+## A Telegram-first media library
 
 TeleDirect7Bot keeps media in a Telegram channel while providing a web app for the library around it.
 
@@ -23,6 +34,14 @@ TeleDirect7Bot keeps media in a Telegram channel while providing a web app for t
 | 📚 | Track watch progress, likes, watchlists, requests, subtitles, and playback statistics. |
 | ✨ | Get library-grounded AI Picks for movies and series, plus music mixes as a separate experience. |
 | 🛠️ | Operate the catalogue from the admin console: enrich metadata, fix titles, inspect health, and remove stale entries. |
+
+<table>
+  <tr>
+    <td width="33%"><strong>Keep control</strong><br />Files remain in your Telegram channel; the web app is the private library layer around them.</td>
+    <td width="33%"><strong>Find something good</strong><br />Metadata, search, discovery shelves, and AI Picks make a growing catalogue useful.</td>
+    <td width="33%"><strong>Run it confidently</strong><br />A focused admin console exposes enrichment, catalogue health, and maintenance workflows.</td>
+  </tr>
+</table>
 
 The service is intended for a private media library. You are responsible for ensuring that the media you store and stream is lawful to use.
 
@@ -125,6 +144,13 @@ Put a TLS-enabled reverse proxy in front of the container and set `FQDN`, `HAS_S
 
 ## Configuration
 
+The essentials are in the Quick start `.env` example. The complete reference is collapsed here so new operators can get running without scrolling past a wall of settings.
+
+<details>
+<summary><strong>Open the full configuration reference</strong></summary>
+
+<br />
+
 ### Required
 
 | Variable | Purpose |
@@ -187,6 +213,8 @@ Put a TLS-enabled reverse proxy in front of the container and set `FQDN`, `HAS_S
 | `USER_API_ID`, `USER_API_HASH` | Separate Telegram API application used with `USER_SESSION`. |
 | `BANNED_CHANNELS`, `BANNED_USERS` | Space-separated numeric IDs to block. |
 | `GRAB_URL_MAX_BYTES` | Maximum remote file size accepted by `/grab`; default 1.5 GiB. |
+
+</details>
 
 ## MongoDB migration
 
