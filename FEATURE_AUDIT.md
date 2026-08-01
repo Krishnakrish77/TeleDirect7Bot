@@ -25,12 +25,6 @@ fulfilment, and measurement**: users need to understand the state of a pick,
 know that requests close the loop, and give the team enough evidence to decide
 what to improve next.
 
-### Critical operating action
-
-| Priority | Finding | Required action |
-|---|---|---|
-| P0 | The deployment example in `README.md` contains credentials in its URL. | Rotate affected bot/API credentials, remove the values from the public deployment link, and assess Git-history remediation before further promotion of the project. |
-
 ### Current feature corrections
 
 | Area | Current status | PM assessment |
@@ -47,7 +41,7 @@ what to improve next.
 
 | Priority | Bet | Success metric | Why now |
 |---|---|---|---|
-| P0 | **Protect deployment secrets and replace the legacy README** | No credentials in public history/docs; current operator guide works from a clean setup. | Security and trust unblock every other investment. |
+| P0 | **Replace the legacy README and document secret-handling** | Current operator guide works from a clean setup and explicitly uses environment placeholders rather than deploy-link values. | Documentation and deployment clarity unblock every other investment. |
 | P0 | **Product health instrumentation** | Weekly dashboard for play-start success, playback errors, AI request/fallback/open/play/save rates, search success, request creation, and request fulfilment. | The app records recommendation feedback but lacks the decision dashboard needed to prioritize objectively. |
 | P1 | **Close the request loop** | % of fulfilled requests notified; time from request to available; repeat requester retention. | Requesting a title must produce a proactive outcome, not require users to revisit a status page. |
 | P1 | **Tune my picks + privacy controls** | % of signed-in users setting taste controls; lower dismiss rate; reset/history actions work. | Passive history alone is slow and opaque, especially for households and changing moods. |
