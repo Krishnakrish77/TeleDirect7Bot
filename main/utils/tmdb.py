@@ -446,13 +446,21 @@ async def fetch_request_title(tmdb_id: int, kind: str) -> Optional[dict]:
                 "episodeCount": _int_or_zero(season.get("episode_count")),
                 "airDate": str(season.get("air_date") or ""),
             })
+    runtime = _int_or_zero(details.get("runtime"))
+    if not runtime and kind == "tv":
+        runtime = _int_or_zero((details.get("episode_run_time") or [0])[0])
+    canonical_id = int(details.get("id") or tmdb_id)
     return {
-        "tmdbId": int(details.get("id") or tmdb_id),
+        "tmdbId": canonical_id,
         "kind": kind,
         "title": title,
         "year": _parse_year(details.get(year_field)),
         "overview": str(details.get("overview") or "").strip(),
         "posterPath": str(details.get("poster_path") or ""),
+        "genres": [str(genre.get("name") or "").strip() for genre in (details.get("genres") or []) if str(genre.get("name") or "").strip()][:3],
+        "runtimeMinutes": runtime or None,
+        "tmdbRating": round(_float_or_zero(details.get("vote_average")), 1) or None,
+        "tmdbUrl": f"https://www.themoviedb.org/{kind}/{canonical_id}",
         "seasons": seasons,
     }
 

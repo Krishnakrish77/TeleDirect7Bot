@@ -447,6 +447,10 @@ export interface RequestTitle {
   overview: string;
   posterPath: string;
   posterUrl?: string;
+  genres?: string[];
+  runtimeMinutes?: number | null;
+  tmdbRating?: number | null;
+  tmdbUrl?: string;
   seasons?: Array<{ number: number; name: string; episodeCount: number; airDate: string }>;
   inLibrary?: boolean;
   availableSeasons?: number[];

@@ -82,6 +82,9 @@ class AiRecGroundingTest(unittest.TestCase):
             result = ai_rec._watched_card_ids(set(by_key))
         self.assertEqual(result, {"movie:kalki", "series:dark", "3"})
 
+    def test_ai_picks_uses_the_full_retained_watch_history_for_exclusion(self):
+        self.assertEqual(ai_rec._AI_REC_HISTORY_LIMIT, 200)
+
     def test_external_pick_cache_uses_a_monotonic_clock(self):
         async def run():
             ai_rec._external_pick_cache.clear()

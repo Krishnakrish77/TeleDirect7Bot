@@ -262,7 +262,7 @@ export function AiRecPanel({
                   <div className="ai-rec-external-head"><h3 className="ai-rec-section">Beyond your library</h3><p>Good fits we don’t have yet. Request one if it belongs here.</p></div>
                   <div className="ai-rec-external-grid">{externalItems.map((item) => <article key={`${item.kind}:${item.tmdbId}`} className="ai-request-card">
                     {item.posterPath ? <img src={tmdbImageUrl(item.posterPath, 'w342')} alt="" /> : <span className="ai-request-card-art">{item.kind === 'tv' ? <TvIcon /> : <FilmIcon />}</span>}
-                    <div><span>{item.kind === 'tv' ? 'Series' : 'Movie'}</span><h4>{item.title}</h4>{item.year && <small>{item.year}</small>}<Button size="sm" onClick={() => onRequestTitle(item)}><ListPlusIcon /> Request</Button></div>
+                    <div><span>{item.kind === 'tv' ? 'Series' : 'Movie'}</span><h4>{item.title}</h4>{item.year && <small>{item.year}</small>}<p className="ai-request-card-meta">{item.genres?.join(' · ')}{item.runtimeMinutes ? `${item.genres?.length ? ' · ' : ''}${item.runtimeMinutes}m` : ''}{item.tmdbRating ? `${item.genres?.length || item.runtimeMinutes ? ' · ' : ''}TMDB ${item.tmdbRating.toFixed(1)}` : ''}</p>{item.overview && <p className="ai-request-card-overview">{item.overview}</p>}<div className="ai-request-card-actions">{item.tmdbUrl && <a href={item.tmdbUrl} target="_blank" rel="noreferrer">View on TMDB <span aria-hidden="true">↗</span></a>}<Button size="sm" onClick={() => onRequestTitle(item)}><ListPlusIcon /> Request</Button></div></div>
                   </article>)}</div>
                 </section>}
               </>

@@ -31,6 +31,7 @@ _MAX_CANDIDATES = 50
 _AGENT_MAX_TOOL_CALLS = 3
 _AGENT_TOOL_RESULT_LIMIT = 12
 _AGENT_BUDGET_SECONDS = 25.0
+_AI_REC_HISTORY_LIMIT = 200  # matches the retained server-side watch-history cap
 _QUERY_CANDIDATE_RESERVE = 24
 _QUERY_TERM_LIMIT = 5
 _MIX_SIZE = 20
@@ -924,7 +925,7 @@ async def _cached_ai_recommendations(
 async def get_cached_ai_recommendations(user_id: int) -> dict | None:
     """Fast cache check for a panel open, with the usual safety revalidation."""
     profile, history, cw_map, dismissed = await asyncio.gather(
-        rec_engine._collect_signal_profile(user_id), wh_store.get_recent(user_id, limit=80),
+        rec_engine._collect_signal_profile(user_id), wh_store.get_recent(user_id, limit=_AI_REC_HISTORY_LIMIT),
         cw_store.get_all(user_id), dismissed_store.get_dismissed_ids(user_id),
     )
     return await _cached_ai_recommendations(
@@ -1048,8 +1049,11 @@ class _AgentCatalogue:
                     return int(getattr(card, "year", None) or getattr(getattr(card, "poster_item", None), "year", 0) or 0)
                 cards = [card for card in cards if (not start or card_year(card) >= start)
                          and (not end or card_year(card) <= end)]
+        # Rank the full bounded reserve, then apply watched/hidden filtering in
+        # _register.  Ranking only twelve raw cards first can leave the model
+        # with one or two candidates after those safety filters run.
         ranked = rec_engine.rank_catalogue_cards(
-            list(cards), self.profile, query=args.get("query") or "", limit=_AGENT_TOOL_RESULT_LIMIT,
+            list(cards), self.profile, query=args.get("query") or "", limit=len(cards),
         )
         result = self._register(ranked)
         self.source_counts[name] += len(result)
@@ -1079,7 +1083,7 @@ async def _generate_agentic(
     """Use at most three read-only catalogue tool calls, then rank discovered ids."""
     started = time.monotonic()
     profile, history, cw_map, dismissed = await asyncio.gather(
-        rec_engine._collect_signal_profile(user_id), wh_store.get_recent(user_id, limit=80),
+        rec_engine._collect_signal_profile(user_id), wh_store.get_recent(user_id, limit=_AI_REC_HISTORY_LIMIT),
         cw_store.get_all(user_id), dismissed_store.get_dismissed_ids(user_id),
     )
     stats = await _safe_stats(user_id)
@@ -1221,7 +1225,7 @@ async def get_ai_recommendations(
         # best-effort pass over local activity before serving the fallback.
         try:
             history, cw_map = await asyncio.gather(
-                wh_store.get_recent(user_id, limit=80),
+                wh_store.get_recent(user_id, limit=_AI_REC_HISTORY_LIMIT),
                 cw_store.get_all(user_id),
             )
             seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map)
@@ -1253,7 +1257,7 @@ async def _generate(
 
     profile, history, cw_map, dismissed = await asyncio.gather(
         rec_engine._collect_signal_profile(user_id),
-        wh_store.get_recent(user_id, limit=80),
+        wh_store.get_recent(user_id, limit=_AI_REC_HISTORY_LIMIT),
         cw_store.get_all(user_id),
         dismissed_store.get_dismissed_ids(user_id),
     )

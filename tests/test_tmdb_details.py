@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import AsyncMock, patch
 
 
 os.environ.setdefault("API_ID", "1")
@@ -57,3 +58,28 @@ class TMDBDetailExtractionTests(unittest.TestCase):
         self.assertEqual(hit.keywords, ["anime"])
         self.assertEqual(hit.logo_path, "/en.png")
 
+    def test_request_title_includes_compact_tmdb_context_and_link(self):
+        class Session:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return False
+
+        async def run():
+            details = {
+                "id": 77, "name": "Example Series", "first_air_date": "2020-01-01",
+                "overview": "A concise overview.", "poster_path": "/poster.jpg",
+                "genres": [{"name": "Drama"}, {"name": "Mystery"}],
+                "episode_run_time": [48], "vote_average": 8.26,
+            }
+            with patch.object(tmdb, "is_configured", return_value=True), patch.object(
+                tmdb.aiohttp, "ClientSession", return_value=Session()
+            ), patch.object(tmdb, "_get", AsyncMock(return_value=details)):
+                return await tmdb.fetch_request_title(77, "tv")
+
+        result = __import__("asyncio").run(run())
+        self.assertEqual(result["genres"], ["Drama", "Mystery"])
+        self.assertEqual(result["runtimeMinutes"], 48)
+        self.assertEqual(result["tmdbRating"], 8.3)
+        self.assertEqual(result["tmdbUrl"], "https://www.themoviedb.org/tv/77")
