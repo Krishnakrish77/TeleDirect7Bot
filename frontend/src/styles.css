@@ -6600,6 +6600,26 @@ img {
   font-size: 0.9rem;
 }
 
+.ai-rec-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.55rem;
+  align-items: baseline;
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.ai-rec-status > span:first-child { color: #cbd5e1; font-weight: 700; }
+.ai-rec-status--fallback { border-color: rgba(251, 191, 36, 0.28); background: rgba(245, 158, 11, 0.07); }
+.ai-rec-status--fallback > span:first-child { color: #fde68a; }
+.ai-rec-status-retry { min-height: 1.9rem; margin-left: auto; font-size: 0.72rem; }
+
 .ai-rec-progress {
   display: grid;
   gap: 0.65rem;

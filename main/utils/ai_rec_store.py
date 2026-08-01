@@ -42,19 +42,33 @@ async def _ensure_indexes() -> None:
 
 
 async def get_cached(user_id: int) -> Optional[list]:
+    entry = await get_cached_entry(user_id)
+    return entry.get("items") if entry else None
+
+
+async def get_cached_entry(user_id: int) -> Optional[dict]:
+    """Return cached picks plus their non-sensitive presentation metadata."""
     await _ensure_indexes()
     db = _get_db()
     if db is None:
         return None
     try:
         doc = await db["ai_recommendations"].find_one({"user_id": user_id})
-        return doc.get("items") if doc else None
+        if not doc or not isinstance(doc.get("items"), list):
+            return None
+        cached_at = doc.get("cached_at")
+        cached_at_unix = int(cached_at.timestamp()) if isinstance(cached_at, datetime) else 0
+        return {
+            "items": doc["items"],
+            "origin": str(doc.get("origin") or "library"),
+            "cachedAt": cached_at_unix,
+        }
     except Exception:
-        logging.exception("ai_rec_store: get_cached failed for user %d", user_id)
+        logging.exception("ai_rec_store: get_cached_entry failed for user %d", user_id)
         return None
 
 
-async def set_cached(user_id: int, items: list) -> None:
+async def set_cached(user_id: int, items: list, *, origin: str = "library") -> None:
     await _ensure_indexes()
     db = _get_db()
     if db is None:
@@ -62,7 +76,11 @@ async def set_cached(user_id: int, items: list) -> None:
     try:
         await db["ai_recommendations"].update_one(
             {"user_id": user_id},
-            {"$set": {"items": items, "cached_at": datetime.now(timezone.utc)}},
+            {"$set": {
+                "items": items,
+                "origin": origin if origin in {"agent", "library", "fresh"} else "library",
+                "cached_at": datetime.now(timezone.utc),
+            }},
             upsert=True,
         )
     except Exception:

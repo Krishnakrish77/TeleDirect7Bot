@@ -639,6 +639,29 @@ def _now() -> float:
     return time.monotonic()
 
 
+def _recommendation_meta(
+    origin: str, *, cached: bool = False, fallback: bool = False, generated_at: int | None = None,
+) -> dict:
+    """Small, user-safe provenance for the AI Picks UI.
+
+    This intentionally describes the result rather than an upstream model or
+    error. People need to know whether they are seeing saved, AI-curated, or
+    resilient catalogue picks—not Gemini internals.
+    """
+    safe_origin = origin if origin in {"agent", "library", "fresh"} else "library"
+    return {
+        "origin": safe_origin,
+        "cached": bool(cached),
+        "fallback": bool(fallback),
+        "generatedAt": max(0, int(time.time() if generated_at is None else generated_at)),
+    }
+
+
+def _with_recommendation_meta(result: dict, origin: str, *, fallback: bool = False) -> dict:
+    result["recommendationMeta"] = _recommendation_meta(origin, fallback=fallback)
+    return result
+
+
 def _profile_title_anchors(keys: object, limit: int) -> list[str]:
     """Resolve a small, ordered set of local TMDB keys to display titles.
 
@@ -903,8 +926,11 @@ async def _cached_ai_recommendations(
     user_id: int, *, profile: dict, history: list, cw_map: dict, dismissed: set,
 ) -> dict | None:
     """Return a revalidated AI Picks cache entry, if it is still useful."""
-    cached = await ai_rec_store.get_cached(user_id)
-    if not cached:
+    entry = await ai_rec_store.get_cached_entry(user_id)
+    if not entry:
+        return None
+    cached = entry.get("items")
+    if not isinstance(cached, list):
         return None
     seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map)
     valid = _validate_cached(
@@ -919,6 +945,10 @@ async def _cached_ai_recommendations(
         "items": valid,
         "externalItems": await _requestable_picks(user_id, profile, dismissed, ""),
         "message": "", "coldStart": False, "cached": True,
+        "recommendationMeta": _recommendation_meta(
+            str(entry.get("origin") or "library"), cached=True,
+            generated_at=int(entry.get("cachedAt") or 0),
+        ),
     }
 
 
@@ -1168,7 +1198,7 @@ async def _generate_agentic(
     if refresh:
         await rec_store.clear_cached(user_id)
     if refresh or not query:
-        await ai_rec_store.set_cached(user_id, items)
+        await ai_rec_store.set_cached(user_id, items, origin="agent")
     logging.info(
         "ai_rec_agent tool_count=%d elapsed_ms=%d candidate_count=%d scored_candidate_count=%d "
         "model_pick_count=%d final_pick_count=%d comfort_count=%d discovery_count=%d "
@@ -1178,13 +1208,13 @@ async def _generate_agentic(
         sum(item.get("bucket") == "discovery" for item in items), dict(getattr(catalogue, "source_counts", {})),
         rerank_metrics["diversity_relaxations"], "",
     )
-    return {
+    return _with_recommendation_meta({
         "items": items,
         "externalItems": await _requestable_picks(user_id, profile, dismissed, query),
         "message": str(result.get("message") or "").strip()[:240] if isinstance(result, dict) else "",
         "assessment": _validated_assessment(result.get("assessment"), catalogue.payloads) if _is_taste_match_question(query) and isinstance(result, dict) else None,
         "coldStart": False,
-    }
+    }, "agent")
 
 
 async def get_ai_recommendations(
@@ -1216,8 +1246,13 @@ async def get_ai_recommendations(
                     getattr(exc, "candidate_count", 0), 0, str(exc) or type(exc).__name__,
                 )
                 await _emit_agent_status(progress, "Curating picks")
-                return await _generate(user_id, query=query, limit=limit, refresh=refresh, rank_with_gemini=False)
-        return await _generate(user_id, query=query, limit=limit, refresh=refresh)
+                return _with_recommendation_meta(
+                    await _generate(user_id, query=query, limit=limit, refresh=refresh, rank_with_gemini=False),
+                    "library", fallback=True,
+                )
+        return _with_recommendation_meta(
+            await _generate(user_id, query=query, limit=limit, refresh=refresh), "library",
+        )
     except Exception:
         logging.exception("ai_rec: generation failed, serving trending fallback")
         # An optional ranking dependency must not turn into an endless client
@@ -1237,12 +1272,12 @@ async def get_ai_recommendations(
         except Exception:
             logging.exception("ai_rec: fallback activity filter failed")
             items = await _trending_items(limit)
-        return {
+        return _with_recommendation_meta({
             "items": items,
             "externalItems": [],
             "message": "We couldn't tailor picks just now; showing fresh titles instead. Try Refresh.",
             "coldStart": False,
-        }
+        }, "fresh", fallback=True)
 
 
 async def _generate(
@@ -1276,7 +1311,7 @@ async def _generate(
 
     async def _finish(result: dict) -> dict:
         if write_cache and result.get("items"):
-            await ai_rec_store.set_cached(user_id, result["items"])
+            await ai_rec_store.set_cached(user_id, result["items"], origin="library")
         return result
 
     # ``coldStart`` is exclusively about the absence of user activity. A

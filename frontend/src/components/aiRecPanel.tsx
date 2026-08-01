@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { dismissRecommendation, streamAiRecommendations, trackRecommendationEvents } from '../api';
-import type { AiRecItem, HubCard, RequestTitle } from '../types';
+import type { AiRecItem, AiRecResponse, HubCard, RequestTitle } from '../types';
 import { FilmIcon, ListPlusIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
 import type { WatchTrack } from '../types';
 import { AiMixPanel } from './aiMixPanel';
@@ -18,6 +18,19 @@ function progressStep(status: string) {
   if (text.includes('curating')) return 2;
   if (text.includes('exploring')) return 1;
   return 0;
+}
+
+function recommendationStatus(meta: AiRecResponse['recommendationMeta']) {
+  if (!meta) return null;
+  const elapsed = meta.generatedAt > 0 ? Math.max(0, Math.floor(Date.now() / 1000) - meta.generatedAt) : null;
+  const age = elapsed === null ? 'recently' : elapsed < 60 ? 'just now' : elapsed < 3600 ? `${Math.floor(elapsed / 60)}m ago` : `${Math.floor(elapsed / 3600)}h ago`;
+  const source = meta.origin === 'agent' ? 'AI-curated from your library'
+    : meta.origin === 'fresh' ? 'Fresh, playable library titles'
+      : 'Library picks matched to your taste';
+  return {
+    label: `${meta.cached ? 'Saved' : 'Updated'} ${age} · ${source}`,
+    fallback: meta.fallback,
+  };
 }
 
 export function AiRecPanel({
@@ -41,6 +54,7 @@ export function AiRecPanel({
   const [externalItems, setExternalItems] = useState<RequestTitle[]>([]);
   const [message, setMessage] = useState('');
   const [assessment, setAssessment] = useState<{ title: string; verdict: 'likely' | 'maybe' | 'unlikely'; reason: string } | null>(null);
+  const [recommendationMeta, setRecommendationMeta] = useState<AiRecResponse['recommendationMeta']>();
   const [coldStart, setColdStart] = useState(false);
   const [loading, setLoading] = useState(true);
   const [asking, setAsking] = useState(false);
@@ -80,6 +94,7 @@ export function AiRecPanel({
         setMessage(res.message || '');
         setAssessment(res.assessment || null);
         setColdStart(Boolean(res.coldStart));
+        setRecommendationMeta(res.recommendationMeta);
       })
       .catch((err) => {
         if (timedOut) setError('Recommendations took too long. Please try again.');
@@ -121,6 +136,7 @@ export function AiRecPanel({
         setMessage(res.message || '');
         setAssessment(res.assessment || null);
         setColdStart(Boolean(res.coldStart));
+        setRecommendationMeta(res.recommendationMeta);
       })
       .catch((err) => {
         if (timedOut) setError('Recommendations took too long. Please try again.');
@@ -157,6 +173,7 @@ export function AiRecPanel({
   const comfort = items.filter((item) => item.bucket !== 'discovery');
   const discovery = items.filter((item) => item.bucket === 'discovery');
   const split = discovery.length > 0 && comfort.length > 0;
+  const status = recommendationStatus(recommendationMeta);
   useEffect(() => {
     if (busy || !items.length) return;
     const unseen = items.flatMap((item, position) => {
@@ -219,6 +236,12 @@ export function AiRecPanel({
               {PROGRESS_STEPS.map((step, index) => <li key={step} className={index < activeProgressStep ? 'complete' : index === activeProgressStep ? 'active' : ''}>{step}</li>)}
             </ol>
           </section> : message && !busy && <p className="ai-rec-message">{message}</p>}
+
+          {status && !busy && <aside className={`ai-rec-status${status.fallback ? ' ai-rec-status--fallback' : ''}`} aria-live="polite">
+            <span>{status.label}</span>
+            {status.fallback && <span>Personalized curation was unavailable, so we kept this to unwatched titles in your library.</span>}
+            {status.fallback && <Button type="button" variant="outline" size="sm" className="ai-rec-status-retry" onClick={() => runAgent({ refresh: true })}>Try again</Button>}
+          </aside>}
 
           {/* Any card click navigates via its link — close the panel so it doesn't cover the new page. */}
           <div className="ai-rec-body" onClickCapture={(event) => { if ((event.target as HTMLElement).closest('a')) onClose(); }}>

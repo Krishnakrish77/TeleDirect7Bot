@@ -85,6 +85,13 @@ class AiRecGroundingTest(unittest.TestCase):
     def test_ai_picks_uses_the_full_retained_watch_history_for_exclusion(self):
         self.assertEqual(ai_rec._AI_REC_HISTORY_LIMIT, 200)
 
+    def test_recommendation_metadata_is_safe_and_distinguishes_fallbacks(self):
+        with patch.object(ai_rec.time, "time", return_value=1_700_000_000):
+            agent = ai_rec._recommendation_meta("agent")
+            fallback = ai_rec._recommendation_meta("unknown", cached=True, fallback=True, generated_at=123)
+        self.assertEqual(agent, {"origin": "agent", "cached": False, "fallback": False, "generatedAt": 1_700_000_000})
+        self.assertEqual(fallback, {"origin": "library", "cached": True, "fallback": True, "generatedAt": 123})
+
     def test_external_pick_cache_uses_a_monotonic_clock(self):
         async def run():
             ai_rec._external_pick_cache.clear()
@@ -206,7 +213,7 @@ class AiRecGroundingTest(unittest.TestCase):
                 ai_rec._AGENT_INITIAL_TOOL_CONFIG,
             )
             self.assertIsNone(generate_content.await_args_list[1].kwargs["tool_config"])
-            set_cached.assert_awaited_once_with(7, result["items"])
+            set_cached.assert_awaited_once_with(7, result["items"], origin="agent")
 
         async def _append(values, value):
             values.append(value)

@@ -479,6 +479,12 @@ export interface AiRecResponse {
   assessment?: { title: string; verdict: 'likely' | 'maybe' | 'unlikely'; reason: string } | null;
   coldStart: boolean;
   cached?: boolean;
+  recommendationMeta?: {
+    origin: 'agent' | 'library' | 'fresh';
+    cached: boolean;
+    fallback: boolean;
+    generatedAt: number;
+  };
 }
 
 export interface Suggestion {
