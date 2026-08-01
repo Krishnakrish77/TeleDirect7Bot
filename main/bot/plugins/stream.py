@@ -3,11 +3,17 @@ import logging
 from main.bot import StreamBot
 from main.utils import media_index
 from main.utils.download_urls import as_download_url
-from main.utils.file_properties import gen_link, get_hash, get_media_from_message
+from main.utils.file_properties import (
+    PROJECT_REPOSITORY_URL,
+    gen_link,
+    get_hash,
+    get_media_from_message,
+)
 from main.utils.indexer import schedule_index, schedule_subtitle_pairing
 from main.utils.subtitles import is_subtitle_filename, is_subtitle_mime
 from main.vars import Var
 from pyrogram import filters, Client, raw, utils as pyrogram_utils
+from pyrogram.enums import ButtonStyle
 from pyrogram.errors import FloodWait
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -264,7 +270,10 @@ async def channel_receive_handler(bot, broadcast: Message):
                 chat_id=broadcast.chat.id,
                 message_id=broadcast.id,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Download Link 📥", url=stream_link)]]),
+                    [[
+                        InlineKeyboardButton("⬇ Download", url=stream_link, style=ButtonStyle.PRIMARY),
+                        InlineKeyboardButton("⌘ GitHub", url=PROJECT_REPOSITORY_URL),
+                    ]]),
             )
         except Exception as edit_exc:
             if MessageIdInvalid is not None and isinstance(edit_exc, MessageIdInvalid):

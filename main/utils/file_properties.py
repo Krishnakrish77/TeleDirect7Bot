@@ -10,7 +10,11 @@ from main.utils.Translation import Language
 from main.utils.download_urls import as_download_url
 from main.utils.human_readable import humanbytes
 from main.vars import Var
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+
+PROJECT_REPOSITORY_URL = "https://github.com/Krishnakrish77/TeleDirect7Bot"
 
 async def parse_file_id(message: "Message") -> Optional[FileId]:
     media = get_media_from_message(message)
@@ -120,12 +124,16 @@ async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
     download_link = as_download_url(stream_link)
     Stream_Text = lang.stream_msg_text.format(file_name, file_size, download_link, page_link)
 
-    buttons = [[InlineKeyboardButton("🖥STREAM", url=page_link),
-                InlineKeyboardButton("Dᴏᴡɴʟᴏᴀᴅ 📥", url=download_link)]]
+    buttons = [[
+        InlineKeyboardButton("▶ Watch", url=page_link, style=ButtonStyle.PRIMARY),
+        InlineKeyboardButton("⬇ Download", url=download_link),
+    ]]
+    buttons.append([InlineKeyboardButton("⌘ GitHub", url=PROJECT_REPOSITORY_URL)])
     if not from_channel:
         buttons.append([InlineKeyboardButton(
-            "❌ Delete Link",
-            callback_data=f"msgdelconf2_{log_msg.id}_{get_media_file_unique_id(log_msg)}"
+            "🗑 Delete link",
+            callback_data=f"msgdelconf2_{log_msg.id}_{get_media_file_unique_id(log_msg)}",
+            style=ButtonStyle.DANGER,
         )])
     reply_markup = InlineKeyboardMarkup(buttons)
 

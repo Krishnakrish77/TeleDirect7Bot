@@ -1,4 +1,5 @@
 from main.vars import Var
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
@@ -47,43 +48,43 @@ class BUTTON(object):
     START_BUTTONS = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("📚 Browse Library", url=Var.URL),
+                InlineKeyboardButton("📚 Browse library", url=Var.URL, style=ButtonStyle.PRIMARY),
             ],
             [
-                InlineKeyboardButton("Help", callback_data="help"),
-                InlineKeyboardButton("About", callback_data="about"),
+                InlineKeyboardButton("❔ Help", callback_data="help"),
+                InlineKeyboardButton("ℹ️ About", callback_data="about"),
             ],
             [
-                InlineKeyboardButton("Media Search Bot", url="https://t.me/Movier7Bot"),
-                InlineKeyboardButton("Repo", url="https://github.com/Krishnakrish77/TeleDirect7Bot"),
+                InlineKeyboardButton("🔎 Search media", url="https://t.me/Movier7Bot"),
+                InlineKeyboardButton("⌘ GitHub", url="https://github.com/Krishnakrish77/TeleDirect7Bot"),
             ],
         ]
     )
     HELP_BUTTONS = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("📚 Browse Library", url=Var.URL),
+                InlineKeyboardButton("📚 Browse library", url=Var.URL, style=ButtonStyle.PRIMARY),
             ],
             [
-                InlineKeyboardButton("Home", callback_data="home"),
-                InlineKeyboardButton("About", callback_data="about"),
+                InlineKeyboardButton("← Home", callback_data="home"),
+                InlineKeyboardButton("ℹ️ About", callback_data="about"),
             ],
             [
-                InlineKeyboardButton("Close", callback_data="close"),
+                InlineKeyboardButton("✕ Close", callback_data="close", style=ButtonStyle.DANGER),
             ],
         ]
     )
     ABOUT_BUTTONS = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("📚 Browse Library", url=Var.URL),
+                InlineKeyboardButton("📚 Browse library", url=Var.URL, style=ButtonStyle.PRIMARY),
             ],
             [
-                InlineKeyboardButton("Home", callback_data="home"),
-                InlineKeyboardButton("Help", callback_data="help"),
+                InlineKeyboardButton("← Home", callback_data="home"),
+                InlineKeyboardButton("❔ Help", callback_data="help"),
             ],
             [
-                InlineKeyboardButton("Close", callback_data="close"),
+                InlineKeyboardButton("✕ Close", callback_data="close", style=ButtonStyle.DANGER),
             ],
         ]
     )
