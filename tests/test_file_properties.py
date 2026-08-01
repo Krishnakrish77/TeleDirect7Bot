@@ -30,7 +30,7 @@ class LinkMarkupTest(unittest.IsolatedAsyncioTestCase):
         rows = markup.inline_keyboard
         self.assertEqual(rows[0][0].text, "▶ Watch")
         self.assertEqual(rows[0][0].style, ButtonStyle.PRIMARY)
-        self.assertEqual(rows[1][0].text, "⌘ GitHub")
+        self.assertEqual(rows[1][0].text, "↗ GitHub")
         self.assertEqual(rows[1][0].url, PROJECT_REPOSITORY_URL)
         self.assertEqual(rows[2][0].text, "🗑 Delete link")
         self.assertEqual(rows[2][0].style, ButtonStyle.DANGER)
@@ -41,7 +41,7 @@ class LinkMarkupTest(unittest.IsolatedAsyncioTestCase):
         rows = markup.inline_keyboard
         self.assertEqual([[button.text for button in row] for row in rows], [
             ["▶ Watch", "⬇ Download"],
-            ["⌘ GitHub"],
+            ["↗ GitHub"],
         ])
 
 

@@ -272,7 +272,7 @@ async def channel_receive_handler(bot, broadcast: Message):
                 reply_markup=InlineKeyboardMarkup(
                     [[
                         InlineKeyboardButton("⬇ Download", url=stream_link, style=ButtonStyle.PRIMARY),
-                        InlineKeyboardButton("⌘ GitHub", url=PROJECT_REPOSITORY_URL),
+                        InlineKeyboardButton("↗ GitHub", url=PROJECT_REPOSITORY_URL),
                     ]]),
             )
         except Exception as edit_exc:

@@ -56,7 +56,7 @@ class BUTTON(object):
             ],
             [
                 InlineKeyboardButton("🔎 Search media", url="https://t.me/Movier7Bot"),
-                InlineKeyboardButton("⌘ GitHub", url="https://github.com/Krishnakrish77/TeleDirect7Bot"),
+                InlineKeyboardButton("↗ GitHub", url="https://github.com/Krishnakrish77/TeleDirect7Bot"),
             ],
         ]
     )
