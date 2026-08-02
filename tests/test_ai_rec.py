@@ -92,6 +92,39 @@ class AiRecGroundingTest(unittest.TestCase):
         self.assertEqual(agent, {"origin": "agent", "cached": False, "fallback": False, "generatedAt": 1_700_000_000})
         self.assertEqual(fallback, {"origin": "library", "cached": True, "fallback": True, "generatedAt": 123})
 
+    def test_initial_open_ignores_a_cached_library_fallback(self):
+        async def run():
+            with patch.object(
+                ai_rec.ai_rec_store,
+                "get_cached_entry",
+                AsyncMock(return_value={"items": [{"href": "/weaker"}], "origin": "library"}),
+            ):
+                return await ai_rec._cached_ai_recommendations(
+                    7, profile={}, history=[], cw_map={}, dismissed=set(),
+                )
+
+        self.assertIsNone(__import__("asyncio").run(run()))
+
+    def test_agent_fallback_does_not_write_an_initial_pick_cache(self):
+        async def run():
+            with (
+                patch.object(ai_rec.rec_engine, "_collect_signal_profile", AsyncMock(return_value={})),
+                patch.object(ai_rec.wh_store, "get_recent", AsyncMock(return_value=[])),
+                patch.object(ai_rec.cw_store, "get_all", AsyncMock(return_value={})),
+                patch.object(ai_rec.dismissed_store, "get_dismissed_ids", AsyncMock(return_value=set())),
+                patch.object(ai_rec.ai_rec_store, "get_cached_entry", AsyncMock(return_value=None)),
+                patch.object(ai_rec.ai_rec_store, "set_cached", AsyncMock()) as set_cached,
+                patch.object(ai_rec, "_safe_stats", AsyncMock(return_value={})),
+                patch.object(ai_rec, "_trending_items", AsyncMock(return_value=[{"href": "/fresh"}])),
+            ):
+                result = await ai_rec._generate(
+                    7, query=None, limit=12, refresh=False, rank_with_gemini=False, cache_result=False,
+                )
+            set_cached.assert_not_awaited()
+            return result
+
+        self.assertEqual(__import__("asyncio").run(run())["items"], [{"href": "/fresh"}])
+
     def test_external_pick_cache_uses_a_monotonic_clock(self):
         async def run():
             ai_rec._external_pick_cache.clear()

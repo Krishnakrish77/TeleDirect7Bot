@@ -925,9 +925,17 @@ async def _requestable_picks(user_id: int, profile: dict, dismissed: set, query:
 async def _cached_ai_recommendations(
     user_id: int, *, profile: dict, history: list, cw_map: dict, dismissed: set,
 ) -> dict | None:
-    """Return a revalidated AI Picks cache entry, if it is still useful."""
+    """Return a revalidated successful agent cache entry, if it is useful.
+
+    A deterministic library fallback is intentionally not reused.  It exists
+    to make one failed agent request graceful, but keeping it for the cache
+    TTL makes the next panel open noticeably weaker than an explicit Refresh.
+    Older fallback cache documents are likewise ignored until they expire.
+    """
     entry = await ai_rec_store.get_cached_entry(user_id)
     if not entry:
+        return None
+    if str(entry.get("origin") or "") != "agent":
         return None
     cached = entry.get("items")
     if not isinstance(cached, list):
@@ -1247,7 +1255,10 @@ async def get_ai_recommendations(
                 )
                 await _emit_agent_status(progress, "Curating picks")
                 return _with_recommendation_meta(
-                    await _generate(user_id, query=query, limit=limit, refresh=refresh, rank_with_gemini=False),
+                    await _generate(
+                        user_id, query=query, limit=limit, refresh=refresh,
+                        rank_with_gemini=False, cache_result=False,
+                    ),
                     "library", fallback=True,
                 )
         return _with_recommendation_meta(
@@ -1282,11 +1293,13 @@ async def get_ai_recommendations(
 
 async def _generate(
     user_id: int, *, query: Optional[str], limit: int, refresh: bool,
-    rank_with_gemini: bool = True,
+    rank_with_gemini: bool = True, cache_result: bool = True,
 ) -> dict:
     query = (query or "").strip()
     read_cache = not query and not refresh
-    write_cache = not query  # refresh recomputes AND refreshes the stored cache
+    # A fallback may be shown for this request, but it must never pin weaker
+    # deterministic results over the next cache-first panel open.
+    write_cache = not query and cache_result  # refresh recomputes AND refreshes the stored cache
 
     from main.server import spa_routes as _spa  # lazy: card builders
 
