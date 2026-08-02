@@ -2595,13 +2595,30 @@ def _subtitle_request_item(key: str) -> HubItem | None:
     return item
 
 
+async def _subtitle_search_item(key: str) -> HubItem | None:
+    """Return a searchable video, restoring missing TMDB/IMDb metadata once.
+
+    The subtitle provider accepts canonical IDs rather than title text. A
+    user-triggered enrichment gives clean title/series names one chance to
+    recover that ID, including the show ID needed for season/episode lookups.
+    """
+    item = _subtitle_request_item(key)
+    if item is None or item.imdb_id or item.tmdb_id:
+        return item
+    try:
+        await media_index.enrich_one(item.message_id)
+    except Exception:
+        logging.warning("subtitle search: metadata recovery failed for item %s", item.message_id, exc_info=True)
+    return _subtitle_request_item(key)
+
+
 @routes.get(r"/api/app/subtitles/{key:[A-Za-z0-9_-]+}/search")
 async def api_user_subtitle_search(request: web.Request) -> web.Response:
     """Search provider-side subtitles without ever disclosing its API key."""
     user = get_user(request)
     if user is None:
         return _json({"error": "Sign in to search subtitles"}, status=401)
-    item = _subtitle_request_item(request.match_info["key"])
+    item = await _subtitle_search_item(request.match_info["key"])
     if item is None:
         return _json({"error": "Video not found"}, status=404)
     try:

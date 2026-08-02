@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -24,8 +25,17 @@ _USER_SEARCH_LIMIT = 50
 _USER_ATTACH_LIMIT = 10
 _USER_ITEM_ATTACH_LIMIT = 3
 _GLOBAL_REQUEST_LIMIT = 800
+# Wyzie otherwise defaults to OpenSubtitles alone. Asking its source router
+# for every source available to the configured key gives sparse or regional
+# catalogue entries a real chance of finding a match without exposing the key.
+_SEARCH_SOURCES = "all"
 _cache: dict[tuple[int, str], tuple[float, list[dict[str, Any]]]] = {}
 _lock = asyncio.Lock()
+_RELEASE_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_RELEASE_NOISE = {
+    "aac", "ac3", "atmos", "av1", "bluray", "brrip", "ddp", "dv", "dts", "h264", "h265",
+    "hevc", "hdr", "proper", "remux", "repack", "subs", "web", "webrip", "webdl", "x264", "x265",
+}
 
 
 class WyzieError(Exception):
@@ -96,6 +106,39 @@ def _candidate(raw: Any) -> dict[str, Any] | None:
             "hearingImpaired": bool(raw.get("isHearingImpaired")), "source": str(raw.get("source") or "")}
 
 
+def _release_tokens(value: object) -> set[str]:
+    """Keep useful release/name tokens without turning them into a filter."""
+    tokens = _RELEASE_TOKEN_RE.findall(str(value or "").lower())
+    return {token for token in tokens if len(token) > 1 and token not in _RELEASE_NOISE}
+
+
+def _rank_release_matches(item, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Prefer subtitle releases resembling the video, retaining every result.
+
+    Wyzie resolves title identity with IMDB/TMDB IDs.  The local filename and
+    parsed title are only a tie-breaker: release strings are often incomplete
+    or unconventional, so using them as an upstream search filter would turn
+    good subtitle matches into empty results.
+    """
+    wanted = _release_tokens(getattr(item, "file_name", ""))
+    wanted.update(_release_tokens(getattr(item, "series_title", "")))
+    wanted.update(_release_tokens(getattr(item, "title", "")))
+    if not wanted:
+        return candidates
+
+    def score(candidate: dict[str, Any]) -> int:
+        available = _release_tokens(candidate.get("release"))
+        available.update(_release_tokens(candidate.get("fileName")))
+        overlap = wanted & available
+        # Episode and resolution/release-group tokens tend to be the most
+        # discriminating. A plain title overlap is still useful but lighter.
+        return sum(3 if token.startswith("s") and "e" in token else 2 if token.isdigit() else 1 for token in overlap)
+
+    return [candidate for _position, candidate in sorted(
+        enumerate(candidates), key=lambda row: (-score(row[1]), row[0]),
+    )]
+
+
 async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]:
     if not configured():
         raise WyzieError("Subtitle search is not configured")
@@ -111,7 +154,12 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
     await _reserve(user_id, "search", provider_call=not (cached and now - cached[0] < _SEARCH_TTL))
     if cached and now - cached[0] < _SEARCH_TTL:
         return [{k: v for k, v in result.items() if k != "url"} for result in cached[1]]
-    params = {"id": provider_id, "format": "srt,vtt", "key": Var.WYZIE_API_KEY}
+    params = {
+        "id": provider_id,
+        "format": "srt,vtt",
+        "source": _SEARCH_SOURCES,
+        "key": Var.WYZIE_API_KEY,
+    }
     if item.season is not None and item.episode is not None:
         params.update({"season": str(item.season), "episode": str(item.episode)})
     if language:
@@ -131,6 +179,7 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
         raise WyzieError("Subtitle provider is unavailable") from exc
     results = payload if isinstance(payload, list) else payload.get("subtitles", []) if isinstance(payload, dict) else []
     clean = [value for value in (_candidate(raw) for raw in results) if value][: _MAX_RESULTS]
+    clean = _rank_release_matches(item, clean)
     _cache[cache_key] = (now, clean)
     return [{k: v for k, v in result.items() if k != "url"} for result in clean]
 
