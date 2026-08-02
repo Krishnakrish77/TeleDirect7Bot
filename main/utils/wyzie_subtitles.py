@@ -24,6 +24,10 @@ _USER_SEARCH_LIMIT = 50
 _USER_ATTACH_LIMIT = 10
 _USER_ITEM_ATTACH_LIMIT = 3
 _GLOBAL_REQUEST_LIMIT = 800
+# Wyzie otherwise defaults to OpenSubtitles alone. Asking its source router
+# for every source available to the configured key gives sparse or regional
+# catalogue entries a real chance of finding a match without exposing the key.
+_SEARCH_SOURCES = "all"
 _cache: dict[tuple[int, str], tuple[float, list[dict[str, Any]]]] = {}
 _lock = asyncio.Lock()
 
@@ -111,7 +115,12 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
     await _reserve(user_id, "search", provider_call=not (cached and now - cached[0] < _SEARCH_TTL))
     if cached and now - cached[0] < _SEARCH_TTL:
         return [{k: v for k, v in result.items() if k != "url"} for result in cached[1]]
-    params = {"id": provider_id, "format": "srt,vtt", "key": Var.WYZIE_API_KEY}
+    params = {
+        "id": provider_id,
+        "format": "srt,vtt",
+        "source": _SEARCH_SOURCES,
+        "key": Var.WYZIE_API_KEY,
+    }
     if item.season is not None and item.episode is not None:
         params.update({"season": str(item.season), "episode": str(item.episode)})
     if language:
