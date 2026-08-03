@@ -253,6 +253,57 @@ class AiRecGroundingTest(unittest.TestCase):
 
         __import__("asyncio").run(run())
 
+    def test_agent_recovers_when_all_model_searches_are_empty(self):
+        class Catalogue:
+            def __init__(self, **_kwargs):
+                self.payloads = {}
+                self.source_counts = Counter()
+                self.recovered = False
+
+            def run(self, _name, _args):
+                return []
+
+            def recover_with_broad_browse(self):
+                self.recovered = True
+                self.payloads = {"card_1": _card("/recovered", title="Recovered")}
+                self.source_counts["recovery_browse"] = 1
+                return [{"id": "card_1", "title": "Recovered", "availability": {"playable": True}}]
+
+            def _compact(self, identifier, payload):
+                return {"id": identifier, "title": payload["title"], "availability": {"playable": True}}
+
+        async def run():
+            empty_calls = {"candidates": [{"content": {"parts": [
+                {"functionCall": {"name": "search_library", "args": {"query": "missing one"}}},
+                {"functionCall": {"name": "search_library", "args": {"query": "missing two"}}},
+                {"functionCall": {"name": "browse_library", "args": {"genre": "missing"}}},
+            ]}}]}
+            catalogues = []
+
+            def make_catalogue(**kwargs):
+                catalogue = Catalogue(**kwargs)
+                catalogues.append(catalogue)
+                return catalogue
+
+            with patch.object(ai_rec.rec_engine, "_collect_signal_profile", AsyncMock(return_value={"seeds": []})), patch.object(
+                ai_rec.wh_store, "get_recent", AsyncMock(return_value=[])
+            ), patch.object(ai_rec.cw_store, "get_all", AsyncMock(return_value={})), patch.object(
+                ai_rec.dismissed_store, "get_dismissed_ids", AsyncMock(return_value=set())
+            ), patch.object(ai_rec, "_safe_stats", AsyncMock(return_value={})), patch.object(
+                ai_rec, "_AgentCatalogue", side_effect=make_catalogue
+            ), patch.object(
+                ai_rec.gemini, "generate_content", AsyncMock(return_value=empty_calls)
+            ), patch.object(
+                ai_rec.gemini, "generate_json", AsyncMock(return_value={"picks": [{"id": "card_1", "reason": "grounded", "bucket": "comfort"}]})
+            ), patch.object(ai_rec, "_requestable_picks", AsyncMock(return_value=[])), patch.object(
+                ai_rec.ai_rec_store, "set_cached", AsyncMock()
+            ):
+                result = await ai_rec._generate_agentic(7, query="", refresh=False, limit=12)
+            self.assertEqual([item["href"] for item in result["items"]], ["/recovered"])
+            self.assertTrue(catalogues[0].recovered)
+
+        __import__("asyncio").run(run())
+
     def test_reason_prompt_requires_a_concrete_personal_match(self):
         prompt = ai_rec._build_prompt("Likes crime dramas", [], "", 8)
         self.assertIn("max 9 words", prompt)

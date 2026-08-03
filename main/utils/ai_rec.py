@@ -135,11 +135,15 @@ _AGENT_INITIAL_TOOL_CONFIG = {
 class AgentRunError(RuntimeError):
     """The bounded agent could not produce a grounded result."""
 
-    def __init__(self, reason: str, *, tool_count: int = 0, candidate_count: int = 0, elapsed_ms: int = 0):
+    def __init__(
+        self, reason: str, *, tool_count: int = 0, candidate_count: int = 0,
+        elapsed_ms: int = 0, source_counts: dict[str, int] | None = None,
+    ):
         super().__init__(reason)
         self.tool_count = tool_count
         self.candidate_count = candidate_count
         self.elapsed_ms = elapsed_ms
+        self.source_counts = source_counts or {}
 
 
 # ---- pure helpers (unit-tested in test_ai_rec.py) -------------------------
@@ -1017,6 +1021,7 @@ class _AgentCatalogue:
         self.payloads: dict[str, dict] = {}
         self.scores: dict[str, float] = {}
         self.source_counts: Counter = Counter()
+        self._last_filter_counts: dict[str, int] = {}
 
     def _compact(self, identifier: str, payload: dict) -> dict:
         return {
@@ -1038,15 +1043,22 @@ class _AgentCatalogue:
         from main.server import spa_routes as _spa
         card_payloads = [(_spa._card(card, art_cache=self._art_cache), score) for card, score in ranked_cards]
         payloads = [payload for payload, _score in card_payloads]
-        payloads = _video_payloads(payloads)
-        payloads = _dedup_payloads(payloads, self.seen_keys, self.watched_ids)
-        payloads = _exclude_tmdb_payloads(payloads, self.excluded_tmdb)
+        video_payloads = _video_payloads(payloads)
+        unseen_payloads = _dedup_payloads(video_payloads, self.seen_keys, self.watched_ids)
+        included_payloads = _exclude_tmdb_payloads(unseen_payloads, self.excluded_tmdb)
         # A second cache-style validation covers hidden/deleted single uploads
         # and makes all three tools subject to identical eligibility rules.
         payloads = _validate_cached(
-            payloads, exclude_keys=self.seen_keys, exclude_item_ids=self.watched_ids,
+            included_payloads, exclude_keys=self.seen_keys, exclude_item_ids=self.watched_ids,
             excluded_tmdb=self.excluded_tmdb,
         )
+        self._last_filter_counts = {
+            "ranked": len(card_payloads),
+            "video": len(video_payloads),
+            "unwatched": len(unseen_payloads),
+            "included": len(included_payloads),
+            "valid": len(payloads),
+        }
         score_by_href = {str(payload.get("href") or ""): score for payload, score in card_payloads}
         result: list[dict] = []
         for payload in payloads[:_AGENT_TOOL_RESULT_LIMIT]:
@@ -1095,6 +1107,28 @@ class _AgentCatalogue:
         )
         result = self._register(ranked)
         self.source_counts[name] += len(result)
+        for stage, count in self._last_filter_counts.items():
+            self.source_counts[f"{name}:{stage}"] += count
+        return result
+
+    def recover_with_broad_browse(self) -> list[dict]:
+        """Seed a safe local reserve when model-selected searches are all empty.
+
+        Tool calling is probabilistic: a model can make three perfectly valid
+        but overly specific searches.  A bounded broad browse keeps the final
+        curation grounded in the user's *unwatched* library without another
+        model round trip.
+        """
+        cards, _ = media_index.query_grouped(
+            sort="newest", limit=_MAX_CANDIDATES * 3,
+        )
+        ranked = rec_engine.rank_catalogue_cards(
+            list(cards), self.profile, limit=len(cards),
+        )
+        result = self._register(ranked)
+        self.source_counts["recovery_browse"] += len(result)
+        for stage, count in self._last_filter_counts.items():
+            self.source_counts[f"recovery_browse:{stage}"] += count
         return result
 
 
@@ -1148,6 +1182,7 @@ async def _generate_agentic(
             tool_count=calls_used,
             candidate_count=len(catalogue.payloads),
             elapsed_ms=round((time.monotonic() - started) * 1000),
+            source_counts=dict(catalogue.source_counts),
         )
 
     explored = False
@@ -1177,6 +1212,8 @@ async def _generate_agentic(
             answers.append({"functionResponse": {"name": name, "response": {"items": result}}})
             calls_used += 1
         contents.append({"role": "user", "parts": answers})
+    if not catalogue.payloads:
+        catalogue.recover_with_broad_browse()
     if not catalogue.payloads:
         raise failed("no_candidates")
     await _emit_agent_status(progress, "Curating picks")
@@ -1249,9 +1286,11 @@ async def get_ai_recommendations(
                 # extra model call. A bad response must feel like a slightly
                 # less tailored shelf, never an error page or endless spinner.
                 logging.info(
-                    "ai_rec_agent tool_count=%d elapsed_ms=%d candidate_count=%d final_pick_count=%d fallback_reason=%s",
+                    "ai_rec_agent tool_count=%d elapsed_ms=%d candidate_count=%d final_pick_count=%d "
+                    "source_counts=%s fallback_reason=%s",
                     getattr(exc, "tool_count", 0), getattr(exc, "elapsed_ms", 0),
-                    getattr(exc, "candidate_count", 0), 0, str(exc) or type(exc).__name__,
+                    getattr(exc, "candidate_count", 0), 0, getattr(exc, "source_counts", {}),
+                    str(exc) or type(exc).__name__,
                 )
                 await _emit_agent_status(progress, "Curating picks")
                 return _with_recommendation_meta(
