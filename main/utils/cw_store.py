@@ -2,7 +2,7 @@
 
 Schema — collection ``continue_watching``:
   { user_id: int, cw_key: str, pos: float, dur: float, t: int (epoch-ms),
-    title: str, updated_at: datetime }
+    title: str, variant_key?: str, updated_at: datetime }
   unique index on (user_id, cw_key); TTL on updated_at (90 days).
 """
 
@@ -89,7 +89,7 @@ async def get_all(user_id: int) -> Dict[str, dict]:
         docs = await db["continue_watching"].find(
             {"user_id": user_id},
             projection={"cw_key": 1, "pos": 1, "dur": 1, "t": 1, "title": 1,
-                        "started_at": 1, "device_id": 1, "device_label": 1, "_id": 0},
+                        "started_at": 1, "device_id": 1, "device_label": 1, "variant_key": 1, "_id": 0},
             sort=[("t", -1)],
         ).to_list(length=_CW_CAP)
         return {
@@ -101,6 +101,7 @@ async def get_all(user_id: int) -> Dict[str, dict]:
                 "startedAt": d.get("started_at", d.get("t", 0)),
                 "deviceId": d.get("device_id", ""),
                 "deviceLabel": d.get("device_label", ""),
+                "variantKey": d.get("variant_key", ""),
             }
             for d in docs
         }
@@ -111,7 +112,7 @@ async def get_all(user_id: int) -> Dict[str, dict]:
 
 async def upsert(user_id: int, cw_key: str, pos: float, dur: float,
                  t: int, title: str, started_at: int = 0,
-                 device_id: str = "", device_label: str = "") -> bool:
+                 device_id: str = "", device_label: str = "", variant_key: str = "") -> bool:
     """Save newer in-progress state, rejecting stale writes after deletion.
 
     Tombstones are essential for cross-device sync: a device that was offline
@@ -147,6 +148,8 @@ async def upsert(user_id: int, cw_key: str, pos: float, dur: float,
             if device_id:
                 fields["device_id"] = device_id
                 fields["device_label"] = device_label
+            if variant_key:
+                fields["variant_key"] = variant_key
             await db["continue_watching"].update_one(
                 {"user_id": user_id, "cw_key": cw_key},
                 {"$set": fields},

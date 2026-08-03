@@ -508,9 +508,12 @@ export async function markWatchlistWatched(itemId: string): Promise<void> {
   await request(`/api/app/watchlist/${encodeURIComponent(itemId)}/watched`, { method: 'POST' });
 }
 
-export async function fetchContinueItems(keys: string[], signal?: AbortSignal): Promise<ContinueItem[]> {
-  if (!keys.length) return [];
-  const qs = new URLSearchParams({ keys: keys.join(',') });
+export async function fetchContinueItems(entries: Array<Pick<ContinueEntry, 'key' | 'variantKey'>>, signal?: AbortSignal): Promise<ContinueItem[]> {
+  if (!entries.length) return [];
+  const qs = new URLSearchParams({
+    keys: entries.map((entry) => entry.key).join(','),
+    variants: entries.map((entry) => entry.variantKey || '').join(','),
+  });
   return request<ContinueItem[]>(`/api/items?${qs}`, { signal });
 }
 

@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import json
 import os
 import unittest
 from types import SimpleNamespace
@@ -209,7 +210,7 @@ class SpaHubPayloadTest(unittest.TestCase):
             )
             alternate = _video_item(
                 102,
-                secure_hash="episode-one-720",
+                secure_hash="episode-one-low",
                 title="Pilot",
                 series_key="example-series",
                 series_title="Example Series",
@@ -228,8 +229,19 @@ class SpaHubPayloadTest(unittest.TestCase):
                 episode=2,
                 episode_title="Second episode",
             )
+            next_episode_720 = _video_item(
+                104,
+                secure_hash="episode-two-low",
+                title="Second episode",
+                series_key="example-series",
+                series_title="Example Series",
+                season=1,
+                episode=2,
+                episode_title="Second episode",
+                quality="720p",
+            )
             media_index._items.clear()
-            media_index._items.update({item.message_id: item for item in (current, alternate, next_episode)})
+            media_index._items.update({item.message_id: item for item in (current, alternate, next_episode, next_episode_720)})
 
             payload = spa_routes._episode_navigator_payload(current)
 
@@ -240,6 +252,59 @@ class SpaHubPayloadTest(unittest.TestCase):
             self.assertEqual([entry["label"] for entry in entries], ["S01E01", "S01E02"])
             self.assertTrue(entries[0]["current"])
             self.assertEqual(entries[1]["playHref"], "/play/episode-two103")
+            autoplay_next = media_index.next_episode(alternate)
+            self.assertEqual(autoplay_next["url"], "/watch/episode-two-low104")
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
+    def test_continue_lookup_uses_shared_episode_key_and_selected_variant(self):
+        previous = dict(media_index._items)
+        try:
+            canonical = _video_item(
+                101, secure_hash="episode-one", title="Pilot", series_key="example-series",
+                series_title="Example Series", season=1, episode=1, file_size=2_000,
+            )
+            selected = _video_item(
+                102, secure_hash="episode-one-low", title="Pilot", series_key="example-series",
+                series_title="Example Series", season=1, episode=1, quality="720p", file_size=1_000,
+            )
+            media_index._items.clear()
+            media_index._items.update({101: canonical, 102: selected})
+
+            response = asyncio.run(hub_routes.api_items(SimpleNamespace(query={
+                "keys": "episode-one101",
+                "variants": "episode-one-low102",
+            })))
+            payload = json.loads(response.text)
+
+            self.assertEqual(payload[0]["key"], "episode-one101")
+            self.assertEqual(payload[0]["canonical_key"], "episode-one101")
+            self.assertEqual(payload[0]["variant_key"], "episode-one-low102")
+            self.assertEqual(payload[0]["watch_url"], "/watch/episode-one-low102")
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
+    def test_watch_payload_shares_resume_key_across_episode_variants(self):
+        previous = dict(media_index._items)
+        try:
+            canonical = _video_item(
+                101, secure_hash="episode-one", title="Pilot", series_key="example-series",
+                series_title="Example Series", season=1, episode=1, file_size=2_000,
+            )
+            selected = _video_item(
+                102, secure_hash="episode-one-low", title="Pilot", series_key="example-series",
+                series_title="Example Series", season=1, episode=1, quality="720p", file_size=1_000,
+            )
+            media_index._items.clear()
+            media_index._items.update({101: canonical, 102: selected})
+
+            with patch.object(spa_routes, "get_user", return_value=None):
+                payload = spa_routes._video_watch_payload(SimpleNamespace(), selected)
+
+            self.assertEqual(payload["resumeKey"], "episode-one101")
+            self.assertEqual(payload["variantKey"], "episode-one-low102")
         finally:
             media_index._items.clear()
             media_index._items.update(previous)
