@@ -1265,6 +1265,7 @@ function VideoWatchPage({
             // Persist the TRUE session start so a stale device's later sync
             // can't masquerade as a new session and slip past the tombstone.
             startedAt: continueSessionStartedRef.current,
+            variantKey: video.variantKey,
           };
         }
         localStorage.setItem('td:cw', JSON.stringify(data));
@@ -1288,6 +1289,7 @@ function VideoWatchPage({
             t: now,
             title: video.title,
             startedAt: continueSessionStartedRef.current,
+            variantKey: video.variantKey,
           }).catch(() => undefined);
         }
       } else if (force) {

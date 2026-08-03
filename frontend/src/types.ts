@@ -363,6 +363,7 @@ export interface WatchVideo {
   recapEnd: number;
   chapters: VideoChapter[];
   resumeKey: string;
+  variantKey: string;
   metadata: {
     title: string;
     year: number | null;
@@ -507,6 +508,7 @@ export interface ContinueEntry {
   startedAt?: number;
   deviceId?: string;
   deviceLabel?: string;
+  variantKey?: string;
 }
 
 export type ContinueMap = Record<string, Omit<ContinueEntry, 'key'>>;
@@ -532,6 +534,8 @@ export interface ContinueNextEpisode {
 
 export interface ContinueItem {
   key: string;
+  canonical_key?: string;
+  variant_key?: string;
   title: string;
   series_title: string;
   episode_label: string;

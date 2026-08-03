@@ -1,7 +1,7 @@
 """Continue-Watching sync API.
 
 GET    /api/cw          — fetch all entries for the signed-in user
-POST   /api/cw/{key}    — upsert one entry  {pos, dur, t, title}
+POST   /api/cw/{key}    — upsert one entry  {pos, dur, t, title, variantKey?}
 DELETE /api/cw/{key}    — remove one entry
 DELETE /api/cw          — clear all entries
 """
@@ -61,8 +61,11 @@ async def api_upsert(request: web.Request) -> web.Response:
         title = str(body.get("title", ""))[:200]
         device_id = str(body.get("deviceId", ""))[:64]
         device_label = str(body.get("deviceLabel", ""))[:64]
+        variant_key = str(body.get("variantKey", ""))[:50]
     except Exception:
         return _json({"error": "invalid body"}, status=400)
+    if variant_key and not _VALID_KEY.match(variant_key):
+        return _json({"error": "invalid variant key"}, status=400)
     if not all(math.isfinite(value) for value in (pos, dur)) or dur <= 0 or pos < 0:
         return _json({"error": "invalid progress"}, status=400)
     now_ms = int(time.time() * 1000)
@@ -80,7 +83,7 @@ async def api_upsert(request: web.Request) -> web.Response:
         await cw_store.delete_one(int(user["sub"]), key)
         return _json({"ok": True, "accepted": False})
     accepted = await cw_store.upsert(int(user["sub"]), key, pos, dur, t, title, started_at,
-                                     device_id=device_id, device_label=device_label)
+                                     device_id=device_id, device_label=device_label, variant_key=variant_key)
     # accepted=False means a stale/tombstoned write was rejected — the client
     # uses this to drop a locally-stale or deleted-elsewhere entry.
     return _json({"ok": True, "accepted": bool(accepted)})

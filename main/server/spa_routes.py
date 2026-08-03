@@ -2495,6 +2495,11 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
                 "posterUrl": _tmdb_image(next_item.episode_still_path, "w300") or _thumb(next_item),
             }
 
+    # Series episode variants share one CW record. The selected source remains
+    # explicit so resume/autoplay does not silently move a viewer to another
+    # quality when that variant exists.
+    resume_item = media_index.canonical_episode_variant(item)
+
     return {
         **common,
         "key": f"{item.secure_hash}{item.message_id}",
@@ -2540,7 +2545,8 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
         "recapEnd": float(item.recap_end or 0),
         "chapters": _video_chapters(item),
         "duration": item.duration or 0,
-        "resumeKey": f"{item.secure_hash}{item.message_id}",
+        "resumeKey": f"{resume_item.secure_hash}{resume_item.message_id}",
+        "variantKey": f"{item.secure_hash}{item.message_id}",
         "metadata": _meta_payload(item),
     }
 

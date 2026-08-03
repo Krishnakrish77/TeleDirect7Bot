@@ -803,8 +803,9 @@ async def api_items(request: web.Request) -> web.Response:
     if not raw:
         return web.json_response([], headers={"Cache-Control": "no-store"})
     keys = [k for k in raw.split(",") if k][:50]
+    variant_keys = (request.query.get("variants") or "").split(",")
     resolved: list[tuple[str, HubItem]] = []
-    for k in keys:
+    for index, k in enumerate(keys):
         m = re.match(r"^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$", k)
         if not m:
             continue
@@ -815,10 +816,20 @@ async def api_items(request: web.Request) -> web.Response:
         item = media_index.get_item(mid)
         if item is None or item.secure_hash != m.group(1):
             continue
+        # A shared episode CW key points to its canonical upload. Retain the
+        # viewer's chosen variant whenever it is still a valid upload of that
+        # exact episode, otherwise safely fall back to the canonical source.
+        requested = variant_keys[index] if index < len(variant_keys) else ""
+        candidate_match = re.match(r"^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$", requested)
+        if candidate_match:
+            candidate = media_index.get_item(int(candidate_match.group(2)))
+            if (candidate is not None and candidate.secure_hash == candidate_match.group(1)
+                    and media_index.canonical_episode_variant(candidate).message_id
+                    == media_index.canonical_episode_variant(item).message_id):
+                item = candidate
         resolved.append((k, item))
 
     out = []
-    _eps_cache: dict = {}  # series_key → episode list, memoised for this request
     _art_cache = media_index.group_art_cache_for(item for _k, item in resolved)
     for k, item in resolved:
         # Prefer a series episode's parent show title for the card label
@@ -833,33 +844,29 @@ async def api_items(request: web.Request) -> web.Response:
         # user to finish and re-visit the series page.
         next_ep = None
         if item.series_key and item.season is not None and item.episode is not None:
-            if item.series_key not in _eps_cache:
-                _eps_cache[item.series_key] = media_index.episodes_for_series(item.series_key)
-            eps = _eps_cache[item.series_key]
-            # Find the LAST variant of the current (season, episode) so that
-            # curr_last_idx+1 is the first item of the genuinely next episode,
-            # not another quality variant of the same one.
-            curr_last_idx = None
-            for i, e in enumerate(eps):
-                if e.season == item.season and e.episode == item.episode:
-                    curr_last_idx = i
-            if curr_last_idx is not None and curr_last_idx + 1 < len(eps):
-                nxt = eps[curr_last_idx + 1]
-                nxt_ep_label = (
-                    f"S{nxt.season:02d}E{nxt.episode:02d}"
-                    if nxt.season is not None and nxt.episode is not None
-                    else ""
-                )
-                next_ep = {
-                    "key": f"{nxt.secure_hash}{nxt.message_id}",
-                    "episode_label": nxt_ep_label,
-                    "title": nxt.title,
-                    "watch_url": f"/watch/{nxt.secure_hash}{nxt.message_id}",
-                    "thumb_url": f"/thumb/{nxt.secure_hash}{nxt.message_id}.jpg",
-                    "poster_path": media_index.poster_path_for_item(nxt, cache=_art_cache),
-                }
+            next_raw = media_index.next_episode(item)
+            if next_raw:
+                key_match = re.match(r"^/watch/([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$", str(next_raw.get("url") or ""))
+                nxt = media_index.get_item(int(key_match.group(2))) if key_match else None
+                if nxt is not None and key_match and nxt.secure_hash == key_match.group(1):
+                    nxt_ep_label = (
+                        f"S{nxt.season:02d}E{nxt.episode:02d}"
+                        if nxt.season is not None and nxt.episode is not None
+                        else ""
+                    )
+                    next_ep = {
+                        "key": f"{nxt.secure_hash}{nxt.message_id}",
+                        "episode_label": nxt_ep_label,
+                        "title": nxt.title,
+                        "watch_url": f"/watch/{nxt.secure_hash}{nxt.message_id}",
+                        "thumb_url": f"/thumb/{nxt.secure_hash}{nxt.message_id}.jpg",
+                        "poster_path": media_index.poster_path_for_item(nxt, cache=_art_cache),
+                    }
+        canonical = media_index.canonical_episode_variant(item)
         out.append({
             "key": k,
+            "canonical_key": f"{canonical.secure_hash}{canonical.message_id}",
+            "variant_key": f"{item.secure_hash}{item.message_id}",
             "message_id": item.message_id,
             "secure_hash": item.secure_hash,
             "title": item.title,

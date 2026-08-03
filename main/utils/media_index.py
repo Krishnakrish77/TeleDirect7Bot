@@ -2347,6 +2347,33 @@ def episodes_for_series(series_key: str) -> List[HubItem]:
     return eps
 
 
+def _episode_identity(item: HubItem) -> tuple[object, object, object]:
+    """Stable identity shared by every uploaded quality of one episode."""
+    return item.season, item.episode, item.episode_end
+
+
+def episode_variants(item: HubItem) -> List[HubItem]:
+    """Return all playable uploads of ``item``'s exact series episode."""
+    if not item.series_key or item.episode is None:
+        return [item]
+    identity = _episode_identity(item)
+    return [episode for episode in episodes_for_series(item.series_key)
+            if _episode_identity(episode) == identity]
+
+
+def canonical_episode_variant(item: HubItem) -> HubItem:
+    """Choose the durable earliest-upload representative for an episode.
+
+    Every quality variant writes progress under this one real watch key. The
+    player's separate ``variantKey`` still remembers the user's chosen source,
+    while this representative keeps existing CW route/key validation intact.
+    """
+    variants = episode_variants(item)
+    # First upload is stable when additional qualities arrive later. If it is
+    # deleted, the next surviving upload becomes the natural migration target.
+    return min(variants, key=lambda variant: variant.message_id)
+
+
 import re as _re
 _ARTIST_SPLIT_RE = _re.compile(r"[,;/&×]|\bfeat\.?\b|\bft\.?\b|\bx\b|\band\b", _re.IGNORECASE)
 
@@ -2623,20 +2650,36 @@ def standalone_audio_tracks() -> List[HubItem]:
 
 
 def next_episode(item: HubItem) -> Optional[dict]:
-    """Return watch URL + label for the episode after ``item``, or None."""
+    """Return the next *distinct* episode, preserving quality when possible."""
     if not item.series_key or item.episode is None:
         return None
     eps = episodes_for_series(item.series_key)
-    for i, ep in enumerate(eps):
-        if ep.message_id == item.message_id and i + 1 < len(eps):
-            nxt = eps[i + 1]
-            label = nxt.episode_title or nxt.title or f"Episode {nxt.episode}"
-            return {
-                "url": f"/watch/{nxt.secure_hash}{nxt.message_id}",
-                "title": label,
-                "season": nxt.season,
-                "episode": nxt.episode,
-            }
+    current = _episode_identity(item)
+    current_seen = False
+    next_variants: List[HubItem] = []
+    for episode in eps:
+        identity = _episode_identity(episode)
+        if identity == current:
+            current_seen = True
+            continue
+        if current_seen:
+            if next_variants and identity != _episode_identity(next_variants[0]):
+                break
+            next_variants.append(episode)
+    if next_variants:
+        # Keep the viewer on their selected quality whenever that upload exists
+        # for the following episode; otherwise use the canonical best variant.
+        nxt = next(
+            (variant for variant in next_variants if variant.quality and variant.quality == item.quality),
+            max(next_variants, key=lambda variant: (variant.file_size or 0, variant.message_id)),
+        )
+        label = nxt.episode_title or nxt.title or f"Episode {nxt.episode}"
+        return {
+            "url": f"/watch/{nxt.secure_hash}{nxt.message_id}",
+            "title": label,
+            "season": nxt.season,
+            "episode": nxt.episode,
+        }
     return None
 
 

@@ -136,6 +136,7 @@ function makeVideo(overrides: Partial<WatchVideo> = {}): WatchVideo {
     recapEnd: 0,
     chapters: [],
     resumeKey: 'video-key',
+    variantKey: 'video-key',
     metadata: {
       title: 'Pilot',
       year: 2026,

@@ -349,6 +349,36 @@ describe('ContinueWatching', () => {
     next_episode: null,
   } as const;
 
+  it('groups legacy quality-variant entries into one shared episode resume', async () => {
+    localStorage.setItem('td:cw', JSON.stringify({
+      hash720: { pos: 240, dur: 1200, t: 20, title: 'Pilot' },
+      hash1080: { pos: 120, dur: 1200, t: 10, title: 'Pilot' },
+    }));
+    vi.mocked(fetchContinueItems).mockResolvedValue([
+      {
+        ...kalkiItem,
+        key: 'hash720',
+        title: 'Pilot',
+        canonical_key: 'hash1080',
+        variant_key: 'hash720',
+      },
+      {
+        ...kalkiItem,
+        key: 'hash1080',
+        title: 'Pilot',
+        canonical_key: 'hash1080',
+        variant_key: 'hash1080',
+      },
+    ]);
+
+    render(<ContinueWatching />);
+
+    expect(await screen.findAllByRole('link')).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')).toEqual({
+      hash1080: expect.objectContaining({ pos: 240, variantKey: 'hash720' }),
+    });
+  });
+
   it('merges local entries missing from the server snapshot (login merge)', async () => {
     // A local entry the server has never seen is pushed up on sign-in — the
     // robust login merge. Resurrection of *deleted* entries is prevented by

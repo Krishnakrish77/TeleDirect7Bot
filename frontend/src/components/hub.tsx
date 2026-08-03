@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, trackRecommendationEvents } from '../api';
+import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, saveContinueEntry, trackRecommendationEvents } from '../api';
 import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, PlayIcon, UserIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
 import { tmdbImageUrl } from '../utils/tmdb';
 import { formatExternalRating } from '../utils/externalRating';
-import { addContinueClearTombstone, addContinueTombstone, isContinueSuppressed, readContinueClearTombstone, readContinueTombstones, readLocalContinue, syncContinueWatching } from '../utils/continueWatching';
+import { addContinueClearTombstone, addContinueTombstone, isContinueSuppressed, readContinueClearTombstone, readContinueTombstones, readLocalContinue, syncContinueWatching, writeLocalContinue } from '../utils/continueWatching';
 import { MediaCard } from './mediaCard';
 import { Button } from './ui/button';
 
@@ -173,12 +173,44 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
       }
 
       try {
-        const items = await fetchContinueItems(local.map((entry) => entry.key), controller.signal);
+        const items = await fetchContinueItems(local, controller.signal);
         const byKey = new Map(items.map((item) => [item.key, item]));
-        setEntries(local.flatMap((entry) => {
+        const grouped = new Map<string, { entry: ContinueEntry; item: ContinueItem; legacyKeys: string[] }>();
+        local.forEach((entry) => {
           const item = byKey.get(entry.key);
-          return item ? [{ ...entry, ...item }] : [];
-        }));
+          if (!item) return;
+          const canonicalKey = item.canonical_key || entry.key;
+          const candidate = {
+            ...entry,
+            key: canonicalKey,
+            variantKey: entry.variantKey || item.variant_key,
+          };
+          const existing = grouped.get(canonicalKey);
+          if (!existing || candidate.t > existing.entry.t) {
+            grouped.set(canonicalKey, { entry: candidate, item, legacyKeys: [...(existing?.legacyKeys || []), entry.key] });
+          } else {
+            existing.legacyKeys.push(entry.key);
+          }
+        });
+        const groupedEntries = [...grouped.values()];
+        const migrations = groupedEntries.filter(({ entry, legacyKeys }) => legacyKeys.some((key) => key !== entry.key));
+        if (migrations.length) {
+          const persisted = readLocalContinue();
+          migrations.forEach(({ entry, legacyKeys }) => {
+            legacyKeys.forEach((key) => { if (key !== entry.key) delete persisted[key]; });
+            persisted[entry.key] = { ...entry };
+          });
+          writeLocalContinue(persisted);
+          if (serverSyncEnabled) {
+            migrations.forEach(({ entry, legacyKeys }) => {
+              void queueServerMutation(async () => {
+                await saveContinueEntry(entry.key, { ...entry, startedAt: entry.startedAt || entry.t });
+                await Promise.all(legacyKeys.filter((key) => key !== entry.key).map((key) => deleteContinueEntry(key)));
+              });
+            });
+          }
+        }
+        setEntries(groupedEntries.map(({ entry, item }) => ({ ...item, ...entry })));
       } catch (_) {
         setEntries([]);
       }
