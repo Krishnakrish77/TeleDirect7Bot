@@ -2,14 +2,12 @@
 Long-lived ffmpeg-per-stream HLS sessions.
 
 Replaces the per-segment ffmpeg pattern. One ffmpeg subprocess per file
-produces all segments sequentially to /tmp via ``-f segment
--reset_timestamps 1``, and route handlers just send the .ts files from
-disk. The big wins:
+produces all segments sequentially to /tmp via ``-f segment``, and route
+handlers just send the .ts files from disk. The big wins:
 
   * No per-segment startup cost — sequential playback is smooth.
-  * Each output segment's PTS is reset to 0 (`-reset_timestamps 1`), so
-    there are no PTS gaps/overlaps between segments. That's what was
-    causing the frame-replay stutter at segment boundaries.
+  * Output timestamps stay on the playlist's continuous timeline, avoiding
+    PTS gaps/overlaps and frame-replay stutter at segment boundaries.
   * Backward seek within already-produced segments is free (file is on
     disk). Forward-seek beyond the current production cursor restarts
     ffmpeg from the seek point.
@@ -46,11 +44,23 @@ MAX_SESSIONS = int(os.environ.get("HLS_SESSION_MAX", "2"))
 # Re-encoding is CPU-bound, unlike the normal remux path. Limit it separately
 # so a couple of HEVC/AV1 viewers cannot starve the bot or ordinary HLS users.
 MAX_TRANSCODE_SESSIONS = int(os.environ.get("HLS_TRANSCODE_MAX", "1"))
+# Do not let a request wait for the duration of another viewer's full-file
+# transcode.  A busy encoder is a retryable capacity condition, not a 504.
+TRANSCODE_ACQUIRE_TIMEOUT = float(os.environ.get("HLS_TRANSCODE_ACQUIRE_TIMEOUT", "5"))
+# Admission is based on the immutable source size. It is deliberately
+# conservative: a session can write approximately a full rendition to disk.
+# Zero means use the currently available disk space after the free-space floor.
+SESSION_DISK_BUDGET = int(os.environ.get("HLS_SESSION_DISK_BUDGET", "0"))
+MIN_FREE_DISK_BYTES = int(os.environ.get("HLS_SESSION_MIN_FREE_BYTES", str(128 * 1024 * 1024)))
 # If a requested segment is more than this many segments ahead of what
 # ffmpeg has produced, restart ffmpeg from the requested segment instead
 # of waiting (which would otherwise mean polling forever).
 RESTART_AHEAD_THRESHOLD = int(os.environ.get("HLS_SESSION_AHEAD_THRESH", "20"))
 SEGMENT_WAIT_TIMEOUT = float(os.environ.get("HLS_SESSION_WAIT_TIMEOUT", "30.0"))
+
+
+class HlsSessionCapacityError(RuntimeError):
+    """Raised when a new HLS session cannot be admitted safely."""
 
 
 class HlsSession:
@@ -59,14 +69,19 @@ class HlsSession:
 
     def __init__(self, message_id: int, source_url: str,
                  duration: float, audio_codec: Optional[str],
-                 audio_index: int = 0, *, transcode_video: bool = False):
+                 audio_index: int = 0, *, transcode_video: bool = False,
+                 source_size: int = 0):
         self.message_id = message_id
         self.source_url = source_url
         self.duration = duration
         self.audio_codec = audio_codec
         self.audio_index = audio_index
         self.transcode_video = transcode_video
-        self._has_transcode_slot = False
+        self.source_size = max(0, int(source_size or 0))
+        # A token belongs to one ffmpeg process.  The old stderr task can
+        # finish after a seek starts a replacement; identity checking keeps it
+        # from releasing the replacement process's semaphore slot.
+        self._transcode_slot_token: object | None = None
         self.work_dir = WORK_ROOT / str(message_id) / f"a{audio_index}"
         # A fresh session must not inherit partial segments from a crashed
         # previous process. Completed segments are an optimization, not state.
@@ -198,28 +213,31 @@ class HlsSession:
             str(self.work_dir / "%05d.ts"),
         ]
 
-    async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
-        if proc.stderr is None:
-            return
+    async def _drain_stderr(self, proc: asyncio.subprocess.Process,
+                            slot_token: object | None = None) -> None:
         try:
-            while True:
-                line = await proc.stderr.readline()
-                if not line:
-                    break
-                logging.debug("ffmpeg(msg=%d): %s", self.message_id,
-                              line.decode(errors="replace").rstrip())
+            if proc.stderr is not None:
+                while True:
+                    line = await proc.stderr.readline()
+                    if not line:
+                        break
+                    logging.debug("ffmpeg(msg=%d): %s", self.message_id,
+                                  line.decode(errors="replace").rstrip())
         except Exception:
             pass
         finally:
             # A completed full-file session no longer consumes CPU. Release
             # its scarce encode slot even if it stays cached for seeking.
             await proc.wait()
-            self._release_transcode_slot()
+            self._release_transcode_slot(slot_token)
 
-    def _release_transcode_slot(self) -> None:
-        if self._has_transcode_slot:
+    def _release_transcode_slot(self, slot_token: object | None = None) -> None:
+        if (
+            self._transcode_slot_token is not None
+            and (slot_token is None or self._transcode_slot_token is slot_token)
+        ):
             _transcode_sem().release()
-            self._has_transcode_slot = False
+            self._transcode_slot_token = None
 
     async def _kill_proc_unlocked(self) -> None:
         if self.proc and self.proc.returncode is None:
@@ -248,9 +266,16 @@ class HlsSession:
         await self._kill_proc_unlocked()
         self._discard_from(from_segment)
         args = self._ffmpeg_args(from_segment)
+        slot_token = None
         if self.transcode_video:
-            await _transcode_sem().acquire()
-            self._has_transcode_slot = True
+            try:
+                await asyncio.wait_for(
+                    _transcode_sem().acquire(), timeout=TRANSCODE_ACQUIRE_TIMEOUT
+                )
+            except asyncio.TimeoutError as exc:
+                raise HlsSessionCapacityError("HLS transcoder is busy") from exc
+            slot_token = object()
+            self._transcode_slot_token = slot_token
         try:
             self.proc = await asyncio.create_subprocess_exec(
                 *args,
@@ -260,10 +285,10 @@ class HlsSession:
         except FileNotFoundError:
             logging.error("ffmpeg not installed; HLS sessions disabled")
             self.proc = None
-            self._release_transcode_slot()
+            self._release_transcode_slot(slot_token)
             return
         self.start_segment = from_segment
-        self._stderr_task = asyncio.create_task(self._drain_stderr(self.proc))
+        self._stderr_task = asyncio.create_task(self._drain_stderr(self.proc, slot_token))
         logging.info(
             "hls_session msg=%d started %sffmpeg from segment %d",
             self.message_id, "transcoding " if self.transcode_video else "",
@@ -345,12 +370,28 @@ def _transcode_sem() -> asyncio.Semaphore:
 
 async def get_or_start(message_id: int, source_url: str,
                        duration: float, audio_codec: Optional[str],
-                       audio_index: int = 0, *, transcode_video: bool = False) -> HlsSession:
+                       audio_index: int = 0, *, transcode_video: bool = False,
+                       source_size: int = 0) -> HlsSession:
     key = (message_id, audio_index)
     async with _sessions_lock:
         session = _sessions.get(key)
         if session is not None:
             return session
+
+        source_size = max(0, int(source_size or 0))
+        try:
+            free_bytes = shutil.disk_usage(WORK_ROOT.parent).free
+        except OSError:
+            raise HlsSessionCapacityError("HLS work disk is unavailable")
+        if free_bytes < MIN_FREE_DISK_BYTES:
+            raise HlsSessionCapacityError("HLS work disk is nearly full")
+        if source_size:
+            reserved = sum(session.source_size for session in _sessions.values())
+            disk_budget = free_bytes - MIN_FREE_DISK_BYTES
+            if SESSION_DISK_BUDGET:
+                disk_budget = min(disk_budget, SESSION_DISK_BUDGET)
+            if reserved + source_size > disk_budget:
+                raise HlsSessionCapacityError("HLS disk budget is exhausted")
 
         # LRU evict if over capacity.
         if len(_sessions) >= MAX_SESSIONS:
@@ -361,7 +402,8 @@ async def get_or_start(message_id: int, source_url: str,
                          victim_key[0], victim_key[1])
 
         session = HlsSession(message_id, source_url, duration, audio_codec,
-                             audio_index=audio_index, transcode_video=transcode_video)
+                             audio_index=audio_index, transcode_video=transcode_video,
+                             source_size=source_size)
         _sessions[key] = session
         return session
 
@@ -398,6 +440,20 @@ def ensure_reaper_running() -> None:
     global _reaper_task
     if _reaper_task is None or _reaper_task.done():
         _reaper_task = asyncio.create_task(_reaper())
+
+
+def cleanup_orphaned_workdirs() -> None:
+    """Remove HLS output left by a previous process before accepting traffic."""
+    try:
+        if not WORK_ROOT.exists():
+            return
+        for child in WORK_ROOT.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
+            elif child.is_file():
+                child.unlink(missing_ok=True)
+    except OSError:
+        logging.warning("could not clean stale HLS work directory %s", WORK_ROOT, exc_info=True)
 
 
 async def shutdown_all() -> None:

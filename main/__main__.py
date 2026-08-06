@@ -71,6 +71,9 @@ async def start_services():
     await initialize_clients()
     print("------------------------------ DONE ------------------------------")
     print("--------------------- Initalizing Web Server ---------------------")
+    # A hard restart can leave completed/partial HLS segments in /tmp. They
+    # cannot be safely resumed and would consume the next process's disk budget.
+    hls_session.cleanup_orphaned_workdirs()
     await server.setup()
     bind_address = "0.0.0.0" if Var.ON_KOYEB else Var.BIND_ADDRESS
     await web.TCPSite(server, bind_address, Var.PORT).start()

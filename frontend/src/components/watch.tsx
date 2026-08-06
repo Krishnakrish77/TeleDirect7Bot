@@ -1333,11 +1333,21 @@ function VideoWatchPage({
       // into displaying the terminal overlay.
       if (sourceMode === 'hls' && hasHls && (hlsLoadingRef.current || hlsRef.current)) {
         return;
-      } else {
-        setPlaying(false);
-        setVideoMediaSessionPlaybackState(false);
-        setError('Browser playback failed. Try VLC or download the file.');
       }
+      // Native HLS (Safari) reports failures through the media element rather
+      // than hls.js, so it never reaches attachHls's fatal-error callback.
+      // Return to a known-good direct source when HLS was manually selected.
+      if (sourceMode === 'hls' && hasHls && !directFallbackTriedRef.current) {
+        directFallbackTriedRef.current = true;
+        hlsFailedRef.current = true;
+        setSourceMode('direct');
+        setError('');
+        showToast('HLS failed. Using direct stream.');
+        return;
+      }
+      setPlaying(false);
+      setVideoMediaSessionPlaybackState(false);
+      setError('Browser playback failed. Try VLC or download the file.');
     };
     const onPlay = () => {
       setPlaying(true);

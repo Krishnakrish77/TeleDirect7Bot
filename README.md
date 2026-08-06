@@ -185,9 +185,13 @@ The essentials are in the Quick start `.env` example. The complete reference is 
 | `CODEC_PROBE_CONCURRENCY` | `3` | Parallel `ffprobe` jobs. Keep modest on small hosts. |
 | `MAX_STREAMS_TOTAL` | `25` | Total concurrent streams allowed. |
 | `MAX_STREAMS_PER_IP` | `8` | Concurrent streams per client IP. |
+| `TRUSTED_PROXY_CIDRS` | — | Space-separated reverse-proxy/LB CIDRs allowed to supply `X-Forwarded-For`. Leave unset when the origin is directly reachable. |
 | `HLS_MAX_CONCURRENT` | `2` | Parallel HLS segment work. |
 | `HLS_SESSION_MAX` | `2` | Active HLS sessions. |
 | `HLS_TRANSCODE_MAX` | `1` | Concurrent transcoding HLS sessions. |
+| `HLS_TRANSCODE_ACQUIRE_TIMEOUT` | `5` | Seconds an HLS request may wait for a transcode slot before receiving a retryable 503. |
+| `HLS_SESSION_DISK_BUDGET` | available disk | Optional byte cap for total source-size reservations across active HLS sessions; `0` derives the cap from currently free disk space. |
+| `HLS_SESSION_MIN_FREE_BYTES` | `128 MiB` | Reject a new HLS session when the work disk is below this free-space floor. |
 
 ### Optional bot capabilities
 
