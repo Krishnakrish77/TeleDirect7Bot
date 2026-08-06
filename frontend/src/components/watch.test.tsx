@@ -648,6 +648,26 @@ describe('WatchPage video player', () => {
     expect(screen.queryByText('This video needs another player')).toBeNull();
   });
 
+  it('returns to direct playback when native HLS reports a media error', async () => {
+    const nativeHls = vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+    try {
+      const view = renderWatchPage();
+
+      await screen.findByRole('heading', { name: 'Pilot' });
+      fireEvent.click(screen.getByLabelText('More video options'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /Source/i }));
+      const video = view.container.querySelector('video') as HTMLVideoElement;
+      await waitFor(() => expect(video.getAttribute('src')).toBe('/hls/video-key/master.m3u8'));
+
+      fireEvent.error(video);
+
+      await waitFor(() => expect(video.getAttribute('src')).toBe('/stream/video-key'));
+      expect(screen.queryByText('This video needs another player')).toBeNull();
+    } finally {
+      nativeHls.mockRestore();
+    }
+  });
+
   it('shows a fallback overlay when playback advances without decoded video frames and HLS is unavailable', async () => {
     const view = renderWatchPage(makeVideo({ hlsSrc: '', audioTrackBase: '' }));
 

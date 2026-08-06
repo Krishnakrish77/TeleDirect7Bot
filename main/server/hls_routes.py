@@ -108,7 +108,7 @@ async def hls_playlist(request: web.Request) -> web.Response:
 async def hls_segment(request: web.Request) -> web.StreamResponse:
     try:
         secure_hash, message_id = _parse_path(request.match_info["path"])
-        await _resolve(message_id, secure_hash)
+        file_id, _, _ = await _resolve(message_id, secure_hash)
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
@@ -135,17 +135,25 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
     # we just serve the file when it's on disk. Backward seeks within already-
     # produced segments are free; forward seek beyond the current cursor
     # restarts ffmpeg from the seek point.
-    session = await hls_session.get_or_start(
-        message_id, source_url, probe.duration, probe.audio_codec,
-        audio_index=audio_index,
-        # HLS is our browser-compatibility rendition. Even an H.264 source
-        # can carry timestamp discontinuities that are harmless for a direct
-        # file stream but fatal to Chrome's MSE append pipeline. Re-encoding
-        # this fallback guarantees monotonic AVC/AAC segment timestamps and
-        # keyframes at every advertised HLS boundary.
-        transcode_video=True,
-    )
-    seg_path = await session.request(n)
+    try:
+        session = await hls_session.get_or_start(
+            message_id, source_url, probe.duration, hls.selected_audio_codec(probe, audio_index),
+            audio_index=audio_index,
+            # HLS is our browser-compatibility rendition. Even an H.264 source
+            # can carry timestamp discontinuities that are harmless for a direct
+            # file stream but fatal to Chrome's MSE append pipeline. Re-encoding
+            # this fallback guarantees monotonic AVC/AAC segment timestamps and
+            # keyframes at every advertised HLS boundary.
+            transcode_video=True,
+            source_size=file_id.file_size,
+        )
+        seg_path = await session.request(n)
+    except hls_session.HlsSessionCapacityError as exc:
+        logging.info("hls_session msg=%d unavailable: %s", message_id, exc)
+        raise web.HTTPServiceUnavailable(
+            text="HLS capacity is busy; retry shortly",
+            headers={"Retry-After": "5"},
+        )
     if seg_path is None:
         logging.warning("hls_session msg=%d segment %d timed out", message_id, n)
         raise web.HTTPGatewayTimeout(text="segment generation timed out")

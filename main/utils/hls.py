@@ -122,6 +122,13 @@ class ProbeResult:
         return max(1, math.ceil(self.duration / SEGMENT_SECONDS))
 
 
+def selected_audio_codec(probe_result: ProbeResult, audio_index: int) -> Optional[str]:
+    """Return the codec for the requested audio stream (not always track 0)."""
+    if 0 <= audio_index < len(probe_result.audio_tracks):
+        return probe_result.audio_tracks[audio_index].codec
+    return probe_result.audio_codec
+
+
 _probe_cache: Dict[int, Tuple[float, ProbeResult]] = {}
 _probe_locks: Dict[int, asyncio.Lock] = {}
 _segment_semaphore: Optional[asyncio.Semaphore] = None

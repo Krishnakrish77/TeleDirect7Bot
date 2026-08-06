@@ -1,5 +1,6 @@
 import os
 import importlib
+import ipaddress
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -103,6 +104,19 @@ class _FakeRequest:
 
 
 class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
+    def test_untrusted_peer_cannot_spoof_x_forwarded_for(self):
+        request = _FakeRequest(headers={"X-Forwarded-For": "203.0.113.9"})
+        request.remote = "198.51.100.7"
+        with patch.object(stream_routes, "_TRUSTED_PROXY_NETWORKS", ()):
+            self.assertEqual(stream_routes._real_ip(request), "198.51.100.7")
+
+    def test_trusted_proxy_supplies_valid_forwarded_client_ip(self):
+        request = _FakeRequest(headers={"X-Forwarded-For": "203.0.113.9, 198.51.100.1"})
+        request.remote = "10.0.0.7"
+        trusted = (ipaddress.ip_network("10.0.0.0/8"),)
+        with patch.object(stream_routes, "_TRUSTED_PROXY_NETWORKS", trusted):
+            self.assertEqual(stream_routes._real_ip(request), "203.0.113.9")
+
     def test_legacy_hash_validation_stays_scoped_to_the_catalogued_value(self):
         self.assertTrue(
             matches_secure_hash(

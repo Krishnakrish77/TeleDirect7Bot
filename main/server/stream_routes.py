@@ -4,6 +4,7 @@
 import asyncio
 import hashlib
 import hmac as _hmac
+import ipaddress
 import os
 import re
 import time
@@ -36,6 +37,20 @@ _CLIENT_COOLDOWN_SECONDS = float(os.environ.get("STREAM_CLIENT_COOLDOWN_SECONDS"
 _total_active: int = 0
 _ip_active: dict = {}   # ip → concurrent stream count
 _client_cooldowns: dict[int, float] = {}
+
+
+def _trusted_proxy_networks() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """Parse the explicit proxy allow-list used for forwarded client IPs."""
+    networks = []
+    for raw in os.environ.get("TRUSTED_PROXY_CIDRS", "").split():
+        try:
+            networks.append(ipaddress.ip_network(raw, strict=False))
+        except ValueError:
+            logging.warning("ignoring invalid TRUSTED_PROXY_CIDRS entry %r", raw)
+    return tuple(networks)
+
+
+_TRUSTED_PROXY_NETWORKS = _trusted_proxy_networks()
 
 
 _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
@@ -209,19 +224,26 @@ async def _vlc_track(user_id: int, message_id: int,
 
 
 def _real_ip(request: web.Request) -> str:
-    """Return the real client IP, reading X-Forwarded-For when behind a proxy.
+    """Return a forwarded client IP only when the peer is a trusted proxy.
 
-    Koyeb (and most LBs) set X-Forwarded-For to the original client IP.
-    Without this, request.remote is always the LB node IP, making the
-    per-IP limit a global cap shared by all users.
-
-    Loopback addresses (127.0.0.1, ::1) are returned as-is so HLS ffmpeg
-    loopback fetches can be handled separately at the call site.
+    ``X-Forwarded-For`` is user-controlled on a directly reachable origin;
+    operators must set TRUSTED_PROXY_CIDRS to their reverse proxy/LB ranges.
     """
+    peer = request.remote or "unknown"
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer
+    if not any(peer_ip in network for network in _TRUSTED_PROXY_NETWORKS):
+        return peer
     xff = request.headers.get("X-Forwarded-For", "")
     if xff:
-        return xff.split(",")[0].strip() or request.remote or "unknown"
-    return request.remote or "unknown"
+        forwarded = xff.split(",")[0].strip()
+        try:
+            return str(ipaddress.ip_address(forwarded))
+        except ValueError:
+            pass
+    return peer
 
 
 async def _rate_limited_body(gen, ip: str):
