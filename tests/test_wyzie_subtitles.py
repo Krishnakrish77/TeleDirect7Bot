@@ -52,7 +52,7 @@ class _Session:
 
 
 class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
-    async def test_search_queries_all_sources_available_to_the_key(self):
+    async def test_search_uses_the_default_source_before_broad_fallback(self):
         session = _Session()
         item = SimpleNamespace(
             message_id=42,
@@ -69,7 +69,7 @@ class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
         ):
             results = await wyzie_subtitles.search(7, item)
 
-        self.assertEqual(session.params["source"], "all")
+        self.assertNotIn("source", session.params)
         self.assertEqual(session.params["id"], "tt3659388")
         self.assertEqual(session.params["season"], "2")
         self.assertEqual(session.params["episode"], "5")
@@ -78,21 +78,39 @@ class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
             "release": "", "fileName": "subtitle.srt", "hearingImpaired": False, "source": "",
         }])
 
-    async def test_search_retries_the_default_source_after_all_returns_no_results(self):
-        all_sources = _Session(_Response([]))
-        default_source = _Session()
+    async def test_search_retries_all_sources_after_default_returns_no_results(self):
+        default_source = _Session(_Response([]))
+        all_sources = _Session()
         item = SimpleNamespace(message_id=42, imdb_id="tt4154796", tmdb_id=None, season=None, episode=None)
         wyzie_subtitles._cache.clear()
         with (
             patch.object(wyzie_subtitles.Var, "WYZIE_API_KEY", "test-key"),
             patch.object(wyzie_subtitles, "_reserve", AsyncMock()),
-            patch.object(wyzie_subtitles, "ClientSession", side_effect=[all_sources, default_source]),
+            patch.object(wyzie_subtitles, "ClientSession", side_effect=[default_source, all_sources]),
         ):
             results = await wyzie_subtitles.search(7, item)
 
-        self.assertEqual(all_sources.params["source"], "all")
         self.assertNotIn("source", default_source.params)
+        self.assertEqual(all_sources.params["source"], "all")
         self.assertEqual([result["id"] for result in results], ["candidate-1"])
+
+    async def test_search_does_not_cache_empty_provider_results(self):
+        item = SimpleNamespace(message_id=42, imdb_id="tt4154796", tmdb_id=None, season=None, episode=None)
+        wyzie_subtitles._cache.clear()
+        sessions = [_Session(_Response([])) for _ in range(4)]
+        with (
+            patch.object(wyzie_subtitles.Var, "WYZIE_API_KEY", "test-key"),
+            patch.object(wyzie_subtitles, "_reserve", AsyncMock()),
+            patch.object(wyzie_subtitles, "ClientSession", side_effect=sessions),
+        ):
+            self.assertEqual(await wyzie_subtitles.search(7, item), [])
+            self.assertEqual(await wyzie_subtitles.search(7, item), [])
+
+        self.assertNotIn((42, ""), wyzie_subtitles._cache)
+        self.assertEqual(sessions[0].params.get("source"), None)
+        self.assertEqual(sessions[1].params["source"], "all")
+        self.assertEqual(sessions[2].params.get("source"), None)
+        self.assertEqual(sessions[3].params["source"], "all")
 
     def test_release_like_the_video_is_ranked_first_without_dropping_others(self):
         item = SimpleNamespace(
