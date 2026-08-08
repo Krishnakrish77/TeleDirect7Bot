@@ -21,7 +21,7 @@ from main.bot import multi_clients, work_loads
 from main.server.exceptions import FIleNotFound, InvalidHash
 from main.utils import hls, hls_session, media_index, skeleton_cache, ByteStreamer
 from main.utils.subtitles import srt_to_vtt
-from main.utils.file_properties import secure_hash_from_unique_id
+from main.utils.file_properties import matches_secure_hash
 from main.vars import Var
 
 
@@ -47,7 +47,16 @@ async def _resolve(message_id: int, secure_hash: str):
         streamer = ByteStreamer(client)
         _class_cache[client] = streamer
     file_id = await streamer.get_file_properties(message_id)
-    if secure_hash_from_unique_id(file_id.unique_id) != secure_hash:
+    # Keep HLS/subtitle URLs compatible with the direct stream route.  Older
+    # catalogue rows can contain a valid legacy hash for their message ID;
+    # rejecting it here made the video stream work while /sub and /hls failed.
+    item = media_index.get_item(message_id)
+    catalogued_hash = getattr(item, "secure_hash", "") if item else ""
+    if not matches_secure_hash(
+        file_id.unique_id,
+        secure_hash,
+        catalogued_hash=catalogued_hash,
+    ):
         raise InvalidHash
     return file_id, streamer, index
 

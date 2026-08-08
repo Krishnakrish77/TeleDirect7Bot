@@ -19,6 +19,7 @@ from main.utils.hub_query import HubItem
 from main.utils import cw_store, media_index, rec_store, wh_store
 
 stream_routes = importlib.import_module("main.server.stream_routes")
+hls_routes = importlib.import_module("main.server.hls_routes")
 render_template = importlib.import_module("main.utils.render_template")
 
 
@@ -176,6 +177,20 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
             _, _, file_id = await stream_routes._file_for_index(0, 42, "legacy-hash")
 
         self.assertEqual(file_id.unique_id, "abc123")
+
+    async def test_subtitle_and_hls_routes_accept_catalogued_legacy_hash(self):
+        client = _FakeClient()
+        legacy_item = _video_item(secure_hash="legacy-hash")
+        with (
+            patch.object(hls_routes, "multi_clients", {0: client}),
+            patch.object(hls_routes, "work_loads", {0: 0}),
+            patch.object(hls_routes, "_class_cache", {client: _FakeStreamer()}),
+            patch.object(hls_routes.media_index, "get_item", return_value=legacy_item),
+        ):
+            file_id, _, index = await hls_routes._resolve(42, "legacy-hash")
+
+        self.assertEqual(file_id.unique_id, "abc123")
+        self.assertEqual(index, 0)
 
     async def test_direct_stream_falls_back_to_second_client(self):
         bad_client = _FakeClient("bad")
