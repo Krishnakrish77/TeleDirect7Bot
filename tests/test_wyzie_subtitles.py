@@ -52,6 +52,20 @@ class _Session:
 
 
 class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
+    def test_direct_opensubtitles_result_is_kept(self):
+        candidate = wyzie_subtitles._candidate({
+            "id": "1956307067",
+            "url": "https://d1.opensubtitles.org/en/download/subencoding-utf8/src-api/v1/file/1956307067",
+            "format": "srt",
+            "language": "en",
+            "display": "English",
+            "source": "charlie",
+        })
+
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate["id"], "1956307067")
+        self.assertEqual(candidate["format"], "srt")
+
     async def test_search_uses_the_default_source_before_broad_fallback(self):
         session = _Session()
         item = SimpleNamespace(

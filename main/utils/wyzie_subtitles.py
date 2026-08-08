@@ -12,6 +12,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 from aiohttp import ClientSession, ClientTimeout
 
@@ -31,6 +32,7 @@ _GLOBAL_REQUEST_LIMIT = 800
 _FALLBACK_SEARCH_SOURCES = "all"
 _cache: dict[tuple[int, str], tuple[float, list[dict[str, Any]]]] = {}
 _lock = asyncio.Lock()
+_TRUSTED_DOWNLOAD_HOSTS = {"sub.wyzie.io"}
 _RELEASE_TOKEN_RE = re.compile(r"[a-z0-9]+")
 _RELEASE_NOISE = {
     "aac", "ac3", "atmos", "av1", "bluray", "brrip", "ddp", "dv", "dts", "h264", "h265",
@@ -40,6 +42,22 @@ _RELEASE_NOISE = {
 
 class WyzieError(Exception):
     pass
+
+
+def _trusted_download_url(value: object) -> bool:
+    """Accept the provider proxy and direct HTTPS OpenSubtitles downloads.
+
+    Wyzie used to return only ``sub.wyzie.io`` proxy URLs. It now also
+    returns direct ``d1.opensubtitles.org`` links for some sources, so keeping
+    the old proxy-only guard silently discarded valid search results.
+    """
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" and bool(parsed.path) and (
+        host in _TRUSTED_DOWNLOAD_HOSTS or host.endswith(".opensubtitles.org")
+    )
 
 
 def configured() -> bool:
@@ -98,7 +116,7 @@ def _candidate(raw: Any) -> dict[str, Any] | None:
     url = raw.get("url")
     ident = str(raw.get("id") or "")
     fmt = str(raw.get("format") or "").lower()
-    if not ident or not isinstance(url, str) or not url.startswith(f"{_BASE_URL}/") or fmt not in {"srt", "vtt"}:
+    if not ident or not _trusted_download_url(url) or fmt not in {"srt", "vtt"}:
         return None
     return {"id": ident, "url": url, "format": fmt, "language": str(raw.get("language") or ""),
             "label": str(raw.get("display") or raw.get("language") or "Subtitles"),
