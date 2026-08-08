@@ -2248,6 +2248,7 @@ function VideoWatchPage({
               <span>Find subtitles</span>
               <strong>{subtitleSearching ? 'Searching…' : 'Online'}</strong>
             </Button>
+            {subtitleStatus && <div className="video-menu-status" role="status">{subtitleStatus}</div>}
             {subtitleResults.map((result) => (
               <Button key={result.id} type="button" variant="ghost" size="sm" className="video-menu-row" role="menuitem" onClick={() => void attachSubtitle(result)} disabled={Boolean(subtitleAttaching)}>
                 <span>{result.label}{result.release ? ` · ${result.release}` : ''}</span>
@@ -2303,7 +2304,7 @@ function VideoWatchPage({
               <span>AirPlay</span>
               <strong>Open</strong>
             </Button>
-            {(subtitleLoadStatus || subtitleStatus) && <div className="video-menu-status" role="status">{subtitleLoadStatus || subtitleStatus}</div>}
+            {subtitleLoadStatus && <div className="video-menu-status" role="status">{subtitleLoadStatus}</div>}
             <a className="video-menu-row" role="menuitem" href={vlcHref}>
               <span>VLC</span>
               <strong>Open</strong>

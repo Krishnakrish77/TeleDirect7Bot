@@ -164,20 +164,33 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
         params.update({"season": str(item.season), "episode": str(item.episode)})
     if language:
         params["language"] = language
+
+    async def _search(params: dict[str, str]) -> list[Any]:
+        try:
+            async with ClientSession(timeout=ClientTimeout(total=15)) as session:
+                async with session.get(f"{_BASE_URL}/search", params=params) as response:
+                    if response.status == 429:
+                        raise WyzieError("Subtitle provider rate limit reached. Try again later.")
+                    if response.status >= 400:
+                        raise WyzieError("Subtitle provider is unavailable")
+                    payload = await response.json(content_type=None)
+        except WyzieError:
+            raise
+        except Exception as exc:
+            logging.warning("wyzie: search failed for item %s: %s", item.message_id, exc)
+            raise WyzieError("Subtitle provider is unavailable") from exc
+        return payload if isinstance(payload, list) else payload.get("subtitles", []) if isinstance(payload, dict) else []
+
     try:
-        async with ClientSession(timeout=ClientTimeout(total=15)) as session:
-            async with session.get(f"{_BASE_URL}/search", params=params) as response:
-                if response.status == 429:
-                    raise WyzieError("Subtitle provider rate limit reached. Try again later.")
-                if response.status >= 400:
-                    raise WyzieError("Subtitle provider is unavailable")
-                payload = await response.json(content_type=None)
+        results = await _search(params)
+        # Some provider keys do not expose every source behind ``all``.  A
+        # second request using Wyzie's default source makes search useful on
+        # those keys instead of presenting a misleading empty result list.
+        if not results and params.get("source") == "all":
+            fallback_params = {key: value for key, value in params.items() if key != "source"}
+            results = await _search(fallback_params)
     except WyzieError:
         raise
-    except Exception as exc:
-        logging.warning("wyzie: search failed for item %s: %s", item.message_id, exc)
-        raise WyzieError("Subtitle provider is unavailable") from exc
-    results = payload if isinstance(payload, list) else payload.get("subtitles", []) if isinstance(payload, dict) else []
     clean = [value for value in (_candidate(raw) for raw in results) if value][: _MAX_RESULTS]
     clean = _rank_release_matches(item, clean)
     _cache[cache_key] = (now, clean)

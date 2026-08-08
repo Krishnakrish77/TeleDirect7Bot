@@ -16,14 +16,8 @@ from main.utils import wyzie_subtitles
 class _Response:
     status = 200
 
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_args):
-        return None
-
-    async def json(self, **_kwargs):
-        return [{
+    def __init__(self, payload=None):
+        self.payload = payload if payload is not None else [{
             "id": "candidate-1",
             "url": "https://sub.wyzie.io/c/example/id/candidate-1?format=srt",
             "format": "srt",
@@ -31,10 +25,20 @@ class _Response:
             "display": "English",
         }]
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def json(self, **_kwargs):
+        return self.payload
+
 
 class _Session:
-    def __init__(self):
+    def __init__(self, response=None):
         self.params = None
+        self.response = response or _Response()
 
     async def __aenter__(self):
         return self
@@ -44,7 +48,7 @@ class _Session:
 
     def get(self, _url, *, params):
         self.params = params
-        return _Response()
+        return self.response
 
 
 class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
@@ -73,6 +77,22 @@ class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
             "id": "candidate-1", "format": "srt", "language": "en", "label": "English",
             "release": "", "fileName": "subtitle.srt", "hearingImpaired": False, "source": "",
         }])
+
+    async def test_search_retries_the_default_source_after_all_returns_no_results(self):
+        all_sources = _Session(_Response([]))
+        default_source = _Session()
+        item = SimpleNamespace(message_id=42, imdb_id="tt4154796", tmdb_id=None, season=None, episode=None)
+        wyzie_subtitles._cache.clear()
+        with (
+            patch.object(wyzie_subtitles.Var, "WYZIE_API_KEY", "test-key"),
+            patch.object(wyzie_subtitles, "_reserve", AsyncMock()),
+            patch.object(wyzie_subtitles, "ClientSession", side_effect=[all_sources, default_source]),
+        ):
+            results = await wyzie_subtitles.search(7, item)
+
+        self.assertEqual(all_sources.params["source"], "all")
+        self.assertNotIn("source", default_source.params)
+        self.assertEqual([result["id"] for result in results], ["candidate-1"])
 
     def test_release_like_the_video_is_ranked_first_without_dropping_others(self):
         item = SimpleNamespace(
