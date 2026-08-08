@@ -25,10 +25,10 @@ _USER_SEARCH_LIMIT = 50
 _USER_ATTACH_LIMIT = 10
 _USER_ITEM_ATTACH_LIMIT = 3
 _GLOBAL_REQUEST_LIMIT = 800
-# Wyzie otherwise defaults to OpenSubtitles alone. Asking its source router
-# for every source available to the configured key gives sparse or regional
-# catalogue entries a real chance of finding a match without exposing the key.
-_SEARCH_SOURCES = "all"
+# Start with Wyzie's default source (OpenSubtitles). It is consistently
+# available to valid keys; the wider source router is a fallback for titles it
+# misses, because some keys cannot query every source in ``all`` reliably.
+_FALLBACK_SEARCH_SOURCES = "all"
 _cache: dict[tuple[int, str], tuple[float, list[dict[str, Any]]]] = {}
 _lock = asyncio.Lock()
 _RELEASE_TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -157,7 +157,6 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
     params = {
         "id": provider_id,
         "format": "srt,vtt",
-        "source": _SEARCH_SOURCES,
         "key": Var.WYZIE_API_KEY,
     }
     if item.season is not None and item.episode is not None:
@@ -171,6 +170,10 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
                 async with session.get(f"{_BASE_URL}/search", params=params) as response:
                     if response.status == 429:
                         raise WyzieError("Subtitle provider rate limit reached. Try again later.")
+                    if response.status in (401, 403):
+                        raise WyzieError("Subtitle service key is invalid or not authorized.")
+                    if response.status == 402:
+                        raise WyzieError("Subtitle service request budget is exhausted. Try again later.")
                     if response.status >= 400:
                         raise WyzieError("Subtitle provider is unavailable")
                     payload = await response.json(content_type=None)
@@ -183,17 +186,20 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
 
     try:
         results = await _search(params)
-        # Some provider keys do not expose every source behind ``all``.  A
-        # second request using Wyzie's default source makes search useful on
-        # those keys instead of presenting a misleading empty result list.
-        if not results and params.get("source") == "all":
-            fallback_params = {key: value for key, value in params.items() if key != "source"}
+        # Search every enabled source only after the dependable default source
+        # has no result. This expands discovery without letting a restricted
+        # source set make a common title look unavailable.
+        if not results:
+            fallback_params = {**params, "source": _FALLBACK_SEARCH_SOURCES}
             results = await _search(fallback_params)
     except WyzieError:
         raise
     clean = [value for value in (_candidate(raw) for raw in results) if value][: _MAX_RESULTS]
     clean = _rank_release_matches(item, clean)
-    _cache[cache_key] = (now, clean)
+    # Never cache an empty provider response. An intermittent provider/source
+    # failure must not make a title appear to have no subtitles for six hours.
+    if clean:
+        _cache[cache_key] = (now, clean)
     return [{k: v for k, v in result.items() if k != "url"} for result in clean]
 
 
