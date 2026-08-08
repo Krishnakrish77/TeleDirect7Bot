@@ -1,11 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, searchUserSubtitles, setRating } from '../api';
+import { attachUserSubtitle, deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, searchUserSubtitles, setRating } from '../api';
 import type { AudioPlayerHandle, PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, VideoChoice, WatchTrack, WatchVideo } from '../types';
 import { STILL_WATCHING_TIMEOUT_MS, WatchPage } from './watch';
 
 vi.mock('../api', () => ({
+  attachUserSubtitle: vi.fn(),
   fetchAudioTracks: vi.fn(),
   fetchContinueMap: vi.fn(),
   deleteContinueEntry: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('../api', () => ({
 }));
 
 const fetchWatchMock = vi.mocked(fetchWatch);
+const attachUserSubtitleMock = vi.mocked(attachUserSubtitle);
 const fetchSubtitlesMock = vi.mocked(fetchSubtitles);
 const fetchAudioTracksMock = vi.mocked(fetchAudioTracks);
 const fetchContinueMapMock = vi.mocked(fetchContinueMap);
@@ -274,6 +276,7 @@ beforeEach(() => {
   fetchRatingMock.mockResolvedValue({ rating: null, counts: { up: 0, down: 0 } });
   saveContinueEntryMock.mockResolvedValue(true);
   deleteContinueEntryMock.mockResolvedValue(undefined);
+  attachUserSubtitleMock.mockResolvedValue({ ok: true, vtt: '1\n00:00:00,000 --> 00:00:01,000\nHello', label: 'English', language: 'en' });
   recordWatchHistoryMock.mockResolvedValue(undefined);
   searchUserSubtitlesMock.mockResolvedValue({ results: [] });
   setRatingMock.mockResolvedValue({ rating: null, counts: { up: 0, down: 0 } });
@@ -1025,7 +1028,7 @@ describe('WatchPage video player', () => {
     expect(screen.getByRole('menuitem', { name: /720pOpen/i }).getAttribute('href')).toBe('/app/watch/video-key-720');
   });
 
-  it('shows subtitle-search feedback beside Find subtitles, before AirPlay', async () => {
+  it('opens subtitle search in its own sheet instead of extending the playback menu', async () => {
     renderWatchPage();
 
     await screen.findByRole('heading', { name: 'Pilot' });
@@ -1034,11 +1037,35 @@ describe('WatchPage video player', () => {
 
     const status = await screen.findByRole('status');
     const findButton = screen.getByText('Find subtitles').closest('button');
-    const airPlayButton = screen.getByText('AirPlay').closest('button');
-    if (!findButton || !airPlayButton) throw new Error('Subtitle menu controls are missing');
+    const sheet = screen.getByRole('dialog', { name: 'Pilot' });
+    if (!findButton) throw new Error('Subtitle search action is missing');
     expect(status.textContent).toBe('No matching subtitles found.');
-    expect(findButton.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(status.compareDocumentPosition(airPlayButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(sheet.contains(status)).toBe(true);
+    expect(sheet.contains(findButton)).toBe(true);
+    expect(screen.queryByText('AirPlay')).toBeNull();
+  });
+
+  it('adds an online subtitle as the active default caption track', async () => {
+    searchUserSubtitlesMock.mockResolvedValue({
+      results: [{ id: 'online-en', format: 'srt', language: 'en', label: 'English', release: 'Endgame.1080p', fileName: 'endgame.en.srt', hearingImpaired: false, source: 'opensubtitles' }],
+    });
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:online-english');
+    const view = renderWatchPage();
+
+    try {
+      await screen.findByRole('heading', { name: 'Pilot' });
+      fireEvent.click(screen.getByLabelText('More video options'));
+      fireEvent.click(screen.getByText('Find subtitles'));
+      await screen.findByText('Endgame.1080p · opensubtitles');
+      fireEvent.click(screen.getByRole('button', { name: /English.*Add/i }));
+
+      await waitFor(() => expect(attachUserSubtitleMock).toHaveBeenCalledWith('video-key', 'online-en'));
+      await waitFor(() => expect(view.container.querySelector('track')?.getAttribute('src')).toBe('blob:online-english'));
+      expect(view.container.querySelector('track')?.hasAttribute('default')).toBe(true);
+      expect(screen.queryByText(/Preparing captions/i)).toBeNull();
+    } finally {
+      createObjectUrl.mockRestore();
+    }
   });
 
   it('exposes VLC as a direct player action without opening the options menu', async () => {

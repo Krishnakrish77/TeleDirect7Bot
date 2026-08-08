@@ -7876,6 +7876,105 @@ img {
   display: none;
 }
 
+.subtitle-search-sheet {
+  position: fixed;
+  z-index: 51;
+  right: 50%;
+  bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  transform: translateX(50%);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 0.7rem;
+  width: min(36rem, calc(100% - 1.5rem));
+  max-height: min(78%, 34rem);
+  overflow: hidden;
+  padding: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(29, 32, 38, 0.99), rgba(11, 12, 14, 0.99));
+  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.52);
+}
+
+.subtitle-search-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.subtitle-search-header h2 {
+  margin: 0.12rem 0;
+  color: #fff;
+  font-size: 1.1rem;
+}
+
+.subtitle-search-header [data-slot="dialog-description"] {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.subtitle-search-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.subtitle-search-actions [data-slot="button"] svg {
+  width: 16px;
+}
+
+.subtitle-search-status {
+  margin: 0;
+  color: #fdba74;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.subtitle-search-results {
+  display: grid;
+  gap: 0.4rem;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 0.15rem;
+}
+
+.subtitle-search-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 3.75rem;
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+}
+
+.subtitle-search-result > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.subtitle-search-result strong,
+.subtitle-search-result small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle-search-result strong {
+  color: #fff;
+}
+
+.subtitle-search-result small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.subtitle-search-result b {
+  color: #fdba74;
+  font-size: 0.8rem;
+}
+
 .episode-navigator-panel {
   position: fixed;
   z-index: 51;
@@ -8052,6 +8151,17 @@ img {
 }
 
 @media (max-width: 40rem) {
+  .subtitle-search-sheet {
+    bottom: 0;
+    width: 100%;
+    max-height: min(76svh, 38rem);
+    padding: 0.8rem 0.75rem max(0.8rem, env(safe-area-inset-bottom, 0px));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 12px 12px 0 0;
+  }
+
   .episode-navigator-panel {
     bottom: 0;
     width: 100%;
