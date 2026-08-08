@@ -236,7 +236,13 @@ async def download(user_id: int, item, candidate_id: str) -> tuple[bytes, dict[s
     await _reserve(user_id, "attach", item.message_id, provider_call=True)
     try:
         async with ClientSession(timeout=ClientTimeout(total=20)) as session:
-            async with session.get(found["url"], allow_redirects=False) as response:
+            # Direct OpenSubtitles links commonly redirect to a regional
+            # download host. Follow that redirect only while every hop stays
+            # on a trusted subtitle host.
+            async with session.get(found["url"], allow_redirects=True) as response:
+                redirect_urls = [str(entry.url) for entry in response.history]
+                if not _trusted_download_url(str(response.url)) or not all(_trusted_download_url(url) for url in redirect_urls):
+                    raise WyzieError("Selected subtitle download is not trusted")
                 if response.status != 200:
                     raise WyzieError("Selected subtitle is no longer available")
                 length = response.content_length

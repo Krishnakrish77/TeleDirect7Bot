@@ -1,6 +1,6 @@
 import { type CSSProperties, DragEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { attachUserSubtitle, deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, searchUserSubtitles } from '../api';
-import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
+import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, SearchIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, RESTORE_AUDIO_MEDIA_SESSION_EVENT, type AudioPlayerHandle, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleSearchResult, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -280,6 +280,63 @@ function EpisodeNavigatorSheet({
           <span>View all episodes</span>
           <ChevronRightIcon />
         </a>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SubtitleSearchSheet({
+  title,
+  results,
+  status,
+  searching,
+  attaching,
+  onSearch,
+  onAttach,
+  onClose,
+  container,
+}: {
+  title: string;
+  results: SubtitleSearchResult[];
+  status: string;
+  searching: boolean;
+  attaching: string;
+  onSearch: () => void;
+  onAttach: (result: SubtitleSearchResult) => void;
+  onClose: () => void;
+  container?: HTMLElement | null;
+}) {
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="subtitle-search-sheet" aria-labelledby="subtitle-search-title" container={container}>
+        <header className="subtitle-search-header">
+          <div>
+            <p className="eyebrow">Online subtitles</p>
+            <DialogTitle asChild><h2 id="subtitle-search-title">{title}</h2></DialogTitle>
+            <DialogDescription>Choose a subtitle release that matches your video.</DialogDescription>
+          </div>
+          <Button type="button" variant="ghost" size="icon-sm" className="icon-button" onClick={onClose} aria-label="Close subtitle search"><XIcon /></Button>
+        </header>
+        <div className="subtitle-search-actions">
+          <Button type="button" onClick={onSearch} disabled={searching}>
+            <SearchIcon />
+            <span>{searching ? 'Searching…' : results.length ? 'Search again' : 'Find subtitles'}</span>
+          </Button>
+          {status && <p className="subtitle-search-status" role="status">{status}</p>}
+        </div>
+        {results.length > 0 && (
+          <div className="subtitle-search-results" aria-label="Subtitle search results">
+            {results.map((result) => (
+              <Button key={result.id} type="button" variant="outline" className="subtitle-search-result" onClick={() => onAttach(result)} disabled={Boolean(attaching)}>
+                <span>
+                  <strong>{result.label || result.language || 'Subtitles'}</strong>
+                  <small>{[result.release, result.source].filter(Boolean).join(' · ') || result.fileName}</small>
+                </span>
+                <b>{attaching === result.id ? 'Adding…' : 'Add'}</b>
+              </Button>
+            ))}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -714,10 +771,12 @@ function VideoWatchPage({
   const [subtitleLoadStatus, setSubtitleLoadStatus] = useState('');
   const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
   const [customSubtitles, setCustomSubtitles] = useState<SubtitleTrack[]>([]);
-  const [subtitleStatus, setSubtitleStatus] = useState('');
+  const [subtitleUploadStatus, setSubtitleUploadStatus] = useState('');
+  const [subtitleSearchStatus, setSubtitleSearchStatus] = useState('');
   const [subtitleResults, setSubtitleResults] = useState<SubtitleSearchResult[]>([]);
   const [subtitleSearching, setSubtitleSearching] = useState(false);
   const [subtitleAttaching, setSubtitleAttaching] = useState('');
+  const [subtitleSearchOpen, setSubtitleSearchOpen] = useState(false);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -801,7 +860,7 @@ function VideoWatchPage({
   }, [chapters, currentTime]);
   const displaySubtitle = video.subtitle && video.subtitle !== video.quality ? video.subtitle : '';
   const shellClass = [
-    controlsVisible || menuOpen || episodesOpen || stillWatchingPrompt ? 'video-shell controls-visible' : 'video-shell controls-hidden',
+    controlsVisible || menuOpen || episodesOpen || subtitleSearchOpen || stillWatchingPrompt ? 'video-shell controls-visible' : 'video-shell controls-hidden',
     video.knownUnplayable ? 'video-unplayable' : '',
   ].filter(Boolean).join(' ');
 
@@ -896,12 +955,12 @@ function VideoWatchPage({
 
   const scheduleControlsHide = useCallback(() => {
     clearControlsTimer();
-    if (!playing || menuOpen || episodesOpen || error || showNext || stillWatchingPrompt) return;
+    if (!playing || menuOpen || episodesOpen || subtitleSearchOpen || error || showNext || stillWatchingPrompt) return;
     controlsTimerRef.current = window.setTimeout(() => {
       setControlsVisible(false);
       controlsTimerRef.current = null;
     }, 2200);
-  }, [clearControlsTimer, episodesOpen, error, menuOpen, playing, showNext, stillWatchingPrompt]);
+  }, [clearControlsTimer, episodesOpen, error, menuOpen, playing, showNext, stillWatchingPrompt, subtitleSearchOpen]);
 
   const revealVideoControls = useCallback(() => {
     if (playing) noteStillWatchingActivity();
@@ -1057,14 +1116,14 @@ function VideoWatchPage({
   }, []);
 
   useEffect(() => {
-    if (!playing || menuOpen || episodesOpen || error || showNext || stillWatchingPrompt) {
+    if (!playing || menuOpen || episodesOpen || subtitleSearchOpen || error || showNext || stillWatchingPrompt) {
       clearControlsTimer();
       setControlsVisible(true);
       return undefined;
     }
     scheduleControlsHide();
     return clearControlsTimer;
-  }, [clearControlsTimer, episodesOpen, error, menuOpen, playing, scheduleControlsHide, showNext, stillWatchingPrompt]);
+  }, [clearControlsTimer, episodesOpen, error, menuOpen, playing, scheduleControlsHide, showNext, stillWatchingPrompt, subtitleSearchOpen]);
 
   useEffect(() => {
     clearStillWatchingTimer();
@@ -1606,21 +1665,21 @@ function VideoWatchPage({
         return [track];
       });
       setActiveSub(track.id);
-      setSubtitleStatus(`Loaded "${file.name}" as subtitles.`);
+      setSubtitleUploadStatus(`Loaded "${file.name}" as subtitles.`);
     } catch (err) {
-      setSubtitleStatus(err instanceof Error ? err.message : 'Could not load subtitles.');
+      setSubtitleUploadStatus(err instanceof Error ? err.message : 'Could not load subtitles.');
     }
   }, [video.resumeKey]);
 
   const findSubtitles = useCallback(async () => {
     setSubtitleSearching(true);
-    setSubtitleStatus('');
+    setSubtitleSearchStatus('');
     try {
       const response = await searchUserSubtitles(video.key);
       setSubtitleResults(response.results);
-      setSubtitleStatus(response.results.length ? 'Choose a subtitle to add to this video.' : 'No matching subtitles found.');
+      setSubtitleSearchStatus(response.results.length ? 'Choose a subtitle to add to this video.' : 'No matching subtitles found.');
     } catch (err) {
-      setSubtitleStatus(err instanceof Error ? err.message : 'Could not search subtitles.');
+      setSubtitleSearchStatus(err instanceof Error ? err.message : 'Could not search subtitles.');
     } finally {
       setSubtitleSearching(false);
     }
@@ -1628,7 +1687,7 @@ function VideoWatchPage({
 
   const attachSubtitle = useCallback(async (result: SubtitleSearchResult) => {
     setSubtitleAttaching(result.id);
-    setSubtitleStatus('');
+    setSubtitleSearchStatus('');
     try {
       const response = await attachUserSubtitle(video.key, result.id);
       const track = subtitleTextToTrack(response.vtt, response.label, response.language);
@@ -1637,10 +1696,15 @@ function VideoWatchPage({
         return [track];
       });
       setActiveSub(track.id);
+      // The search endpoint has already returned subtitle text. Use its blob
+      // URL immediately rather than waiting for the embedded-track loader,
+      // which is only for server-hosted subtitle URLs.
+      setResolvedSubtitle({ id: track.id, url: track.url });
+      setSubtitleLoadStatus('');
       setSubtitleResults([]);
-      setSubtitleStatus('Loaded temporary subtitles for this session.');
+      setSubtitleSearchStatus('Loaded temporary subtitles for this session.');
     } catch (err) {
-      setSubtitleStatus(err instanceof Error ? err.message : 'Could not add subtitle.');
+      setSubtitleSearchStatus(err instanceof Error ? err.message : 'Could not add subtitle.');
     } finally {
       setSubtitleAttaching('');
     }
@@ -1992,6 +2056,7 @@ function VideoWatchPage({
               src={playableSubtitle.url}
               srcLang={playableSubtitle.language || 'und'}
               label={playableSubtitle.label || playableSubtitle.language || 'Subtitles'}
+              default
             />
           )}
         </video>
@@ -2077,6 +2142,19 @@ function VideoWatchPage({
 
         {episodesOpen && video.episodeNavigator && (
           <EpisodeNavigatorSheet navigator={video.episodeNavigator} container={shellRef.current} onClose={() => setEpisodesOpen(false)} />
+        )}
+        {subtitleSearchOpen && (
+          <SubtitleSearchSheet
+            title={video.title}
+            results={subtitleResults}
+            status={subtitleSearchStatus}
+            searching={subtitleSearching}
+            attaching={subtitleAttaching}
+            onSearch={() => void findSubtitles()}
+            onAttach={(result) => void attachSubtitle(result)}
+            onClose={() => setSubtitleSearchOpen(false)}
+            container={shellRef.current}
+          />
         )}
 
         <div className="video-controls">
@@ -2228,6 +2306,7 @@ function VideoWatchPage({
                 ))}
               </select>
             </label>
+            {subtitleLoadStatus && <div className="video-menu-status" role="status">{subtitleLoadStatus}</div>}
             <label className="video-menu-row video-menu-range">
               <span>Volume</span>
               <input
@@ -2244,17 +2323,11 @@ function VideoWatchPage({
               <span>Load subtitles</span>
               <strong>SRT/VTT</strong>
             </Button>
-            <Button type="button" variant="ghost" size="sm" className="video-menu-row" role="menuitem" onClick={() => void findSubtitles()} disabled={subtitleSearching}>
+            {subtitleUploadStatus && <div className="video-menu-status" role="status">{subtitleUploadStatus}</div>}
+            <Button type="button" variant="ghost" size="sm" className="video-menu-row" role="menuitem" onClick={() => { setMenuOpen(false); setSubtitleSearchOpen(true); void findSubtitles(); }} disabled={subtitleSearching}>
               <span>Find subtitles</span>
               <strong>{subtitleSearching ? 'Searching…' : 'Online'}</strong>
             </Button>
-            {subtitleStatus && <div className="video-menu-status" role="status">{subtitleStatus}</div>}
-            {subtitleResults.map((result) => (
-              <Button key={result.id} type="button" variant="ghost" size="sm" className="video-menu-row" role="menuitem" onClick={() => void attachSubtitle(result)} disabled={Boolean(subtitleAttaching)}>
-                <span>{result.label}{result.release ? ` · ${result.release}` : ''}</span>
-                <strong>{subtitleAttaching === result.id ? 'Adding…' : 'Add'}</strong>
-              </Button>
-            ))}
             {hasHls && (
               <label className="video-menu-row">
                 <span>Audio</span>
@@ -2304,7 +2377,6 @@ function VideoWatchPage({
               <span>AirPlay</span>
               <strong>Open</strong>
             </Button>
-            {subtitleLoadStatus && <div className="video-menu-status" role="status">{subtitleLoadStatus}</div>}
             <a className="video-menu-row" role="menuitem" href={vlcHref}>
               <span>VLC</span>
               <strong>Open</strong>
