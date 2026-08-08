@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, setRating } from '../api';
+import { deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, searchUserSubtitles, setRating } from '../api';
 import type { AudioPlayerHandle, PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, VideoChoice, WatchTrack, WatchVideo } from '../types';
 import { STILL_WATCHING_TIMEOUT_MS, WatchPage } from './watch';
@@ -14,6 +14,7 @@ vi.mock('../api', () => ({
   fetchWatch: vi.fn(),
   recordWatchHistory: vi.fn(),
   saveContinueEntry: vi.fn(),
+  searchUserSubtitles: vi.fn(),
   setRating: vi.fn(),
 }));
 
@@ -25,6 +26,7 @@ const fetchRatingMock = vi.mocked(fetchRating);
 const saveContinueEntryMock = vi.mocked(saveContinueEntry);
 const deleteContinueEntryMock = vi.mocked(deleteContinueEntry);
 const recordWatchHistoryMock = vi.mocked(recordWatchHistory);
+const searchUserSubtitlesMock = vi.mocked(searchUserSubtitles);
 const setRatingMock = vi.mocked(setRating);
 
 function makeAudio(playerOverrides?: Partial<PlayerState>): AudioPlayerHandle {
@@ -273,6 +275,7 @@ beforeEach(() => {
   saveContinueEntryMock.mockResolvedValue(true);
   deleteContinueEntryMock.mockResolvedValue(undefined);
   recordWatchHistoryMock.mockResolvedValue(undefined);
+  searchUserSubtitlesMock.mockResolvedValue({ results: [] });
   setRatingMock.mockResolvedValue({ rating: null, counts: { up: 0, down: 0 } });
 });
 
@@ -1020,6 +1023,22 @@ describe('WatchPage video player', () => {
     await waitFor(() => expect(video.volume).toBe(0.4));
 
     expect(screen.getByRole('menuitem', { name: /720pOpen/i }).getAttribute('href')).toBe('/app/watch/video-key-720');
+  });
+
+  it('shows subtitle-search feedback beside Find subtitles, before AirPlay', async () => {
+    renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    fireEvent.click(screen.getByLabelText('More video options'));
+    fireEvent.click(screen.getByText('Find subtitles'));
+
+    const status = await screen.findByRole('status');
+    const findButton = screen.getByText('Find subtitles').closest('button');
+    const airPlayButton = screen.getByText('AirPlay').closest('button');
+    if (!findButton || !airPlayButton) throw new Error('Subtitle menu controls are missing');
+    expect(status.textContent).toBe('No matching subtitles found.');
+    expect(findButton.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(status.compareDocumentPosition(airPlayButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('exposes VLC as a direct player action without opening the options menu', async () => {
