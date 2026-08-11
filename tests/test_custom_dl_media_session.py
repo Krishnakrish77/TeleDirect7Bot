@@ -10,7 +10,7 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 from pyrogram import raw
-from pyrogram.errors import AuthBytesInvalid, FloodWait
+from pyrogram.errors import AuthBytesInvalid, AuthKeyUnregistered, FloodWait
 
 from main.utils import custom_dl
 from main.utils.custom_dl import ByteStreamer, MediaSessionUnavailable
@@ -27,6 +27,7 @@ class _FakeSession:
 class _FakeClient:
     def __init__(self):
         self.calls = 0
+        self.session_error = AuthBytesInvalid
         self.media_session = _FakeSession()
         self.normal_session = _FakeSession()
         self.media_sessions = {4: self.media_session}
@@ -34,7 +35,7 @@ class _FakeClient:
 
     async def get_session(self, dc_id, is_media=False):
         self.calls += 1
-        raise AuthBytesInvalid()
+        raise self.session_error()
 
 
 class ByteStreamerMediaSessionTest(unittest.IsolatedAsyncioTestCase):
@@ -54,6 +55,22 @@ class ByteStreamerMediaSessionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.sessions, {})
         self.assertTrue(client.media_session.stopped)
         self.assertTrue(client.normal_session.stopped)
+
+    async def test_auth_key_unregistered_during_session_setup_is_retried(self):
+        client = _FakeClient()
+        client.session_error = AuthKeyUnregistered
+        streamer = ByteStreamer.__new__(ByteStreamer)
+
+        with patch("asyncio.sleep", return_value=None):
+            with self.assertRaises(MediaSessionUnavailable):
+                await streamer.generate_media_session(
+                    client,
+                    SimpleNamespace(dc_id=4, media_id=99),
+                )
+
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(client.media_sessions, {})
+        self.assertEqual(client.sessions, {})
 
     async def test_get_file_flood_wait_retries_without_escaping_response_body(self):
         class MediaSession:
@@ -89,6 +106,38 @@ class ByteStreamerMediaSessionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(chunks, [b"payload"])
         self.assertEqual(media_session.calls, 2)
         sleep.assert_awaited_once_with(1.0)
+
+    async def test_expired_media_auth_key_is_refreshed_before_retrying_get_file(self):
+        class ExpiredSession:
+            async def send(self, _request):
+                raise AuthKeyUnregistered()
+
+        class FreshSession:
+            async def send(self, _request):
+                return raw.types.upload.File(
+                    type=raw.types.storage.FileUnknown(), mtime=0, bytes=b"payload",
+                )
+
+        streamer = ByteStreamer.__new__(ByteStreamer)
+        streamer.client = object()
+        file_id = SimpleNamespace(media_id=99, dc_id=4, file_type=None)
+        refresh_cache = AsyncMock()
+
+        with (
+            patch.object(streamer, "generate_media_session", side_effect=[ExpiredSession(), FreshSession()]) as generate,
+            patch.object(streamer, "get_location", return_value=object()),
+            patch.object(streamer, "_drop_cached_session", refresh_cache),
+            patch.object(custom_dl, "work_loads", {0: 0}),
+        ):
+            chunks = [
+                chunk async for chunk in streamer.yield_file(
+                    file_id, 0, 0, 0, len(b"payload"), 1, len(b"payload"),
+                )
+            ]
+
+        self.assertEqual(chunks, [b"payload"])
+        self.assertEqual(generate.await_count, 2)
+        refresh_cache.assert_awaited_once_with(streamer.client, 4)
 
 
 if __name__ == "__main__":

@@ -124,7 +124,15 @@ async def error_middleware(request: web.Request, handler):
 @web.middleware
 async def mongo_readiness_middleware(request: web.Request, handler):
     """Serve a deliberate maintenance response while Mongo reconnects."""
-    if request.path == "/healthz" or request.path.startswith("/static/"):
+    # Caption URLs are authenticated by their per-media secure hash and can
+    # serve embedded tracks directly from Telegram.  Do not make a viewer who
+    # has already opened a video lose captions merely because the catalogue's
+    # optional Mongo mirror is reconnecting.
+    if (
+        request.path == "/healthz"
+        or request.path.startswith("/static/")
+        or request.path.startswith("/sub/")
+    ):
         return await handler(request)
     from main.utils import media_index
     if not media_index.store_ready():
