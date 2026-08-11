@@ -8,6 +8,7 @@ from pyrogram import Client, utils, raw
 from pyrogram.crypto import aes
 from pyrogram.errors import (
     AuthBytesInvalid,
+    AuthKeyUnregistered,
     CDNFileHashMismatch,
     FloodWait,
     Timeout as TelegramTimeout,
@@ -80,11 +81,11 @@ class ByteStreamer:
         Client.get_session helper.
         """
         dc_id = file_id.dc_id
-        last_err: AuthBytesInvalid | None = None
+        last_err: Exception | None = None
         for attempt in range(2):
             try:
                 return await client.get_session(dc_id, is_media=True)
-            except AuthBytesInvalid as exc:
+            except (AuthBytesInvalid, AuthKeyUnregistered) as exc:
                 last_err = exc
                 logging.warning(
                     "media session auth failed for dc=%s media_id=%s attempt=%d/2; "
@@ -192,6 +193,7 @@ class ByteStreamer:
             location = await self.get_location(file_id)
 
             async def _send_get_file(current_offset: int):
+                nonlocal media_session
                 last_err: Union[BaseException, None] = None
                 for attempt in range(_FLOOD_WAIT_RETRIES):
                     try:
@@ -223,6 +225,27 @@ class ByteStreamer:
                             chunk_size,
                         )
                         await asyncio.sleep(0.5 * (attempt + 1))
+                    except AuthKeyUnregistered as error:
+                        # Media sessions use temporary auth keys. Telegram can
+                        # revoke one after a deploy or DC migration even though
+                        # the main bot session is still valid. Remove that
+                        # cached session, negotiate a new key, and retry this
+                        # exact byte range instead of letting the exception
+                        # escape from aiohttp's streaming response body.
+                        last_err = error
+                        logging.warning(
+                            "yield_file: media auth key expired; refreshing "
+                            "session (attempt %d/%d) media_id=%s dc=%s",
+                            attempt + 1, _FLOOD_WAIT_RETRIES,
+                            getattr(file_id, "media_id", "?"),
+                            getattr(file_id, "dc_id", "?"),
+                        )
+                        await self._drop_cached_session(client, file_id.dc_id)
+                        try:
+                            media_session = await self.generate_media_session(client, file_id)
+                        except MediaSessionUnavailable as refresh_error:
+                            last_err = refresh_error
+                            break
                 logging.warning(
                     "yield_file: giving up after GetFile retries "
                     "media_id=%s offset=%d (last error: %r)",
