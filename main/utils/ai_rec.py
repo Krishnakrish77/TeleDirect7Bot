@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
 import re
 import time
@@ -28,7 +29,21 @@ from main.utils import (
 )
 
 _MAX_CANDIDATES = 50
-_AGENT_MAX_TOOL_CALLS = 3
+
+
+def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Read an integer setting without allowing an unsafe agent budget."""
+    try:
+        value = int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(value, maximum))
+
+
+# Five catalogue calls can fill the 50-title candidate pool (up to 12 results
+# per call) while leaving the 25-second agent budget practical. Deployments
+# with consistently low Gemini latency may opt into up to ten calls.
+_AGENT_MAX_TOOL_CALLS = _bounded_env_int("AI_REC_AGENT_MAX_TOOL_CALLS", 5, 1, 10)
 _AGENT_TOOL_RESULT_LIMIT = 12
 _AGENT_BUDGET_SECONDS = 25.0
 _AI_REC_HISTORY_LIMIT = 200  # matches the retained server-side watch-history cap
@@ -1067,6 +1082,8 @@ class _AgentCatalogue:
                 continue
             identifier = self._by_href.get(href)
             if not identifier:
+                if len(self.payloads) >= _MAX_CANDIDATES:
+                    continue
                 identifier = f"card_{len(self.payloads) + 1}"
                 self._by_href[href] = identifier
                 self.payloads[identifier] = payload
@@ -1114,7 +1131,7 @@ class _AgentCatalogue:
     def recover_with_broad_browse(self) -> list[dict]:
         """Seed a safe local reserve when model-selected searches are all empty.
 
-        Tool calling is probabilistic: a model can make three perfectly valid
+        Tool calling is probabilistic: a model can make several perfectly valid
         but overly specific searches.  A bounded broad browse keeps the final
         curation grounded in the user's *unwatched* library without another
         model round trip.
@@ -1152,7 +1169,7 @@ async def _generate_agentic(
     user_id: int, *, query: str, refresh: bool, limit: int,
     progress: Callable[[str], Awaitable[None]] | None = None,
 ) -> dict:
-    """Use at most three read-only catalogue tool calls, then rank discovered ids."""
+    """Use a bounded number of read-only catalogue calls, then rank their ids."""
     started = time.monotonic()
     profile, history, cw_map, dismissed = await asyncio.gather(
         rec_engine._collect_signal_profile(user_id), wh_store.get_recent(user_id, limit=_AI_REC_HISTORY_LIMIT),
@@ -1169,7 +1186,7 @@ async def _generate_agentic(
         "First call search_library or browse_library to find candidates before recommending anything.",
         "For a question about whether the user will enjoy a named title, find that title first, then explore related library titles for comparison.",
         "Never ask for or reveal private catalogue data beyond tool results. Do not use unavailable titles.",
-        "You have at most three total tool calls; explore efficiently.",
+        f"You have at most {_AGENT_MAX_TOOL_CALLS} total tool calls; explore efficiently.",
         f"User taste summary: {_taste_summary(profile, stats)}",
         f"User request: {intent}",
     ])}]}]
