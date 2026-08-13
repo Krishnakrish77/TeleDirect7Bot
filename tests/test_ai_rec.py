@@ -85,6 +85,13 @@ class AiRecGroundingTest(unittest.TestCase):
     def test_ai_picks_uses_the_full_retained_watch_history_for_exclusion(self):
         self.assertEqual(ai_rec._AI_REC_HISTORY_LIMIT, 200)
 
+    def test_ai_picks_tool_call_limit_defaults_to_five_and_is_capped_at_ten(self):
+        self.assertEqual(ai_rec._bounded_env_int("MISSING_AI_REC_TEST_LIMIT", 5, 1, 10), 5)
+        with patch.dict(os.environ, {"MISSING_AI_REC_TEST_LIMIT": "99"}):
+            self.assertEqual(ai_rec._bounded_env_int("MISSING_AI_REC_TEST_LIMIT", 5, 1, 10), 10)
+        with patch.dict(os.environ, {"MISSING_AI_REC_TEST_LIMIT": "bad"}):
+            self.assertEqual(ai_rec._bounded_env_int("MISSING_AI_REC_TEST_LIMIT", 5, 1, 10), 5)
+
     def test_recommendation_metadata_is_safe_and_distinguishes_fallbacks(self):
         with patch.object(ai_rec.time, "time", return_value=1_700_000_000):
             agent = ai_rec._recommendation_meta("agent")

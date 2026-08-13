@@ -166,6 +166,7 @@ The essentials are in the Quick start `.env` example. The complete reference is 
 | --- | --- | --- |
 | `TMDB_API_KEY` | — | Enables TMDB movie/series metadata, artwork, trailers, and discovery. |
 | `GEMINI_API_KEY` | — | Enables Gemini-backed, library-grounded AI Picks and admin metadata assistance. |
+| `AI_REC_AGENT_MAX_TOOL_CALLS` | `5` | Maximum catalogue calls per AI Picks run. `5` fills the candidate pool efficiently; use up to `10` only after confirming Gemini latency stays within the request budget. |
 | `WYZIE_API_KEY` | — | Enables server-side subtitle search. Never expose this key to the browser. |
 | `STORE_BACKEND` | — | Set to `mongo` to use MongoDB for the durable catalogue. |
 | `MONGO_URI` | — | Required when `STORE_BACKEND=mongo`. |
