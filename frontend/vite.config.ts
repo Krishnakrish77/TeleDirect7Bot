@@ -27,6 +27,7 @@ export default defineConfig(({ mode }) => {
         '/admin': backend,
         '/thumb': backend,
         '/watch': backend,
+        '/book': backend,
         '/hls': backend,
         '/sub': backend,
         '^/[A-Za-z0-9_-]+\\d+$': backend
