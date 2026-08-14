@@ -698,11 +698,18 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     # bytes to identify the container format. They will then make targeted
     # Range requests for the MOOV/Cues block (served from the tail cache) and
     # the actual seek position — no full-file stream required.
-    if _should_serve_probe_head(
+    # The bounded head response exists for ffprobe/ffmpeg to identify media
+    # containers without reading a whole video. Browser PDF viewers may begin
+    # with a plain GET and require a complete document, so never apply this
+    # media-probe optimisation to PDFs or other documents.
+    if (
+        (mime_type.startswith("video/") or mime_type.startswith("audio/"))
+        and _should_serve_probe_head(
         download_request=download_request,
         range_header=range_header,
         from_bytes=from_bytes,
         file_size=file_size,
+        )
     ):
         try:
             head = await _fetch_skeleton_with_fallback(

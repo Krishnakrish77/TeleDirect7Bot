@@ -166,6 +166,36 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stream_routes._total_active, 0)
         self.assertEqual(stream_routes._ip_active, {})
 
+    async def test_pdf_full_get_is_not_reduced_to_a_probe_head(self):
+        """PDF viewers can start without Range and need the full document."""
+        client = _FakeClient()
+
+        class PdfFileId(_LargeFakeFileId):
+            mime_type = "application/pdf"
+            file_name = "book.pdf"
+
+        class PdfStreamer(_FakeStreamer):
+            async def get_file_properties(self, message_id):
+                return PdfFileId()
+
+            async def yield_file(self, *args):
+                yield b"%PDF"
+
+        with (
+            patch.object(stream_routes, "multi_clients", {0: client}),
+            patch.object(stream_routes, "work_loads", {0: 0}),
+            patch.object(stream_routes, "class_cache", {client: PdfStreamer()}),
+            patch.object(stream_routes, "_total_active", 0),
+            patch.object(stream_routes, "_ip_active", {}),
+            patch.object(stream_routes, "_client_cooldowns", {}),
+        ):
+            response = await stream_routes.media_streamer(
+                _FakeRequest(method="GET"), 42, "abc"
+            )
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers["Content-Type"], "application/pdf")
+
     async def test_stream_accepts_the_catalogued_legacy_hash_for_the_same_item(self):
         client = _FakeClient()
         legacy_item = _video_item(secure_hash="legacy-hash")
