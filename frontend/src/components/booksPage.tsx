@@ -4,7 +4,7 @@ import { BookOpenIcon, BookmarkIcon, DownloadIcon, MoreVerticalIcon, PauseIcon, 
 import type { BookItem, BookProgressMap, User } from '../types';
 import { Button } from './ui/button';
 
-declare global { interface Window { ePub?: (source: string | ArrayBuffer, options?: { openAs?: 'epub' }) => EpubBook; pdfjsLib?: PdfJs; JSZip?: JsZipStatic; } }
+declare global { interface Window { ePub?: (source: string | ArrayBuffer, options?: { openAs?: 'epub' | 'binary' }) => EpubBook; pdfjsLib?: PdfJs; JSZip?: JsZipStatic; } }
 type EpubLocation = { start?: { cfi?: string; percentage?: number } };
 type EpubTocItem = { label: string; href: string; subitems?: EpubTocItem[] };
 type EpubRendition = { display: (target?: string | number) => Promise<unknown>; next: () => Promise<unknown>; prev: () => Promise<unknown>; on?: (event: string, callback: (location: EpubLocation) => void) => void; getContents?: () => Array<{ document?: Document }>; destroy?: () => void; };
@@ -119,7 +119,7 @@ export function BooksPage({ user }: { user: User | null }) {
     let cancelled = false; let book: EpubBook | null = null; let timeout = 0; const epubTouchCleanups: Array<() => void> = []; const boundEpubDocuments = new Set<Document>(); setReaderError(''); setReaderLoading(true); setToc([]); setReaderPanel(null); setReaderMenuOpen(false); setFindStatus('');
     void Promise.all([loadEpubReader(), epubSource(selected.readUrl)]).then(([, source]) => {
       if (cancelled || !window.ePub || !epubRootRef.current) return;
-      epubRootRef.current.replaceChildren(); book = window.ePub(source, { openAs: 'epub' });
+      epubRootRef.current.replaceChildren(); book = window.ePub(source, { openAs: 'binary' });
       void book.loaded?.navigation?.then((navigation) => { if (!cancelled) setToc(navigation.toc || []); });
       const rendition = book.renderTo(epubRootRef.current, { width: '100%', height: '100%', spread: 'none' }); renditionRef.current = rendition;
       const bindEpubTouch = () => rendition.getContents?.().forEach((content) => { const doc = content.document; if (!doc || boundEpubDocuments.has(doc)) return; boundEpubDocuments.add(doc); let start: { x: number; y: number } | null = null; const onStart = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (touch) start = { x: touch.clientX, y: touch.clientY }; }; const onEnd = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (!start || !touch || readerMenuOpen) return; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; start = null; if (Math.abs(dx) < 56 || Math.abs(dy) > Math.abs(dx)) return; setControlsVisible(true); void (dx < 0 ? rendition.next() : rendition.prev()); }; doc.addEventListener('touchstart', onStart, { passive: true }); doc.addEventListener('touchend', onEnd, { passive: true }); epubTouchCleanups.push(() => { doc.removeEventListener('touchstart', onStart); doc.removeEventListener('touchend', onEnd); }); });
