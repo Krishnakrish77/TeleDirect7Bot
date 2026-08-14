@@ -5338,7 +5338,7 @@ img {
 .epub-reader { background: #f8f4e9; color: #1c1917; transition: background .18s ease, color .18s ease; }
 .epub-reader-dark { background: #121416; color: #f1f5f9; }
 .pdf-reader { display: grid; place-items: start center; width: 100%; height: 100%; overflow: auto; overscroll-behavior: contain; padding: 1rem; background: #2b2d31; touch-action: pan-y; }
-.pdf-reader canvas { max-width: 100%; height: auto; background: white; box-shadow: 0 3px 18px rgba(0, 0, 0, .45); }
+.pdf-reader canvas { max-width: none; height: auto; background: white; box-shadow: 0 3px 18px rgba(0, 0, 0, .45); }
 .text-book-reader { height: 100%; overflow: auto; padding: clamp(1.5rem, 5vw, 5rem); background: #f8f4e9; color: #292524; white-space: pre-wrap; font: 1.1rem/1.8 Georgia, serif; }
 .books-reader-error { margin: 0; padding: .75rem 1rem; border: 1px solid #fb7185; background: #4c061d; color: #fff1f2; box-shadow: 0 8px 24px rgba(0, 0, 0, .38); font-weight: 700; line-height: 1.45; }
 .books-reader-note { margin: 0; padding: 0.8rem 1rem; color: var(--muted); font-size: 0.82rem; line-height: 1.4; }
@@ -5468,6 +5468,7 @@ img {
 .books-reader-appearance { display: grid; gap: .5rem; }
 .books-reader-appearance > span { color: #cbd5e1; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .books-reader-appearance > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.books-reader-pdf-view > div { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .books-reader-appearance .books-reader-theme-option { justify-content: flex-start; min-height: 3rem; padding-inline: .65rem; }
 .books-reader-theme-option.is-active { border-color: #fb923c !important; background: #7c2d12 !important; color: #fff !important; }
 .books-reader-theme-swatch { display: inline-block; flex: 0 0 auto; width: 1.15rem; height: 1.15rem; border: 1px solid rgba(255, 255, 255, .35); border-radius: 50%; }
@@ -5479,6 +5480,14 @@ img {
 .books-reader-menu .books-reader-find input { flex: 1 1 11rem; }
 .books-reader-menu .books-reader-find small { flex-basis: 100%; }
 .books-reader-menu .books-reader-panel { max-height: 18rem; margin-top: .75rem; padding: .75rem 0 0; border-top: 1px solid var(--line); border-bottom: 0; background: transparent; }
+.books-reader-note-draft { display: grid; gap: .4rem; margin-top: .75rem; color: #cbd5e1; font-size: .85rem; }
+.books-reader-note-draft textarea { width: 100%; min-height: 5.5rem; resize: vertical; padding: .6rem; border: 1px solid var(--line); border-radius: 8px; background: #0d0f12; color: var(--text); font: inherit; line-height: 1.4; }
+.books-reader-note-draft textarea:focus { border-color: #fb923c; outline: 2px solid rgba(251, 146, 60, .22); outline-offset: 1px; }
+.pdf-thumbnail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr)); gap: .6rem; }
+.pdf-thumbnail { display: grid; gap: .3rem; place-items: center; min-width: 0; padding: .35rem; border: 1px solid #374151; border-radius: 8px; background: #111317; color: #cbd5e1; cursor: pointer; }
+.pdf-thumbnail:hover, .pdf-thumbnail:focus-visible, .pdf-thumbnail.is-current { border-color: #fb923c; background: #3b1c0b; color: #fff; outline: none; }
+.pdf-thumbnail canvas { width: 100%; height: auto; max-height: 7rem; background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, .3); }
+.pdf-thumbnail span { font-size: .72rem; font-weight: 800; }
 .books-reader-download { display: inline-flex; align-items: center; gap: .5rem; margin-top: .8rem; color: #fdba74; font-weight: 750; text-decoration: none; }
 .books-reader-download:hover { color: #ffedd5; }
 .books-reader-download svg { width: 1rem; height: 1rem; }
