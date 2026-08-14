@@ -58,8 +58,7 @@ async function epubSource(url: string): Promise<ArrayBuffer> {
   // first ZIP entry. Avoid loading JSZip and duplicating the whole book in
   // memory for the common case.
   if (hasStandardEpubMimetype(original)) return original;
-  await loadZipRepair();
-  if (!window.JSZip) return original;
+  if (!window.JSZip) throw new Error('The EPUB reader dependency did not load. Refresh and try again.');
   const archive = await window.JSZip.loadAsync(original);
   const mimetype = archive.files.mimetype;
   // EPUB readers in the wild are permissive about this, but epub.js is not:
@@ -117,7 +116,9 @@ export function BooksPage({ user }: { user: User | null }) {
   useEffect(() => {
     if (!selected || !isEpub || !epubRootRef.current) return undefined;
     let cancelled = false; let book: EpubBook | null = null; let timeout = 0; const epubTouchCleanups: Array<() => void> = []; const boundEpubDocuments = new Set<Document>(); setReaderError(''); setReaderLoading(true); setToc([]); setReaderPanel(null); setReaderMenuOpen(false); setFindStatus('');
-    void Promise.all([loadEpubReader(), epubSource(selected.readUrl)]).then(([, source]) => {
+    // epub.js captures JSZip when its script executes. Loading both scripts in
+    // parallel lets epub.js permanently capture an undefined dependency.
+    void loadZipRepair().then(loadEpubReader).then(() => epubSource(selected.readUrl)).then((source) => {
       if (cancelled || !window.ePub || !epubRootRef.current) return;
       epubRootRef.current.replaceChildren(); book = window.ePub(source, { openAs: 'binary' });
       void book.loaded?.navigation?.then((navigation) => { if (!cancelled) setToc(navigation.toc || []); });

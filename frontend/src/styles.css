@@ -5307,7 +5307,7 @@ img {
 .pdf-reader { display: grid; place-items: start center; width: 100%; height: 100%; overflow: auto; overscroll-behavior: contain; padding: 1rem; background: #2b2d31; touch-action: pan-y; }
 .pdf-reader canvas { max-width: 100%; height: auto; background: white; box-shadow: 0 3px 18px rgba(0, 0, 0, .45); }
 .text-book-reader { height: 100%; overflow: auto; padding: clamp(1.5rem, 5vw, 5rem); background: #f8f4e9; color: #292524; white-space: pre-wrap; font: 1.1rem/1.8 Georgia, serif; }
-.books-reader-error { margin: 0; padding: 0.7rem 1rem; background: rgba(251, 113, 133, 0.12); color: #fecdd3; }
+.books-reader-error { margin: 0; padding: .75rem 1rem; border: 1px solid #fb7185; background: #4c061d; color: #fff1f2; box-shadow: 0 8px 24px rgba(0, 0, 0, .38); font-weight: 700; line-height: 1.45; }
 .books-reader-note { margin: 0; padding: 0.8rem 1rem; color: var(--muted); font-size: 0.82rem; line-height: 1.4; }
 .books-reader-footer { display: flex; justify-content: space-between; gap: 1rem; padding: .65rem 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
 .books-reader-page .books-reader-footer { position: absolute; z-index: 5; right: 0; bottom: 0; left: 0; background: linear-gradient(transparent, rgba(17, 19, 23, .96) 45%); border: 0; padding-top: 2rem; transition: opacity .22s ease, transform .22s ease; }
