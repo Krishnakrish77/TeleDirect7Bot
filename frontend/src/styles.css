@@ -5245,8 +5245,9 @@ img {
 .books-search svg { width: 1.1rem; height: 1.1rem; }
 .books-search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); }
 .books-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
-.book-card { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 1rem; min-height: 178px; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-.book-card:hover { border-color: rgba(249, 115, 22, 0.5); }
+.book-card { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 1rem; min-height: 178px; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+.book-card:hover { border-color: rgba(249, 115, 22, 0.5); background: var(--panel-strong); transform: translateY(-2px); }
+.book-card:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 .book-cover { display: flex; flex-direction: column; justify-content: space-between; min-height: 145px; padding: 0.65rem; border-radius: 5px 10px 10px 5px; background: linear-gradient(135deg, #9a3412, #431407); color: #ffedd5; box-shadow: inset 5px 0 rgba(0,0,0,.2); }
 .book-cover-image { width: 76px; height: 145px; padding: 0; object-fit: cover; background: var(--panel); }
 .book-cover svg { width: 1.6rem; height: 1.6rem; }.book-cover small { font-weight: 900; letter-spacing: .08em; }
@@ -5262,6 +5263,7 @@ img {
 .books-reader-shell { position: relative; overflow: hidden; background: var(--panel); }
 .books-reading-mode .app-header, .books-reading-mode .primary-nav { display: none; }
 .books-reading-mode .app-shell { padding-bottom: 0; }
+.books-reading-mode { overflow: hidden; }
 .books-reader-page { min-height: 100svh; background: #090a0c; }
 .books-reader-page .books-reader-shell { min-height: 100svh; border: 0; border-radius: 0; }
 .books-reader-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 68px; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
@@ -5321,6 +5323,15 @@ img {
 .books-reader-page .books-reader {
   height: 100svh;
   min-height: 100svh;
+}
+
+.books-reader-page {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  width: 100vw;
+  height: 100svh;
+  overflow: hidden;
 }
 
 .books-reader-page .books-reader-toolbar {
