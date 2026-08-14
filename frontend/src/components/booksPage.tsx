@@ -7,7 +7,7 @@ import { Button } from './ui/button';
 declare global { interface Window { ePub?: (source: string | ArrayBuffer, options?: { openAs?: 'epub' | 'binary' }) => EpubBook; pdfjsLib?: PdfJs; JSZip?: JsZipStatic; } }
 type EpubLocation = { start?: { cfi?: string; percentage?: number } };
 type EpubTocItem = { label: string; href: string; subitems?: EpubTocItem[] };
-type EpubRendition = { display: (target?: string | number) => Promise<unknown>; next: () => Promise<unknown>; prev: () => Promise<unknown>; on?: (event: string, callback: (location: EpubLocation) => void) => void; getContents?: () => Array<{ document?: Document }>; destroy?: () => void; };
+type EpubRendition = { display: (target?: string | number) => Promise<unknown>; next: () => Promise<unknown>; prev: () => Promise<unknown>; on?: (event: string, callback: (location: EpubLocation) => void) => void; getContents?: () => Array<{ document?: Document }>; themes?: { register: (name: string, rules: Record<string, Record<string, string>>) => void; select: (name: string) => void }; destroy?: () => void; };
 type EpubBook = { renderTo: (element: HTMLElement, options: Record<string, unknown>) => EpubRendition; loaded?: { navigation?: Promise<{ toc?: EpubTocItem[] }> }; destroy?: () => void; };
 type PdfViewport = { width: number; height: number };
 type PdfPage = { getViewport: (params: { scale: number }) => PdfViewport; render: (params: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<unknown>; cancel?: () => void } };
@@ -25,6 +25,7 @@ const BOOKMARKS_KEY = 'td:book-bookmarks';
 type BookBookmark = { locator: string; label: string; progress: number; t: number };
 const NOTES_KEY = 'td:book-notes';
 type BookNote = { text: string; progress: number; t: number };
+type ReaderTheme = 'light' | 'dark';
 
 function localProgress(): BookProgressMap { try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}') || {}; } catch (_) { return {}; } }
 function writeProgress(value: BookProgressMap) { try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(value)); } catch (_) {} }
@@ -79,6 +80,11 @@ function hasStandardEpubMimetype(archive: ArrayBuffer): boolean {
   const nameLength = header.getUint16(26, true);
   return 30 + nameLength <= bytes.length && new TextDecoder().decode(bytes.subarray(30, 30 + nameLength)) === 'mimetype';
 }
+function applyEpubTheme(rendition: EpubRendition, theme: ReaderTheme) {
+  rendition.themes?.register('teledirect-light', { body: { background: '#f8f4e9 !important', color: '#1c1917 !important' }, a: { color: '#9a3412 !important' } });
+  rendition.themes?.register('teledirect-dark', { body: { background: '#121416 !important', color: '#f1f5f9 !important' }, a: { color: '#fdba74 !important' } });
+  rendition.themes?.select(`teledirect-${theme}`);
+}
 function loadPdfReader(): Promise<void> {
   if (window.pdfjsLib) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -91,7 +97,7 @@ function loadPdfReader(): Promise<void> {
 
 export function BooksPage({ user }: { user: User | null }) {
   const [items, setItems] = useState<BookItem[]>([]); const [query, setQuery] = useState(''); const [debouncedQuery, setDebouncedQuery] = useState(''); const [selected, setSelected] = useState<BookItem | null>(null);
-  const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [readerError, setReaderError] = useState(''); const [readerLoading, setReaderLoading] = useState(false); const [speaking, setSpeaking] = useState(false);
+  const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [readerError, setReaderError] = useState(''); const [readerLoading, setReaderLoading] = useState(false); const [speaking, setSpeaking] = useState(false); const [readerTheme, setReaderTheme] = useState<ReaderTheme>('light');
   const [progress, setProgress] = useState<BookProgressMap>(() => localProgress());
   const [bookmarks, setBookmarks] = useState<Record<string, BookBookmark[]>>(() => localBookmarks()); const [notes, setNotes] = useState<Record<string, BookNote[]>>(() => localNotes()); const [toc, setToc] = useState<EpubTocItem[]>([]); const [readerPanel, setReaderPanel] = useState<'contents' | 'bookmarks' | 'notes' | null>(null); const [readerMenuOpen, setReaderMenuOpen] = useState(false); const [findQuery, setFindQuery] = useState(''); const [findStatus, setFindStatus] = useState(''); const [speechRate, setSpeechRate] = useState(1); const [sessionMinutes, setSessionMinutes] = useState(0); const [pdfPage, setPdfPage] = useState(1); const [pdfDocument, setPdfDocument] = useState<PdfDocument | null>(null); const [pdfPages, setPdfPages] = useState(0); const [controlsVisible, setControlsVisible] = useState(true);
   const epubRootRef = useRef<HTMLDivElement>(null); const renditionRef = useRef<EpubRendition | null>(null); const pdfCanvasRef = useRef<HTMLCanvasElement>(null); const pdfRootRef = useRef<HTMLDivElement>(null); const gestureStart = useRef<{ x: number; y: number } | null>(null); const pdfScrollTopRef = useRef(0); const pdfPageTurnLockedRef = useRef(false); const pdfPendingScrollRef = useRef<'top' | 'bottom' | null>(null); const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -122,7 +128,7 @@ export function BooksPage({ user }: { user: User | null }) {
       if (cancelled || !window.ePub || !epubRootRef.current) return;
       epubRootRef.current.replaceChildren(); book = window.ePub(source, { openAs: 'binary' });
       void book.loaded?.navigation?.then((navigation) => { if (!cancelled) setToc(navigation.toc || []); });
-      const rendition = book.renderTo(epubRootRef.current, { width: '100%', height: '100%', spread: 'none' }); renditionRef.current = rendition;
+      const rendition = book.renderTo(epubRootRef.current, { width: '100%', height: '100%', spread: 'none' }); renditionRef.current = rendition; applyEpubTheme(rendition, readerTheme);
       const bindEpubTouch = () => rendition.getContents?.().forEach((content) => { const doc = content.document; if (!doc || boundEpubDocuments.has(doc)) return; boundEpubDocuments.add(doc); let start: { x: number; y: number } | null = null; const onStart = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (touch) start = { x: touch.clientX, y: touch.clientY }; }; const onEnd = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (!start || !touch || readerMenuOpen) return; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; start = null; if (Math.abs(dx) < 56 || Math.abs(dy) > Math.abs(dx)) return; setControlsVisible(true); void (dx < 0 ? rendition.next() : rendition.prev()); }; doc.addEventListener('touchstart', onStart, { passive: true }); doc.addEventListener('touchend', onEnd, { passive: true }); epubTouchCleanups.push(() => { doc.removeEventListener('touchstart', onStart); doc.removeEventListener('touchend', onEnd); }); });
       rendition.on?.('rendered', bindEpubTouch);
       rendition.on?.('relocated', (location) => { const start = location.start; if (start?.cfi) saveProgress(selected, start.cfi, start.percentage || 0); });
@@ -131,6 +137,7 @@ export function BooksPage({ user }: { user: User | null }) {
     }).catch((err: unknown) => { if (!cancelled) { setReaderLoading(false); setReaderError(err instanceof Error ? err.message : 'This EPUB could not be opened.'); } });
     return () => { cancelled = true; window.clearTimeout(timeout); epubTouchCleanups.forEach((cleanup) => cleanup()); renditionRef.current?.destroy?.(); renditionRef.current = null; book?.destroy?.(); };
   }, [isEpub, selected]);
+  useEffect(() => { if (isEpub && renditionRef.current) applyEpubTheme(renditionRef.current, readerTheme); }, [isEpub, readerTheme]);
   useEffect(() => {
     if (!selected || isEpub) return undefined;
     let cancelled = false; let task: { promise: Promise<PdfDocument>; destroy?: () => void } | null = null; setPdfDocument(null); setPdfPages(0); setReaderError(''); setReaderLoading(true);
@@ -189,17 +196,19 @@ export function BooksPage({ user }: { user: User | null }) {
     <main className="books-reader-page">
       <section className="books-reader-shell">
         <header className="books-reader-toolbar">
-          <Button className="books-reader-back" variant="ghost" size="sm" onClick={closeReader}>← <span>Library</span></Button>
+          <Button className="books-reader-back" variant="ghost" size="sm" aria-label="Back to library" onClick={closeReader}>←</Button>
           <div className="books-file-label">
             <BookOpenIcon />
             <span><strong>{selected.title}</strong><small>{selected.fileName} · {selected.fileSizeLabel}</small></span>
           </div>
-          <Button className="books-reader-tools" variant="ghost" size="sm" aria-label="Open reader tools" aria-expanded={readerMenuOpen} onClick={() => { setControlsVisible(true); setReaderMenuOpen((open) => !open); }}><MoreVerticalIcon /></Button>
+          <Button className="books-reader-tools" variant="ghost" size="sm" aria-label={isEpub ? 'Open reading settings' : 'Open reader tools'} aria-expanded={readerMenuOpen} onClick={() => { setControlsVisible(true); setReaderMenuOpen((open) => !open); }}>{isEpub ? <span className="books-reader-appearance-glyph" aria-hidden="true">A<span>a</span></span> : <MoreVerticalIcon />}</Button>
         </header>
 
-        {readerMenuOpen && <aside className="books-reader-menu" aria-label="Reader tools">
-          <div className="books-reader-menu-heading"><strong>Reader tools</strong><Button variant="ghost" size="sm" onClick={() => { setReaderMenuOpen(false); setReaderPanel(null); }}>Done</Button></div>
+        {readerMenuOpen && <aside className="books-reader-menu" aria-label={isEpub ? 'Reading settings' : 'Reader tools'}>
+          <div className="books-reader-menu-heading"><strong>{isEpub ? 'Reading settings' : 'Reader tools'}</strong><Button variant="ghost" size="sm" onClick={() => { setReaderMenuOpen(false); setReaderPanel(null); }}>Done</Button></div>
           {isEpub ? <>
+            <section className="books-reader-appearance" aria-label="Reading theme"><span>Appearance</span><div><Button className={`books-reader-theme-option${readerTheme === 'light' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={readerTheme === 'light'} onClick={() => setReaderTheme('light')}><i className="books-reader-theme-swatch books-reader-theme-light" />Light</Button><Button className={`books-reader-theme-option${readerTheme === 'dark' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={readerTheme === 'dark'} onClick={() => setReaderTheme('dark')}><i className="books-reader-theme-swatch books-reader-theme-dark" />Dark</Button></div></section>
+            <p className="books-reader-menu-section-label">Reading tools</p>
             <div className="books-reader-menu-actions">
               <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'contents' ? null : 'contents')}>Contents</Button>
               <Button variant="secondary" size="sm" onClick={addBookmark}><BookmarkIcon /> Bookmark</Button>
@@ -219,7 +228,7 @@ export function BooksPage({ user }: { user: User | null }) {
         {readerLoading && <p className="books-reader-loading" role="status">Opening {isEpub ? 'EPUB' : 'PDF'}…</p>}
         {readerError && <p className="books-reader-error" role="alert">{readerError}</p>}
         <div className="books-reader">
-          {isEpub ? <div ref={epubRootRef} className="epub-reader" aria-label={`${selected.title} reader`} /> : <div ref={pdfRootRef} className="pdf-reader" onScroll={onPdfScroll}><canvas ref={pdfCanvasRef} aria-label={`${selected.title} PDF page ${pdfPage}`} /></div>}
+          {isEpub ? <div ref={epubRootRef} className={`epub-reader epub-reader-${readerTheme}`} aria-label={`${selected.title} reader`} /> : <div ref={pdfRootRef} className="pdf-reader" onScroll={onPdfScroll}><canvas ref={pdfCanvasRef} aria-label={`${selected.title} PDF page ${pdfPage}`} /></div>}
         </div>
         {!isEpub && <nav className="books-reader-pagination" aria-label="PDF page navigation">
           <Button variant="ghost" size="sm" onClick={() => changePdfPage(pdfPage - 1)} disabled={pdfPage <= 1}>Previous</Button>
