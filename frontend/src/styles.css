@@ -5298,6 +5298,8 @@ img {
 .books-reader { height: min(74svh, 920px); min-height: 520px; background: #08090b; }
 .books-reader iframe, .epub-reader { width: 100%; height: 100%; border: 0; }
 .epub-reader { background: #f8f4e9; color: #1c1917; }
+.pdf-reader { display: grid; place-items: start center; width: 100%; height: 100%; overflow: auto; padding: 1rem; background: #2b2d31; }
+.pdf-reader canvas { max-width: 100%; height: auto; background: white; box-shadow: 0 3px 18px rgba(0, 0, 0, .45); }
 .text-book-reader { height: 100%; overflow: auto; padding: clamp(1.5rem, 5vw, 5rem); background: #f8f4e9; color: #292524; white-space: pre-wrap; font: 1.1rem/1.8 Georgia, serif; }
 .books-reader-error { margin: 0; padding: 0.7rem 1rem; background: rgba(251, 113, 133, 0.12); color: #fecdd3; }
 .books-reader-note { margin: 0; padding: 0.8rem 1rem; color: var(--muted); font-size: 0.82rem; line-height: 1.4; }
