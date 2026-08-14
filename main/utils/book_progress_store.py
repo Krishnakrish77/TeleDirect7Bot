@@ -29,6 +29,9 @@ async def _indexes() -> None:
         collection = db["book_progress"]
         await collection.create_index([("user_id", 1), ("book_id", 1)], unique=True)
         await collection.create_index("updated_at", expireAfterSeconds=_TTL_DAYS * 86400)
+        reader_data = db["book_reader_data"]
+        await reader_data.create_index([("user_id", 1), ("book_id", 1)], unique=True)
+        await reader_data.create_index("updated_at", expireAfterSeconds=_TTL_DAYS * 86400)
         _INDEXED = True
     except Exception:
         logging.exception("book_progress: index creation failed")
@@ -65,4 +68,34 @@ async def upsert(user_id: int, book_id: int, locator: str, progress: float, stam
         return True
     except Exception:
         logging.exception("book_progress: save failed uid=%d book=%d", user_id, book_id)
+        return False
+
+
+async def get_reader_data(user_id: int, book_id: int) -> dict:
+    await _indexes()
+    db = _db()
+    if db is None:
+        return {"bookmarks": [], "notes": []}
+    try:
+        doc = await db["book_reader_data"].find_one({"user_id": user_id, "book_id": book_id}, projection={"bookmarks": 1, "notes": 1, "t": 1, "_id": 0}) or {}
+        return {"bookmarks": doc.get("bookmarks") or [], "notes": doc.get("notes") or [], "t": doc.get("t", 0)}
+    except Exception:
+        logging.exception("book_progress: reader data fetch failed uid=%d", user_id)
+        return {"bookmarks": [], "notes": []}
+
+
+async def upsert_reader_data(user_id: int, book_id: int, bookmarks: list[dict], notes: list[dict], stamp: int) -> bool:
+    await _indexes()
+    db = _db()
+    if db is None:
+        return False
+    try:
+        await db["book_reader_data"].update_one(
+            {"user_id": user_id, "book_id": book_id},
+            {"$set": {"bookmarks": bookmarks[:30], "notes": notes[:50], "t": stamp, "updated_at": datetime.now(timezone.utc)}},
+            upsert=True,
+        )
+        return True
+    except Exception:
+        logging.exception("book_progress: reader data save failed uid=%d", user_id)
         return False

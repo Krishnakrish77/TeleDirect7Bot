@@ -25,6 +25,7 @@ import type {
   AudioTrackOption,
   BooksResponse,
   BookProgressMap,
+  BookReaderData,
   BookMetadataCandidate,
   ContinueEntry,
   ContinueMap,
@@ -146,6 +147,16 @@ export async function fetchBookProgress(signal?: AbortSignal): Promise<BookProgr
 export async function saveBookProgress(bookId: string, value: { locator: string; progress: number; t: number }): Promise<void> {
   await request<{ ok: boolean }>(`/api/app/books/${encodeURIComponent(bookId)}/progress`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value), keepalive: true,
+  });
+}
+
+export async function fetchBookReaderData(bookId: string, signal?: AbortSignal): Promise<BookReaderData> {
+  return request<BookReaderData>(`/api/app/books/${encodeURIComponent(bookId)}/reader-data`, { signal });
+}
+
+export async function saveBookReaderData(bookId: string, value: BookReaderData): Promise<void> {
+  await request<{ ok: boolean }>(`/api/app/books/${encodeURIComponent(bookId)}/reader-data`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...value, t: Date.now() }), keepalive: true,
   });
 }
 

@@ -689,6 +689,41 @@ async def api_save_book_progress(request: web.Request) -> web.Response:
     return _json({"ok": saved})
 
 
+def _book_for_user_data(book_id: int):
+    item = media_index.get_item(book_id)
+    return item if item is not None and not item.hidden and item.media_kind == "book" else None
+
+
+@routes.get(r"/api/app/books/{book_id:\d+}/reader-data")
+async def api_book_reader_data(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if user is None:
+        return _json({"error": "unauthenticated"}, status=401)
+    book_id = int(request.match_info["book_id"])
+    if _book_for_user_data(book_id) is None:
+        return _json({"error": "book not found"}, status=404)
+    return _json(await book_progress_store.get_reader_data(int(user["sub"]), book_id))
+
+
+@routes.put(r"/api/app/books/{book_id:\d+}/reader-data")
+async def api_save_book_reader_data(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if user is None:
+        return _json({"error": "unauthenticated"}, status=401)
+    book_id = int(request.match_info["book_id"])
+    if _book_for_user_data(book_id) is None:
+        return _json({"error": "book not found"}, status=404)
+    try:
+        body = await request.json()
+        stamp = int(body.get("t") or int(time.time() * 1000))
+        bookmarks = [{"locator": str(x.get("locator") or "")[:500], "label": str(x.get("label") or "")[:160], "progress": max(0, min(1, float(x.get("progress") or 0))), "t": int(x.get("t") or stamp)} for x in (body.get("bookmarks") or []) if isinstance(x, dict) and str(x.get("locator") or "")][:30]
+        notes = [{"text": str(x.get("text") or "")[:1200], "progress": max(0, min(1, float(x.get("progress") or 0))), "t": int(x.get("t") or stamp)} for x in (body.get("notes") or []) if isinstance(x, dict) and str(x.get("text") or "")][:50]
+    except (TypeError, ValueError, OverflowError):
+        return _json({"error": "invalid reader data"}, status=400)
+    saved = await book_progress_store.upsert_reader_data(int(user["sub"]), book_id, bookmarks, notes, stamp)
+    return _json({"ok": saved})
+
+
 def _vlc_tracking_token(request: web.Request, item: HubItem) -> str:
     user = get_user(request)
     if not user:

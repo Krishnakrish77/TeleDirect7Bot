@@ -174,6 +174,9 @@ export interface BookMetadataCandidate {
 }
 
 export type BookProgressMap = Record<string, BookProgress>;
+export interface BookBookmark { locator: string; label: string; progress: number; t: number; }
+export interface BookNote { text: string; progress: number; t: number; }
+export interface BookReaderData { bookmarks: BookBookmark[]; notes: BookNote[]; t?: number; }
 
 export interface IptvChannel {
   id: string;
