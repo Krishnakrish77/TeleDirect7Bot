@@ -23,6 +23,7 @@ import type {
   PlaylistsResponse,
   StatsResponse,
   AudioTrackOption,
+  BooksResponse,
   ContinueEntry,
   ContinueMap,
   SubtitleTrack,
@@ -129,6 +130,11 @@ export async function fetchHub(
   const qs = hubSearchParams(params);
   const suffix = qs.toString() ? `?${qs}` : '';
   return request<HubResponse>(`/api/hub${suffix}`, { signal });
+}
+
+export async function fetchBooks(query = '', signal?: AbortSignal): Promise<BooksResponse> {
+  const suffix = query ? `?${new URLSearchParams({ q: query })}` : '';
+  return request<BooksResponse>(`/api/app/books${suffix}`, { signal });
 }
 
 export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {

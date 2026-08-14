@@ -221,6 +221,26 @@ export function MusicIcon(props: Props) {
   );
 }
 
+export function BookOpenIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2V3Z" />
+      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7V3Z" />
+    </IconBase>
+  );
+}
+
+export function UploadIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 16V3" />
+      <path d="m7 8 5-5 5 5" />
+      <path d="M5 21h14a2 2 0 0 0 2-2v-4" />
+      <path d="M3 15v4a2 2 0 0 0 2 2" />
+    </IconBase>
+  );
+}
+
 export function FilmIcon(props: Props) {
   return (
     <IconBase {...props}>

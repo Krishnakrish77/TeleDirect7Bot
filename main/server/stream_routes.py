@@ -599,7 +599,7 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         else:
             mime_type = "application/octet-stream"
             file_name = f"{secrets.token_hex(2)}.unknown"
-    if not download_request and ("video/" in mime_type or "audio/" in mime_type):
+    if not download_request and ("video/" in mime_type or "audio/" in mime_type or mime_type == "application/pdf"):
         disposition = "inline"
 
     common_headers = {

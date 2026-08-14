@@ -86,10 +86,11 @@ def _indexable_media(message: Message):
         if media is None:
             continue
         mime = (getattr(media, "mime_type", "") or "").lower()
-        # Generic documents (zips, pdfs, etc.) shouldn't end up in the hub —
-        # accept documents only when their MIME type is video or audio.
+        # Books are first-class catalogue documents alongside video/audio.
         if attr == "document" and not (
             mime.startswith("video/") or mime.startswith("audio/")
+            or mime in {"application/pdf", "application/epub+zip"}
+            or (getattr(media, "file_name", "") or "").lower().endswith((".pdf", ".epub"))
         ):
             continue
         return media
@@ -191,7 +192,8 @@ async def _index_bin_message_impl(bot: Client, bin_msg: Message) -> None:
     # multiple episodes of one series share the network round-trip.
     try:
         from main.utils import tmdb
-        if tmdb.is_configured():
+        item = media_index.get_item(bin_msg.id)
+        if tmdb.is_configured() and item is not None and item.media_kind != "book":
             await media_index.enrich_one(bin_msg.id, bot=bot)
     except Exception:
         logging.debug("enrichment failed for bin:%d", bin_msg.id,
@@ -202,7 +204,9 @@ async def _index_bin_message_impl(bot: Client, bin_msg: Message) -> None:
     # without waiting for the user to hit play and fail.
     try:
         from main.utils import codec_probe
-        codec_probe.schedule_probe(bin_msg.id)
+        item = media_index.get_item(bin_msg.id)
+        if item is not None and item.media_kind != "book":
+            codec_probe.schedule_probe(bin_msg.id)
     except Exception:
         logging.debug("codec probe schedule failed for bin:%d", bin_msg.id,
                       exc_info=True)

@@ -73,12 +73,13 @@ beforeEach(() => {
 });
 
 describe('PrimaryNav', () => {
-  it('shows the five public destinations without a more menu', () => {
+  it('shows the public destinations without a more menu', () => {
     render(<PrimaryNav user={null} activeView="" activeSection="home" />);
 
     expect(screen.queryByRole('link', { name: /Watchlist/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /Search/i })).toBeNull();
     expect(screen.getByRole('link', { name: /Live TV/i }).getAttribute('href')).toBe('/live-tv');
+    expect(screen.getByRole('link', { name: /Books/i }).getAttribute('href')).toBe('/books');
     expect(screen.getByRole('link', { name: /Series/i }).getAttribute('href')).toBe('/?view=series');
     expect(screen.queryByRole('button', { name: 'More' })).toBeNull();
   });
