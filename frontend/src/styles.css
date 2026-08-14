@@ -5272,6 +5272,8 @@ img {
 .books-file-label strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .books-file-label small { color: var(--muted); }
 .books-reader-actions { flex-wrap: wrap; justify-content: end; }
+.books-speech-rate { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; color: var(--muted); font-size: .8rem; }
+.books-speech-rate select, .books-speech-rate input { min-width: 4.5rem; padding: .35rem .45rem; border: 1px solid var(--line); border-radius: 6px; background: #17191d; color: var(--text); }
 .books-reader-find { display: flex; align-items: center; gap: .5rem; padding: .55rem 1rem; border-bottom: 1px solid var(--line); background: #111317; }
 .books-reader-find input { width: min(100%, 22rem); padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 7px; background: #0a0b0d; color: var(--text); }
 .books-reader-find small { color: var(--muted); }
@@ -5280,6 +5282,19 @@ img {
 .books-reader-panel > small { color: var(--muted); }
 .books-reader-panel-link { overflow: hidden; padding: .45rem .7rem; border: 0; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .books-reader-panel-link:hover { background: rgba(249, 115, 22, .12); color: #fdba74; }
+
+@media (max-width: 680px) {
+  .books-reader-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .7rem; padding: .75rem; }
+  .books-file-label { min-width: 0; align-items: flex-start; padding-top: .25rem; }
+  .books-file-label small { display: block; white-space: normal; }
+  .books-reader-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: .55rem; justify-content: stretch; }
+  .books-reader-actions > button, .books-reader-actions > a, .books-reader-actions > a > button, .books-reader-actions .books-speech-rate { width: 100%; min-width: 0; }
+  .books-reader-actions > a > button { justify-content: center; }
+  .books-speech-rate { justify-content: space-between; min-height: 2.25rem; padding: 0 .45rem; border: 1px solid var(--line); border-radius: 7px; background: #17191d; }
+  .books-speech-rate select, .books-speech-rate input { width: 4.25rem; min-width: 0; }
+  .books-reader { min-height: 420px; height: calc(100svh - 300px); }
+  .books-reader-footer { flex-direction: column; align-items: flex-start; gap: .25rem; }
+}
 .books-reader { height: min(74svh, 920px); min-height: 520px; background: #08090b; }
 .books-reader iframe, .epub-reader { width: 100%; height: 100%; border: 0; }
 .epub-reader { background: #f8f4e9; color: #1c1917; }
