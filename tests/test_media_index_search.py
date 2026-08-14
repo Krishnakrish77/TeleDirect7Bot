@@ -58,6 +58,23 @@ class MediaIndexSearchTests(unittest.TestCase):
         self.assertEqual(total, 2)
         self.assertEqual(cards[0].message_id, exact.message_id)
 
+    def test_books_are_not_returned_in_video_shelves(self):
+        movie = video_item(101, title="A Film")
+        book = video_item(
+            202,
+            title="A Book",
+            file_name="A Book.pdf",
+            media_kind="book",
+            has_thumb=False,
+        )
+        media_index._items.update({movie.message_id: movie, book.message_id: book})
+
+        shelves = media_index.shelves(per_shelf=10)
+        shelf_items = [item for shelf in shelves for item in shelf["items"]]
+
+        self.assertNotIn(book, shelf_items)
+        self.assertIn(movie, shelf_items)
+
     def test_relevance_stays_primary_when_a_sort_is_selected(self):
         exact = video_item(101, title="Castle")
         weak_old = video_item(1, title="Unrelated", description="Castle archive")

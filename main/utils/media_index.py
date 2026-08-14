@@ -3033,8 +3033,9 @@ def shelves(per_shelf: int = 25) -> List[dict]:
     for it in _items.values():
         if it.hidden:
             continue
-        # Audio items belong to the Music shelf, not Series/Movies.
-        if getattr(it, "media_kind", "") == "audio":
+        # Audio has its own Music shelf and books have their own reader.
+        # Neither belongs in the movie/series catalogue rows.
+        if getattr(it, "media_kind", "") in {"audio", "book"}:
             continue
         if it.series_key:
             series_buckets.setdefault(it.series_key, []).append(it)
@@ -3092,7 +3093,7 @@ def shelves(per_shelf: int = 25) -> List[dict]:
     seen_episode_keys: set = set()
     seen_series_keys: set = set()
     for it in sorted(_items.values(), key=lambda item: -item.message_id):
-        if it.hidden or getattr(it, "media_kind", "") == "audio" or not it.series_key:
+        if it.hidden or getattr(it, "media_kind", "") in {"audio", "book"} or not it.series_key:
             continue
         episode_key = (it.series_key, it.season, it.episode, it.episode_end)
         if episode_key in seen_episode_keys:
