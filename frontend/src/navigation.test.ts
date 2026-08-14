@@ -4,6 +4,7 @@ import { localAppHref, parseRoute } from './navigation';
 describe('React app navigation', () => {
   it('parses canonical root routes while accepting old app links', () => {
     expect(parseRoute('/filters')).toEqual({ kind: 'filters' });
+    expect(parseRoute('/books')).toEqual({ kind: 'books' });
     expect(parseRoute('/watchlist')).toEqual({ kind: 'watchlist' });
     expect(parseRoute('/playlists')).toEqual({ kind: 'playlists' });
     expect(parseRoute('/playlist/1234567890abcdef1234567890abcdef')).toEqual({

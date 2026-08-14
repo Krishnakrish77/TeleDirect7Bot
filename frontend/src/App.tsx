@@ -35,6 +35,7 @@ const loadAdminTrendingGaps = () => import('./components/adminTrendingGaps');
 const loadAdminIptvPage = () => import('./components/adminIptvPage');
 const loadAdminRequestsPage = () => import('./components/adminRequestsPage');
 const loadLiveTvPage = () => import('./components/liveTvPage');
+const loadBooksPage = () => import('./components/booksPage');
 
 const DetailPage = lazy(() => loadDetailPage().then((module) => ({ default: module.DetailPage })));
 const WatchPage = lazy(() => loadWatchPage().then((module) => ({ default: module.WatchPage })));
@@ -52,6 +53,7 @@ const AdminTrendingGaps = lazy(() => loadAdminTrendingGaps().then((module) => ({
 const AdminIptvPage = lazy(() => loadAdminIptvPage().then((module) => ({ default: module.AdminIptvPage })));
 const AdminRequestsPage = lazy(() => loadAdminRequestsPage().then((module) => ({ default: module.AdminRequestsPage })));
 const LiveTvPage = lazy(() => loadLiveTvPage().then((module) => ({ default: module.LiveTvPage })));
+const BooksPage = lazy(() => loadBooksPage().then((module) => ({ default: module.BooksPage })));
 
 const preloadedRouteChunks = new Set<string>();
 
@@ -86,6 +88,9 @@ function preloadAppRoute(pathname: string) {
       break;
     case 'live-tv':
       void loadLiveTvPage();
+      break;
+    case 'books':
+      void loadBooksPage();
       break;
     case 'admin':
       void loadAdminPage();
@@ -342,6 +347,8 @@ function App() {
       ? 'liked-songs'
       : route.kind === 'live-tv'
         ? 'live-tv'
+        : route.kind === 'books'
+          ? 'books'
         : route.kind === 'playlists' || route.kind === 'playlist'
           ? 'playlists'
           : route.kind === 'stats'
@@ -577,6 +584,8 @@ function App() {
             loading={liveTv.loading}
             error={liveTv.error}
           />
+        ) : route.kind === 'books' ? (
+          <BooksPage />
         ) : route.kind === 'admin-dashboard' ? (
           <AdminFrame routeKind={route.kind} locationSearch={location.search}>
             <AdminDashboard user={user} onSignIn={() => setSignInOpen(true)} />

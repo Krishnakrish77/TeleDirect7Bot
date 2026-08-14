@@ -613,6 +613,27 @@ def _download_url(item: HubItem) -> str:
     return as_download_url(_stream_url(item))
 
 
+@routes.get("/api/app/books")
+async def api_books(request: web.Request) -> web.Response:
+    query = (request.query.get("q") or "").strip()
+    items = media_index.books(q=query)
+    payload = []
+    for item in items:
+        suffix = Path(item.file_name or "").suffix.lower().lstrip(".")
+        payload.append({
+            "id": str(item.message_id),
+            "title": item.title or Path(item.file_name or "Book").stem or "Untitled book",
+            "fileName": item.file_name or "",
+            "format": suffix.upper() if suffix else "BOOK",
+            "fileSize": item.file_size or 0,
+            "fileSizeLabel": humanbytes(item.file_size) if item.file_size else "",
+            "description": item.description or "",
+            "readUrl": _stream_url(item),
+            "downloadUrl": _download_url(item),
+        })
+    return _json({"items": payload})
+
+
 def _vlc_tracking_token(request: web.Request, item: HubItem) -> str:
     user = get_user(request)
     if not user:
@@ -2902,6 +2923,7 @@ async def spa_app_fallback(request: web.Request) -> web.Response:
 
 
 @routes.get("/filters")
+@routes.get("/books")
 @routes.get("/liked-songs")
 @routes.get("/playlists")
 @routes.get(r"/playlist/{playlist_id:[a-f0-9]{32}}")

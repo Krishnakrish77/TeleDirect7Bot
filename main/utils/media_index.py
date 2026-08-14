@@ -470,6 +470,20 @@ def _is_audio_message(message) -> bool:
     return mime.startswith("audio/")
 
 
+_BOOK_EXTENSIONS = {".pdf", ".epub"}
+_BOOK_MIMES = {"application/pdf", "application/epub+zip"}
+
+
+def _is_book_message(message) -> bool:
+    """True for ebook documents we can present in the web reader."""
+    document = getattr(message, "document", None)
+    if document is None or getattr(message, "empty", False):
+        return False
+    mime = (getattr(document, "mime_type", "") or "").lower()
+    name = (getattr(document, "file_name", "") or "").lower()
+    return mime in _BOOK_MIMES or any(name.endswith(ext) for ext in _BOOK_EXTENSIONS)
+
+
 _KURIGRAM_TS_RE = re.compile(r"^video_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.mp4$")
 # Other device-generated or meaningless filenames that should not be used
 # as TMDB search titles.
@@ -568,9 +582,10 @@ def _synthesize_filename(title: str, year, media) -> str:
 
 def _item_from_message(message) -> Optional[HubItem]:
     is_audio = _is_audio_message(message)
-    if not _is_video_message(message) and not is_audio:
+    is_book = _is_book_message(message)
+    if not _is_video_message(message) and not is_audio and not is_book:
         return None
-    media_kind = "audio" if is_audio else "video"
+    media_kind = "book" if is_book else "audio" if is_audio else "video"
     media = _media_of(message)
     # For audio messages, Telegram extracts performer/title directly
     audio_obj = getattr(message, "audio", None)
@@ -584,7 +599,7 @@ def _item_from_message(message) -> Optional[HubItem]:
     # caption first — it's often the original filename when the user
     # pastes it in. If the caption is absent or unhelpful, synthesise a
     # display name from the title + year + mime extension after parsing.
-    if not file_name and not is_audio:
+    if not file_name and not is_audio and not is_book:
         cap = (message.caption or "").strip()
         if cap and re.search(
             r'\.(mkv|mp4|avi|mov|wmv|flv|webm|m4v|ts|m2ts)\s*$',
@@ -607,7 +622,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         parsed.year = year_from_filename(file_name)
     # Try filename first (release names follow conventions), fall back to the
     # parsed caption title for hand-written entries.
-    sm = series_parse.parse(file_name) or series_parse.parse(parsed.title)
+    sm = None if is_book else (series_parse.parse(file_name) or series_parse.parse(parsed.title))
     # If the caption preserved a TMDB tv id but the filename has no
     # SxxEyy pattern, still treat the upload as a series so a re-seed
     # doesn't fragment grouped titles back into the movie-variant pool.
@@ -648,7 +663,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         episode_end = None
         # Audio items belong to the music world — no movie_key so they
         # don't appear in the Movies shelf or grid.
-        movie_key = "" if is_audio else compute_movie_key(
+        movie_key = "" if (is_audio or is_book) else compute_movie_key(
             parsed.title or file_name, parsed.year, file_name
         )
 
@@ -677,7 +692,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         file_size=int(getattr(media, "file_size", 0) or 0),
         # Video/Document have thumbs (list); Audio.thumb is singular.
         has_thumb=bool(getattr(media, "thumbs", None) or getattr(media, "thumb", None)),
-        quality=_extract_quality(parsed.title, file_name, parsed.description),
+        quality="" if is_book else _extract_quality(parsed.title, file_name, parsed.description),
         file_name=file_name or _synthesize_filename(parsed.title, parsed.year, media),
         series_key=series_key,
         series_title=series_title,
@@ -2194,6 +2209,8 @@ def query_grouped(
         # Audio items belong to the music view when browsing.
         # When a search query is active, include audio in results so
         # searching "Indra" returns the track (suggest shows it; grid should too).
+        if getattr(it, "media_kind", "") == "book":
+            continue
         if getattr(it, "media_kind", "") == "audio" and not q:
             continue
         if it.series_key:
@@ -2259,6 +2276,20 @@ def query_grouped(
     total = len(combined)
     page = combined[offset : offset + limit]
     return page, total
+
+
+def books(*, q: str = "") -> List[HubItem]:
+    """Visible ebooks, newest first, optionally filtered by local metadata."""
+    needle = (q or "").strip().lower()
+    matches = []
+    for item in _items.values():
+        if item.hidden or item.media_kind != "book":
+            continue
+        haystack = " ".join([item.title, item.file_name, item.description, " ".join(item.tags)]).lower()
+        if needle and needle not in haystack:
+            continue
+        matches.append(item)
+    return sorted(matches, key=lambda item: item.message_id, reverse=True)
 
 
 def _card_message_id(card) -> int:
@@ -3681,8 +3712,8 @@ async def enrich_one(message_id: int, bot=None) -> bool:
     if item is None:
         return False
 
-    # TMDB only covers films and TV — never enrich audio/music items.
-    if item.media_kind == "audio":
+    # TMDB only covers films and TV — never enrich audio or books.
+    if item.media_kind in {"audio", "book"}:
         return False
 
     _search_signal = (item.series_title or item.title or "").strip()

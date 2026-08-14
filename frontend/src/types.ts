@@ -133,6 +133,22 @@ export interface HubResponse {
   emptyText: string;
 }
 
+export interface BookItem {
+  id: string;
+  title: string;
+  fileName: string;
+  format: string;
+  fileSize: number;
+  fileSizeLabel: string;
+  description: string;
+  readUrl: string;
+  downloadUrl: string;
+}
+
+export interface BooksResponse {
+  items: BookItem[];
+}
+
 export interface IptvChannel {
   id: string;
   name: string;

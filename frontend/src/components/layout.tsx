@@ -2,7 +2,7 @@ import { FormEvent, KeyboardEvent, RefObject, useEffect, useRef, useState, type 
 import { signInTelegram } from '../api';
 import { useSuggestions } from '../hooks/data';
 import { localAppHref } from '../navigation';
-import { BookmarkIcon, BroadcastIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HeartIcon, HomeIcon, ListIcon, ListPlusIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, UserIcon, XIcon } from '../icons';
+import { BookOpenIcon, BookmarkIcon, BroadcastIcon, ChartIcon, ChevronDownIcon, ChevronUpIcon, FilmIcon, HeartIcon, HomeIcon, ListIcon, ListPlusIcon, LogOutIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TvIcon, UserIcon, XIcon } from '../icons';
 import type { MeResponse, Suggestion, TelegramAuthUser, User, ViewValue } from '../types';
 import { tmdbImageUrl } from '../utils/tmdb';
 import { Button } from './ui/button';
@@ -29,7 +29,7 @@ export function PrimaryNav({
 }: {
   user: User | null;
   activeView: ViewValue | '';
-  activeSection: 'home' | 'movies' | 'series' | 'music' | 'live-tv' | 'watchlist' | 'liked-songs' | 'playlists' | 'stats' | '';
+  activeSection: 'home' | 'movies' | 'series' | 'music' | 'books' | 'live-tv' | 'watchlist' | 'liked-songs' | 'playlists' | 'stats' | '';
 }) {
   return (
     <nav className="primary-nav" aria-label="Primary">
@@ -48,6 +48,10 @@ export function PrimaryNav({
       <a className={activeView === 'music' && activeSection === 'music' ? 'active' : ''} href="/?view=music">
         <MusicIcon />
         <span>Music</span>
+      </a>
+      <a className={activeSection === 'books' ? 'active' : ''} href="/books">
+        <BookOpenIcon />
+        <span>Books</span>
       </a>
       <a className={activeSection === 'live-tv' ? 'active' : ''} href="/live-tv">
         <BroadcastIcon />

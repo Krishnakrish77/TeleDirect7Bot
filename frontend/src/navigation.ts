@@ -73,7 +73,7 @@ function normalizeAppHref(href: string): string {
 
 function isReactAppPath(pathname: string): boolean {
   return pathname === '/' || pathname === '/app' || pathname.startsWith('/app/') ||
-    /^(?:\/(?:filters|watchlist|requests|liked-songs|playlists|playlist|live-tv|stats|admin|play|movie|series|album|artist|person))(?:\/|$)/.test(pathname);
+    /^(?:\/(?:filters|books|watchlist|requests|liked-songs|playlists|playlist|live-tv|stats|admin|play|movie|series|album|artist|person))(?:\/|$)/.test(pathname);
 }
 
 export function useAppNavigation() {
@@ -115,6 +115,7 @@ export function useAppNavigation() {
 export type AppRoute =
   | { kind: 'hub' }
   | { kind: 'filters' }
+  | { kind: 'books' }
   | { kind: 'watchlist' }
   | { kind: 'requests' }
   | { kind: 'liked-songs' }
@@ -133,6 +134,7 @@ export type AppRoute =
 export function parseRoute(pathname: string): AppRoute {
   const canonicalPath = localAppHref(pathname) || pathname;
   if (canonicalPath === '/filters') return { kind: 'filters' };
+  if (canonicalPath === '/books') return { kind: 'books' };
   if (canonicalPath === '/watchlist') return { kind: 'watchlist' };
   if (canonicalPath === '/requests') return { kind: 'requests' };
   if (canonicalPath === '/liked-songs') return { kind: 'liked-songs' };
