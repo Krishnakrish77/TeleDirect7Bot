@@ -1,6 +1,6 @@
 import { type ReactNode, type UIEvent, useEffect, useRef, useState } from 'react';
 import { fetchBookProgress, fetchBookReaderData, fetchBooks, saveBookProgress, saveBookReaderData } from '../api';
-import { BookOpenIcon, BookmarkIcon, DownloadIcon, MoreVerticalIcon, PauseIcon, SearchIcon, VolumeIcon } from '../icons';
+import { BookOpenIcon, BookmarkIcon, DownloadIcon, ListIcon, ListPlusIcon, MoreVerticalIcon, PauseIcon, SearchIcon, VolumeIcon } from '../icons';
 import type { BookItem, BookProgressMap, User } from '../types';
 import { Button } from './ui/button';
 
@@ -211,11 +211,11 @@ export function BooksPage({ user }: { user: User | null }) {
             <section className="books-reader-appearance" aria-label="Reading theme"><span>Appearance</span><div><Button className={`books-reader-theme-option${readerTheme === 'light' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={readerTheme === 'light'} onClick={() => setReaderTheme('light')}><i className="books-reader-theme-swatch books-reader-theme-light" />Light</Button><Button className={`books-reader-theme-option${readerTheme === 'dark' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={readerTheme === 'dark'} onClick={() => setReaderTheme('dark')}><i className="books-reader-theme-swatch books-reader-theme-dark" />Dark</Button></div></section>
             <p className="books-reader-menu-section-label">Reading tools</p>
             <div className="books-reader-menu-actions">
-              <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'contents' ? null : 'contents')}>Contents</Button>
+              <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'contents' ? null : 'contents')}><BookOpenIcon />Contents</Button>
               <Button variant="secondary" size="sm" onClick={addBookmark}><BookmarkIcon /> Bookmark</Button>
-              <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'bookmarks' ? null : 'bookmarks')}>Bookmarks</Button>
-              <Button variant="secondary" size="sm" onClick={addNote}>Add note</Button>
-              <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'notes' ? null : 'notes')}>Notes</Button>
+              <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'bookmarks' ? null : 'bookmarks')}><BookmarkIcon />Bookmarks</Button>
+              <Button variant="secondary" size="sm" onClick={addNote}><ListPlusIcon />Add note</Button>
+              <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'notes' ? null : 'notes')}><ListIcon />Notes</Button>
               <Button variant="secondary" size="sm" onClick={speak}>{speaking ? <PauseIcon /> : <VolumeIcon />}{speaking ? 'Stop reading' : 'Listen'}</Button>
             </div>
             <label className="books-reader-menu-rate">Reading speed<select value={speechRate} onChange={(event) => setSpeechRate(Number(event.currentTarget.value))}><option value={0.8}>0.8×</option><option value={1}>1×</option><option value={1.25}>1.25×</option><option value={1.5}>1.5×</option></select></label>
