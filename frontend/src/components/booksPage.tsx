@@ -10,7 +10,7 @@ type EpubTocItem = { label: string; href: string; subitems?: EpubTocItem[] };
 type EpubRendition = { display: (target?: string | number) => Promise<unknown>; next: () => Promise<unknown>; prev: () => Promise<unknown>; on?: (event: string, callback: (location: EpubLocation) => void) => void; getContents?: () => Array<{ document?: Document }>; destroy?: () => void; };
 type EpubBook = { renderTo: (element: HTMLElement, options: Record<string, unknown>) => EpubRendition; loaded?: { navigation?: Promise<{ toc?: EpubTocItem[] }> }; destroy?: () => void; };
 type PdfViewport = { width: number; height: number };
-type PdfPage = { getViewport: (params: { scale: number }) => PdfViewport; render: (params: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<unknown> } };
+type PdfPage = { getViewport: (params: { scale: number }) => PdfViewport; render: (params: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<unknown>; cancel?: () => void } };
 type PdfDocument = { numPages: number; getPage: (page: number) => Promise<PdfPage>; destroy?: () => void };
 type PdfJs = { GlobalWorkerOptions: { workerSrc: string }; getDocument: (url: string) => { promise: Promise<PdfDocument>; destroy?: () => void } };
 type JsZipEntry = { dir: boolean; async: (type: 'uint8array') => Promise<Uint8Array> };
@@ -51,10 +51,14 @@ function loadZipRepair(): Promise<void> {
   });
 }
 async function epubSource(url: string): Promise<ArrayBuffer> {
-  await loadZipRepair();
   const response = await fetch(url);
   if (!response.ok) throw new Error('Unable to download this EPUB.');
   const original = await response.arrayBuffer();
+  // A standards-compliant EPUB already has an uncompressed `mimetype` as its
+  // first ZIP entry. Avoid loading JSZip and duplicating the whole book in
+  // memory for the common case.
+  if (hasStandardEpubMimetype(original)) return original;
+  await loadZipRepair();
   if (!window.JSZip) return original;
   const archive = await window.JSZip.loadAsync(original);
   const mimetype = archive.files.mimetype;
@@ -68,6 +72,14 @@ async function epubSource(url: string): Promise<ArrayBuffer> {
   }));
   return repaired.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
 }
+function hasStandardEpubMimetype(archive: ArrayBuffer): boolean {
+  const bytes = new Uint8Array(archive);
+  if (bytes.length < 30) return false;
+  const header = new DataView(archive);
+  if (header.getUint32(0, true) !== 0x04034b50 || header.getUint16(8, true) !== 0) return false;
+  const nameLength = header.getUint16(26, true);
+  return 30 + nameLength <= bytes.length && new TextDecoder().decode(bytes.subarray(30, 30 + nameLength)) === 'mimetype';
+}
 function loadPdfReader(): Promise<void> {
   if (window.pdfjsLib) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -79,14 +91,15 @@ function loadPdfReader(): Promise<void> {
 }
 
 export function BooksPage({ user }: { user: User | null }) {
-  const [items, setItems] = useState<BookItem[]>([]); const [query, setQuery] = useState(''); const [selected, setSelected] = useState<BookItem | null>(null);
+  const [items, setItems] = useState<BookItem[]>([]); const [query, setQuery] = useState(''); const [debouncedQuery, setDebouncedQuery] = useState(''); const [selected, setSelected] = useState<BookItem | null>(null);
   const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [readerError, setReaderError] = useState(''); const [readerLoading, setReaderLoading] = useState(false); const [speaking, setSpeaking] = useState(false);
   const [progress, setProgress] = useState<BookProgressMap>(() => localProgress());
   const [bookmarks, setBookmarks] = useState<Record<string, BookBookmark[]>>(() => localBookmarks()); const [notes, setNotes] = useState<Record<string, BookNote[]>>(() => localNotes()); const [toc, setToc] = useState<EpubTocItem[]>([]); const [readerPanel, setReaderPanel] = useState<'contents' | 'bookmarks' | 'notes' | null>(null); const [readerMenuOpen, setReaderMenuOpen] = useState(false); const [findQuery, setFindQuery] = useState(''); const [findStatus, setFindStatus] = useState(''); const [speechRate, setSpeechRate] = useState(1); const [sessionMinutes, setSessionMinutes] = useState(0); const [pdfPage, setPdfPage] = useState(1); const [pdfDocument, setPdfDocument] = useState<PdfDocument | null>(null); const [pdfPages, setPdfPages] = useState(0); const [controlsVisible, setControlsVisible] = useState(true);
   const epubRootRef = useRef<HTMLDivElement>(null); const renditionRef = useRef<EpubRendition | null>(null); const pdfCanvasRef = useRef<HTMLCanvasElement>(null); const pdfRootRef = useRef<HTMLDivElement>(null); const gestureStart = useRef<{ x: number; y: number } | null>(null); const pdfScrollTopRef = useRef(0); const pdfPageTurnLockedRef = useRef(false); const pdfPendingScrollRef = useRef<'top' | 'bottom' | null>(null); const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const isEpub = selected?.format.toLowerCase() === 'epub';
 
-  useEffect(() => { const controller = new AbortController(); setLoading(true); void fetchBooks(query, controller.signal).then((data) => setItems(data.items)).catch((err) => { if (err.name !== 'AbortError') setError(err.message || 'Unable to load books.'); }).finally(() => setLoading(false)); return () => controller.abort(); }, [query]);
+  useEffect(() => { const timer = window.setTimeout(() => setDebouncedQuery(query), 250); return () => window.clearTimeout(timer); }, [query]);
+  useEffect(() => { const controller = new AbortController(); let active = true; setLoading(true); void fetchBooks(debouncedQuery, controller.signal).then((data) => { if (active) setItems(data.items); }).catch((err) => { if (active && err.name !== 'AbortError') setError(err.message || 'Unable to load books.'); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; controller.abort(); }; }, [debouncedQuery]);
   useEffect(() => { if (!user) return; void fetchBookProgress().then((server) => { const local = localProgress(); const merged: BookProgressMap = { ...local }; Object.entries(server).forEach(([bookId, value]) => { if (!merged[bookId] || value.t > merged[bookId].t) merged[bookId] = value; }); writeProgress(merged); setProgress(merged); }).catch(() => undefined); }, [user]);
   useEffect(() => { if (!selected || !user) return; let cancelled = false; void fetchBookReaderData(selected.id).then((data) => { if (cancelled) return; if (data.bookmarks.length) setBookmarks((current) => { const next = { ...current, [selected.id]: data.bookmarks }; writeBookmarks(next); return next; }); if (data.notes.length) setNotes((current) => { const next = { ...current, [selected.id]: data.notes }; writeNotes(next); return next; }); }).catch(() => undefined); return () => { cancelled = true; }; }, [selected, user]);
   useEffect(() => { document.body.classList.toggle('books-reading-mode', Boolean(selected)); return () => document.body.classList.remove('books-reading-mode'); }, [selected]);
@@ -134,13 +147,14 @@ export function BooksPage({ user }: { user: User | null }) {
   }, [isEpub, selected]);
   useEffect(() => {
     if (!pdfDocument || !pdfCanvasRef.current) return;
-    let cancelled = false;
+    let cancelled = false; let renderTask: { promise: Promise<unknown>; cancel?: () => void } | null = null;
     void pdfDocument.getPage(Math.max(1, Math.min(pdfPage, pdfDocument.numPages))).then((page) => {
       if (cancelled || !pdfCanvasRef.current) return;
       const viewport = page.getViewport({ scale: 1.5 }); const canvas = pdfCanvasRef.current; const context = canvas.getContext('2d');
       if (!context) return;
       canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
-      return page.render({ canvasContext: context, viewport }).promise;
+      renderTask = page.render({ canvasContext: context, viewport });
+      return renderTask.promise;
     }).then(() => {
       if (cancelled || !pdfPendingScrollRef.current || !pdfRootRef.current) return;
       const position = pdfPendingScrollRef.current; pdfPendingScrollRef.current = null;
@@ -152,7 +166,7 @@ export function BooksPage({ user }: { user: User | null }) {
         pdfPageTurnLockedRef.current = false;
       });
     }).catch((err: unknown) => { if (!cancelled) setReaderError(err instanceof Error ? err.message : 'Could not render this PDF page.'); });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; renderTask?.cancel?.(); };
   }, [pdfDocument, pdfPage]);
 
   const speak = () => { if (!('speechSynthesis' in window)) { setReaderError('Read aloud is not available in this browser.'); return; } if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return; } const selectedText = window.getSelection()?.toString().trim() || ''; const epubText = renditionRef.current?.getContents?.().map((content) => content.document?.body?.innerText || '').join('\n').trim() || ''; const source = selectedText || epubText; if (!source) { setReaderError('Select text in the book first. EPUB chapters can also be read aloud.'); return; } const utterance = new SpeechSynthesisUtterance(source.slice(0, 12000)); utterance.rate = speechRate; utterance.onend = utterance.onerror = () => setSpeaking(false); setSpeaking(true); window.speechSynthesis.speak(utterance); };
@@ -215,5 +229,5 @@ export function BooksPage({ user }: { user: User | null }) {
       </section>
     </main>
   );
-  return <main className="hub-main books-page"><section className="books-hero"><div><p className="eyebrow">Library books</p><h1>Your reading library.</h1><p>Browse and read available PDFs and EPUBs from one comfortable place.</p></div></section><label className="books-search"><SearchIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search books" /></label>{loading ? <p className="books-state">Loading books…</p> : error ? <p className="books-reader-error">{error}</p> : items.length ? <div className="books-grid">{items.map((book) => <article className="book-card" key={book.id} role="button" tabIndex={0} onClick={() => openBook(book)} onKeyDown={(event) => { if (event.currentTarget !== event.target) return; if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openBook(book); } }}><span className="book-cover book-cover-image">{book.coverUrl && <img src={book.coverUrl} alt="" loading="eager" decoding="async" onError={(event) => { event.currentTarget.hidden = true; }} />}<BookOpenIcon /><small>{book.format}</small></span><div><p className="eyebrow">{book.format} · {book.fileSizeLabel}{progress[book.id]?.progress ? ` · ${Math.round(progress[book.id].progress * 100)}% read` : ''}</p><h2>{book.title}</h2>{book.authors.length > 0 && <p className="book-author">{book.authors.join(', ')}</p>}<p>{bookSummary(book)}</p></div></article>)}</div> : <section className="books-dropzone books-empty"><BookOpenIcon /><strong>{query.trim() ? `No books match “${query.trim()}”` : 'No books in your library yet'}</strong><span>{query.trim() ? 'Try another title, author, or filename.' : 'Check back soon for new titles to read.'}</span>{query.trim() && <Button variant="secondary" size="sm" onClick={() => setQuery('')}>Clear search</Button>}</section>}</main>;
+  return <main className="hub-main books-page"><section className="books-hero"><div><p className="eyebrow">Library books</p><h1>Your reading library.</h1><p>Browse and read available PDFs and EPUBs from one comfortable place.</p></div></section><label className="books-search"><SearchIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search books" /></label>{loading ? <p className="books-state">Loading books…</p> : error ? <p className="books-reader-error">{error}</p> : items.length ? <div className="books-grid">{items.map((book) => <article className="book-card" key={book.id} role="button" tabIndex={0} onClick={() => openBook(book)} onKeyDown={(event) => { if (event.currentTarget !== event.target) return; if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openBook(book); } }}><span className="book-cover book-cover-image">{book.coverUrl && <img src={book.coverUrl} alt="" loading="lazy" decoding="async" onError={(event) => { event.currentTarget.hidden = true; }} />}<BookOpenIcon /><small>{book.format}</small></span><div><p className="eyebrow">{book.format} · {book.fileSizeLabel}{progress[book.id]?.progress ? ` · ${Math.round(progress[book.id].progress * 100)}% read` : ''}</p><h2>{book.title}</h2>{book.authors.length > 0 && <p className="book-author">{book.authors.join(', ')}</p>}<p>{bookSummary(book)}</p></div></article>)}</div> : <section className="books-dropzone books-empty"><BookOpenIcon /><strong>{query.trim() ? `No books match “${query.trim()}”` : 'No books in your library yet'}</strong><span>{query.trim() ? 'Try another title, author, or filename.' : 'Check back soon for new titles to read.'}</span>{query.trim() && <Button variant="secondary" size="sm" onClick={() => setQuery('')}>Clear search</Button>}</section>}</main>;
 }
