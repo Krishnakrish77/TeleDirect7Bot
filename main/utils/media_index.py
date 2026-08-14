@@ -344,6 +344,13 @@ def _to_serializable(item: HubItem) -> dict:
         "audio_codec": item.audio_codec,
         "audio_sample_rate": item.audio_sample_rate,
         "audio_bit_depth": item.audio_bit_depth,
+        "book_authors": list(item.book_authors or []),
+        "book_isbn": item.book_isbn,
+        "book_publisher": item.book_publisher,
+        "book_language": item.book_language,
+        "book_page_count": item.book_page_count,
+        "book_cover_url": item.book_cover_url,
+        "book_source_key": item.book_source_key,
         "admin_locked": list(item.admin_locked or []),
         "hidden": item.hidden,
         "subtitles": [
@@ -421,6 +428,13 @@ def _from_serializable(d: dict) -> HubItem:
         audio_codec=d.get("audio_codec", "") or "",
         audio_sample_rate=int(d.get("audio_sample_rate") or 0),
         audio_bit_depth=int(d.get("audio_bit_depth") or 0),
+        book_authors=list(d.get("book_authors") or []),
+        book_isbn=d.get("book_isbn", "") or "",
+        book_publisher=d.get("book_publisher", "") or "",
+        book_language=d.get("book_language", "") or "",
+        book_page_count=int(d.get("book_page_count") or 0),
+        book_cover_url=d.get("book_cover_url", "") or "",
+        book_source_key=d.get("book_source_key", "") or "",
         admin_locked=list(d.get("admin_locked") or []),
         hidden=bool(d.get("hidden", False)),
         subtitles=[
@@ -1483,9 +1497,14 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
                                      "trailer_key", "episode_title", "episode_overview",
                                      "episode_still_path", "episode_air_date",
                                      "artist", "album_title", "album_key", "media_kind",
-                                     "director"):
+                                     "director", "book_isbn", "book_publisher",
+                                     "book_language", "book_cover_url", "book_source_key"):
                             if getattr(existing, attr) and not getattr(new_item, attr):
                                 setattr(new_item, attr, getattr(existing, attr))
+                        if existing.book_authors and not new_item.book_authors:
+                            new_item.book_authors = existing.book_authors
+                        if existing.book_page_count and not new_item.book_page_count:
+                            new_item.book_page_count = existing.book_page_count
                         if existing.cast and not new_item.cast:
                             new_item.cast = existing.cast
                         if existing.track_number is not None and new_item.track_number is None:

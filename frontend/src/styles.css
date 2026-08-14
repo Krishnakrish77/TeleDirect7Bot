@@ -5248,8 +5248,9 @@ img {
 .book-card { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 1rem; min-height: 178px; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .book-card:hover { border-color: rgba(249, 115, 22, 0.5); }
 .book-cover { display: flex; flex-direction: column; justify-content: space-between; min-height: 145px; padding: 0.65rem; border-radius: 5px 10px 10px 5px; background: linear-gradient(135deg, #9a3412, #431407); color: #ffedd5; box-shadow: inset 5px 0 rgba(0,0,0,.2); }
+.book-cover-image { width: 76px; height: 145px; padding: 0; object-fit: cover; background: var(--panel); }
 .book-cover svg { width: 1.6rem; height: 1.6rem; }.book-cover small { font-weight: 900; letter-spacing: .08em; }
-.book-card .eyebrow { margin: 0 0 .35rem; font-size: .68rem; }.book-card h2 { margin: 0; font-size: 1.05rem; line-height: 1.25; }.book-card p:not(.eyebrow) { min-height: 2.8em; margin: .45rem 0 .7rem; color: var(--muted); font-size: .84rem; line-height: 1.4; overflow: hidden; }
+.book-card .eyebrow { margin: 0 0 .35rem; font-size: .68rem; }.book-card h2 { margin: 0; font-size: 1.05rem; line-height: 1.25; }.book-card .book-author { min-height: 0; margin: .25rem 0 0; color: var(--text); font-weight: 650; }.book-card p:not(.eyebrow) { min-height: 2.8em; margin: .45rem 0 .7rem; color: var(--muted); font-size: .84rem; line-height: 1.4; overflow: hidden; }
 .books-state { color: var(--muted); }.books-empty { min-height: 260px; }.books-empty > svg { width: 2rem; height: 2rem; color: #fdba74; }
 .books-dropzone { display: grid; justify-items: center; gap: 0.7rem; width: 100%; min-height: 360px; padding: 2rem; color: var(--muted); cursor: pointer; }
 .books-dropzone:hover, .books-dropzone:focus-visible { border-color: rgba(249, 115, 22, 0.6); outline: none; }

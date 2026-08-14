@@ -25,6 +25,7 @@ import type {
   AudioTrackOption,
   BooksResponse,
   BookProgressMap,
+  BookMetadataCandidate,
   ContinueEntry,
   ContinueMap,
   SubtitleTrack,
@@ -590,6 +591,19 @@ export async function refreshAdminTrendingGaps(): Promise<void> {
 
 export async function fetchAdminItem(id: number, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return request(`/api/app/admin/item/${id}`, { signal });
+}
+
+export async function searchAdminBooks(query: string, signal?: AbortSignal): Promise<{ items: BookMetadataCandidate[] }> {
+  const qs = new URLSearchParams({ q: query });
+  return request(`/api/app/admin/book-search?${qs}`, { signal });
+}
+
+export async function applyAdminBookMetadata(id: number, candidate: BookMetadataCandidate): Promise<{ ok: boolean; item: unknown }> {
+  return request(`/api/app/admin/item/${id}/book-metadata`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ candidate }),
+  });
 }
 
 export async function clearAdminItemTmdb(id: number): Promise<{ ok: boolean; item: unknown }> {

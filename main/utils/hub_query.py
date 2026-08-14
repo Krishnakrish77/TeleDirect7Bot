@@ -104,6 +104,17 @@ class HubItem:
     audio_codec: str = ""          # "flac", "mp3", "aac", "opus", etc.
     audio_sample_rate: int = 0     # Hz: 44100, 48000, 96000, …
     audio_bit_depth: int = 0       # 16, 24, 32; 0 for lossy formats
+    # --- Book metadata (admin-selected Open Library records) --------------
+    # Kept apart from TMDB so document uploads never enter the video
+    # enrichment pipeline.  ``book_source_key`` is the canonical Open
+    # Library work key (for example ``/works/OL123W``).
+    book_authors: List[str] = field(default_factory=list)
+    book_isbn: str = ""
+    book_publisher: str = ""
+    book_language: str = ""
+    book_page_count: int = 0
+    book_cover_url: str = ""
+    book_source_key: str = ""
     # Fields that TMDB enrichment must not overwrite because the admin set
     # them manually.  Values: "title", "year", "series_title".
     admin_locked: List[str] = field(default_factory=list)

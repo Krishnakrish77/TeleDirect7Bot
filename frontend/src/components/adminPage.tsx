@@ -1,5 +1,5 @@
 import { type ReactNode, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { aiSuggestItem, clearAdminItemTmdb, deleteAdminSubtitle, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem, uploadAdminSubtitle } from '../api';
+import { aiSuggestItem, applyAdminBookMetadata, clearAdminItemTmdb, deleteAdminSubtitle, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem, searchAdminBooks, uploadAdminSubtitle } from '../api';
 import { FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TrashIcon, XIcon } from '../icons';
 import { Checkbox } from './ui/checkbox';
 import { Button } from './ui/button';
@@ -57,7 +57,7 @@ export function AdminFrame({
     </div>
   );
 }
-import type { AdminItem, AdminItemEditPayload, AdminProgressState, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, TmdbPreviewResult, User } from '../types';
+import type { AdminItem, AdminItemEditPayload, AdminProgressState, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, BookMetadataCandidate, TmdbPreviewResult, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { tmdbImageUrl } from '../utils/tmdb';
 
@@ -831,6 +831,10 @@ function EditModal({
   const [imdbError, setImdbError] = useState('');
   const tmdbDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isAudio, setIsAudio] = useState(false);
+  const [isBook, setIsBook] = useState(false);
+  const [bookSearchLoading, setBookSearchLoading] = useState(false);
+  const [bookMatches, setBookMatches] = useState<BookMetadataCandidate[]>([]);
+  const [bookStatus, setBookStatus] = useState('');
   const [subtitleUploading, setSubtitleUploading] = useState(false);
   const [subtitleStatus, setSubtitleStatus] = useState('');
   const [sidecars, setSidecars] = useState<Array<{ binMessageId: number; language: string; label: string }>>([]);
@@ -851,6 +855,7 @@ function EditModal({
         const d = data as Record<string, unknown>;
         setSidecars(Array.isArray(d['sidecars']) ? d['sidecars'] as Array<{ binMessageId: number; language: string; label: string }> : []);
         setIsAudio(d['mediaKind'] === 'audio');
+        setIsBook(d['mediaKind'] === 'book');
         setForm((prev) => ({
           ...prev,
           title:        String(d['title'] || ''),
@@ -1042,6 +1047,36 @@ function EditModal({
     }
   };
 
+  const handleBookSearch = async () => {
+    const query = form.title.trim() || form.fileName.replace(/\.[^.]+$/, '').trim();
+    if (query.length < 2) { setError('Enter a title before searching Open Library.'); return; }
+    setBookSearchLoading(true); setBookStatus(''); setError('');
+    try {
+      const result = await searchAdminBooks(query);
+      setBookMatches(result.items || []);
+      setBookStatus(result.items?.length ? 'Choose the matching edition below.' : 'No matches found. Try a shorter title.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Open Library search failed');
+    } finally { setBookSearchLoading(false); }
+  };
+
+  const handleBookApply = async (candidate: BookMetadataCandidate) => {
+    setBookSearchLoading(true); setBookStatus(''); setError('');
+    try {
+      const result = await applyAdminBookMetadata(messageId, candidate);
+      if (result.item) onSaved(result.item as AdminItem);
+      setForm((prev) => ({
+        ...prev,
+        title: candidate.title,
+        year: candidate.year ?? prev.year,
+        description: candidate.description || prev.description,
+      }));
+      setBookMatches([]); setBookStatus('Metadata applied. Save only if you want additional manual edits.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not apply book metadata');
+    } finally { setBookSearchLoading(false); }
+  };
+
   const handleSubtitleUpload = async (file: File | null | undefined) => {
     if (!file) return;
     setSubtitleUploading(true);
@@ -1112,7 +1147,7 @@ function EditModal({
               className="edit-modal-tab-btn"
               onClick={() => setActiveSection(s)}
             >
-              {s === 'identity' ? 'Identity' : s === 'metadata' ? (isAudio ? 'Music' : 'Metadata') : 'Advanced'}
+              {s === 'identity' ? 'Identity' : s === 'metadata' ? (isAudio ? 'Music' : isBook ? 'Book' : 'Metadata') : 'Advanced'}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -1191,6 +1226,29 @@ function EditModal({
                         </div>
                       </label>
                     </div>
+                  ) : isBook ? (
+                    <div className="edit-section">
+                      <p className="edit-section-label">Open Library metadata</p>
+                      <p className="edit-field-hint">Find a title, then select the exact edition/work. This updates the shared book card without using TMDB.</p>
+                      <div className="edit-field-row" style={{ marginTop: '0.75rem' }}>
+                        <Button type="button" size="sm" onClick={() => void handleBookSearch()} disabled={bookSearchLoading}>
+                          {bookSearchLoading ? 'Searching…' : 'Search Open Library'}
+                        </Button>
+                        {bookStatus && <span className="edit-field-hint">{bookStatus}</span>}
+                      </div>
+                      {bookMatches.length > 0 && <div className="edit-tmdb-preview" style={{ display: 'block', marginTop: '0.75rem' }}>
+                        {bookMatches.map((match) => (
+                          <div key={match.key} className="edit-field-row" style={{ alignItems: 'center', padding: '0.45rem 0', borderBottom: '1px solid var(--border)' }}>
+                            {match.coverId > 0 && <img src={`https://covers.openlibrary.org/b/id/${match.coverId}-S.jpg`} alt="" style={{ width: 34, height: 48, objectFit: 'cover', borderRadius: 3 }} />}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <strong>{match.title}</strong>{match.year ? ` (${match.year})` : ''}
+                              <p className="edit-field-hint">{match.authors.join(', ') || 'Author unavailable'}{match.publisher ? ` · ${match.publisher}` : ''}</p>
+                            </div>
+                            <Button type="button" variant="outline" size="sm" onClick={() => void handleBookApply(match)} disabled={bookSearchLoading}>Use</Button>
+                          </div>
+                        ))}
+                      </div>}
+                    </div>
                   ) : (
                     <div className="edit-section">
                       <p className="edit-section-label">Series <span className="edit-field-hint">(groups into a /series/ page)</span></p>
@@ -1214,7 +1272,7 @@ function EditModal({
                       </div>
                     </div>
                   )}
-                  <div className="edit-section">
+                  {!isBook && <div className="edit-section">
                     <p className="edit-section-label">TMDB</p>
                     <label className="edit-field">
                       <span className="edit-field-label">IMDb id or URL</span>
@@ -1253,7 +1311,7 @@ function EditModal({
                         </div>
                       </div>
                     )}
-                  </div>
+                  </div>}
                 </>
               )}
 
@@ -1267,7 +1325,7 @@ function EditModal({
                       <Button type="button" variant="outline" size="sm" onClick={() => setField('thumbUrlInput', '__clear__')}>Clear</Button>
                     </div>
                   </div>
-                  {!isAudio && (
+                  {!isAudio && !isBook && (
                     <>
                       <div className="edit-section">
                         <p className="edit-section-label">Playback markers</p>

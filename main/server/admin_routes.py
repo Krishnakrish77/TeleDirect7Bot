@@ -36,7 +36,7 @@ from aiohttp.abc import AbstractResolver
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import media_index, thumb_cache, trending as _trending
+from main.utils import media_index, openlibrary, thumb_cache, trending as _trending
 from main.utils.human_readable import humanbytes
 from main.utils.hub_query import ExternalSubtitle, HubItem
 from main.utils.file_properties import get_hash
@@ -225,6 +225,7 @@ _ADMIN_FILTERS = [
     ("series", "Series"),
     ("movies", "Movies"),
     ("music", "Music"),
+    ("books", "Books"),
     ("no-poster", "No poster"),
     ("no-thumb", "No thumb"),
     ("no-overview", "No overview"),
@@ -324,7 +325,7 @@ def _admin_catalogue_context(request: web.Request) -> dict:
     duplicate_message_ids = set(duplicate_details)
 
     def _is_video_item(it) -> bool:
-        return getattr(it, "media_kind", "") != "audio"
+        return getattr(it, "media_kind", "") in {"", "video"}
 
     def _has_time_range(start, end) -> bool:
         try:
@@ -339,7 +340,7 @@ def _admin_catalogue_context(request: web.Request) -> dict:
             return False
         if filter_name == "series" and not it.series_key:
             return False
-        if filter_name == "movies" and it.series_key:
+        if filter_name == "movies" and (not _is_video_item(it) or it.series_key):
             return False
         if filter_name == "no-poster" and (it.poster_path or not it.tmdb_id):
             return False
@@ -373,6 +374,8 @@ def _admin_catalogue_context(request: web.Request) -> dict:
         ):
             return False
         if filter_name == "music" and getattr(it, "media_kind", "") != "audio":
+            return False
+        if filter_name == "books" and getattr(it, "media_kind", "") != "book":
             return False
         if filter_name == "hidden" and not it.hidden:
             return False
@@ -505,6 +508,13 @@ def _admin_item_payload(item, duplicate_details) -> dict:
         "artist": getattr(item, "artist", "") or "",
         "albumTitle": getattr(item, "album_title", "") or "",
         "trackNumber": getattr(item, "track_number", None),
+        "bookAuthors": list(getattr(item, "book_authors", []) or []),
+        "bookIsbn": getattr(item, "book_isbn", "") or "",
+        "bookPublisher": getattr(item, "book_publisher", "") or "",
+        "bookLanguage": getattr(item, "book_language", "") or "",
+        "bookPageCount": getattr(item, "book_page_count", 0) or 0,
+        "bookCoverUrl": getattr(item, "book_cover_url", "") or "",
+        "bookSourceKey": getattr(item, "book_source_key", "") or "",
         "adminLocked": list(item.admin_locked or []),
         "posterUrl": _admin_thumb_url(item),
         "watchHref": f"/app/watch/{watch_key}",
@@ -2915,6 +2925,65 @@ async def api_app_admin_item_get(request: web.Request) -> web.Response:
     )
 
 
+@routes.get("/api/app/admin/book-search")
+async def api_app_admin_book_search(request: web.Request) -> web.Response:
+    """Search Open Library from the authenticated admin editor."""
+    _require_api_admin(request)
+    query = (request.query.get("q") or "").strip()
+    if len(query) < 2:
+        return web.json_response({"items": []})
+    try:
+        items = await openlibrary.search_books(query)
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        logging.info("admin: Open Library search unavailable", exc_info=True)
+        return web.json_response({"error": "Open Library is unavailable. Try again shortly."}, status=502)
+    return web.json_response({"items": items}, headers={"Cache-Control": "no-store"})
+
+
+@routes.post(r"/api/app/admin/item/{id:\d+}/book-metadata")
+async def api_app_admin_item_apply_book_metadata(request: web.Request) -> web.Response:
+    """Apply one explicit Open Library match to a book upload.
+
+    The selected result is normalised again server-side. This avoids an
+    implicit title match overwriting an admin's chosen edition/work.
+    """
+    _require_api_admin(request)
+    message_id = int(request.match_info["id"])
+    item = media_index.get_item(message_id)
+    if item is None or getattr(item, "media_kind", "") != "book":
+        return web.json_response({"error": "Book not found"}, status=404)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    candidate = openlibrary.normalise_search_doc(body.get("candidate") or {})
+    if candidate is None:
+        return web.json_response({"error": "Choose a valid Open Library result"}, status=400)
+
+    async with media_index._lock:
+        item.title = candidate["title"]
+        if candidate["year"]:
+            item.year = candidate["year"]
+        item.book_authors = candidate["authors"]
+        item.book_isbn = candidate["isbn"]
+        item.book_publisher = candidate["publisher"]
+        item.book_language = candidate["language"]
+        item.book_page_count = candidate["pageCount"]
+        item.book_cover_url = openlibrary.cover_url(candidate["coverId"])
+        item.book_source_key = candidate["key"]
+        if candidate["description"]:
+            item.description = candidate["description"]
+        # A selected catalogue match is authoritative for title/year. Keep
+        # those values stable when later maintenance jobs are run.
+        item.admin_locked = sorted(set(item.admin_locked or []) | {"title", "year"})
+        media_index._persist_unlocked()
+    await media_index._store_upsert(item)
+    return web.json_response({
+        "ok": True,
+        "item": _admin_item_payload(item, set()),
+    }, headers={"Cache-Control": "no-store"})
+
+
 @routes.post(r"/api/app/admin/item/{id:\d+}/clear-tmdb")
 async def api_app_admin_item_clear_tmdb(request: web.Request) -> web.Response:
     """Wipe all TMDB-derived fields for an item (JSON-auth version of /admin/clear-tmdb/{id})."""
@@ -3077,6 +3146,7 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
 
     title_changed = new_title != (item_before.title or "")
     year_changed  = new_year != item_before.year
+    is_book = getattr(item_before, "media_kind", "") == "book"
 
     def apply(entry, item):
         entry.title       = new_title
@@ -3084,7 +3154,14 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
         entry.tags        = new_tags
         entry.description = new_description
         item.file_name    = new_file_name
-        if new_series_title:
+        if is_book:
+            # A document must never be regrouped into Movies/Series merely
+            # because the generic admin form is saved.
+            item.series_title = ""
+            item.series_key = ""
+            item.season = item.episode = item.episode_end = None
+            item.movie_key = ""
+        elif new_series_title:
             item.series_title = new_series_title
             item.series_key   = series_parse.slugify(new_series_title)
             item.season       = new_season if new_season is not None else 1
@@ -3129,9 +3206,9 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
             item_after.admin_locked = sorted(locked)
             await media_index._store_upsert(item_after)
 
-    if status in ("written", "local-only") and manual_tmdb_id is not None and manual_tmdb_id > 0:
+    if not is_book and status in ("written", "local-only") and manual_tmdb_id is not None and manual_tmdb_id > 0:
         await media_index.enrich_with_tmdb_id(message_id, manual_tmdb_id, tmdb_kind, bot=StreamBot)
-    elif status in ("written", "local-only") and (title_changed or year_changed):
+    elif not is_book and status in ("written", "local-only") and (title_changed or year_changed):
         from main.utils import tmdb
         if tmdb.is_configured():
             item_now = media_index.get_item(message_id)

@@ -141,6 +141,11 @@ export interface BookItem {
   fileSize: number;
   fileSizeLabel: string;
   description: string;
+  authors: string[];
+  coverUrl: string;
+  publisher: string;
+  language: string;
+  pageCount: number;
   readUrl: string;
   downloadUrl: string;
 }
@@ -153,6 +158,19 @@ export interface BookProgress {
   locator: string;
   progress: number;
   t: number;
+}
+
+export interface BookMetadataCandidate {
+  key: string;
+  title: string;
+  authors: string[];
+  year: number | null;
+  coverId: number;
+  isbn: string;
+  publisher: string;
+  language: string;
+  pageCount: number;
+  description: string;
 }
 
 export type BookProgressMap = Record<string, BookProgress>;
@@ -715,6 +733,13 @@ export interface AdminItem {
   artist: string;
   albumTitle: string;
   trackNumber: number | null;
+  bookAuthors?: string[];
+  bookIsbn?: string;
+  bookPublisher?: string;
+  bookLanguage?: string;
+  bookPageCount?: number;
+  bookCoverUrl?: string;
+  bookSourceKey?: string;
   adminLocked: string[];
   posterUrl: string;
   watchHref: string;

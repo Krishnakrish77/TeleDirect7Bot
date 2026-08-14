@@ -648,6 +648,11 @@ async def api_books(request: web.Request) -> web.Response:
             "fileSize": item.file_size or 0,
             "fileSizeLabel": humanbytes(item.file_size) if item.file_size else "",
             "description": item.description or "",
+            "authors": list(item.book_authors or []),
+            "coverUrl": item.book_cover_url or "",
+            "publisher": item.book_publisher or "",
+            "language": item.book_language or "",
+            "pageCount": item.book_page_count or 0,
             "readUrl": _book_content_url(item),
             "downloadUrl": _download_url(item),
         })
