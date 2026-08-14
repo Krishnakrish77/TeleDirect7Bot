@@ -725,6 +725,7 @@ self.addEventListener('fetch', e => {
     url.pathname.startsWith('/admin') ||
     url.pathname.startsWith('/watch/') ||
     url.pathname.startsWith('/play/') ||
+    url.pathname.startsWith('/book/') ||
     url.pathname.startsWith('/hls/')
   ) return;
 

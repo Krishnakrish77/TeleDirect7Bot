@@ -44,6 +44,7 @@ from main.vars import Var
 
 routes = web.RouteTableDef()
 _CW_KEY_RE = re.compile(r'^[A-Za-z0-9_-]*[A-Za-z_-](\d+)$')
+_BOOK_STREAM_KEY_RE = re.compile(r"^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$")
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _APP_DIR = _STATIC_DIR / "app"
@@ -613,6 +614,24 @@ def _download_url(item: HubItem) -> str:
     return as_download_url(_stream_url(item))
 
 
+def _book_content_url(item: HubItem) -> str:
+    return f"/book/{item.secure_hash}{item.message_id}/content"
+
+
+@routes.get(r"/book/{key:[A-Za-z0-9_-]+}/content", allow_head=True)
+async def book_content(request: web.Request) -> web.Response:
+    """Serve an indexed book through a non-SPA route for the embedded reader."""
+    match = _BOOK_STREAM_KEY_RE.match(request.match_info["key"])
+    if match is None:
+        raise web.HTTPNotFound()
+    secure_hash, message_id_raw = match.groups()
+    item = media_index.get_item(int(message_id_raw))
+    if item is None or item.hidden or item.media_kind != "book" or item.secure_hash != secure_hash:
+        raise web.HTTPNotFound()
+    from main.server.stream_routes import media_streamer
+    return await media_streamer(request, item.message_id, item.secure_hash)
+
+
 @routes.get("/api/app/books")
 async def api_books(request: web.Request) -> web.Response:
     query = (request.query.get("q") or "").strip()
@@ -628,7 +647,7 @@ async def api_books(request: web.Request) -> web.Response:
             "fileSize": item.file_size or 0,
             "fileSizeLabel": humanbytes(item.file_size) if item.file_size else "",
             "description": item.description or "",
-            "readUrl": _stream_url(item),
+            "readUrl": _book_content_url(item),
             "downloadUrl": _download_url(item),
         })
     return _json({"items": payload})
