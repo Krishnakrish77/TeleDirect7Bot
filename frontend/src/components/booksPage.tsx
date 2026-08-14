@@ -4,7 +4,7 @@ import { BookOpenIcon, BookmarkIcon, DownloadIcon, MoreVerticalIcon, PauseIcon, 
 import type { BookItem, BookProgressMap, User } from '../types';
 import { Button } from './ui/button';
 
-declare global { interface Window { ePub?: (source: string, options?: { openAs?: 'epub' }) => EpubBook; pdfjsLib?: PdfJs; } }
+declare global { interface Window { ePub?: (source: string | ArrayBuffer, options?: { openAs?: 'epub' }) => EpubBook; pdfjsLib?: PdfJs; JSZip?: JsZipStatic; } }
 type EpubLocation = { start?: { cfi?: string; percentage?: number } };
 type EpubTocItem = { label: string; href: string; subitems?: EpubTocItem[] };
 type EpubRendition = { display: (target?: string | number) => Promise<unknown>; next: () => Promise<unknown>; prev: () => Promise<unknown>; on?: (event: string, callback: (location: EpubLocation) => void) => void; getContents?: () => Array<{ document?: Document }>; destroy?: () => void; };
@@ -13,7 +13,11 @@ type PdfViewport = { width: number; height: number };
 type PdfPage = { getViewport: (params: { scale: number }) => PdfViewport; render: (params: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<unknown> } };
 type PdfDocument = { numPages: number; getPage: (page: number) => Promise<PdfPage>; destroy?: () => void };
 type PdfJs = { GlobalWorkerOptions: { workerSrc: string }; getDocument: (url: string) => { promise: Promise<PdfDocument>; destroy?: () => void } };
+type JsZipEntry = { dir: boolean; async: (type: 'uint8array') => Promise<Uint8Array> };
+type JsZip = { files: Record<string, JsZipEntry>; file: (name: string, data: Uint8Array, options?: { compression?: 'STORE' | 'DEFLATE'; createFolders?: boolean }) => JsZip; generateAsync: (options: { type: 'arraybuffer'; compression: 'STORE' | 'DEFLATE' }) => Promise<ArrayBuffer> };
+type JsZipStatic = { new (): JsZip; loadAsync: (data: ArrayBuffer) => Promise<JsZip> };
 const EPUB_SCRIPT = 'https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js';
+const JSZIP_SCRIPT = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
 const PDFJS_SCRIPT = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const PROGRESS_KEY = 'td:book-progress';
@@ -36,6 +40,33 @@ function loadEpubReader(): Promise<void> {
     script.onerror = () => reject(new Error('Unable to load the EPUB reader. Check your connection and try again.'));
     document.head.appendChild(script);
   });
+}
+function loadZipRepair(): Promise<void> {
+  if (window.JSZip) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script'); script.src = JSZIP_SCRIPT; script.async = true;
+    script.onload = () => window.JSZip ? resolve() : reject(new Error('The EPUB compatibility reader did not start.'));
+    script.onerror = () => reject(new Error('Unable to load the EPUB compatibility reader. Check your connection and try again.'));
+    document.head.appendChild(script);
+  });
+}
+async function epubSource(url: string): Promise<ArrayBuffer> {
+  await loadZipRepair();
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Unable to download this EPUB.');
+  const original = await response.arrayBuffer();
+  if (!window.JSZip) return original;
+  const archive = await window.JSZip.loadAsync(original);
+  const mimetype = archive.files.mimetype;
+  // EPUB readers in the wild are permissive about this, but epub.js is not:
+  // rebuild the archive with an uncompressed `mimetype` entry first.
+  if (!mimetype || mimetype.dir) return original;
+  const repaired = new window.JSZip();
+  repaired.file('mimetype', await mimetype.async('uint8array'), { compression: 'STORE' });
+  await Promise.all(Object.entries(archive.files).filter(([path, entry]) => path !== 'mimetype' && !entry.dir).map(async ([path, entry]) => {
+    repaired.file(path, await entry.async('uint8array'), { compression: 'DEFLATE', createFolders: true });
+  }));
+  return repaired.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
 }
 function loadPdfReader(): Promise<void> {
   if (window.pdfjsLib) return Promise.resolve();
@@ -73,9 +104,9 @@ export function BooksPage({ user }: { user: User | null }) {
   useEffect(() => {
     if (!selected || !isEpub || !epubRootRef.current) return undefined;
     let cancelled = false; let book: EpubBook | null = null; let timeout = 0; const epubTouchCleanups: Array<() => void> = []; const boundEpubDocuments = new Set<Document>(); setReaderError(''); setReaderLoading(true); setToc([]); setReaderPanel(null); setReaderMenuOpen(false); setFindStatus('');
-    void loadEpubReader().then(() => {
+    void Promise.all([loadEpubReader(), epubSource(selected.readUrl)]).then(([, source]) => {
       if (cancelled || !window.ePub || !epubRootRef.current) return;
-      epubRootRef.current.replaceChildren(); book = window.ePub(selected.readUrl, { openAs: 'epub' });
+      epubRootRef.current.replaceChildren(); book = window.ePub(source, { openAs: 'epub' });
       void book.loaded?.navigation?.then((navigation) => { if (!cancelled) setToc(navigation.toc || []); });
       const rendition = book.renderTo(epubRootRef.current, { width: '100%', height: '100%', spread: 'none' }); renditionRef.current = rendition;
       const bindEpubTouch = () => rendition.getContents?.().forEach((content) => { const doc = content.document; if (!doc || boundEpubDocuments.has(doc)) return; boundEpubDocuments.add(doc); let start: { x: number; y: number } | null = null; const onStart = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (touch) start = { x: touch.clientX, y: touch.clientY }; }; const onEnd = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (!start || !touch || readerMenuOpen) return; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; start = null; if (Math.abs(dx) < 56 || Math.abs(dy) > Math.abs(dx)) return; setControlsVisible(true); void (dx < 0 ? rendition.next() : rendition.prev()); }; doc.addEventListener('touchstart', onStart, { passive: true }); doc.addEventListener('touchend', onEnd, { passive: true }); epubTouchCleanups.push(() => { doc.removeEventListener('touchstart', onStart); doc.removeEventListener('touchend', onEnd); }); });
