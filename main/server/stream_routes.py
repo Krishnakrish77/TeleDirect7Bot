@@ -319,6 +319,9 @@ async def watch_handler(request: web.Request):
             secure_hash = request.rel_url.query.get("hash")
         if is_download_query(request.rel_url.query):
             return await media_streamer(request, message_id, secure_hash)
+        item = media_index.get_item(message_id)
+        if item is not None and item.secure_hash == secure_hash and item.media_kind == "book":
+            raise web.HTTPPermanentRedirect("/books")
         # The server-rendered watch page has been retired. Preserve historic
         # links by sending them into the canonical React player instead.
         target = f"/play/{path}"

@@ -111,6 +111,15 @@ def get_media_file_unique_id(m):
     media = get_media_from_message(m)
     return getattr(media, "file_unique_id", "")
 
+
+def _is_book_message(message: Message) -> bool:
+    document = getattr(message, "document", None)
+    if document is None:
+        return False
+    mime = (getattr(document, "mime_type", "") or "").lower()
+    name = (getattr(document, "file_name", "") or "").lower()
+    return mime in {"application/pdf", "application/epub+zip"} or name.endswith((".pdf", ".epub"))
+
 # Generate Text, Stream Link, reply_markup
 async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
     """Generate Text for Stream Link, Reply Text and reply_markup"""
@@ -122,12 +131,26 @@ async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
     page_link = f"{Var.URL}watch/{file_hash}{log_msg.id}"
     stream_link = f"{Var.URL}{file_hash}{log_msg.id}"
     download_link = as_download_url(stream_link)
-    Stream_Text = lang.stream_msg_text.format(file_name, file_size, download_link, page_link)
-
-    buttons = [[
-        InlineKeyboardButton("▶ Watch", url=page_link, style=ButtonStyle.PRIMARY),
-        InlineKeyboardButton("⬇ Download", url=download_link),
-    ]]
+    if _is_book_message(log_msg):
+        # Books are served by the dedicated web reader, not the video player.
+        # Keep the reply free of raw URLs so recipients don't receive a broken
+        # video-style "Watch" link alongside the intended library action.
+        page_link = f"{Var.URL}books"
+        Stream_Text = (
+            "<u>**Book added to your library**</u>\n\n"
+            f"<b>📚 Title :</b> {file_name}\n"
+            f"<b>📦 File Size :</b> {file_size}"
+        )
+        buttons = [[
+            InlineKeyboardButton("📚 Open books", url=page_link, style=ButtonStyle.PRIMARY),
+            InlineKeyboardButton("⬇ Download", url=download_link),
+        ]]
+    else:
+        Stream_Text = lang.stream_msg_text.format(file_name, file_size, download_link, page_link)
+        buttons = [[
+            InlineKeyboardButton("▶ Watch", url=page_link, style=ButtonStyle.PRIMARY),
+            InlineKeyboardButton("⬇ Download", url=download_link),
+        ]]
     if not from_channel:
         buttons.append([
             InlineKeyboardButton("↗ GitHub", url=PROJECT_REPOSITORY_URL),
