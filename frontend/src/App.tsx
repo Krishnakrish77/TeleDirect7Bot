@@ -585,7 +585,7 @@ function App() {
             error={liveTv.error}
           />
         ) : route.kind === 'books' ? (
-          <BooksPage />
+          <BooksPage user={user} />
         ) : route.kind === 'admin-dashboard' ? (
           <AdminFrame routeKind={route.kind} locationSearch={location.search}>
             <AdminDashboard user={user} onSignIn={() => setSignInOpen(true)} />
