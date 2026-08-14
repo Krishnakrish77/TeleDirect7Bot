@@ -5351,6 +5351,41 @@ img {
   padding-inline: .65rem;
 }
 
+/* Reader controls never inherit the low-contrast, general-purpose button
+   treatment. They sit over content, so their contrast needs to be explicit. */
+.books-reader-page [data-slot="button"][data-variant="ghost"] {
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(9, 10, 12, .78);
+  color: #f8fafc;
+}
+
+.books-reader-page [data-slot="button"][data-variant="ghost"]:hover:not(:disabled),
+.books-reader-page [data-slot="button"][data-variant="ghost"]:focus-visible {
+  border-color: #fb923c;
+  background: #ea580c;
+  color: #fff;
+}
+
+.books-reader-page [data-slot="button"][data-variant="secondary"] {
+  border-color: #4b5563;
+  background: #20242b;
+  color: #f8fafc;
+}
+
+.books-reader-page [data-slot="button"][data-variant="secondary"]:hover:not(:disabled),
+.books-reader-page [data-slot="button"][data-variant="secondary"]:focus-visible {
+  border-color: #fb923c;
+  background: #7c2d12;
+  color: #fff;
+}
+
+.books-reader-page [data-slot="button"]:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: rgba(226, 232, 240, .38);
+  opacity: 1;
+}
+
 .books-reader-tools {
   width: 2.4rem;
   padding: 0;
@@ -5418,9 +5453,10 @@ img {
   transition: opacity .22s ease, transform .22s ease;
 }
 
-.books-reader-pagination [data-slot="button"] { min-height: 2.45rem; border-radius: 0; }
-.books-reader-page-indicator { min-height: 2.45rem; padding: 0 .8rem; border: 0; border-inline: 1px solid rgba(255, 255, 255, .1); background: transparent; color: var(--text); font: inherit; font-size: .82rem; cursor: pointer; }
-.books-reader-page-indicator:hover { color: #fdba74; }
+.books-reader-pagination [data-slot="button"] { min-height: 2.45rem; border: 0; border-radius: 0; background: transparent; color: #f8fafc; }
+.books-reader-pagination [data-slot="button"]:hover:not(:disabled), .books-reader-pagination [data-slot="button"]:focus-visible { background: rgba(249, 115, 22, .25); color: #fff; }
+.books-reader-page-indicator { min-height: 2.45rem; padding: 0 .8rem; border: 0; border-inline: 1px solid rgba(255, 255, 255, .16); background: #f97316; color: #fff; font: inherit; font-size: .82rem; font-weight: 750; cursor: pointer; }
+.books-reader-page-indicator:hover, .books-reader-page-indicator:focus-visible { background: #ea580c; color: #fff; }
 .books-reading-mode:not(.books-reader-controls-visible) .books-reader-pagination { opacity: 0; transform: translate(-50%, 130%); pointer-events: none; }
 
 .books-reader-page .books-reader-footer {
