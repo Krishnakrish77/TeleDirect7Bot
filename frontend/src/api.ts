@@ -24,6 +24,7 @@ import type {
   StatsResponse,
   AudioTrackOption,
   BooksResponse,
+  BookProgressMap,
   ContinueEntry,
   ContinueMap,
   SubtitleTrack,
@@ -135,6 +136,16 @@ export async function fetchHub(
 export async function fetchBooks(query = '', signal?: AbortSignal): Promise<BooksResponse> {
   const suffix = query ? `?${new URLSearchParams({ q: query })}` : '';
   return request<BooksResponse>(`/api/app/books${suffix}`, { signal });
+}
+
+export async function fetchBookProgress(signal?: AbortSignal): Promise<BookProgressMap> {
+  return request<BookProgressMap>('/api/app/books/progress', { signal });
+}
+
+export async function saveBookProgress(bookId: string, value: { locator: string; progress: number; t: number }): Promise<void> {
+  await request<{ ok: boolean }>(`/api/app/books/${encodeURIComponent(bookId)}/progress`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value), keepalive: true,
+  });
 }
 
 export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {

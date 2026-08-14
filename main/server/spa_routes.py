@@ -24,6 +24,7 @@ from aiohttp import web
 from main.server.tmdb_images import tmdb_image_proxy, tmdb_image_url
 from main.utils import codec_probe
 from main.utils import cw_store
+from main.utils import book_progress_store
 from main.utils import media_index
 from main.utils import playlist_store
 from main.utils import ratings_store
@@ -651,6 +652,36 @@ async def api_books(request: web.Request) -> web.Response:
             "downloadUrl": _download_url(item),
         })
     return _json({"items": payload})
+
+
+@routes.get("/api/app/books/progress")
+async def api_book_progress(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if user is None:
+        return _json({"error": "unauthenticated"}, status=401)
+    return _json(await book_progress_store.get_all(int(user["sub"])))
+
+
+@routes.put(r"/api/app/books/{book_id:\d+}/progress")
+async def api_save_book_progress(request: web.Request) -> web.Response:
+    user = get_user(request)
+    if user is None:
+        return _json({"error": "unauthenticated"}, status=401)
+    book_id = int(request.match_info["book_id"])
+    item = media_index.get_item(book_id)
+    if item is None or item.hidden or item.media_kind != "book":
+        return _json({"error": "book not found"}, status=404)
+    try:
+        body = await request.json()
+        locator = str(body.get("locator") or "")[:500]
+        progress = max(0.0, min(1.0, float(body.get("progress") or 0)))
+        supplied_stamp = int(body.get("t") or 0)
+        now_ms = int(time.time() * 1000)
+        stamp = supplied_stamp if 0 < supplied_stamp <= now_ms else now_ms
+    except (TypeError, ValueError, OverflowError):
+        return _json({"error": "invalid progress"}, status=400)
+    saved = await book_progress_store.upsert(int(user["sub"]), book_id, locator, progress, stamp)
+    return _json({"ok": saved})
 
 
 def _vlc_tracking_token(request: web.Request, item: HubItem) -> str:

@@ -149,6 +149,14 @@ export interface BooksResponse {
   items: BookItem[];
 }
 
+export interface BookProgress {
+  locator: string;
+  progress: number;
+  t: number;
+}
+
+export type BookProgressMap = Record<string, BookProgress>;
+
 export interface IptvChannel {
   id: string;
   name: string;
