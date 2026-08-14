@@ -211,6 +211,10 @@ function MediaCardBase({
             )}
           </span>
         </a>
+        <span className="card-hover-details" aria-hidden="true">
+          <span>View details</span>
+          {card.overview && <small>{card.overview}</small>}
+        </span>
         {canPreview && (
           <Button
             ref={previewButtonRef}
