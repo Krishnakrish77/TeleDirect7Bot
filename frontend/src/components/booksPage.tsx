@@ -1,6 +1,6 @@
 import { type ReactNode, type UIEvent, useEffect, useRef, useState } from 'react';
 import { fetchBookProgress, fetchBookReaderData, fetchBooks, saveBookProgress, saveBookReaderData } from '../api';
-import { BookOpenIcon, BookmarkIcon, DownloadIcon, ListIcon, ListPlusIcon, MoreVerticalIcon, PauseIcon, SearchIcon, VolumeIcon } from '../icons';
+import { BookOpenIcon, BookmarkIcon, DownloadIcon, ListIcon, ListPlusIcon, MoreVerticalIcon, PauseIcon, SearchIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
 import type { BookItem, BookProgressMap, User } from '../types';
 import { Button } from './ui/button';
 
@@ -81,6 +81,18 @@ function hasStandardEpubMimetype(archive: ArrayBuffer): boolean {
   const nameLength = header.getUint16(26, true);
   return 30 + nameLength <= bytes.length && new TextDecoder().decode(bytes.subarray(30, 30 + nameLength)) === 'mimetype';
 }
+function speechChunks(text: string): string[] {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+  const chunks: string[] = []; let remainder = normalized;
+  while (remainder.length > 0) {
+    if (remainder.length <= 2800) { chunks.push(remainder); break; }
+    const boundary = Math.max(remainder.lastIndexOf('. ', 2800), remainder.lastIndexOf('? ', 2800), remainder.lastIndexOf('! ', 2800), remainder.lastIndexOf(' ', 2800));
+    const end = boundary > 300 ? boundary + 1 : 2800;
+    chunks.push(remainder.slice(0, end).trim()); remainder = remainder.slice(end).trim();
+  }
+  return chunks;
+}
 function applyEpubTheme(rendition: EpubRendition, theme: ReaderTheme) {
   rendition.themes?.register('teledirect-light', { body: { background: '#f8f4e9 !important', color: '#1c1917 !important' }, a: { color: '#9a3412 !important' } });
   rendition.themes?.register('teledirect-dark', { body: { background: '#121416 !important', color: '#f1f5f9 !important' }, a: { color: '#fdba74 !important' } });
@@ -117,8 +129,8 @@ export function BooksPage({ user }: { user: User | null }) {
   const [items, setItems] = useState<BookItem[]>([]); const [query, setQuery] = useState(''); const [debouncedQuery, setDebouncedQuery] = useState(''); const [selected, setSelected] = useState<BookItem | null>(null);
   const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [readerError, setReaderError] = useState(''); const [readerLoading, setReaderLoading] = useState(false); const [speaking, setSpeaking] = useState(false); const [readerTheme, setReaderTheme] = useState<ReaderTheme>('light');
   const [progress, setProgress] = useState<BookProgressMap>(() => localProgress());
-  const [bookmarks, setBookmarks] = useState<Record<string, BookBookmark[]>>(() => localBookmarks()); const [notes, setNotes] = useState<Record<string, BookNote[]>>(() => localNotes()); const [toc, setToc] = useState<EpubTocItem[]>([]); const [readerPanel, setReaderPanel] = useState<'contents' | 'bookmarks' | 'notes' | 'pages' | 'outline' | null>(null); const [readerMenuOpen, setReaderMenuOpen] = useState(false); const [findQuery, setFindQuery] = useState(''); const [findStatus, setFindStatus] = useState(''); const [speechRate, setSpeechRate] = useState(1); const [sessionMinutes, setSessionMinutes] = useState(0); const [pdfPage, setPdfPage] = useState(1); const [pdfDocument, setPdfDocument] = useState<PdfDocument | null>(null); const [pdfPages, setPdfPages] = useState(0); const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[]>([]); const [pdfZoom, setPdfZoom] = useState<number | 'fit'>('fit'); const [pdfReaderWidth, setPdfReaderWidth] = useState(0); const [pdfSearchBusy, setPdfSearchBusy] = useState(false); const [pdfNoteDraft, setPdfNoteDraft] = useState(''); const [controlsVisible, setControlsVisible] = useState(true);
-  const epubRootRef = useRef<HTMLDivElement>(null); const renditionRef = useRef<EpubRendition | null>(null); const pdfCanvasRef = useRef<HTMLCanvasElement>(null); const pdfRootRef = useRef<HTMLDivElement>(null); const gestureStart = useRef<{ x: number; y: number } | null>(null); const pdfScrollTopRef = useRef(0); const pdfPageTurnLockedRef = useRef(false); const pdfPendingScrollRef = useRef<'top' | 'bottom' | null>(null); const touchStartRef = useRef<{ x: number; y: number; scrollLeft: number; panning: boolean } | null>(null); const pdfPinchRef = useRef<{ distance: number; scale: number } | null>(null); const pdfSearchTokenRef = useRef(0); const readerMenuOpenRef = useRef(false);
+  const [bookmarks, setBookmarks] = useState<Record<string, BookBookmark[]>>(() => localBookmarks()); const [notes, setNotes] = useState<Record<string, BookNote[]>>(() => localNotes()); const [toc, setToc] = useState<EpubTocItem[]>([]); const [readerPanel, setReaderPanel] = useState<'contents' | 'bookmarks' | 'notes' | 'pages' | 'outline' | null>(null); const [readerMenuOpen, setReaderMenuOpen] = useState(false); const [findQuery, setFindQuery] = useState(''); const [findStatus, setFindStatus] = useState(''); const [speechRate, setSpeechRate] = useState(1); const [speechPaused, setSpeechPaused] = useState(false); const [speechPage, setSpeechPage] = useState<number | null>(null); const [sessionMinutes, setSessionMinutes] = useState(0); const [pdfPage, setPdfPage] = useState(1); const [pdfDocument, setPdfDocument] = useState<PdfDocument | null>(null); const [pdfPages, setPdfPages] = useState(0); const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[]>([]); const [pdfZoom, setPdfZoom] = useState<number | 'fit'>('fit'); const [pdfReaderWidth, setPdfReaderWidth] = useState(0); const [pdfSearchBusy, setPdfSearchBusy] = useState(false); const [pdfNoteDraft, setPdfNoteDraft] = useState(''); const [controlsVisible, setControlsVisible] = useState(true);
+  const epubRootRef = useRef<HTMLDivElement>(null); const renditionRef = useRef<EpubRendition | null>(null); const pdfCanvasRef = useRef<HTMLCanvasElement>(null); const pdfRootRef = useRef<HTMLDivElement>(null); const gestureStart = useRef<{ x: number; y: number } | null>(null); const pdfScrollTopRef = useRef(0); const pdfPageTurnLockedRef = useRef(false); const pdfPendingScrollRef = useRef<'top' | 'bottom' | null>(null); const touchStartRef = useRef<{ x: number; y: number; scrollLeft: number; panning: boolean } | null>(null); const pdfPinchRef = useRef<{ distance: number; scale: number } | null>(null); const pdfSearchTokenRef = useRef(0); const speechTokenRef = useRef(0); const readerMenuOpenRef = useRef(false);
   const isEpub = selected?.format.toLowerCase() === 'epub';
 
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedQuery(query), 250); return () => window.clearTimeout(timer); }, [query]);
@@ -202,10 +214,41 @@ export function BooksPage({ user }: { user: User | null }) {
     return () => { cancelled = true; renderTask?.cancel?.(); };
   }, [pdfDocument, pdfPage, pdfReaderWidth, pdfZoom]);
 
-  const speak = () => { if (!('speechSynthesis' in window)) { setReaderError('Read aloud is not available in this browser.'); return; } if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return; } const selectedText = window.getSelection()?.toString().trim() || ''; const epubText = renditionRef.current?.getContents?.().map((content) => content.document?.body?.innerText || '').join('\n').trim() || ''; const source = selectedText || epubText; if (!source) { setReaderError('Select text in the book first. EPUB chapters can also be read aloud.'); return; } const utterance = new SpeechSynthesisUtterance(source.slice(0, 12000)); utterance.rate = speechRate; utterance.onend = utterance.onerror = () => setSpeaking(false); setSpeaking(true); window.speechSynthesis.speak(utterance); };
-  const openBook = (book: BookItem) => { setReaderError(''); setReaderMenuOpen(false); setReaderPanel(null); setControlsVisible(true); setSelected(book); };
-  const closeReader = () => { pdfSearchTokenRef.current += 1; window.speechSynthesis?.cancel(); setSpeaking(false); setReaderMenuOpen(false); setReaderPanel(null); setSelected(null); };
-  const changePdfPage = (page: number, scrollTo: 'top' | 'bottom' = 'top') => { if (!selected) return; const next = Math.max(1, Math.min(pdfPages || Number.MAX_SAFE_INTEGER, Math.floor(page))); if (next === pdfPage) return; pdfPendingScrollRef.current = scrollTo; setPdfPage(next); saveProgress(selected, `page:${next}`, pdfPages ? next / pdfPages : 0); };
+  const stopSpeech = () => { speechTokenRef.current += 1; window.speechSynthesis?.cancel(); setSpeaking(false); setSpeechPaused(false); setSpeechPage(null); };
+  const playSpeech = (chunks: string[], page: number | null) => {
+    if (!('speechSynthesis' in window)) { setReaderError('Read aloud is not available in this browser.'); return; }
+    const token = speechTokenRef.current + 1; speechTokenRef.current = token; window.speechSynthesis.cancel(); setReaderError(''); setSpeaking(true); setSpeechPaused(false); setSpeechPage(page);
+    const playChunk = (index: number) => {
+      if (token !== speechTokenRef.current) return;
+      if (index >= chunks.length) { setSpeaking(false); setSpeechPaused(false); setSpeechPage(null); return; }
+      const utterance = new SpeechSynthesisUtterance(chunks[index]); utterance.rate = speechRate;
+      utterance.onend = () => playChunk(index + 1);
+      utterance.onerror = (event) => { if (token !== speechTokenRef.current || event.error === 'canceled' || event.error === 'interrupted') return; setReaderError('Reading this page stopped unexpectedly.'); setSpeaking(false); setSpeechPaused(false); setSpeechPage(null); };
+      window.speechSynthesis.speak(utterance);
+    };
+    playChunk(0);
+  };
+  const speak = () => {
+    if (!('speechSynthesis' in window)) { setReaderError('Read aloud is not available in this browser.'); return; }
+    if (speaking) { if (speechPaused) { window.speechSynthesis.resume(); setSpeechPaused(false); } else { window.speechSynthesis.pause(); setSpeechPaused(true); } return; }
+    const selectedText = window.getSelection()?.toString().trim() || ''; const epubText = renditionRef.current?.getContents?.().map((content) => content.document?.body?.innerText || '').join('\n').trim() || ''; const chunks = speechChunks(selectedText || epubText);
+    if (!chunks.length) { setReaderError('Select text in the book first. EPUB chapters can also be read aloud.'); return; }
+    playSpeech(chunks, null);
+  };
+  const speakPdfPage = (page = pdfPage) => {
+    if (!pdfDocument) { setReaderError('The PDF is still opening. Try Read page again in a moment.'); return; }
+    if (speaking && speechPage === page) { speak(); return; }
+    const token = speechTokenRef.current + 1; speechTokenRef.current = token; window.speechSynthesis?.cancel(); setSpeaking(false); setSpeechPaused(false); setSpeechPage(null); if (page !== pdfPage) changePdfPage(page);
+    void pdfDocument.getPage(page).then((entry) => entry.getTextContent()).then((content) => {
+      if (token !== speechTokenRef.current) return;
+      const chunks = speechChunks(content.items.map((item) => item.str || '').join(' '));
+      if (!chunks.length) { setReaderError('This PDF page has no readable text.'); return; }
+      playSpeech(chunks, page);
+    }).catch(() => { if (token === speechTokenRef.current) setReaderError('Could not read text from this PDF page.'); });
+  };
+  const openBook = (book: BookItem) => { stopSpeech(); setReaderError(''); setReaderMenuOpen(false); setReaderPanel(null); setControlsVisible(true); setSelected(book); };
+  const closeReader = () => { pdfSearchTokenRef.current += 1; stopSpeech(); setReaderMenuOpen(false); setReaderPanel(null); setSelected(null); };
+  const changePdfPage = (page: number, scrollTo: 'top' | 'bottom' = 'top') => { if (!selected) return; const next = Math.max(1, Math.min(pdfPages || Number.MAX_SAFE_INTEGER, Math.floor(page))); if (next === pdfPage) return; if (speechPage !== null && next !== speechPage) stopSpeech(); pdfPendingScrollRef.current = scrollTo; setPdfPage(next); saveProgress(selected, `page:${next}`, pdfPages ? next / pdfPages : 0); };
   const turnPage = (direction: 1 | -1) => { setControlsVisible(true); if (isEpub) void (direction > 0 ? renditionRef.current?.next() : renditionRef.current?.prev()); else changePdfPage(pdfPage + direction); };
   const onPdfScroll = (event: UIEvent<HTMLDivElement>) => { const root = event.currentTarget; const current = root.scrollTop; const direction = current - pdfScrollTopRef.current; pdfScrollTopRef.current = current; if (pdfPageTurnLockedRef.current || Math.abs(direction) < 2 || root.scrollHeight <= root.clientHeight + 4) return; if (direction > 0 && current + root.clientHeight >= root.scrollHeight - 28 && (!pdfPages || pdfPage < pdfPages)) { pdfPageTurnLockedRef.current = true; changePdfPage(pdfPage + 1, 'top'); } else if (direction < 0 && current <= 2 && pdfPage > 1) { pdfPageTurnLockedRef.current = true; changePdfPage(pdfPage - 1, 'bottom'); } };
   useEffect(() => { if (!selected || isEpub || !pdfRootRef.current) return undefined; const root = pdfRootRef.current; const touchStart = (event: TouchEvent) => { if (event.touches.length === 2) { const [first, second] = Array.from(event.touches); pdfPinchRef.current = { distance: Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY), scale: typeof pdfZoom === 'number' ? pdfZoom : 1.2 }; return; } const touch = event.changedTouches[0]; if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY, scrollLeft: root.scrollLeft, panning: false }; }; const touchMove = (event: TouchEvent) => { const pinch = pdfPinchRef.current; if (pinch && event.touches.length === 2) { const [first, second] = Array.from(event.touches); const distance = Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY); if (!distance) return; event.preventDefault(); setPdfZoom(Math.max(.6, Math.min(2.5, pinch.scale * distance / pinch.distance))); return; } const start = touchStartRef.current; const touch = event.touches[0]; if (!start || !touch || readerMenuOpen || root.scrollWidth <= root.clientWidth + 4) return; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; if (Math.abs(dx) < 4 || Math.abs(dx) <= Math.abs(dy)) return; event.preventDefault(); start.panning = true; root.scrollLeft = Math.max(0, Math.min(root.scrollWidth - root.clientWidth, start.scrollLeft - dx)); }; const touchEnd = (event: TouchEvent) => { if (pdfPinchRef.current) { if (event.touches.length < 2) pdfPinchRef.current = null; return; } const start = touchStartRef.current; touchStartRef.current = null; const touch = event.changedTouches[0]; if (!start || !touch || readerMenuOpen) return; if (start.panning) { setControlsVisible(true); return; } const dx = touch.clientX - start.x; if (Math.abs(dx) < 56 || Math.abs(touch.clientY - start.y) > Math.abs(dx)) { setControlsVisible(true); return; } setControlsVisible(true); changePdfPage(pdfPage + (dx < 0 ? 1 : -1), dx < 0 ? 'top' : 'bottom'); }; root.addEventListener('touchstart', touchStart, { passive: true }); root.addEventListener('touchmove', touchMove, { passive: false }); root.addEventListener('touchend', touchEnd, { passive: true }); return () => { root.removeEventListener('touchstart', touchStart); root.removeEventListener('touchmove', touchMove); root.removeEventListener('touchend', touchEnd); }; }, [selected, isEpub, pdfPage, pdfPages, pdfZoom, readerMenuOpen]);
@@ -244,7 +287,7 @@ export function BooksPage({ user }: { user: User | null }) {
               <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'bookmarks' ? null : 'bookmarks')}><BookmarkIcon />Bookmarks</Button>
               <Button variant="secondary" size="sm" onClick={addNote}><ListPlusIcon />Add note</Button>
               <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'notes' ? null : 'notes')}><ListIcon />Notes</Button>
-              <Button variant="secondary" size="sm" onClick={speak}>{speaking ? <PauseIcon /> : <VolumeIcon />}{speaking ? 'Stop reading' : 'Listen'}</Button>
+              <Button variant="secondary" size="sm" onClick={speak}>{speaking ? <PauseIcon /> : <VolumeIcon />}{speaking ? (speechPaused ? 'Resume reading' : 'Pause reading') : 'Listen'}</Button>
             </div>
             <label className="books-reader-menu-rate">Reading speed<select value={speechRate} onChange={(event) => setSpeechRate(Number(event.currentTarget.value))}><option value={0.8}>0.8×</option><option value={1}>1×</option><option value={1.25}>1.25×</option><option value={1.5}>1.5×</option></select></label>
           </> : <>
@@ -258,6 +301,13 @@ export function BooksPage({ user }: { user: User | null }) {
               <Button variant="secondary" size="sm" onClick={addNote}><ListPlusIcon />Save note</Button>
               <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'notes' ? null : 'notes')}><ListIcon />Notes</Button>
             </div>
+            <p className="books-reader-menu-section-label">Read aloud</p>
+            <div className="books-reader-speech-actions">
+              <Button variant="secondary" size="sm" onClick={() => speakPdfPage(pdfPage)}>{speaking && speechPage === pdfPage ? <PauseIcon /> : <VolumeIcon />}{speaking && speechPage === pdfPage ? (speechPaused ? 'Resume page' : 'Pause reading') : 'Read page'}</Button>
+              <Button variant="secondary" size="sm" disabled={pdfPage <= 1} onClick={() => speakPdfPage(pdfPage - 1)}><SkipBackIcon />Previous page</Button>
+              <Button variant="secondary" size="sm" disabled={Boolean(pdfPages && pdfPage >= pdfPages)} onClick={() => speakPdfPage(pdfPage + 1)}><SkipForwardIcon />Next page</Button>
+            </div>
+            {speechPage !== null && <p className="books-reader-speech-status">{speechPaused ? 'Paused' : 'Reading'} page {speechPage}</p>}
             <label className="books-reader-menu-rate">Go to page<input type="number" min="1" max={pdfPages || undefined} value={pdfPage} onChange={(event) => changePdfPage(Number(event.currentTarget.value))} /></label>
             <label className="books-reader-find"><SearchIcon /><input value={findQuery} onChange={(event) => setFindQuery(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === 'Enter') findPdf(); }} placeholder="Search this PDF" /><Button variant="secondary" size="sm" disabled={pdfSearchBusy} onClick={findPdf}>{pdfSearchBusy ? 'Searching…' : 'Search'}</Button>{findStatus && <small>{findStatus}</small>}</label>
             <label className="books-reader-note-draft">Note for page {pdfPage}<textarea value={pdfNoteDraft} maxLength={1200} onChange={(event) => setPdfNoteDraft(event.currentTarget.value)} placeholder="Write a private note" /></label>
