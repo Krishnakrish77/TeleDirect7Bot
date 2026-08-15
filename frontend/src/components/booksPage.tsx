@@ -215,12 +215,12 @@ export function BooksPage({ user }: { user: User | null }) {
   }, [pdfDocument, pdfPage, pdfReaderWidth, pdfZoom]);
 
   const stopSpeech = () => { speechTokenRef.current += 1; window.speechSynthesis?.cancel(); setSpeaking(false); setSpeechPaused(false); setSpeechPage(null); };
-  const playSpeech = (chunks: string[], page: number | null) => {
+  const playSpeech = (chunks: string[], page: number | null, onComplete?: () => void) => {
     if (!('speechSynthesis' in window)) { setReaderError('Read aloud is not available in this browser.'); return; }
     const token = speechTokenRef.current + 1; speechTokenRef.current = token; window.speechSynthesis.cancel(); setReaderError(''); setSpeaking(true); setSpeechPaused(false); setSpeechPage(page);
     const playChunk = (index: number) => {
       if (token !== speechTokenRef.current) return;
-      if (index >= chunks.length) { setSpeaking(false); setSpeechPaused(false); setSpeechPage(null); return; }
+      if (index >= chunks.length) { if (onComplete) { onComplete(); return; } setSpeaking(false); setSpeechPaused(false); setSpeechPage(null); return; }
       const utterance = new SpeechSynthesisUtterance(chunks[index]); utterance.rate = speechRate;
       utterance.onend = () => playChunk(index + 1);
       utterance.onerror = (event) => { if (token !== speechTokenRef.current || event.error === 'canceled' || event.error === 'interrupted') return; setReaderError('Reading this page stopped unexpectedly.'); setSpeaking(false); setSpeechPaused(false); setSpeechPage(null); };
@@ -243,7 +243,7 @@ export function BooksPage({ user }: { user: User | null }) {
       if (token !== speechTokenRef.current) return;
       const chunks = speechChunks(content.items.map((item) => item.str || '').join(' '));
       if (!chunks.length) { setReaderError('This PDF page has no readable text.'); return; }
-      playSpeech(chunks, page);
+      playSpeech(chunks, page, page < pdfDocument.numPages ? () => speakPdfPage(page + 1) : undefined);
     }).catch(() => { if (token === speechTokenRef.current) setReaderError('Could not read text from this PDF page.'); });
   };
   const openBook = (book: BookItem) => { stopSpeech(); setReaderError(''); setReaderMenuOpen(false); setReaderPanel(null); setControlsVisible(true); setSelected(book); };
@@ -303,7 +303,7 @@ export function BooksPage({ user }: { user: User | null }) {
             </div>
             <p className="books-reader-menu-section-label">Read aloud</p>
             <div className="books-reader-speech-actions">
-              <Button variant="secondary" size="sm" onClick={() => speakPdfPage(pdfPage)}>{speaking && speechPage === pdfPage ? <PauseIcon /> : <VolumeIcon />}{speaking && speechPage === pdfPage ? (speechPaused ? 'Resume page' : 'Pause reading') : 'Read page'}</Button>
+              <Button variant="secondary" size="sm" onClick={() => speakPdfPage(pdfPage)}>{speaking && speechPage === pdfPage ? <PauseIcon /> : <VolumeIcon />}{speaking && speechPage === pdfPage ? (speechPaused ? 'Resume page' : 'Pause reading') : 'Read from here'}</Button>
               <Button variant="secondary" size="sm" disabled={pdfPage <= 1} onClick={() => speakPdfPage(pdfPage - 1)}><SkipBackIcon />Previous page</Button>
               <Button variant="secondary" size="sm" disabled={Boolean(pdfPages && pdfPage >= pdfPages)} onClick={() => speakPdfPage(pdfPage + 1)}><SkipForwardIcon />Next page</Button>
             </div>
