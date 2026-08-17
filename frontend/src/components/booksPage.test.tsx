@@ -189,13 +189,9 @@ describe('BooksPage EPUB reading settings', () => {
     expect(apiMocks.fetchBooks).toHaveBeenLastCalledWith('', { offset: 2, limit: 36 });
   });
 
-  it('persists compact cards and opens reader tools with the help shortcut', async () => {
+  it('opens reader tools with the help shortcut', async () => {
     render(<BooksPage user={null} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Compact' }));
-    expect(localStorage.getItem('td:book-density')).toBe('compact');
-    expect(document.querySelector('.books-grid')?.classList.contains('books-grid-compact')).toBe(true);
-
-    fireEvent.click(screen.getByRole('button', { name: /Example Book/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Example Book/i }));
     await screen.findByLabelText('Example Book reader');
     fireEvent.keyDown(window, { key: '?', shiftKey: true });
     expect(screen.getByRole('complementary', { name: 'Reading settings' })).toBeTruthy();
