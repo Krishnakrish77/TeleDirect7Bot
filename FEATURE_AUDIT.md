@@ -164,6 +164,91 @@ _Evidence: Home shelf assembly audit, SPA payload tests, and React shelf-order t
 
 ---
 
+## BOOKS LIBRARY UX REVIEW — 2026-08-14
+
+_Evidence: Chrome DevTools MCP against production (`/books`, desktop + `390×844` mobile emulation, opened both seeded titles, inspected network/console) plus a source read of `booksPage.tsx`, `media_index.py`, and `spa_routes.py`._
+
+### Current status — 2026-08-17
+
+_Production revalidated after deployment of `a9adf67` (`Fix PDF image decoder assets`). Chrome DevTools was used against the deployed Koyeb application, including a cache-bypassed reload of the enriched **Build a Large Language Model (From Scratch)** PDF._
+
+| Area | Status | Current evidence |
+|---|---|---|
+| PDF reader and embedded images | ✅ Fixed | PDF.js now receives its same-origin WebAssembly decoder directory. The affected JPEG-2000 diagram on PDF page 7 renders in production; the prior `openjpeg`/`wasmUrl` warnings are absent. |
+| EPUB delivery and malformed archives | ✅ Fixed | The reader fetches EPUBs as binary data, repairs a non-compliant `mimetype` ZIP ordering when necessary, and opens the resulting buffer as binary rather than coercing it to a URL. |
+| Reader experience | ✅ Shipped | Deep links, full-card open, responsive reader layout, PDF fit/100%/150% view controls, PDF/EPUB search, notes, bookmarks, reading progress, swipe/edge interactions, read-aloud voice and speed controls, and EPUB light/sepia/dark typography settings are live. |
+| Library and book metadata | ✅ Shipped | Format/reading/sort filters, Continue Reading, subject browse, robust card fallbacks, Google Books enrichment, and same-origin cover proxying are live. Books remain excluded from video/music shelves. |
+| Production health | ✅ Clean in this pass | The deployed reader loaded the latest app bundle, rendered PDF page 7 at `1393×1747` canvas resolution, and produced no console errors or warnings. |
+
+**Current conclusion:** there is no known Books P0/P1 defect. The dated investigations below are retained as incident history and must not be read as the current feature state.
+
+### Remaining opportunity backlog
+
+1. Add a PDF fixture containing JPEG-2000 artwork to automated browser coverage, preventing a missing-decoder regression.
+2. Improve admin metadata operations with bulk enrichment and manual cover/description overrides for imperfect Google Books matches.
+3. Consider reader highlights/annotations and book collections or series grouping only after real-library usage warrants them.
+4. Keep server-side audiobook conversion out of scope; browser read-aloud is the free, privacy-preserving baseline for text PDFs and EPUBs.
+
+### Historical bugs found live — superseded
+
+| Severity | Finding | Evidence |
+|---|---|---|
+| 🔴 P0 | **EPUB rendering is broken in production, with no user-facing error.** Opening *The Silo Saga Omnibus* renders a fully blank page — no text, no spinner, no error message. Network trace shows epub.js requesting `book/{id}/META-INF/container.xml` → `404`. The reader hands epub.js a bare `/book/{id}/content` URL with no `.epub` extension, so its type-sniffer guesses "unpacked directory" instead of "zip archive" and never falls back; unlike the PDF error path, this failure never triggers the `role="alert"` message. | Reproduced twice (fresh load + reload) at desktop and mobile viewport. |
+| 🟡 P1 | **Empty-search state is indistinguishable from empty-library state.** Searching `/books` for a non-matching term shows the same illustration/copy as a library with zero books: "No books in your library yet — check back soon for new titles." Should read "No books match '<query>'" with a clear-search action. | Reproduced on mobile viewport. |
+| 🟡 P1 | **Reader footer promises sync it doesn't deliver for anonymous users.** The reader always shows "Your place, bookmarks, and notes sync to your library account," but `/api/app/books/progress` and `/api/app/books/{id}/reader-data` return `401` for signed-out sessions, so sync silently no-ops. Gate the message on auth state or prompt sign-in instead. | Confirmed via network trace: two `401`s on every book open while signed out. |
+| ⚪ P2 | Book cover art occasionally paints as an empty placeholder on first render even when `coverUrl` is present (seen once on the PDF cover, desktop pass) — looks like a lazy-load/layout-shift timing issue, not a missing asset. | Single occurrence; did not reproduce on mobile pass. |
+
+### VALIDATION — 2026-08-14 (post-fix, commits `2328da4`, `f020072`)
+
+_Re-tested live on the same production URL after redeploy (`booksPage-Bd54asUW.js`, confirmed fresh bundle hash). All four items retested; one new defect surfaced during EPUB retest._
+
+| Finding | Status | Evidence |
+|---|---|---|
+| Empty-search-state copy | ✅ Fixed | Searching `xyz-nonexistent` now shows `No books match "xyz-nonexistent"` / "Try another title, author, or filename." with a working **Clear search** button. |
+| Anonymous sync message | ✅ Fixed | Reader footer now reads "Saved on this device. Sign in to sync across devices." while signed out; no longer claims sync it can't deliver. |
+| Card metadata fallback | ✅ Fixed | `bookSummary()` fallback chain (`description → authors → publisher/language/pageCount/format → 'Book'`) replaces the raw-filename fallback; confirmed no filename text renders on either seeded card. |
+| Cover placeholder flash (P2) | ✅ Fixed | Fallback gradient/icon now renders underneath the `<img>` at all times (`onError` hides the image instead of the fallback being conditional), so there's no blank-frame flash. |
+| EPUB opens and renders | ⚠️ **Still broken — root cause changed** | The `openAs: 'epub'` fix does stop the `META-INF/container.xml` 404 misdetection, and the new `readerLoading`/12s-timeout/`role="alert"` now correctly surface a visible error ("This EPUB is taking too long to open...") instead of a silent blank page — that part works and is a real improvement. But the book **still never opens**: `book.opened` on `window.ePub(url, {openAs:'epub'})` hangs indefinitely (confirmed via direct in-page instrumentation, reproduced identically when epub.js is fed a pre-fetched `ArrayBuffer` instead of a URL, ruling out the request path). Byte-level inspection of the served file (`/book/{id}/content`, `200`, `content-type: application/epub+zip`, `6,645,048` bytes) shows a structurally valid ZIP (`PK\x03\x04` header, valid EOCD record) — but its **first zip entry is the `META-INF/` directory, not the required uncompressed `mimetype` file that the OCF/EPUB spec mandates be first**. This looks like a non-spec-compliant source EPUB (likely from the original conversion tool), and epub.js 0.3.93 appears to hang rather than reject when it can't find `mimetype` in the expected position. |
+
+**New finding to track:** epub.js hangs (rather than fails fast) on this malformed EPUB, so the useful signal is the 12s timeout message — worth keeping, but consider: (a) verifying/repairing `mimetype`-first ordering at ingest/upload time for EPUBs so this class of file is caught before it reaches a reader, and (b) shortening the timeout or racing `book.opened` specifically (not just `rendition.display()`) so users see the error well before 12s. PDF path was regression-tested in the same pass and still opens correctly, including resuming at the last saved page.
+
+### VALIDATION — 2026-08-14, round 2 (post-fix, commits `d5faef6`, `d9c781e`)
+
+_Re-tested live after another redeploy (`booksPage-CqeEqscV.js`, fresh bundle hash confirmed). These commits target the exact root cause identified above: `d5faef6` adds `epubSource()`, which fetches the EPUB, uses JSZip to check whether `mimetype` is the first stored entry, and rebuilds the archive with `mimetype` first (uncompressed) if not; `d9c781e` adds a byte-level `hasStandardEpubMimetype()` fast path so compliant EPUBs skip the JSZip round-trip, plus a search debounce (250ms) and PDF render-task cancellation on rapid page changes._
+
+| Finding | Status | Evidence |
+|---|---|---|
+| Repair logic itself | ✅ Correct | Manually replayed the repair algorithm in-page: `hasStandardEpubMimetype()` correctly identifies this file's first entry as `META-INF/` (not `mimetype`), so the JSZip repair path is taken as designed. |
+| **EPUB still doesn't open — new regression** | 🔴 **Not fixed, different bug** | Network trace shows: `epub.min.js` loads, `book/{id}/content` `200`, `jszip.min.js` loads (repair path taken as expected) — then a request to literally `GET /[object%20ArrayBuffer]` → `404`. `epubSource()` now correctly returns a repaired `ArrayBuffer`, but the call site still passes `window.ePub(source, { openAs: 'epub' })`. `openAs: 'epub'` tells epub.js to treat `source` as a **URL string** to fetch, not as binary archive data; handed an `ArrayBuffer` instead, epub.js coerces it with implicit `String(arrayBuffer)` → the literal text `"[object ArrayBuffer]"` — confirmed by direct repro (`String(new ArrayBuffer(8))` → `"[object ArrayBuffer]"`) — then requests that string as a relative path, which 404s. The book still never renders; the UI still shows the same "This EPUB is taking too long to open" timeout message after 12s, so from a user's perspective the symptom is unchanged even though the underlying cause moved. |
+| Fix direction | — | Use `{ openAs: 'binary' }` (or omit `openAs` entirely, letting epub.js auto-detect via `instanceof ArrayBuffer`) when passing the fetched/repaired buffer. Reserve `openAs: 'epub'` only for the case where `source` is still a bare URL string. |
+| Search debounce | ✅ Working | Typing no longer fires a request per keystroke; requests fire ~250ms after the last change. |
+| PDF regression check | ✅ No regression | `James Potter and the Hall of Elders' Crossing` still opens, renders, and shows "Opening PDF…" transiently — unaffected by the EPUB-path changes. |
+
+**Net effect across both rounds:** the P0 EPUB-blank-page bug has been *chased correctly* twice (misdetected URL → fixed; malformed archive → fixed) but a small binding mismatch between `epubSource()`'s return type and `window.ePub()`'s `openAs` option keeps it broken. This is now a one-line fix (`openAs: 'binary'`), not a design problem — worth calling out so it doesn't get mistaken for a third distinct root cause.
+
+### What's already good
+
+- Server-side separation of books from movies/music is clean: `_is_book_message()` classifies by MIME/extension, `shelves()` explicitly excludes `media_kind in {"audio","book"}`, and a regression test (`test_books_are_not_returned_in_video_shelves`) guards it. Books never leak into `mediaCard` shelves.
+- Gesture model (edge-tap, swipe-to-turn, drag threshold, auto-hide chrome, Esc/Arrow keys, continuous-scroll paging for PDF) is a genuine reading-first interaction pattern, not a media-player skin reused for documents.
+- The reader-control contrast pass (solid orange/dark overrides instead of the app's default low-contrast ghost buttons) is the right call for controls floating over arbitrary page content.
+- Whole-card click target on library entries (`role="button"`, Enter/Space handling) is correct and accessible.
+
+### Historical gaps vs. Kindle / Apple Books / Google Play Books — largely resolved
+
+| Area | Gap | Detail |
+|---|---|---|
+| Library grid | Sort/filter, fallback, Continue Reading, subjects | ✅ Resolved | Format/reading/sort controls, fallback metadata, progress surfacing, and subject browse have shipped. |
+| Reader | EPUB typography, PDF zoom, book-wide search, deep links | ✅ Resolved | Settings, view controls, search, and `/books?book={id}` deep links are live. |
+| Reader | Highlights and richer annotation | ⚪ Opportunity | Notes and bookmarks exist; text highlights are a future enhancement rather than a release blocker. |
+| Library grid | Collections/series and density controls | ⚪ Opportunity | Worth revisiting with a larger book catalogue and real reading behaviour. |
+| Reader | Auto-hide accessibility | ⚪ Monitor | Controls can be kept visible and are keyboard reachable. A dedicated assistive-technology pass remains worthwhile before calling this fully closed. |
+
+### Historical recommended priority order — completed
+
+The five recommendations above were delivered. Follow the current opportunity backlog instead.
+
+---
+
 ## VIDEO / OTT
 
 ### Discovery & Browse
