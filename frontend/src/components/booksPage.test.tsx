@@ -70,8 +70,9 @@ describe('BooksPage EPUB reading settings', () => {
     const document = { numPages: 2, getPage: vi.fn((number: number) => Promise.resolve(page(number === 1 ? 'First page.' : 'Second page.'))) };
     const speak = vi.fn();
     const voice = { name: 'Test voice', lang: 'en-GB', voiceURI: 'test-voice' } as SpeechSynthesisVoice;
+    const alternateVoice = { name: 'Alternate voice', lang: 'en-US', voiceURI: 'alternate-voice' } as SpeechSynthesisVoice;
     class Utterance { text: string; rate = 1; voice: SpeechSynthesisVoice | null = null; lang = ''; onend: (() => void) | null = null; onerror: ((event: { error: string }) => void) | null = null; constructor(text: string) { this.text = text; } }
-    Object.assign(window, { pdfjsLib: { GlobalWorkerOptions: {}, getDocument: vi.fn(() => ({ promise: Promise.resolve(document) })) }, speechSynthesis: { speak, cancel: vi.fn(), pause: vi.fn(), resume: vi.fn(), getVoices: () => [voice], addEventListener: vi.fn(), removeEventListener: vi.fn() }, SpeechSynthesisUtterance: Utterance });
+    Object.assign(window, { pdfjsLib: { GlobalWorkerOptions: {}, getDocument: vi.fn(() => ({ promise: Promise.resolve(document) })) }, speechSynthesis: { speak, cancel: vi.fn(), pause: vi.fn(), resume: vi.fn(), getVoices: () => [voice, alternateVoice], addEventListener: vi.fn(), removeEventListener: vi.fn() }, SpeechSynthesisUtterance: Utterance });
     apiMocks.fetchBooks.mockResolvedValue({ items: [pdf] });
 
     const view = render(<BooksPage user={null} />);
@@ -85,9 +86,13 @@ describe('BooksPage EPUB reading settings', () => {
     expect((speak.mock.calls[0][0] as Utterance).rate).toBe(1.5);
     expect((speak.mock.calls[0][0] as Utterance).voice).toBe(voice);
 
-    (speak.mock.calls[0][0] as Utterance).onend?.();
+    fireEvent.change(screen.getByLabelText('Voice'), { target: { value: 'alternate-voice' } });
+    await waitFor(() => expect(speak).toHaveBeenCalledTimes(2));
+    expect((speak.mock.calls[1][0] as Utterance).voice).toBe(alternateVoice);
+
+    (speak.mock.calls[1][0] as Utterance).onend?.();
     await waitFor(() => {
-      expect(speak).toHaveBeenCalledTimes(2);
+      expect(speak).toHaveBeenCalledTimes(3);
       expect(view.container.querySelector('canvas')?.getAttribute('aria-label')).toContain('page 2');
     });
   });

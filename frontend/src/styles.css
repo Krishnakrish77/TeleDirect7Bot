@@ -5512,6 +5512,7 @@ img {
 .books-reader-speech-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-top: .75rem; }
 .books-reader-speech-settings .books-reader-menu-rate { display: grid; gap: .3rem; margin: 0; }
 .books-reader-speech-settings .books-reader-menu-rate select { width: 100%; min-width: 0; }
+.books-reader-speech-settings small { grid-column: 1 / -1; color: var(--muted); font-size: .72rem; line-height: 1.35; }
 .books-reader-speech-status { margin: .55rem 0 0; color: #fed7aa; font-size: .82rem; font-weight: 700; }
 .books-reader-menu-section-label { margin: 1rem 0 .4rem; color: #cbd5e1; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .books-reader-appearance { display: grid; gap: .5rem; }
