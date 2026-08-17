@@ -26,7 +26,10 @@ const BOOKMARKS_KEY = 'td:book-bookmarks';
 type BookBookmark = { locator: string; label: string; progress: number; t: number };
 const NOTES_KEY = 'td:book-notes';
 type BookNote = { text: string; progress: number; t: number };
-type ReaderTheme = 'light' | 'dark';
+const EPUB_PREFERENCES_KEY = 'td:epub-preferences';
+type ReaderTheme = 'light' | 'sepia' | 'dark';
+type EpubPreferences = { theme: ReaderTheme; fontSize: number; fontFamily: 'serif' | 'sans'; lineHeight: 'compact' | 'relaxed'; margins: 'narrow' | 'wide' };
+const DEFAULT_EPUB_PREFERENCES: EpubPreferences = { theme: 'light', fontSize: 100, fontFamily: 'serif', lineHeight: 'relaxed', margins: 'wide' };
 
 function localProgress(): BookProgressMap { try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}') || {}; } catch (_) { return {}; } }
 function writeProgress(value: BookProgressMap) { try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(value)); } catch (_) {} }
@@ -34,6 +37,19 @@ function localBookmarks(): Record<string, BookBookmark[]> { try { return JSON.pa
 function writeBookmarks(value: Record<string, BookBookmark[]>) { try { localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(value)); } catch (_) {} }
 function localNotes(): Record<string, BookNote[]> { try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}') || {}; } catch (_) { return {}; } }
 function writeNotes(value: Record<string, BookNote[]>) { try { localStorage.setItem(NOTES_KEY, JSON.stringify(value)); } catch (_) {} }
+function localEpubPreferences(): EpubPreferences {
+  try {
+    const stored = JSON.parse(localStorage.getItem(EPUB_PREFERENCES_KEY) || '{}') as Partial<EpubPreferences>;
+    return {
+      theme: stored.theme === 'dark' || stored.theme === 'sepia' ? stored.theme : 'light',
+      fontSize: typeof stored.fontSize === 'number' ? Math.max(85, Math.min(135, Math.round(stored.fontSize / 5) * 5)) : DEFAULT_EPUB_PREFERENCES.fontSize,
+      fontFamily: stored.fontFamily === 'sans' ? 'sans' : 'serif',
+      lineHeight: stored.lineHeight === 'compact' ? 'compact' : 'relaxed',
+      margins: stored.margins === 'narrow' ? 'narrow' : 'wide',
+    };
+  } catch (_) { return DEFAULT_EPUB_PREFERENCES; }
+}
+function writeEpubPreferences(value: EpubPreferences) { try { localStorage.setItem(EPUB_PREFERENCES_KEY, JSON.stringify(value)); } catch (_) {} }
 function loadEpubReader(): Promise<void> {
   if (window.ePub) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -93,10 +109,11 @@ function speechChunks(text: string): string[] {
   }
   return chunks;
 }
-function applyEpubTheme(rendition: EpubRendition, theme: ReaderTheme) {
-  rendition.themes?.register('teledirect-light', { body: { background: '#f8f4e9 !important', color: '#1c1917 !important' }, a: { color: '#9a3412 !important' } });
-  rendition.themes?.register('teledirect-dark', { body: { background: '#121416 !important', color: '#f1f5f9 !important' }, a: { color: '#fdba74 !important' } });
-  rendition.themes?.select(`teledirect-${theme}`);
+function applyEpubTheme(rendition: EpubRendition, preferences: EpubPreferences) {
+  const palette = preferences.theme === 'dark' ? { background: '#121416', color: '#f1f5f9', link: '#fdba74' } : preferences.theme === 'sepia' ? { background: '#f4ecd8', color: '#3f3224', link: '#9a3412' } : { background: '#f8f4e9', color: '#1c1917', link: '#9a3412' };
+  const themeName = `teledirect-${preferences.theme}-${preferences.fontSize}-${preferences.fontFamily}-${preferences.lineHeight}-${preferences.margins}`;
+  rendition.themes?.register(themeName, { body: { background: `${palette.background} !important`, color: `${palette.color} !important`, 'font-family': `${preferences.fontFamily === 'serif' ? 'Georgia, Cambria, serif' : 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'} !important`, 'font-size': `${preferences.fontSize}% !important`, 'line-height': `${preferences.lineHeight === 'relaxed' ? '1.8' : '1.5'} !important`, padding: `${preferences.margins === 'wide' ? '0 8%' : '0 3%'} !important`, 'box-sizing': 'border-box !important' }, p: { 'line-height': 'inherit !important' }, a: { color: `${palette.link} !important` } });
+  rendition.themes?.select(themeName);
 }
 function loadPdfReader(): Promise<void> {
   if (window.pdfjsLib) return Promise.resolve();
@@ -127,7 +144,7 @@ function PdfThumbnail({ document, pageNumber, selected, onSelect }: { document: 
 
 export function BooksPage({ user }: { user: User | null }) {
   const [items, setItems] = useState<BookItem[]>([]); const [query, setQuery] = useState(''); const [debouncedQuery, setDebouncedQuery] = useState(''); const [selected, setSelected] = useState<BookItem | null>(null);
-  const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [readerError, setReaderError] = useState(''); const [readerLoading, setReaderLoading] = useState(false); const [speaking, setSpeaking] = useState(false); const [readerTheme, setReaderTheme] = useState<ReaderTheme>('light');
+  const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [readerError, setReaderError] = useState(''); const [readerLoading, setReaderLoading] = useState(false); const [speaking, setSpeaking] = useState(false); const [epubPreferences, setEpubPreferences] = useState<EpubPreferences>(() => localEpubPreferences());
   const [progress, setProgress] = useState<BookProgressMap>(() => localProgress());
   const [bookmarks, setBookmarks] = useState<Record<string, BookBookmark[]>>(() => localBookmarks()); const [notes, setNotes] = useState<Record<string, BookNote[]>>(() => localNotes()); const [toc, setToc] = useState<EpubTocItem[]>([]); const [readerPanel, setReaderPanel] = useState<'contents' | 'bookmarks' | 'notes' | 'pages' | 'outline' | null>(null); const [readerMenuOpen, setReaderMenuOpen] = useState(false); const [findQuery, setFindQuery] = useState(''); const [findStatus, setFindStatus] = useState(''); const [speechRate, setSpeechRate] = useState(1); const [speechPaused, setSpeechPaused] = useState(false); const [speechPage, setSpeechPage] = useState<number | null>(null); const [sessionMinutes, setSessionMinutes] = useState(0); const [pdfPage, setPdfPage] = useState(1); const [pdfDocument, setPdfDocument] = useState<PdfDocument | null>(null); const [pdfPages, setPdfPages] = useState(0); const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[]>([]); const [pdfZoom, setPdfZoom] = useState<number | 'fit'>('fit'); const [pdfReaderWidth, setPdfReaderWidth] = useState(0); const [pdfSearchBusy, setPdfSearchBusy] = useState(false); const [pdfNoteDraft, setPdfNoteDraft] = useState(''); const [controlsVisible, setControlsVisible] = useState(true);
   const epubRootRef = useRef<HTMLDivElement>(null); const renditionRef = useRef<EpubRendition | null>(null); const pdfCanvasRef = useRef<HTMLCanvasElement>(null); const pdfRootRef = useRef<HTMLDivElement>(null); const gestureStart = useRef<{ x: number; y: number } | null>(null); const pdfScrollTopRef = useRef(0); const pdfPageTurnLockedRef = useRef(false); const pdfPendingScrollRef = useRef<'top' | 'bottom' | null>(null); const touchStartRef = useRef<{ x: number; y: number; scrollLeft: number; panning: boolean } | null>(null); const pdfPinchRef = useRef<{ distance: number; scale: number } | null>(null); const pdfSearchTokenRef = useRef(0); const speechTokenRef = useRef(0); const readerMenuOpenRef = useRef(false);
@@ -159,7 +176,7 @@ export function BooksPage({ user }: { user: User | null }) {
       if (cancelled || !window.ePub || !epubRootRef.current) return;
       epubRootRef.current.replaceChildren(); book = window.ePub(source, { openAs: 'binary' });
       void book.loaded?.navigation?.then((navigation) => { if (!cancelled) setToc(navigation.toc || []); });
-      const rendition = book.renderTo(epubRootRef.current, { width: '100%', height: '100%', spread: 'none' }); renditionRef.current = rendition; applyEpubTheme(rendition, readerTheme);
+      const rendition = book.renderTo(epubRootRef.current, { width: '100%', height: '100%', spread: 'none' }); renditionRef.current = rendition; applyEpubTheme(rendition, epubPreferences);
       const bindEpubTouch = () => rendition.getContents?.().forEach((content) => { const doc = content.document; if (!doc || boundEpubDocuments.has(doc)) return; boundEpubDocuments.add(doc); let start: { x: number; y: number } | null = null; const showControls = () => { if (!readerMenuOpenRef.current) setControlsVisible(true); }; const onStart = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (touch) start = { x: touch.clientX, y: touch.clientY }; }; const onEnd = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (!start || !touch || readerMenuOpenRef.current) return; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; start = null; if (Math.abs(dx) < 56 || Math.abs(dy) > Math.abs(dx)) { showControls(); return; } setControlsVisible(true); void (dx < 0 ? rendition.next() : rendition.prev()); }; doc.addEventListener('click', showControls); doc.addEventListener('touchstart', onStart, { passive: true }); doc.addEventListener('touchend', onEnd, { passive: true }); epubTouchCleanups.push(() => { doc.removeEventListener('click', showControls); doc.removeEventListener('touchstart', onStart); doc.removeEventListener('touchend', onEnd); }); });
       rendition.on?.('rendered', bindEpubTouch);
       rendition.on?.('relocated', (location) => { const start = location.start; if (start?.cfi) saveProgress(selected, start.cfi, start.percentage || 0); });
@@ -168,7 +185,7 @@ export function BooksPage({ user }: { user: User | null }) {
     }).catch((err: unknown) => { if (!cancelled) { setReaderLoading(false); setReaderError(err instanceof Error ? err.message : 'This EPUB could not be opened.'); } });
     return () => { cancelled = true; window.clearTimeout(timeout); epubTouchCleanups.forEach((cleanup) => cleanup()); renditionRef.current?.destroy?.(); renditionRef.current = null; book?.destroy?.(); };
   }, [isEpub, selected]);
-  useEffect(() => { if (isEpub && renditionRef.current) applyEpubTheme(renditionRef.current, readerTheme); }, [isEpub, readerTheme]);
+  useEffect(() => { if (isEpub && renditionRef.current) applyEpubTheme(renditionRef.current, epubPreferences); }, [isEpub, epubPreferences]);
   useEffect(() => {
     if (!selected || isEpub) return undefined;
     let cancelled = false; let task: { promise: Promise<PdfDocument>; destroy?: () => void } | null = null; pdfSearchTokenRef.current += 1; setPdfDocument(null); setPdfPages(0); setPdfOutline([]); setReaderError(''); setReaderLoading(true);
@@ -263,6 +280,7 @@ export function BooksPage({ user }: { user: User | null }) {
   const renderPdfOutline = (entries: PdfOutlineItem[], depth = 0): ReactNode[] => entries.flatMap((entry, index) => [<button key={`${depth}-${index}-${entry.title}`} type="button" className="books-reader-panel-link" style={{ paddingLeft: `${0.7 + depth * 0.8}rem` }} onClick={() => openPdfOutlineItem(entry)}>{entry.title}</button>, ...renderPdfOutline(entry.items || [], depth + 1)]);
   const nearbyPdfPages = () => { const start = Math.max(1, pdfPage - 8); const end = Math.min(pdfPages, pdfPage + 8); return Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => start + index); };
   const bookSummary = (book: BookItem) => { const authors = book.authors.join(', '); const description = book.description.trim(); if (description && description.toLocaleLowerCase() !== authors.toLocaleLowerCase()) return description; return [book.publisher, book.language, book.pageCount ? `${book.pageCount} pages` : '', book.format].filter(Boolean).join(' · ') || authors || 'Book'; };
+  const updateEpubPreferences = (next: Partial<EpubPreferences>) => setEpubPreferences((current) => { const updated = { ...current, ...next }; writeEpubPreferences(updated); return updated; });
 
   if (selected) return (
     <main className="books-reader-page">
@@ -279,7 +297,8 @@ export function BooksPage({ user }: { user: User | null }) {
         {readerMenuOpen && <aside className="books-reader-menu" aria-label={isEpub ? 'Reading settings' : 'Reader tools'}>
           <div className="books-reader-menu-heading"><strong>{isEpub ? 'Reading settings' : 'Reader tools'}</strong><Button variant="ghost" size="sm" onClick={() => { setReaderMenuOpen(false); setReaderPanel(null); }}>Done</Button></div>
           {isEpub ? <>
-            <section className="books-reader-appearance" aria-label="Reading theme"><span>Appearance</span><div><Button className={`books-reader-theme-option${readerTheme === 'light' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={readerTheme === 'light'} onClick={() => setReaderTheme('light')}><i className="books-reader-theme-swatch books-reader-theme-light" />Light</Button><Button className={`books-reader-theme-option${readerTheme === 'dark' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={readerTheme === 'dark'} onClick={() => setReaderTheme('dark')}><i className="books-reader-theme-swatch books-reader-theme-dark" />Dark</Button></div></section>
+            <section className="books-reader-appearance" aria-label="Reading appearance"><span>Appearance</span><div className="books-reader-theme-options"><Button className={`books-reader-theme-option${epubPreferences.theme === 'light' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={epubPreferences.theme === 'light'} onClick={() => updateEpubPreferences({ theme: 'light' })}><i className="books-reader-theme-swatch books-reader-theme-light" />Light</Button><Button className={`books-reader-theme-option${epubPreferences.theme === 'sepia' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={epubPreferences.theme === 'sepia'} onClick={() => updateEpubPreferences({ theme: 'sepia' })}><i className="books-reader-theme-swatch books-reader-theme-sepia" />Sepia</Button><Button className={`books-reader-theme-option${epubPreferences.theme === 'dark' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={epubPreferences.theme === 'dark'} onClick={() => updateEpubPreferences({ theme: 'dark' })}><i className="books-reader-theme-swatch books-reader-theme-dark" />Dark</Button></div></section>
+            <section className="books-reader-appearance books-reader-type-controls" aria-label="Typography"><span>Typography</span><div className="books-reader-font-size"><Button variant="secondary" size="sm" aria-label="Decrease text size" disabled={epubPreferences.fontSize <= 85} onClick={() => updateEpubPreferences({ fontSize: epubPreferences.fontSize - 5 })}>A−</Button><strong aria-live="polite">{epubPreferences.fontSize}%</strong><Button variant="secondary" size="sm" aria-label="Increase text size" disabled={epubPreferences.fontSize >= 135} onClick={() => updateEpubPreferences({ fontSize: epubPreferences.fontSize + 5 })}>A+</Button></div><div><Button className={`books-reader-theme-option${epubPreferences.fontFamily === 'serif' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={epubPreferences.fontFamily === 'serif'} onClick={() => updateEpubPreferences({ fontFamily: 'serif' })}>Serif</Button><Button className={`books-reader-theme-option${epubPreferences.fontFamily === 'sans' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={epubPreferences.fontFamily === 'sans'} onClick={() => updateEpubPreferences({ fontFamily: 'sans' })}>Sans</Button></div><div><Button className={`books-reader-theme-option${epubPreferences.lineHeight === 'compact' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={epubPreferences.lineHeight === 'compact'} onClick={() => updateEpubPreferences({ lineHeight: 'compact' })}>Compact</Button><Button className={`books-reader-theme-option${epubPreferences.lineHeight === 'relaxed' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={epubPreferences.lineHeight === 'relaxed'} onClick={() => updateEpubPreferences({ lineHeight: 'relaxed' })}>Relaxed</Button></div><div><Button className={`books-reader-theme-option${epubPreferences.margins === 'narrow' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={epubPreferences.margins === 'narrow'} onClick={() => updateEpubPreferences({ margins: 'narrow' })}>Narrow margins</Button><Button className={`books-reader-theme-option${epubPreferences.margins === 'wide' ? ' is-active' : ''}`} variant="secondary" size="sm" aria-pressed={epubPreferences.margins === 'wide'} onClick={() => updateEpubPreferences({ margins: 'wide' })}>Wide margins</Button></div></section>
             <p className="books-reader-menu-section-label">Reading tools</p>
             <div className="books-reader-menu-actions">
               <Button variant="secondary" size="sm" onClick={() => setReaderPanel(readerPanel === 'contents' ? null : 'contents')}><BookOpenIcon />Contents</Button>
@@ -320,7 +339,7 @@ export function BooksPage({ user }: { user: User | null }) {
         {readerLoading && <p className="books-reader-loading" role="status">Opening {isEpub ? 'EPUB' : 'PDF'}…</p>}
         {readerError && <p className="books-reader-error" role="alert">{readerError}</p>}
         <div className="books-reader">
-          {isEpub ? <div ref={epubRootRef} className={`epub-reader epub-reader-${readerTheme}`} aria-label={`${selected.title} reader`} /> : <div ref={pdfRootRef} className="pdf-reader" onScroll={onPdfScroll}><canvas ref={pdfCanvasRef} aria-label={`${selected.title} PDF page ${pdfPage}`} /></div>}
+          {isEpub ? <div ref={epubRootRef} className={`epub-reader epub-reader-${epubPreferences.theme}`} aria-label={`${selected.title} reader`} /> : <div ref={pdfRootRef} className="pdf-reader" onScroll={onPdfScroll}><canvas ref={pdfCanvasRef} aria-label={`${selected.title} PDF page ${pdfPage}`} /></div>}
         </div>
         {!isEpub && <nav className="books-reader-pagination" aria-label="PDF page navigation">
           <Button variant="ghost" size="sm" onClick={() => changePdfPage(pdfPage - 1)} disabled={pdfPage <= 1}>Previous</Button>
