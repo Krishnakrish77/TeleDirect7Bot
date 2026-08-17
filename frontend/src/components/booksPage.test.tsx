@@ -28,6 +28,7 @@ function standardEpubHeader() {
 
 describe('BooksPage EPUB reading settings', () => {
   beforeEach(() => {
+    window.history.replaceState(null, '', '/books');
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as CanvasRenderingContext2D);
     themes = { register: vi.fn(), select: vi.fn() };
     const rendition = { display: vi.fn().mockResolvedValue(undefined), next: vi.fn(), prev: vi.fn(), themes };
@@ -75,5 +76,18 @@ describe('BooksPage EPUB reading settings', () => {
       expect(speak).toHaveBeenCalledTimes(2);
       expect(view.container.querySelector('canvas')?.getAttribute('aria-label')).toContain('page 2');
     });
+  });
+
+  it('opens shared book links and returns to the library URL', async () => {
+    window.history.replaceState(null, '', '/books?book=book-1');
+
+    render(<BooksPage user={null} />);
+    await screen.findByLabelText('Example Book reader');
+    expect(window.location.search).toBe('?book=book-1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to library' }));
+    await waitFor(() => expect(screen.queryByLabelText('Example Book reader')).toBeNull());
+    expect(window.location.pathname).toBe('/books');
+    expect(window.location.search).toBe('');
   });
 });
