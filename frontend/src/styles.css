@@ -5506,6 +5506,8 @@ img {
 .books-reader-menu .books-reader-find { flex-wrap: wrap; margin-top: .75rem; padding: .75rem 0 0; border-top: 1px solid var(--line); border-bottom: 0; background: transparent; }
 .books-reader-menu .books-reader-find input { flex: 1 1 11rem; }
 .books-reader-menu .books-reader-find small { flex-basis: 100%; }
+.books-reader-find-results { display: inline-flex; gap: .35rem; }
+.books-reader-find-results [data-slot="button"] { min-width: 0; }
 .books-reader-menu .books-reader-panel { max-height: 18rem; margin-top: .75rem; padding: .75rem 0 0; border-top: 1px solid var(--line); border-bottom: 0; background: transparent; }
 .books-reader-note-draft { display: grid; gap: .4rem; margin-top: .75rem; color: #cbd5e1; font-size: .85rem; }
 .books-reader-note-draft textarea { width: 100%; min-height: 5.5rem; resize: vertical; padding: .6rem; border: 1px solid var(--line); border-radius: 8px; background: #0d0f12; color: var(--text); font: inherit; line-height: 1.4; }

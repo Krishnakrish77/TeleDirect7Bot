@@ -81,6 +81,31 @@ describe('BooksPage EPUB reading settings', () => {
     });
   });
 
+  it('caches PDF text search and navigates matching pages', async () => {
+    const firstPage = { getViewport: vi.fn(() => ({ width: 400, height: 600 })), getTextContent: vi.fn().mockResolvedValue({ items: [{ str: 'Needle on the first page.' }] }), render: vi.fn(() => ({ promise: Promise.resolve() })) };
+    const secondPage = { getViewport: vi.fn(() => ({ width: 400, height: 600 })), getTextContent: vi.fn().mockResolvedValue({ items: [{ str: 'Needle on the second page.' }] }), render: vi.fn(() => ({ promise: Promise.resolve() })) };
+    const document = { numPages: 2, getPage: vi.fn((number: number) => Promise.resolve(number === 1 ? firstPage : secondPage)) };
+    Object.assign(window, { pdfjsLib: { GlobalWorkerOptions: {}, getDocument: vi.fn(() => ({ promise: Promise.resolve(document) })) } });
+    apiMocks.fetchBooks.mockResolvedValue({ items: [pdf] });
+
+    const view = render(<BooksPage user={null} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Example PDF/i }));
+    await screen.findByLabelText('Example PDF PDF page 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Open reader tools' }));
+    fireEvent.change(screen.getByPlaceholderText('Search this PDF'), { target: { value: 'needle' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await screen.findByText('1 of 2 matching pages · page 1');
+    expect(firstPage.getTextContent).toHaveBeenCalledTimes(1);
+    expect(secondPage.getTextContent).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next search result' }));
+    await waitFor(() => expect(view.container.querySelector('canvas')?.getAttribute('aria-label')).toContain('page 2'));
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await screen.findByText('1 of 2 matching pages · page 1');
+    expect(firstPage.getTextContent).toHaveBeenCalledTimes(1);
+    expect(secondPage.getTextContent).toHaveBeenCalledTimes(1);
+  });
+
   it('opens shared book links and returns to the library URL', async () => {
     window.history.replaceState(null, '', '/books?book=book-1');
 
