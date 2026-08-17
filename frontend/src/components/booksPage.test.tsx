@@ -69,16 +69,21 @@ describe('BooksPage EPUB reading settings', () => {
     const page = (text: string) => ({ getViewport: vi.fn(() => ({ width: 400, height: 600 })), getTextContent: vi.fn().mockResolvedValue({ items: [{ str: text }] }), render: vi.fn(() => ({ promise: Promise.resolve() })) });
     const document = { numPages: 2, getPage: vi.fn((number: number) => Promise.resolve(page(number === 1 ? 'First page.' : 'Second page.'))) };
     const speak = vi.fn();
-    class Utterance { text: string; rate = 1; onend: (() => void) | null = null; onerror: ((event: { error: string }) => void) | null = null; constructor(text: string) { this.text = text; } }
-    Object.assign(window, { pdfjsLib: { GlobalWorkerOptions: {}, getDocument: vi.fn(() => ({ promise: Promise.resolve(document) })) }, speechSynthesis: { speak, cancel: vi.fn(), pause: vi.fn(), resume: vi.fn() }, SpeechSynthesisUtterance: Utterance });
+    const voice = { name: 'Test voice', lang: 'en-GB', voiceURI: 'test-voice' } as SpeechSynthesisVoice;
+    class Utterance { text: string; rate = 1; voice: SpeechSynthesisVoice | null = null; lang = ''; onend: (() => void) | null = null; onerror: ((event: { error: string }) => void) | null = null; constructor(text: string) { this.text = text; } }
+    Object.assign(window, { pdfjsLib: { GlobalWorkerOptions: {}, getDocument: vi.fn(() => ({ promise: Promise.resolve(document) })) }, speechSynthesis: { speak, cancel: vi.fn(), pause: vi.fn(), resume: vi.fn(), getVoices: () => [voice], addEventListener: vi.fn(), removeEventListener: vi.fn() }, SpeechSynthesisUtterance: Utterance });
     apiMocks.fetchBooks.mockResolvedValue({ items: [pdf] });
 
     const view = render(<BooksPage user={null} />);
     fireEvent.click(await screen.findByRole('button', { name: /Example PDF/i }));
     await screen.findByLabelText('Example PDF PDF page 1');
     fireEvent.click(screen.getByRole('button', { name: 'Open reader tools' }));
+    fireEvent.change(screen.getByLabelText('Reading speed'), { target: { value: '1.5' } });
+    fireEvent.change(await screen.findByLabelText('Voice'), { target: { value: 'test-voice' } });
     fireEvent.click(screen.getByRole('button', { name: 'Read from here' }));
     await waitFor(() => expect(speak).toHaveBeenCalledTimes(1));
+    expect((speak.mock.calls[0][0] as Utterance).rate).toBe(1.5);
+    expect((speak.mock.calls[0][0] as Utterance).voice).toBe(voice);
 
     (speak.mock.calls[0][0] as Utterance).onend?.();
     await waitFor(() => {
