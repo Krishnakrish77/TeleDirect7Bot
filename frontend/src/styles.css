@@ -5304,8 +5304,9 @@ img {
 .book-cover { display: flex; flex-direction: column; justify-content: space-between; min-height: 145px; padding: 0.65rem; border-radius: 4px 10px 10px 4px; background: linear-gradient(135deg, #9a3412, #431407); color: #ffedd5; box-shadow: inset 5px 0 rgba(0,0,0,.2), 0 8px 20px rgba(0,0,0,.24); }
 .book-cover-image { position: relative; width: 100%; height: auto; min-height: 0; aspect-ratio: 2 / 3; padding: .8rem; overflow: hidden; background: linear-gradient(135deg, #9a3412, #431407); }
 .book-cover-image img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; }
-.book-cover-image svg, .book-cover-image small { position: relative; z-index: 2; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .72)); }
-.book-cover-image:has(img:not([hidden])) svg { opacity: 0; }
+.book-cover-image svg, .book-cover-image small, .book-cover-fallback-title { position: relative; z-index: 2; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .72)); }
+.book-cover-fallback-title { display: -webkit-box; margin-top: auto; overflow: hidden; color: #ffedd5; font-size: clamp(.82rem, 1.45vw, 1.05rem); line-height: 1.16; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+.book-cover-image:has(img:not([hidden])) svg, .book-cover-image:has(img:not([hidden])) .book-cover-fallback-title { opacity: 0; }
 .book-cover svg { width: 1.6rem; height: 1.6rem; }.book-cover small { font-weight: 900; letter-spacing: .08em; }
 .book-card-copy { display: grid; align-content: start; gap: .2rem; min-width: 0; padding: 0 .2rem; }.book-card-title, .book-card .book-author, .book-card-meta { display: block; }.book-card-title { color: var(--text); font-size: .96rem; line-height: 1.28; font-weight: 760; }.book-card .book-author { overflow: hidden; color: var(--muted); font-size: .82rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }.book-card-meta { margin-top: .1rem; color: color-mix(in srgb, var(--muted) 82%, transparent); font-size: .72rem; font-weight: 650; }
 .books-state { color: var(--muted); }.books-empty { min-height: 260px; }.books-empty > svg { width: 2rem; height: 2rem; color: #fdba74; }
