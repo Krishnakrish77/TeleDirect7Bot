@@ -104,7 +104,7 @@ class HubItem:
     audio_codec: str = ""          # "flac", "mp3", "aac", "opus", etc.
     audio_sample_rate: int = 0     # Hz: 44100, 48000, 96000, …
     audio_bit_depth: int = 0       # 16, 24, 32; 0 for lossy formats
-    # --- Book metadata (admin-selected Open Library records) --------------
+    # --- Book metadata (admin-selected Google Books records) --------------
     # Kept apart from TMDB so document uploads never enter the video
     # enrichment pipeline.  ``book_source_key`` is the canonical Open
     # Library work key (for example ``/works/OL123W``).

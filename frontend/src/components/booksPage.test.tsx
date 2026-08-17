@@ -144,7 +144,7 @@ describe('BooksPage EPUB reading settings', () => {
     expect(window.location.search).toBe('');
   });
 
-  it('browses admin-confirmed Open Library subjects', async () => {
+  it('browses admin-confirmed book subjects', async () => {
     apiMocks.fetchBooks.mockResolvedValue({ items: [epub, pdf] });
     render(<BooksPage user={null} />);
     const bookCard = await screen.findByRole('button', { name: /Example Book/i });

@@ -67,6 +67,9 @@ class Var(object):
     JWT_SECRET = _jwt_raw
 
     TMDB_API_KEY = environ.get("TMDB_API_KEY", "").strip()
+    # Optional Google Books key for admin book metadata lookup. Kept server-side
+    # so it is never exposed in the browser bundle.
+    GOOGLE_BOOKS_API_KEY = environ.get("GOOGLE_BOOKS_API_KEY", "").strip()
     # Optional Gemini API key for thumbnail-based metadata suggestions in admin.
     # Free tier at aistudio.google.com — no credit card required.
     GEMINI_API_KEY = environ.get("GEMINI_API_KEY", "").strip()

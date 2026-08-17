@@ -1049,14 +1049,14 @@ function EditModal({
 
   const handleBookSearch = async () => {
     const query = form.title.trim() || form.fileName.replace(/\.[^.]+$/, '').trim();
-    if (query.length < 2) { setError('Enter a title before searching Open Library.'); return; }
+    if (query.length < 2) { setError('Enter a title before searching Google Books.'); return; }
     setBookSearchLoading(true); setBookStatus(''); setError('');
     try {
       const result = await searchAdminBooks(query);
       setBookMatches(result.items || []);
       setBookStatus(result.items?.length ? 'Choose the matching edition below.' : 'No matches found. Try a shorter title.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Open Library search failed');
+      setError(err instanceof Error ? err.message : 'Google Books search failed');
     } finally { setBookSearchLoading(false); }
   };
 
@@ -1228,18 +1228,18 @@ function EditModal({
                     </div>
                   ) : isBook ? (
                     <div className="edit-section">
-                      <p className="edit-section-label">Open Library metadata</p>
-                      <p className="edit-field-hint">Find a title, then select the exact edition/work. This updates the shared book card without using TMDB.</p>
+                      <p className="edit-section-label">Google Books metadata</p>
+                      <p className="edit-field-hint">Find a title, then select the exact edition. This updates the shared book card without using TMDB.</p>
                       <div className="edit-field-row" style={{ marginTop: '0.75rem' }}>
                         <Button type="button" size="sm" onClick={() => void handleBookSearch()} disabled={bookSearchLoading}>
-                          {bookSearchLoading ? 'Searching…' : 'Search Open Library'}
+                          {bookSearchLoading ? 'Searching…' : 'Search Google Books'}
                         </Button>
                         {bookStatus && <span className="edit-field-hint">{bookStatus}</span>}
                       </div>
                       {bookMatches.length > 0 && <div className="edit-tmdb-preview" style={{ display: 'block', marginTop: '0.75rem' }}>
                         {bookMatches.map((match) => (
                           <div key={match.key} className="edit-field-row" style={{ alignItems: 'center', padding: '0.45rem 0', borderBottom: '1px solid var(--border)' }}>
-                            {match.coverId > 0 && <img src={`/api/openlibrary-cover/${match.coverId}`} alt="" style={{ width: 34, height: 48, objectFit: 'cover', borderRadius: 3 }} />}
+                            {match.coverUrl && <img src={`/api/google-books-cover/${match.key.replace('google:', '')}`} alt="" style={{ width: 34, height: 48, objectFit: 'cover', borderRadius: 3 }} />}
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <strong>{match.title}</strong>{match.year ? ` (${match.year})` : ''}
                               <p className="edit-field-hint">{match.authors.join(', ') || 'Author unavailable'}{match.publisher ? ` · ${match.publisher}` : ''}{match.subjects.length ? ` · ${match.subjects.slice(0, 2).join(' · ')}` : ''}</p>

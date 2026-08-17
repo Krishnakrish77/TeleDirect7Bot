@@ -36,7 +36,7 @@ from aiohttp.abc import AbstractResolver
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import media_index, openlibrary, thumb_cache, trending as _trending
+from main.utils import google_books, media_index, thumb_cache, trending as _trending
 from main.utils.human_readable import humanbytes
 from main.utils.hub_query import ExternalSubtitle, HubItem
 from main.utils.file_properties import get_hash
@@ -2928,17 +2928,19 @@ async def api_app_admin_item_get(request: web.Request) -> web.Response:
 
 @routes.get("/api/app/admin/book-search")
 async def api_app_admin_book_search(request: web.Request) -> web.Response:
-    """Search Open Library from the authenticated admin editor."""
+    """Search Google Books from the authenticated admin editor."""
     _require_api_admin(request)
     query = (request.query.get("q") or "").strip()
     if len(query) < 2:
         return web.json_response({"items": []})
+    if not Var.GOOGLE_BOOKS_API_KEY:
+        return web.json_response({"error": "GOOGLE_BOOKS_API_KEY is not configured."}, status=503)
     try:
-        items = await openlibrary.search_books(query)
+        items = await google_books.search_books(query)
     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-        logging.warning("admin: Open Library search unavailable (%s)", type(exc).__name__)
+        logging.warning("admin: Google Books search unavailable (%s)", type(exc).__name__)
         return web.json_response(
-            {"error": "Open Library is unavailable. Try again shortly."},
+            {"error": "Google Books is unavailable. Try again shortly."},
             status=503,
             headers={"Retry-After": "5"},
         )
@@ -2947,7 +2949,7 @@ async def api_app_admin_book_search(request: web.Request) -> web.Response:
 
 @routes.post(r"/api/app/admin/item/{id:\d+}/book-metadata")
 async def api_app_admin_item_apply_book_metadata(request: web.Request) -> web.Response:
-    """Apply one explicit Open Library match to a book upload.
+    """Apply one explicit Google Books match to a book upload.
 
     The selected result is normalised again server-side. This avoids an
     implicit title match overwriting an admin's chosen edition/work.
@@ -2961,9 +2963,9 @@ async def api_app_admin_item_apply_book_metadata(request: web.Request) -> web.Re
         body = await request.json()
     except Exception:
         return web.json_response({"error": "invalid JSON"}, status=400)
-    candidate = openlibrary.normalise_search_doc(body.get("candidate") or {})
+    candidate = google_books.normalise_search_doc(body.get("candidate") or {})
     if candidate is None:
-        return web.json_response({"error": "Choose a valid Open Library result"}, status=400)
+        return web.json_response({"error": "Choose a valid Google Books result"}, status=400)
 
     async with media_index._lock:
         item.title = candidate["title"]
@@ -2974,7 +2976,7 @@ async def api_app_admin_item_apply_book_metadata(request: web.Request) -> web.Re
         item.book_publisher = candidate["publisher"]
         item.book_language = candidate["language"]
         item.book_page_count = candidate["pageCount"]
-        item.book_cover_url = openlibrary.cover_url(candidate["coverId"])
+        item.book_cover_url = candidate["coverUrl"]
         item.book_source_key = candidate["key"]
         item.book_subjects = candidate["subjects"]
         if candidate["description"]:

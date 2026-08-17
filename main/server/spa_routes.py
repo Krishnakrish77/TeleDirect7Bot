@@ -22,7 +22,7 @@ from urllib.parse import urlencode, urljoin
 from aiohttp import web
 
 from main.server.tmdb_images import tmdb_image_proxy, tmdb_image_url
-from main.server.openlibrary_images import cover_proxy_url, openlibrary_cover_proxy
+from main.server.google_books_images import google_books_cover_proxy
 from main.utils import codec_probe
 from main.utils import cw_store
 from main.utils import book_progress_store
@@ -262,9 +262,9 @@ async def api_tmdb_image_proxy(request: web.Request) -> web.Response:
     return await tmdb_image_proxy(request)
 
 
-@routes.get(r"/api/openlibrary-cover/{cover_id:\d+}")
-async def api_openlibrary_cover_proxy(request: web.Request) -> web.Response:
-    return await openlibrary_cover_proxy(request)
+@routes.get(r"/api/google-books-cover/{volume_id:[A-Za-z0-9_-]+}")
+async def api_google_books_cover_proxy(request: web.Request) -> web.Response:
+    return await google_books_cover_proxy(request)
 
 
 def _cache_get(key: str) -> str | None:
@@ -626,8 +626,8 @@ def _book_content_url(item: HubItem) -> str:
 
 
 def _book_cover_proxy_url(item: HubItem) -> str:
-    match = re.fullmatch(r"https?://covers\.openlibrary\.org/b/id/(\d+)-[A-Za-z]+\.jpg", item.book_cover_url or "")
-    return cover_proxy_url(match.group(1)) if match else ""
+    match = re.fullmatch(r"google-books:([A-Za-z0-9_-]{4,64})", item.book_cover_url or "")
+    return f"/api/google-books-cover/{match.group(1)}" if match else ""
 
 
 @routes.get(r"/book/{key:[A-Za-z0-9_-]+}/content", allow_head=True)

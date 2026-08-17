@@ -163,10 +163,12 @@ export interface BookProgress {
 
 export interface BookMetadataCandidate {
   key: string;
+  source?: string;
   title: string;
   authors: string[];
   year: number | null;
   coverId: number;
+  coverUrl?: string;
   isbn: string;
   publisher: string;
   language: string;
