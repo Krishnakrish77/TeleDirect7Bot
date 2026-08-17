@@ -26,7 +26,10 @@
     "@tailwindcss/vite": "4.3.3",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "epubjs": "0.3.93",
+    "jszip": "3.10.1",
     "lucide-react": "1.25.0",
+    "pdfjs-dist": "6.2.108",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "tailwind-merge": "3.6.0",
@@ -44,5 +47,11 @@
     "typescript": "5.9.2",
     "vite": "7.3.6",
     "vitest": "4.1.7"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "0.9.11",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.23",
+    "undici": "7.29.0"
   }
 }

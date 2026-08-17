@@ -1,6 +1,6 @@
 import { type ReactNode, type UIEvent, useEffect, useRef, useState } from 'react';
 import { fetchBookProgress, fetchBookReaderData, fetchBooks, saveBookProgress, saveBookReaderData } from '../api';
-import { BookOpenIcon, BookmarkIcon, DownloadIcon, ListIcon, ListPlusIcon, MoreVerticalIcon, PauseIcon, SearchIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon } from '../icons';
+import { BookOpenIcon, BookmarkIcon, DownloadIcon, ListIcon, ListPlusIcon, MoreVerticalIcon, PauseIcon, SearchIcon, VolumeIcon } from '../icons';
 import type { BookItem, BookProgressMap, User } from '../types';
 import { Button } from './ui/button';
 
@@ -11,18 +11,18 @@ type EpubRendition = { display: (target?: string | number) => Promise<unknown>; 
 type EpubSearchMatch = { cfi: string; excerpt?: string };
 type EpubSection = { load: () => Promise<Document>; find: (query: string) => EpubSearchMatch[]; unload?: () => void };
 type EpubBook = { renderTo: (element: HTMLElement, options: Record<string, unknown>) => EpubRendition; loaded?: { navigation?: Promise<{ toc?: EpubTocItem[] }> }; spine?: { each: (callback: (section: EpubSection) => void) => void }; destroy?: () => void; };
-type PdfViewport = { width: number; height: number };
+type PdfViewport = { width: number; height: number; scale: number; rotation: number; rawDims: { pageWidth: number; pageHeight: number; pageX: number; pageY: number } };
 type PdfPage = { getViewport: (params: { scale: number }) => PdfViewport; getTextContent: () => Promise<{ items: Array<{ str?: string }> }>; render: (params: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<unknown>; cancel?: () => void } };
 type PdfOutlineItem = { title: string; dest?: string | unknown[] | null; items?: PdfOutlineItem[] };
 type PdfDocument = { numPages: number; getPage: (page: number) => Promise<PdfPage>; getOutline?: () => Promise<PdfOutlineItem[] | null>; getDestination?: (name: string) => Promise<unknown[] | null>; getPageIndex?: (ref: unknown) => Promise<number>; destroy?: () => void };
-type PdfJs = { GlobalWorkerOptions: { workerSrc: string }; getDocument: (url: string) => { promise: Promise<PdfDocument>; destroy?: () => void } };
+type PdfJs = { GlobalWorkerOptions: { workerSrc: string }; getDocument: (source: string | { url: string }) => { promise: Promise<PdfDocument>; destroy?: () => void }; TextLayer?: new (params: { textContentSource: unknown; container: HTMLElement; viewport: PdfViewport }) => { render: () => Promise<unknown>; cancel?: () => void } };
 type JsZipEntry = { dir: boolean; async: (type: 'uint8array') => Promise<Uint8Array> };
 type JsZip = { files: Record<string, JsZipEntry>; file: (name: string, data: Uint8Array, options?: { compression?: 'STORE' | 'DEFLATE'; createFolders?: boolean }) => JsZip; generateAsync: (options: { type: 'arraybuffer'; compression: 'STORE' | 'DEFLATE' }) => Promise<ArrayBuffer> };
 type JsZipStatic = { new (): JsZip; loadAsync: (data: ArrayBuffer) => Promise<JsZip> };
-const EPUB_SCRIPT = 'https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js';
-const JSZIP_SCRIPT = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
-const PDFJS_SCRIPT = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let epubReader: NonNullable<Window['ePub']> | null = null;
+let zipReader: JsZipStatic | null = null;
+let epubReaderLoad: Promise<void> | null = null;
+let pdfReaderLoad: Promise<PdfJs> | null = null;
 const PROGRESS_KEY = 'td:book-progress';
 const BOOKMARKS_KEY = 'td:book-bookmarks';
 type BookBookmark = { locator: string; label: string; progress: number; t: number };
@@ -55,23 +55,24 @@ function localEpubPreferences(): EpubPreferences {
   } catch (_) { return DEFAULT_EPUB_PREFERENCES; }
 }
 function writeEpubPreferences(value: EpubPreferences) { try { localStorage.setItem(EPUB_PREFERENCES_KEY, JSON.stringify(value)); } catch (_) {} }
+function browserEpubReader() { return (window as unknown as { ePub?: NonNullable<Window['ePub']> }).ePub; }
+function browserZipReader() { return (window as unknown as { JSZip?: JsZipStatic }).JSZip; }
 function loadEpubReader(): Promise<void> {
-  if (window.ePub) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script'); script.src = EPUB_SCRIPT; script.async = true;
-    script.onload = () => window.ePub ? resolve() : reject(new Error('The EPUB reader did not start.'));
-    script.onerror = () => reject(new Error('Unable to load the EPUB reader. Check your connection and try again.'));
-    document.head.appendChild(script);
+  if (browserEpubReader() && browserZipReader()) return Promise.resolve();
+  if (!epubReaderLoad) epubReaderLoad = Promise.all([import('epubjs'), import('jszip')]).then(([epubModule, zipModule]) => {
+    epubReader = epubModule.default as unknown as NonNullable<Window['ePub']>;
+    zipReader = zipModule.default as unknown as JsZipStatic;
   });
+  return epubReaderLoad;
 }
-function loadZipRepair(): Promise<void> {
-  if (window.JSZip) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script'); script.src = JSZIP_SCRIPT; script.async = true;
-    script.onload = () => window.JSZip ? resolve() : reject(new Error('The EPUB compatibility reader did not start.'));
-    script.onerror = () => reject(new Error('Unable to load the EPUB compatibility reader. Check your connection and try again.'));
-    document.head.appendChild(script);
+function loadPdfReader(): Promise<PdfJs> {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (!pdfReaderLoad) pdfReaderLoad = Promise.all([import('pdfjs-dist/legacy/build/pdf.mjs'), import('pdfjs-dist/legacy/build/pdf.worker.mjs?url')]).then(([pdfModule, workerModule]) => {
+    const reader = pdfModule as unknown as PdfJs;
+    reader.GlobalWorkerOptions.workerSrc = workerModule.default;
+    return reader;
   });
+  return pdfReaderLoad;
 }
 async function epubSource(url: string): Promise<ArrayBuffer> {
   const response = await fetch(url);
@@ -81,13 +82,14 @@ async function epubSource(url: string): Promise<ArrayBuffer> {
   // first ZIP entry. Avoid loading JSZip and duplicating the whole book in
   // memory for the common case.
   if (hasStandardEpubMimetype(original)) return original;
-  if (!window.JSZip) throw new Error('The EPUB reader dependency did not load. Refresh and try again.');
-  const archive = await window.JSZip.loadAsync(original);
+  const zip = browserZipReader() || zipReader;
+  if (!zip) throw new Error('The EPUB reader dependency did not load. Refresh and try again.');
+  const archive = await zip.loadAsync(original);
   const mimetype = archive.files.mimetype;
   // EPUB readers in the wild are permissive about this, but epub.js is not:
   // rebuild the archive with an uncompressed `mimetype` entry first.
   if (!mimetype || mimetype.dir) return original;
-  const repaired = new window.JSZip();
+  const repaired = new zip();
   repaired.file('mimetype', await mimetype.async('uint8array'), { compression: 'STORE' });
   await Promise.all(Object.entries(archive.files).filter(([path, entry]) => path !== 'mimetype' && !entry.dir).map(async ([path, entry]) => {
     repaired.file(path, await entry.async('uint8array'), { compression: 'DEFLATE', createFolders: true });
@@ -120,16 +122,6 @@ function applyEpubTheme(rendition: EpubRendition, preferences: EpubPreferences) 
   rendition.themes?.register(themeName, { body: { background: `${palette.background} !important`, color: `${palette.color} !important`, 'font-family': `${preferences.fontFamily === 'serif' ? 'Georgia, Cambria, serif' : 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif'} !important`, 'font-size': `${preferences.fontSize}% !important`, 'line-height': `${preferences.lineHeight === 'relaxed' ? '1.8' : '1.5'} !important`, padding: `${preferences.margins === 'wide' ? '0 8%' : '0 3%'} !important`, 'box-sizing': 'border-box !important' }, p: { 'line-height': 'inherit !important' }, a: { color: `${palette.link} !important` } });
   rendition.themes?.select(themeName);
 }
-function loadPdfReader(): Promise<void> {
-  if (window.pdfjsLib) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script'); script.src = PDFJS_SCRIPT; script.async = true;
-    script.onload = () => window.pdfjsLib ? resolve() : reject(new Error('The PDF reader did not start.'));
-    script.onerror = () => reject(new Error('Unable to load the PDF reader. Check your connection and try again.'));
-    document.head.appendChild(script);
-  });
-}
-
 function PdfThumbnail({ document, pageNumber, selected, onSelect }: { document: PdfDocument; pageNumber: number; selected: boolean; onSelect: (page: number) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -150,10 +142,10 @@ function PdfThumbnail({ document, pageNumber, selected, onSelect }: { document: 
 export function BooksPage({ user }: { user: User | null }) {
   const [items, setItems] = useState<BookItem[]>([]); const [query, setQuery] = useState(''); const [debouncedQuery, setDebouncedQuery] = useState(''); const [selected, setSelected] = useState<BookItem | null>(null);
   const [formatFilter, setFormatFilter] = useState<BookFormatFilter>('all'); const [readingFilter, setReadingFilter] = useState<BookReadingFilter>('all'); const [subjectFilter, setSubjectFilter] = useState(''); const [bookSort, setBookSort] = useState<BookSort>('added'); const [bookIdFromUrl, setBookIdFromUrl] = useState(() => new URLSearchParams(window.location.search).get('book'));
-  const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [readerError, setReaderError] = useState(''); const [readerLoading, setReaderLoading] = useState(false); const [speaking, setSpeaking] = useState(false); const [keepControlsVisible, setKeepControlsVisible] = useState(false); const [epubPreferences, setEpubPreferences] = useState<EpubPreferences>(() => localEpubPreferences());
+  const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [readerError, setReaderError] = useState(''); const [readerLoading, setReaderLoading] = useState(false); const [readerAttempt, setReaderAttempt] = useState(0); const [speaking, setSpeaking] = useState(false); const [keepControlsVisible, setKeepControlsVisible] = useState(false); const [epubPreferences, setEpubPreferences] = useState<EpubPreferences>(() => localEpubPreferences());
   const [progress, setProgress] = useState<BookProgressMap>(() => localProgress());
-  const [bookmarks, setBookmarks] = useState<Record<string, BookBookmark[]>>(() => localBookmarks()); const [notes, setNotes] = useState<Record<string, BookNote[]>>(() => localNotes()); const [toc, setToc] = useState<EpubTocItem[]>([]); const [readerPanel, setReaderPanel] = useState<'contents' | 'bookmarks' | 'notes' | 'pages' | 'outline' | null>(null); const [readerMenuOpen, setReaderMenuOpen] = useState(false); const [findQuery, setFindQuery] = useState(''); const [findStatus, setFindStatus] = useState(''); const [epubSearchMatches, setEpubSearchMatches] = useState<EpubSearchMatch[]>([]); const [epubSearchIndex, setEpubSearchIndex] = useState(0); const [epubSearchBusy, setEpubSearchBusy] = useState(false); const [pdfSearchMatches, setPdfSearchMatches] = useState<number[]>([]); const [pdfSearchIndex, setPdfSearchIndex] = useState(0); const [speechRate, setSpeechRate] = useState(1); const [speechPaused, setSpeechPaused] = useState(false); const [speechPage, setSpeechPage] = useState<number | null>(null); const [sessionMinutes, setSessionMinutes] = useState(0); const [pdfPage, setPdfPage] = useState(1); const [pdfDocument, setPdfDocument] = useState<PdfDocument | null>(null); const [pdfPages, setPdfPages] = useState(0); const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[]>([]); const [pdfZoom, setPdfZoom] = useState<number | 'fit'>('fit'); const [pdfReaderWidth, setPdfReaderWidth] = useState(0); const [pdfSearchBusy, setPdfSearchBusy] = useState(false); const [pdfNoteDraft, setPdfNoteDraft] = useState(''); const [controlsVisible, setControlsVisible] = useState(true);
-  const epubRootRef = useRef<HTMLDivElement>(null); const epubBookRef = useRef<EpubBook | null>(null); const renditionRef = useRef<EpubRendition | null>(null); const pdfCanvasRef = useRef<HTMLCanvasElement>(null); const pdfRootRef = useRef<HTMLDivElement>(null); const gestureStart = useRef<{ x: number; y: number } | null>(null); const pdfScrollTopRef = useRef(0); const pdfPageTurnLockedRef = useRef(false); const pdfPendingScrollRef = useRef<'top' | 'bottom' | null>(null); const touchStartRef = useRef<{ x: number; y: number; scrollLeft: number; panning: boolean } | null>(null); const pdfPinchRef = useRef<{ distance: number; scale: number } | null>(null); const epubSearchTokenRef = useRef(0); const epubSearchHighlightRef = useRef<string | null>(null); const pdfSearchTokenRef = useRef(0); const pdfTextCacheRef = useRef(new Map<number, string>()); const speechTokenRef = useRef(0); const readerMenuOpenRef = useRef(false);
+  const [bookmarks, setBookmarks] = useState<Record<string, BookBookmark[]>>(() => localBookmarks()); const [notes, setNotes] = useState<Record<string, BookNote[]>>(() => localNotes()); const [toc, setToc] = useState<EpubTocItem[]>([]); const [readerPanel, setReaderPanel] = useState<'contents' | 'bookmarks' | 'notes' | 'pages' | 'outline' | null>(null); const [readerMenuOpen, setReaderMenuOpen] = useState(false); const [findQuery, setFindQuery] = useState(''); const [findStatus, setFindStatus] = useState(''); const [epubSearchMatches, setEpubSearchMatches] = useState<EpubSearchMatch[]>([]); const [epubSearchIndex, setEpubSearchIndex] = useState(0); const [epubSearchBusy, setEpubSearchBusy] = useState(false); const [pdfSearchMatches, setPdfSearchMatches] = useState<number[]>([]); const [pdfSearchIndex, setPdfSearchIndex] = useState(0); const [pdfHighlightQuery, setPdfHighlightQuery] = useState(''); const [speechRate, setSpeechRate] = useState(1); const [speechPaused, setSpeechPaused] = useState(false); const [speechPage, setSpeechPage] = useState<number | null>(null); const [sessionMinutes, setSessionMinutes] = useState(0); const [pdfPage, setPdfPage] = useState(1); const [pdfDocument, setPdfDocument] = useState<PdfDocument | null>(null); const [pdfPages, setPdfPages] = useState(0); const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[]>([]); const [pdfZoom, setPdfZoom] = useState<number | 'fit'>('fit'); const [pdfReaderWidth, setPdfReaderWidth] = useState(0); const [pdfSearchBusy, setPdfSearchBusy] = useState(false); const [pdfNoteDraft, setPdfNoteDraft] = useState(''); const [controlsVisible, setControlsVisible] = useState(true);
+  const epubRootRef = useRef<HTMLDivElement>(null); const epubBookRef = useRef<EpubBook | null>(null); const renditionRef = useRef<EpubRendition | null>(null); const pdfCanvasRef = useRef<HTMLCanvasElement>(null); const pdfTextLayerRef = useRef<HTMLDivElement>(null); const pdfRootRef = useRef<HTMLDivElement>(null); const pdfJsRef = useRef<PdfJs | null>(null); const gestureStart = useRef<{ x: number; y: number } | null>(null); const pdfScrollTopRef = useRef(0); const pdfPageTurnLockedRef = useRef(false); const pdfPendingScrollRef = useRef<'top' | 'bottom' | null>(null); const touchStartRef = useRef<{ x: number; y: number; scrollLeft: number; panning: boolean } | null>(null); const pdfPinchRef = useRef<{ distance: number; scale: number } | null>(null); const epubSearchTokenRef = useRef(0); const epubSearchHighlightRef = useRef<string | null>(null); const pdfSearchTokenRef = useRef(0); const pdfTextCacheRef = useRef(new Map<number, string>()); const speechTokenRef = useRef(0); const readerMenuOpenRef = useRef(false);
   const isEpub = selected?.format.toLowerCase() === 'epub';
 
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedQuery(query), 250); return () => window.clearTimeout(timer); }, [query]);
@@ -178,29 +170,52 @@ export function BooksPage({ user }: { user: User | null }) {
   useEffect(() => {
     if (!selected || !isEpub || !epubRootRef.current) return undefined;
     let cancelled = false; let book: EpubBook | null = null; let timeout = 0; const epubTouchCleanups: Array<() => void> = []; const boundEpubDocuments = new Set<Document>(); epubSearchTokenRef.current += 1; setEpubSearchMatches([]); setEpubSearchIndex(0); setReaderError(''); setReaderLoading(true); setToc([]); setReaderPanel(null); setReaderMenuOpen(false); setFindStatus('');
-    // epub.js captures JSZip when its script executes. Loading both scripts in
-    // parallel lets epub.js permanently capture an undefined dependency.
-    void loadZipRepair().then(loadEpubReader).then(() => epubSource(selected.readUrl)).then((source) => {
-      if (cancelled || !window.ePub || !epubRootRef.current) return;
-      epubRootRef.current.replaceChildren(); book = window.ePub(source, { openAs: 'binary' }); epubBookRef.current = book;
+    void loadEpubReader().then(() => epubSource(selected.readUrl)).then((source) => {
+      if (cancelled || !epubRootRef.current) return;
+      const ePub = browserEpubReader() || epubReader;
+      if (!ePub) throw new Error('The EPUB reader dependency did not load. Refresh and try again.');
+      epubRootRef.current.replaceChildren(); book = ePub(source, { openAs: 'binary' }); epubBookRef.current = book;
       void book.loaded?.navigation?.then((navigation) => { if (!cancelled) setToc(navigation.toc || []); });
       const rendition = book.renderTo(epubRootRef.current, { width: '100%', height: '100%', spread: 'none' }); renditionRef.current = rendition; applyEpubTheme(rendition, epubPreferences);
-      const bindEpubTouch = () => rendition.getContents?.().forEach((content) => { const doc = content.document; if (!doc || boundEpubDocuments.has(doc)) return; boundEpubDocuments.add(doc); let start: { x: number; y: number } | null = null; const showControls = () => { if (!readerMenuOpenRef.current) setControlsVisible(true); }; const onStart = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (touch) start = { x: touch.clientX, y: touch.clientY }; }; const onEnd = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (!start || !touch || readerMenuOpenRef.current) return; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; start = null; if (Math.abs(dx) < 56 || Math.abs(dy) > Math.abs(dx)) { showControls(); return; } setControlsVisible(true); void (dx < 0 ? rendition.next() : rendition.prev()); }; doc.addEventListener('click', showControls); doc.addEventListener('touchstart', onStart, { passive: true }); doc.addEventListener('touchend', onEnd, { passive: true }); epubTouchCleanups.push(() => { doc.removeEventListener('click', showControls); doc.removeEventListener('touchstart', onStart); doc.removeEventListener('touchend', onEnd); }); });
-      rendition.on?.('rendered', bindEpubTouch);
+      const labelEpubFrames = () => epubRootRef.current?.querySelectorAll('iframe').forEach((frame, index) => { frame.title = `${selected.title}, reading page ${index + 1}`; });
+      const bindEpubTouch = () => rendition.getContents?.().forEach((content) => {
+        const doc = content.document; if (!doc || boundEpubDocuments.has(doc)) return; boundEpubDocuments.add(doc);
+        let start: { x: number; y: number } | null = null; let skipClick = false;
+        const showControls = () => { if (!readerMenuOpenRef.current) setControlsVisible(true); };
+        const turnAtEdge = (x: number) => {
+          if (readerMenuOpenRef.current) return false;
+          const width = doc.documentElement.clientWidth || window.innerWidth;
+          if (x < width * .25) { setControlsVisible(true); void rendition.prev(); return true; }
+          if (x > width * .75) { setControlsVisible(true); void rendition.next(); return true; }
+          return false;
+        };
+        const onClick = (event: MouseEvent) => { if (skipClick) { skipClick = false; return; } if (!turnAtEdge(event.clientX)) showControls(); };
+        const onStart = (event: TouchEvent) => { const touch = event.changedTouches[0]; if (touch) start = { x: touch.clientX, y: touch.clientY }; };
+        const onEnd = (event: TouchEvent) => {
+          const touch = event.changedTouches[0]; if (!start || !touch || readerMenuOpenRef.current) return;
+          const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; start = null; skipClick = true;
+          if (Math.abs(dx) >= 56 && Math.abs(dy) <= Math.abs(dx)) { setControlsVisible(true); void (dx < 0 ? rendition.next() : rendition.prev()); return; }
+          if (Math.abs(dy) <= 28 && turnAtEdge(touch.clientX)) return;
+          showControls();
+        };
+        doc.addEventListener('click', onClick); doc.addEventListener('touchstart', onStart, { passive: true }); doc.addEventListener('touchend', onEnd, { passive: true });
+        epubTouchCleanups.push(() => { doc.removeEventListener('click', onClick); doc.removeEventListener('touchstart', onStart); doc.removeEventListener('touchend', onEnd); });
+      });
+      rendition.on?.('rendered', () => { bindEpubTouch(); labelEpubFrames(); });
       rendition.on?.('relocated', (location) => { const start = location.start; if (start?.cfi) saveProgress(selected, start.cfi, start.percentage || 0); });
       timeout = window.setTimeout(() => { if (!cancelled) { setReaderLoading(false); setReaderError('This EPUB is taking too long to open. Try downloading it and check that the file is a valid EPUB.'); } }, 12_000);
-      return rendition.display(progress[selected.id]?.locator || undefined).then((result) => { window.clearTimeout(timeout); if (!cancelled) { setReaderLoading(false); setReaderError(''); } bindEpubTouch(); return result; });
+      return rendition.display(progress[selected.id]?.locator || undefined).then((result) => { window.clearTimeout(timeout); if (!cancelled) { setReaderLoading(false); setReaderError(''); } bindEpubTouch(); labelEpubFrames(); return result; });
     }).catch((err: unknown) => { if (!cancelled) { setReaderLoading(false); setReaderError(err instanceof Error ? err.message : 'This EPUB could not be opened.'); } });
     return () => { cancelled = true; epubSearchTokenRef.current += 1; const highlighted = epubSearchHighlightRef.current; if (highlighted) renditionRef.current?.annotations?.remove?.(highlighted, 'highlight'); epubSearchHighlightRef.current = null; window.clearTimeout(timeout); epubTouchCleanups.forEach((cleanup) => cleanup()); renditionRef.current?.destroy?.(); renditionRef.current = null; epubBookRef.current = null; book?.destroy?.(); };
-  }, [isEpub, selected]);
+  }, [isEpub, selected, readerAttempt]);
   useEffect(() => { if (isEpub && renditionRef.current) applyEpubTheme(renditionRef.current, epubPreferences); }, [isEpub, epubPreferences]);
   useEffect(() => {
     if (!selected || isEpub) return undefined;
     let cancelled = false; let task: { promise: Promise<PdfDocument>; destroy?: () => void } | null = null; pdfSearchTokenRef.current += 1; pdfTextCacheRef.current.clear(); setPdfSearchMatches([]); setPdfSearchIndex(0); setPdfDocument(null); setPdfPages(0); setPdfOutline([]); setReaderError(''); setReaderLoading(true);
-    void loadPdfReader().then(async () => {
-      if (!window.pdfjsLib || cancelled) return;
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
-      task = window.pdfjsLib.getDocument(selected.readUrl);
+    void loadPdfReader().then(async (pdfjs) => {
+      if (cancelled) return;
+      pdfJsRef.current = pdfjs;
+      task = pdfjs.getDocument({ url: selected.readUrl });
       const document = await task.promise;
       if (cancelled) { document.destroy?.(); return; }
       setPdfPages(document.numPages); setPdfDocument(document); setReaderLoading(false); void document.getOutline?.().then((outline) => { if (!cancelled) setPdfOutline(outline || []); }).catch(() => undefined);
@@ -208,7 +223,7 @@ export function BooksPage({ user }: { user: User | null }) {
       if (restored > 0) setPdfPage(Math.min(restored, document.numPages));
     }).catch((err: unknown) => { if (!cancelled) { setReaderLoading(false); setReaderError(err instanceof Error ? err.message : 'This PDF could not be opened.'); } });
     return () => { cancelled = true; task?.destroy?.(); };
-  }, [isEpub, selected]);
+  }, [isEpub, selected, readerAttempt]);
   useEffect(() => {
     if (!selected || isEpub || !pdfRootRef.current) return undefined;
     const root = pdfRootRef.current; const updateWidth = () => setPdfReaderWidth(root.clientWidth); updateWidth(); if (!('ResizeObserver' in window)) return undefined;
@@ -217,14 +232,25 @@ export function BooksPage({ user }: { user: User | null }) {
   }, [isEpub, selected]);
   useEffect(() => {
     if (!pdfDocument || !pdfCanvasRef.current) return;
-    let cancelled = false; let renderTask: { promise: Promise<unknown>; cancel?: () => void } | null = null;
+    let cancelled = false; let renderTask: { promise: Promise<unknown>; cancel?: () => void } | null = null; let textTask: { render: () => Promise<unknown>; cancel?: () => void } | null = null;
     void pdfDocument.getPage(Math.max(1, Math.min(pdfPage, pdfDocument.numPages))).then((page) => {
       if (cancelled || !pdfCanvasRef.current) return;
       const baseViewport = page.getViewport({ scale: 1 }); const fitScale = pdfReaderWidth ? Math.max(.5, (pdfReaderWidth - 32) / baseViewport.width) : 1.15; const displayScale = pdfZoom === 'fit' ? fitScale : pdfZoom; const deviceScale = Math.min(window.devicePixelRatio || 1, 2); const viewport = page.getViewport({ scale: displayScale * deviceScale }); const displayViewport = page.getViewport({ scale: displayScale }); const canvas = pdfCanvasRef.current; const context = canvas.getContext('2d');
       if (!context) return;
       canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height); canvas.style.width = `${Math.ceil(displayViewport.width)}px`; canvas.style.height = `${Math.ceil(displayViewport.height)}px`;
       renderTask = page.render({ canvasContext: context, viewport });
-      return renderTask.promise;
+      const textLayer = pdfTextLayerRef.current; const TextLayer = pdfJsRef.current?.TextLayer;
+      if (!textLayer || !TextLayer) return renderTask.promise;
+      textLayer.replaceChildren(); textLayer.style.width = `${Math.ceil(displayViewport.width)}px`; textLayer.style.height = `${Math.ceil(displayViewport.height)}px`;
+      return page.getTextContent().then((textContent) => {
+        pdfTextCacheRef.current.set(pdfPage, textContent.items.map((item) => item.str || '').join(' ').toLocaleLowerCase());
+        if (cancelled) return renderTask?.promise;
+        textTask = new TextLayer({ textContentSource: textContent, container: textLayer, viewport: displayViewport });
+        return Promise.all([renderTask?.promise, textTask.render()]).then(() => {
+          const query = pdfHighlightQuery;
+          if (query) textLayer.querySelectorAll('span').forEach((span) => span.classList.toggle('is-search-hit', (span.textContent || '').toLocaleLowerCase().includes(query)));
+        });
+      });
     }).then(() => {
       if (cancelled || !pdfPendingScrollRef.current || !pdfRootRef.current) return;
       const position = pdfPendingScrollRef.current; pdfPendingScrollRef.current = null;
@@ -236,8 +262,8 @@ export function BooksPage({ user }: { user: User | null }) {
         pdfPageTurnLockedRef.current = false;
       });
     }).catch((err: unknown) => { if (!cancelled) setReaderError(err instanceof Error ? err.message : 'Could not render this PDF page.'); });
-    return () => { cancelled = true; renderTask?.cancel?.(); };
-  }, [pdfDocument, pdfPage, pdfReaderWidth, pdfZoom]);
+    return () => { cancelled = true; renderTask?.cancel?.(); textTask?.cancel?.(); };
+  }, [pdfDocument, pdfPage, pdfReaderWidth, pdfZoom, pdfHighlightQuery]);
 
   const stopSpeech = () => { speechTokenRef.current += 1; window.speechSynthesis?.cancel(); setSpeaking(false); setSpeechPaused(false); setSpeechPage(null); };
   const playSpeech = (chunks: string[], page: number | null, onComplete?: () => void) => {
@@ -278,11 +304,11 @@ export function BooksPage({ user }: { user: User | null }) {
   const onPdfScroll = (event: UIEvent<HTMLDivElement>) => { const root = event.currentTarget; const current = root.scrollTop; const direction = current - pdfScrollTopRef.current; pdfScrollTopRef.current = current; if (pdfPageTurnLockedRef.current || Math.abs(direction) < 2 || root.scrollHeight <= root.clientHeight + 4) return; if (direction > 0 && current + root.clientHeight >= root.scrollHeight - 28 && (!pdfPages || pdfPage < pdfPages)) { pdfPageTurnLockedRef.current = true; changePdfPage(pdfPage + 1, 'top'); } else if (direction < 0 && current <= 2 && pdfPage > 1) { pdfPageTurnLockedRef.current = true; changePdfPage(pdfPage - 1, 'bottom'); } };
   useEffect(() => { if (!selected || isEpub || !pdfRootRef.current) return undefined; const root = pdfRootRef.current; const touchStart = (event: TouchEvent) => { if (event.touches.length === 2) { const [first, second] = Array.from(event.touches); pdfPinchRef.current = { distance: Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY), scale: typeof pdfZoom === 'number' ? pdfZoom : 1.2 }; return; } const touch = event.changedTouches[0]; if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY, scrollLeft: root.scrollLeft, panning: false }; }; const touchMove = (event: TouchEvent) => { const pinch = pdfPinchRef.current; if (pinch && event.touches.length === 2) { const [first, second] = Array.from(event.touches); const distance = Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY); if (!distance) return; event.preventDefault(); setPdfZoom(Math.max(.6, Math.min(2.5, pinch.scale * distance / pinch.distance))); return; } const start = touchStartRef.current; const touch = event.touches[0]; if (!start || !touch || readerMenuOpen || root.scrollWidth <= root.clientWidth + 4) return; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; if (Math.abs(dx) < 4 || Math.abs(dx) <= Math.abs(dy)) return; event.preventDefault(); start.panning = true; root.scrollLeft = Math.max(0, Math.min(root.scrollWidth - root.clientWidth, start.scrollLeft - dx)); }; const touchEnd = (event: TouchEvent) => { if (pdfPinchRef.current) { if (event.touches.length < 2) pdfPinchRef.current = null; return; } const start = touchStartRef.current; touchStartRef.current = null; const touch = event.changedTouches[0]; if (!start || !touch || readerMenuOpen) return; if (start.panning) { setControlsVisible(true); return; } const dx = touch.clientX - start.x; if (Math.abs(dx) < 56 || Math.abs(touch.clientY - start.y) > Math.abs(dx)) { setControlsVisible(true); return; } setControlsVisible(true); changePdfPage(pdfPage + (dx < 0 ? 1 : -1), dx < 0 ? 'top' : 'bottom'); }; root.addEventListener('touchstart', touchStart, { passive: true }); root.addEventListener('touchmove', touchMove, { passive: false }); root.addEventListener('touchend', touchEnd, { passive: true }); return () => { root.removeEventListener('touchstart', touchStart); root.removeEventListener('touchmove', touchMove); root.removeEventListener('touchend', touchEnd); }; }, [selected, isEpub, pdfPage, pdfPages, pdfZoom, readerMenuOpen]);
   useEffect(() => { if (!selected) return undefined; const onKey = (event: KeyboardEvent) => { setControlsVisible(true); if ((event.target as HTMLElement)?.tagName === 'INPUT') return; if (event.key === 'ArrowLeft') { event.preventDefault(); turnPage(-1); } if (event.key === 'ArrowRight') { event.preventDefault(); turnPage(1); } if (event.key === 'Escape') { setReaderMenuOpen(false); setReaderPanel(null); setControlsVisible(false); } }; window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey); }, [selected, isEpub, pdfPage]);
-  useEffect(() => { if (!selected) return undefined; const down = (event: PointerEvent) => { const target = event.target as HTMLElement | null; if (!target?.closest('.books-reader')) return; gestureStart.current = { x: event.clientX, y: event.clientY }; }; const up = (event: PointerEvent) => { const target = event.target as HTMLElement | null; const start = gestureStart.current; gestureStart.current = null; if (!start || !target?.closest('.books-reader') || readerMenuOpen) return; if (!isEpub && event.pointerType === 'touch' && (pdfRootRef.current?.scrollWidth || 0) > (pdfRootRef.current?.clientWidth || 0) + 4) return; const dx = event.clientX - start.x; if (Math.abs(dx) > 52) { turnPage(dx < 0 ? 1 : -1); return; } if (Math.abs(event.clientY - start.y) > 28) return; if (controlsVisible) { setControlsVisible(false); return; } if (event.clientX < window.innerWidth * .25) turnPage(-1); else if (event.clientX > window.innerWidth * .75) turnPage(1); else setControlsVisible(true); }; window.addEventListener('pointerdown', down); window.addEventListener('pointerup', up); return () => { window.removeEventListener('pointerdown', down); window.removeEventListener('pointerup', up); }; }, [selected, controlsVisible, readerMenuOpen, isEpub, pdfPage]);
+  useEffect(() => { if (!selected) return undefined; const down = (event: PointerEvent) => { const target = event.target as HTMLElement | null; if (!target?.closest('.books-reader')) return; gestureStart.current = { x: event.clientX, y: event.clientY }; }; const up = (event: PointerEvent) => { const target = event.target as HTMLElement | null; const start = gestureStart.current; gestureStart.current = null; if (!start || !target?.closest('.books-reader') || readerMenuOpen) return; if (window.getSelection()?.toString()) { setControlsVisible(true); return; } if (!isEpub && event.pointerType === 'touch' && (pdfRootRef.current?.scrollWidth || 0) > (pdfRootRef.current?.clientWidth || 0) + 4) return; const dx = event.clientX - start.x; if (Math.abs(dx) > 52) { turnPage(dx < 0 ? 1 : -1); return; } if (Math.abs(event.clientY - start.y) > 28) return; if (controlsVisible) { setControlsVisible(false); return; } if (event.clientX < window.innerWidth * .25) turnPage(-1); else if (event.clientX > window.innerWidth * .75) turnPage(1); else setControlsVisible(true); }; window.addEventListener('pointerdown', down); window.addEventListener('pointerup', up); return () => { window.removeEventListener('pointerdown', down); window.removeEventListener('pointerup', up); }; }, [selected, controlsVisible, readerMenuOpen, isEpub, pdfPage]);
   const addBookmark = () => { if (!selected) return; const current = isEpub ? progress[selected.id] : { locator: `page:${pdfPage}`, progress: pdfPages ? pdfPage / pdfPages : 0, t: Date.now() }; if (!current?.locator) { setReaderError('Open a page before saving a bookmark.'); return; } const label = isEpub ? `${Math.round(current.progress * 100)}% through` : `Page ${pdfPage}`; const bookEntries = [{ locator: current.locator, label, progress: current.progress, t: Date.now() }, ...(bookmarks[selected.id] || []).filter((entry) => entry.locator !== current.locator)].slice(0, 30); const next = { ...bookmarks, [selected.id]: bookEntries }; setBookmarks(next); writeBookmarks(next); if (user) void saveBookReaderData(selected.id, { bookmarks: bookEntries, notes: notes[selected.id] || [] }).catch(() => undefined); setReaderPanel('bookmarks'); };
   const addNote = () => { if (!selected) return; const text = isEpub ? window.getSelection()?.toString().trim() || renditionRef.current?.getContents?.().map((entry) => entry.document?.getSelection()?.toString().trim() || '').find(Boolean) || '' : pdfNoteDraft.trim(); if (!text) { setReaderError(isEpub ? 'Select text in the open chapter before adding a note.' : 'Write a note for this page first.'); return; } const noteEntries = [{ text: text.slice(0, 1200), progress: isEpub ? progress[selected.id]?.progress || 0 : pdfPages ? pdfPage / pdfPages : 0, t: Date.now() }, ...(notes[selected.id] || [])].slice(0, 50); const next = { ...notes, [selected.id]: noteEntries }; setNotes(next); writeNotes(next); if (user) void saveBookReaderData(selected.id, { bookmarks: bookmarks[selected.id] || [], notes: noteEntries }).catch(() => undefined); setPdfNoteDraft(''); setReaderPanel('notes'); };
   const openPdfSearchMatch = (index: number) => { if (!pdfSearchMatches.length) return; const next = (index + pdfSearchMatches.length) % pdfSearchMatches.length; const page = pdfSearchMatches[next]; setPdfSearchIndex(next); changePdfPage(page); setFindStatus(`${next + 1} of ${pdfSearchMatches.length} matching page${pdfSearchMatches.length === 1 ? '' : 's'} · page ${page}`); };
-  const findPdf = () => { const query = findQuery.trim().toLocaleLowerCase(); if (!query) { setFindStatus('Enter text to search this PDF.'); return; } if (!pdfDocument) return; const token = pdfSearchTokenRef.current + 1; pdfSearchTokenRef.current = token; setPdfSearchBusy(true); setPdfSearchMatches([]); setPdfSearchIndex(0); setFindStatus('Searching this PDF…'); void (async () => { const matches: number[] = []; let nextPage = 1; const readPage = async () => { while (nextPage <= pdfDocument.numPages) { const page = nextPage; nextPage += 1; let text = pdfTextCacheRef.current.get(page); if (text === undefined) { const content = await pdfDocument.getPage(page).then((entry) => entry.getTextContent()); text = content.items.map((item) => item.str || '').join(' ').toLocaleLowerCase(); pdfTextCacheRef.current.set(page, text); } if (text.includes(query)) matches.push(page); if (token !== pdfSearchTokenRef.current) return; } }; await Promise.all(Array.from({ length: Math.min(6, pdfDocument.numPages) }, readPage)); if (token !== pdfSearchTokenRef.current) return; matches.sort((left, right) => left - right); if (matches.length) { setPdfSearchMatches(matches); setPdfSearchIndex(0); changePdfPage(matches[0]); setFindStatus(`1 of ${matches.length} matching page${matches.length === 1 ? '' : 's'} · page ${matches[0]}`); } else setFindStatus('No matches in this PDF.'); })().catch(() => { if (token === pdfSearchTokenRef.current) setFindStatus('Unable to search this PDF.'); }).finally(() => { if (token === pdfSearchTokenRef.current) setPdfSearchBusy(false); }); };
+  const findPdf = () => { const query = findQuery.trim().toLocaleLowerCase(); if (!query) { setFindStatus('Enter text to search this PDF.'); return; } if (!pdfDocument) return; const token = pdfSearchTokenRef.current + 1; pdfSearchTokenRef.current = token; setPdfSearchBusy(true); setPdfSearchMatches([]); setPdfSearchIndex(0); setPdfHighlightQuery(''); setFindStatus('Searching this PDF…'); void (async () => { const matches: number[] = []; let nextPage = 1; const readPage = async () => { while (nextPage <= pdfDocument.numPages) { const page = nextPage; nextPage += 1; let text = pdfTextCacheRef.current.get(page); if (text === undefined) { const content = await pdfDocument.getPage(page).then((entry) => entry.getTextContent()); text = content.items.map((item) => item.str || '').join(' ').toLocaleLowerCase(); pdfTextCacheRef.current.set(page, text); } if (text.includes(query)) matches.push(page); if (token !== pdfSearchTokenRef.current) return; } }; await Promise.all(Array.from({ length: Math.min(6, pdfDocument.numPages) }, readPage)); if (token !== pdfSearchTokenRef.current) return; matches.sort((left, right) => left - right); if (matches.length) { setPdfSearchMatches(matches); setPdfSearchIndex(0); setPdfHighlightQuery(query); changePdfPage(matches[0]); setFindStatus(`1 of ${matches.length} matching page${matches.length === 1 ? '' : 's'} · page ${matches[0]}`); } else setFindStatus('No matches in this PDF.'); })().catch(() => { if (token === pdfSearchTokenRef.current) setFindStatus('Unable to search this PDF.'); }).finally(() => { if (token === pdfSearchTokenRef.current) setPdfSearchBusy(false); }); };
   const clearEpubSearchHighlight = () => { const highlighted = epubSearchHighlightRef.current; if (highlighted) renditionRef.current?.annotations?.remove?.(highlighted, 'highlight'); epubSearchHighlightRef.current = null; };
   const showEpubSearchMatch = (match: EpubSearchMatch) => { const rendition = renditionRef.current; if (!rendition) return; clearEpubSearchHighlight(); epubSearchHighlightRef.current = match.cfi; void rendition.display(match.cfi).then(() => { if (epubSearchHighlightRef.current !== match.cfi || renditionRef.current !== rendition) return; rendition.annotations?.highlight(match.cfi, undefined, undefined, 'td-epub-search-result', { fill: '#facc15', 'fill-opacity': '.48', 'mix-blend-mode': 'multiply' }); }).catch(() => { if (epubSearchHighlightRef.current === match.cfi) epubSearchHighlightRef.current = null; }); };
   const openEpubSearchMatch = (index: number) => { if (!epubSearchMatches.length) return; const next = (index + epubSearchMatches.length) % epubSearchMatches.length; const match = epubSearchMatches[next]; setEpubSearchIndex(next); showEpubSearchMatch(match); setFindStatus(`${next + 1} of ${epubSearchMatches.length} matches${match.excerpt ? ` · ${match.excerpt}` : ''}`); };
@@ -302,7 +328,7 @@ export function BooksPage({ user }: { user: User | null }) {
     return 0;
   });
   const continueBooks = visibleBooks.filter((book) => { const value = progress[book.id]?.progress || 0; return value > 0 && value < .98; }).sort((left, right) => (progress[right.id]?.t || 0) - (progress[left.id]?.t || 0)).slice(0, 6);
-  const bookCard = (book: BookItem) => <article className="book-card" key={book.id} role="button" tabIndex={0} onClick={() => openBook(book)} onKeyDown={(event) => { if (event.currentTarget !== event.target) return; if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openBook(book); } }}><span className="book-cover book-cover-image">{book.coverUrl && <img src={book.coverUrl} alt="" loading="lazy" decoding="async" onError={(event) => { event.currentTarget.hidden = true; }} />}<BookOpenIcon /><small>{book.format}</small></span><div><p className="eyebrow">{book.format} · {book.fileSizeLabel}{progress[book.id]?.progress ? ` · ${Math.round(progress[book.id].progress * 100)}% read` : ''}</p><h2>{book.title}</h2>{book.authors.length > 0 && <p className="book-author">{book.authors.join(', ')}</p>}<p>{bookSummary(book)}</p></div></article>;
+  const bookCard = (book: BookItem) => <button type="button" className="book-card" key={book.id} onClick={() => openBook(book)}><span className="book-cover book-cover-image">{book.coverUrl && <img src={book.coverUrl} alt="" loading="lazy" decoding="async" onError={(event) => { event.currentTarget.hidden = true; }} />}<BookOpenIcon /><small>{book.format}</small></span><span><span className="eyebrow">{book.format} · {book.fileSizeLabel}{progress[book.id]?.progress ? ` · ${Math.round(progress[book.id].progress * 100)}% read` : ''}</span><strong className="book-card-title">{book.title}</strong>{book.authors.length > 0 && <span className="book-author">{book.authors.join(', ')}</span>}<span className="book-card-summary">{bookSummary(book)}</span></span></button>;
 
   if (selected) return (
     <main className="books-reader-page" onFocusCapture={() => setControlsVisible(true)}>
@@ -347,12 +373,10 @@ export function BooksPage({ user }: { user: User | null }) {
             <p className="books-reader-menu-section-label">Read aloud</p>
             <div className="books-reader-speech-actions">
               <Button variant="secondary" size="sm" onClick={() => speakPdfPage(pdfPage)}>{speaking && speechPage === pdfPage ? <PauseIcon /> : <VolumeIcon />}{speaking && speechPage === pdfPage ? (speechPaused ? 'Resume page' : 'Pause reading') : 'Read from here'}</Button>
-              <Button variant="secondary" size="sm" disabled={pdfPage <= 1} onClick={() => speakPdfPage(pdfPage - 1)}><SkipBackIcon />Previous page</Button>
-              <Button variant="secondary" size="sm" disabled={Boolean(pdfPages && pdfPage >= pdfPages)} onClick={() => speakPdfPage(pdfPage + 1)}><SkipForwardIcon />Next page</Button>
             </div>
             {speechPage !== null && <p className="books-reader-speech-status">{speechPaused ? 'Paused' : 'Reading'} page {speechPage}</p>}
             <label className="books-reader-menu-rate">Go to page<input type="number" min="1" max={pdfPages || undefined} value={pdfPage} onChange={(event) => changePdfPage(Number(event.currentTarget.value))} /></label>
-            <label className="books-reader-find"><SearchIcon /><input value={findQuery} onChange={(event) => { setFindQuery(event.currentTarget.value); setPdfSearchMatches([]); setPdfSearchIndex(0); }} onKeyDown={(event) => { if (event.key === 'Enter') findPdf(); }} placeholder="Search this PDF" /><Button variant="secondary" size="sm" disabled={pdfSearchBusy} onClick={findPdf}>{pdfSearchBusy ? 'Searching…' : 'Search'}</Button>{pdfSearchMatches.length > 1 && <span className="books-reader-find-results"><Button variant="secondary" size="sm" aria-label="Previous search result" onClick={() => openPdfSearchMatch(pdfSearchIndex - 1)}>Previous</Button><Button variant="secondary" size="sm" aria-label="Next search result" onClick={() => openPdfSearchMatch(pdfSearchIndex + 1)}>Next</Button></span>}{findStatus && <small aria-live="polite">{findStatus}</small>}</label>
+            <label className="books-reader-find"><SearchIcon /><input value={findQuery} onChange={(event) => { setFindQuery(event.currentTarget.value); setPdfSearchMatches([]); setPdfSearchIndex(0); setPdfHighlightQuery(''); }} onKeyDown={(event) => { if (event.key === 'Enter') findPdf(); }} placeholder="Search this PDF" /><Button variant="secondary" size="sm" disabled={pdfSearchBusy} onClick={findPdf}>{pdfSearchBusy ? 'Searching…' : 'Search'}</Button>{pdfSearchMatches.length > 1 && <span className="books-reader-find-results"><Button variant="secondary" size="sm" aria-label="Previous search result" onClick={() => openPdfSearchMatch(pdfSearchIndex - 1)}>Previous</Button><Button variant="secondary" size="sm" aria-label="Next search result" onClick={() => openPdfSearchMatch(pdfSearchIndex + 1)}>Next</Button></span>}{findStatus && <small aria-live="polite">{findStatus}</small>}</label>
             <label className="books-reader-note-draft">Note for page {pdfPage}<textarea value={pdfNoteDraft} maxLength={1200} onChange={(event) => setPdfNoteDraft(event.currentTarget.value)} placeholder="Write a private note" /></label>
             <a className="books-reader-download" href={selected.downloadUrl}><DownloadIcon /> Download original PDF</a>
           </>}
@@ -361,9 +385,9 @@ export function BooksPage({ user }: { user: User | null }) {
         </aside>}
 
         {readerLoading && <p className="books-reader-loading" role="status">Opening {isEpub ? 'EPUB' : 'PDF'}…</p>}
-        {readerError && <p className="books-reader-error" role="alert">{readerError}</p>}
+        {readerError && <div className="books-reader-error" role="alert"><span>{readerError}</span><Button variant="secondary" size="sm" onClick={() => { setReaderError(''); setReaderAttempt((attempt) => attempt + 1); }}>Retry reader</Button></div>}
         <div className="books-reader">
-          {isEpub ? <div ref={epubRootRef} className={`epub-reader epub-reader-${epubPreferences.theme}`} aria-label={`${selected.title} reader`} /> : <div ref={pdfRootRef} className="pdf-reader" onScroll={onPdfScroll}><canvas ref={pdfCanvasRef} aria-label={`${selected.title} PDF page ${pdfPage}`} /></div>}
+          {isEpub ? <div ref={epubRootRef} className={`epub-reader epub-reader-${epubPreferences.theme}`} role="region" aria-label={`${selected.title} reader`} /> : <div ref={pdfRootRef} className="pdf-reader" onScroll={onPdfScroll}><div className="pdf-page"><canvas ref={pdfCanvasRef} aria-label={`${selected.title} PDF page ${pdfPage}`} /><div ref={pdfTextLayerRef} className="pdf-text-layer" aria-hidden="true" /></div></div>}
         </div>
         <p className="books-reader-reveal-hint" aria-hidden="true">Tap the centre for controls · swipe or tap an edge to turn pages</p>
         {!isEpub && <nav className="books-reader-pagination" aria-label="PDF page navigation">
@@ -375,5 +399,5 @@ export function BooksPage({ user }: { user: User | null }) {
       </section>
     </main>
   );
-  return <main className="hub-main books-page"><section className="books-hero"><div><p className="eyebrow">Library books</p><h1>Your reading library.</h1><p>Browse and read available PDFs and EPUBs from one comfortable place.</p></div></section><div className="books-library-controls"><label className="books-search"><SearchIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search books" /></label><div className="books-filter-row" aria-label="Book library controls"><label>Format<select value={formatFilter} onChange={(event) => setFormatFilter(event.target.value as BookFormatFilter)}><option value="all">All formats</option><option value="pdf">PDF</option><option value="epub">EPUB</option></select></label><label>Reading<select value={readingFilter} onChange={(event) => setReadingFilter(event.target.value as BookReadingFilter)}><option value="all">All books</option><option value="reading">In progress</option><option value="unread">Unread</option><option value="finished">Finished</option></select></label><label>Sort<select value={bookSort} onChange={(event) => setBookSort(event.target.value as BookSort)}><option value="added">Recently added</option><option value="progress">Recently read</option><option value="title">Title</option><option value="author">Author</option></select></label></div></div>{subjectOptions.length > 0 && <section className="books-topic-filter" aria-label="Browse books by topic"><span>Browse topics</span><div><button type="button" className={!subjectFilter ? 'is-active' : ''} aria-pressed={!subjectFilter} onClick={() => setSubjectFilter('')}>All topics</button>{subjectOptions.map(([subject, count]) => <button key={subject} type="button" className={subjectFilter === subject ? 'is-active' : ''} aria-label={`${subject}, ${count} ${count === 1 ? 'book' : 'books'}`} aria-pressed={subjectFilter === subject} onClick={() => setSubjectFilter(subject)}>{subject}<small aria-hidden="true">{count}</small></button>)}</div></section>}{loading ? <p className="books-state">Loading books…</p> : error ? <p className="books-reader-error">{error}</p> : items.length ? <>{continueBooks.length > 0 && <section className="books-continue" aria-labelledby="continue-reading-title"><div><p className="eyebrow">Pick up where you left off</p><h2 id="continue-reading-title">Continue reading</h2></div><div className="books-continue-grid">{continueBooks.map(bookCard)}</div></section>}{visibleBooks.length ? <section aria-label="Books"><div className="books-library-heading"><h2>{continueBooks.length ? 'All books' : 'Books'}</h2><span>{visibleBooks.length} {visibleBooks.length === 1 ? 'book' : 'books'}</span></div><div className="books-grid">{visibleBooks.map(bookCard)}</div></section> : <section className="books-dropzone books-empty"><BookOpenIcon /><strong>No books match these filters</strong><span>Try another format, reading state, or topic.</span><Button variant="secondary" size="sm" onClick={() => { setFormatFilter('all'); setReadingFilter('all'); setSubjectFilter(''); setBookSort('added'); }}>Reset filters</Button></section>}</> : <section className="books-dropzone books-empty"><BookOpenIcon /><strong>{query.trim() ? `No books match “${query.trim()}”` : 'No books in your library yet'}</strong><span>{query.trim() ? 'Try another title, author, or filename.' : 'Check back soon for new titles to read.'}</span>{query.trim() && <Button variant="secondary" size="sm" onClick={() => setQuery('')}>Clear search</Button>}</section>}</main>;
+  return <main className="hub-main books-page"><section className="books-hero"><div><p className="eyebrow">Library books</p><h1>Your reading library.</h1><p>Browse and read available PDFs and EPUBs from one comfortable place.</p></div></section><div className="books-library-controls"><label className="books-search"><SearchIcon /><input aria-label="Search books" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search books" /></label><div className="books-filter-row" aria-label="Book library controls"><label>Format<select value={formatFilter} onChange={(event) => setFormatFilter(event.target.value as BookFormatFilter)}><option value="all">All formats</option><option value="pdf">PDF</option><option value="epub">EPUB</option></select></label><label>Reading<select value={readingFilter} onChange={(event) => setReadingFilter(event.target.value as BookReadingFilter)}><option value="all">All books</option><option value="reading">In progress</option><option value="unread">Unread</option><option value="finished">Finished</option></select></label><label>Sort<select value={bookSort} onChange={(event) => setBookSort(event.target.value as BookSort)}><option value="added">Recently added</option><option value="progress">Recently read</option><option value="title">Title</option><option value="author">Author</option></select></label></div></div>{subjectOptions.length > 0 && <section className="books-topic-filter" aria-label="Browse books by topic"><span>Browse topics</span><div><button type="button" className={!subjectFilter ? 'is-active' : ''} aria-pressed={!subjectFilter} onClick={() => setSubjectFilter('')}>All topics</button>{subjectOptions.map(([subject, count]) => <button key={subject} type="button" className={subjectFilter === subject ? 'is-active' : ''} aria-label={`${subject}, ${count} ${count === 1 ? 'book' : 'books'}`} aria-pressed={subjectFilter === subject} onClick={() => setSubjectFilter(subject)}>{subject}<small aria-hidden="true">{count}</small></button>)}</div></section>}{loading ? <p className="books-state">Loading books…</p> : error ? <p className="books-reader-error">{error}</p> : items.length ? <>{continueBooks.length > 0 && <section className="books-continue" aria-labelledby="continue-reading-title"><div><p className="eyebrow">Pick up where you left off</p><h2 id="continue-reading-title">Continue reading</h2></div><div className="books-continue-grid">{continueBooks.map(bookCard)}</div></section>}{visibleBooks.length ? <section aria-label="Books"><div className="books-library-heading"><h2>{continueBooks.length ? 'All books' : 'Books'}</h2><span>{visibleBooks.length} {visibleBooks.length === 1 ? 'book' : 'books'}</span></div><div className="books-grid">{visibleBooks.map(bookCard)}</div></section> : <section className="books-dropzone books-empty"><BookOpenIcon /><strong>No books match these filters</strong><span>Try another format, reading state, or topic.</span><Button variant="secondary" size="sm" onClick={() => { setFormatFilter('all'); setReadingFilter('all'); setSubjectFilter(''); setBookSort('added'); }}>Reset filters</Button></section>}</> : <section className="books-dropzone books-empty"><BookOpenIcon /><strong>{query.trim() ? `No books match “${query.trim()}”` : 'No books in your library yet'}</strong><span>{query.trim() ? 'Try another title, author, or filename.' : 'Check back soon for new titles to read.'}</span>{query.trim() && <Button variant="secondary" size="sm" onClick={() => setQuery('')}>Clear search</Button>}</section>}</main>;
 }

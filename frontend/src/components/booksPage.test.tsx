@@ -142,7 +142,9 @@ describe('BooksPage EPUB reading settings', () => {
   it('browses admin-confirmed Open Library subjects', async () => {
     apiMocks.fetchBooks.mockResolvedValue({ items: [epub, pdf] });
     render(<BooksPage user={null} />);
-    await screen.findByRole('button', { name: /Example Book/i });
+    const bookCard = await screen.findByRole('button', { name: /Example Book/i });
+    expect(bookCard.tagName).toBe('BUTTON');
+    expect(screen.getByLabelText('Search books')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Science fiction, 1 book' }));
     expect(screen.getByRole('button', { name: /Example Book/i })).toBeTruthy();
