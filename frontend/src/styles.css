@@ -5281,6 +5281,13 @@ img {
 .books-filter-row label { display: grid; gap: .3rem; color: var(--muted); font-size: .72rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
 .books-filter-row select { min-height: 2.55rem; padding: .45rem 2rem .45rem .65rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; font-size: .82rem; text-transform: none; }
 .books-filter-row select:focus-visible { border-color: var(--brand); outline: 2px solid rgba(249, 115, 22, .25); outline-offset: 1px; }
+.books-topic-filter { display: grid; gap: .5rem; }
+.books-topic-filter > span { color: var(--muted); font-size: .72rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.books-topic-filter > div { display: flex; gap: .45rem; overflow-x: auto; padding: .1rem 0 .35rem; scrollbar-color: rgba(148, 163, 184, .55) transparent; }
+.books-topic-filter button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .45rem; min-height: 2.25rem; padding: .4rem .7rem; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); cursor: pointer; font: inherit; font-size: .8rem; font-weight: 650; white-space: nowrap; }
+.books-topic-filter button:hover, .books-topic-filter button:focus-visible { border-color: rgba(249, 115, 22, .7); color: var(--text); outline: none; }
+.books-topic-filter button.is-active { border-color: #fb923c; background: #7c2d12; color: #fff; }
+.books-topic-filter small { color: inherit; font-size: .72rem; opacity: .78; }
 .books-continue { display: grid; gap: .8rem; }
 .books-continue h2, .books-library-heading h2 { margin: 0; font-size: 1.15rem; }
 .books-continue .eyebrow { margin: 0 0 .2rem; }

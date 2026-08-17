@@ -16,9 +16,9 @@ vi.mock('../api', () => ({
 }));
 
 const epub: BookItem = {
-  id: 'book-1', title: 'Example Book', fileName: 'example.epub', format: 'EPUB', fileSize: 1024, fileSizeLabel: '1 MiB', description: '', authors: ['Example Author'], coverUrl: '', publisher: '', language: 'en', pageCount: 0, readUrl: '/book/example/content', downloadUrl: '/book/example/content?download=1',
+  id: 'book-1', title: 'Example Book', fileName: 'example.epub', format: 'EPUB', fileSize: 1024, fileSizeLabel: '1 MiB', description: '', authors: ['Example Author'], coverUrl: '', publisher: '', language: 'en', pageCount: 0, subjects: ['Science fiction'], readUrl: '/book/example/content', downloadUrl: '/book/example/content?download=1',
 };
-const pdf: BookItem = { ...epub, id: 'book-2', title: 'Example PDF', fileName: 'example.pdf', format: 'PDF', readUrl: '/book/example-pdf/content' };
+const pdf: BookItem = { ...epub, id: 'book-2', title: 'Example PDF', fileName: 'example.pdf', format: 'PDF', subjects: ['History'], readUrl: '/book/example-pdf/content' };
 
 function standardEpubHeader() {
   const bytes = new Uint8Array(38); const view = new DataView(bytes.buffer);
@@ -137,5 +137,15 @@ describe('BooksPage EPUB reading settings', () => {
     await waitFor(() => expect(screen.queryByLabelText('Example Book reader')).toBeNull());
     expect(window.location.pathname).toBe('/books');
     expect(window.location.search).toBe('');
+  });
+
+  it('browses admin-confirmed Open Library subjects', async () => {
+    apiMocks.fetchBooks.mockResolvedValue({ items: [epub, pdf] });
+    render(<BooksPage user={null} />);
+    await screen.findByRole('button', { name: /Example Book/i });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Science fiction, 1 book' }));
+    expect(screen.getByRole('button', { name: /Example Book/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Example PDF/i })).toBeNull();
   });
 });

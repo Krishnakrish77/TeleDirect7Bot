@@ -351,6 +351,7 @@ def _to_serializable(item: HubItem) -> dict:
         "book_page_count": item.book_page_count,
         "book_cover_url": item.book_cover_url,
         "book_source_key": item.book_source_key,
+        "book_subjects": list(item.book_subjects or []),
         "admin_locked": list(item.admin_locked or []),
         "hidden": item.hidden,
         "subtitles": [
@@ -435,6 +436,7 @@ def _from_serializable(d: dict) -> HubItem:
         book_page_count=int(d.get("book_page_count") or 0),
         book_cover_url=d.get("book_cover_url", "") or "",
         book_source_key=d.get("book_source_key", "") or "",
+        book_subjects=list(d.get("book_subjects") or []),
         admin_locked=list(d.get("admin_locked") or []),
         hidden=bool(d.get("hidden", False)),
         subtitles=[
@@ -1503,6 +1505,8 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
                                 setattr(new_item, attr, getattr(existing, attr))
                         if existing.book_authors and not new_item.book_authors:
                             new_item.book_authors = existing.book_authors
+                        if existing.book_subjects and not new_item.book_subjects:
+                            new_item.book_subjects = existing.book_subjects
                         if existing.book_page_count and not new_item.book_page_count:
                             new_item.book_page_count = existing.book_page_count
                         if existing.cast and not new_item.cast:
@@ -2304,7 +2308,7 @@ def books(*, q: str = "") -> List[HubItem]:
     for item in _items.values():
         if item.hidden or item.media_kind != "book":
             continue
-        haystack = " ".join([item.title, item.file_name, item.description, " ".join(item.tags)]).lower()
+        haystack = " ".join([item.title, item.file_name, item.description, " ".join(item.tags), " ".join(item.book_authors), " ".join(item.book_subjects)]).lower()
         if needle and needle not in haystack:
             continue
         matches.append(item)

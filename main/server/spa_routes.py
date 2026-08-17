@@ -653,6 +653,7 @@ async def api_books(request: web.Request) -> web.Response:
             "publisher": item.book_publisher or "",
             "language": item.book_language or "",
             "pageCount": item.book_page_count or 0,
+            "subjects": list(item.book_subjects or []),
             "readUrl": _book_content_url(item),
             "downloadUrl": _download_url(item),
         })

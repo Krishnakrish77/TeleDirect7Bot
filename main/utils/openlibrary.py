@@ -13,7 +13,7 @@ _WORK_KEY_RE = re.compile(r"^/works/OL\d+W$")
 _TIMEOUT = aiohttp.ClientTimeout(total=10)
 _FIELDS = ",".join((
     "key", "title", "author_name", "first_publish_year", "cover_i", "isbn",
-    "publisher", "language", "number_of_pages_median", "first_sentence",
+    "publisher", "language", "number_of_pages_median", "first_sentence", "subject",
 ))
 
 
@@ -68,6 +68,7 @@ def normalise_search_doc(doc: dict[str, Any] | Any) -> dict[str, Any] | None:
         "language": (_strings(doc.get("language") if isinstance(doc.get("language"), list) else [doc.get("language")], limit=1, item_limit=20) or [""])[0],
         "pageCount": pages,
         "description": _text(doc.get("first_sentence", doc.get("description")), 1200),
+        "subjects": _strings(doc.get("subject", doc.get("subjects")), limit=8, item_limit=80),
     }
 
 

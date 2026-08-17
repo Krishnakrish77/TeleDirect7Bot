@@ -1242,7 +1242,7 @@ function EditModal({
                             {match.coverId > 0 && <img src={`https://covers.openlibrary.org/b/id/${match.coverId}-S.jpg`} alt="" style={{ width: 34, height: 48, objectFit: 'cover', borderRadius: 3 }} />}
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <strong>{match.title}</strong>{match.year ? ` (${match.year})` : ''}
-                              <p className="edit-field-hint">{match.authors.join(', ') || 'Author unavailable'}{match.publisher ? ` · ${match.publisher}` : ''}</p>
+                              <p className="edit-field-hint">{match.authors.join(', ') || 'Author unavailable'}{match.publisher ? ` · ${match.publisher}` : ''}{match.subjects.length ? ` · ${match.subjects.slice(0, 2).join(' · ')}` : ''}</p>
                             </div>
                             <Button type="button" variant="outline" size="sm" onClick={() => void handleBookApply(match)} disabled={bookSearchLoading}>Use</Button>
                           </div>

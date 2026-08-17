@@ -20,6 +20,7 @@ def test_normalise_search_result_and_client_round_trip():
         "language": ["eng"],
         "number_of_pages_median": 321,
         "first_sentence": "An opening sentence.",
+        "subject": ["Science fiction", "Space opera"],
     }
     candidate = normalise_search_doc(raw)
 
@@ -28,6 +29,7 @@ def test_normalise_search_result_and_client_round_trip():
         "authors": ["Ada Author", "Ben Writer"], "year": 1999,
         "coverId": 42, "isbn": "9781234567890", "publisher": "Example Press",
         "language": "eng", "pageCount": 321, "description": "An opening sentence.",
+        "subjects": ["Science fiction", "Space opera"],
     }
     assert normalise_search_doc(candidate) == candidate
     assert cover_url(42) == "https://covers.openlibrary.org/b/id/42-L.jpg"

@@ -75,6 +75,20 @@ class MediaIndexSearchTests(unittest.TestCase):
         self.assertNotIn(book, shelf_items)
         self.assertIn(movie, shelf_items)
 
+    def test_book_search_includes_confirmed_author_and_subject_metadata(self):
+        book = video_item(
+            303,
+            title="The Library",
+            file_name="library.epub",
+            media_kind="book",
+            book_authors=["Ada Author"],
+            book_subjects=["Science fiction"],
+        )
+        media_index._items[book.message_id] = book
+
+        self.assertEqual(media_index.books(q="ada"), [book])
+        self.assertEqual(media_index.books(q="fiction"), [book])
+
     def test_relevance_stays_primary_when_a_sort_is_selected(self):
         exact = video_item(101, title="Castle")
         weak_old = video_item(1, title="Unrelated", description="Castle archive")

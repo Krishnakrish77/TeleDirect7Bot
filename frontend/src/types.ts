@@ -146,6 +146,7 @@ export interface BookItem {
   publisher: string;
   language: string;
   pageCount: number;
+  subjects: string[];
   readUrl: string;
   downloadUrl: string;
 }
@@ -171,6 +172,7 @@ export interface BookMetadataCandidate {
   language: string;
   pageCount: number;
   description: string;
+  subjects: string[];
 }
 
 export type BookProgressMap = Record<string, BookProgress>;

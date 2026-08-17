@@ -515,6 +515,7 @@ def _admin_item_payload(item, duplicate_details) -> dict:
         "bookPageCount": getattr(item, "book_page_count", 0) or 0,
         "bookCoverUrl": getattr(item, "book_cover_url", "") or "",
         "bookSourceKey": getattr(item, "book_source_key", "") or "",
+        "bookSubjects": list(getattr(item, "book_subjects", []) or []),
         "adminLocked": list(item.admin_locked or []),
         "posterUrl": _admin_thumb_url(item),
         "watchHref": f"/app/watch/{watch_key}",
@@ -2971,6 +2972,7 @@ async def api_app_admin_item_apply_book_metadata(request: web.Request) -> web.Re
         item.book_page_count = candidate["pageCount"]
         item.book_cover_url = openlibrary.cover_url(candidate["coverId"])
         item.book_source_key = candidate["key"]
+        item.book_subjects = candidate["subjects"]
         if candidate["description"]:
             item.description = candidate["description"]
         # A selected catalogue match is authoritative for title/year. Keep

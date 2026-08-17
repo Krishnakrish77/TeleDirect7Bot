@@ -115,6 +115,7 @@ class HubItem:
     book_page_count: int = 0
     book_cover_url: str = ""
     book_source_key: str = ""
+    book_subjects: List[str] = field(default_factory=list)
     # Fields that TMDB enrichment must not overwrite because the admin set
     # them manually.  Values: "title", "year", "series_title".
     admin_locked: List[str] = field(default_factory=list)
