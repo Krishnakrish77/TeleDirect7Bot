@@ -5315,6 +5315,7 @@ img {
 .books-reader-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 68px; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
 .books-reader-page .books-reader-toolbar { position: absolute; z-index: 5; inset: 0 0 auto; background: rgba(17, 19, 23, .96); transition: opacity .22s ease, transform .22s ease; }
 .books-reading-mode:not(.books-reader-controls-visible) .books-reader-toolbar { opacity: 0; transform: translateY(-110%); pointer-events: none; }
+.books-reader-page:focus-within .books-reader-toolbar { opacity: 1; transform: translateY(0); pointer-events: auto; }
 .books-file-label, .books-reader-actions, .books-reader-note { display: flex; align-items: center; gap: 0.65rem; }
 .books-file-label { min-width: 0; color: #fdba74; }
 .books-file-label > svg { flex: 0 0 auto; width: 1.25rem; height: 1.25rem; }
@@ -5358,6 +5359,9 @@ img {
 .books-reader-footer { display: flex; justify-content: space-between; gap: 1rem; padding: .65rem 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
 .books-reader-page .books-reader-footer { position: absolute; z-index: 5; right: 0; bottom: 0; left: 0; background: linear-gradient(transparent, rgba(17, 19, 23, .96) 45%); border: 0; padding-top: 2rem; transition: opacity .22s ease, transform .22s ease; }
 .books-reading-mode:not(.books-reader-controls-visible) .books-reader-footer { opacity: 0; transform: translateY(110%); pointer-events: none; }
+.books-reader-page:focus-within .books-reader-footer { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.books-reader-reveal-hint { position: absolute; z-index: 4; right: 1rem; bottom: max(1rem, env(safe-area-inset-bottom, 0px)); left: 1rem; margin: 0; color: rgba(248, 250, 252, .72); font-size: .72rem; font-weight: 650; letter-spacing: .01em; pointer-events: none; text-align: center; opacity: 0; transform: translateY(.45rem); transition: opacity .22s ease, transform .22s ease; }
+.books-reading-mode:not(.books-reader-controls-visible) .books-reader-reveal-hint { opacity: 1; transform: translateY(0); }
 .books-reader-note svg { flex: 0 0 auto; width: 1rem; height: 1rem; color: #fdba74; }
 
 /* Reading is a focused, full-viewport surface.  The surrounding app chrome and
@@ -5470,6 +5474,8 @@ img {
   margin-bottom: .65rem;
 }
 
+.books-reader-chrome-toggle { width: 100%; min-height: 2.75rem; margin-bottom: .75rem; justify-content: center; }
+
 .books-reader-menu-actions {
   display: grid;
   grid-template-columns: 1fr;
@@ -5535,6 +5541,7 @@ img {
 .books-reader-page-indicator { min-height: 2.45rem; padding: 0 .8rem; border: 0; border-inline: 1px solid rgba(255, 255, 255, .16); background: #f97316; color: #fff; font: inherit; font-size: .82rem; font-weight: 750; cursor: pointer; }
 .books-reader-page-indicator:hover, .books-reader-page-indicator:focus-visible { background: #ea580c; color: #fff; }
 .books-reading-mode:not(.books-reader-controls-visible) .books-reader-pagination { opacity: 0; transform: translate(-50%, 130%); pointer-events: none; }
+.books-reader-page:focus-within .books-reader-pagination { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 
 .books-reader-page .books-reader-footer {
   bottom: calc(3.85rem + env(safe-area-inset-bottom, 0px));
@@ -5589,6 +5596,7 @@ img {
   .books-reader-menu-actions [data-slot="button"] { min-height: 2.8rem; }
   .books-reader-appearance .books-reader-theme-option { min-height: 3.2rem; }
   .books-reader-page .books-reader-footer { display: none; }
+  .books-reader-reveal-hint { bottom: max(1.1rem, env(safe-area-inset-bottom, 0px)); padding-inline: 1rem; }
   .books-reader-page > .books-reader-shell > .books-reader-error { top: calc(60px + env(safe-area-inset-top, 0px)); }
   .books-reader-loading { top: calc(60px + env(safe-area-inset-top, 0px)); }
   .books-reader-pagination { bottom: max(.8rem, env(safe-area-inset-bottom, 0px)); }

@@ -44,6 +44,9 @@ describe('BooksPage EPUB reading settings', () => {
     await screen.findByLabelText('Example Book reader');
     fireEvent.click(screen.getByRole('button', { name: 'Open reading settings' }));
 
+    fireEvent.click(screen.getByRole('button', { name: 'Keep controls visible' }));
+    expect(screen.getByRole('button', { name: 'Controls stay visible' }).getAttribute('aria-pressed')).toBe('true');
+
     fireEvent.click(screen.getByRole('button', { name: 'Sepia' }));
     fireEvent.click(screen.getByRole('button', { name: 'Increase text size' }));
     fireEvent.click(screen.getByRole('button', { name: 'Sans' }));
