@@ -106,7 +106,7 @@ async function epubSource(url: string, knownSize = 0): Promise<ArrayBuffer> {
   const archive = await zip.loadAsync(original);
   const entries = Object.entries(archive.files);
   if (entries.length > MAX_EPUB_ENTRIES) throw new Error('This EPUB contains too many files to open safely. Download it to read locally.');
-  const unpackedBytes = entries.reduce((total, [path, entry]) => total + (entry.dir || path.startsWith('/') || path.split('/').includes('..') || entry.unsafeOriginalName?.split('/').includes('..') ? MAX_EPUB_UNCOMPRESSED_BYTES + 1 : Number(entry._data?.uncompressedSize || 0)), 0);
+  const unpackedBytes = entries.reduce((total, [path, entry]) => total + (path.startsWith('/') || path.split('/').includes('..') || entry.unsafeOriginalName?.split('/').includes('..') ? MAX_EPUB_UNCOMPRESSED_BYTES + 1 : Number(entry._data?.uncompressedSize || 0)), 0);
   if (unpackedBytes > MAX_EPUB_UNCOMPRESSED_BYTES) throw new Error('This EPUB expands to an unsafe size. Download it to read locally.');
   // A standards-compliant EPUB already has an uncompressed `mimetype` as its
   // first ZIP entry. Having inspected its archive bounds above, avoid a

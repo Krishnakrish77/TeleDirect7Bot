@@ -39,7 +39,7 @@ describe('BooksPage EPUB reading settings', () => {
       { load: vi.fn().mockResolvedValue(document), find: vi.fn((query: string) => query.toLowerCase() === 'needle' ? [{ cfi: 'epubcfi(/6/4)', excerpt: 'Needle in chapter two' }] : []), unload: vi.fn() },
     ];
     const ePub = vi.fn(() => ({ renderTo: vi.fn(() => rendition), loaded: { navigation: Promise.resolve({ toc: [] }) }, spine: { each: (callback: (chapter: typeof chapters[number]) => void) => chapters.forEach(callback) }, destroy: vi.fn() }));
-    Object.assign(window, { ePub, JSZip: { loadAsync: vi.fn().mockResolvedValue({ files: { mimetype: { dir: false, _data: { uncompressedSize: 20 }, async: vi.fn() } } }) } });
+    Object.assign(window, { ePub, JSZip: { loadAsync: vi.fn().mockResolvedValue({ files: { 'META-INF/': { dir: true, _data: { uncompressedSize: 0 }, async: vi.fn() }, mimetype: { dir: false, _data: { uncompressedSize: 20 }, async: vi.fn() } } }) } });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(standardEpubHeader())));
     apiMocks.fetchBooks.mockResolvedValue({ items: [epub] });
   });
