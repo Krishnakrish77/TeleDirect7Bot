@@ -147,12 +147,16 @@ export interface BookItem {
   language: string;
   pageCount: number;
   subjects: string[];
+  collection?: string;
+  collectionOrder?: number | null;
   readUrl: string;
   downloadUrl: string;
 }
 
 export interface BooksResponse {
   items: BookItem[];
+  total?: number;
+  nextOffset?: number | null;
 }
 
 export interface BookProgress {
@@ -747,6 +751,9 @@ export interface AdminItem {
   bookPageCount?: number;
   bookCoverUrl?: string;
   bookSourceKey?: string;
+  bookSubjects?: string[];
+  bookCollection?: string;
+  bookCollectionOrder?: number | null;
   adminLocked: string[];
   posterUrl: string;
   watchHref: string;
@@ -1067,6 +1074,9 @@ export interface AdminItemEditPayload {
   artist: string;
   albumTitle: string;
   trackNumber: number | null;
+  bookSubjects: string;
+  bookCollection: string;
+  bookCollectionOrder: number | null;
   thumbUrl: string;
   tmdbId: number | null;
   tmdbKind: 'movie' | 'tv';

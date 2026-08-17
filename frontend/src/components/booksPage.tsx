@@ -16,7 +16,7 @@ type PdfPage = { getViewport: (params: { scale: number }) => PdfViewport; getTex
 type PdfOutlineItem = { title: string; dest?: string | unknown[] | null; items?: PdfOutlineItem[] };
 type PdfDocument = { numPages: number; getPage: (page: number) => Promise<PdfPage>; getOutline?: () => Promise<PdfOutlineItem[] | null>; getDestination?: (name: string) => Promise<unknown[] | null>; getPageIndex?: (ref: unknown) => Promise<number>; destroy?: () => void };
 type PdfJs = { GlobalWorkerOptions: { workerSrc: string }; getDocument: (source: string | { url: string; wasmUrl?: string }) => { promise: Promise<PdfDocument>; destroy?: () => void }; TextLayer?: new (params: { textContentSource: unknown; container: HTMLElement; viewport: PdfViewport }) => { render: () => Promise<unknown>; cancel?: () => void } };
-type JsZipEntry = { dir: boolean; async: (type: 'uint8array') => Promise<Uint8Array> };
+type JsZipEntry = { dir: boolean; unsafeOriginalName?: string; _data?: { uncompressedSize?: number }; async: (type: 'uint8array') => Promise<Uint8Array> };
 type JsZip = { files: Record<string, JsZipEntry>; file: (name: string, data: Uint8Array, options?: { compression?: 'STORE' | 'DEFLATE'; createFolders?: boolean }) => JsZip; generateAsync: (options: { type: 'arraybuffer'; compression: 'STORE' | 'DEFLATE' }) => Promise<ArrayBuffer> };
 type JsZipStatic = { new (): JsZip; loadAsync: (data: ArrayBuffer) => Promise<JsZip> };
 let epubReader: NonNullable<Window['ePub']> | null = null;
@@ -38,6 +38,10 @@ type BookDensity = 'comfortable' | 'compact';
 type EpubPreferences = { theme: ReaderTheme; fontSize: number; fontFamily: 'serif' | 'sans'; lineHeight: 'compact' | 'relaxed'; margins: 'narrow' | 'wide' };
 const DEFAULT_EPUB_PREFERENCES: EpubPreferences = { theme: 'light', fontSize: 100, fontFamily: 'serif', lineHeight: 'relaxed', margins: 'wide' };
 const BOOK_DENSITY_KEY = 'td:book-density';
+const BOOK_PAGE_SIZE = 36;
+const MAX_EPUB_FILE_BYTES = 75 * 1024 * 1024;
+const MAX_EPUB_UNCOMPRESSED_BYTES = 300 * 1024 * 1024;
+const MAX_EPUB_ENTRIES = 5_000;
 
 function localProgress(): BookProgressMap { try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}') || {}; } catch (_) { return {}; } }
 function writeProgress(value: BookProgressMap) { try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(value)); } catch (_) {} }
@@ -89,24 +93,32 @@ function loadPdfReader(): Promise<PdfJs> {
   });
   return pdfReaderLoad;
 }
-async function epubSource(url: string): Promise<ArrayBuffer> {
+async function epubSource(url: string, knownSize = 0): Promise<ArrayBuffer> {
+  if (knownSize > MAX_EPUB_FILE_BYTES) throw new Error('This EPUB is too large to open safely in the browser. Download it to read locally.');
   const response = await fetch(url);
   if (!response.ok) throw new Error('Unable to download this EPUB.');
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (contentLength > MAX_EPUB_FILE_BYTES) throw new Error('This EPUB is too large to open safely in the browser. Download it to read locally.');
   const original = await response.arrayBuffer();
-  // A standards-compliant EPUB already has an uncompressed `mimetype` as its
-  // first ZIP entry. Avoid loading JSZip and duplicating the whole book in
-  // memory for the common case.
-  if (hasStandardEpubMimetype(original)) return original;
+  if (original.byteLength > MAX_EPUB_FILE_BYTES) throw new Error('This EPUB is too large to open safely in the browser. Download it to read locally.');
   const zip = browserZipReader() || zipReader;
   if (!zip) throw new Error('The EPUB reader dependency did not load. Refresh and try again.');
   const archive = await zip.loadAsync(original);
+  const entries = Object.entries(archive.files);
+  if (entries.length > MAX_EPUB_ENTRIES) throw new Error('This EPUB contains too many files to open safely. Download it to read locally.');
+  const unpackedBytes = entries.reduce((total, [path, entry]) => total + (entry.dir || path.startsWith('/') || path.split('/').includes('..') || entry.unsafeOriginalName?.split('/').includes('..') ? MAX_EPUB_UNCOMPRESSED_BYTES + 1 : Number(entry._data?.uncompressedSize || 0)), 0);
+  if (unpackedBytes > MAX_EPUB_UNCOMPRESSED_BYTES) throw new Error('This EPUB expands to an unsafe size. Download it to read locally.');
+  // A standards-compliant EPUB already has an uncompressed `mimetype` as its
+  // first ZIP entry. Having inspected its archive bounds above, avoid a
+  // needless rebuild in that common case.
+  if (hasStandardEpubMimetype(original)) return original;
   const mimetype = archive.files.mimetype;
   // EPUB readers in the wild are permissive about this, but epub.js is not:
   // rebuild the archive with an uncompressed `mimetype` entry first.
   if (!mimetype || mimetype.dir) return original;
   const repaired = new zip();
   repaired.file('mimetype', await mimetype.async('uint8array'), { compression: 'STORE' });
-  await Promise.all(Object.entries(archive.files).filter(([path, entry]) => path !== 'mimetype' && !entry.dir).map(async ([path, entry]) => {
+  await Promise.all(entries.filter(([path, entry]) => path !== 'mimetype' && !entry.dir).map(async ([path, entry]) => {
     repaired.file(path, await entry.async('uint8array'), { compression: 'DEFLATE', createFolders: true });
   }));
   return repaired.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
@@ -155,16 +167,16 @@ function PdfThumbnail({ document, pageNumber, selected, onSelect }: { document: 
 }
 
 export function BooksPage({ user }: { user: User | null }) {
-  const [items, setItems] = useState<BookItem[]>([]); const [query, setQuery] = useState(''); const [debouncedQuery, setDebouncedQuery] = useState(''); const [selected, setSelected] = useState<BookItem | null>(null); const [bookDensity, setBookDensity] = useState<BookDensity>(() => localBookDensity());
-  const [formatFilter, setFormatFilter] = useState<BookFormatFilter>('all'); const [readingFilter, setReadingFilter] = useState<BookReadingFilter>('all'); const [subjectFilter, setSubjectFilter] = useState(''); const [bookSort, setBookSort] = useState<BookSort>('added'); const [bookIdFromUrl, setBookIdFromUrl] = useState(() => new URLSearchParams(window.location.search).get('book'));
+  const [items, setItems] = useState<BookItem[]>([]); const [bookTotal, setBookTotal] = useState(0); const [nextBookOffset, setNextBookOffset] = useState<number | null>(null); const [loadingMoreBooks, setLoadingMoreBooks] = useState(false); const [query, setQuery] = useState(''); const [debouncedQuery, setDebouncedQuery] = useState(''); const [selected, setSelected] = useState<BookItem | null>(null); const [bookDensity, setBookDensity] = useState<BookDensity>(() => localBookDensity());
+  const [formatFilter, setFormatFilter] = useState<BookFormatFilter>('all'); const [readingFilter, setReadingFilter] = useState<BookReadingFilter>('all'); const [subjectFilter, setSubjectFilter] = useState(''); const [collectionFilter, setCollectionFilter] = useState(''); const [bookSort, setBookSort] = useState<BookSort>('added'); const [bookIdFromUrl, setBookIdFromUrl] = useState(() => new URLSearchParams(window.location.search).get('book'));
   const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [readerError, setReaderError] = useState(''); const [readerLoading, setReaderLoading] = useState(false); const [readerAttempt, setReaderAttempt] = useState(0); const [speaking, setSpeaking] = useState(false); const [keepControlsVisible, setKeepControlsVisible] = useState(false); const [epubPreferences, setEpubPreferences] = useState<EpubPreferences>(() => localEpubPreferences());
   const [progress, setProgress] = useState<BookProgressMap>(() => localProgress());
   const [bookmarks, setBookmarks] = useState<Record<string, BookBookmark[]>>(() => localBookmarks()); const [notes, setNotes] = useState<Record<string, BookNote[]>>(() => localNotes()); const [toc, setToc] = useState<EpubTocItem[]>([]); const [readerPanel, setReaderPanel] = useState<'contents' | 'bookmarks' | 'notes' | 'pages' | 'outline' | null>(null); const [readerMenuOpen, setReaderMenuOpen] = useState(false); const [findQuery, setFindQuery] = useState(''); const [findStatus, setFindStatus] = useState(''); const [epubSearchMatches, setEpubSearchMatches] = useState<EpubSearchMatch[]>([]); const [epubSearchIndex, setEpubSearchIndex] = useState(0); const [epubSearchBusy, setEpubSearchBusy] = useState(false); const [pdfSearchMatches, setPdfSearchMatches] = useState<number[]>([]); const [pdfSearchIndex, setPdfSearchIndex] = useState(0); const [pdfHighlightQuery, setPdfHighlightQuery] = useState(''); const [speechRate, setSpeechRate] = useState(1); const [speechVoiceUri, setSpeechVoiceUri] = useState(''); const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]); const [speechPaused, setSpeechPaused] = useState(false); const [speechPage, setSpeechPage] = useState<number | null>(null); const [sessionMinutes, setSessionMinutes] = useState(0); const [pdfPage, setPdfPage] = useState(1); const [pdfDocument, setPdfDocument] = useState<PdfDocument | null>(null); const [pdfPages, setPdfPages] = useState(0); const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[]>([]); const [pdfZoom, setPdfZoom] = useState<number | 'fit'>('fit'); const [pdfReaderWidth, setPdfReaderWidth] = useState(0); const [pdfSearchBusy, setPdfSearchBusy] = useState(false); const [pdfNoteDraft, setPdfNoteDraft] = useState(''); const [controlsVisible, setControlsVisible] = useState(true);
-  const epubRootRef = useRef<HTMLDivElement>(null); const epubBookRef = useRef<EpubBook | null>(null); const renditionRef = useRef<EpubRendition | null>(null); const pdfCanvasRef = useRef<HTMLCanvasElement>(null); const pdfTextLayerRef = useRef<HTMLDivElement>(null); const pdfRootRef = useRef<HTMLDivElement>(null); const pdfJsRef = useRef<PdfJs | null>(null); const gestureStart = useRef<{ x: number; y: number } | null>(null); const pdfScrollTopRef = useRef(0); const pdfPageTurnLockedRef = useRef(false); const pdfPendingScrollRef = useRef<'top' | 'bottom' | null>(null); const touchStartRef = useRef<{ x: number; y: number; scrollLeft: number; panning: boolean } | null>(null); const pdfPinchRef = useRef<{ distance: number; scale: number } | null>(null); const epubSearchTokenRef = useRef(0); const epubSearchHighlightRef = useRef<string | null>(null); const pdfSearchTokenRef = useRef(0); const pdfTextCacheRef = useRef(new Map<number, string>()); const speechTokenRef = useRef(0); const speechChunksRef = useRef<string[]>([]); const speechChunkIndexRef = useRef(0); const speechOnCompleteRef = useRef<(() => void) | undefined>(undefined); const speechSettingsRef = useRef({ rate: speechRate, voiceUri: speechVoiceUri }); const readerMenuOpenRef = useRef(false);
+  const epubRootRef = useRef<HTMLDivElement>(null); const epubBookRef = useRef<EpubBook | null>(null); const renditionRef = useRef<EpubRendition | null>(null); const pdfCanvasRef = useRef<HTMLCanvasElement>(null); const pdfTextLayerRef = useRef<HTMLDivElement>(null); const pdfRootRef = useRef<HTMLDivElement>(null); const pdfJsRef = useRef<PdfJs | null>(null); const gestureStart = useRef<{ x: number; y: number } | null>(null); const pdfScrollTopRef = useRef(0); const pdfPageTurnLockedRef = useRef(false); const pdfPendingScrollRef = useRef<'top' | 'bottom' | null>(null); const touchStartRef = useRef<{ x: number; y: number; scrollLeft: number; panning: boolean } | null>(null); const pdfPinchRef = useRef<{ distance: number; scale: number } | null>(null); const epubSearchTokenRef = useRef(0); const epubSearchHighlightRef = useRef<string | null>(null); const pdfSearchTokenRef = useRef(0); const pdfTextCacheRef = useRef(new Map<number, string>()); const bookRequestTokenRef = useRef(0); const speechTokenRef = useRef(0); const speechChunksRef = useRef<string[]>([]); const speechChunkIndexRef = useRef(0); const speechOnCompleteRef = useRef<(() => void) | undefined>(undefined); const speechSettingsRef = useRef({ rate: speechRate, voiceUri: speechVoiceUri }); const readerMenuOpenRef = useRef(false);
   const isEpub = selected?.format.toLowerCase() === 'epub';
 
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedQuery(query), 250); return () => window.clearTimeout(timer); }, [query]);
-  useEffect(() => { const controller = new AbortController(); let active = true; setLoading(true); void fetchBooks(debouncedQuery, controller.signal).then((data) => { if (active) setItems(data.items); }).catch((err) => { if (active && err.name !== 'AbortError') setError(err.message || 'Unable to load books.'); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; controller.abort(); }; }, [debouncedQuery]);
+  useEffect(() => { const controller = new AbortController(); const token = bookRequestTokenRef.current + 1; bookRequestTokenRef.current = token; let active = true; setLoading(true); setLoadingMoreBooks(false); setError(''); void fetchBooks(debouncedQuery, { limit: BOOK_PAGE_SIZE, signal: controller.signal }).then((data) => { if (active && token === bookRequestTokenRef.current) { setItems(data.items); setBookTotal(data.total ?? data.items.length); setNextBookOffset(data.nextOffset ?? null); } }).catch((err) => { if (active && err.name !== 'AbortError') setError(err.message || 'Unable to load books.'); }).finally(() => { if (active && token === bookRequestTokenRef.current) setLoading(false); }); return () => { active = false; controller.abort(); }; }, [debouncedQuery]);
   useEffect(() => { const onPopState = () => setBookIdFromUrl(new URLSearchParams(window.location.search).get('book')); window.addEventListener('popstate', onPopState); return () => window.removeEventListener('popstate', onPopState); }, []);
   useEffect(() => { if (!bookIdFromUrl) { setSelected(null); return; } const book = items.find((entry) => entry.id === bookIdFromUrl); if (book) setSelected(book); }, [bookIdFromUrl, items]);
   useEffect(() => { if (!user) return; void fetchBookProgress().then((server) => { const local = localProgress(); const merged: BookProgressMap = { ...local }; Object.entries(server).forEach(([bookId, value]) => { if (!merged[bookId] || value.t > merged[bookId].t) merged[bookId] = value; }); writeProgress(merged); setProgress(merged); }).catch(() => undefined); }, [user]);
@@ -192,7 +204,7 @@ export function BooksPage({ user }: { user: User | null }) {
   useEffect(() => {
     if (!selected || !isEpub || !epubRootRef.current) return undefined;
     let cancelled = false; let book: EpubBook | null = null; let timeout = 0; const epubTouchCleanups: Array<() => void> = []; const boundEpubDocuments = new Set<Document>(); epubSearchTokenRef.current += 1; setEpubSearchMatches([]); setEpubSearchIndex(0); setReaderError(''); setReaderLoading(true); setToc([]); setReaderPanel(null); setReaderMenuOpen(false); setFindStatus('');
-    void loadEpubReader().then(() => epubSource(selected.readUrl)).then((source) => {
+    void loadEpubReader().then(() => epubSource(selected.readUrl, selected.fileSize)).then((source) => {
       if (cancelled || !epubRootRef.current) return;
       const ePub = browserEpubReader() || epubReader;
       if (!ePub) throw new Error('The EPUB reader dependency did not load. Refresh and try again.');
@@ -356,21 +368,37 @@ export function BooksPage({ user }: { user: User | null }) {
   const bookSummary = (book: BookItem) => { const authors = book.authors.join(', '); const description = book.description.trim(); if (description && description.toLocaleLowerCase() !== authors.toLocaleLowerCase()) return description; return [book.publisher, book.language, book.pageCount ? `${book.pageCount} pages` : '', book.format].filter(Boolean).join(' · ') || authors || 'Book'; };
   const updateEpubPreferences = (next: Partial<EpubPreferences>) => setEpubPreferences((current) => { const updated = { ...current, ...next }; writeEpubPreferences(updated); return updated; });
   const updateBookDensity = (next: BookDensity) => { writeBookDensity(next); setBookDensity(next); };
+  const loadMoreBooks = () => {
+    if (nextBookOffset === null || loadingMoreBooks) return;
+    const token = bookRequestTokenRef.current; setLoadingMoreBooks(true);
+    void fetchBooks(debouncedQuery, { offset: nextBookOffset, limit: BOOK_PAGE_SIZE }).then((data) => {
+      if (token !== bookRequestTokenRef.current) return;
+      setItems((current) => [...current, ...data.items.filter((book) => !current.some((entry) => entry.id === book.id))]);
+      setBookTotal(data.total ?? bookTotal); setNextBookOffset(data.nextOffset ?? null);
+    }).catch((err) => { if (token === bookRequestTokenRef.current) setError(err.message || 'Unable to load more books.'); }).finally(() => { if (token === bookRequestTokenRef.current) setLoadingMoreBooks(false); });
+  };
   const readAloudSettings = <section className="books-reader-speech-settings" aria-label="Read aloud settings"><label className="books-reader-menu-rate">Reading speed<select value={speechRate} onChange={(event) => setSpeechRate(Number(event.currentTarget.value))}><option value={0.75}>0.75×</option><option value={1}>1×</option><option value={1.25}>1.25×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label><label className="books-reader-menu-rate">Voice<select value={speechVoiceUri} onChange={(event) => setSpeechVoiceUri(event.currentTarget.value)}><option value="">Browser default</option>{speechVoices.map((voice) => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name}{voice.lang ? ` · ${voice.lang}` : ''}</option>)}</select></label><small>Changing voice or speed restarts the current passage.</small></section>;
-  const subjectCounts = new Map<string, number>(); items.forEach((book) => (book.subjects || []).forEach((subject) => subjectCounts.set(subject, (subjectCounts.get(subject) || 0) + 1))); const subjectOptions = Array.from(subjectCounts.entries()).sort(([leftSubject, leftCount], [rightSubject, rightCount]) => rightCount - leftCount || leftSubject.localeCompare(rightSubject)).slice(0, 12);
+  const subjectBooks = new Map<string, BookItem[]>(); const authorBooks = new Map<string, BookItem[]>(); const collectionBooks = new Map<string, BookItem[]>();
+  items.forEach((book) => {
+    (book.subjects || []).forEach((subject) => { const values = subjectBooks.get(subject) || []; values.push(book); subjectBooks.set(subject, values); });
+    const author = book.authors[0]?.trim(); if (author) { const values = authorBooks.get(author) || []; values.push(book); authorBooks.set(author, values); }
+    const collection = book.collection?.trim(); if (collection) { const values = collectionBooks.get(collection) || []; values.push(book); collectionBooks.set(collection, values); }
+  });
+  const subjectOptions = Array.from(subjectBooks.entries()).map(([subject, books]) => [subject, books.length] as const).sort(([leftSubject, leftCount], [rightSubject, rightCount]) => rightCount - leftCount || leftSubject.localeCompare(rightSubject)).slice(0, 12);
+  const collectionOptions = Array.from(collectionBooks.entries()).map(([collection, books]) => [collection, books.length] as const).sort(([leftCollection, leftCount], [rightCollection, rightCount]) => rightCount - leftCount || leftCollection.localeCompare(rightCollection));
   const matchesReadingFilter = (book: BookItem) => { const value = progress[book.id]?.progress || 0; if (readingFilter === 'reading') return value > 0 && value < .98; if (readingFilter === 'unread') return value === 0; if (readingFilter === 'finished') return value >= .98; return true; };
-  const visibleBooks = items.filter((book) => (formatFilter === 'all' || book.format.toLowerCase() === formatFilter) && (!subjectFilter || (book.subjects || []).includes(subjectFilter)) && matchesReadingFilter(book)).sort((left, right) => {
+  const visibleBooks = items.filter((book) => (formatFilter === 'all' || book.format.toLowerCase() === formatFilter) && (!subjectFilter || (book.subjects || []).includes(subjectFilter)) && (!collectionFilter || book.collection === collectionFilter) && matchesReadingFilter(book)).sort((left, right) => {
     if (bookSort === 'title') return left.title.localeCompare(right.title, undefined, { sensitivity: 'base' });
     if (bookSort === 'author') return (left.authors[0] || left.title).localeCompare(right.authors[0] || right.title, undefined, { sensitivity: 'base' });
     if (bookSort === 'progress') return (progress[right.id]?.t || 0) - (progress[left.id]?.t || 0) || left.title.localeCompare(right.title);
     return 0;
   });
   const continueBooks = visibleBooks.filter((book) => { const value = progress[book.id]?.progress || 0; return value > 0 && value < .98; }).sort((left, right) => (progress[right.id]?.t || 0) - (progress[left.id]?.t || 0)).slice(0, 6);
-  const shelvesEnabled = !query.trim() && formatFilter === 'all' && readingFilter === 'all' && !subjectFilter;
-  const authorCounts = new Map<string, number>(); items.forEach((book) => { const author = book.authors[0]?.trim(); if (author) authorCounts.set(author, (authorCounts.get(author) || 0) + 1); });
+  const shelvesEnabled = !query.trim() && formatFilter === 'all' && readingFilter === 'all' && !subjectFilter && !collectionFilter;
   const bookShelves = !shelvesEnabled ? [] : [
-    ...subjectOptions.map(([subject, count]) => ({ key: `subject:${subject}`, label: subject, detail: `${count} ${count === 1 ? 'book' : 'books'}`, books: items.filter((book) => (book.subjects || []).includes(subject)) })),
-    ...Array.from(authorCounts.entries()).sort(([leftAuthor, leftCount], [rightAuthor, rightCount]) => rightCount - leftCount || leftAuthor.localeCompare(rightAuthor)).map(([author, count]) => ({ key: `author:${author}`, label: `By ${author}`, detail: `${count} ${count === 1 ? 'book' : 'books'}`, books: items.filter((book) => book.authors[0] === author) })),
+    ...collectionOptions.map(([collection, count]) => ({ key: `collection:${collection}`, label: collection, detail: `${count} ${count === 1 ? 'book' : 'books'} · curated collection`, books: (collectionBooks.get(collection) || []).slice().sort((left, right) => (left.collectionOrder ?? Number.MAX_SAFE_INTEGER) - (right.collectionOrder ?? Number.MAX_SAFE_INTEGER) || left.title.localeCompare(right.title)) })),
+    ...subjectOptions.map(([subject, count]) => ({ key: `subject:${subject}`, label: subject, detail: `${count} ${count === 1 ? 'book' : 'books'} · genre`, books: subjectBooks.get(subject) || [] })),
+    ...Array.from(authorBooks.entries()).sort(([leftAuthor, leftBooks], [rightAuthor, rightBooks]) => rightBooks.length - leftBooks.length || leftAuthor.localeCompare(rightAuthor)).slice(0, 5).map(([author, books]) => ({ key: `author:${author}`, label: `By ${author}`, detail: `${books.length} ${books.length === 1 ? 'book' : 'books'} · author`, books })),
   ].filter((shelf) => shelf.books.length >= 2).slice(0, 5);
   const bookCard = (book: BookItem) => <button type="button" className="book-card" key={book.id} onClick={() => openBook(book)}><span className="book-cover book-cover-image">{book.coverUrl && <img src={book.coverUrl} alt="" loading="lazy" decoding="async" onError={(event) => { event.currentTarget.hidden = true; }} />}<BookOpenIcon /><small>{book.format}</small></span><span><span className="eyebrow">{book.format} · {book.fileSizeLabel}{progress[book.id]?.progress ? ` · ${Math.round(progress[book.id].progress * 100)}% read` : ''}</span><strong className="book-card-title">{book.title}</strong>{book.authors.length > 0 && <span className="book-author">{book.authors.join(', ')}</span>}<span className="book-card-summary">{bookSummary(book)}</span></span></button>;
 
@@ -459,11 +487,12 @@ export function BooksPage({ user }: { user: User | null }) {
         <button type="button" className={bookDensity === 'compact' ? 'is-active' : ''} aria-pressed={bookDensity === 'compact'} onClick={() => updateBookDensity('compact')}>Compact</button>
       </div>
     </div>
+    {collectionOptions.length > 0 && <section className="books-topic-filter" aria-label="Browse books by collection"><span>Browse collections</span><div><button type="button" className={!collectionFilter ? 'is-active' : ''} aria-pressed={!collectionFilter} onClick={() => setCollectionFilter('')}>All collections</button>{collectionOptions.map(([collection, count]) => <button key={collection} type="button" className={collectionFilter === collection ? 'is-active' : ''} aria-label={`${collection}, ${count} ${count === 1 ? 'book' : 'books'}`} aria-pressed={collectionFilter === collection} onClick={() => setCollectionFilter(collection)}>{collection}<small aria-hidden="true">{count}</small></button>)}</div></section>}
     {subjectOptions.length > 0 && <section className="books-topic-filter" aria-label="Browse books by genre"><span>Browse genres</span><div><button type="button" className={!subjectFilter ? 'is-active' : ''} aria-pressed={!subjectFilter} onClick={() => setSubjectFilter('')}>All genres</button>{subjectOptions.map(([subject, count]) => <button key={subject} type="button" className={subjectFilter === subject ? 'is-active' : ''} aria-label={`${subject}, ${count} ${count === 1 ? 'book' : 'books'}`} aria-pressed={subjectFilter === subject} onClick={() => setSubjectFilter(subject)}>{subject}<small aria-hidden="true">{count}</small></button>)}</div></section>}
     {loading ? <p className="books-state">Loading books…</p> : error ? <p className="books-reader-error">{error}</p> : items.length ? <>
       {continueBooks.length > 0 && <section className="books-continue" aria-labelledby="continue-reading-title"><div><p className="eyebrow">Pick up where you left off</p><h2 id="continue-reading-title">Continue reading</h2></div><div className="books-continue-grid">{continueBooks.map(bookCard)}</div></section>}
-      {bookShelves.map((shelf) => <section className="books-genre-shelf" key={shelf.key} aria-label={shelf.label}><div className="books-library-heading"><div><p className="eyebrow">{shelf.detail}</p><h2>{shelf.label}</h2></div><button type="button" onClick={() => { if (shelf.key.startsWith('subject:')) setSubjectFilter(shelf.label); else setQuery(shelf.label.replace(/^By /, '')); setBookSort('title'); }}>View all</button></div><div className="books-continue-grid">{shelf.books.slice(0, 12).map(bookCard)}</div></section>)}
-      {visibleBooks.length ? <section aria-label="Books"><div className="books-library-heading"><h2>{continueBooks.length || bookShelves.length ? 'All books' : 'Books'}</h2><span>{visibleBooks.length} {visibleBooks.length === 1 ? 'book' : 'books'}</span></div><div className={`books-grid${bookDensity === 'compact' ? ' books-grid-compact' : ''}`}>{visibleBooks.map(bookCard)}</div></section> : <section className="books-dropzone books-empty"><BookOpenIcon /><strong>No books match these filters</strong><span>Try another format, reading state, or genre.</span><Button variant="secondary" size="sm" onClick={() => { setFormatFilter('all'); setReadingFilter('all'); setSubjectFilter(''); setBookSort('added'); }}>Reset filters</Button></section>}
+      {bookShelves.map((shelf) => <section className="books-genre-shelf" key={shelf.key} aria-label={shelf.label}><div className="books-library-heading"><div><p className="eyebrow">{shelf.detail}</p><h2>{shelf.label}</h2></div><button type="button" onClick={() => { if (shelf.key.startsWith('collection:')) setCollectionFilter(shelf.label); else if (shelf.key.startsWith('subject:')) setSubjectFilter(shelf.label); else setQuery(shelf.label.replace(/^By /, '')); setBookSort('title'); }}>View all</button></div><div className="books-continue-grid">{shelf.books.slice(0, 12).map(bookCard)}</div></section>)}
+      {visibleBooks.length ? <section aria-label="Books"><div className="books-library-heading"><h2>{continueBooks.length || bookShelves.length ? 'All books' : 'Books'}</h2><span>{visibleBooks.length} shown{bookTotal > items.length ? ` · ${items.length} of ${bookTotal} loaded` : ''}</span></div><div className={`books-grid${bookDensity === 'compact' ? ' books-grid-compact' : ''}`}>{visibleBooks.map(bookCard)}</div>{nextBookOffset !== null && <div className="books-load-more"><Button variant="secondary" onClick={loadMoreBooks} disabled={loadingMoreBooks}>{loadingMoreBooks ? 'Loading more…' : `Load ${Math.min(BOOK_PAGE_SIZE, Math.max(1, bookTotal - items.length))} more`}</Button></div>}</section> : <section className="books-dropzone books-empty"><BookOpenIcon /><strong>No books match these filters</strong><span>Try another format, reading state, collection, or genre.</span><Button variant="secondary" size="sm" onClick={() => { setFormatFilter('all'); setReadingFilter('all'); setSubjectFilter(''); setCollectionFilter(''); setBookSort('added'); }}>Reset filters</Button></section>}
     </> : <section className="books-dropzone books-empty"><BookOpenIcon /><strong>{query.trim() ? `No books match “${query.trim()}”` : 'No books in your library yet'}</strong><span>{query.trim() ? 'Try another title, author, or filename.' : 'Check back soon for new titles to read.'}</span>{query.trim() && <Button variant="secondary" size="sm" onClick={() => setQuery('')}>Clear search</Button>}</section>}
   </main>;
 }

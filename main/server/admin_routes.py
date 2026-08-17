@@ -516,6 +516,8 @@ def _admin_item_payload(item, duplicate_details) -> dict:
         "bookCoverUrl": getattr(item, "book_cover_url", "") or "",
         "bookSourceKey": getattr(item, "book_source_key", "") or "",
         "bookSubjects": list(getattr(item, "book_subjects", []) or []),
+        "bookCollection": getattr(item, "book_collection", "") or "",
+        "bookCollectionOrder": getattr(item, "book_collection_order", None),
         "adminLocked": list(item.admin_locked or []),
         "posterUrl": _admin_thumb_url(item),
         "watchHref": f"/app/watch/{watch_key}",
@@ -3140,6 +3142,18 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
     new_artist       = (body.get("artist") or "").strip()
     new_album_title  = (body.get("albumTitle") or "").strip()
     new_track_number = _int_or_none(body.get("trackNumber"))
+    raw_book_subjects = body.get("bookSubjects") or ""
+    new_book_subjects = []
+    for subject in str(raw_book_subjects).replace("\n", ",").split(","):
+        cleaned = " ".join(subject.split())[:80]
+        if cleaned and cleaned.casefold() not in {value.casefold() for value in new_book_subjects}:
+            new_book_subjects.append(cleaned)
+        if len(new_book_subjects) >= 12:
+            break
+    new_book_collection = " ".join(str(body.get("bookCollection") or "").split())[:120]
+    new_book_collection_order = _int_or_none(body.get("bookCollectionOrder"))
+    if new_book_collection_order is not None and not 0 <= new_book_collection_order <= 100000:
+        new_book_collection_order = None
     thumb_url        = (body.get("thumbUrl") or "").strip()
     tmdb_id_raw      = body.get("tmdbId")
     tmdb_kind        = (body.get("tmdbKind") or "movie").lower()
@@ -3169,6 +3183,9 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
             item.series_key = ""
             item.season = item.episode = item.episode_end = None
             item.movie_key = ""
+            item.book_subjects = new_book_subjects
+            item.book_collection = new_book_collection
+            item.book_collection_order = new_book_collection_order
         elif new_series_title:
             item.series_title = new_series_title
             item.series_key   = series_parse.slugify(new_series_title)
@@ -3211,7 +3228,17 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
             else: locked.discard("year")
             if new_series_title: locked.add("series_title")
             else: locked.discard("series_title")
-            item_after.admin_locked = sorted(locked)
+            async with media_index._lock:
+                # A caption rewrite may rebuild the HubItem from Telegram.
+                # Reapply fields that live only in our catalogue so book
+                # curation survives both Telegram-backed and Mongo-backed
+                # save paths.
+                item_after.admin_locked = sorted(locked)
+                if is_book:
+                    item_after.book_subjects = new_book_subjects
+                    item_after.book_collection = new_book_collection
+                    item_after.book_collection_order = new_book_collection_order
+                media_index._persist_unlocked()
             await media_index._store_upsert(item_after)
 
     if not is_book and status in ("written", "local-only") and manual_tmdb_id is not None and manual_tmdb_id > 0:

@@ -5301,6 +5301,7 @@ img {
 .books-continue-grid .book-card { scroll-snap-align: start; }
 .books-library-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin: .1rem 0 .8rem; }
 .books-library-heading span { color: var(--muted); font-size: .82rem; }
+.books-load-more { display: flex; justify-content: center; padding-top: 1.25rem; }
 .books-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
 .books-grid-compact { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .7rem; }
 .books-grid-compact .book-card { grid-template-columns: 52px minmax(0, 1fr); min-height: 124px; gap: .7rem; padding: .7rem; }

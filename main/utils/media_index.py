@@ -352,6 +352,8 @@ def _to_serializable(item: HubItem) -> dict:
         "book_cover_url": item.book_cover_url,
         "book_source_key": item.book_source_key,
         "book_subjects": list(item.book_subjects or []),
+        "book_collection": item.book_collection,
+        "book_collection_order": item.book_collection_order,
         "admin_locked": list(item.admin_locked or []),
         "hidden": item.hidden,
         "subtitles": [
@@ -437,6 +439,12 @@ def _from_serializable(d: dict) -> HubItem:
         book_cover_url=d.get("book_cover_url", "") or "",
         book_source_key=d.get("book_source_key", "") or "",
         book_subjects=list(d.get("book_subjects") or []),
+        book_collection=d.get("book_collection", "") or "",
+        book_collection_order=(
+            int(d["book_collection_order"])
+            if str(d.get("book_collection_order", "")).strip().lstrip("-").isdigit()
+            else None
+        ),
         admin_locked=list(d.get("admin_locked") or []),
         hidden=bool(d.get("hidden", False)),
         subtitles=[
@@ -1507,6 +1515,10 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
                             new_item.book_authors = existing.book_authors
                         if existing.book_subjects and not new_item.book_subjects:
                             new_item.book_subjects = existing.book_subjects
+                        if existing.book_collection and not new_item.book_collection:
+                            new_item.book_collection = existing.book_collection
+                        if existing.book_collection_order is not None and new_item.book_collection_order is None:
+                            new_item.book_collection_order = existing.book_collection_order
                         if existing.book_page_count and not new_item.book_page_count:
                             new_item.book_page_count = existing.book_page_count
                         if existing.cast and not new_item.cast:
@@ -2301,7 +2313,7 @@ def query_grouped(
     return page, total
 
 
-def books(*, q: str = "") -> List[HubItem]:
+def _matching_books(*, q: str = "") -> List[HubItem]:
     """Visible ebooks, newest first, optionally filtered by local metadata."""
     needle = (q or "").strip().lower()
     matches = []
@@ -2313,6 +2325,19 @@ def books(*, q: str = "") -> List[HubItem]:
             continue
         matches.append(item)
     return sorted(matches, key=lambda item: item.message_id, reverse=True)
+
+
+def books(*, q: str = "") -> List[HubItem]:
+    """Backwards-compatible full book list for internal callers and tests."""
+    return _matching_books(q=q)
+
+
+def books_page(*, q: str = "", offset: int = 0, limit: int = 36) -> Tuple[List[HubItem], int]:
+    """Return one bounded public-library page and its total count."""
+    matches = _matching_books(q=q)
+    start = max(0, int(offset))
+    size = max(1, min(int(limit), 60))
+    return matches[start : start + size], len(matches)
 
 
 def _card_message_id(card) -> int:

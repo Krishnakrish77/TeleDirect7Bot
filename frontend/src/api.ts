@@ -135,9 +135,11 @@ export async function fetchHub(
   return request<HubResponse>(`/api/hub${suffix}`, { signal });
 }
 
-export async function fetchBooks(query = '', signal?: AbortSignal): Promise<BooksResponse> {
-  const suffix = query ? `?${new URLSearchParams({ q: query })}` : '';
-  return request<BooksResponse>(`/api/app/books${suffix}`, { signal });
+export async function fetchBooks(query = '', options: { offset?: number; limit?: number; signal?: AbortSignal } = {}): Promise<BooksResponse> {
+  const params = new URLSearchParams({ limit: String(options.limit || 36) });
+  if (query) params.set('q', query);
+  if (options.offset) params.set('offset', String(options.offset));
+  return request<BooksResponse>(`/api/app/books?${params}`, { signal: options.signal });
 }
 
 export async function fetchBookProgress(signal?: AbortSignal): Promise<BookProgressMap> {

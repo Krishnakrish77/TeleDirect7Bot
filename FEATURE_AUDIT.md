@@ -179,14 +179,28 @@ _Production revalidated after deployment of `a9adf67` (`Fix PDF image decoder as
 | Reader experience | ✅ Shipped | Deep links, full-card open, responsive reader layout, PDF fit/100%/150% view controls, PDF/EPUB search, notes, bookmarks, reading progress, swipe/edge interactions, read-aloud voice and speed controls, and EPUB light/sepia/dark typography settings are live. |
 | Library and book metadata | ✅ Shipped | Format/reading/sort filters, Continue Reading, subject browse, robust card fallbacks, Google Books enrichment, and same-origin cover proxying are live. Books remain excluded from video/music shelves. |
 | Production health | ✅ Clean in this pass | The deployed reader loaded the latest app bundle, rendered PDF page 7 at `1393×1747` canvas resolution, and produced no console errors or warnings. |
+| EPUB resource bounds | ✅ Added | The browser refuses EPUBs over 75 MiB, archives with more than 5,000 entries, unsafe ZIP paths, or more than 300 MiB expanded content. This protects the client-side repair/open path from obvious archive bombs. |
+| Public-library scale | ✅ Added | `/api/app/books` is paginated (default 36, hard cap 60) with `total` and `nextOffset`; the library appends pages only when the reader requests more. |
+| Curated discovery | ✅ Added | Admins can edit genres, collection name, and collection order per book. Public collection shelves take precedence over automatic genre/author shelves, while automatic shelves remain a fallback. |
 
 **Current conclusion:** there is no known Books P0/P1 defect. The dated investigations below are retained as incident history and must not be read as the current feature state.
+
+### Security and performance review — 2026-08-17
+
+| Area | Result | Notes |
+|---|---|---|
+| Public access | ✅ Intentional | The library, book metadata, reader content, and download routes remain public by product decision. Protected reader-progress, notes, and admin endpoints still require authentication. |
+| EPUB execution | ✅ Contained | EPUB content is rendered in a sandboxed iframe without script permission; book descriptions and metadata are rendered as React text, not injected HTML. |
+| EPUB archive safety | ✅ Bounded | The client rejects oversized, high-entry-count, path-unsafe, and high-expansion EPUB archives before passing them to epub.js. These are browser-memory protections, not a substitute for server-side malware scanning. |
+| External metadata/artwork | ✅ Bounded | Google Books lookup has a short server timeout; covers go through the same-origin, fixed-host proxy with a response cap. No browser API key is exposed. |
+| Library payload | ✅ Bounded | Public results are paginated; a user can still deliberately load the full catalogue, but initial render/network work is limited to one page. |
+| Remaining watch item | ⚪ Low | PDF.js worker/decoder assets are inherently large, but they remain route-lazy and are only fetched when a PDF is opened. |
 
 ### Remaining opportunity backlog
 
 1. Add a PDF fixture containing JPEG-2000 artwork to automated browser coverage, preventing a missing-decoder regression.
-2. Improve admin metadata operations with bulk enrichment and manual cover/description overrides for imperfect Google Books matches.
-3. Consider reader highlights/annotations and book collections or series grouping only after real-library usage warrants them.
+2. Add bulk metadata/collection editing only when the catalogue size makes per-book curation onerous.
+3. Consider reader highlights/annotations after real-library usage validates the need.
 4. Keep server-side audiobook conversion out of scope; browser read-aloud is the free, privacy-preserving baseline for text PDFs and EPUBs.
 
 ### Historical bugs found live — superseded

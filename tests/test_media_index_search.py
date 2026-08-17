@@ -89,6 +89,27 @@ class MediaIndexSearchTests(unittest.TestCase):
         self.assertEqual(media_index.books(q="ada"), [book])
         self.assertEqual(media_index.books(q="fiction"), [book])
 
+    def test_books_page_bounds_the_public_response_and_preserves_total(self):
+        books = [video_item(400 + index, title=f"Book {index}", file_name=f"book-{index}.pdf", media_kind="book") for index in range(4)]
+        self._items_update(books)
+
+        page, total = media_index.books_page(offset=1, limit=2)
+
+        self.assertEqual(total, 4)
+        self.assertEqual([item.message_id for item in page], [402, 401])
+
+    def test_book_curation_round_trips_through_the_catalogue_snapshot(self):
+        book = video_item(501, title="Curated", file_name="curated.epub", media_kind="book", book_subjects=["Technology"], book_collection="Reading list", book_collection_order=3)
+
+        restored = media_index._from_serializable(media_index._to_serializable(book))
+
+        self.assertEqual(restored.book_subjects, ["Technology"])
+        self.assertEqual(restored.book_collection, "Reading list")
+        self.assertEqual(restored.book_collection_order, 3)
+
+    def _items_update(self, entries):
+        media_index._items.update({entry.message_id: entry for entry in entries})
+
     def test_relevance_stays_primary_when_a_sort_is_selected(self):
         exact = video_item(101, title="Castle")
         weak_old = video_item(1, title="Unrelated", description="Castle archive")

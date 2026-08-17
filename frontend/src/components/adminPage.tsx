@@ -844,6 +844,7 @@ function EditModal({
     seriesTitle: '', season: null, episode: null, episodeEnd: null,
     introStart: null, introEnd: null, recapStart: null, recapEnd: null, chapters: '',
     artist: '', albumTitle: '', trackNumber: null,
+    bookSubjects: '', bookCollection: '', bookCollectionOrder: null,
     thumbUrl: '', thumbUrlInput: '', tmdbId: null, tmdbKind: 'movie',
     adminLocked: [], imdbInput: '', aiModel: 'gemini-2.5-flash-lite',
   });
@@ -875,6 +876,9 @@ function EditModal({
           artist:       String(d['artist'] || ''),
           albumTitle:   String(d['albumTitle'] || ''),
           trackNumber:  (d['trackNumber'] as number | null) ?? null,
+          bookSubjects: Array.isArray(d['bookSubjects']) ? (d['bookSubjects'] as string[]).join(', ') : '',
+          bookCollection: String(d['bookCollection'] || ''),
+          bookCollectionOrder: (d['bookCollectionOrder'] as number | null) ?? null,
           tmdbId:       (d['tmdbId'] as number | null) ?? null,
           tmdbKind:     (d['tmdbKind'] as 'movie' | 'tv') || 'movie',
           adminLocked:  Array.isArray(d['adminLocked']) ? d['adminLocked'] as string[] : [],
@@ -1034,6 +1038,7 @@ function EditModal({
         introStart: form.introStart, introEnd: form.introEnd,
         recapStart: form.recapStart, recapEnd: form.recapEnd, chapters: form.chapters,
         artist: form.artist, albumTitle: form.albumTitle, trackNumber: form.trackNumber,
+        bookSubjects: form.bookSubjects, bookCollection: form.bookCollection, bookCollectionOrder: form.bookCollectionOrder,
         thumbUrl: form.thumbUrlInput,
         tmdbId: form.tmdbId, tmdbKind: form.tmdbKind, adminLocked: form.adminLocked,
       };
@@ -1070,6 +1075,7 @@ function EditModal({
         title: candidate.title,
         year: candidate.year ?? prev.year,
         description: candidate.description || prev.description,
+        bookSubjects: candidate.subjects.join(', '),
       }));
       setBookMatches([]); setBookStatus('Metadata applied. Save only if you want additional manual edits.');
     } catch (err) {
@@ -1228,8 +1234,8 @@ function EditModal({
                     </div>
                   ) : isBook ? (
                     <div className="edit-section">
-                      <p className="edit-section-label">Google Books metadata</p>
-                      <p className="edit-field-hint">Find a title, then select the exact edition. This updates the shared book card without using TMDB.</p>
+                      <p className="edit-section-label">Book metadata</p>
+                      <p className="edit-field-hint">Find the exact edition with Google Books, then curate its public genres and collection below.</p>
                       <div className="edit-field-row" style={{ marginTop: '0.75rem' }}>
                         <Button type="button" size="sm" onClick={() => void handleBookSearch()} disabled={bookSearchLoading}>
                           {bookSearchLoading ? 'Searching…' : 'Search Google Books'}
@@ -1248,6 +1254,20 @@ function EditModal({
                           </div>
                         ))}
                       </div>}
+                      <div className="edit-field-row" style={{ marginTop: '1rem' }}>
+                        <label className="edit-field" style={{ flex: 1 }}>
+                          <span className="edit-field-label">Genres <span className="edit-field-hint">comma separated</span></span>
+                          <input className="edit-field-input" value={form.bookSubjects} onChange={(e) => setField('bookSubjects', e.currentTarget.value)} placeholder="Technology, Artificial intelligence" />
+                        </label>
+                        <label className="edit-field" style={{ flex: 1 }}>
+                          <span className="edit-field-label">Collection</span>
+                          <input className="edit-field-input" value={form.bookCollection} onChange={(e) => setField('bookCollection', e.currentTarget.value)} placeholder="Machine learning essentials" />
+                        </label>
+                        <label className="edit-field edit-field-narrow">
+                          <span className="edit-field-label">Order</span>
+                          <input className="edit-field-input" type="number" min="0" max="100000" value={form.bookCollectionOrder ?? ''} onChange={(e) => setField('bookCollectionOrder', e.currentTarget.value ? parseInt(e.currentTarget.value, 10) : null)} />
+                        </label>
+                      </div>
                     </div>
                   ) : (
                     <div className="edit-section">

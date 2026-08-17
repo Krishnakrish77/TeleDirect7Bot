@@ -39,7 +39,7 @@ describe('BooksPage EPUB reading settings', () => {
       { load: vi.fn().mockResolvedValue(document), find: vi.fn((query: string) => query.toLowerCase() === 'needle' ? [{ cfi: 'epubcfi(/6/4)', excerpt: 'Needle in chapter two' }] : []), unload: vi.fn() },
     ];
     const ePub = vi.fn(() => ({ renderTo: vi.fn(() => rendition), loaded: { navigation: Promise.resolve({ toc: [] }) }, spine: { each: (callback: (chapter: typeof chapters[number]) => void) => chapters.forEach(callback) }, destroy: vi.fn() }));
-    Object.assign(window, { ePub, JSZip: {} });
+    Object.assign(window, { ePub, JSZip: { loadAsync: vi.fn().mockResolvedValue({ files: { mimetype: { dir: false, _data: { uncompressedSize: 20 }, async: vi.fn() } } }) } });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(standardEpubHeader())));
     apiMocks.fetchBooks.mockResolvedValue({ items: [epub] });
   });
@@ -169,6 +169,24 @@ describe('BooksPage EPUB reading settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Science fiction, 1 book' }));
     expect(screen.getByRole('button', { name: /Example Book/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Example PDF/i })).toBeNull();
+  });
+
+  it('shows curated collections and loads the next bounded page on demand', async () => {
+    const first = { ...epub, collection: 'AI foundations', collectionOrder: 2 };
+    const second = { ...pdf, collection: 'AI foundations', collectionOrder: 1 };
+    const third = { ...epub, id: 'book-3', title: 'Later book', collection: 'AI foundations', collectionOrder: 3 };
+    apiMocks.fetchBooks.mockReset()
+      .mockResolvedValueOnce({ items: [first, second], total: 3, nextOffset: 2 })
+      .mockResolvedValueOnce({ items: [third], total: 3, nextOffset: null });
+    render(<BooksPage user={null} />);
+
+    expect(await screen.findByRole('region', { name: 'AI foundations' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'AI foundations, 2 books' }));
+    expect(screen.getByRole('button', { name: /Example Book/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Example PDF/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Load 1 more' }));
+    expect(await screen.findByRole('button', { name: /Later book/i })).toBeTruthy();
+    expect(apiMocks.fetchBooks).toHaveBeenLastCalledWith('', { offset: 2, limit: 36 });
   });
 
   it('persists compact cards and opens reader tools with the help shortcut', async () => {

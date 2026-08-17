@@ -647,7 +647,12 @@ async def book_content(request: web.Request) -> web.Response:
 @routes.get("/api/app/books")
 async def api_books(request: web.Request) -> web.Response:
     query = (request.query.get("q") or "").strip()
-    items = media_index.books(q=query)
+    try:
+        offset = max(0, int(request.query.get("offset") or 0))
+        limit = max(1, min(int(request.query.get("limit") or 36), 60))
+    except ValueError:
+        return _json({"error": "invalid pagination"}, status=400)
+    items, total = media_index.books_page(q=query, offset=offset, limit=limit)
     payload = []
     for item in items:
         suffix = Path(item.file_name or "").suffix.lower().lstrip(".")
@@ -665,10 +670,13 @@ async def api_books(request: web.Request) -> web.Response:
             "language": item.book_language or "",
             "pageCount": item.book_page_count or 0,
             "subjects": list(item.book_subjects or []),
+            "collection": item.book_collection or "",
+            "collectionOrder": item.book_collection_order,
             "readUrl": _book_content_url(item),
             "downloadUrl": _download_url(item),
         })
-    return _json({"items": payload})
+    next_offset = offset + len(payload) if offset + len(payload) < total else None
+    return _json({"items": payload, "total": total, "nextOffset": next_offset})
 
 
 @routes.get("/api/app/books/progress")
