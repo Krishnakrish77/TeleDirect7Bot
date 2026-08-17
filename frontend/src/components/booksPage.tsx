@@ -15,7 +15,7 @@ type PdfViewport = { width: number; height: number; scale: number; rotation: num
 type PdfPage = { getViewport: (params: { scale: number }) => PdfViewport; getTextContent: () => Promise<{ items: Array<{ str?: string }> }>; render: (params: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<unknown>; cancel?: () => void } };
 type PdfOutlineItem = { title: string; dest?: string | unknown[] | null; items?: PdfOutlineItem[] };
 type PdfDocument = { numPages: number; getPage: (page: number) => Promise<PdfPage>; getOutline?: () => Promise<PdfOutlineItem[] | null>; getDestination?: (name: string) => Promise<unknown[] | null>; getPageIndex?: (ref: unknown) => Promise<number>; destroy?: () => void };
-type PdfJs = { GlobalWorkerOptions: { workerSrc: string }; getDocument: (source: string | { url: string }) => { promise: Promise<PdfDocument>; destroy?: () => void }; TextLayer?: new (params: { textContentSource: unknown; container: HTMLElement; viewport: PdfViewport }) => { render: () => Promise<unknown>; cancel?: () => void } };
+type PdfJs = { GlobalWorkerOptions: { workerSrc: string }; getDocument: (source: string | { url: string; wasmUrl?: string }) => { promise: Promise<PdfDocument>; destroy?: () => void }; TextLayer?: new (params: { textContentSource: unknown; container: HTMLElement; viewport: PdfViewport }) => { render: () => Promise<unknown>; cancel?: () => void } };
 type JsZipEntry = { dir: boolean; async: (type: 'uint8array') => Promise<Uint8Array> };
 type JsZip = { files: Record<string, JsZipEntry>; file: (name: string, data: Uint8Array, options?: { compression?: 'STORE' | 'DEFLATE'; createFolders?: boolean }) => JsZip; generateAsync: (options: { type: 'arraybuffer'; compression: 'STORE' | 'DEFLATE' }) => Promise<ArrayBuffer> };
 type JsZipStatic = { new (): JsZip; loadAsync: (data: ArrayBuffer) => Promise<JsZip> };
@@ -23,6 +23,7 @@ let epubReader: NonNullable<Window['ePub']> | null = null;
 let zipReader: JsZipStatic | null = null;
 let epubReaderLoad: Promise<void> | null = null;
 let pdfReaderLoad: Promise<PdfJs> | null = null;
+let pdfWasmUrl: string | undefined;
 const PROGRESS_KEY = 'td:book-progress';
 const BOOKMARKS_KEY = 'td:book-bookmarks';
 type BookBookmark = { locator: string; label: string; progress: number; t: number };
@@ -67,9 +68,18 @@ function loadEpubReader(): Promise<void> {
 }
 function loadPdfReader(): Promise<PdfJs> {
   if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
-  if (!pdfReaderLoad) pdfReaderLoad = Promise.all([import('pdfjs-dist/legacy/build/pdf.mjs'), import('pdfjs-dist/legacy/build/pdf.worker.mjs?url')]).then(([pdfModule, workerModule]) => {
+  if (!pdfReaderLoad) pdfReaderLoad = Promise.all([
+    import('pdfjs-dist/legacy/build/pdf.mjs'),
+    import('pdfjs-dist/legacy/build/pdf.worker.mjs?url'),
+    import('pdfjs-dist/wasm/openjpeg.wasm?url'),
+    import('pdfjs-dist/wasm/jbig2.wasm?url'),
+    import('pdfjs-dist/wasm/qcms_bg.wasm?url'),
+  ]).then(([pdfModule, workerModule, openJpegModule]) => {
     const reader = pdfModule as unknown as PdfJs;
     reader.GlobalWorkerOptions.workerSrc = workerModule.default;
+    // PDF.js loads image decoders relative to this directory. Keep the JPEG2000
+    // and JBIG2 decoders alongside one another in the production bundle.
+    pdfWasmUrl = openJpegModule.default.slice(0, openJpegModule.default.lastIndexOf('/') + 1);
     return reader;
   });
   return pdfReaderLoad;
@@ -222,7 +232,7 @@ export function BooksPage({ user }: { user: User | null }) {
     void loadPdfReader().then(async (pdfjs) => {
       if (cancelled) return;
       pdfJsRef.current = pdfjs;
-      task = pdfjs.getDocument({ url: selected.readUrl });
+      task = pdfjs.getDocument({ url: selected.readUrl, wasmUrl: pdfWasmUrl });
       const document = await task.promise;
       if (cancelled) { document.destroy?.(); return; }
       setPdfPages(document.numPages); setPdfDocument(document); setReaderLoading(false); void document.getOutline?.().then((outline) => { if (!cancelled) setPdfOutline(outline || []); }).catch(() => undefined);

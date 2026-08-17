@@ -37,7 +37,18 @@ export default defineConfig(({ mode }) => {
       outDir: '../main/server/static/app',
       emptyOutDir: true,
       sourcemap: false,
-      manifest: true
+      manifest: true,
+      rollupOptions: {
+        output: {
+          // PDF.js looks up its WebAssembly decoders by their fixed filenames
+          // (for example, `${wasmUrl}openjpeg.wasm`). Preserve those filenames
+          // in one isolated directory while every other asset stays content-hashed.
+          assetFileNames: (assetInfo) => {
+            const pdfWasmFiles = new Set(['openjpeg.wasm', 'jbig2.wasm', 'qcms_bg.wasm']);
+            return assetInfo.names.some((name) => pdfWasmFiles.has(name)) ? 'assets/pdfjs/[name][extname]' : 'assets/[name]-[hash][extname]';
+          }
+        }
+      }
     },
     test: {
       environment: 'jsdom',
