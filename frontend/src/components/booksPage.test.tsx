@@ -32,7 +32,11 @@ describe('BooksPage EPUB reading settings', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as CanvasRenderingContext2D);
     themes = { register: vi.fn(), select: vi.fn() };
     const rendition = { display: vi.fn().mockResolvedValue(undefined), next: vi.fn(), prev: vi.fn(), themes };
-    const ePub = vi.fn(() => ({ renderTo: vi.fn(() => rendition), loaded: { navigation: Promise.resolve({ toc: [] }) }, destroy: vi.fn() }));
+    const chapters = [
+      { load: vi.fn().mockResolvedValue(document), find: vi.fn((query: string) => query.toLowerCase() === 'needle' ? [{ cfi: 'epubcfi(/6/2)', excerpt: 'Needle in chapter one' }] : []), unload: vi.fn() },
+      { load: vi.fn().mockResolvedValue(document), find: vi.fn((query: string) => query.toLowerCase() === 'needle' ? [{ cfi: 'epubcfi(/6/4)', excerpt: 'Needle in chapter two' }] : []), unload: vi.fn() },
+    ];
+    const ePub = vi.fn(() => ({ renderTo: vi.fn(() => rendition), loaded: { navigation: Promise.resolve({ toc: [] }) }, spine: { each: (callback: (chapter: typeof chapters[number]) => void) => chapters.forEach(callback) }, destroy: vi.fn() }));
     Object.assign(window, { ePub, JSZip: {} });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(standardEpubHeader())));
     apiMocks.fetchBooks.mockResolvedValue({ items: [epub] });
@@ -79,6 +83,18 @@ describe('BooksPage EPUB reading settings', () => {
       expect(speak).toHaveBeenCalledTimes(2);
       expect(view.container.querySelector('canvas')?.getAttribute('aria-label')).toContain('page 2');
     });
+  });
+
+  it('searches every EPUB chapter and opens the next result', async () => {
+    render(<BooksPage user={null} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Example Book/i }));
+    await screen.findByLabelText('Example Book reader');
+    fireEvent.click(screen.getByRole('button', { name: 'Open reading settings' }));
+    fireEvent.change(screen.getByPlaceholderText('Search this EPUB'), { target: { value: 'needle' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await screen.findByText('1 of 2 matches · Needle in chapter one');
+    fireEvent.click(screen.getByRole('button', { name: 'Next EPUB search result' }));
+    await screen.findByText('2 of 2 matches · Needle in chapter two');
   });
 
   it('caches PDF text search and navigates matching pages', async () => {
