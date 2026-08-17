@@ -5,6 +5,7 @@ import { BooksPage } from './booksPage';
 
 const apiMocks = vi.hoisted(() => ({ fetchBooks: vi.fn() }));
 let themes: { register: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> };
+let annotations: { highlight: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> };
 
 vi.mock('../api', () => ({
   fetchBooks: apiMocks.fetchBooks,
@@ -31,7 +32,8 @@ describe('BooksPage EPUB reading settings', () => {
     window.history.replaceState(null, '', '/books');
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as CanvasRenderingContext2D);
     themes = { register: vi.fn(), select: vi.fn() };
-    const rendition = { display: vi.fn().mockResolvedValue(undefined), next: vi.fn(), prev: vi.fn(), themes };
+    annotations = { highlight: vi.fn(), remove: vi.fn() };
+    const rendition = { display: vi.fn().mockResolvedValue(undefined), next: vi.fn(), prev: vi.fn(), themes, annotations };
     const chapters = [
       { load: vi.fn().mockResolvedValue(document), find: vi.fn((query: string) => query.toLowerCase() === 'needle' ? [{ cfi: 'epubcfi(/6/2)', excerpt: 'Needle in chapter one' }] : []), unload: vi.fn() },
       { load: vi.fn().mockResolvedValue(document), find: vi.fn((query: string) => query.toLowerCase() === 'needle' ? [{ cfi: 'epubcfi(/6/4)', excerpt: 'Needle in chapter two' }] : []), unload: vi.fn() },
@@ -93,8 +95,10 @@ describe('BooksPage EPUB reading settings', () => {
     fireEvent.change(screen.getByPlaceholderText('Search this EPUB'), { target: { value: 'needle' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     await screen.findByText('1 of 2 matches · Needle in chapter one');
+    await waitFor(() => expect(annotations.highlight).toHaveBeenCalledWith('epubcfi(/6/2)', undefined, undefined, 'td-epub-search-result', expect.any(Object)));
     fireEvent.click(screen.getByRole('button', { name: 'Next EPUB search result' }));
     await screen.findByText('2 of 2 matches · Needle in chapter two');
+    await waitFor(() => expect(annotations.highlight).toHaveBeenLastCalledWith('epubcfi(/6/4)', undefined, undefined, 'td-epub-search-result', expect.any(Object)));
   });
 
   it('caches PDF text search and navigates matching pages', async () => {
