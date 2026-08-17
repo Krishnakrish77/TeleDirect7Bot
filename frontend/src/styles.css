@@ -5585,6 +5585,11 @@ img {
   font-size: .72rem;
 }
 
+/* PDF pages frequently use dark text at the bottom edge. The EPUB-style
+   footer gradient obscures that content, while the page control already
+   provides the relevant PDF position, so keep it out of the PDF reader. */
+.books-reader-shell-pdf .books-reader-footer { display: none; }
+
 .books-reader-page > .books-reader-shell > .books-reader-error {
   position: absolute;
   z-index: 7;

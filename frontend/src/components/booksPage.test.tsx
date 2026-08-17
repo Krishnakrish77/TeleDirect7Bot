@@ -79,6 +79,15 @@ describe('BooksPage EPUB reading settings', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Example PDF/i }));
     await screen.findByLabelText('Example PDF PDF page 1');
     fireEvent.click(screen.getByRole('button', { name: 'Open reader tools' }));
+    expect(screen.getByRole('complementary', { name: 'Reader tools' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Open reader tools' }));
+    expect(screen.queryByRole('complementary', { name: 'Reader tools' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Page 1 / 2' }));
+    expect(screen.getByRole('complementary', { name: 'Reader tools' })).toBeTruthy();
+    fireEvent.pointerDown(screen.getByLabelText('Example PDF PDF page 1'));
+    fireEvent.pointerUp(screen.getByLabelText('Example PDF PDF page 1'));
+    expect(screen.queryByRole('complementary', { name: 'Reader tools' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open reader tools' }));
     fireEvent.change(screen.getByLabelText('Reading speed'), { target: { value: '1.5' } });
     fireEvent.change(await screen.findByLabelText('Voice'), { target: { value: 'test-voice' } });
     fireEvent.click(screen.getByRole('button', { name: 'Read from here' }));
