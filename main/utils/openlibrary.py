@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any
 
@@ -10,7 +11,12 @@ import aiohttp
 
 _SEARCH_URL = "https://openlibrary.org/search.json"
 _WORK_KEY_RE = re.compile(r"^/works/OL\d+W$")
-_TIMEOUT = aiohttp.ClientTimeout(total=10)
+# Book metadata is an optional admin convenience, so don't make an editor wait
+# behind a slow DNS/connect attempt. One short retry covers transient Open
+# Library hiccups without turning a failed lookup into a long spinner.
+_TIMEOUT = aiohttp.ClientTimeout(total=5, sock_connect=2, sock_read=4)
+_RETRY_DELAY_SECONDS = 0.25
+_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 _FIELDS = ",".join((
     "key", "title", "author_name", "first_publish_year", "cover_i", "isbn",
     "publisher", "language", "number_of_pages_median", "first_sentence", "subject",
@@ -79,9 +85,24 @@ async def search_books(query: str, limit: int = 8) -> list[dict[str, Any]]:
     params = {"q": query, "limit": str(max(1, min(limit, 12))), "fields": _FIELDS}
     headers = {"User-Agent": "TeleDirect/1.0 (admin book metadata)"}
     async with aiohttp.ClientSession(timeout=_TIMEOUT, headers=headers) as session:
-        async with session.get(_SEARCH_URL, params=params) as response:
-            response.raise_for_status()
-            data = await response.json(content_type=None)
+        for attempt in range(2):
+            retry = False
+            try:
+                async with session.get(_SEARCH_URL, params=params) as response:
+                    if response.status in _RETRYABLE_STATUSES and attempt == 0:
+                        retry = True
+                    else:
+                        response.raise_for_status()
+                        data = await response.json(content_type=None)
+                        break
+            except (aiohttp.ClientConnectionError, aiohttp.ServerTimeoutError, asyncio.TimeoutError):
+                if attempt:
+                    raise
+                retry = True
+            if retry:
+                await asyncio.sleep(_RETRY_DELAY_SECONDS)
+        else:  # Defensive: the second attempt either returns or raises above.
+            raise asyncio.TimeoutError("Open Library search did not complete")
     hits: list[dict[str, Any]] = []
     for doc in data.get("docs", []) if isinstance(data, dict) else []:
         if isinstance(doc, dict):

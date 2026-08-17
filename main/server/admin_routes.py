@@ -2935,9 +2935,13 @@ async def api_app_admin_book_search(request: web.Request) -> web.Response:
         return web.json_response({"items": []})
     try:
         items = await openlibrary.search_books(query)
-    except (aiohttp.ClientError, asyncio.TimeoutError):
-        logging.info("admin: Open Library search unavailable", exc_info=True)
-        return web.json_response({"error": "Open Library is unavailable. Try again shortly."}, status=502)
+    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+        logging.warning("admin: Open Library search unavailable (%s)", type(exc).__name__)
+        return web.json_response(
+            {"error": "Open Library is unavailable. Try again shortly."},
+            status=503,
+            headers={"Retry-After": "5"},
+        )
     return web.json_response({"items": items}, headers={"Cache-Control": "no-store"})
 
 
