@@ -147,12 +147,25 @@ describe('BooksPage EPUB reading settings', () => {
   it('browses admin-confirmed book subjects', async () => {
     apiMocks.fetchBooks.mockResolvedValue({ items: [epub, pdf] });
     render(<BooksPage user={null} />);
-    const bookCard = await screen.findByRole('button', { name: /Example Book/i });
+    const [bookCard] = await screen.findAllByRole('button', { name: /Example Book/i });
     expect(bookCard.tagName).toBe('BUTTON');
     expect(screen.getByLabelText('Search books')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'By Example Author' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Science fiction, 1 book' }));
     expect(screen.getByRole('button', { name: /Example Book/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Example PDF/i })).toBeNull();
+  });
+
+  it('persists compact cards and opens reader tools with the help shortcut', async () => {
+    render(<BooksPage user={null} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Compact' }));
+    expect(localStorage.getItem('td:book-density')).toBe('compact');
+    expect(document.querySelector('.books-grid')?.classList.contains('books-grid-compact')).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: /Example Book/i }));
+    await screen.findByLabelText('Example Book reader');
+    fireEvent.keyDown(window, { key: '?', shiftKey: true });
+    expect(screen.getByRole('complementary', { name: 'Reading settings' })).toBeTruthy();
   });
 });

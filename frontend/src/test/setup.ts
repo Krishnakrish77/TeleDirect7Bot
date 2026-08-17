@@ -11,6 +11,7 @@ if (!globalThis.ResizeObserver) {
 }
 
 beforeEach(() => {
+  if (typeof HTMLElement === 'undefined' || typeof HTMLMediaElement === 'undefined') return;
   delete (HTMLElement.prototype as unknown as { requestFullscreen?: unknown }).requestFullscreen;
   Object.defineProperty(HTMLMediaElement.prototype, 'play', {
     configurable: true,
@@ -28,8 +29,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
-  sessionStorage.clear();
+  if (typeof localStorage !== 'undefined') localStorage.clear();
+  if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
   vi.clearAllMocks();
   vi.useRealTimers();
 });
