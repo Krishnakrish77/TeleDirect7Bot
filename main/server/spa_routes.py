@@ -22,6 +22,7 @@ from urllib.parse import urlencode, urljoin
 from aiohttp import web
 
 from main.server.tmdb_images import tmdb_image_proxy, tmdb_image_url
+from main.server.openlibrary_images import cover_proxy_url, openlibrary_cover_proxy
 from main.utils import codec_probe
 from main.utils import cw_store
 from main.utils import book_progress_store
@@ -259,6 +260,11 @@ def _budget_home_shelves(shelves: list[dict], limit: int | None = None) -> list[
 @routes.get(r"/api/tmdb-image/{size}/{tail:.*}")
 async def api_tmdb_image_proxy(request: web.Request) -> web.Response:
     return await tmdb_image_proxy(request)
+
+
+@routes.get(r"/api/openlibrary-cover/{cover_id:\d+}")
+async def api_openlibrary_cover_proxy(request: web.Request) -> web.Response:
+    return await openlibrary_cover_proxy(request)
 
 
 def _cache_get(key: str) -> str | None:
@@ -619,6 +625,11 @@ def _book_content_url(item: HubItem) -> str:
     return f"/book/{item.secure_hash}{item.message_id}/content"
 
 
+def _book_cover_proxy_url(item: HubItem) -> str:
+    match = re.fullmatch(r"https?://covers\.openlibrary\.org/b/id/(\d+)-[A-Za-z]+\.jpg", item.book_cover_url or "")
+    return cover_proxy_url(match.group(1)) if match else ""
+
+
 @routes.get(r"/book/{key:[A-Za-z0-9_-]+}/content", allow_head=True)
 async def book_content(request: web.Request) -> web.Response:
     """Serve an indexed book through a non-SPA route for the embedded reader."""
@@ -649,7 +660,7 @@ async def api_books(request: web.Request) -> web.Response:
             "fileSizeLabel": humanbytes(item.file_size) if item.file_size else "",
             "description": item.description or "",
             "authors": list(item.book_authors or []),
-            "coverUrl": item.book_cover_url or "",
+            "coverUrl": _book_cover_proxy_url(item),
             "publisher": item.book_publisher or "",
             "language": item.book_language or "",
             "pageCount": item.book_page_count or 0,

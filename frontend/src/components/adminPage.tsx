@@ -1239,7 +1239,7 @@ function EditModal({
                       {bookMatches.length > 0 && <div className="edit-tmdb-preview" style={{ display: 'block', marginTop: '0.75rem' }}>
                         {bookMatches.map((match) => (
                           <div key={match.key} className="edit-field-row" style={{ alignItems: 'center', padding: '0.45rem 0', borderBottom: '1px solid var(--border)' }}>
-                            {match.coverId > 0 && <img src={`https://covers.openlibrary.org/b/id/${match.coverId}-S.jpg`} alt="" style={{ width: 34, height: 48, objectFit: 'cover', borderRadius: 3 }} />}
+                            {match.coverId > 0 && <img src={`/api/openlibrary-cover/${match.coverId}`} alt="" style={{ width: 34, height: 48, objectFit: 'cover', borderRadius: 3 }} />}
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <strong>{match.title}</strong>{match.year ? ` (${match.year})` : ''}
                               <p className="edit-field-hint">{match.authors.join(', ') || 'Author unavailable'}{match.publisher ? ` · ${match.publisher}` : ''}{match.subjects.length ? ` · ${match.subjects.slice(0, 2).join(' · ')}` : ''}</p>
