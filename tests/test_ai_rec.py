@@ -252,6 +252,10 @@ class AiRecGroundingTest(unittest.TestCase):
                 generate_content.await_args_list[0].kwargs["tool_config"],
                 ai_rec._AGENT_INITIAL_TOOL_CONFIG,
             )
+            self.assertEqual(
+                generate_content.await_args_list[0].kwargs["model"],
+                ai_rec.Var.GEMINI_AI_REC_MODEL,
+            )
             self.assertIsNone(generate_content.await_args_list[1].kwargs["tool_config"])
             set_cached.assert_awaited_once_with(7, result["items"], origin="agent")
 

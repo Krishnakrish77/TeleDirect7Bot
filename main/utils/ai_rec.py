@@ -27,6 +27,7 @@ from typing import Awaitable, Callable, Optional
 from main.utils import (
     ai_rec_store, cw_store, dismissed_store, gemini, media_index, rec_engine, rec_store, request_store, tmdb, wh_store,
 )
+from main.vars import Var
 
 _MAX_CANDIDATES = 50
 
@@ -1211,6 +1212,7 @@ async def _generate_agentic(
             contents,
             tools=_AGENT_TOOLS,
             tool_config=_AGENT_INITIAL_TOOL_CONFIG if calls_used == 0 else None,
+            model=Var.GEMINI_AI_REC_MODEL,
             timeout=remaining,
         )
         model_content, calls = _function_calls(response)
@@ -1241,6 +1243,7 @@ async def _generate_agentic(
     prompt = _build_prompt(_taste_summary(profile, stats), candidates, query, limit)
     result = await gemini.generate_json(
         prompt,
+        model=Var.GEMINI_AI_REC_MODEL,
         schema=_DECISION_PICK_SCHEMA if _is_taste_match_question(query) else _PICK_SCHEMA,
         timeout=remaining,
     )

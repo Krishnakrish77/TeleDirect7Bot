@@ -73,6 +73,9 @@ class Var(object):
     # Optional Gemini API key for thumbnail-based metadata suggestions in admin.
     # Free tier at aistudio.google.com — no credit card required.
     GEMINI_API_KEY = environ.get("GEMINI_API_KEY", "").strip()
+    # AI Picks uses function calling plus structured JSON. Keep its model
+    # independent from the admin metadata-suggestion selector.
+    GEMINI_AI_REC_MODEL = environ.get("GEMINI_AI_REC_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
     # Optional Wyzie subtitle provider key.  This is intentionally consumed
     # by server-side routes only; never expose it to the browser bundle.
     WYZIE_API_KEY = environ.get("WYZIE_API_KEY", "").strip()
