@@ -198,6 +198,7 @@ describe('MediaCard', () => {
     expect(screen.getByLabelText('External rating TMDB 7.8')).toBeTruthy();
     expect(screen.getByLabelText('Kalki 2898-AD metadata').textContent).not.toContain('TMDB 7.8');
     expect(screen.getAllByText('TMDB 7.8')).toHaveLength(1);
+    expect(document.querySelector('.card-hover-details')?.classList.contains('has-rating-badge')).toBe(true);
   });
 
   it('does not show external ratings on music cards', () => {
