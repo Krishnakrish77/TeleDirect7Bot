@@ -1,6 +1,8 @@
 # Taken from megadlbot_oss <https://github.com/eyaadh/megadlbot_oss/blob/master/mega/webserver/__init__.py>
 # Thanks to Eyaadh <https://github.com/eyaadh>
 
+import asyncio
+import functools
 import gzip
 from html import escape
 import logging
@@ -228,6 +230,10 @@ async def gzip_middleware(request: web.Request, handler):
         return response
     if response.body is None:
         return response
+    # Cached SPA payloads are stored pre-gzipped and already carry
+    # Content-Encoding — never double-compress them.
+    if "gzip" in response.headers.get("Content-Encoding", ""):
+        return response
     if "gzip" not in request.headers.get("Accept-Encoding", ""):
         return response
 
@@ -242,7 +248,12 @@ async def gzip_middleware(request: web.Request, handler):
     if len(raw) < GZIP_MIN_BYTES:
         return response
 
-    compressed = gzip.compress(raw, compresslevel=6, mtime=0)
+    # gzip.compress is CPU-bound; run it off the event loop so one large
+    # payload cannot stall every in-flight request.
+    loop = asyncio.get_running_loop()
+    compressed = await loop.run_in_executor(
+        None, functools.partial(gzip.compress, raw, 6, mtime=0)
+    )
     response.body = compressed
     response.headers["Content-Encoding"] = "gzip"
     response.headers["Content-Length"] = str(len(compressed))

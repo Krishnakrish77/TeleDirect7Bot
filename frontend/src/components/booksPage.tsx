@@ -241,18 +241,27 @@ export function BooksPage({ user }: { user: User | null }) {
   useEffect(() => { if (isEpub && renditionRef.current) applyEpubTheme(renditionRef.current, epubPreferences); }, [isEpub, epubPreferences]);
   useEffect(() => {
     if (!selected || isEpub) return undefined;
-    let cancelled = false; let task: { promise: Promise<PdfDocument>; destroy?: () => void } | null = null; pdfSearchTokenRef.current += 1; pdfTextCacheRef.current.clear(); setPdfSearchMatches([]); setPdfSearchIndex(0); setPdfDocument(null); setPdfPages(0); setPdfOutline([]); setReaderError(''); setReaderLoading(true);
+    let cancelled = false; let task: { promise: Promise<PdfDocument>; destroy?: () => void } | null = null; let loadedDoc: PdfDocument | null = null; pdfSearchTokenRef.current += 1; pdfTextCacheRef.current.clear(); setPdfSearchMatches([]); setPdfSearchIndex(0); setPdfDocument(null); setPdfPages(0); setPdfOutline([]); setReaderError(''); setReaderLoading(true);
     void loadPdfReader().then(async (pdfjs) => {
       if (cancelled) return;
       pdfJsRef.current = pdfjs;
       task = pdfjs.getDocument({ url: selected.readUrl, wasmUrl: pdfWasmUrl });
       const document = await task.promise;
       if (cancelled) { document.destroy?.(); return; }
+      loadedDoc = document;
       setPdfPages(document.numPages); setPdfDocument(document); setReaderLoading(false); void document.getOutline?.().then((outline) => { if (!cancelled) setPdfOutline(outline || []); }).catch(() => undefined);
       const restored = Number((progress[selected.id]?.locator || '').replace(/^page:/, ''));
       if (restored > 0) setPdfPage(Math.min(restored, document.numPages));
     }).catch((err: unknown) => { if (!cancelled) { setReaderLoading(false); setReaderError(err instanceof Error ? err.message : 'This PDF could not be opened.'); } });
-    return () => { cancelled = true; task?.destroy?.(); };
+    return () => {
+      // Release the loaded pdf.js document (and its worker) on book switch
+      // or unmount — the success path used to keep it alive indefinitely.
+      cancelled = true;
+      const doc = loadedDoc;
+      loadedDoc = null;
+      if (doc) doc.destroy?.();
+      else task?.destroy?.();
+    };
   }, [isEpub, selected, readerAttempt]);
   useEffect(() => {
     if (!selected || isEpub || !pdfRootRef.current) return undefined;

@@ -33,6 +33,12 @@ SEGMENT_SECONDS = 6
 # Cache codec/duration probes for an hour — the source file never changes.
 PROBE_TTL = 60 * 60
 
+# Hard cap on ffprobe/ffmpeg metadata runs. ffprobe's own -timeout only
+# covers its network read; without an asyncio-level bound a hung probe
+# leaks a subprocess and — while its per-file lock is held — deadlocks
+# every later request for the same media.
+SUBPROCESS_TIMEOUT = 25.0
+
 # Cap concurrent ffmpeg subprocesses so a free-tier instance can't be DOSed
 # into oblivion by a handful of viewers all hitting "play" at once.
 MAX_CONCURRENT_SEGMENTS = int(os.environ.get("HLS_MAX_CONCURRENT", "2"))
@@ -239,6 +245,18 @@ def _label_for(lang: str, title: Optional[str], index: int) -> str:
     return f"Track {index + 1}"
 
 
+async def _finish_subprocess(proc) -> None:
+    """Kill and reap a hung subprocess (best-effort, never raises)."""
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        pass
+    try:
+        await proc.wait()
+    except Exception:
+        pass
+
+
 async def _run_ffprobe(source_url: str) -> ProbeResult:
     global _ffmpeg_available
     args = [
@@ -270,7 +288,19 @@ async def _run_ffprobe(source_url: str) -> ProbeResult:
             "Install ffmpeg (Dockerfile already does this) and redeploy."
         )
         return ProbeResult(duration=0.0, video_codec=None, audio_codec=None)
-    stdout, stderr = await proc.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=SUBPROCESS_TIMEOUT
+        )
+    except asyncio.TimeoutError:
+        await _finish_subprocess(proc)
+        logging.warning(
+            "ffprobe timed out after %ss for %s", SUBPROCESS_TIMEOUT, source_url
+        )
+        return ProbeResult(duration=0.0, video_codec=None, audio_codec=None)
+    except asyncio.CancelledError:
+        await _finish_subprocess(proc)
+        raise
     if proc.returncode != 0:
         logging.warning("ffprobe failed (%s): %s", proc.returncode, stderr.decode()[:300])
         return ProbeResult(duration=0.0, video_codec=None, audio_codec=None)
@@ -486,7 +516,19 @@ async def extract_subtitle_vtt(source_url: str, track_index: int) -> Optional[by
     except FileNotFoundError:
         _ffmpeg_available = False
         return None
-    stdout, stderr = await proc.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=SUBPROCESS_TIMEOUT
+        )
+    except asyncio.TimeoutError:
+        await _finish_subprocess(proc)
+        logging.warning(
+            "ffmpeg subtitle extract timed out (track=%d)", track_index
+        )
+        return None
+    except asyncio.CancelledError:
+        await _finish_subprocess(proc)
+        raise
     if proc.returncode != 0:
         logging.warning(
             "ffmpeg subtitle extract failed (track=%d, code=%s): %s",

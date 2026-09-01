@@ -119,11 +119,35 @@ def _should_serve_probe_head(
 
 # ── VLC playback tracking ─────────────────────────────────────────────────
 # Debounce CW updates: at most one MongoDB write per 30s per (user, message).
-# Values are either:
-#   float ts   — last progress timestamp (normal debounce)
-#   ("done", float deadline) — completion cooldown: no new complete until deadline
-_vlc_cw_debounce: dict = {}   # (user_id, message_id) → value
+_vlc_cw_debounce: dict = {}   # (user_id, message_id) → last progress ts or ("done", deadline)
 _vlc_cw_session_started: dict = {}  # (user_id, message_id) → epoch seconds
+_VLC_SWEEP_INTERVAL = 300.0   # prune stale tracking entries at most every 5 min
+_VLC_ENTRY_TTL = 6 * 60 * 60  # forget sessions older than 6h
+_vlc_last_sweep = 0.0
+
+
+def _vlc_prune(now: float) -> None:
+    """Drop VLC tracking entries once they can no longer matter.
+
+    Without this the two dicts grow one key per distinct (user, file)
+    streamed — unbounded on a busy library.
+    """
+    global _vlc_last_sweep
+    if now - _vlc_last_sweep < _VLC_SWEEP_INTERVAL:
+        return
+    _vlc_last_sweep = now
+    cutoff = now - _VLC_ENTRY_TTL
+    stale = [
+        key
+        for key, value in _vlc_cw_debounce.items()
+        if (value[1] if isinstance(value, tuple) else value) < cutoff
+    ]
+    for key in stale:
+        _vlc_cw_debounce.pop(key, None)
+    for key, ts in list(_vlc_cw_session_started.items()):
+        if ts < cutoff:
+            _vlc_cw_session_started.pop(key, None)
+
 
 def _vlc_verify(param: str, message_id: int) -> int | None:
     """Return user_id if param is a valid VLC tracking token, else None."""
@@ -151,6 +175,7 @@ def _vlc_should_track(user_id: int, message_id: int,
     Called in the request-handling coroutine to avoid spawning tasks
     that would immediately exit via the debounce guard inside _vlc_track.
     """
+    _vlc_prune(now)
     if pct < 0.02:
         return None
     key = (user_id, message_id)

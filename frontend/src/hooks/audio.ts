@@ -1029,6 +1029,7 @@ export function useAudioPlayer() {
     const audioNodes = [audioRef.current, bufferRef.current].filter(Boolean) as HTMLAudioElement[];
     if (!audioNodes.length) return undefined;
 
+    let lastMediaSessionPos = -1;
     const onTime = (event: Event) => {
       const audio = event.currentTarget as HTMLAudioElement;
       if (audio !== getActiveAudio()) return;
@@ -1036,11 +1037,15 @@ export function useAudioPlayer() {
       const current = playerRef.current;
       const currentTime = audio.currentTime || 0;
       const duration = audio.duration || current.duration || current.track?.duration || 0;
-      setPlayer((state) => ({
-        ...state,
-        currentTime,
-        duration,
-      }));
+      // Throttle React state to whole-second changes — timeupdate fires
+      // ~4×/s and this state lives in App, re-rendering the whole tree.
+      if (Math.floor(currentTime) !== Math.floor(current.currentTime) || duration !== current.duration) {
+        setPlayer((state) => ({
+          ...state,
+          currentTime,
+          duration,
+        }));
+      }
       if (currentTime > 0 || audio.readyState >= 3) clearPlaybackWatchdog();
       if (current.track && now - persistLastRef.current > 2000) {
         persistLastRef.current = now;
@@ -1065,7 +1070,8 @@ export function useAudioPlayer() {
         upsertLocalContinue(current.track.key, entry);
         void saveContinueEntry(current.track.key, entry).catch(() => undefined);
       }
-      if ('mediaSession' in navigator && current.track && duration > 0) {
+      if ('mediaSession' in navigator && current.track && duration > 0 && Math.floor(currentTime) !== lastMediaSessionPos) {
+        lastMediaSessionPos = Math.floor(currentTime);
         setMediaSessionPosition({ ...current, currentTime, duration });
       }
       maybeCrossfade(audio);

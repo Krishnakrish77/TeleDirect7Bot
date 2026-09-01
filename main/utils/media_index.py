@@ -131,6 +131,13 @@ _search_title_tokens: set[str] = set()
 _search_index_stale = True
 _SEARCH_STOP_WORDS = frozenset({"a", "an", "and", "at", "for", "from", "in", "of", "on", "the", "to", "with"})
 
+# Derived art-bucket map: (kind, series_key|movie_key) → non-hidden,
+# non-audio catalogue siblings. Rebuilt lazily on the same invalidation
+# as the search index so /api/hub stops rescanning _items.values() once
+# per request just to find TMDB-art siblings for visible cards.
+_art_buckets: dict[tuple[str, str], list[HubItem]] = {}
+_art_buckets_stale = True
+
 # --- Durable store (Mongo when configured) ---------------------------------
 # When ``STORE_BACKEND=mongo``, every mutation also writes-through to
 # MongoDB Atlas. The in-memory ``_items`` dict stays authoritative
@@ -1133,14 +1140,25 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
     return removed
 
 
+_PERSIST_DEBOUNCE = float(os.environ.get("MEDIA_INDEX_PERSIST_DEBOUNCE", "2"))
+_persist_dirty = False
+_persist_task: Optional["asyncio.Task"] = None
+
+
 async def persist_now() -> None:
-    """Public helper: take the lock and flush the /tmp JSON cache.
+    """Public helper: take the lock and flush the /tmp JSON cache now.
 
     Used by helper modules (codec_probe etc.) that mutate item
-    fields in place and need to durably record the change.
+    fields in place and need to durably record the change. Cancels
+    any pending debounced write so the caller's state hits disk now.
     """
+    global _persist_dirty, _persist_task
+    if _persist_task is not None:
+        _persist_task.cancel()
+        _persist_task = None
     async with _lock:
-        _persist_unlocked()
+        _persist_dirty = False
+        _persist_write_now()
 
 
 def _invalidate_hub_caches() -> None:
@@ -1158,13 +1176,42 @@ def _invalidate_hub_caches() -> None:
 
 def _invalidate_search_index() -> None:
     """Mark the derived index stale after any catalogue mutation."""
-    global _search_index_stale
+    global _search_index_stale, _art_buckets_stale
     _search_index_stale = True
+    _art_buckets_stale = True
+
+
+def _mark_derived_stale() -> None:
+    """Immediate, cheap invalidation shared by every mutation path."""
+    _invalidate_search_index()
+    _invalidate_hub_caches()
 
 
 def _persist_unlocked() -> None:
-    _invalidate_search_index()
-    _invalidate_hub_caches()
+    """Debounced catalogue persistence.
+
+    Invalidates derived indexes immediately, then coalesces the /tmp
+    JSON dump into a single background write after a quiet window.
+    Bulk operations (season uploads, enrich/backfill sweeps) used to
+    trigger one O(N) json.dump per item — now one write per burst.
+    """
+    global _persist_dirty, _persist_task
+    _mark_derived_stale()
+    if _store_active():
+        return
+    _persist_dirty = True
+    if _persist_task is None or _persist_task.done():
+        try:
+            _persist_task = asyncio.create_task(_debounced_persist_flush())
+        except RuntimeError:
+            # No running event loop (sync startup/tests): flush directly.
+            _persist_dirty = False
+            _persist_write_now()
+
+
+def _persist_write_now() -> None:
+    """Immediate synchronous flush. Caller must hold ``_lock``."""
+    _mark_derived_stale()
     # When MongoDB is the durable store every mutation is already written
     # through there. Writing to /tmp JSON is redundant — Koyeb wipes /tmp
     # on restart and the bot re-seeds from Mongo anyway.
@@ -1184,8 +1231,24 @@ def _persist_unlocked() -> None:
         logging.debug("media_index: persist failed (non-fatal)", exc_info=True)
 
 
+async def _debounced_persist_flush() -> None:
+    """Single background writer; re-arms while mutations keep arriving."""
+    global _persist_dirty
+    try:
+        while True:
+            await asyncio.sleep(_PERSIST_DEBOUNCE)
+            async with _lock:
+                if not _persist_dirty:
+                    return
+                _persist_dirty = False
+                _persist_write_now()
+    except asyncio.CancelledError:
+        pass
+
+
 def _load() -> None:
-    global _latest_seen_id, _snapshot_msg_id, _reconcile_cursor
+    global _latest_seen_id, _snapshot_msg_id, _reconcile_cursor, _art_buckets_stale
+    _art_buckets_stale = True
     if not _INDEX_FILE.exists():
         return
     try:
@@ -1951,6 +2014,29 @@ def best_group_art_item(
     return result
 
 
+def _art_buckets_lookup() -> dict[tuple[str, str], list[HubItem]]:
+    """One scan of the catalogue per catalogue version.
+
+    Returns (kind, series_key|movie_key) → non-hidden, non-audio sibling
+    items. Rebuilt lazily after any mutation (same invalidation as the
+    search index) so /api/hub stops rescanning _items.values() once per
+    request.
+    """
+    global _art_buckets, _art_buckets_stale
+    if _art_buckets_stale:
+        buckets: dict[tuple[str, str], list[HubItem]] = {}
+        for candidate in _items.values():
+            if candidate.hidden or (candidate.media_kind or "") == "audio":
+                continue
+            if candidate.series_key:
+                buckets.setdefault(("series", candidate.series_key), []).append(candidate)
+            elif candidate.movie_key:
+                buckets.setdefault(("movie", candidate.movie_key), []).append(candidate)
+        _art_buckets = buckets
+        _art_buckets_stale = False
+    return _art_buckets
+
+
 def group_art_cache_for(items: Iterable[object]) -> dict[tuple[str, str], Optional[HubItem]]:
     wanted_series: set[str] = set()
     wanted_movies: set[str] = set()
@@ -1966,15 +2052,7 @@ def group_art_cache_for(items: Iterable[object]) -> dict[tuple[str, str], Option
     if not wanted_series and not wanted_movies:
         return {}
 
-    buckets: dict[tuple[str, str], list[HubItem]] = {}
-    for candidate in _items.values():
-        if candidate.hidden or (candidate.media_kind or "") == "audio":
-            continue
-        if candidate.series_key in wanted_series:
-            buckets.setdefault(("series", candidate.series_key), []).append(candidate)
-        elif candidate.movie_key in wanted_movies:
-            buckets.setdefault(("movie", candidate.movie_key), []).append(candidate)
-
+    buckets = _art_buckets_lookup()
     cache: dict[tuple[str, str], Optional[HubItem]] = {}
     for series_key in wanted_series:
         key = ("series", series_key)

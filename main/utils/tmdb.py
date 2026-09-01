@@ -38,6 +38,11 @@ _YEAR_TOLERANCE = 1  # TMDB ↔ release-year off-by-one is common
 _CACHE_TTL = 60 * 60 * 12  # 12h
 _REQUEST_TIMEOUT = 10
 
+# Hard cap on in-memory TMDB cache entries. _prune() drops expired
+# entries AND their per-key locks on every insert, so a long-lived
+# process stops accumulating one never-freed Lock per distinct lookup.
+_CACHE_MAX = 2048
+
 
 @dataclass
 class TMDBHit:
@@ -74,6 +79,20 @@ _season_locks: dict = {}
 
 def _now() -> float:
     return time.monotonic()
+
+
+def _prune(now: float, cache: dict, locks: dict) -> None:
+    """Evict expired cache entries and their per-key locks on insert."""
+    expired = [key for key, (ts, _) in cache.items() if now - ts >= _CACHE_TTL]
+    if not expired and len(cache) <= _CACHE_MAX:
+        return
+    for key in expired:
+        cache.pop(key, None)
+        locks.pop(key, None)
+    while len(cache) > _CACHE_MAX:
+        oldest = next(iter(cache))
+        cache.pop(oldest, None)
+        locks.pop(oldest, None)
 
 
 def _normalise(title: str) -> str:
@@ -305,6 +324,7 @@ async def _lookup(kind: str, title: str, year: Optional[int]) -> Optional[TMDBHi
             match = _best_match(results, title, year, year_field)
             if match is None:
                 _cache[cache_key] = (_now(), None)
+                _prune(_now(), _cache, _locks)
                 return None
 
             details = await _enrich_details(session, kind, int(match["id"]))
@@ -313,6 +333,7 @@ async def _lookup(kind: str, title: str, year: Optional[int]) -> Optional[TMDBHi
 
             hit = _hit_from_details(kind, int(match["id"]), details, fallback=match)
             _cache[cache_key] = (_now(), hit)
+            _prune(_now(), _cache, _locks)
             return hit
 
 
@@ -529,8 +550,10 @@ async def fetch_season(tv_id: int, season: int) -> Optional[dict]:
             # Negative cache so a 404 on an out-of-range season doesn't
             # keep retrying. Short TTL so it self-heals.
             _season_cache[key] = (_now(), None)
+            _prune(_now(), _season_cache, _season_locks)
             return None
         _season_cache[key] = (_now(), payload)
+        _prune(_now(), _season_cache, _season_locks)
         return payload
 
 

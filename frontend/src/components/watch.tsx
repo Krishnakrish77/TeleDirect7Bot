@@ -1355,11 +1355,21 @@ function VideoWatchPage({
         void deleteContinueEntry(video.resumeKey).catch(() => undefined);
       }
     }
+    // Throttle React state to whole-second changes — timeupdate fires
+    // ~4×/s and each set re-renders this whole player shell.
+    let lastTickTime = -1;
+    let lastTickDuration = 0;
     const onTime = () => {
-      if (serverResumePending) pendingResumeMaxPositionRef.current = Math.max(pendingResumeMaxPositionRef.current, el.currentTime || 0);
-      setCurrentTime(el.currentTime || 0);
-      setDuration(el.duration || video.duration || 0);
-      setVideoMediaSessionPosition(el.currentTime || 0);
+      const time = el.currentTime || 0;
+      const dur = el.duration || video.duration || 0;
+      if (serverResumePending) pendingResumeMaxPositionRef.current = Math.max(pendingResumeMaxPositionRef.current, time);
+      if (Math.floor(time) !== Math.floor(lastTickTime) || dur !== lastTickDuration) {
+        lastTickTime = time;
+        lastTickDuration = dur;
+        setCurrentTime(time);
+        setDuration(dur);
+        setVideoMediaSessionPosition(time);
+      }
       saveResume();
     };
     const onLoaded = () => {

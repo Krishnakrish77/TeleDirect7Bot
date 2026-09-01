@@ -20,6 +20,7 @@ from main.vars import Var
 
 _BASE_URL = "https://sub.wyzie.io"
 _SEARCH_TTL = 60 * 60 * 6
+_MAX_CACHE_ENTRIES = 256  # in-memory search-result cache cap
 _MAX_RESULTS = 40
 _MAX_SUBTITLE_BYTES = 10 * 1024 * 1024
 _USER_SEARCH_LIMIT = 50
@@ -30,7 +31,7 @@ _GLOBAL_REQUEST_LIMIT = 800
 # available to valid keys; the wider source router is a fallback for titles it
 # misses, because some keys cannot query every source in ``all`` reliably.
 _FALLBACK_SEARCH_SOURCES = "all"
-_cache: dict[tuple[int, str], tuple[float, list[dict[str, Any]]]] = {}
+_cache: dict[int, dict[str, tuple[float, list[dict[str, Any]]]]] = {}
 _lock = asyncio.Lock()
 _TRUSTED_DOWNLOAD_HOSTS = {"sub.wyzie.io"}
 _RELEASE_TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -42,6 +43,22 @@ _RELEASE_NOISE = {
 
 class WyzieError(Exception):
     pass
+
+
+def _prune_cache(now: float) -> None:
+    """Drop expired entries and cap the in-memory search-result cache."""
+    expired: list[int] = []
+    for message_id, langs in list(_cache.items()):
+        for lang, (created, _candidates) in list(langs.items()):
+            if now - created >= _SEARCH_TTL:
+                langs.pop(lang, None)
+        if not langs:
+            expired.append(message_id)
+    for message_id in expired:
+        _cache.pop(message_id, None)
+    while len(_cache) > _MAX_CACHE_ENTRIES:
+        oldest = min(_cache, key=lambda mid: min(c[0] for c in _cache[mid].values()))
+        _cache.pop(oldest, None)
 
 
 def _trusted_download_url(value: object) -> bool:
@@ -166,9 +183,8 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
     language = language.strip().lower()
     if language and (len(language) > 16 or not all(ch.isalpha() or ch in {",", "-"} for ch in language)):
         raise WyzieError("Invalid subtitle language filter")
-    cache_key = (item.message_id, language)
     now = time.monotonic()
-    cached = _cache.get(cache_key)
+    cached = (_cache.get(item.message_id) or {}).get(language)
     await _reserve(user_id, "search", provider_call=not (cached and now - cached[0] < _SEARCH_TTL))
     if cached and now - cached[0] < _SEARCH_TTL:
         return [{k: v for k, v in result.items() if k != "url"} for result in cached[1]]
@@ -217,7 +233,8 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
     # Never cache an empty provider response. An intermittent provider/source
     # failure must not make a title appear to have no subtitles for six hours.
     if clean:
-        _cache[cache_key] = (now, clean)
+        _cache.setdefault(item.message_id, {})[language] = (now, clean)
+        _prune_cache(now)
     return [{k: v for k, v in result.items() if k != "url"} for result in clean]
 
 
@@ -226,8 +243,8 @@ async def download(user_id: int, item, candidate_id: str) -> tuple[bytes, dict[s
         raise WyzieError("Invalid subtitle selection")
     found = None
     now = time.monotonic()
-    for (message_id, _language), (created, candidates) in list(_cache.items()):
-        if message_id == item.message_id and now - created < _SEARCH_TTL:
+    for _language, (created, candidates) in (_cache.get(item.message_id) or {}).items():
+        if now - created < _SEARCH_TTL:
             found = next((candidate for candidate in candidates if candidate["id"] == candidate_id), None)
             if found:
                 break

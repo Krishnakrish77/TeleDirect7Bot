@@ -8,7 +8,9 @@ import { trackRecommendationEvents, type RecommendationFeedbackEvent } from '../
 import { TrailerModal } from './trailerModal';
 import { Button } from './ui/button';
 
-// Parsed once per render cycle; microtask clears it so the next render reads fresh.
+// Parsed once per render cycle; a microtask clears it so the next render
+// reads fresh. The per-commit parse is cheap; the 4Hz whole-tree re-render
+// that used to drive it is throttled in the audio/video onTime handlers.
 let _cwCache: Record<string, { pos: number; dur: number }> | null = null;
 
 function readCwMap(): Record<string, { pos: number; dur: number }> {

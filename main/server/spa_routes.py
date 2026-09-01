@@ -7,6 +7,7 @@ The React UI is the canonical public surface at the site root.  The former
 from __future__ import annotations
 
 import asyncio
+import gzip
 import hashlib
 import hmac
 import html as html_lib
@@ -267,17 +268,21 @@ async def api_google_books_cover_proxy(request: web.Request) -> web.Response:
     return await google_books_cover_proxy(request)
 
 
-def _cache_get(key: str) -> str | None:
+def _cache_get(key: str) -> tuple[str, bytes] | None:
+    """Return (text, pre-gzipped-bytes) while the entry is fresh."""
     entry = _api_response_cache.get(key)
-    if entry and entry[1] > time.monotonic():
-        return entry[0]
+    if entry and entry[2] > time.monotonic():
+        return entry[0], entry[1]
     if entry:
         _api_response_cache.pop(key, None)
     return None
 
 
 def _cache_set(key: str, text: str) -> None:
-    _api_response_cache[key] = (text, time.monotonic() + _API_CACHE_TTL)
+    # Compress once at cache-fill time so every cache hit skips the
+    # synchronous re-compression the gzip middleware would otherwise do.
+    gz = gzip.compress(text.encode("utf-8"), compresslevel=6, mtime=0)
+    _api_response_cache[key] = (text, gz, time.monotonic() + _API_CACHE_TTL)
 
 
 def invalidate_api_cache() -> None:
@@ -1197,7 +1202,20 @@ async def api_hub(request: web.Request) -> web.Response:
                 params=params,
                 timings=timings,
             )
-            return _json_text(cached)
+            text, gz = cached
+            if "gzip" in request.headers.get("Accept-Encoding", ""):
+                # Pre-compressed at cache-fill time; the gzip middleware
+                # skips bodies that already carry Content-Encoding.
+                return web.Response(
+                    body=gz,
+                    content_type="application/json",
+                    headers={
+                        "Content-Encoding": "gzip",
+                        "Vary": "Accept-Encoding",
+                        "Cache-Control": "no-store",
+                    },
+                )
+            return _json_text(text)
 
     mark = time.monotonic()
     base_filters = _base_filters()
