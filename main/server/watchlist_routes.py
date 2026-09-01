@@ -35,8 +35,16 @@ _env = Environment(
 )
 _env.globals["bot_username"] = Var.BOT_USERNAME
 
-# Allowlist: plain message_id (digits only) or prefixed group key (slug chars)
-_VALID_IID = re.compile(r'^(?:(?:movie|series|album):[a-z0-9_-]{1,120}|\d{1,15})$')
+# Allowlist: plain message_id (digits only) or a prefixed group key.
+# Movie keys carry a ``slug::year`` suffix (dedup.movie_key), while
+# series/album keys are plain slugs — the optional year run covers both.
+_VALID_IID = re.compile(
+    r'^(?:(?:movie|series|album):[a-z0-9_-]{1,120}(?:::\d{1,4})?|\d{1,15})$'
+)
+
+
+def _is_valid_iid(iid: str) -> bool:
+    return bool(_VALID_IID.match(iid or ""))
 
 
 _get_user = get_user  # shared auth helper
@@ -234,7 +242,7 @@ async def api_mark_completed(request: web.Request) -> web.Response:
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
     iid = request.match_info["iid"]
-    if not _VALID_IID.match(iid):
+    if not _is_valid_iid(iid):
         return _json({"error": "invalid item_id"}, status=400)
     if not await watchlist_store.mark_completed(int(user["sub"]), iid):
         return _json({"error": "saved title not found"}, status=404)
@@ -279,7 +287,7 @@ async def api_add(request: web.Request) -> web.Response:
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
     iid = request.match_info["iid"]
-    if not _VALID_IID.match(iid):
+    if not _is_valid_iid(iid):
         return _json({"error": "invalid item_id"}, status=400)
     await watchlist_store.add(int(user["sub"]), iid)
     await rec_store.clear_cached(int(user["sub"]))
@@ -293,7 +301,7 @@ async def api_remove(request: web.Request) -> web.Response:
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
     iid = request.match_info["iid"]
-    if not _VALID_IID.match(iid):
+    if not _is_valid_iid(iid):
         return _json({"error": "invalid item_id"}, status=400)
     await watchlist_store.remove(int(user["sub"]), iid)
     await rec_store.clear_cached(int(user["sub"]))
