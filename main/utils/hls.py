@@ -39,6 +39,12 @@ PROBE_TTL = 60 * 60
 # every later request for the same media.
 SUBPROCESS_TIMEOUT = 25.0
 
+# Extracting an embedded subtitle track means ffmpeg demuxes the WHOLE file
+# sequentially over the Telegram-streamed loopback source (no fast seek to
+# a text stream) — genuinely "can take minutes" per _extract_vtt_cached's
+# own docstring, unlike the metadata-only probe/thumbnail runs above.
+SUBTITLE_EXTRACT_TIMEOUT = 180.0
+
 # Cap concurrent ffmpeg subprocesses so a free-tier instance can't be DOSed
 # into oblivion by a handful of viewers all hitting "play" at once.
 MAX_CONCURRENT_SEGMENTS = int(os.environ.get("HLS_MAX_CONCURRENT", "2"))
@@ -518,7 +524,7 @@ async def extract_subtitle_vtt(source_url: str, track_index: int) -> Optional[by
         return None
     try:
         stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=SUBPROCESS_TIMEOUT
+            proc.communicate(), timeout=SUBTITLE_EXTRACT_TIMEOUT
         )
     except asyncio.TimeoutError:
         await _finish_subprocess(proc)
