@@ -201,17 +201,23 @@ async def probe(message_id: int, source_url: str) -> ProbeResult:
         if (result.duration > 0 or result.video_codec) and not incomplete:
             now = time.monotonic()
             _probe_cache[message_id] = (now, result)
-            # Purge expired cache entries and any orphaned locks (locks whose
-            # cache entry never succeeded and therefore was never inserted).
-            expired = [mid for mid, (ts, _) in _probe_cache.items()
-                       if now - ts > PROBE_TTL]
-            for mid in expired:
-                _probe_cache.pop(mid, None)
-            # Remove locks for IDs absent from the cache (failed probes that
-            # never wrote a cache entry accumulate locks indefinitely otherwise).
-            stale_locks = [mid for mid in _probe_locks if mid not in _probe_cache]
-            for mid in stale_locks:
-                _probe_locks.pop(mid, None)
+        # Purge expired cache entries and orphaned locks on EVERY probe, not
+        # only successes — otherwise a burst of failed probes (server start,
+        # cold skeleton cache) accumulates locks for the life of the process.
+        now = time.monotonic()
+        expired = [mid for mid, (ts, _) in _probe_cache.items()
+                   if now - ts > PROBE_TTL]
+        for mid in expired:
+            _probe_cache.pop(mid, None)
+        # Remove locks for IDs absent from the cache, keeping any lock that
+        # another coroutine may currently be holding (it was just handed out
+        # by setdefault above).
+        stale_locks = [mid for mid in _probe_locks
+                       if mid not in _probe_cache
+                       and mid != message_id
+                       and not _probe_locks[mid].locked()]
+        for mid in stale_locks:
+            _probe_locks.pop(mid, None)
         return result
 
 

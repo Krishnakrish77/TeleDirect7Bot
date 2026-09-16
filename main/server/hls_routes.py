@@ -29,6 +29,9 @@ routes = web.RouteTableDef()
 _PATH_RE = re.compile(r"^([A-Za-z0-9_-]*[A-Za-z_-])(\d+)$")
 
 _class_cache: dict = {}
+# In-flight skeleton prefetches keyed by message_id. Strong references keep
+# the tasks GC-safe; entries are replaced (never accumulated) per message.
+_prefetch_tasks: dict = {}
 
 
 def _parse_path(raw: str):
@@ -88,10 +91,14 @@ async def hls_playlist(request: web.Request) -> web.Response:
 
     # Warm the skeleton cache in the background. By the time the browser asks
     # for segments, ffmpeg's header + Cues reads will hit our in-memory cache
-    # instead of round-tripping to Telegram for every seek.
-    asyncio.create_task(skeleton_cache.prefetch_skeleton(
-        message_id, file_id.file_size, streamer, file_id, index
-    ))
+    # instead of round-tripping to Telegram for every seek. One task per
+    # message: the strong ref keeps it GC-safe and dedupes player retries
+    # that hit the playlist twice in quick succession.
+    _prefetch_tasks[message_id] = asyncio.create_task(
+        skeleton_cache.prefetch_skeleton(
+            message_id, file_id.file_size, streamer, file_id, index
+        )
+    )
 
     # Clamp to the actual track count so a rogue ?a=99 on a video-only file
     # can't create unbounded (message_id, N) session keys.
@@ -241,6 +248,26 @@ def _sub_store_key(message_id: int, track: int) -> str:
     return f"{message_id}:{track}"
 
 
+_VTT_MAX_ENTRIES = 64  # MBs of VTT each; unbounded growth pinned memory forever
+
+
+def _vtt_cache_set(cache_key, data: bytes) -> None:
+    """Insert into the L1 VTT cache and trim expired/oldest entries.
+
+    Entries were previously only TTL-checked on read, so the dict (and its
+    per-key locks) grew without bound for the life of the process.
+    """
+    now = time.monotonic()
+    _vtt_cache[cache_key] = (now, data)
+    for key in [k for k, (ts, _) in _vtt_cache.items() if now - ts >= _VTT_CACHE_TTL]:
+        _vtt_cache.pop(key, None)
+        _vtt_locks.pop(key, None)
+    while len(_vtt_cache) > _VTT_MAX_ENTRIES:
+        oldest = min(_vtt_cache, key=lambda k: _vtt_cache[k][0])
+        _vtt_cache.pop(oldest, None)
+        _vtt_locks.pop(oldest, None)
+
+
 async def _extract_vtt_cached(cache_key, secure_hash: str, message_id: int, track: int):
     """Return a subtitle track as WebVTT from L2 (Mongo) or by extracting.
 
@@ -259,7 +286,7 @@ async def _extract_vtt_cached(cache_key, secure_hash: str, message_id: int, trac
         except Exception:
             persisted = None
         if persisted:
-            _vtt_cache[cache_key] = (time.monotonic(), persisted)
+            _vtt_cache_set(cache_key, persisted)
             return persisted
 
     src = hls.internal_stream_url(secure_hash, message_id)
@@ -269,7 +296,7 @@ async def _extract_vtt_cached(cache_key, secure_hash: str, message_id: int, trac
     data = await hls.extract_subtitle_vtt(src, track)
     if not data:
         return None
-    _vtt_cache[cache_key] = (time.monotonic(), data)
+    _vtt_cache_set(cache_key, data)
     if store is not None:
         try:
             await store.set_subtitle(store_key, data)
@@ -382,7 +409,7 @@ async def hls_sub_external_vtt(request: web.Request) -> web.Response:
                     raise web.HTTPNotFound(text="subtitle source missing")
                 raw = bytesio.getvalue() if hasattr(bytesio, "getvalue") else bytes(bytesio)
                 data = srt_to_vtt(raw)
-                _vtt_cache[cache_key] = (time.monotonic(), data)
+                _vtt_cache_set(cache_key, data)
 
     return web.Response(
         body=data,

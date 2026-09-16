@@ -30,6 +30,13 @@ class MediaSessionUnavailable(RuntimeError):
     pass
 
 
+class TelegramStreamTruncated(RuntimeError):
+    """GetFile retries exhausted mid-range. Raising (instead of ending the
+    generator quietly) makes aiohttp truncate the response body against the
+    promised Content-Length/Content-Range instead of delivering a short body
+    that players and ffmpeg mistake for complete, valid media."""
+
+
 def _flood_wait_seconds(error: FloodWait) -> float:
     """Pyrogram variants expose the wait as either ``value`` or ``x``."""
     try:
@@ -47,7 +54,9 @@ class ByteStreamer:
         """
         self.client: Client = client
         self.cached_file_ids: Dict[int, Tuple[float, FileId]] = {}
-        asyncio.create_task(self.clean_cache())
+        # Strong reference: fire-and-forget tasks are GC-able and can vanish
+        # mid-sleep, silently disabling cache eviction.
+        self._cache_cleaner = asyncio.create_task(self.clean_cache())
 
     async def get_file_properties(self, message_id: int) -> FileId:
         """
@@ -188,7 +197,11 @@ class ByteStreamer:
                     getattr(file_id, "dc_id", "?"),
                     exc,
                 )
-                return
+                # _choose_stream_client in stream_routes validated a session
+                # moments ago, so reaching here means it died before the
+                # first byte. Raise so aiohttp errors the response instead
+                # of serving an empty 200 body the player reads as silence.
+                raise
 
             location = await self.get_location(file_id)
 
@@ -253,7 +266,9 @@ class ByteStreamer:
                     current_offset,
                     last_err,
                 )
-                return None
+                raise TelegramStreamTruncated(
+                    f"GetFile retries exhausted media_id={getattr(file_id, 'media_id', '?')} offset={current_offset}"
+                ) from last_err
 
             async def _send_get_cdn_file(current_offset: int):
                 last_err: Union[BaseException, None] = None
@@ -294,11 +309,11 @@ class ByteStreamer:
                     current_offset,
                     last_err,
                 )
-                return None
+                raise TelegramStreamTruncated(
+                    f"GetCdnFile retries exhausted media_id={getattr(file_id, 'media_id', '?')} offset={current_offset}"
+                ) from last_err
 
             r = await _send_get_file(offset)
-            if r is None:
-                return
             if isinstance(r, raw.types.upload.File):
                 while current_part <= part_count:
                     chunk = r.bytes
@@ -320,8 +335,6 @@ class ByteStreamer:
 
                     if current_part < part_count:
                         r = await _send_get_file(offset)
-                        if r is None:
-                            return
                     current_part += 1
             elif isinstance(r, raw.types.upload.FileCdnRedirect):
                 # Telegram serves popular/large files from edge CDNs. The
@@ -335,8 +348,6 @@ class ByteStreamer:
                 )
                 while current_part <= part_count:
                     r2 = await _send_get_cdn_file(offset)
-                    if r2 is None:
-                        return
                     if isinstance(r2, raw.types.upload.CdnFileReuploadNeeded):
                         # CDN node hasn't been primed yet — ask the home DC
                         # to push the file, then retry the same offset.
@@ -381,6 +392,13 @@ class ByteStreamer:
                     "(media_id=%s offset=%d)",
                     type(r).__name__, getattr(file_id, "media_id", "?"), offset,
                 )
+        except TelegramStreamTruncated:
+            # Deliberately propagates: aiohttp must see the generator fail so
+            # the response body ends short of the promised Content-Length
+            # (a visible network error for the player) instead of a silently
+            # truncated "successful" response. finally still releases the
+            # stream slot below.
+            raise
         except (TimeoutError, asyncio.TimeoutError, TelegramTimeout, AttributeError, FloodWait) as e:
             # Mid-stream timeout or detached session — log so we can tell this
             # apart from "everything finished" in the diagnostics.

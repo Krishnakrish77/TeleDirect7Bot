@@ -139,6 +139,46 @@ class ByteStreamerMediaSessionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(generate.await_count, 2)
         refresh_cache.assert_awaited_once_with(streamer.client, 4)
 
+    async def test_get_file_retry_exhaustion_raises_instead_of_short_body(self):
+        """A GetFile that exhausts retries must fail the response, not end
+        the generator quietly — a silent end serves a truncated body under a
+        Content-Length that promises more."""
+        class DyingSession:
+            async def send(self, _request):
+                raise FloodWait(1)
+
+        streamer = ByteStreamer.__new__(ByteStreamer)
+        streamer.client = object()
+        file_id = SimpleNamespace(media_id=99, dc_id=4, file_type=None)
+
+        with (
+            patch.object(streamer, "generate_media_session", return_value=DyingSession()),
+            patch.object(streamer, "get_location", return_value=object()),
+            patch.object(custom_dl, "work_loads", {0: 0}),
+            patch.object(custom_dl.asyncio, "sleep", AsyncMock()),
+        ):
+            with self.assertRaises(custom_dl.TelegramStreamTruncated):
+                async for _chunk in streamer.yield_file(
+                    file_id, 0, 0, 0, 1024, 2, 512,
+                ):
+                    pass
+
+    async def test_media_session_failure_raises_instead_of_empty_body(self):
+        """Media session dying before the first byte must error the response,
+        not serve an empty 200 the player reads as silence."""
+        streamer = ByteStreamer.__new__(ByteStreamer)
+        streamer.client = object()
+        file_id = SimpleNamespace(media_id=99, dc_id=4, file_type=None)
+
+        with (
+            patch.object(streamer, "generate_media_session", side_effect=MediaSessionUnavailable("died")),
+            patch.object(custom_dl, "work_loads", {0: 0}),
+        ):
+            with self.assertRaises(MediaSessionUnavailable):
+                async for _chunk in streamer.yield_file(
+                    file_id, 0, 0, 0, 1024, 1, 1024,
+                ):
+                    pass
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ no coverage:
 import asyncio
 import gzip as gzlib
 import os
+import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -149,6 +150,66 @@ class ArtBucketCacheTest(unittest.TestCase):
         media_index._invalidate_search_index()
         fresh = media_index.group_art_cache_for([first])
         self.assertEqual(fresh[("series", "castle")].message_id, better.message_id)
+
+
+class VttCacheEvictionTest(unittest.TestCase):
+    def test_insert_evicts_expired_and_over_cap_entries(self):
+        from main.server import hls_routes
+        saved = (dict(hls_routes._vtt_cache), dict(hls_routes._vtt_locks))
+        try:
+            hls_routes._vtt_cache.clear()
+            hls_routes._vtt_locks.clear()
+            old = time.monotonic() - hls_routes._VTT_CACHE_TTL - 1
+            hls_routes._vtt_cache["expired"] = (old, b"x")
+            hls_routes._vtt_locks["expired"] = asyncio.Lock()
+            for i in range(hls_routes._VTT_MAX_ENTRIES):
+                hls_routes._vtt_cache[i] = (time.monotonic(), b"x")
+
+            hls_routes._vtt_cache_set("new", b"data")
+
+            self.assertNotIn("expired", hls_routes._vtt_cache)
+            self.assertNotIn("expired", hls_routes._vtt_locks)
+            self.assertEqual(hls_routes._vtt_cache["new"], (hls_routes._vtt_cache["new"][0], b"data"))
+            self.assertLessEqual(len(hls_routes._vtt_cache), hls_routes._VTT_MAX_ENTRIES)
+        finally:
+            hls_routes._vtt_cache.clear()
+            hls_routes._vtt_cache.update(saved[0])
+            hls_routes._vtt_locks.clear()
+            hls_routes._vtt_locks.update(saved[1])
+
+
+class ProbeLockPurgeTest(unittest.TestCase):
+    def test_failed_probes_do_not_accumulate_locks(self):
+        from main.utils import hls
+        saved_cache = dict(hls._probe_cache)
+        saved_locks = dict(hls._probe_locks)
+        try:
+            hls._probe_cache.clear()
+            hls._probe_locks.clear()
+
+            async def fail(_url):
+                from main.utils.hls import ProbeResult
+                return ProbeResult(duration=0.0, video_codec=None, audio_codec=None)
+
+            with patch.object(hls, "_run_ffprobe", fail):
+                asyncio.run(hls.probe(42, "http://x"))
+
+            # Failed probe: no cache entry. Its own lock may linger while a
+            # waiter could still hold it, but it must be purged by the NEXT
+            # probe for a different message.
+            async def succeed(_url):
+                from main.utils.hls import ProbeResult
+                return ProbeResult(duration=1.0, video_codec="h264", audio_codec="aac")
+
+            with patch.object(hls, "_run_ffprobe", succeed):
+                asyncio.run(hls.probe(43, "http://x"))
+
+            self.assertNotIn(42, hls._probe_locks)
+        finally:
+            hls._probe_cache.clear()
+            hls._probe_cache.update(saved_cache)
+            hls._probe_locks.clear()
+            hls._probe_locks.update(saved_locks)
 
 
 if __name__ == "__main__":
