@@ -69,13 +69,15 @@ export function AiRecPanel({
 
   const isAbort = (err: unknown) => err instanceof DOMException && err.name === 'AbortError';
 
-  const load = () => {
+  // Single streaming runner for the panel-open, Ask, and Refresh paths: same
+  // 30s ceiling, same status/result state writes, shared abort controller so
+  // an explicit ask cancels a stale initial load (and vice versa). The
+  // opposite busy flag is cleared at handoff; otherwise its aborted request
+  // cannot safely clear state after the controller has been replaced,
+  // leaving the panel stuck loading.
+  const runStream = (input: { initial?: boolean; query?: string; refresh?: boolean }, kind: 'load' | 'ask' | 'refresh') => {
     ctrl.current?.abort();
-    // ``ctrl`` is intentionally shared so an explicit ask cancels a stale
-    // initial load (and vice versa). Clear the opposite busy flag at the
-    // handoff; otherwise its aborted request cannot safely clear state after
-    // the controller has been replaced, leaving the panel stuck loading.
-    setAsking(false);
+    setAsking(kind === 'ask');
     const controller = new AbortController();
     let timedOut = false;
     const timeout = window.setTimeout(() => {
@@ -83,52 +85,10 @@ export function AiRecPanel({
       controller.abort();
     }, 30_000);
     ctrl.current = controller;
-    setLoading(true);
+    if (kind === 'load') setLoading(true);
     setError('');
     setAssessment(null);
     setAgentStatus('Searching your library');
-    streamAiRecommendations({ initial: true }, setAgentStatus, controller.signal)
-      .then((res) => {
-        setItems(res.items || []);
-        setExternalItems(res.externalItems || []);
-        setMessage(res.message || '');
-        setAssessment(res.assessment || null);
-        setColdStart(Boolean(res.coldStart));
-        setRecommendationMeta(res.recommendationMeta);
-      })
-      .catch((err) => {
-        if (timedOut) setError('Recommendations took too long. Please try again.');
-        else if (!isAbort(err)) setError('Could not load recommendations right now.');
-      })
-      .finally(() => {
-        window.clearTimeout(timeout);
-        if (ctrl.current === controller) {
-          setLoading(false);
-          setAgentStatus('');
-        }
-      });
-  };
-
-  useEffect(() => {
-    load();
-    return () => ctrl.current?.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const runAgent = (input: { query?: string; refresh?: boolean }) => {
-    const isRefresh = Boolean(input.refresh);
-    ctrl.current?.abort();
-    setLoading(false);
-    setAsking(!isRefresh);
-    setAgentAction(isRefresh ? 'refresh' : 'ask');
-    setAgentStatus('Searching your library');
-    setLastAgentInput(input);
-    setError('');
-    setAssessment(null);
-    const controller = new AbortController();
-    let timedOut = false;
-    const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 30_000);
-    ctrl.current = controller;
     streamAiRecommendations(input, setAgentStatus, controller.signal)
       .then((res) => {
         setItems(res.items || []);
@@ -140,16 +100,32 @@ export function AiRecPanel({
       })
       .catch((err) => {
         if (timedOut) setError('Recommendations took too long. Please try again.');
-        else if (!isAbort(err)) setError(err instanceof Error ? err.message : 'Could not process that request.');
+        else if (isAbort(err)) { /* superseded or stopped */ }
+        else setError(err instanceof Error ? err.message : 'Could not load recommendations right now.');
       })
       .finally(() => {
         window.clearTimeout(timeout);
         if (ctrl.current === controller) {
+          setLoading(false);
           setAsking(false);
           setAgentAction(null);
           setAgentStatus('');
         }
       });
+  };
+
+  const load = () => runStream({ initial: true }, 'load');
+
+  useEffect(() => {
+    load();
+    return () => ctrl.current?.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const runAgent = (input: { query?: string; refresh?: boolean }) => {
+    runStream(input, input.refresh ? 'refresh' : 'ask');
+    setAgentAction(input.refresh ? 'refresh' : 'ask');
+    setLastAgentInput(input);
   };
 
   const submit = (event: React.FormEvent) => {
@@ -290,6 +266,7 @@ export function AiRecPanel({
                       <h4>{item.title}</h4>
                       {item.year && <small>{item.year}</small>}
                       <p className="ai-request-card-meta">{item.genres?.join(' · ')}{item.runtimeMinutes ? `${item.genres?.length ? ' · ' : ''}${item.runtimeMinutes}m` : ''}{item.tmdbRating ? `${item.genres?.length || item.runtimeMinutes ? ' · ' : ''}TMDB ${item.tmdbRating.toFixed(1)}` : ''}</p>
+                      {item.recReason && <em className="ai-request-card-reason">{item.recReason}</em>}
                       {item.overview && <p className="ai-request-card-overview">{item.overview}</p>}
                       <div className="ai-request-card-actions">
                         {item.tmdbUrl && <Button asChild variant="secondary" size="sm" className="ai-request-card-details"><a href={item.tmdbUrl} target="_blank" rel="noreferrer">Details <span aria-hidden="true">↗</span></a></Button>}

@@ -124,8 +124,10 @@ class AiRecGroundingTest(unittest.TestCase):
                 patch.object(ai_rec, "_safe_stats", AsyncMock(return_value={})),
                 patch.object(ai_rec, "_trending_items", AsyncMock(return_value=[{"href": "/fresh"}])),
             ):
-                result = await ai_rec._generate(
-                    7, query=None, limit=12, refresh=False, rank_with_gemini=False, cache_result=False,
+                # Reused agent signals mark this as a fallback: no cache write.
+                signals = {"profile": {}, "history": [], "cw_map": {}, "dismissed": set()}
+                result = await ai_rec._deterministic_shelf(
+                    7, query=None, limit=12, refresh=False, signals=signals,
                 )
             set_cached.assert_not_awaited()
             return result
@@ -159,10 +161,10 @@ class AiRecGroundingTest(unittest.TestCase):
                 ai_rec.wh_store, "get_recent", AsyncMock(return_value=[{"cw_key": "legacy-watch"}])
             ), patch.object(ai_rec.cw_store, "get_all", AsyncMock(return_value={})), patch.object(
                 ai_rec.dismissed_store, "get_dismissed_ids", AsyncMock(return_value=set())
-            ), patch.object(ai_rec.ai_rec_store, "get_cached", AsyncMock(return_value=None)), patch.object(
+            ), patch.object(
                 ai_rec, "_safe_stats", AsyncMock(return_value={})
             ), patch.object(ai_rec, "_trending_items", AsyncMock(return_value=[{"href": "/fresh"}])):
-                return await ai_rec._generate(7, query=None, limit=12, refresh=False)
+                return await ai_rec._deterministic_shelf(7, query=None, limit=12, refresh=False)
 
         result = __import__("asyncio").run(run())
         self.assertFalse(result["coldStart"])
@@ -210,6 +212,64 @@ class AiRecGroundingTest(unittest.TestCase):
             ai_rec._clean_agent_args("get_title_details", {"ids": ["card_1"] * 20})["ids"],
             ["card_1"] * ai_rec._AGENT_TOOL_RESULT_LIMIT,
         )
+
+    def test_midloop_model_failure_curates_gathered_candidates(self):
+        """A flaky model round after tools filled the pool must still ship a shelf."""
+        class Catalogue:
+            def __init__(self, **_kwargs):
+                self.payloads = {"card_1": _card("/one")}
+                self.source_counts = Counter()
+
+            def run(self, _name, _args):
+                return [{"id": "card_1", "title": "One", "availability": {"playable": True}}]
+
+            def _compact(self, identifier, payload):
+                return {"id": identifier, "title": payload["title"], "availability": {"playable": True}}
+
+        async def run():
+            function_response = {"candidates": [{"content": {"parts": [{"functionCall": {
+                "name": "search_library", "args": {"query": "one"},
+            }}]}}]}
+            with patch.object(ai_rec.rec_engine, "_collect_signal_profile", AsyncMock(return_value={"seeds": []})), patch.object(
+                ai_rec.wh_store, "get_recent", AsyncMock(return_value=[])
+            ), patch.object(ai_rec.cw_store, "get_all", AsyncMock(return_value={})), patch.object(
+                ai_rec.dismissed_store, "get_dismissed_ids", AsyncMock(return_value=set())
+            ), patch.object(ai_rec, "_safe_stats", AsyncMock(return_value={})), patch.object(
+                ai_rec, "_AgentCatalogue", Catalogue
+            ), patch.object(
+                # Second round fails (transient 5xx → None); pool already has a candidate.
+                ai_rec.gemini, "generate_content", AsyncMock(side_effect=[function_response, None])
+            ), patch.object(
+                ai_rec.gemini, "generate_json", AsyncMock(return_value={"picks": [{"id": "card_1", "reason": "grounded", "bucket": "comfort"}]})
+            ), patch.object(ai_rec, "_requestable_picks", AsyncMock(return_value=[])), patch.object(
+                ai_rec.ai_rec_store, "set_cached", AsyncMock()
+            ):
+                return await ai_rec._generate_agentic(7, query="", refresh=False, limit=12)
+
+        result = __import__("asyncio").run(run())
+        self.assertEqual([item["href"] for item in result["items"]], ["/one"])
+        self.assertEqual(result["recommendationMeta"]["origin"], "agent")
+        self.assertFalse(result["recommendationMeta"]["fallback"])
+
+    def test_first_round_model_failure_still_falls_back(self):
+        """No candidates + model failure must remain a real agent failure."""
+        class Catalogue:
+            def __init__(self, **_kwargs):
+                self.payloads = {}
+                self.source_counts = Counter()
+
+        async def run():
+            with patch.object(ai_rec.rec_engine, "_collect_signal_profile", AsyncMock(return_value={"seeds": []})), patch.object(
+                ai_rec.wh_store, "get_recent", AsyncMock(return_value=[])
+            ), patch.object(ai_rec.cw_store, "get_all", AsyncMock(return_value={})), patch.object(
+                ai_rec.dismissed_store, "get_dismissed_ids", AsyncMock(return_value=set())
+            ), patch.object(ai_rec, "_safe_stats", AsyncMock(return_value={})), patch.object(
+                ai_rec, "_AgentCatalogue", Catalogue
+            ), patch.object(ai_rec.gemini, "generate_content", AsyncMock(return_value=None)):
+                return await ai_rec._generate_agentic(7, query="", refresh=False, limit=12)
+
+        with self.assertRaises(ai_rec.AgentRunError):
+            __import__("asyncio").run(run())
 
     def test_agent_loop_only_applies_ids_returned_by_tools(self):
         class Catalogue:

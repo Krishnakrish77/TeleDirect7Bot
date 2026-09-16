@@ -142,6 +142,7 @@ def rank_catalogue_cards(
     """
     related_counts = related_counts or Counter()
     max_message_id = max((it.message_id for it in media_index._items.values()), default=1)
+    penalties = profile.get("impression_penalties") if isinstance(profile.get("impression_penalties"), Counter) else Counter()
     scored: list[tuple[object, float, float]] = []
     seen: set[tuple] = set()
     for card in cards:
@@ -152,7 +153,11 @@ def rank_catalogue_cards(
         tmdb_id, kind = _card_tmdb(card)
         related = related_counts.get((tmdb_id, kind), 0) if tmdb_id else 0
         relevance = media_index.card_search_score(card, query) if query else 0.0
-        scored.append((card, _card_personal_score(card, profile, related_count=related, max_message_id=max_message_id), relevance))
+        score = _card_personal_score(card, profile, related_count=related, max_message_id=max_message_id)
+        # Repeatedly impressed-but-never-opened titles gently sink; a direct
+        # query still outranks the penalty (relevance sorts first).
+        score -= min(0.45, 0.15 * penalties.get((tmdb_id, kind), 0.0)) if not query else 0.0
+        scored.append((card, score, relevance))
     scored.sort(key=lambda entry: (-entry[2], -entry[1], -_card_message_id(entry[0])))
 
     selected: list[tuple[object, float]] = []
@@ -281,18 +286,27 @@ async def _collect_signal_profile(user_id: int) -> dict:
     # signal. A card open/play says "this was interesting" but must never
     # outweigh an explicit rating or completed watch.
     feedback_weights = {"open": 0.35, "play": 0.8, "save": 0.2}
+    # A bare impression with no follow-up engagement is a whisper of "seen it,
+    # skipped it": repeat impressions of the same title accumulate a small
+    # penalty so re-generating a shelf rotates it out. Never excludes — a
+    # skimmed panel must not bury a title forever.
+    impression_penalties: Counter = Counter()
     for index, entry in enumerate(feedback):
         try:
             tmdb_id = int(entry.get("tmdb_id") or 0)
         except (TypeError, ValueError):
             tmdb_id = 0
         kind = str(entry.get("tmdb_kind") or "")
+        if str(entry.get("action") or "") == "impression" and tmdb_id and kind:
+            impression_penalties[(tmdb_id, kind)] += 1.0
+            continue
         item = _item_for_tmdb_key(tmdb_id, kind) if tmdb_id and kind else None
         if item is None:
             continue
         weight = feedback_weights.get(str(entry.get("action") or ""), 0)
         if weight:
             add_seed(item, weight * max(0.2, 1.0 - index * 0.05), exclude=False)
+            impression_penalties.pop((tmdb_id, kind), None)  # engaged — not skipped
 
     return {
         # TMDB calls are deliberately capped.  Select the strongest distinct
@@ -307,6 +321,7 @@ async def _collect_signal_profile(user_id: int) -> dict:
         "liked_tmdb": liked_tmdb,
         "disliked_tmdb": disliked_tmdb,
         "partial_tmdb": partial_tmdb,
+        "impression_penalties": impression_penalties,
     }
 
 

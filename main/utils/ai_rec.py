@@ -125,7 +125,7 @@ _AGENT_TOOLS = [{"functionDeclarations": [
         "parameters": {"type": "object", "properties": {
             "kind": {"type": "string", "enum": ["movies", "series"]}, "genre": {"type": "string"},
             "year_from": {"type": "integer"}, "year_to": {"type": "integer"},
-            "sort": {"type": "string", "enum": ["newest", "relevance"]},
+            "sort": {"type": "string", "enum": ["newest", "oldest"]},
         }},
     },
     {
@@ -814,13 +814,27 @@ def _validated_assessment(raw: object, payloads: dict) -> dict | None:
 
 # ---- orchestration -------------------------------------------------------
 
+# _stats_payload aggregates 500 history rows + all events + CW map per call;
+# the taste summary needs only four display fields from it. A short TTL keeps
+# an Ask → Refresh burst from re-running the full aggregation while staying
+# fresh enough that a new binge shows up in the next generation.
+_STATS_CACHE_TTL = 120.0
+_stats_cache: dict[int, tuple[float, dict]] = {}
+
+
 async def _safe_stats(user_id: int) -> dict:
+    now = time.monotonic()
+    cached = _stats_cache.get(user_id)
+    if cached and now - cached[0] < _STATS_CACHE_TTL:
+        return cached[1]
     try:
         from main.server.stats_routes import _stats_payload
-        return await _stats_payload(user_id)
+        stats = await _stats_payload(user_id)
     except Exception:
         logging.debug("ai_rec: stats payload failed", exc_info=True)
         return {}
+    _stats_cache[user_id] = (now, stats)
+    return stats
 
 
 async def _gather_candidates(
@@ -999,7 +1013,9 @@ def _clean_agent_args(name: str, raw: object) -> dict:
     if kind not in {"movies", "series"}:
         kind = ""
     sort = text("sort", 12).lower()
-    allowed_sorts = {"relevance", "newest", "oldest"} if name == "search_library" else {"relevance", "newest"}
+    # "relevance" only makes sense for search_library: query_grouped orders by
+    # search score there. For browse_library it would silently mean "newest".
+    allowed_sorts = {"relevance", "newest", "oldest"} if name == "search_library" else {"newest", "oldest"}
     if sort not in allowed_sorts:
         sort = "newest" if name == "browse_library" else "relevance"
 
@@ -1177,6 +1193,9 @@ async def _generate_agentic(
         cw_store.get_all(user_id), dismissed_store.get_dismissed_ids(user_id),
     )
     stats = await _safe_stats(user_id)
+    # Shared with the deterministic fallback so a failed agent run never pays
+    # the same Mongo gathers twice.
+    gathered_signals = {"profile": profile, "history": history, "cw_map": cw_map, "dismissed": dismissed}
     seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map)
     watched_ids = _watched_card_ids(seen_keys)
     excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
@@ -1195,13 +1214,15 @@ async def _generate_agentic(
     calls_used = 0
 
     def failed(reason: str) -> AgentRunError:
-        return AgentRunError(
+        error = AgentRunError(
             reason,
             tool_count=calls_used,
             candidate_count=len(catalogue.payloads),
             elapsed_ms=round((time.monotonic() - started) * 1000),
             source_counts=dict(catalogue.source_counts),
         )
+        error.signals = gathered_signals  # type: ignore[attr-defined]
+        return error
 
     explored = False
     while calls_used < _AGENT_MAX_TOOL_CALLS:
@@ -1216,7 +1237,15 @@ async def _generate_agentic(
             timeout=remaining,
         )
         model_content, calls = _function_calls(response)
+        # One flaky model round must not discard the candidates already
+        # gathered: break with whatever the tools found and let the curation
+        # pass (plus the deterministic reranker) finish the shelf. Only a
+        # failure before any candidate exists is a real agent failure.
         if response is None or model_content is None:
+            if catalogue.payloads:
+                logging.info("ai_rec_agent: mid-loop model failure after %d calls, curating %d gathered candidates",
+                             calls_used, len(catalogue.payloads))
+                break
             raise failed("model")
         if not explored:
             await _emit_agent_status(progress, "Exploring related titles")
@@ -1314,14 +1343,14 @@ async def get_ai_recommendations(
                 )
                 await _emit_agent_status(progress, "Curating picks")
                 return _with_recommendation_meta(
-                    await _generate(
+                    await _deterministic_shelf(
                         user_id, query=query, limit=limit, refresh=refresh,
-                        rank_with_gemini=False, cache_result=False,
+                        signals=getattr(exc, "signals", None),
                     ),
                     "library", fallback=True,
                 )
         return _with_recommendation_meta(
-            await _generate(user_id, query=query, limit=limit, refresh=refresh), "library",
+            await _deterministic_shelf(user_id, query=query, limit=limit, refresh=refresh), "library",
         )
     except Exception:
         logging.exception("ai_rec: generation failed, serving trending fallback")
@@ -1350,30 +1379,36 @@ async def get_ai_recommendations(
         }, "fresh", fallback=True)
 
 
-async def _generate(
+async def _deterministic_shelf(
     user_id: int, *, query: Optional[str], limit: int, refresh: bool,
-    rank_with_gemini: bool = True, cache_result: bool = True,
+    signals: dict | None = None,
 ) -> dict:
+    """Deterministic, model-free library shelf.
+
+    Serves the non-agentic route and every agent fallback. ``signals`` lets a
+    caller that already gathered profile/history/cw/dismissed (the agent runs
+    them unconditionally) inject them instead of paying the Mongo round trips
+    again precisely when the request is already slow.
+    """
     query = (query or "").strip()
-    read_cache = not query and not refresh
     # A fallback may be shown for this request, but it must never pin weaker
-    # deterministic results over the next cache-first panel open.
-    write_cache = not query and cache_result  # refresh recomputes AND refreshes the stored cache
+    # deterministic results over the next cache-first panel open, so fallback
+    # callers pass no signals and never write the cache.
+    write_cache = signals is None and not query  # refresh recomputes AND refreshes the stored cache
 
     from main.server import spa_routes as _spa  # lazy: card builders
 
-    profile, history, cw_map, dismissed = await asyncio.gather(
-        rec_engine._collect_signal_profile(user_id),
-        wh_store.get_recent(user_id, limit=_AI_REC_HISTORY_LIMIT),
-        cw_store.get_all(user_id),
-        dismissed_store.get_dismissed_ids(user_id),
-    )
-    if read_cache:
-        cached = await _cached_ai_recommendations(
-            user_id, profile=profile, history=history, cw_map=cw_map, dismissed=dismissed,
+    if signals is not None:
+        profile, history, cw_map, dismissed = (
+            signals["profile"], signals["history"], signals["cw_map"], signals["dismissed"],
         )
-        if cached:
-            return cached
+    else:
+        profile, history, cw_map, dismissed = await asyncio.gather(
+            rec_engine._collect_signal_profile(user_id),
+            wh_store.get_recent(user_id, limit=_AI_REC_HISTORY_LIMIT),
+            cw_store.get_all(user_id),
+            dismissed_store.get_dismissed_ids(user_id),
+        )
     stats = await _safe_stats(user_id)
 
     # A deliberate refresh should regenerate its TMDB-derived candidate pool,
@@ -1394,7 +1429,7 @@ async def _generate(
     seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map.keys())
     watched_card_ids = _watched_card_ids(seen_keys)
     excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
-    if not has_signal:
+    if not has_signal or not gemini.available():
         return await _finish({
             "items": await _trending_items(
                 limit, exclude_keys=seen_keys, exclude_item_ids=watched_card_ids, excluded_tmdb=excluded,
@@ -1402,17 +1437,9 @@ async def _generate(
             "externalItems": [],
             "message": (
                 "Your activity is saved; some watched titles still need library metadata before picks can be tailored."
-                if has_activity else ""
+                if has_activity and not has_signal
+                else "Personalized ranking is temporarily unavailable; here are fresh picks." if has_activity else ""
             ),
-            "coldStart": not has_activity,
-        })
-    if not gemini.available():
-        return await _finish({
-            "items": await _trending_items(
-                limit, exclude_keys=seen_keys, exclude_item_ids=watched_card_ids, excluded_tmdb=excluded,
-            ),
-            "externalItems": [],
-            "message": "Personalized ranking is temporarily unavailable; here are fresh picks." if has_activity else "",
             "coldStart": not has_activity,
         })
 
@@ -1438,17 +1465,10 @@ async def _generate(
             "coldStart": not has_activity,
         })
 
-    def _raw_fallback() -> list:
-        return _fallback_items(payloads, limit)
-
-    index, prompt_items = _index_candidates(payloads)
-    prompt = _build_prompt(_taste_summary(profile, stats), prompt_items, query, limit)
-    result = await gemini.generate_json(prompt, schema=_PICK_SCHEMA, timeout=45) if rank_with_gemini else None
-
-    picks = result.get("picks") if isinstance(result, dict) else None
-    if not isinstance(picks, list) or not picks:
-        return await _finish({"items": _raw_fallback(), "externalItems": await _requestable_picks(user_id, profile, dismissed, query), "message": "", "coldStart": False})
-
-    items = _balanced_buckets(_apply_picks(picks, index, limit) or _raw_fallback())
-    message = (result.get("message") or "").strip()
-    return await _finish({"items": items, "externalItems": await _requestable_picks(user_id, profile, dismissed, query), "message": message, "coldStart": False})
+    items = _fallback_items(payloads, limit)
+    return await _finish({
+        "items": items,
+        "externalItems": await _requestable_picks(user_id, profile, dismissed, query),
+        "message": "",
+        "coldStart": False,
+    })

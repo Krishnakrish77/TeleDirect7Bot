@@ -505,6 +505,7 @@ export interface RequestTitle {
   runtimeMinutes?: number | null;
   tmdbRating?: number | null;
   tmdbUrl?: string;
+  recReason?: string;
   seasons?: Array<{ number: number; name: string; episodeCount: number; airDate: string }>;
   inLibrary?: boolean;
   availableSeasons?: number[];
