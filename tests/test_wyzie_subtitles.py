@@ -223,72 +223,48 @@ class WyzieDownloadReliabilityTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(attempts), 2)
         sleep_mock.assert_awaited_once()
 
-    async def test_gone_download_link_refreshes_cache_and_succeeds(self):
-        """A dead cached URL (404) must re-search for fresh links, not error."""
+    async def test_gone_download_link_falls_back_to_proxy(self):
+        """A dead/blocked direct URL must try Wyzie's proxy path, not error."""
         item = self._item()
-        self._seed_cache(item)  # cached URL is stale — provider will 404 it
-        searches = []
-
-        async def fake_search(user_id, item_arg, language=""):
-            searches.append(item_arg.message_id)
-            # Fresh search replaces the cache with a working URL under the
-            # same candidate id.
-            wyzie_subtitles._cache[item_arg.message_id] = {
-                "": (time.monotonic(), [{
-                    "id": "candidate-1", "url": "https://sub.wyzie.io/fresh", "format": "srt",
-                    "language": "en", "label": "English", "release": "",
-                    "fileName": "subtitle.srt", "hearingImpaired": False, "source": "",
-                }]),
-            }
-            return []
-
+        self._seed_cache(item)  # candidate: url=.../candidate-1?format=srt, source=""
         calls: list[str] = []
 
         async def download_by_url(url):
             calls.append(url)
-            if url.endswith("candidate-1?format=srt"):
-                raise wyzie_subtitles._LinkGoneError("download link expired")  # via 404 path
+            if not url.startswith("https://sub.wyzie.io/c/"):
+                raise wyzie_subtitles._LinkGoneError("download link expired")
             return b"WEBVTT"
 
         async def noop(*_args):
             return None
 
-        with patch.object(wyzie_subtitles, "search", fake_search), patch.object(
-            wyzie_subtitles, "_check_quota", AsyncMock(),
-        ), patch.object(wyzie_subtitles, "_commit_quota", noop), patch.object(
-            wyzie_subtitles, "_download_bytes", download_by_url,
-        ):
+        with patch.object(wyzie_subtitles, "_check_quota", AsyncMock()), patch.object(
+            wyzie_subtitles, "_commit_quota", noop,
+        ), patch.object(wyzie_subtitles, "_download_bytes", download_by_url):
             data, found = await wyzie_subtitles.download(7, item, "candidate-1")
 
         self.assertEqual(data, b"WEBVTT")
-        self.assertEqual(searches, [42])  # exactly one re-search
-        self.assertEqual(calls[-1], "https://sub.wyzie.io/fresh")  # fresh URL used
+        self.assertEqual(calls[-1], "https://sub.wyzie.io/c/example/id/candidate-1?format=srt")
         self.assertEqual(found["id"], "candidate-1")
 
-    async def test_gone_link_twice_surfaces_friendly_error(self):
+    async def test_proxy_url_uses_candidate_source_and_id(self):
         item = self._item()
         self._seed_cache(item)
-        searches = []
+        seen: list[str] = []
 
-        async def fake_search(user_id, item_arg, language=""):
-            searches.append(item_arg.message_id)
-            return []
-
-        async def always_gone(url):
-            raise wyzie_subtitles._LinkGoneError("download link expired")
+        async def download_by_url(url):
+            seen.append(url)
+            raise wyzie_subtitles._LinkGoneError("gone")
 
         async def noop(*_args):
             return None
 
-        with patch.object(wyzie_subtitles, "search", fake_search), patch.object(
-            wyzie_subtitles, "_check_quota", AsyncMock(),
-        ), patch.object(wyzie_subtitles, "_commit_quota", noop), patch.object(
-            wyzie_subtitles, "_download_bytes", always_gone,
-        ):
-            with self.assertRaises(wyzie_subtitles.WyzieError) as caught:
+        with patch.object(wyzie_subtitles, "_check_quota", AsyncMock()), patch.object(
+            wyzie_subtitles, "_commit_quota", noop,
+        ), patch.object(wyzie_subtitles, "_download_bytes", download_by_url):
+            with self.assertRaises(wyzie_subtitles.WyzieError):
                 await wyzie_subtitles.download(7, item, "candidate-1")
-        self.assertIn("no longer offered", str(caught.exception))
-        self.assertEqual(len(searches), 1)  # bounded: one recovery, no loops
+        self.assertIn("/c/opensubtitles/id/candidate-1?format=srt", seen[1])  # default source fills in
 
     async def test_expired_search_cache_researches_transparently(self):
         item = self._item()

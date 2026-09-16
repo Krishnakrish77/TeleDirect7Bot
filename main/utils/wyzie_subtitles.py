@@ -293,6 +293,15 @@ class _LinkGoneError(WyzieError):
     not days). Involves dropping the stale search cache."""
 
 
+def _proxy_url(candidate: dict[str, Any]) -> str:
+    """Wyzie's own proxy download path — routes around OpenSubtitles
+    hotlink/datacenter blocks that 403 direct links."""
+    source = str(candidate.get("source") or "opensubtitles").strip() or "opensubtitles"
+    ident = str(candidate.get("id") or "").strip()
+    fmt = str(candidate.get("format") or "srt").strip() or "srt"
+    return f"{_BASE_URL}/c/{source}/id/{ident}?format={fmt}"
+
+
 def _drop_cached(item) -> None:
     """Forget cached search results for an item so the next search refetches."""
     _cache.pop(item.message_id, None)
@@ -388,7 +397,7 @@ async def download(user_id: int, item, candidate_id: str) -> tuple[bytes, dict[s
     # so flaky provider hops never consume a user's daily attach budget.
     await _check_quota(user_id, "attach", item.message_id)
 
-    async def _attempt(url: str) -> bytes:
+    async def _with_retry(url: str) -> bytes:
         try:
             return await _download_bytes(url)
         except _TransientDownloadError as exc:
@@ -402,26 +411,24 @@ async def download(user_id: int, item, candidate_id: str) -> tuple[bytes, dict[s
                 return await _download_bytes(url)
             except _TransientDownloadError:
                 raise WyzieError("Subtitle download is having trouble — try again in a moment.") from exc
-        except _LinkGoneError as exc:
-            # The cached URL died (link expiry beats our cache TTL). Drop the
-            # stale search results, get fresh URLs, resolve, and try once —
-            # the user should never see "no longer available" for a subtitle
-            # the provider still lists.
-            logging.info("wyzie: download link gone for item %s, re-searching", item.message_id)
-            _drop_cached(item)
-            refreshed = await _resolve_candidate(user_id, item, candidate_id)
-            try:
-                return await _download_bytes(refreshed["url"])
-            except _TransientDownloadError as retry_exc:
-                logging.info("wyzie: refreshed link also transient-failed for item %s: %s", item.message_id, retry_exc)
-                await asyncio.sleep(1.5)
-                try:
-                    return await _download_bytes(refreshed["url"])
-                except _TransientDownloadError:
-                    raise WyzieError("Subtitle download is having trouble — try again in a moment.") from retry_exc
-            except _LinkGoneError as gone_again:
-                raise WyzieError("That subtitle is no longer offered. Pick another or search again.") from gone_again
 
-    data = await _attempt(found["url"])
+    async def _attempt(candidate: dict[str, Any]) -> bytes:
+        # Direct download first. A 403/404/410 covers both a dead link AND
+        # OpenSubtitles blocking datacenter IPs (Koyeb egress) — the next
+        # step handles both.
+        try:
+            return await _with_retry(candidate["url"])
+        except _LinkGoneError:
+            pass
+        # Wyzie's own proxy serves the same subtitle by id and is not subject
+        # to OpenSubtitles hotlink blocks. Try it before giving up.
+        proxy = _proxy_url(candidate)
+        logging.info("wyzie: direct download failed for item %s, falling back to proxy", item.message_id)
+        try:
+            return await _with_retry(proxy)
+        except WyzieError as exc:
+            raise WyzieError("That subtitle is no longer offered. Pick another or search again.") from exc
+
+    data = await _attempt(found)
     await _commit_quota(user_id, "attach", item.message_id)
     return data, found
