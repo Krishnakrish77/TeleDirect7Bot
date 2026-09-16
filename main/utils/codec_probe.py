@@ -223,7 +223,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
                 pass
         logging.warning("codec_probe: ffprobe timed out for bin:%d", item.message_id)
         item.probed_at = time.time()
-        await media_index.persist_now()
+        await media_index.persist_soon()
         await media_index._store_upsert(item)
         return False
     except FileNotFoundError:
@@ -232,7 +232,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     except Exception:
         logging.exception("codec_probe: ffprobe failed for bin:%d", item.message_id)
         item.probed_at = time.time()
-        await media_index.persist_now()
+        await media_index.persist_soon()
         await media_index._store_upsert(item)
         return False
 
@@ -243,7 +243,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
             (stderr or b"").decode(errors="replace")[:200],
         )
         item.probed_at = time.time()
-        await media_index.persist_now()
+        await media_index.persist_soon()
         await media_index._store_upsert(item)
         return False
 
@@ -252,7 +252,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     except Exception:
         logging.warning("codec_probe: JSON parse failed for bin:%d", item.message_id)
         item.probed_at = time.time()
-        await media_index.persist_now()
+        await media_index.persist_soon()
         await media_index._store_upsert(item)
         return False
 
@@ -366,7 +366,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
                 pass
 
         item.probed_at = time.time()
-        await media_index.persist_now()
+        await media_index.persist_soon()
         await media_index._store_upsert(item)
         logging.info(
             "codec_probe: bin:%d → audio_codec=%s sample_rate=%s bit_depth=%s has_thumb=%s",
@@ -381,7 +381,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     if not video_streams:
         # No video stream — unrecognised container. Tags already saved above.
         item.probed_at = time.time()
-        await media_index.persist_now()
+        await media_index.persist_soon()
         await media_index._store_upsert(item)
         return False
     s = video_streams[0]
@@ -413,7 +413,7 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
         if probed_quality:
             item.quality = probed_quality
     item.probed_at = time.time()
-    await media_index.persist_now()
+    await media_index.persist_soon()
     await media_index._store_upsert(item)
     logging.info(
         "codec_probe: bin:%d → codec=%s pix_fmt=%s height=%s quality=%s",

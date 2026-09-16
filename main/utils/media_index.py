@@ -1157,6 +1157,25 @@ _persist_dirty = False
 _persist_task: Optional["asyncio.Task"] = None
 
 
+async def persist_soon() -> None:
+    """Coalesced persistence for background mutators (codec_probe sweeps,
+    enrichment backfills). Marks the catalogue dirty and lets the debounced
+    writer flush — avoids an O(catalogue) serialisation per failed probe
+    when a sweep touches hundreds of entries. Mutations still invalidate
+    derived caches immediately via _persist_unlocked's contract; here we
+    only need the write scheduled."""
+    global _persist_dirty, _persist_task
+    _mark_derived_stale()
+    if _store_active():
+        return
+    _persist_dirty = True
+    if _persist_task is None or _persist_task.done():
+        try:
+            _persist_task = asyncio.create_task(_debounced_persist_flush())
+        except RuntimeError:
+            await persist_now()
+
+
 async def persist_now() -> None:
     """Public helper: take the lock and flush the /tmp JSON cache now.
 
@@ -1167,10 +1186,9 @@ async def persist_now() -> None:
     global _persist_dirty, _persist_task
     if _persist_task is not None:
         _persist_task.cancel()
-        _persist_task = None
     async with _lock:
         _persist_dirty = False
-        _persist_write_now()
+        await asyncio.to_thread(_persist_write_now)
 
 
 def _invalidate_hub_caches() -> None:
@@ -1254,10 +1272,12 @@ async def _debounced_persist_flush() -> None:
                 if not _persist_dirty:
                     return
                 _persist_dirty = False
-                _persist_write_now()
+                # Serialise the whole catalogue in a worker thread — a sync
+                # json.dump of every item must not block the event loop
+                # while streams and HLS segments are being served.
+                await asyncio.to_thread(_persist_write_now)
     except asyncio.CancelledError:
         pass
-
 
 def _load() -> None:
     global _latest_seen_id, _snapshot_msg_id, _reconcile_cursor, _art_buckets_stale

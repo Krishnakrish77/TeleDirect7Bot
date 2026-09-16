@@ -370,6 +370,7 @@ export function WatchPage({
   const compactAudioLayout = useCompactAudioLayout();
   const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
   const [audioSeekPreview, setAudioSeekPreview] = useState<number | null>(null);
+  const audioDragRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -546,14 +547,25 @@ export function WatchPage({
                   onFocus={() => setAudioSeekPreview(currentTime)}
                   onBlur={() => setAudioSeekPreview(null)}
                   onPointerEnter={(event) => setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
-                  onPointerDown={(event) => setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
+                  onPointerDown={(event) => {
+                    audioDragRef.current = true;
+                    setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
+                  }}
                   onPointerMove={(event) => setAudioSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
-                  onPointerCancel={() => setAudioSeekPreview(null)}
+                  onPointerUp={() => {
+                    // Commit once per drag, not per pixel.
+                    audioDragRef.current = false;
+                    if (audioSeekPreview !== null) seek(audioSeekPreview);
+                  }}
+                  onPointerCancel={() => {
+                    audioDragRef.current = false;
+                    setAudioSeekPreview(null);
+                  }}
                   onPointerLeave={() => setAudioSeekPreview(null)}
                   onChange={(event) => {
                     const next = Number(event.currentTarget.value);
                     setAudioSeekPreview(next);
-                    seek(next);
+                    if (!audioDragRef.current) seek(next); // keyboard arrows
                   }}
                   disabled={!current}
                   aria-label="Playback position"
@@ -803,6 +815,7 @@ function VideoWatchPage({
   const hlsLoadingRef = useRef(false);
   const seekPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scrubbingRef = useRef(false);
+  const scrubDraggingRef = useRef(false);
   const lastStillWatchingActivityRef = useRef<number | null>(null);
   const pendingServerResumeRef = useRef(false);
   const pendingResumeMaxPositionRef = useRef(0);
@@ -2201,19 +2214,26 @@ function VideoWatchPage({
                 }}
                 onPointerDown={(event) => {
                   scrubbingRef.current = true;
+                  scrubDraggingRef.current = true;
                   setSeekPreviewFrame('');
                   setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax));
                 }}
                 onPointerMove={(event) => setSeekPreview(previewTimeAtPointer(event.currentTarget, event.clientX, rangeMax))}
                 onPointerUp={() => {
-                  scrubbingRef.current = true;
+                  // Commit once per drag instead of per pixel — native seeks
+                  // per onChange tick spam HLS fragment requests.
+                  scrubDraggingRef.current = false;
+                  if (seekPreview !== null) seekVideo(seekPreview);
                 }}
-                onPointerCancel={clearSeekPreview}
+                onPointerCancel={() => {
+                  scrubDraggingRef.current = false;
+                  clearSeekPreview();
+                }}
                 onPointerLeave={clearSeekPreview}
                 onChange={(event) => {
                   const next = Number(event.currentTarget.value);
                   setSeekPreview(next);
-                  seekVideo(next);
+                  if (!scrubDraggingRef.current) seekVideo(next); // keyboard arrows
                 }}
                 aria-label="Playback position"
               />

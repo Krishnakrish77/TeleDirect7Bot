@@ -7,11 +7,17 @@ function pageFamilyKey(params: HubParams): string {
   return hubParamsKey({ ...params, offset: 0 });
 }
 
+// Stale-while-revalidate: returning to a previously viewed filter combo or
+// page renders the cached payload immediately (no blank grid + spinner) and
+// quietly refetches. Keyed by the full param string; entries are small.
+const hubCache = new Map<string, HubResponse>();
+const HUB_CACHE_MAX = 24;
+
 export function useHub(params: HubParams, enabled = true) {
-  const [data, setData] = useState<HubResponse | null>(null);
-  const [loading, setLoading] = useState(enabled);
-  const [error, setError] = useState('');
   const requestKey = hubParamsKey(params);
+  const [data, setData] = useState<HubResponse | null>(() => (enabled ? hubCache.get(requestKey) ?? null : null));
+  const [loading, setLoading] = useState(enabled && !hubCache.has(requestKey));
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!enabled) {
@@ -19,11 +25,16 @@ export function useHub(params: HubParams, enabled = true) {
       setError('');
       return;
     }
-    const controller = new AbortController();
-    setLoading(true);
+    const cached = hubCache.get(requestKey);
+    setLoading(!cached);
     setError('');
     fetchHub(params, controller.signal)
       .then((response) => {
+        hubCache.set(requestKey, response);
+        if (hubCache.size > HUB_CACHE_MAX) {
+          const oldest = hubCache.keys().next().value;
+          if (oldest !== undefined) hubCache.delete(oldest);
+        }
         setData((current) => {
           if (
             params.offset > 0 &&
