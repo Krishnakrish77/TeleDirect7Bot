@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { dismissRecommendation, streamAiRecommendations, trackRecommendationEvents } from '../api';
+import { dismissRecommendation, streamAiRecommendationJob, streamAiRecommendations, submitAiRecommendationJob, trackRecommendationEvents } from '../api';
 import type { AiRecItem, AiRecResponse, HubCard, RequestTitle } from '../types';
 import { FilmIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
 import type { WatchTrack } from '../types';
@@ -69,15 +69,10 @@ export function AiRecPanel({
 
   const isAbort = (err: unknown) => err instanceof DOMException && err.name === 'AbortError';
 
-  // Single streaming runner for the panel-open, Ask, and Refresh paths: same
-  // 30s ceiling, same status/result state writes, shared abort controller so
-  // an explicit ask cancels a stale initial load (and vice versa). The
-  // opposite busy flag is cleared at handoff; otherwise its aborted request
-  // cannot safely clear state after the controller has been replaced,
-  // leaving the panel stuck loading.
-  const runStream = (input: { initial?: boolean; query?: string; refresh?: boolean }, kind: 'load' | 'ask' | 'refresh') => {
+  // Single streaming runner for the panel-open path: cache-first, 30s ceiling,
+  // shared abort controller so an explicit ask cancels a stale initial load.
+  const runStream = (input: { initial?: boolean }, kind: 'load') => {
     ctrl.current?.abort();
-    setAsking(kind === 'ask');
     const controller = new AbortController();
     let timedOut = false;
     const timeout = window.setTimeout(() => {
@@ -85,7 +80,7 @@ export function AiRecPanel({
       controller.abort();
     }, 30_000);
     ctrl.current = controller;
-    if (kind === 'load') setLoading(true);
+    setLoading(true);
     setError('');
     setAssessment(null);
     setAgentStatus('Searching your library');
@@ -107,8 +102,6 @@ export function AiRecPanel({
         window.clearTimeout(timeout);
         if (ctrl.current === controller) {
           setLoading(false);
-          setAsking(false);
-          setAgentAction(null);
           setAgentStatus('');
         }
       });
@@ -122,10 +115,43 @@ export function AiRecPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Ask/Refresh run as background jobs: submit returns a job id at once, the
+  // panel subscribes to the job's SSE stream, and the user can keep browsing
+  // (or close the panel) while generation runs. The job lands here whenever
+  // it finishes — no more request-lifetime 504s. The subscription rides the
+  // same ctrl so a newer ask/refresh supersedes an older subscription.
   const runAgent = (input: { query?: string; refresh?: boolean }) => {
-    runStream(input, input.refresh ? 'refresh' : 'ask');
-    setAgentAction(input.refresh ? 'refresh' : 'ask');
+    const kind = input.refresh ? 'refresh' as const : 'ask' as const;
+    const controller = new AbortController();
+    ctrl.current = controller;
+    setAsking(kind === 'ask');
+    setAgentAction(kind);
     setLastAgentInput(input);
+    setError('');
+    setAssessment(null);
+    setQuery('');
+    setAgentStatus('Searching your library');
+    submitAiRecommendationJob(input, controller.signal)
+      .then(({ jobId }) => streamAiRecommendationJob(jobId, setAgentStatus, controller.signal))
+      .then((res) => {
+        setItems(res.items || []);
+        setExternalItems(res.externalItems || []);
+        setMessage(res.message || '');
+        setAssessment(res.assessment || null);
+        setColdStart(Boolean(res.coldStart));
+        setRecommendationMeta(res.recommendationMeta);
+      })
+      .catch((err) => {
+        if (isAbort(err)) { /* superseded or stopped */ }
+        else setError(err instanceof Error ? err.message : 'Could not process that request.');
+      })
+      .finally(() => {
+        if (ctrl.current === controller) {
+          setAsking(false);
+          setAgentAction(null);
+          setAgentStatus('');
+        }
+      });
   };
 
   const submit = (event: React.FormEvent) => {

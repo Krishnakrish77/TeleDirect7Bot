@@ -232,6 +232,83 @@ export async function streamAiRecommendations(
   return terminal;
 }
 
+/** Enqueue an Ask/Refresh as a background job; resolves with the job id at once. */
+export async function submitAiRecommendationJob(
+  input: { query?: string; refresh?: boolean },
+  signal?: AbortSignal,
+): Promise<{ jobId: string }> {
+  const response = await fetch('/api/app/ai/recommendations/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+    credentials: 'same-origin',
+    signal,
+  });
+  if (!response.ok) {
+    let message = response.statusText || 'Request failed';
+    try { message = ((await response.json()) as { error?: string }).error || message; } catch (_) { /* keep status */ }
+    throw new ApiError(message, response.status);
+  }
+  const data = await response.json() as { jobId?: string };
+  if (!data.jobId) throw new ApiError('The recommendation queue was unavailable.', 502);
+  return { jobId: data.jobId };
+}
+
+/**
+ * Subscribe to a background job's SSE stream. Resolves when the job lands
+ * (or throws its error); the panel stays usable while this runs in the
+ * background. Statuses surface through ``onStatus``.
+ */
+export async function streamAiRecommendationJob(
+  jobId: string,
+  onStatus: (status: string) => void,
+  signal?: AbortSignal,
+): Promise<AiRecResponse> {
+  const response = await fetch(`/api/app/ai/recommendations/jobs/${encodeURIComponent(jobId)}/stream`, {
+    headers: { Accept: 'text/event-stream' },
+    credentials: 'same-origin',
+    signal,
+  });
+  if (!response.ok) {
+    let message = response.statusText || 'Request failed';
+    try { message = ((await response.json()) as { error?: string }).error || message; } catch (_) { /* keep status */ }
+    throw new ApiError(message, response.status);
+  }
+  if (!response.body) throw new ApiError('The recommendation stream was unavailable.', response.status);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let terminal: AiRecResponse | null = null;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const events = buffer.split(/\n\n/);
+      buffer = events.pop() || '';
+      for (const raw of events) {
+        const event = raw.match(/^event:\s*(.+)$/m)?.[1]?.trim();
+        const data = raw.match(/^data:\s*(.+)$/m)?.[1];
+        if (!event || !data) continue;
+        let parsed: unknown;
+        try { parsed = JSON.parse(data); } catch (_) { continue; }
+        if (event === 'status' && typeof (parsed as { message?: unknown }).message === 'string') {
+          onStatus((parsed as { message: string }).message);
+        } else if (event === 'result') {
+          terminal = parsed as AiRecResponse;
+        } else if (event === 'error') {
+          const error = parsed as { message?: string; status?: number };
+          throw new ApiError(error.message || 'Could not process that request.', error.status || 502);
+        }
+      }
+      if (done) break;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (!terminal) throw new ApiError('The recommendation stream ended unexpectedly.', 502);
+  return terminal;
+}
+
 export async function searchRequestTitles(query: string, signal?: AbortSignal): Promise<RequestTitle[]> {
   const qs = new URLSearchParams({ q: query });
   const data = await request<{ items: RequestTitle[] }>(`/api/app/requests/search?${qs}`, { signal });
