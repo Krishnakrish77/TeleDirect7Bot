@@ -128,8 +128,20 @@ _ART_RECOVERY_NEGATIVE_TTL = 60 * 60 * 6
 _search_index: dict[str, set[int]] = {}
 _search_docs: dict[int, dict[str, object]] = {}
 _search_title_tokens: set[str] = set()
+_search_tokens_sorted: list[str] = []
 _search_index_stale = True
 _SEARCH_STOP_WORDS = frozenset({"a", "an", "and", "at", "for", "from", "in", "of", "on", "the", "to", "with"})
+
+# Derived group buckets: series_key/movie_key/album_key → visible members,
+# pre-sorted in the order each lookup returns. Rebuilt lazily on the same
+# invalidation as the search index. Without them every query_grouped sort
+# pays an O(catalogue) rescan per card (episodes_for_series inside
+# _grouped_search_key), making search latency grow with catalogue size
+# instead of result size.
+_series_buckets: dict[str, list[HubItem]] = {}
+_movie_buckets: dict[str, list[HubItem]] = {}
+_album_buckets: dict[str, list[HubItem]] = {}
+_group_buckets_stale = True
 
 # Derived art-bucket map: (kind, series_key|movie_key) → non-hidden,
 # non-audio catalogue siblings. Rebuilt lazily on the same invalidation
@@ -1176,9 +1188,10 @@ def _invalidate_hub_caches() -> None:
 
 def _invalidate_search_index() -> None:
     """Mark the derived index stale after any catalogue mutation."""
-    global _search_index_stale, _art_buckets_stale
+    global _search_index_stale, _art_buckets_stale, _group_buckets_stale
     _search_index_stale = True
     _art_buckets_stale = True
+    _group_buckets_stale = True
 
 
 def _mark_derived_stale() -> None:
@@ -1762,7 +1775,8 @@ def _search_fields(item: HubItem) -> dict[str, str]:
 
 
 def _rebuild_search_index() -> None:
-    global _search_index, _search_docs, _search_title_tokens, _search_index_stale
+    global _search_index, _search_docs, _search_title_tokens, _search_tokens_sorted
+    global _search_index_stale
     postings: dict[str, set[int]] = {}
     docs: dict[int, dict[str, object]] = {}
     title_tokens: set[str] = set()
@@ -1780,6 +1794,7 @@ def _rebuild_search_index() -> None:
     _search_index = postings
     _search_docs = docs
     _search_title_tokens = title_tokens
+    _search_tokens_sorted = sorted(postings)
     _search_index_stale = False
 
 
@@ -1808,14 +1823,18 @@ def _token_matches(token: str) -> set[int]:
     exact = _search_index.get(token)
     if exact:
         return set(exact)
+    # Bisect the sorted vocabulary for the prefix range instead of scanning
+    # every indexed token. Bounded so even a one-character type-ahead prefix
+    # cannot produce unbounded work.
+    lo = bisect.bisect_left(_search_tokens_sorted, token)
     matches: set[int] = set()
-    # Search over vocabulary rather than every catalogue record. Bound it so
-    # even a one-character type-ahead prefix cannot produce unbounded work.
-    for indexed_token, ids in _search_index.items():
-        if indexed_token.startswith(token):
-            matches.update(ids)
-            if len(matches) >= 160:
-                break
+    for i in range(lo, len(_search_tokens_sorted)):
+        indexed_token = _search_tokens_sorted[i]
+        if not indexed_token.startswith(token):
+            break
+        matches.update(_search_index[indexed_token])
+        if len(matches) >= 160:
+            break
     return matches
 
 
@@ -1930,12 +1949,11 @@ def query(
     key_fn, reverse = _SORT_KEYS.get(sort, _SORT_KEYS["newest"])
     candidate_ids = _search_candidate_ids(q) if q else None
     normalized, tokens = _search_terms(q) if q else ("", [])
-    items_all = sorted(_items.values(), key=key_fn, reverse=reverse)
-
-    # Exclude hidden items from all public library views
-    items_all = [it for it in items_all if not it.hidden]
+    # Filter first, then sort only the matches — never the whole catalogue.
     scored_items: list[tuple[HubItem, float]] = []
-    for item in items_all:
+    for item in _items.values():
+        if item.hidden:
+            continue
         if candidate_ids is not None and item.message_id not in candidate_ids:
             continue
         if not _matches(item, "", year, quality, tag, genre):
@@ -1945,9 +1963,13 @@ def query(
             continue
         scored_items.append((item, score))
     items_all = [item for item, _score in scored_items]
-    if q:
-        # ``items_all`` is already in the requested browse order. A stable
-        # relevance sort preserves it for equal scores, matching query_grouped.
+    if not q:
+        items_all.sort(key=key_fn, reverse=reverse)
+    else:
+        # Browse order first, then a stable relevance sort: relevance stays
+        # primary while equal scores keep the requested browse order,
+        # matching query_grouped.
+        items_all.sort(key=key_fn, reverse=reverse)
         scores = {item.message_id: score for item, score in scored_items}
         items_all.sort(key=lambda item: -scores[item.message_id])
 
@@ -2488,20 +2510,61 @@ def card_search_score(card, query: str) -> float:
     query ahead of personalized tie-breaking.  It intentionally shares the
     exact same indexed field weights as ordinary library search.
     """
+    normalized, tokens = _search_terms(query)
+    if not normalized:
+        return 0.0
     if isinstance(card, SeriesGroup):
-        return max((_search_score(query, item) for item in episodes_for_series(card.series_key)), default=0.0)
+        return max((_search_score_terms(normalized, tokens, item) for item in episodes_for_series(card.series_key)), default=0.0)
     if isinstance(card, MovieGroup):
-        return max((_search_score(query, item) for item in variants_for_movie(card.movie_key)), default=0.0)
+        return max((_search_score_terms(normalized, tokens, item) for item in variants_for_movie(card.movie_key)), default=0.0)
     if isinstance(card, AlbumGroup):
-        return max((_search_score(query, item) for item in tracks_for_album(card.album_key)), default=0.0)
-    return _search_score(query, card)
+        return max((_search_score_terms(normalized, tokens, item) for item in tracks_for_album(card.album_key)), default=0.0)
+    return _search_score_terms(normalized, tokens, card)
+
+
+def _ensure_group_buckets() -> None:
+    """Build series/movie/album member buckets once per catalogue version.
+
+    Every one of these lookups was previously an O(catalogue) scan plus sort,
+    and _grouped_search_key calls them per card during query_grouped sorting —
+    O(cards x catalogue) per search request. Buckets make each lookup O(1).
+    """
+    global _series_buckets, _movie_buckets, _album_buckets, _group_buckets_stale
+    if not _group_buckets_stale:
+        return
+    series: dict[str, list[HubItem]] = {}
+    movies: dict[str, list[HubItem]] = {}
+    albums: dict[str, list[HubItem]] = {}
+    for it in _items.values():
+        if it.hidden:
+            continue
+        if it.series_key:
+            series.setdefault(it.series_key, []).append(it)
+        elif it.movie_key:
+            movies.setdefault(it.movie_key, []).append(it)
+        if (it.media_kind or "") == "audio":
+            ak = getattr(it, "album_key", "") or ""
+            if ak:
+                albums.setdefault(ak, []).append(it)
+    for bucket in series.values():
+        bucket.sort(key=lambda e: (e.season or 0, e.episode or 0, e.message_id))
+    for bucket in movies.values():
+        bucket.sort(key=lambda v: v.message_id, reverse=True)
+    for bucket in albums.values():
+        bucket.sort(key=lambda t: (
+            t.track_number if t.track_number is not None else 9999,
+            t.message_id,
+        ))
+    _series_buckets = series
+    _movie_buckets = movies
+    _album_buckets = albums
+    _group_buckets_stale = False
 
 
 def episodes_for_series(series_key: str) -> List[HubItem]:
     """All episodes for a series, sorted by season then episode."""
-    eps = [it for it in _items.values() if it.series_key == series_key and not it.hidden]
-    eps.sort(key=lambda e: (e.season or 0, e.episode or 0, e.message_id))
-    return eps
+    _ensure_group_buckets()
+    return _series_buckets.get(series_key, [])
 
 
 def _episode_identity(item: HubItem) -> tuple[object, object, object]:
@@ -2720,14 +2783,19 @@ def tracks_for_album(album_key: str) -> List[HubItem]:
     with stale legacy keys (artist+album) are still found via the corrected
     title-only slug without requiring a re-probe.
     """
-    def _matches(it) -> bool:
-        if getattr(it, "media_kind", "") != "audio":
-            return False
-        if getattr(it, "album_key", "") == album_key:
-            return True
-        at = getattr(it, "album_title", "") or ""
-        return bool(at) and series_parse.slugify(at) == album_key
-    tracks = [it for it in _items.values() if _matches(it) and not it.hidden]
+    _ensure_group_buckets()
+    exact = _album_buckets.get(album_key)
+    if exact:
+        return exact
+    # Legacy fallback: album_key mismatch — match on slugify(album_title).
+    # Rare path, so the O(catalogue) scan only runs when the bucket misses.
+    tracks = [
+        it for it in _items.values()
+        if not it.hidden
+        and (it.media_kind or "") == "audio"
+        and (getattr(it, "album_key", "") or "") != album_key
+        and series_parse.slugify(getattr(it, "album_title", "") or "") == album_key
+    ]
     return sorted(tracks, key=lambda t: (
         t.track_number if t.track_number is not None else 9999,
         t.message_id,
@@ -2893,13 +2961,14 @@ def suggest(q: str, limit: int = 8) -> List[dict]:
     candidate_ids = _search_candidate_ids(q)
     if not candidate_ids:
         return []
+    normalized, tokens = _search_terms(q)
 
     scored: List = []
     for message_id in candidate_ids:
         it = _items.get(message_id)
         if it is None or it.hidden:
             continue
-        score = _search_score(q, it)
+        score = _search_score_terms(normalized, tokens, it)
         if score > 0:
             scored.append((score, it))
 
@@ -2988,9 +3057,8 @@ def card_for_tmdb_id(tmdb_id: int, kind: str = "") -> object:
 
 def variants_for_movie(movie_key: str) -> List[HubItem]:
     """All uploads of a given movie, sorted newest first."""
-    vs = [it for it in _items.values() if it.movie_key == movie_key and not it.hidden]
-    vs.sort(key=lambda v: v.message_id, reverse=True)
-    return vs
+    _ensure_group_buckets()
+    return _movie_buckets.get(movie_key, [])
 
 
 async def set_hidden(message_id: int, hidden: bool) -> bool:

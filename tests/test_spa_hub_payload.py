@@ -63,6 +63,14 @@ def _video_item(
 
 
 class SpaHubPayloadTest(unittest.TestCase):
+    def setUp(self):
+        # Tests swap media_index._items directly; derived buckets must not
+        # leak across tests (mirrors test_media_index_search's convention).
+        media_index._invalidate_search_index()
+
+    def tearDown(self):
+        media_index._invalidate_search_index()
+
     def test_visible_art_recovery_is_scheduled_without_blocking_the_response(self):
         async def verify() -> None:
             recovery = AsyncMock(return_value=0)

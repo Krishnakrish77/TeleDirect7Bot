@@ -40,6 +40,7 @@ def video_item(**overrides):
 class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self._items = dict(media_index._items)
+        media_index._invalidate_search_index()
         self._credits_state = dict(media_index._credits_state)
         self._group_enrich_locks = dict(media_index._group_enrich_locks)
         self._group_art_tasks = dict(media_index._group_art_tasks)
@@ -62,6 +63,7 @@ class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         media_index._items.clear()
         media_index._items.update(self._items)
+        media_index._invalidate_search_index()
         media_index._group_enrich_locks.clear()
         media_index._group_enrich_locks.update(self._group_enrich_locks)
         media_index._group_art_tasks.clear()
