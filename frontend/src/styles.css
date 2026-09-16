@@ -8513,6 +8513,21 @@ img {
   font-size: 0.74rem;
 }
 
+/* Language group headers inside the results list. */
+.subtitle-search-lang {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.subtitle-search-lang h3 {
+  margin: 0.2rem 0 0;
+  color: #fdba74;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .subtitle-search-result b {
   color: #fdba74;
   font-size: 0.8rem;

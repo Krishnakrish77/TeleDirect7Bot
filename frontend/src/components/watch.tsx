@@ -306,6 +306,25 @@ function SubtitleSearchSheet({
   onClose: () => void;
   container?: HTMLElement | null;
 }) {
+  // Group results by language (stable order: first appearance). Languages
+  // with more results first so the user's likeliest language is on top.
+  const groups = useMemo(() => {
+    const order: string[] = [];
+    const byLang = new Map<string, SubtitleSearchResult[]>();
+    for (const result of results) {
+      const lang = (result.language || 'und').trim() || 'und';
+      const bucket = byLang.get(lang);
+      if (bucket) bucket.push(result);
+      else {
+        byLang.set(lang, [result]);
+        order.push(lang);
+      }
+    }
+    return order
+      .sort((left, right) => (byLang.get(right)?.length ?? 0) - (byLang.get(left)?.length ?? 0))
+      .map((lang) => ({ lang, items: byLang.get(lang) ?? [] }));
+  }, [results]);
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="subtitle-search-sheet" aria-labelledby="subtitle-search-title" container={container}>
@@ -326,14 +345,21 @@ function SubtitleSearchSheet({
         </div>
         {results.length > 0 && (
           <div className="subtitle-search-results" aria-label="Subtitle search results">
-            {results.map((result) => (
-              <Button key={result.id} type="button" variant="outline" className="subtitle-search-result" onClick={() => onAttach(result)} disabled={Boolean(attaching)}>
-                <span>
-                  <strong>{result.label || result.language || 'Subtitles'}</strong>
-                  <small>{[result.release, result.source].filter(Boolean).join(' · ') || result.fileName}</small>
-                </span>
-                <b>{attaching === result.id ? 'Adding…' : 'Add'}</b>
-              </Button>
+            {groups.map(({ lang, items }) => (
+              <section key={lang} className="subtitle-search-lang">
+                <h3>{items[0]?.label && items.every((item) => item.label === items[0].label)
+                  ? items[0].label
+                  : lang === 'und' ? 'Unknown language' : lang}</h3>
+                {items.map((result) => (
+                  <Button key={result.id} type="button" variant="outline" className="subtitle-search-result" onClick={() => onAttach(result)} disabled={Boolean(attaching)}>
+                    <span>
+                      <strong>{result.label || result.language || 'Subtitles'}</strong>
+                      <small>{[result.release, result.source].filter(Boolean).join(' · ') || result.fileName}</small>
+                    </span>
+                    <b>{attaching === result.id ? 'Adding…' : 'Add'}</b>
+                  </Button>
+                ))}
+              </section>
             ))}
           </div>
         )}
