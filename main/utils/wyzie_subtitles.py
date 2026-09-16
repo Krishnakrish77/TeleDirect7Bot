@@ -288,6 +288,16 @@ class _TransientDownloadError(WyzieError):
     """Timeout/network/truncated-body class — worth one retry."""
 
 
+class _LinkGoneError(WyzieError):
+    """The cached download URL died (OpenSubtitles links expire in hours,
+    not days). Involves dropping the stale search cache."""
+
+
+def _drop_cached(item) -> None:
+    """Forget cached search results for an item so the next search refetches."""
+    _cache.pop(item.message_id, None)
+
+
 async def _download_bytes(url: str) -> bytes:
     """One trusted-redirect-following subtitle download attempt."""
     try:
@@ -301,6 +311,11 @@ async def _download_bytes(url: str) -> bytes:
                     raise WyzieError("Selected subtitle download is not trusted")
                 if response.status == 429 or response.status == 503 or response.status >= 500:
                     raise _TransientDownloadError(f"provider returned {response.status}")
+                if response.status in (404, 410):
+                    # OpenSubtitles download links expire hours after search,
+                    # far sooner than our 6h result cache. Treat as a stale
+                    # cache entry, not a user-facing failure.
+                    raise _LinkGoneError("download link expired")
                 if response.status != 200:
                     raise WyzieError("Selected subtitle is no longer available")
                 length = response.content_length
@@ -328,34 +343,64 @@ def _find_candidate(item, candidate_id: str) -> dict[str, Any] | None:
     return None
 
 
+async def _resolve_candidate(user_id: int, item, candidate_id: str) -> dict[str, Any]:
+    """Find the cached candidate, transparently re-searching when stale.
+
+    OpenSubtitles download links die hours before our search cache does, so
+    the recovery path drops the cache and refetches fresh URLs once.
+    """
+    found = _find_candidate(item, candidate_id)
+    if found is not None:
+        return found
+    await search(user_id, item, getattr(item, "language", "") or "")
+    found = _find_candidate(item, candidate_id)
+    if found is None:
+        raise WyzieError("That subtitle is no longer offered. Pick another or search again.")
+    return found
+
+
 async def download(user_id: int, item, candidate_id: str) -> tuple[bytes, dict[str, Any]]:
     if not candidate_id or len(candidate_id) > 64:
         raise WyzieError("Invalid subtitle selection")
-    found = _find_candidate(item, candidate_id)
-    if found is None:
-        # The search cache expired (or the server restarted and lost it).
-        # Re-search transparently instead of bouncing the user back to the
-        # sheet with "Search results expired".
-        await search(user_id, item, getattr(item, "language", "") or "")
-        found = _find_candidate(item, candidate_id)
-    if found is None:
-        raise WyzieError("That subtitle is no longer offered. Pick another or search again.")
+    found = await _resolve_candidate(user_id, item, candidate_id)
     # Quota is a pre-check only; it is committed after a successful download
     # so flaky provider hops never consume a user's daily attach budget.
     await _check_quota(user_id, "attach", item.message_id)
-    try:
-        data = await _download_bytes(found["url"])
-    except _TransientDownloadError as exc:
-        # Download hosts (OpenSubtitles mirrors in particular) drop or time
-        # out sporadically. One bounded retry with a short backoff converts
-        # most of those into success without hammering the provider.
-        logging.info("wyzie: transient download failure for item %s, retrying once: %s", item.message_id, exc)
-        await asyncio.sleep(1.5)
+
+    async def _attempt(url: str) -> bytes:
         try:
-            data = await _download_bytes(found["url"])
-        except _TransientDownloadError:
-            raise WyzieError("Subtitle download is having trouble — try again in a moment.") from exc
-    except WyzieError:
-        raise
+            return await _download_bytes(url)
+        except _TransientDownloadError as exc:
+            # Download hosts (OpenSubtitles mirrors in particular) drop or
+            # time out sporadically. One bounded retry with a short backoff
+            # converts most of those into success without hammering the
+            # provider.
+            logging.info("wyzie: transient download failure for item %s, retrying once: %s", item.message_id, exc)
+            await asyncio.sleep(1.5)
+            try:
+                return await _download_bytes(url)
+            except _TransientDownloadError:
+                raise WyzieError("Subtitle download is having trouble — try again in a moment.") from exc
+        except _LinkGoneError as exc:
+            # The cached URL died (link expiry beats our cache TTL). Drop the
+            # stale search results, get fresh URLs, resolve, and try once —
+            # the user should never see "no longer available" for a subtitle
+            # the provider still lists.
+            logging.info("wyzie: download link gone for item %s, re-searching", item.message_id)
+            _drop_cached(item)
+            refreshed = await _resolve_candidate(user_id, item, candidate_id)
+            try:
+                return await _download_bytes(refreshed["url"])
+            except _TransientDownloadError as retry_exc:
+                logging.info("wyzie: refreshed link also transient-failed for item %s: %s", item.message_id, retry_exc)
+                await asyncio.sleep(1.5)
+                try:
+                    return await _download_bytes(refreshed["url"])
+                except _TransientDownloadError:
+                    raise WyzieError("Subtitle download is having trouble — try again in a moment.") from retry_exc
+            except _LinkGoneError as gone_again:
+                raise WyzieError("That subtitle is no longer offered. Pick another or search again.") from gone_again
+
+    data = await _attempt(found["url"])
     await _commit_quota(user_id, "attach", item.message_id)
     return data, found
