@@ -1,4 +1,5 @@
 import os
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -78,7 +79,8 @@ class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
         wyzie_subtitles._cache.clear()
         with (
             patch.object(wyzie_subtitles.Var, "WYZIE_API_KEY", "test-key"),
-            patch.object(wyzie_subtitles, "_reserve", AsyncMock()),
+            patch.object(wyzie_subtitles, "_check_quota", AsyncMock()),
+            patch.object(wyzie_subtitles, "_commit_quota", AsyncMock()),
             patch.object(wyzie_subtitles, "ClientSession", return_value=session),
         ):
             results = await wyzie_subtitles.search(7, item)
@@ -99,7 +101,8 @@ class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
         wyzie_subtitles._cache.clear()
         with (
             patch.object(wyzie_subtitles.Var, "WYZIE_API_KEY", "test-key"),
-            patch.object(wyzie_subtitles, "_reserve", AsyncMock()),
+            patch.object(wyzie_subtitles, "_check_quota", AsyncMock()),
+            patch.object(wyzie_subtitles, "_commit_quota", AsyncMock()),
             patch.object(wyzie_subtitles, "ClientSession", side_effect=[default_source, all_sources]),
         ):
             results = await wyzie_subtitles.search(7, item)
@@ -114,7 +117,8 @@ class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
         sessions = [_Session(_Response([])) for _ in range(4)]
         with (
             patch.object(wyzie_subtitles.Var, "WYZIE_API_KEY", "test-key"),
-            patch.object(wyzie_subtitles, "_reserve", AsyncMock()),
+            patch.object(wyzie_subtitles, "_check_quota", AsyncMock()),
+            patch.object(wyzie_subtitles, "_commit_quota", AsyncMock()),
             patch.object(wyzie_subtitles, "ClientSession", side_effect=sessions),
         ):
             self.assertEqual(await wyzie_subtitles.search(7, item), [])
@@ -140,3 +144,105 @@ class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
         ranked = wyzie_subtitles._rank_release_matches(item, candidates)
 
         self.assertEqual([candidate["id"] for candidate in ranked], ["match", "wrong"])
+
+
+class WyzieDownloadReliabilityTest(unittest.IsolatedAsyncioTestCase):
+    def _item(self, **overrides):
+        base = SimpleNamespace(message_id=42, imdb_id="tt3659388", tmdb_id=None, season=None, episode=None)
+        return SimpleNamespace(**{**base.__dict__, **overrides})
+
+    def _seed_cache(self, item):
+        wyzie_subtitles._cache.clear()
+        wyzie_subtitles._cache[item.message_id] = {
+            "": (time.monotonic(), [{
+                "id": "candidate-1", "url": "https://sub.wyzie.io/c/example/id/candidate-1?format=srt",
+                "format": "srt", "language": "en", "label": "English",
+                "release": "", "fileName": "subtitle.srt", "hearingImpaired": False, "source": "",
+            }]),
+        }
+
+    async def test_failed_download_does_not_consume_quota(self):
+        item = self._item()
+        self._seed_cache(item)
+        committed = []
+
+        async def fail_download(url):
+            raise wyzie_subtitles._TransientDownloadError("timed out")
+
+        async def commit(user_id, action, item_id=None):
+            committed.append(action)
+
+        with patch.object(wyzie_subtitles, "_check_quota", AsyncMock()), patch.object(
+            wyzie_subtitles, "_commit_quota", commit,
+        ), patch.object(wyzie_subtitles, "_download_bytes", fail_download), patch.object(
+            wyzie_subtitles.asyncio, "sleep", AsyncMock(),
+        ):
+            with self.assertRaises(wyzie_subtitles.WyzieError):
+                await wyzie_subtitles.download(7, item, "candidate-1")
+        self.assertEqual(committed, [])  # failure is free to retry
+
+    async def test_transient_download_failure_retries_once_then_succeeds(self):
+        item = self._item()
+        self._seed_cache(item)
+        attempts = []
+
+        async def flaky_download(url):
+            attempts.append(url)
+            if len(attempts) == 1:
+                raise wyzie_subtitles._TransientDownloadError("connection reset")
+            return b"WEBVTT"
+
+        async def noop(*_args):
+            return None
+
+        with patch.object(wyzie_subtitles, "_check_quota", AsyncMock()), patch.object(
+            wyzie_subtitles, "_commit_quota", noop,
+        ), patch.object(wyzie_subtitles, "_download_bytes", flaky_download), patch.object(
+            wyzie_subtitles.asyncio, "sleep", AsyncMock(),
+        ) as sleep_mock:
+            data, _found = await wyzie_subtitles.download(7, item, "candidate-1")
+        self.assertEqual(data, b"WEBVTT")
+        self.assertEqual(len(attempts), 2)
+        sleep_mock.assert_awaited_once()
+
+    async def test_expired_search_cache_researches_transparently(self):
+        item = self._item()
+        wyzie_subtitles._cache.clear()  # nothing cached — old code raised "expired"
+        searched = []
+
+        async def fake_search(user_id, item_arg, language=""):
+            searched.append(item_arg.message_id)
+            self._seed_cache(item_arg)
+            return []
+
+        async def noop(*_args):
+            return None
+
+        with patch.object(wyzie_subtitles, "search", fake_search), patch.object(
+            wyzie_subtitles, "_check_quota", AsyncMock(),
+        ), patch.object(wyzie_subtitles, "_commit_quota", noop), patch.object(
+            wyzie_subtitles, "_download_bytes", AsyncMock(return_value=b"WEBVTT"),
+        ):
+            data, _found = await wyzie_subtitles.download(7, item, "candidate-1")
+        self.assertEqual(data, b"WEBVTT")
+        self.assertEqual(searched, [42])  # re-search happened inside download
+
+    async def test_quota_check_raises_retryable_daily_error(self):
+        item = self._item()
+        self._seed_cache(item)
+        downloads = []
+
+        async def count_check(user_id, action, item_id=None):
+            raise wyzie_subtitles.QuotaUnavailable("Daily attach limit reached. Try again tomorrow.")
+
+        async def never_called(url):
+            downloads.append(url)
+            return b""
+
+        with patch.object(wyzie_subtitles, "_check_quota", count_check), patch.object(
+            wyzie_subtitles, "_download_bytes", never_called,
+        ):
+            with self.assertRaises(wyzie_subtitles.QuotaUnavailable) as caught:
+                await wyzie_subtitles.download(7, item, "candidate-1")
+        self.assertEqual(caught.exception.retry_after, 3600)
+        self.assertEqual(downloads, [])  # no download attempt when quota is out

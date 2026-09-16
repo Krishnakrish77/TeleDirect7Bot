@@ -23,10 +23,12 @@ _SEARCH_TTL = 60 * 60 * 6
 _MAX_CACHE_ENTRIES = 256  # in-memory search-result cache cap
 _MAX_RESULTS = 40
 _MAX_SUBTITLE_BYTES = 10 * 1024 * 1024
-_USER_SEARCH_LIMIT = 50
-_USER_ATTACH_LIMIT = 10
-_USER_ITEM_ATTACH_LIMIT = 3
-_GLOBAL_REQUEST_LIMIT = 800
+# Daily caps now come from Var (env-tunable, generous defaults). Kept as
+# module names for the tests that patch behavior around them.
+_USER_SEARCH_LIMIT = Var.WYZIE_USER_SEARCH_LIMIT
+_USER_ATTACH_LIMIT = Var.WYZIE_USER_ATTACH_LIMIT
+_USER_ITEM_ATTACH_LIMIT = Var.WYZIE_ITEM_ATTACH_LIMIT
+_GLOBAL_REQUEST_LIMIT = Var.WYZIE_GLOBAL_REQUEST_LIMIT
 # Start with Wyzie's default source (OpenSubtitles). It is consistently
 # available to valid keys; the wider source router is a fallback for titles it
 # misses, because some keys cannot query every source in ``all`` reliably.
@@ -96,35 +98,77 @@ def _day() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-async def _reserve(user_id: int, action: str, item_id: int | None = None,
-                   *, provider_call: bool) -> None:
-    """Persist conservative daily counters in Mongo before doing work."""
+class QuotaUnavailable(WyzieError):
+    """A daily cap was hit; the route maps this to a 429 with Retry-After."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.retry_after = 3600  # daily caps reset at UTC midnight
+
+
+def _check_quota(user_id: int, action: str, item_id: int | None = None) -> None:
+    """Refuse the request up front when a daily cap is already spent.
+
+    Read-only: nothing is counted here. Counters are only committed after the
+    work succeeds, so a provider hiccup or flaky download never eats quota.
+    """
     db = _db()
     if db is None:
         raise WyzieError("Subtitle requests are temporarily unavailable")
     day = _day()
     limit = _USER_SEARCH_LIMIT if action == "search" else _USER_ATTACH_LIMIT
     item_limit = _USER_ITEM_ATTACH_LIMIT if action == "attach" and item_id else None
-    async with _lock:
-        usage = db["subtitle_usage"]
-        user_key = f"{day}:user:{user_id}:{action}"
-        user = await usage.find_one({"_id": user_key}, projection={"count": 1})
-        if int((user or {}).get("count", 0)) >= limit:
-            raise WyzieError(f"Daily {action} limit reached. Try again tomorrow.")
-        if item_limit:
-            item_key = f"{day}:item:{user_id}:{item_id}:attach"
-            item = await usage.find_one({"_id": item_key}, projection={"count": 1})
-            if int((item or {}).get("count", 0)) >= item_limit:
-                raise WyzieError("You have reached the subtitle limit for this title today.")
-        if provider_call:
-            global_key = f"{day}:provider"
-            global_doc = await usage.find_one({"_id": global_key}, projection={"count": 1})
-            if int((global_doc or {}).get("count", 0)) >= _GLOBAL_REQUEST_LIMIT:
-                raise WyzieError("Subtitle service has reached today's request budget.")
-            await usage.update_one({"_id": global_key}, {"$inc": {"count": 1}, "$setOnInsert": {"day": day}}, upsert=True)
-        await usage.update_one({"_id": user_key}, {"$inc": {"count": 1}, "$setOnInsert": {"day": day, "user_id": user_id, "action": action}}, upsert=True)
-        if item_limit:
-            await usage.update_one({"_id": item_key}, {"$inc": {"count": 1}, "$setOnInsert": {"day": day, "user_id": user_id, "item_id": item_id}}, upsert=True)
+    usage = db["subtitle_usage"]
+
+    async def _run() -> None:
+        async with _lock:
+            user = await usage.find_one({"_id": f"{day}:user:{user_id}:{action}"}, projection={"count": 1})
+            if int((user or {}).get("count", 0)) >= limit:
+                raise QuotaUnavailable(f"Daily {action} limit reached. Try again tomorrow.")
+            if item_limit:
+                item = await usage.find_one({"_id": f"{day}:item:{user_id}:{item_id}:attach"}, projection={"count": 1})
+                if int((item or {}).get("count", 0)) >= item_limit:
+                    raise QuotaUnavailable("You have reached the subtitle limit for this title today.")
+            if item_id or action == "search":
+                # Provider requests (every search, every attach download) draw
+                # from the shared key budget; check it before doing the work.
+                global_doc = await usage.find_one({"_id": f"{day}:provider"}, projection={"count": 1})
+                if int((global_doc or {}).get("count", 0)) >= _GLOBAL_REQUEST_LIMIT:
+                    raise QuotaUnavailable("Subtitle service has reached today's request budget.")
+
+    return _run()
+
+
+def _commit_quota(user_id: int, action: str, item_id: int | None = None):
+    """Count one successful request against the daily caps."""
+    db = _db()
+    if db is None:
+        async def _noop() -> None:
+            return None
+        return _noop()
+    day = _day()
+    item_limit = _USER_ITEM_ATTACH_LIMIT if action == "attach" and item_id else None
+    usage = db["subtitle_usage"]
+
+    async def _run() -> None:
+        async with _lock:
+            if item_id or action == "search":
+                await usage.update_one(
+                    {"_id": f"{day}:provider"}, {"$inc": {"count": 1}, "$setOnInsert": {"day": day}}, upsert=True,
+                )
+            await usage.update_one(
+                {"_id": f"{day}:user:{user_id}:{action}"},
+                {"$inc": {"count": 1}, "$setOnInsert": {"day": day, "user_id": user_id, "action": action}},
+                upsert=True,
+            )
+            if item_limit:
+                await usage.update_one(
+                    {"_id": f"{day}:item:{user_id}:{item_id}:attach"},
+                    {"$inc": {"count": 1}, "$setOnInsert": {"day": day, "user_id": user_id, "item_id": item_id}},
+                    upsert=True,
+                )
+
+    return _run()
 
 
 def _candidate(raw: Any) -> dict[str, Any] | None:
@@ -185,9 +229,10 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
         raise WyzieError("Invalid subtitle language filter")
     now = time.monotonic()
     cached = (_cache.get(item.message_id) or {}).get(language)
-    await _reserve(user_id, "search", provider_call=not (cached and now - cached[0] < _SEARCH_TTL))
     if cached and now - cached[0] < _SEARCH_TTL:
+        # Cache hits cost nothing: no quota check, no provider call.
         return [{k: v for k, v in result.items() if k != "url"} for result in cached[1]]
+    await _check_quota(user_id, "search")
     params = {
         "id": provider_id,
         "format": "srt,vtt",
@@ -235,31 +280,27 @@ async def search(user_id: int, item, language: str = "") -> list[dict[str, Any]]
     if clean:
         _cache.setdefault(item.message_id, {})[language] = (now, clean)
         _prune_cache(now)
+        await _commit_quota(user_id, "search")
     return [{k: v for k, v in result.items() if k != "url"} for result in clean]
 
 
-async def download(user_id: int, item, candidate_id: str) -> tuple[bytes, dict[str, Any]]:
-    if not candidate_id or len(candidate_id) > 64:
-        raise WyzieError("Invalid subtitle selection")
-    found = None
-    now = time.monotonic()
-    for _language, (created, candidates) in (_cache.get(item.message_id) or {}).items():
-        if now - created < _SEARCH_TTL:
-            found = next((candidate for candidate in candidates if candidate["id"] == candidate_id), None)
-            if found:
-                break
-    if found is None:
-        raise WyzieError("Search results expired. Search again before attaching a subtitle.")
-    await _reserve(user_id, "attach", item.message_id, provider_call=True)
+class _TransientDownloadError(WyzieError):
+    """Timeout/network/truncated-body class — worth one retry."""
+
+
+async def _download_bytes(url: str) -> bytes:
+    """One trusted-redirect-following subtitle download attempt."""
     try:
         async with ClientSession(timeout=ClientTimeout(total=20)) as session:
             # Direct OpenSubtitles links commonly redirect to a regional
             # download host. Follow that redirect only while every hop stays
             # on a trusted subtitle host.
-            async with session.get(found["url"], allow_redirects=True) as response:
+            async with session.get(url, allow_redirects=True) as response:
                 redirect_urls = [str(entry.url) for entry in response.history]
                 if not _trusted_download_url(str(response.url)) or not all(_trusted_download_url(url) for url in redirect_urls):
                     raise WyzieError("Selected subtitle download is not trusted")
+                if response.status == 429 or response.status == 503 or response.status >= 500:
+                    raise _TransientDownloadError(f"provider returned {response.status}")
                 if response.status != 200:
                     raise WyzieError("Selected subtitle is no longer available")
                 length = response.content_length
@@ -269,8 +310,52 @@ async def download(user_id: int, item, candidate_id: str) -> tuple[bytes, dict[s
     except WyzieError:
         raise
     except Exception as exc:
-        logging.warning("wyzie: download failed for item %s: %s", item.message_id, exc)
-        raise WyzieError("Could not download selected subtitle") from exc
+        logging.warning("wyzie: download attempt failed: %s", exc)
+        raise _TransientDownloadError(str(exc)) from exc
     if not data or len(data) > _MAX_SUBTITLE_BYTES:
         raise WyzieError("Selected subtitle is invalid or too large")
+    return data
+
+
+def _find_candidate(item, candidate_id: str) -> dict[str, Any] | None:
+    """Locate a cached search result, ignoring expired entries."""
+    now = time.monotonic()
+    for _language, (created, candidates) in (_cache.get(item.message_id) or {}).items():
+        if now - created < _SEARCH_TTL:
+            for candidate in candidates:
+                if candidate["id"] == candidate_id:
+                    return candidate
+    return None
+
+
+async def download(user_id: int, item, candidate_id: str) -> tuple[bytes, dict[str, Any]]:
+    if not candidate_id or len(candidate_id) > 64:
+        raise WyzieError("Invalid subtitle selection")
+    found = _find_candidate(item, candidate_id)
+    if found is None:
+        # The search cache expired (or the server restarted and lost it).
+        # Re-search transparently instead of bouncing the user back to the
+        # sheet with "Search results expired".
+        await search(user_id, item, getattr(item, "language", "") or "")
+        found = _find_candidate(item, candidate_id)
+    if found is None:
+        raise WyzieError("That subtitle is no longer offered. Pick another or search again.")
+    # Quota is a pre-check only; it is committed after a successful download
+    # so flaky provider hops never consume a user's daily attach budget.
+    await _check_quota(user_id, "attach", item.message_id)
+    try:
+        data = await _download_bytes(found["url"])
+    except _TransientDownloadError as exc:
+        # Download hosts (OpenSubtitles mirrors in particular) drop or time
+        # out sporadically. One bounded retry with a short backoff converts
+        # most of those into success without hammering the provider.
+        logging.info("wyzie: transient download failure for item %s, retrying once: %s", item.message_id, exc)
+        await asyncio.sleep(1.5)
+        try:
+            data = await _download_bytes(found["url"])
+        except _TransientDownloadError:
+            raise WyzieError("Subtitle download is having trouble — try again in a moment.") from exc
+    except WyzieError:
+        raise
+    await _commit_quota(user_id, "attach", item.message_id)
     return data, found

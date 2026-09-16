@@ -2779,6 +2779,8 @@ async def api_user_subtitle_search(request: web.Request) -> web.Response:
     try:
         results = await wyzie_subtitles.search(int(user["sub"]), item, request.query.get("language", ""))
         return _json({"results": results, "configured": True})
+    except wyzie_subtitles.QuotaUnavailable as exc:
+        return _json({"error": str(exc), "configured": wyzie_subtitles.configured()}, status=429, headers={"Retry-After": str(exc.retry_after)})
     except wyzie_subtitles.WyzieError as exc:
         return _json({"error": str(exc), "configured": wyzie_subtitles.configured()}, status=429 if "limit" in str(exc).lower() or "budget" in str(exc).lower() else 503)
 
@@ -2804,6 +2806,8 @@ async def api_user_subtitle_attach(request: web.Request) -> web.Response:
             "label": str(candidate.get("label") or "Subtitles"),
             "language": str(candidate.get("language") or "und"),
         })
+    except wyzie_subtitles.QuotaUnavailable as exc:
+        return _json({"error": str(exc)}, status=429, headers={"Retry-After": str(exc.retry_after)})
     except wyzie_subtitles.WyzieError as exc:
         return _json({"error": str(exc)}, status=429 if "limit" in str(exc).lower() or "budget" in str(exc).lower() else 503)
     except Exception:

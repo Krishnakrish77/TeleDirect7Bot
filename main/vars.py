@@ -79,6 +79,13 @@ class Var(object):
     # Optional Wyzie subtitle provider key.  This is intentionally consumed
     # by server-side routes only; never expose it to the browser bundle.
     WYZIE_API_KEY = environ.get("WYZIE_API_KEY", "").strip()
+    # Per-user daily subtitle limits. Generous defaults: attaching a subtitle
+    # must never be the thing that fails on a movie night. The provider's own
+    # key budget is usually the real ceiling (see _GLOBAL_REQUEST_LIMIT).
+    WYZIE_USER_SEARCH_LIMIT = max(10, int(environ.get("WYZIE_USER_SEARCH_LIMIT", "150") or 150))
+    WYZIE_USER_ATTACH_LIMIT = max(5, int(environ.get("WYZIE_USER_ATTACH_LIMIT", "60") or 60))
+    WYZIE_ITEM_ATTACH_LIMIT = max(2, int(environ.get("WYZIE_ITEM_ATTACH_LIMIT", "12") or 12))
+    WYZIE_GLOBAL_REQUEST_LIMIT = max(100, int(environ.get("WYZIE_GLOBAL_REQUEST_LIMIT", "5000") or 5000))
 
     BANNED_CHANNELS = list({int(x) for x in str(environ.get("BANNED_CHANNELS", "")).split()})
     BANNED_USERS = list({int(x) for x in str(environ.get("BANNED_USERS", "")).split()})
