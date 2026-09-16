@@ -718,6 +718,19 @@ export async function deleteAdminSubtitle(id: number, binMessageId: number): Pro
   return request(`/api/app/admin/item/${id}/subtitles/${binMessageId}`, { method: 'DELETE' });
 }
 
+export async function searchAdminSubtitles(id: number, language = ''): Promise<{ results: SubtitleSearchResult[] }> {
+  const suffix = language ? `?language=${encodeURIComponent(language)}` : '';
+  return request(`/api/app/admin/item/${id}/subtitles/search${suffix}`);
+}
+
+export async function fetchAdminSubtitle(id: number, candidateId: string): Promise<{ ok: boolean; message: string; item: unknown }> {
+  return request(`/api/app/admin/item/${id}/subtitles/fetch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: candidateId }),
+  });
+}
+
 export async function fetchAiModels(signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
   return request<Array<{ id: string; name: string }>>('/api/app/admin/ai-models', { signal });
 }

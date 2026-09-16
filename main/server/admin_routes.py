@@ -45,6 +45,8 @@ from main.utils import series as series_parse
 from main.utils.media_index import compute_movie_key
 from main.utils.user_auth import decode_token
 from main.utils.subtitles import derive_label, language_from_filename
+from main.utils import subtitles as subtitles_util
+from main.utils import wyzie_subtitles
 from main.vars import Var
 
 
@@ -3068,6 +3070,85 @@ async def api_app_admin_item_upload_subtitle(request: web.Request) -> web.Respon
         })
     except Exception:
         logging.exception("admin: subtitle upload failed for bin:%d", message_id)
+        return web.json_response({"error": "Could not save subtitle"}, status=502)
+
+
+@routes.get(r"/api/app/admin/item/{id:\d+}/subtitles/search")
+async def api_admin_item_subtitle_search(request: web.Request) -> web.Response:
+    """Search the Wyzie provider for one video's subtitles (admin)."""
+    _require_api_admin(request)
+    message_id = int(request.match_info["id"])
+    item = media_index.get_item(message_id)
+    if item is None:
+        return web.json_response({"error": "Not found"}, status=404)
+    if getattr(item, "media_kind", "") == "audio":
+        return web.json_response({"error": "Subtitles can only be attached to video"}, status=400)
+    try:
+        results = await wyzie_subtitles.search(int(_require_api_admin(request)["sub"]), item, request.query.get("language", ""))
+        return web.json_response({"results": results, "configured": wyzie_subtitles.configured()})
+    except wyzie_subtitles.QuotaUnavailable as exc:
+        return web.json_response({"error": str(exc)}, status=429, headers={"Retry-After": str(exc.retry_after)})
+    except wyzie_subtitles.WyzieError as exc:
+        return web.json_response({"error": str(exc), "configured": wyzie_subtitles.configured()}, status=429 if "limit" in str(exc).lower() else 503)
+
+
+@routes.post(r"/api/app/admin/item/{id:\d+}/subtitles/fetch")
+async def api_admin_item_subtitle_fetch(request: web.Request) -> web.Response:
+    """Fetch a provider subtitle and attach it as a durable sidecar.
+
+    Reuses the user-side pipeline (proxy fallback, transient retry) but the
+    result is durable: sent to BIN_CHANNEL and linked to the video for every
+    viewer, exactly like a manual upload.
+    """
+    _require_api_admin(request)
+    message_id = int(request.match_info["id"])
+    item = media_index.get_item(message_id)
+    if item is None:
+        return web.json_response({"error": "Not found"}, status=404)
+    if getattr(item, "media_kind", "") == "audio":
+        return web.json_response({"error": "Subtitles can only be attached to video"}, status=400)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    candidate_id = str(body.get("id") or "") if isinstance(body, dict) else ""
+    if not candidate_id or len(candidate_id) > 64:
+        return web.json_response({"error": "Invalid subtitle selection"}, status=400)
+    try:
+        data, candidate = await wyzie_subtitles.download(int(_require_api_admin(request)["sub"]), item, candidate_id)
+        filename = str(candidate.get("fileName") or f"subtitle.{candidate.get('format') or 'srt'}")
+        vtt = subtitles_util.srt_to_vtt(data)
+        bin_message = await StreamBot.send_document(
+            Var.BIN_CHANNEL,
+            io.BytesIO(vtt),
+            file_name=filename,
+            caption=f"Subtitle sidecar for bin:{message_id}",
+            disable_notification=True,
+        )
+        sidecar = ExternalSubtitle(
+            bin_message_id=bin_message.id,
+            secure_hash=get_hash(bin_message),
+            language=str(candidate.get("language") or "") or "und",
+            label=str(candidate.get("label") or "Subtitles"),
+        )
+        if not await media_index.attach_subtitle(message_id, sidecar):
+            await StreamBot.delete_messages(Var.BIN_CHANNEL, bin_message.id)
+            return web.json_response({"error": "Video no longer exists"}, status=404)
+        item = media_index.get_item(message_id)
+        if item is not None:
+            await media_index._store_upsert(item)
+            media_index.schedule_snapshot(StreamBot)
+        return web.json_response({
+            "ok": True,
+            "item": _admin_item_payload(item, set()) if item else None,
+            "message": f"Attached {filename}",
+        })
+    except wyzie_subtitles.QuotaUnavailable as exc:
+        return web.json_response({"error": str(exc)}, status=429, headers={"Retry-After": str(exc.retry_after)})
+    except wyzie_subtitles.WyzieError as exc:
+        return web.json_response({"error": str(exc)}, status=429 if "limit" in str(exc).lower() else 503)
+    except Exception:
+        logging.exception("admin: subtitle fetch failed for bin:%d", message_id)
         return web.json_response({"error": "Could not save subtitle"}, status=502)
 
 

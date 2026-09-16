@@ -1,5 +1,5 @@
 import { type ReactNode, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { aiSuggestItem, applyAdminBookMetadata, clearAdminItemTmdb, deleteAdminSubtitle, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem, searchAdminBooks, uploadAdminSubtitle } from '../api';
+import { aiSuggestItem, applyAdminBookMetadata, clearAdminItemTmdb, deleteAdminSubtitle, fetchAdminItem, fetchAdminSeriesList, fetchAdminStatus, fetchAiModels, fetchAdminSubtitle, fetchTmdbPreview, mergeAdminSeries, resolveTmdbImdb, runAdminAction, runAdminMaintenance, saveAdminItem, searchAdminBooks, searchAdminSubtitles, uploadAdminSubtitle } from '../api';
 import { FilmIcon, FilterIcon, MusicIcon, PlayIcon, SearchIcon, ShieldIcon, TrashIcon, XIcon } from '../icons';
 import { Checkbox } from './ui/checkbox';
 import { Button } from './ui/button';
@@ -57,7 +57,7 @@ export function AdminFrame({
     </div>
   );
 }
-import type { AdminItem, AdminItemEditPayload, AdminProgressState, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, BookMetadataCandidate, TmdbPreviewResult, User } from '../types';
+import type { AdminItem, AdminItemEditPayload, AdminProgressState, AdminResponse, AdminSeriesOption, AdminStatusResponse, AiSuggestResponse, BookMetadataCandidate, SubtitleSearchResult, TmdbPreviewResult, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { tmdbImageUrl } from '../utils/tmdb';
 
@@ -838,6 +838,8 @@ function EditModal({
   const [subtitleUploading, setSubtitleUploading] = useState(false);
   const [subtitleStatus, setSubtitleStatus] = useState('');
   const [sidecars, setSidecars] = useState<Array<{ binMessageId: number; language: string; label: string }>>([]);
+  const [subtitleResults, setSubtitleResults] = useState<SubtitleSearchResult[]>([]);
+  const [subtitleSearching, setSubtitleSearching] = useState(false);
 
   const [form, setForm] = useState<FormState>({
     title: '', year: null, tags: '', description: '', fileName: '',
@@ -1098,6 +1100,39 @@ function EditModal({
       setSubtitleStatus(result.message || `Attached ${file.name}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Subtitle upload failed');
+    } finally {
+      setSubtitleUploading(false);
+    }
+  };
+
+  const findOnlineSubtitles = async () => {
+    setSubtitleSearching(true);
+    setSubtitleStatus('');
+    try {
+      const response = await searchAdminSubtitles(messageId);
+      setSubtitleResults(response.results);
+      setSubtitleStatus(response.results.length ? 'Choose a release to attach for every viewer.' : 'No matching subtitles found online.');
+    } catch (err) {
+      setSubtitleStatus(err instanceof Error ? err.message : 'Could not search subtitles.');
+    } finally {
+      setSubtitleSearching(false);
+    }
+  };
+
+  const handleSubtitleFetch = async (result: SubtitleSearchResult) => {
+    setSubtitleUploading(true);
+    setError('');
+    try {
+      const response = await fetchAdminSubtitle(messageId, result.id);
+      if (response.item) {
+        const item = response.item as AdminItem;
+        onSaved(item);
+        setSidecars(item.sidecars || []);
+      }
+      setSubtitleResults([]);
+      setSubtitleStatus(response.message || `Attached ${result.label || result.language || 'subtitle'}`);
+    } catch (err) {
+      setSubtitleStatus(err instanceof Error ? err.message : 'Could not fetch subtitle.');
     } finally {
       setSubtitleUploading(false);
     }
@@ -1382,17 +1417,44 @@ function EditModal({
                       </div>
                       <div className="edit-section">
                         <p className="edit-section-label">Sidecar subtitles <span className="edit-field-hint">you can attach multiple language tracks</span></p>
-                        <label className="secondary-action compact-action" style={{ display: 'inline-flex', cursor: subtitleUploading ? 'wait' : 'pointer' }}>
-                          <input
-                            hidden
-                            type="file"
-                            accept=".srt,.vtt,text/vtt,application/x-subrip"
-                            disabled={subtitleUploading}
-                            onChange={(event) => void handleSubtitleUpload(event.currentTarget.files?.[0])}
-                          />
-                          {subtitleUploading ? 'Uploading…' : 'Upload subtitle'}
-                        </label>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <label className="secondary-action compact-action" style={{ display: 'inline-flex', cursor: subtitleUploading ? 'wait' : 'pointer' }}>
+                            <input
+                              hidden
+                              type="file"
+                              accept=".srt,.vtt,text/vtt,application/x-subrip"
+                              disabled={subtitleUploading}
+                              onChange={(event) => void handleSubtitleUpload(event.currentTarget.files?.[0])}
+                            />
+                            {subtitleUploading ? 'Uploading…' : 'Upload subtitle'}
+                          </label>
+                          <Button type="button" variant="outline" size="sm" disabled={subtitleUploading || subtitleSearching} onClick={() => void findOnlineSubtitles()}>
+                            <SearchIcon />
+                            {subtitleSearching ? 'Searching…' : subtitleResults.length ? 'Search again' : 'Find online'}
+                          </Button>
+                        </div>
                         {subtitleStatus && <p className="edit-field-hint" style={{ marginTop: '0.5rem' }}>{subtitleStatus}</p>}
+                        {subtitleResults.length > 0 && (
+                          <div className="edit-field-hint" style={{ marginTop: '0.75rem', display: 'grid', gap: '0.3rem' }}>
+                            {Object.entries(
+                              subtitleResults.reduce<Record<string, typeof subtitleResults>>((acc, result) => {
+                                const lang = result.language || 'und';
+                                (acc[lang] = acc[lang] || []).push(result);
+                                return acc;
+                              }, {}),
+                            ).map(([lang, langResults]) => (
+                              <div key={lang} style={{ display: 'grid', gap: '0.3rem' }}>
+                                <strong style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#fdba74' }}>{langResults[0]?.label || lang}</strong>
+                                {langResults.map((result) => (
+                                  <div key={result.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center' }}>
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[result.release, result.source].filter(Boolean).join(' · ') || result.fileName}</span>
+                                    <Button type="button" variant="outline" size="sm" disabled={subtitleUploading} onClick={() => void handleSubtitleFetch(result)}>Attach</Button>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {sidecars.length > 0 && (
                           <div className="edit-field-hint" style={{ marginTop: '0.75rem' }}>
                             {sidecars.map((sidecar) => (
