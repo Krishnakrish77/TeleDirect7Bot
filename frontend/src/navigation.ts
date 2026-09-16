@@ -46,6 +46,10 @@ function sameParams(left: HubParams, right: HubParams): boolean {
 
 export function localAppHref(href: string | null): string | null {
   if (!href) return null;
+  // Vite dev serves the SPA under /static/app/ (vite.config base); production
+  // serves it at /. Strip the dev base so route parsing and hrefs match prod.
+  if (href === '/static/app') return '/';
+  if (href.startsWith('/static/app/')) return localAppHref(`/app/${href.slice('/static/app/'.length)}`);
   if (href === '/app') return '/';
   if (href.startsWith('/app?')) return `/${href.slice('/app?'.length) ? `?${href.slice('/app?'.length)}` : ''}`;
   if (href.startsWith('/app/watch/')) return `/play/${href.slice('/app/watch/'.length)}`;

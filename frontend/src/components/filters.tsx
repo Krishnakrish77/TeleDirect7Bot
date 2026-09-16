@@ -1,4 +1,4 @@
-import { FilterIcon } from '../icons';
+import { FilterIcon, XIcon } from '../icons';
 import { appUrl } from '../navigation';
 import type { FilterOption, HubFilters, HubParams, ViewValue } from '../types';
 import { Button } from './ui/button';
@@ -26,19 +26,48 @@ function SelectControl({ control, className = '', compact = false }: { control: 
   );
   const onValueChange = (value: string) => control.onChange(value === '__any' ? '' : value);
 
-  // Compact pill (browse bar): one control reading the field name until a value
-  // is picked, then the value — no redundant "Year Any" prefix. Highlights when
-  // a value is active.
+  // Compact pill (browse bar): reads "Field · Value" while a value is active so
+  // every orange pill stays self-describing. Metadata pills also get an × that
+  // clears just this filter without opening the menu; sort is a chooser, so it
+  // never gets one.
   if (compact) {
     const active = Boolean(control.value);
+    const clearable = active && control.id !== 'sort';
+    // A stale/foreign value (e.g. a URL hand-edit) has no matching option;
+    // fall back to the raw value instead of rendering a blank pill.
+    const valueLabel = control.value ? (optionLabel(control.options, control.value) || control.value) : '';
     return (
       <Select value={control.value || undefined} onValueChange={onValueChange}>
-        <SelectTrigger
-          className={['filter-pill', active ? 'active' : '', className].filter(Boolean).join(' ')}
-          aria-label={control.label}
-        >
-          <SelectValue placeholder={control.label} />
-        </SelectTrigger>
+        <span className="filter-pill-group">
+          <SelectTrigger
+            className={['filter-pill', active ? 'active' : '', clearable ? 'clearable' : '', className].filter(Boolean).join(' ')}
+            aria-label={control.label}
+          >
+            {active ? (
+              <span className="filter-pill-value">
+                <span className="filter-pill-field">{control.label}</span>
+                <span className="filter-pill-sep">·</span>
+                <span className="filter-pill-text">{valueLabel}</span>
+              </span>
+            ) : (
+              <SelectValue placeholder={control.label} />
+            )}
+          </SelectTrigger>
+          {clearable && (
+            <button
+              type="button"
+              className="filter-pill-clear"
+              aria-label={`Clear ${control.label} filter`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                control.onChange('');
+              }}
+            >
+              <XIcon />
+            </button>
+          )}
+        </span>
         {options}
       </Select>
     );
@@ -123,7 +152,9 @@ function filterOptions(filters: HubFilters, params: HubParams, update: (patch: P
   return { viewOptions, yearOptions, qualityOptions, genreOptions, tagOptions, metadataControls, sortControl };
 }
 
-function activeFilterLabels({
+type AppliedFilter = { key: string; field: string; value: string; clear: Partial<HubParams> };
+
+function appliedFilterChips({
   filters,
   params,
   query,
@@ -131,7 +162,7 @@ function activeFilterLabels({
   filters: HubFilters;
   params: HubParams;
   query: string;
-}) {
+}): AppliedFilter[] {
   const qualityOptions = [
     { value: '', label: 'Any quality' },
     ...filters.qualities.map((quality) => ({ value: quality, label: quality })),
@@ -144,13 +175,13 @@ function activeFilterLabels({
     { value: '', label: 'Any tag' },
     ...filters.tags.map((tag) => ({ value: tag.name, label: tag.name })),
   ];
-  return [
-    query ? `Search: ${query}` : '',
-    params.year ? String(params.year) : '',
-    params.quality ? optionLabel(qualityOptions, params.quality) : '',
-    params.genre ? optionLabel(genreOptions, params.genre) : '',
-    params.tag ? optionLabel(tagOptions, params.tag) : '',
-  ].filter(Boolean);
+  const chips: AppliedFilter[] = [];
+  if (query) chips.push({ key: 'q', field: 'Search', value: query, clear: { q: '' } });
+  if (params.year) chips.push({ key: 'year', field: 'Year', value: String(params.year), clear: { year: null } });
+  if (params.quality) chips.push({ key: 'quality', field: 'Quality', value: optionLabel(qualityOptions, params.quality) || params.quality, clear: { quality: '' } });
+  if (params.genre) chips.push({ key: 'genre', field: 'Genre', value: optionLabel(genreOptions, params.genre) || params.genre, clear: { genre: '' } });
+  if (params.tag) chips.push({ key: 'tag', field: 'Tag', value: optionLabel(tagOptions, params.tag) || params.tag, clear: { tag: '' } });
+  return chips;
 }
 
 function clearParams(): Partial<HubParams> {
@@ -182,12 +213,8 @@ export function FilterBar({
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
 }) {
   const { viewOptions, metadataControls, sortControl } = filterOptions(filters, params, update);
-  const activeLabels = activeFilterLabels({ filters, params, query });
-  const activeFilterCount = activeLabels.length;
+  const activeFilterCount = appliedFilterChips({ filters, params, query }).length;
   const hasFilters = activeFilterCount > 0 || params.sort !== 'newest' || Boolean(params.view);
-  const summary = activeFilterCount
-    ? `${activeLabels.slice(0, 2).join(' / ')}${activeFilterCount > 2 ? ` +${activeFilterCount - 2}` : ''}`
-    : 'Any year, quality, genre';
   const clearAll = (replace = false) => {
     setQuery('');
     update(clearParams(), replace);
@@ -266,8 +293,8 @@ export function FilterPage({
     navigate(appUrl(next, '/filters'), replace);
   };
   const { viewOptions, metadataControls, sortControl } = filterOptions(filters, params, updateFilterRoute);
-  const activeLabels = activeFilterLabels({ filters, params, query });
-  const hasFilters = activeLabels.length > 0 || params.sort !== 'newest' || Boolean(params.view);
+  const chips = appliedFilterChips({ filters, params, query });
+  const hasFilters = chips.length > 0 || params.sort !== 'newest' || Boolean(params.view);
   const clearAll = () => {
     setQuery('');
     navigate(appUrl(clearParams(), '/filters'), true);
@@ -307,10 +334,21 @@ export function FilterPage({
           ))}
         </div>
 
-        {activeLabels.length > 0 && (
+        {chips.length > 0 && (
           <div className="applied-filter-row" aria-label="Applied filters">
-            {activeLabels.map((label) => (
-              <span key={label}>{label}</span>
+            {chips.map((chip) => (
+              <span key={chip.key} className="applied-filter-chip">
+                <span className="applied-filter-field">{chip.field}</span>
+                <span className="applied-filter-value">{chip.value}</span>
+                <button
+                  type="button"
+                  className="applied-filter-clear"
+                  aria-label={`Remove ${chip.field} filter`}
+                  onClick={() => updateFilterRoute({ ...chip.clear, offset: 0 }, true)}
+                >
+                  <XIcon />
+                </button>
+              </span>
             ))}
           </div>
         )}

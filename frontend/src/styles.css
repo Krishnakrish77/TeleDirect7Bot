@@ -907,14 +907,22 @@ img {
   margin-inline: 0.25rem;
 }
 
-/* Inline filter controls: Year / Quality / Genre / Tag — visible on desktop */
+/* Inline filter controls: Year / Quality / Genre / Tag — visible on desktop.
+   Horizontal scroll when the row overflows (fade hints there is more). */
 .filter-inline-controls {
   display: flex;
   align-items: center;
   gap: 0.3rem;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, #000 92%, transparent);
+  mask-image: linear-gradient(to right, #000 92%, transparent);
+}
+
+.filter-inline-controls::-webkit-scrollbar {
+  display: none;
 }
 
 /* Right side: Sort + Reset + mobile Filters link */
@@ -967,8 +975,8 @@ img {
 
 /* Compact pill selects in the browse bar (Year / Quality / Genre / Tag / Sort).
    Scoped (0,2,0+) so these beat the SelectTrigger base utilities (h-10, w-full,
-   rounded-lg, bg-soft). Filled background gives real contrast vs the old
-   transparent pills; brand accent marks an active filter. */
+   rounded-lg, bg-soft). Active pills read "Field · Value" and carry a per-pill
+   clear (×) button so a single filter can be dropped without opening menus. */
 .filter-inline-controls .filter-pill,
 .filter-action-row .filter-pill {
   height: 32px;
@@ -981,7 +989,7 @@ img {
   background: var(--panel-strong);
   font-size: 0.82rem;
   font-weight: 700;
-  max-width: 11rem;
+  max-width: 12rem;
 }
 
 .filter-inline-controls .filter-pill:hover,
@@ -989,11 +997,93 @@ img {
   border-color: rgba(255, 255, 255, 0.26);
 }
 
+/* Active: quiet tinted pill, field name de-emphasized, value prominent.
+   .filter-pill-group wraps trigger + clear button so the × visually sits
+   inside one pill; the wrapper carries the active pill styling. */
+.filter-inline-controls .filter-pill-group,
+.filter-action-row .filter-pill-group {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.filter-inline-controls .filter-pill-group .filter-pill-clear,
+.filter-action-row .filter-pill-group .filter-pill-clear {
+  position: absolute;
+  right: 7px;
+  z-index: 1;
+}
+
+.filter-inline-controls .filter-pill-group .filter-pill.clearable,
+.filter-action-row .filter-pill-group .filter-pill.clearable {
+  padding-right: 2rem;
+}
+
 .filter-inline-controls .filter-pill.active,
 .filter-action-row .filter-pill.active {
-  border-color: var(--brand);
-  background: rgba(249, 115, 22, 0.14);
+  border-color: rgba(249, 115, 22, 0.45);
+  background: rgba(249, 115, 22, 0.12);
   color: #fdba74;
+}
+
+.filter-inline-controls .filter-pill-group:has(.filter-pill.active) {
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.45);
+  background: rgba(249, 115, 22, 0.12);
+}
+
+.filter-pill-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+.filter-pill .filter-pill-field {
+  color: rgba(253, 186, 116, 0.62);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.filter-pill .filter-pill-sep {
+  color: rgba(253, 186, 116, 0.4);
+}
+
+.filter-pill .filter-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Per-pill clear button — stops the trigger's click so the menu stays closed. */
+.filter-pill-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-right: 0.15rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(253, 186, 116, 0.16);
+  color: #fdba74;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.filter-pill-clear:hover {
+  background: rgba(253, 186, 116, 0.34);
+  color: #fff;
+}
+
+.filter-pill-clear svg {
+  width: 11px;
+  height: 11px;
 }
 
 /* Reset button */
@@ -1073,17 +1163,58 @@ img {
   gap: 0.45rem;
 }
 
-.applied-filter-row span {
+/* Applied filter chip: "FIELD value ×" — the × removes just that filter. */
+.applied-filter-chip {
   display: inline-flex;
   align-items: center;
+  gap: 0.4rem;
   min-height: 30px;
-  padding: 0 0.58rem;
+  padding: 0 0.35rem 0 0.65rem;
   border: 1px solid rgba(20, 184, 166, 0.32);
   border-radius: 999px;
   background: rgba(20, 184, 166, 0.1);
   color: #99f6e4;
   font-size: 0.78rem;
-  font-weight: 850;
+  font-weight: 700;
+}
+
+.applied-filter-chip .applied-filter-field {
+  color: rgba(153, 246, 228, 0.6);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.applied-filter-chip .applied-filter-value {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.applied-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(153, 246, 228, 0.14);
+  color: #99f6e4;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.applied-filter-clear:hover {
+  background: rgba(153, 246, 228, 0.32);
+  color: #fff;
+}
+
+.applied-filter-clear svg {
+  width: 11px;
+  height: 11px;
 }
 
 .filter-page-actions {
