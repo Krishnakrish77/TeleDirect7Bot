@@ -28,6 +28,7 @@ export function useHub(params: HubParams, enabled = true) {
     const cached = hubCache.get(requestKey);
     setLoading(!cached);
     setError('');
+    const controller = new AbortController();
     fetchHub(params, controller.signal)
       .then((response) => {
         hubCache.set(requestKey, response);
