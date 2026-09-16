@@ -298,6 +298,27 @@ def _drop_cached(item) -> None:
     _cache.pop(item.message_id, None)
 
 
+def _status_class(status: int) -> str:
+    """Classify a provider download response.
+
+    Returns one of:
+    - "ok"        — body is usable.
+    - "transient" — throttling/server fault; worth one retry.
+    - "gone"      — dead/expired download link; drop the stale cache and
+                    re-search for fresh URLs.
+    - "error"     — anything else; a user-facing failure.
+    """
+    if status == 200:
+        return "ok"
+    if status == 429 or status == 503 or status >= 500:
+        return "transient"
+    if status in (403, 404, 410):
+        # OpenSubtitles mirrors answer expired signed URLs with 403 as
+        # often as 404/410, hours before the cached result would refresh.
+        return "gone"
+    return "error"
+
+
 async def _download_bytes(url: str) -> bytes:
     """One trusted-redirect-following subtitle download attempt."""
     try:
@@ -309,9 +330,9 @@ async def _download_bytes(url: str) -> bytes:
                 redirect_urls = [str(entry.url) for entry in response.history]
                 if not _trusted_download_url(str(response.url)) or not all(_trusted_download_url(url) for url in redirect_urls):
                     raise WyzieError("Selected subtitle download is not trusted")
-                if response.status == 429 or response.status == 503 or response.status >= 500:
+                if _status_class(response.status) == "transient":
                     raise _TransientDownloadError(f"provider returned {response.status}")
-                if response.status in (404, 410):
+                if _status_class(response.status) == "gone":
                     # OpenSubtitles download links expire hours after search,
                     # far sooner than our 6h result cache. Treat as a stale
                     # cache entry, not a user-facing failure.

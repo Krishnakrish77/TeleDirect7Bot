@@ -67,6 +67,24 @@ class WyzieSubtitleSearchTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(candidate["id"], "1956307067")
         self.assertEqual(candidate["format"], "srt")
 
+    def test_download_status_classification_sends_expired_403_links_to_research(self):
+        """A dead cached link must go down the re-search path, not surface
+        the generic 'no longer available' error. OpenSubtitles mirrors
+        answer expired signed URLs with 403 as often as 404/410."""
+        ok = [200]
+        transient = [429, 500, 502, 503, 504]
+        gone = [403, 404, 410]
+        error = [401, 406, 451]
+
+        for status in ok:
+            self.assertEqual(wyzie_subtitles._status_class(status), "ok", status)
+        for status in transient:
+            self.assertEqual(wyzie_subtitles._status_class(status), "transient", status)
+        for status in gone:
+            self.assertEqual(wyzie_subtitles._status_class(status), "gone", status)
+        for status in error:
+            self.assertEqual(wyzie_subtitles._status_class(status), "error", status)
+
     async def test_search_uses_the_default_source_before_broad_fallback(self):
         session = _Session()
         item = SimpleNamespace(
