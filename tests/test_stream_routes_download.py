@@ -12,6 +12,7 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 
 from aiohttp import web
+from aiohttp.test_utils import make_mocked_request
 
 from main.utils.custom_dl import MediaSessionUnavailable
 from main.utils.file_properties import matches_secure_hash
@@ -491,6 +492,35 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
                 file_size=stream_routes.skeleton_cache.HEAD_SIZE + 1,
             )
         )
+
+
+class StreamCatchAllRoutingTest(unittest.IsolatedAsyncioTestCase):
+    """The /{path} catch-all must 404 digitless named paths, not 500.
+
+    Any URL that isn't a "{hash}{message_id}" stream link or a legacy
+    "{message_id}/{filename}" link (e.g. /movies, /sitemap.xml) must fall
+    through to a clean 404.
+    """
+
+    async def _assert_not_found(self, path: str) -> None:
+        request = make_mocked_request("GET", f"/{path}")
+        request._match_info = {"path": path}
+        with self.assertRaises(web.HTTPNotFound):
+            await stream_routes.stream_handler(request)
+
+    async def test_digitless_named_path_returns_404(self):
+        for path in ("movies", "series", "music", "sitemap.xml", "robots.txt2"):
+            await self._assert_not_found(path)
+
+    async def test_slash_path_still_rejected(self):
+        await self._assert_not_found("some/invalid/path")
+
+    async def test_stream_link_still_parses(self):
+        request = make_mocked_request("GET", "/abc12345")
+        request._match_info = {"path": "abc12345"}
+        with patch.object(stream_routes, "media_streamer", AsyncMock(return_value=web.Response())):
+            response = await stream_routes.stream_handler(request)
+        self.assertEqual(response.status, 200)
 
 
 if __name__ == "__main__":

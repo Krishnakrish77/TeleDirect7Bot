@@ -5739,6 +5739,32 @@ img {
   font-size: .82rem;
   transform: translateX(-50%);
 }
+.books-reader-loading-card {
+  display: flex;
+  flex-direction: column;
+  gap: .7rem;
+  min-width: min(20rem, calc(100vw - 2rem));
+  padding: 1rem 1.1rem;
+  border-radius: 14px;
+}
+.books-reader-loading-card-copy { display: grid; gap: .15rem; }
+.books-reader-loading-card-copy strong { font-size: .82rem; text-transform: uppercase; letter-spacing: .06em; color: #fdba74; }
+.books-reader-loading-title { font-weight: 600; color: var(--text, #e5e7eb); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.books-reader-loading-sub { font-size: .78rem; color: var(--muted, #9ca3af); }
+.books-reader-loading-skeleton { display: grid; gap: .4rem; }
+.books-reader-loading-bar {
+  height: .5rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .09);
+  animation: books-reader-loading-pulse 1.4s ease-in-out infinite;
+}
+.books-reader-loading-bar.is-main { width: 65%; }
+.books-reader-loading-bar:nth-child(2) { width: 90%; animation-delay: .2s; }
+.books-reader-loading-bar:nth-child(3) { width: 45%; animation-delay: .4s; }
+@keyframes books-reader-loading-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .45; }
+}
 
 @media (max-width: 680px) {
   .books-library-controls { align-items: stretch; flex-direction: column; }

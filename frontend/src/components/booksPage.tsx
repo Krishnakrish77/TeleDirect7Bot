@@ -171,6 +171,26 @@ export function BooksPage({ user }: { user: User | null }) {
   const epubRootRef = useRef<HTMLDivElement>(null); const epubBookRef = useRef<EpubBook | null>(null); const renditionRef = useRef<EpubRendition | null>(null); const pdfCanvasRef = useRef<HTMLCanvasElement>(null); const pdfTextLayerRef = useRef<HTMLDivElement>(null); const pdfRootRef = useRef<HTMLDivElement>(null); const pdfJsRef = useRef<PdfJs | null>(null); const gestureStart = useRef<{ x: number; y: number } | null>(null); const pdfScrollTopRef = useRef(0); const pdfPageTurnLockedRef = useRef(false); const pdfPendingScrollRef = useRef<'top' | 'bottom' | null>(null); const touchStartRef = useRef<{ x: number; y: number; scrollLeft: number; panning: boolean } | null>(null); const pdfPinchRef = useRef<{ distance: number; scale: number } | null>(null); const epubSearchTokenRef = useRef(0); const epubSearchHighlightRef = useRef<string | null>(null); const pdfSearchTokenRef = useRef(0); const pdfTextCacheRef = useRef(new Map<number, string>()); const bookRequestTokenRef = useRef(0); const speechTokenRef = useRef(0); const speechChunksRef = useRef<string[]>([]); const speechChunkIndexRef = useRef(0); const speechOnCompleteRef = useRef<(() => void) | undefined>(undefined); const speechSettingsRef = useRef({ rate: speechRate, voiceUri: speechVoiceUri }); const readerMenuOpenRef = useRef(false);
   const isEpub = selected?.format.toLowerCase() === 'epub';
 
+  // The reader chunks are heavy (pdf.worker ~2.3 MB, epubjs+jszip ~100 KB).
+  // Prefetch them once while the library is open and the main thread is
+  // idle, so tapping a book starts reading almost immediately instead of
+  // staring at the loading card.
+  useEffect(() => {
+    if (items.length === 0) return undefined;
+    const prefetch = () => {
+      void loadEpubReader().catch(() => undefined);
+      void loadPdfReader().catch(() => undefined);
+    };
+    const hasIdle = typeof window.requestIdleCallback === 'function';
+    const idle = hasIdle
+      ? window.requestIdleCallback(prefetch, { timeout: 5000 })
+      : window.setTimeout(prefetch, 1500);
+    return () => {
+      if (hasIdle) window.cancelIdleCallback(idle as number);
+      else window.clearTimeout(idle as number);
+    };
+  }, [items.length === 0]);
+
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedQuery(query), 250); return () => window.clearTimeout(timer); }, [query]);
   useEffect(() => { const controller = new AbortController(); const token = bookRequestTokenRef.current + 1; bookRequestTokenRef.current = token; let active = true; setLoading(true); setLoadingMoreBooks(false); setError(''); void fetchBooks(debouncedQuery, { limit: BOOK_PAGE_SIZE, signal: controller.signal }).then((data) => { if (active && token === bookRequestTokenRef.current) { setItems(data.items); setBookTotal(data.total ?? data.items.length); setNextBookOffset(data.nextOffset ?? null); } }).catch((err) => { if (active && err.name !== 'AbortError') setError(err.message || 'Unable to load books.'); }).finally(() => { if (active && token === bookRequestTokenRef.current) setLoading(false); }); return () => { active = false; controller.abort(); }; }, [debouncedQuery]);
   useEffect(() => { const onPopState = () => setBookIdFromUrl(new URLSearchParams(window.location.search).get('book')); window.addEventListener('popstate', onPopState); return () => window.removeEventListener('popstate', onPopState); }, []);
@@ -461,7 +481,21 @@ export function BooksPage({ user }: { user: User | null }) {
           {readerPanel && !isEpub && <section className="books-reader-panel"><strong>{readerPanel === 'pages' ? 'Pages' : readerPanel === 'outline' ? 'Outline' : readerPanel === 'bookmarks' ? 'Bookmarks' : 'Notes'}</strong>{readerPanel === 'pages' ? <div className="pdf-thumbnail-grid">{nearbyPdfPages().map((page) => pdfDocument && <PdfThumbnail key={page} document={pdfDocument} pageNumber={page} selected={page === pdfPage} onSelect={(next) => { changePdfPage(next); setReaderPanel(null); }} />)}</div> : readerPanel === 'outline' ? (pdfOutline.length ? renderPdfOutline(pdfOutline) : <small>This PDF does not include an outline.</small>) : readerPanel === 'bookmarks' ? ((bookmarks[selected.id] || []).length ? (bookmarks[selected.id] || []).map((entry) => <button key={entry.t} type="button" className="books-reader-panel-link" onClick={() => { const page = Number(entry.locator.replace(/^page:/, '')); if (page) changePdfPage(page); setReaderPanel(null); }}>{entry.label}</button>) : <small>No bookmarks yet.</small>) : ((notes[selected.id] || []).length ? (notes[selected.id] || []).map((entry) => <p key={entry.t} className="books-reader-note"><small>Page {Math.max(1, Math.round(entry.progress * (pdfPages || 1)))}</small>{entry.text}</p>) : <small>No notes yet. Write one above and choose Save note.</small>)}</section>}
         </aside>}
 
-        {readerLoading && <p className="books-reader-loading" role="status">Opening {isEpub ? 'EPUB' : 'PDF'}…</p>}
+        {readerLoading && (
+          <div className="books-reader-loading books-reader-loading-card" role="status" aria-live="polite">
+            <div className="books-reader-loading-card-copy">
+              <strong>Opening {isEpub ? 'EPUB' : 'PDF'}</strong>
+              <span className="books-reader-loading-title">{selected.title}</span>
+              <span className="books-reader-loading-sub">Large files can take a moment on slow connections.</span>
+            </div>
+            <div className="books-reader-loading-skeleton" aria-hidden="true">
+              <span className="books-reader-loading-bar is-main" />
+              <span className="books-reader-loading-bar" />
+              <span className="books-reader-loading-bar" />
+            </div>
+            <Button variant="secondary" size="sm" onClick={closeReader}>Cancel</Button>
+          </div>
+        )}
         {readerError && <div className="books-reader-error" role="alert"><span>{readerError}</span><Button variant="secondary" size="sm" onClick={() => { setReaderError(''); setReaderAttempt((attempt) => attempt + 1); }}>Retry reader</Button></div>}
         <div className="books-reader">
           {isEpub ? <div ref={epubRootRef} className={`epub-reader epub-reader-${epubPreferences.theme}`} role="region" aria-label={`${selected.title} reader`} /> : <div ref={pdfRootRef} className="pdf-reader" onScroll={onPdfScroll}><div className="pdf-page"><canvas ref={pdfCanvasRef} aria-label={`${selected.title} PDF page ${pdfPage}`} /><div ref={pdfTextLayerRef} className="pdf-text-layer" aria-hidden="true" /></div></div>}

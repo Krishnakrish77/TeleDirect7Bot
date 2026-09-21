@@ -408,6 +408,11 @@ async def stream_handler(request: web.Request):
         # routes that fell through to this catch-all.
         if '/' in path and not re.match(r'^\d+/', path):
             raise web.HTTPNotFound()
+        if not re.search(r"\d", path):
+            # No digits at all: cannot be a "{hash}{message_id}" or legacy
+            # "{message_id}/{filename}" link — a named route that fell
+            # through (e.g. /movies, /sitemap.xml). 404, not AttributeError.
+            raise web.HTTPNotFound()
         # Hash is everything before the trailing digit run (message_id).
         # File unique_ids can be 6, 15, 16+ chars — accept any hash
         # ending with a non-digit char followed by the numeric message_id.
