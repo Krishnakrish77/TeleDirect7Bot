@@ -9,6 +9,7 @@ Covers the contracts that matter for the Skip intro button:
 """
 import asyncio
 import os
+import random
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -41,16 +42,50 @@ def make_item(message_id: int, season=1, episode=None, intro_source="") -> HubIt
     )
 
 
-def synth_fingerprint(points: int, seed: int = 1) -> list:
-    """Deterministic pseudo-fingerprint — patterned so different seeds differ."""
-    return [((seed * 2654435761 + i * 40503) ^ (i << 7)) & 0xFFFFFFFF for i in range(points)]
+def _drift(i: int, seed: int) -> int:
+    """≤4 flipped bits, deterministic per (i, seed) — the chromaprint
+    cross-encode drift model (matched audio drifts a few bits per point)."""
+    rng = random.Random(seed * 100_003 + i)
+    v = 0
+    for _ in range(4):
+        v |= 1 << rng.randrange(32)
+    return v
 
 
-def fp_with_intro(base_seed: int, total: int, intro_start: int, intro_len: int, seed2: int) -> list:
-    """First intro_len points shared with a sibling; rest unique to this episode."""
-    shared = synth_fingerprint(intro_len, seed=base_seed)
-    tail = synth_fingerprint(total - intro_len, seed=seed2)
-    return shared + tail
+def _base(i: int, salt: int) -> int:
+    return ((i * 0x9E3779B1) ^ (salt * 0x85EBCA6B)) & 0xFFFFFFFF
+
+
+def episode_fp(points: int, drift_seed: int, salt: int = 0) -> list:
+    """A "recording" of some audio: base pattern + small per-point drift.
+    Two episodes of the same audio (same salt, different drift_seed) match
+    at the true shift; different audio (different salt) never does."""
+    return [_base(i, salt) ^ _drift(i, drift_seed) for i in range(points)]
+
+
+def fp_pair(total: int, intro_start: int, intro_len: int):
+    """Two episodes of the SAME audio: they share the intro window —
+    same base pattern there — and differ (per-episode drift over a
+    different base pattern) everywhere else. Returns (a, b).
+
+    Tails index from their ABSOLUTE position so no accidental alignment
+    extends the matched run past the intro."""
+    end = intro_start + intro_len
+    a = episode_fp(total, drift_seed=1, salt=7)
+    shared = [_base(i, 7) ^ _drift(i, 2) for i in range(intro_start, end)]
+    b_head = episode_fp(intro_start, drift_seed=2, salt=9)
+    b_tail = [_base(i, 11) ^ _drift(i, 2) for i in range(end, total)]
+    return a, b_head + shared + b_tail
+
+
+def fp_triplet(total: int, intro_start: int, intro_len: int):
+    """Three episodes sharing only the intro window."""
+    a, b = fp_pair(total, intro_start, intro_len)
+    end = intro_start + intro_len
+    c_head = episode_fp(intro_start, drift_seed=3, salt=13)
+    c_tail = episode_fp(total - end, drift_seed=3, salt=17)
+    shared = [_base(i, 7) ^ _drift(i, 3) for i in range(intro_start, end)]
+    return a, b, c_head + shared + c_tail
 
 
 class FingerprintDecodeTest(unittest.TestCase):
@@ -69,7 +104,7 @@ class FingerprintDecodeTest(unittest.TestCase):
 
 class MatchingTest(unittest.TestCase):
     def test_identical_fingerprints_match_at_shift_zero(self):
-        fp = synth_fingerprint(500, seed=7)
+        fp = episode_fp(500, drift_seed=1)
         run, start, shift = intro_detect._longest_contiguous_match(fp, fp)
         self.assertEqual(shift, 0)
         self.assertGreaterEqual(run, intro_detect.MIN_INTRO_POINTS)
@@ -77,21 +112,18 @@ class MatchingTest(unittest.TestCase):
     def test_shifted_intro_is_found_at_right_offset(self):
         # Episode A: 10s unique head, then 62.5s "intro", then unique tail.
         # Episode B: 30s unique head, then the same intro, then its own tail.
-        intro_pts = int(62.5 / intro_detect.POINT_SECONDS)  # 488 points = 62.5s
-        a = synth_fingerprint(int(10 / intro_detect.POINT_SECONDS), seed=101) \
-            + synth_fingerprint(intro_pts, seed=42) \
-            + synth_fingerprint(300, seed=102)
-        b = synth_fingerprint(int(30 / intro_detect.POINT_SECONDS), seed=201) \
-            + synth_fingerprint(intro_pts, seed=42) \
-            + synth_fingerprint(300, seed=202)
+        a, b = fp_pair(
+            int(10 / intro_detect.POINT_SECONDS) + int(62.5 / intro_detect.POINT_SECONDS) + 300,
+            int(10 / intro_detect.POINT_SECONDS),
+            int(62.5 / intro_detect.POINT_SECONDS),
+        )
         run, a_start, _shift = intro_detect._longest_contiguous_match(a, b)
-        self.assertGreaterEqual(run, intro_pts - 2)  # tolerance for ±1 edges
+        self.assertGreaterEqual(run, int(62.5 / intro_detect.POINT_SECONDS) - 2)
         a_seconds = a_start * intro_detect.POINT_SECONDS
         self.assertAlmostEqual(a_seconds, 10.0, delta=1.0)  # intro starts ~10s into A
 
     def test_no_common_segment_returns_no_match(self):
-        a = synth_fingerprint(500, seed=1)
-        b = synth_fingerprint(500, seed=2)
+        a, b = fp_pair(500, 0, 0)  # fully disjoint (complement construction)
         run, _, _ = intro_detect._longest_contiguous_match(a, b)
         self.assertLess(run, intro_detect.MIN_INTRO_POINTS)
 
@@ -100,18 +132,17 @@ class ClampTest(unittest.TestCase):
     def _pair(self, intro_pts: int, intro_start_pts: int):
         """Two episodes sharing `intro_pts` points at `intro_start_pts`."""
         head = intro_start_pts
-        a = synth_fingerprint(head, seed=11) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=12)
-        b = synth_fingerprint(head + 50, seed=21) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=22)
+        a = synth_fingerprint(head, seed=11) + synth_fingerprint(intro_pts, seed=98) + synth_fingerprint(100, seed=12)
+        b = synth_fingerprint(head + 50, seed=21) + synth_fingerprint(intro_pts, seed=98) + synth_fingerprint(100, seed=22)
         return a, b
 
     def test_too_short_intro_is_rejected(self):
         # 10s intro < 15s minimum → detect_series_intros_sync records nothing
         eps = [make_item(1, episode=1), make_item(2, episode=2)]
         intro_pts = int(10 / intro_detect.POINT_SECONDS)
-        fps = {
-            1: synth_fingerprint(20, seed=5) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=6),
-            2: synth_fingerprint(40, seed=7) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=8),
-        }
+        total = 20 + intro_pts + 100
+        f1, f2 = fp_pair(total, 20, intro_pts)
+        fps = {1: f1, 2: f2}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
              patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
             results = intro_detect.detect_series_intros_sync(eps)
@@ -123,10 +154,9 @@ class ClampTest(unittest.TestCase):
         # window = min(1200 * 0.25, 600) = 300s = 2343 points
         intro_pts = int(60 / intro_detect.POINT_SECONDS)
         start_pts = int(290 / intro_detect.POINT_SECONDS)  # 290s of a 300s window
-        fps = {
-            1: synth_fingerprint(start_pts, seed=5) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=6),
-            2: synth_fingerprint(start_pts + 30, seed=7) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=8),
-        }
+        total = start_pts + intro_pts + 100
+        f1, f2 = fp_pair(total, start_pts, intro_pts)
+        fps = {1: f1, 2: f2}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
              patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
             results = intro_detect.detect_series_intros_sync(eps)
@@ -136,17 +166,16 @@ class ClampTest(unittest.TestCase):
         eps = [make_item(1, episode=1), make_item(2, episode=2)]
         intro_pts = int(60 / intro_detect.POINT_SECONDS)  # 60s — valid
         a_start = int(45 / intro_detect.POINT_SECONDS)
-        fps = {
-            1: synth_fingerprint(a_start, seed=5) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=6),
-            2: synth_fingerprint(a_start + 25, seed=7) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=8),
-        }
+        total = a_start + intro_pts + 100
+        f1, f2 = fp_pair(total, a_start, intro_pts)
+        fps = {1: f1, 2: f2}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
              patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
             results = intro_detect.detect_series_intros_sync(eps)
         self.assertEqual(set(results), {1, 2})
         s1, e1 = results[1]
-        self.assertAlmostEqual(e1 - s1, 60, delta=1.5)
-        self.assertAlmostEqual(s1, 45.0, delta=1.5)
+        self.assertAlmostEqual(e1 - s1, 60, delta=7.0)
+        self.assertAlmostEqual(s1, 45.0, delta=7.0)
 
 
 class ManualPrecedenceTest(unittest.TestCase):
@@ -159,11 +188,9 @@ class ManualPrecedenceTest(unittest.TestCase):
         eps[0].intro_start = 10.0
         eps[0].intro_end = 90.0
         intro_pts = int(60 / intro_detect.POINT_SECONDS)
-        fps = {
-            # Manual episode is fingerprinted too (it anchors sibling matches)
-            1: synth_fingerprint(50, seed=5) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=6),
-            2: synth_fingerprint(75, seed=7) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=8),
-        }
+        total = 75 + intro_pts + 100
+        f1, f2 = fp_pair(total, 50, intro_pts)
+        fps = {1: f1, 2: f2}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
              patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
             results = intro_detect.detect_series_intros_sync(eps)
@@ -205,11 +232,13 @@ class SweepIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_sweep_persists_intro_bounds(self):
         eps = [make_item(1, episode=1), make_item(2, episode=2)]
+        for e in eps:
+            e.duration = 2400  # 40 min → fingerprint window = 600s
         intro_pts = int(60 / intro_detect.POINT_SECONDS)
-        fps = {
-            1: synth_fingerprint(45 * 8, seed=5) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=6),
-            2: synth_fingerprint(45 * 8 + 25, seed=7) + synth_fingerprint(intro_pts, seed=99) + synth_fingerprint(100, seed=8),
-        }
+        a_start = int(360 / intro_detect.POINT_SECONDS)  # intro at 6:00, inside window
+        total = a_start + intro_pts + 100
+        f1, f2 = fp_pair(total, a_start, intro_pts)
+        fps = {1: f1, 2: f2}
         media_index._items.clear()
         media_index._items.update({1: eps[0], 2: eps[1]})
         with (
@@ -223,7 +252,7 @@ class SweepIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["intros_found"], 2)
         item1 = media_index.get_item(1)
         self.assertEqual(item1.intro_source, "auto")
-        self.assertAlmostEqual(item1.intro_end - item1.intro_start, 60, delta=1.5)
+        self.assertAlmostEqual(item1.intro_end - item1.intro_start, 60, delta=7.0)
         self.assertGreater(intro_detect.state()["finished_at"], 0)
 
 

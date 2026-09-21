@@ -45,6 +45,12 @@ POINT_SECONDS = 0.128
 # ±point tolerance when matching — chromaprint points are quantized gradients
 # that can differ by ±1 even for identical audio (different encodes).
 POINT_TOLERANCE = 1
+# Points "match" when ≤18 of 32 bits differ. Calibrated empirically on two
+# series (Silo, One Piece): 16 and 18 give stable runs with matching starts;
+# 20 over-extends backwards into cold-open music; ≤14 loses the intro.
+# Random-pair baseline is 16/32 — the *contiguous run* (not the individual
+# point) is what separates intro from noise.
+MATCH_HAMMING_BITS = 18
 MIN_INTRO_POINTS = int(15 / POINT_SECONDS)   # 15 s
 MAX_INTRO_POINTS = int(150 / POINT_SECONDS)  # 150 s
 # Fingerprint this fraction of each episode (Jellyfin: first 25% or 10 min).
@@ -97,26 +103,37 @@ def _fingerprint_window_seconds(item) -> float:
 
 # ---------------------------------------------------------------- matching
 
+def _hamming(x: int, y: int) -> int:
+    """Bit distance between two chromaprint points (32-bit words)."""
+    return bin(x ^ y).count("1")
+
+
 def _longest_contiguous_match(a: List[int], b: List[int]) -> Tuple[int, int, int]:
-    """Longest run where a[i] ≈ b[i+shift], best shift. Returns
-    (run_points, a_start_points, shift)."""
-    index_b: Dict[int, List[int]] = defaultdict(list)
-    for j, pt in enumerate(b):
-        for d in (-POINT_TOLERANCE, 0, POINT_TOLERANCE):
-            index_b[pt + d].append(j)
-    shift_counts: Dict[int, int] = defaultdict(int)
-    for i, pt in enumerate(a):
-        for d in (-POINT_TOLERANCE, 0, POINT_TOLERANCE):
-            for j in index_b.get(pt + d, ()):
-                shift_counts[j - i] += 1
+    """Longest run where Hamming(a[i], b[i+shift]) ≤ threshold, over ALL
+    shifts. Returns (run_points, a_start_points, shift).
+
+    Design notes (empirically calibrated on real library episodes — Silo,
+    One Piece):
+    - Chromaprint points drift a few bits per point across encodes; exact
+      or ±1-integer matching finds nothing (0 matches at the true shift).
+    - Individual point thresholds can't separate signal from noise
+      (matched ≈15/32 vs random ≈16/32). The *contiguous run* is the
+      separator: at the true shift, sub-threshold points line up for
+      tens of seconds; elsewhere runs are short.
+    - Threshold 18 balances run stability vs over-extension (sweep-validated:
+      starts agree between 16 and 18; 20 swallows cold-open music).
+    - Brute-force scan over all shifts: O(len(a)·len(b)) Hamming ops per
+      pair. ~1.4M ops for two 150s windows ≈ sub-second; series sweeps
+      use short windows and this is simpler + more robust than Jellyfin's
+      histogram optimization (their exact-match anchors don't survive
+      cross-encode drift).
+    """
     best = (0, 0, 0)
-    for shift, support in sorted(shift_counts.items(), key=lambda kv: -kv[1]):
-        if support < MIN_INTRO_POINTS:
-            break  # histogram is sorted; the rest are weaker
-        run_best = run = start = best_start = 0
+    for shift in range(-len(b) + 1, len(a)):
+        run_best = run = best_start = 0
         for i in range(len(a)):
             j = i + shift
-            if 0 <= j < len(b) and abs(a[i] - b[j]) <= POINT_TOLERANCE:
+            if 0 <= j < len(b) and _hamming(a[i], b[j]) <= MATCH_HAMMING_BITS:
                 run += 1
                 if run > run_best:
                     run_best, best_start = run, i - run + 1
