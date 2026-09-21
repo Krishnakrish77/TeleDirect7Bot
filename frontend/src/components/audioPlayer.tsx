@@ -261,6 +261,7 @@ export function NowPlayingSheet({
 }) {
   const track = player.track;
   const [seekPreview, setSeekPreview] = useState<number | null>(null);
+  const [lyricsOpen, setLyricsOpen] = useState(false);
   if (!open || !track) return null;
   const duration = player.duration || track.duration || 0;
   const rangeMax = Math.max(1, Math.round(duration));
@@ -373,12 +374,22 @@ export function NowPlayingSheet({
           track={track}
           onRetry={() => togglePlayback()}
         />
-        <LyricsPanel
-          className="now-lyrics"
-          track={track}
-          currentTime={player.currentTime}
-          seek={seek}
-        />
+        {/* Mobile: lyrics collapse behind a toggle to keep the sheet compact.
+            Desktop: always-expanded via CSS (the toggle hides itself there). */}
+        <div className="now-lyrics-toggle">
+          <Button type="button" variant="secondary" size="sm" onClick={() => setLyricsOpen((value) => !value)} aria-expanded={lyricsOpen}>
+            <MusicIcon />
+            <span>{lyricsOpen ? 'Hide lyrics' : 'Lyrics'}</span>
+          </Button>
+        </div>
+        <div className={lyricsOpen ? 'now-lyrics-body is-open' : 'now-lyrics-body'}>
+          <LyricsPanel
+            className="now-lyrics"
+            track={track}
+            currentTime={player.currentTime}
+            seek={seek}
+          />
+        </div>
       </DialogContent>
     </Dialog>
   );

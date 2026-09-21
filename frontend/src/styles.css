@@ -9292,6 +9292,15 @@ img {
     grid-area: issue;
   }
 
+  .now-lyrics-body {
+    grid-area: lyrics;
+    align-self: stretch;
+  }
+
+  .now-lyrics-toggle {
+    display: none;
+  }
+
   .now-lyrics {
     grid-area: lyrics;
     align-self: stretch;
@@ -11483,8 +11492,9 @@ select.edit-field-input {
     grid-template-areas:
       "track controls close"
       "progress progress progress";
+    grid-template-columns: minmax(0, 1fr) auto auto;
     min-height: 86px;
-    gap: 0.5rem 0.6rem;
+    gap: 0.5rem 0.5rem;
     padding: 0.5rem 0.65rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
   }
 
@@ -11509,10 +11519,8 @@ select.edit-field-input {
     gap: 0.4rem;
   }
 
-  .mini-controls .icon-button:not(:last-child) {
-    display: none;
-  }
-
+  /* Keep skip controls reachable on mobile — hiding them forces a sheet
+     open just to move to the next track. Compact but tappable. */
   .mini-controls .icon-button {
     width: 34px;
     height: 34px;
@@ -11525,6 +11533,22 @@ select.edit-field-input {
 
   .mini-progress {
     gap: 0.5rem;
+  }
+
+  /* 16px-tall range inputs are near-impossible to hit with a thumb.
+     Grow the hit area and the visual thumb together. */
+  .mini-progress input[type='range'] {
+    height: 26px;
+  }
+
+  .mini-progress input[type='range']::-webkit-slider-thumb {
+    width: 16px;
+    height: 16px;
+  }
+
+  .mini-progress input[type='range']::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
   }
 
   .now-sheet {
@@ -11590,8 +11614,18 @@ select.edit-field-input {
     width: 100%;
   }
 
-  .now-lyrics {
+  .now-lyrics-toggle {
+    display: flex;
+    justify-content: center;
+  }
+
+  .now-lyrics-body:not(.is-open) {
     display: none;
+  }
+
+  .now-lyrics-body.is-open .now-lyrics .lyrics-lines,
+  .now-lyrics-body.is-open .now-lyrics .lyrics-plain {
+    max-height: min(30svh, 16rem);
   }
 
   .video-main {
@@ -11724,6 +11758,17 @@ select.edit-field-input {
 
   .queue-current-card img {
     width: 52px;
+  }
+
+  /* Stack the header: title block, then action row. One line can't fit
+     "Now playing / Queue" + Autoplay + Clear + Close on a 390px screen. */
+  .drawer-heading {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .drawer-actions {
+    justify-content: space-between;
   }
 
   .queue-row {
