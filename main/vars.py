@@ -1,6 +1,13 @@
 import logging
 from os import environ
 from dotenv import load_dotenv
+from pyrogram.types import LinkPreviewOptions
+
+# kurigram 2.2.24+ removed the ``disable_web_page_preview`` kwarg from
+# Message.reply/reply_text/edit_text; previews are now controlled via
+# ``link_preview_options``. All bot replies that carry stream links use
+# this shared sentinel.
+NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
 load_dotenv()
 

@@ -11,7 +11,7 @@ from main.utils.file_properties import (
 )
 from main.utils.indexer import schedule_index, schedule_subtitle_pairing
 from main.utils.subtitles import is_subtitle_filename, is_subtitle_mime
-from main.vars import Var
+from main.vars import Var, NO_PREVIEW
 from pyrogram import filters, Client, raw, utils as pyrogram_utils
 from pyrogram.enums import ButtonStyle
 from pyrogram.errors import FloodWait
@@ -215,11 +215,11 @@ async def private_receive_handler(c: Client, m: Message):
             _schedule_index_if_admin(c, m, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=reused_bin)
         if not reused_bin:
-            await log_msg.reply_text(text=f"**Requested By :** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n**User ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
+            await log_msg.reply_text(text=f"**Requested By :** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n**User ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", link_preview_options=NO_PREVIEW, quote=True)
 
         await m.reply_text(
             text=Stream_Text,
-            disable_web_page_preview=True,
+            link_preview_options=NO_PREVIEW,
             reply_markup=reply_markup,
             quote=True
         )
@@ -310,11 +310,11 @@ async def group_receive_handler(c: Client, m: Message):
             _schedule_index_if_admin(c, m, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=True)
         if not reused_bin:
-            await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", disable_web_page_preview=True, quote=True)
+            await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", link_preview_options=NO_PREVIEW, quote=True)
 
         await m.reply_text(
             text=Stream_Text,
-            disable_web_page_preview=True,
+            link_preview_options=NO_PREVIEW,
             reply_markup=reply_markup,
             quote=True
         )

@@ -19,7 +19,7 @@ from main.bot import StreamBot
 from main.utils.file_properties import gen_link, get_media_from_message
 from main.utils.human_readable import humanbytes
 from main.utils.indexer import schedule_index
-from main.vars import Var
+from main.vars import Var, NO_PREVIEW
 
 logger = logging.getLogger(__name__)
 
@@ -560,11 +560,11 @@ async def grab_handler(client: Client, m: Message):
             await log_msg.reply_text(
                 text=f"**Grabbed from URL** by [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n"
                      f"**Source:** `{arg[:200]}`",
-                disable_web_page_preview=True,
+                link_preview_options=NO_PREVIEW,
                 quote=True,
             )
             reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
-            await status.edit_text(stream_text, disable_web_page_preview=True, reply_markup=reply_markup)
+            await status.edit_text(stream_text, link_preview_options=NO_PREVIEW, reply_markup=reply_markup)
             return
 
         # ── Telegram message path (requires USER_SESSION) ─────────────────
@@ -586,11 +586,11 @@ async def grab_handler(client: Client, m: Message):
         await log_msg.reply_text(
             text=f"**Grabbed by:** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n"
                  f"**Source:** `{chat}` / msg `{msg_id}`",
-            disable_web_page_preview=True,
+            link_preview_options=NO_PREVIEW,
             quote=True,
         )
         reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
-        await status.edit_text(stream_text, disable_web_page_preview=True, reply_markup=reply_markup)
+        await status.edit_text(stream_text, link_preview_options=NO_PREVIEW, reply_markup=reply_markup)
 
     except ValueError as e:
         await status.edit_text(str(e))
@@ -826,13 +826,13 @@ async def grabsel_cb(client: Client, cb: CallbackQuery):
             schedule_index(client, log_msg)
             await log_msg.reply_text(
                 f"**Grabbed** | source `{chat_id}/{msg_id}`",
-                disable_web_page_preview=True,
+                link_preview_options=NO_PREVIEW,
                 quote=True,
             )
             reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
             # Send stream link as a direct reply to the list message so it's easy to find
             await cb.message.reply_text(
-                stream_text, disable_web_page_preview=True,
+                stream_text, link_preview_options=NO_PREVIEW,
                 reply_markup=reply_markup, quote=True,
             )
             done += 1
@@ -874,11 +874,11 @@ async def grabdo_cb(client: Client, cb: CallbackQuery):
 
         await log_msg.reply_text(
             text=f"**Grabbed via list** | source msg `{chat_id}/{msg_id}`",
-            disable_web_page_preview=True,
+            link_preview_options=NO_PREVIEW,
             quote=True,
         )
         reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
-        await progress.edit_text(stream_text, disable_web_page_preview=True, reply_markup=reply_markup)
+        await progress.edit_text(stream_text, link_preview_options=NO_PREVIEW, reply_markup=reply_markup)
 
     except FloodWait as e:
         await progress.edit_text(f"FloodWait — retry after {e.x}s")

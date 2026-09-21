@@ -2,7 +2,7 @@ import random
 import logging
 from main.bot import StreamBot
 from main.utils.file_properties import gen_link, get_media_file_unique_id
-from main.vars import Var
+from main.vars import Var, NO_PREVIEW
 from main.utils.Translation import Language, BUTTON
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.errors import MessageDeleteForbidden
@@ -17,19 +17,19 @@ async def cb_data(bot, update: CallbackQuery):
     if update.data == "home":
         await update.message.edit_text(
             text=lang.START_TEXT.format(update.from_user.mention),
-            disable_web_page_preview=True,
+            link_preview_options=NO_PREVIEW,
             reply_markup=BUTTON.START_BUTTONS
         )
     elif update.data == "help":
         await update.message.edit_text(
             text=lang.HELP_TEXT.format(Var.UPDATES_CHANNEL),
-            disable_web_page_preview=True,
+            link_preview_options=NO_PREVIEW,
             reply_markup=BUTTON.HELP_BUTTONS
         )
     elif update.data == "about":
         await update.message.edit_text(
             text=lang.ABOUT_TEXT,
-            disable_web_page_preview=True,
+            link_preview_options=NO_PREVIEW,
             reply_markup=BUTTON.ABOUT_BUTTONS
         )
     elif update.data == "close":
@@ -44,7 +44,7 @@ async def cb_data(bot, update: CallbackQuery):
         if usr_cmd[0] == "msgdelconf2":
             await update.message.edit_text(
             text=update.message.text,
-            disable_web_page_preview=True,
+            link_preview_options=NO_PREVIEW,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✔️", callback_data=f"msgdelyes_{usr_cmd[1]}_{usr_cmd[2]}"), InlineKeyboardButton("✖️", callback_data=f"msgdelno_{usr_cmd[1]}_{usr_cmd[2]}")]])
         )
         elif usr_cmd[0] == "msgdelno":
@@ -56,7 +56,7 @@ async def cb_data(bot, update: CallbackQuery):
 
                 await update.message.edit_text(
                 text=Stream_Text,
-                disable_web_page_preview=True,
+                link_preview_options=NO_PREVIEW,
                 reply_markup=reply_markup
                 )
             else:
@@ -71,7 +71,7 @@ async def cb_data(bot, update: CallbackQuery):
                     )
                     await update.message.edit_text(
                     text=update.message.text,
-                    disable_web_page_preview=True,
+                    link_preview_options=NO_PREVIEW,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Link Deleted", callback_data="msgdeleted")]])
                     )
                 elif resp.empty:

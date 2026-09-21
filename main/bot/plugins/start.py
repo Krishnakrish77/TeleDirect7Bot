@@ -4,7 +4,7 @@ from urllib.parse import urljoin
 
 from main.bot import StreamBot
 from main.utils import admin_auth
-from main.vars import Var
+from main.vars import Var, NO_PREVIEW
 from pyrogram import filters
 from main.utils.Translation import Language, BUTTON
 
@@ -24,7 +24,7 @@ async def start(b, m):
     lang = getattr(Language, "en")
     await m.reply_text(
         text=lang.START_TEXT.format(m.from_user.mention),
-        disable_web_page_preview=True,
+        link_preview_options=NO_PREVIEW,
         reply_markup=BUTTON.START_BUTTONS
         )
 
@@ -34,7 +34,7 @@ async def about(bot, update):
     lang = getattr(Language, "en")
     await update.reply_text(
         text=lang.ABOUT_TEXT,
-        disable_web_page_preview=True,
+        link_preview_options=NO_PREVIEW,
         reply_markup=BUTTON.ABOUT_BUTTONS
     )
 
@@ -68,7 +68,7 @@ async def admin_link(bot, message):
                 "and redeploy — that's your Telegram user id. Once set, "
                 "`/admin` will return a one-time login link."
             ),
-            disable_web_page_preview=True,
+            link_preview_options=NO_PREVIEW,
             quote=True,
         )
         return
@@ -117,7 +117,7 @@ async def admin_link(bot, message):
             f"• Open this link within **{link_minutes} minutes** — it expires after that.\n"
             f"• Once you open it, your admin session stays signed in for **{session_human}**."
         ),
-        disable_web_page_preview=True,
+        link_preview_options=NO_PREVIEW,
         quote=True,
     )
 
@@ -127,6 +127,6 @@ async def help_handler(bot, message):
     lang = getattr(Language, "en")
     await message.reply_text(
         text=lang.HELP_TEXT.format(Var.UPDATES_CHANNEL),
-        disable_web_page_preview=True,
+        link_preview_options=NO_PREVIEW,
         reply_markup=BUTTON.HELP_BUTTONS
         )
