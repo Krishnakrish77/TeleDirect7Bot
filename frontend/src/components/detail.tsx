@@ -1005,7 +1005,7 @@ function TrackList({
               active ? 'active' : '',
             ].filter(Boolean).join(' ')}
           >
-            <span className="track-number">{track.trackNumber || index + 1}</span>
+            <span className="track-number">{track.trackNumber || '–'}</span>
             <a className="track-title" href={track.appHref}>
               <strong>{track.title}</strong>
               <span>{subtitleForTrack(track)}</span>

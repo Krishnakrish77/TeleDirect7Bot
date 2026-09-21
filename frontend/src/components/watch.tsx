@@ -714,7 +714,7 @@ export function WatchPage({
                   ].filter(Boolean).join(' ')}
                   href={item.appHref}
                 >
-                  <span className="track-number">{item.trackNumber || index + 1}</span>
+                  <span className="track-number">{item.trackNumber || '–'}</span>
                   <span className="track-title">
                     <strong>{item.title}</strong>
                     <span>{[item.artist, item.qualityLabel].filter(Boolean).join(' - ')}</span>

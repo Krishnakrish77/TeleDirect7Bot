@@ -2571,8 +2571,12 @@ def _ensure_group_buckets() -> None:
     for bucket in movies.values():
         bucket.sort(key=lambda v: v.message_id, reverse=True)
     for bucket in albums.values():
+        # Unnumbered tracks (no embedded track tag) sort FIRST rather than
+        # after #9999 — "unknown position" shouldn't rank below track 9 of
+        # a 6-track compilation with garbage tags. Upload order breaks ties.
         bucket.sort(key=lambda t: (
-            t.track_number if t.track_number is not None else 9999,
+            0 if t.track_number is None else 1,
+            t.track_number if t.track_number is not None else 0,
             t.message_id,
         ))
     _series_buckets = series
@@ -2797,7 +2801,8 @@ def artist_display_name(slug: str) -> str:
 
 
 def tracks_for_album(album_key: str) -> List[HubItem]:
-    """All audio tracks for an album, sorted by track_number then message_id.
+    """All audio tracks for an album — unnumbered first (upload order),
+    then by track_number, then message_id.
 
     Matches by stored album_key OR by slugify(album_title) so that tracks
     with stale legacy keys (artist+album) are still found via the corrected
@@ -2817,7 +2822,8 @@ def tracks_for_album(album_key: str) -> List[HubItem]:
         and series_parse.slugify(getattr(it, "album_title", "") or "") == album_key
     ]
     return sorted(tracks, key=lambda t: (
-        t.track_number if t.track_number is not None else 9999,
+        0 if t.track_number is None else 1,
+        t.track_number if t.track_number is not None else 0,
         t.message_id,
     ))
 
