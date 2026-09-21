@@ -206,7 +206,6 @@ async def private_receive_handler(c: Client, m: Message):
             schedule_subtitle_pairing(c, log_msg, m)
             await m.reply_text(
                 text="📝 Subtitle saved. I'll attach it to the matching video.",
-                quote=True,
             )
             return
 
@@ -215,13 +214,12 @@ async def private_receive_handler(c: Client, m: Message):
             _schedule_index_if_admin(c, m, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=reused_bin)
         if not reused_bin:
-            await log_msg.reply_text(text=f"**Requested By :** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n**User ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", link_preview_options=NO_PREVIEW, quote=True)
+            await log_msg.reply_text(text=f"**Requested By :** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n**User ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", link_preview_options=NO_PREVIEW)
 
         await m.reply_text(
             text=Stream_Text,
             link_preview_options=NO_PREVIEW,
             reply_markup=reply_markup,
-            quote=True
         )
     except FloodWait as e:
         # Log it; don't echo a notice into BIN_CHANNEL. The channel is
@@ -249,7 +247,6 @@ async def channel_receive_handler(bot, broadcast: Message):
         if not reused_bin:
             await log_msg.reply_text(
                 text=f"**Channel Name:** `{broadcast.chat.title}`\n**Channel ID:** `{broadcast.chat.id}`\n**Request URL:** https://t.me/{(await bot.get_me()).username}?start=msgid_{str(log_msg.id)}",
-                quote=True,
             )
         # Best-effort: try to attach an inline "Download Link" button to
         # the source-channel message. This only works when the bot
@@ -310,13 +307,12 @@ async def group_receive_handler(c: Client, m: Message):
             _schedule_index_if_admin(c, m, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=True)
         if not reused_bin:
-            await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", link_preview_options=NO_PREVIEW, quote=True)
+            await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", link_preview_options=NO_PREVIEW)
 
         await m.reply_text(
             text=Stream_Text,
             link_preview_options=NO_PREVIEW,
             reply_markup=reply_markup,
-            quote=True
         )
     except FloodWait as e:
         logging.warning(

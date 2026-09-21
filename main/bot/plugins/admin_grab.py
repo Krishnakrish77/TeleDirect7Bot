@@ -546,12 +546,11 @@ async def grab_handler(client: Client, m: Message):
             "  `/grab https://t.me/channel/123`\n"
             "  `/grab @channel 123`\n"
             "  `/grab -100xxx 123`",
-            quote=True,
         )
         return
 
     arg = parts[1].strip()
-    status = await m.reply_text("Fetching…", quote=True)
+    status = await m.reply_text("Fetching…")
     try:
         # ── HTTP URL path (no USER_SESSION required) ──────────────────────
         if _is_http_url(arg):
@@ -561,7 +560,6 @@ async def grab_handler(client: Client, m: Message):
                 text=f"**Grabbed from URL** by [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n"
                      f"**Source:** `{arg[:200]}`",
                 link_preview_options=NO_PREVIEW,
-                quote=True,
             )
             reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
             await status.edit_text(stream_text, link_preview_options=NO_PREVIEW, reply_markup=reply_markup)
@@ -587,7 +585,6 @@ async def grab_handler(client: Client, m: Message):
             text=f"**Grabbed by:** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n"
                  f"**Source:** `{chat}` / msg `{msg_id}`",
             link_preview_options=NO_PREVIEW,
-            quote=True,
         )
         reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
         await status.edit_text(stream_text, link_preview_options=NO_PREVIEW, reply_markup=reply_markup)
@@ -618,15 +615,14 @@ async def grablist_handler(client: Client, m: Message):
             "  `/grablist @channel`\n"
             "  `/grablist https://t.me/channel`\n"
             "  `/grablist -100xxx`",
-            quote=True,
         )
         return
 
     if not Var.USER_SESSION:
-        await m.reply_text("Set `USER_SESSION` in .env and restart first.", quote=True)
+        await m.reply_text("Set `USER_SESSION` in .env and restart first.")
         return
 
-    status = await m.reply_text("Scanning channel…", quote=True)
+    status = await m.reply_text("Scanning channel…")
     try:
         chat = _parse_channel_arg(parts[1])
         user = await _get_user_client()
@@ -806,7 +802,7 @@ async def grabsel_cb(client: Client, cb: CallbackQuery):
 
     await cb.answer(f"Starting {total} grab(s)…")
     progress = await cb.message.reply_text(
-        f"⏳ 0 / {total} grabbed…", quote=True,
+        f"⏳ 0 / {total} grabbed…",
     )
     done, failed = 0, 0
     for i, msg_id in enumerate(sel, 1):
@@ -827,13 +823,12 @@ async def grabsel_cb(client: Client, cb: CallbackQuery):
             await log_msg.reply_text(
                 f"**Grabbed** | source `{chat_id}/{msg_id}`",
                 link_preview_options=NO_PREVIEW,
-                quote=True,
             )
             reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
             # Send stream link as a direct reply to the list message so it's easy to find
             await cb.message.reply_text(
                 stream_text, link_preview_options=NO_PREVIEW,
-                reply_markup=reply_markup, quote=True,
+                reply_markup=reply_markup,
             )
             done += 1
         except Exception as e:
@@ -856,7 +851,6 @@ async def grabdo_cb(client: Client, cb: CallbackQuery):
     await cb.answer("Starting grab…")
     progress = await cb.message.reply_text(
         f"⬇️ Downloading msg `{msg_id}`…",
-        quote=True,
     )
     try:
         user = await _get_user_client()
@@ -875,7 +869,6 @@ async def grabdo_cb(client: Client, cb: CallbackQuery):
         await log_msg.reply_text(
             text=f"**Grabbed via list** | source msg `{chat_id}/{msg_id}`",
             link_preview_options=NO_PREVIEW,
-            quote=True,
         )
         reply_markup, stream_text, _ = await gen_link(m=log_msg, log_msg=log_msg, from_channel=False)
         await progress.edit_text(stream_text, link_preview_options=NO_PREVIEW, reply_markup=reply_markup)

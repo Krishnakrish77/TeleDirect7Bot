@@ -69,7 +69,6 @@ async def admin_link(bot, message):
                 "`/admin` will return a one-time login link."
             ),
             link_preview_options=NO_PREVIEW,
-            quote=True,
         )
         return
 
@@ -118,7 +117,6 @@ async def admin_link(bot, message):
             f"• Once you open it, your admin session stays signed in for **{session_human}**."
         ),
         link_preview_options=NO_PREVIEW,
-        quote=True,
     )
 
 

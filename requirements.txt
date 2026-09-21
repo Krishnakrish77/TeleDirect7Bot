@@ -1,5 +1,5 @@
 aiohttp
-kurigram~=2.2.22
+kurigram==2.2.26
 python-dotenv
 pytgcrypto
 jinja2
