@@ -10470,6 +10470,7 @@ select.edit-field-input {
   .install-prompt {
     left: 0.75rem;
     right: 0.75rem;
+    /* Clear the mobile tab bar (64px) — the prompt otherwise sits on it. */
     bottom: calc(72px + env(safe-area-inset-bottom, 0px));
     grid-template-columns: auto minmax(0, 1fr) auto;
     width: auto;
@@ -10478,8 +10479,10 @@ select.edit-field-input {
     padding: 0.65rem;
   }
 
+  /* Mini player: bottom 64px + up to ~110px tall (progress row + queue
+     toast). Lift the prompt above both, plus a 12px gap. */
   .app-shell.has-player .install-prompt {
-    bottom: calc(154px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(186px + env(safe-area-inset-bottom, 0px));
   }
 
   .install-prompt-copy strong {

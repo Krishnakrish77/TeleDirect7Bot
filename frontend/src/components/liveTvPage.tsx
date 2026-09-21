@@ -285,10 +285,10 @@ export function LiveTvPage({
         <div>
           <p className="eyebrow">Live TV</p>
           <h1>{selected?.name || 'Live TV'}</h1>
-          <p>{selected ? channelCategory(selected) : `${channels.length.toLocaleString()} channels`}</p>
+          <p>{selected ? channelCategory(selected) : loading && !data ? 'Loading channels…' : `${channels.length.toLocaleString()} channels`}</p>
         </div>
         <div className="live-tv-hero-count">
-          <strong>{channels.length.toLocaleString()}</strong>
+          <strong>{loading && !data ? '…' : channels.length.toLocaleString()}</strong>
           <span>channels</span>
         </div>
       </section>

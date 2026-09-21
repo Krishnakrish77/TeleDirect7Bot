@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { deleteContinueEntry, recordWatchHistory, saveContinueEntry } from '../api';
+import { deleteContinueEntry, recordWatchHistory, reportAudioDuration, saveContinueEntry } from '../api';
 import { isContinueSuppressed, readLocalContinue, upsertLocalContinue } from '../utils/continueWatching';
 import { preloadLyrics } from './lyrics';
 import type { WatchTrack } from '../types';
@@ -265,6 +265,9 @@ export function useAudioPlayer() {
   const cwSessionKeyRef = useRef('');
   const cwSessionStartedRef = useRef(0);
   const persistLastRef = useRef(0);
+  // Track key of the last duration self-heal report — one report per track
+  // per session, even if the server response is slow.
+  const durationHealKeyRef = useRef('');
   const [player, setPlayer] = useState<PlayerState>(() => initialPlayerState());
   const playerRef = useRef(player);
   // Radio mode: the queue auto-refills with related tracks (orchestrated in
@@ -1037,6 +1040,20 @@ export function useAudioPlayer() {
       const current = playerRef.current;
       const currentTime = audio.currentTime || 0;
       const duration = audio.duration || current.duration || current.track?.duration || 0;
+      // Self-heal: the browser decodes the real duration; the catalogue's
+      // ffprobe value can be bogus (VBR MP3 without Xing header). Report
+      // once per track when the delta is material. Server-side guards make
+      // this a cheap no-op when the stored value is already correct.
+      if (
+        current.track &&
+        Number.isFinite(audio.duration) &&
+        audio.duration > 10 &&
+        (!current.track.duration || Math.abs(audio.duration - current.track.duration) / Math.max(current.track.duration, 1) > 0.05) &&
+        durationHealKeyRef.current !== current.track.key
+      ) {
+        durationHealKeyRef.current = current.track.key;
+        void reportAudioDuration(current.track.key, audio.duration).catch(() => undefined);
+      }
       // Throttle React state to whole-second changes — timeupdate fires
       // ~4×/s and this state lives in App, re-rendering the whole tree.
       if (Math.floor(currentTime) !== Math.floor(current.currentTime) || duration !== current.duration) {

@@ -110,11 +110,19 @@ def needs_probe(item) -> bool:
     # artist (from Telegram's Audio.performer) but still need probe for album.
     is_audio = getattr(item, "media_kind", "") == "audio"
     missing_artist = is_audio and not getattr(item, "artist", "")
+    # VBR MP3s without a Xing header make ffprobe estimate duration from the
+    # first frame's bitrate — a 4-minute track can come back as "3 s". Any
+    # audio item shorter than 30 s is bogus (no real song is), so re-probe;
+    # with a correct header the result is stable and this fires only once.
+    suspicious_duration = (
+        is_audio
+        and 0 < int(getattr(item, "duration", 0) or 0) < 30
+    )
     # Older probes predate embedded-subtitle tracking. Re-probe each video
     # once so the admin "No subtitles" queue is based on verified streams,
     # rather than assuming every legacy item has none.
     missing_subtitle_probe = not is_audio and not getattr(item, "subtitles_probed_at", 0)
-    return never_probed or missing_duration or missing_artist or missing_subtitle_probe
+    return never_probed or missing_duration or missing_artist or suspicious_duration or missing_subtitle_probe
 
 
 def _apply_probed_duration(item, payload: dict, *, overwrite: bool = False) -> bool:

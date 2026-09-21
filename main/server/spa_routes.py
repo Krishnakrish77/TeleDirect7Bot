@@ -2397,6 +2397,52 @@ async def api_app_create_playlist(request: web.Request) -> web.Response:
     }), status=201)
 
 
+@routes.post("/api/audio-duration")
+async def api_audio_duration_report(request: web.Request) -> web.Response:
+    """Self-heal wrongly-probed audio durations.
+
+    VBR MP3s without a Xing header make ffprobe report a bogus container
+    duration (e.g. 3s for a 4-minute track). The browser decodes the real
+    value at playback, so the client reports it here once and the catalogue
+    corrects itself. Guarded by sanity bounds and a mismatch threshold so
+    this can't be used to scribble arbitrary durations.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return _json({"error": "invalid JSON"}, status=400)
+    key = str(body.get("key") or "")
+    parsed = _parse_watch_key(key)
+    if not parsed:
+        return _json({"error": "invalid key"}, status=400)
+    secure_hash, message_id = parsed
+    try:
+        duration = float(body.get("duration"))
+    except (TypeError, ValueError):
+        return _json({"error": "invalid duration"}, status=400)
+    if not 10 <= duration <= 86_400:  # 10 s .. 24 h
+        return _json({"error": "implausible duration"}, status=400)
+
+    item = media_index.get_item(message_id)
+    if item is None or item.hidden or (item.media_kind or "") != "audio":
+        return _json({"error": "not an audio item"}, status=404)
+    if item.secure_hash != secure_hash:
+        return _json({"error": "hash mismatch"}, status=403)
+
+    current = int(item.duration or 0)
+    # Only trust the browser when the stored value is missing or materially
+    # wrong (>5%); identical re-reports stay cheap no-ops.
+    if current and abs(duration - current) / current <= 0.05:
+        return _json({"ok": True, "duration": current, "unchanged": True})
+
+    async with media_index._lock:
+        item.duration = int(duration)
+        media_index._persist_unlocked()
+    await media_index._store_upsert(item)
+    media_index._mark_derived_stale()
+    return _json({"ok": True, "duration": int(duration)})
+
+
 @routes.post("/api/app/playlists/from-mix")
 async def api_app_create_playlist_from_mix(request: web.Request) -> web.Response:
     """Persist a reviewed AI mix atomically, retaining its exact order."""

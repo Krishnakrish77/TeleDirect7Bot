@@ -761,6 +761,16 @@ export async function recordWatchHistory(key: string, title: string): Promise<vo
   });
 }
 
+// Playback self-heal: the browser's decoded duration beats a bogus ffprobe
+// estimate (VBR MP3 without Xing header). Server validates + persists.
+export async function reportAudioDuration(key: string, duration: number): Promise<void> {
+  await request<{ ok: boolean }>('/api/audio-duration', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, duration }),
+  });
+}
+
 export async function fetchRating(messageId: string | number, signal?: AbortSignal): Promise<RatingResponse> {
   return request<RatingResponse>(`/api/rate/${encodeURIComponent(String(messageId))}`, { signal });
 }
