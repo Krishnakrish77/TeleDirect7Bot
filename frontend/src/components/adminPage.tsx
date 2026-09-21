@@ -109,7 +109,7 @@ function progressPct(state: { total?: number; done?: number; scanned?: number } 
   return Math.max(0, Math.min(100, Math.round((done / state.total) * 100)));
 }
 
-type AdminJobKey = 'seed' | 'reconciliation' | 'enrich' | 'credits' | 'reindex' | 'probe' | 'episode_fill' | 'migrate';
+type AdminJobKey = 'seed' | 'reconciliation' | 'enrich' | 'credits' | 'reindex' | 'probe' | 'intro_detect' | 'episode_fill' | 'migrate';
 
 type AdminJobDefinition = {
   key: AdminJobKey;
@@ -172,6 +172,14 @@ const ADMIN_JOBS: AdminJobDefinition[] = [
     action: 'probe-codecs',
     actionLabel: 'Run codec probe',
     detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} probed - ${state.found_incompatible ?? 0} flagged` : 'Ready to inspect playback health',
+  },
+  {
+    key: 'intro_detect',
+    label: 'Intro detection',
+    description: 'Fingerprints episode audio to find recurring theme songs and enable the Skip intro button. Skips episodes you set by hand.',
+    action: 'detect-intros',
+    actionLabel: 'Detect intros',
+    detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} episodes - ${state.intros_found ?? 0} intros found` : 'Detects theme songs across series episodes',
   },
   {
     key: 'episode_fill',
@@ -832,6 +840,9 @@ function EditModal({
   const tmdbDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isAudio, setIsAudio] = useState(false);
   const [isBook, setIsBook] = useState(false);
+  const [seriesKey, setSeriesKey] = useState('');
+  const [introDetecting, setIntroDetecting] = useState(false);
+  const [introDetectStatus, setIntroDetectStatus] = useState('');
   const [bookSearchLoading, setBookSearchLoading] = useState(false);
   const [bookMatches, setBookMatches] = useState<BookMetadataCandidate[]>([]);
   const [bookStatus, setBookStatus] = useState('');
@@ -859,6 +870,7 @@ function EditModal({
         setSidecars(Array.isArray(d['sidecars']) ? d['sidecars'] as Array<{ binMessageId: number; language: string; label: string }> : []);
         setIsAudio(d['mediaKind'] === 'audio');
         setIsBook(d['mediaKind'] === 'book');
+        setSeriesKey(String(d['seriesKey'] || ''));
         setForm((prev) => ({
           ...prev,
           title:        String(d['title'] || ''),
@@ -1383,7 +1395,38 @@ function EditModal({
                   {!isAudio && !isBook && (
                     <>
                       <div className="edit-section">
-                        <p className="edit-section-label">Playback markers</p>
+                        <p className="edit-section-label">
+                          Playback markers
+                          {seriesKey && !isAudio && (
+                            <button
+                              type="button"
+                              className="edit-field-hint"
+                              style={{ cursor: 'pointer', color: 'var(--brand)', marginLeft: '0.5rem' }}
+                              onClick={async () => {
+                                setIntroDetecting(true);
+                                setIntroDetectStatus('');
+                                try {
+                                  const res = await fetch(`/api/app/admin/series/${encodeURIComponent(seriesKey)}/detect-intro`, { method: 'POST' });
+                                  const body = await res.json().catch(() => ({}));
+                                  setIntroDetectStatus(res.ok ? (body.message || 'Intros detected') : (body.error || `Failed (${res.status})`));
+                                  if (res.ok && body.intros) {
+                                    const mine = body.intros[String(messageId)];
+                                    if (mine) {
+                                      setField('introStart', mine.start);
+                                      setField('introEnd', mine.end);
+                                    }
+                                  }
+                                } catch {
+                                  setIntroDetectStatus('Detection request failed');
+                                } finally {
+                                  setIntroDetecting(false);
+                                }
+                              }}
+                            >
+                              {introDetecting ? 'Detecting…' : 'Auto-detect from this series'}
+                            </button>
+                          )}
+                        </p>
                         <div className="edit-field-row">
                           <label className="edit-field">
                             <span className="edit-field-label">Intro start</span>
@@ -1404,6 +1447,7 @@ function EditModal({
                             <input className="edit-field-input" type="number" min="0" step="0.5" value={form.recapEnd ?? ''} onChange={(e) => setField('recapEnd', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)} />
                           </label>
                         </div>
+                        {introDetectStatus && <p className="edit-field-hint" role="status">{introDetectStatus}</p>}
                       </div>
                       <div className="edit-section">
                         <p className="edit-section-label">Chapters <span className="edit-field-hint">one per line: 75 Opening</span></p>

@@ -775,6 +775,7 @@ export interface AdminProgressState {
   finished_at?: number;
   found_incompatible?: number;
   filled?: number;
+  intros_found?: number;
   checked?: number;
   removed?: number;
   phase?: string;
@@ -793,6 +794,7 @@ export interface AdminStatusResponse {
   credits: AdminProgressState;
   reindex: AdminProgressState;
   probe: AdminProgressState;
+  intro_detect?: AdminProgressState;
   episode_fill: AdminProgressState;
   migrate: AdminProgressState;
   catalogue_size: number;

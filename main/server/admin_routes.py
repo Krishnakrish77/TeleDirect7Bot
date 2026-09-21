@@ -558,7 +558,7 @@ def _admin_context_payload(ctx: dict) -> dict:
 
 
 def _admin_status_payload() -> dict:
-    from main.utils import codec_probe
+    from main.utils import codec_probe, intro_detect
     return {
         "seed": media_index.seed_state(),
         "reconciliation": media_index.reconciliation_state(),
@@ -566,6 +566,7 @@ def _admin_status_payload() -> dict:
         "credits": media_index.credits_backfill_state(),
         "reindex": media_index.reindex_state(),
         "probe": codec_probe.state(),
+        "intro_detect": intro_detect.state(),
         "episode_fill": media_index.episode_fill_state(),
         "migrate": media_index.migrate_state(),
         "catalogue_size": media_index.size(),
@@ -2081,6 +2082,10 @@ async def admin_edit(request: web.Request) -> web.Response:
         # Intro timestamps — always apply regardless of series/movie/standalone status
         item.intro_start = new_intro_start
         item.intro_end   = new_intro_end
+        if new_intro_start is not None and new_intro_end is not None:
+            item.intro_source = "manual"
+        elif getattr(item, "intro_source", "") == "manual" and not (new_intro_start and new_intro_end):
+            item.intro_source = ""  # admin cleared the fields → detector may run again
         # Music metadata — always apply (new_artist / new_album_title may be blank
         # to intentionally clear the field; track_number None means "not entered").
         item.artist = new_artist
@@ -2798,6 +2803,13 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
             asyncio.create_task(codec_probe.probe_all_missing())
         return _admin_json_message("Codec probe queued", status=_admin_status_payload())
 
+    if action == "detect-intros":
+        from main.utils import intro_detect
+        if intro_detect.state().get("running"):
+            return _admin_json_message("Intro detection already running", status=_admin_status_payload())
+        asyncio.create_task(intro_detect.detect_all_intros())
+        return _admin_json_message("Intro detection queued", status=_admin_status_payload())
+
     if action == "fetch-episodes":
         if not media_index.episode_fill_state().get("running"):
             asyncio.create_task(media_index.fill_episode_details(bot=StreamBot))
@@ -3178,6 +3190,40 @@ async def api_app_admin_item_delete_subtitle(request: web.Request) -> web.Respon
     })
 
 
+@routes.post(r"/api/app/admin/series/{key:[a-z0-9][a-z0-9\-]*}/detect-intro")
+async def api_app_admin_series_detect_intro(request: web.Request) -> web.Response:
+    """Run intro detection for one series' episodes (per-series admin action)."""
+    _require_api_admin(request)
+    from main.utils import intro_detect
+    series_key = request.match_info["key"]
+    episodes = [
+        it for it in media_index.episodes_for_series(series_key)
+        if getattr(it, "intro_source", "") != "manual"
+    ]
+    if len(episodes) < 2:
+        return web.json_response(
+            {"error": "Series needs at least 2 episodes (with intros not set by hand)"},
+            status=400,
+        )
+    # Await directly — per-series runs are short (a handful of fingerprints)
+    # and the admin gets the result inline in the edit modal.
+    results = await asyncio.to_thread(intro_detect.detect_series_intros_sync, episodes)
+    for mid, (start, end) in results.items():
+        item = media_index.get_item(mid)
+        if item is None:
+            continue
+        item.intro_start = start
+        item.intro_end = end
+        item.intro_source = "auto"
+        await media_index._store_upsert(item)
+    async with media_index._lock:
+        media_index._persist_unlocked()
+    return _admin_json_message(
+        f"Detected {len(results)}/{len(episodes)} intros for this series",
+        **{"intros": {str(mid): {"start": s, "end": e} for mid, (s, e) in results.items()}},
+    )
+
+
 @routes.post(r"/api/app/admin/item/{id:\d+}")
 async def api_app_admin_item_save(request: web.Request) -> web.Response:
     """JSON edit endpoint — mirrors the classic /admin/edit/{id} form handler."""
@@ -3282,6 +3328,10 @@ async def api_app_admin_item_save(request: web.Request) -> web.Response:
                 item.movie_key = compute_movie_key(new_title, new_year, new_file_name or item.file_name)
         item.intro_start = new_intro_start
         item.intro_end   = new_intro_end
+        if new_intro_start is not None and new_intro_end is not None:
+            item.intro_source = "manual"
+        elif getattr(item, "intro_source", "") == "manual" and not (new_intro_start and new_intro_end):
+            item.intro_source = ""  # admin cleared the fields → detector may run again
         item.recap_start = new_recap_start
         item.recap_end   = new_recap_end
         item.chapters    = list(new_chapters)

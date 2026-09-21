@@ -49,6 +49,7 @@ class HubItem:
     episode_end: Optional[int] = None  # set for multi-ep files (e.g. S01E01-E03)
     intro_start: Optional[float] = None  # seconds — start of opening credits / intro
     intro_end:   Optional[float] = None  # seconds — end of intro (skip-to target)
+    intro_source: str = ""         # "" (none) | "auto" (detector) | "manual" (admin — never overwritten)
     recap_start: Optional[float] = None  # seconds — start of recap segment
     recap_end:   Optional[float] = None  # seconds — end of recap segment
     chapters: List[dict] = field(default_factory=list)  # [{start: seconds, title: str}]
