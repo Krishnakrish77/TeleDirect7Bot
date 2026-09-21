@@ -12,14 +12,14 @@ RUN cd frontend \
 
 
 # ffmpeg + ffprobe for on-demand HLS, ca-certificates for HTTPS to Telegram,
-# chromaprint (fpcalc) for cross-episode intro fingerprinting.
+# libchromaprint-tools (fpcalc) for cross-episode intro fingerprinting.
 FROM python:3.12-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
          ffmpeg \
          ca-certificates \
-         chromaprint \
+         libchromaprint-tools \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
