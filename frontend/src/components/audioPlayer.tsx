@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useEffect, useId, useState } from 'react';
+import { type CSSProperties, type ReactNode, type TouchEvent as ReactTouchEvent, useEffect, useId, useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon, DownloadIcon, ListIcon, MoreVerticalIcon, MusicIcon, PauseIcon, PlayIcon, RepeatIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
@@ -152,15 +152,34 @@ export function MiniPlayer({
 }) {
   const track = player.track;
   const [seekPreview, setSeekPreview] = useState<number | null>(null);
+  const [swipeTitle, setSwipeTitle] = useState<{ startX: number; startY: number } | null>(null);
   if (!track) return null;
   const duration = player.duration || track.duration || 0;
   const rangeMax = Math.max(1, Math.round(duration));
   const hasPrev = player.queueIndex > 0;
   const hasNext = player.queueIndex + 1 < player.queue.length;
 
+  // Spotify-style: swipe left/right across the title skips a track.
+  const onTitleTouchStart = (event: ReactTouchEvent) => {
+    const touch = event.touches[0];
+    if (touch) setSwipeTitle({ startX: touch.clientX, startY: touch.clientY });
+  };
+  const onTitleTouchEnd = (event: ReactTouchEvent) => {
+    const start = swipeTitle;
+    setSwipeTitle(null);
+    if (!start) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const dx = touch.clientX - start.startX;
+    const dy = touch.clientY - start.startY;
+    if (Math.abs(dx) >= 56 && Math.abs(dx) > Math.abs(dy) * 1.6) {
+      playRelative(dx < 0 ? 1 : -1);
+    }
+  };
+
   return (
     <aside className="mini-player" aria-label="Audio player">
-      <button type="button" className="mini-track mini-track-button" onClick={onExpand}>
+      <button type="button" className="mini-track mini-track-button" onClick={onExpand} onTouchStart={onTitleTouchStart} onTouchEnd={onTitleTouchEnd}>
         <span className="audio-art-wrap">
           <MusicIcon />
           <img src={track.posterUrl || track.thumbUrl} alt="" decoding="async" onError={(e) => { e.currentTarget.hidden = true; }} />
@@ -262,13 +281,33 @@ export function NowPlayingSheet({
   const track = player.track;
   const [seekPreview, setSeekPreview] = useState<number | null>(null);
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  const [swipeDown, setSwipeDown] = useState<{ startY: number } | null>(null);
   if (!open || !track) return null;
   const duration = player.duration || track.duration || 0;
   const rangeMax = Math.max(1, Math.round(duration));
   const repeatActive = player.repeatMode !== 'off';
+  // Spotify-style: swipe down anywhere on the sheet to collapse it.
+  const onSheetTouchStart = (event: ReactTouchEvent) => {
+    const touch = event.touches[0];
+    if (touch) setSwipeDown({ startY: touch.clientY });
+  };
+  const onSheetTouchEnd = (event: ReactTouchEvent) => {
+    const start = swipeDown;
+    setSwipeDown(null);
+    if (!start) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    // Only when the sheet itself can't scroll further up, and the gesture is
+    // a deliberate downward flick. Scrubbing must never close the sheet.
+    const target = event.target as Element | null;
+    if (target?.closest('.now-scrubber-wrap, input[type="range"], .lyrics-lines, .lyrics-plain')) return;
+    const sheet = event.currentTarget;
+    if (sheet.scrollTop > 0) return;
+    if (touch.clientY - start.startY >= 72) onClose();
+  };
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
-      <DialogContent className="now-sheet" aria-describedby={undefined}>
+      <DialogContent className="now-sheet" aria-describedby={undefined} onTouchStart={onSheetTouchStart} onTouchEnd={onSheetTouchEnd}>
         <DialogTitle className="sr-only">Now playing</DialogTitle>
         <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button modal-close" aria-label="Close"><ChevronDownIcon /></Button></DialogClose>
         <div className="audio-art-wrap now-art-wrap">
@@ -277,8 +316,10 @@ export function NowPlayingSheet({
         </div>
         <div className="now-copy">
           <p className="eyebrow">{track.qualityLabel || track.format || 'Now playing'}</p>
-          <h2>{track.title}</h2>
-          <p>{[track.artist, track.albumTitle].filter(Boolean).join(' - ')}</p>
+          <h2>{track.albumHref ? <a href={track.albumHref}>{track.title}</a> : track.title}</h2>
+          <p>{track.artist && track.albumTitle
+            ? <>{track.artistHref ? <a href={track.artistHref}>{track.artist}</a> : track.artist} - {track.albumHref ? <a href={track.albumHref}>{track.albumTitle}</a> : track.albumTitle}</>
+            : (track.artistHref ? <a href={track.artistHref}>{track.artist || track.albumTitle}</a> : [track.artist, track.albumTitle].filter(Boolean).join(' - '))}</p>
         </div>
         <div className="now-progress">
           <div

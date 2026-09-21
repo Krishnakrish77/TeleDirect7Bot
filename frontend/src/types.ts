@@ -271,6 +271,7 @@ export interface WatchTrack {
   appHref: string;
   classicHref: string;
   albumHref: string;
+  artistHref?: string;
 }
 
 export type AiMixDiscovery = 'familiar' | 'balanced' | 'discover';

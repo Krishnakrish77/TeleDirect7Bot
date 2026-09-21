@@ -227,6 +227,12 @@ function App() {
       if (event.key === ' ' || event.key.toLowerCase() === 'k') {
         event.preventDefault();
         a.togglePlayback();
+      } else if (event.key === 'ArrowLeft' && event.shiftKey) {
+        event.preventDefault();
+        a.playRelative(-1);
+      } else if (event.key === 'ArrowRight' && event.shiftKey) {
+        event.preventDefault();
+        a.playRelative(1);
       } else if (event.key === 'ArrowLeft') {
         event.preventDefault();
         a.seek(Math.max(0, a.player.currentTime - 10));

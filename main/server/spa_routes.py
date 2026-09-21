@@ -2266,6 +2266,7 @@ def _track_payload(item: HubItem) -> dict:
         "streamHref": _stream_url(item),
         "downloadHref": _download_url(item),
         "albumHref": f"/album/{item.album_key}" if item.album_key else "",
+        "artistHref": f"/artist/{media_index._artist_slug(media_index._primary_artist(artist))}" if artist else "",
     }
 
 

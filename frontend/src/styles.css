@@ -6966,6 +6966,31 @@ img {
   cursor: pointer;
 }
 
+/* Spotify-style affordance: the track thickens under the pointer. Pointer
+   devices only — touch has no hover, and the thumb is already enlarged. */
+@media (hover: hover) and (pointer: fine) {
+  .now-scrubber-wrap input,
+  .now-scrubber::-webkit-slider-runnable-track,
+  .mini-scrub-wrap input,
+  .audio-scrub-wrap input {
+    transition: height 0.12s ease;
+  }
+
+  .mini-scrub-wrap input,
+  .audio-scrub-wrap input {
+    height: 6px;
+  }
+
+  .mini-scrub-wrap:hover input,
+  .audio-scrub-wrap:hover input {
+    height: 9px;
+  }
+
+  .now-scrubber-wrap:hover [data-slot='slider'] > span:first-child {
+    height: 9px;
+  }
+}
+
 .now-times {
   display: flex;
   justify-content: space-between;
@@ -7633,6 +7658,13 @@ img {
 .drawer-actions .text-button {
   min-height: 34px;
   white-space: nowrap;
+}
+
+/* Swipe-left-to-remove (touch): row follows the finger while dragging;
+   release past threshold removes the track. */
+.queue-row.is-swiping {
+  background: rgba(249, 115, 22, 0.10);
+  box-shadow: inset -3px 0 0 var(--brand);
 }
 
 /* Autoplay toggle in the queue header — orange when the station is armed. */
@@ -9232,35 +9264,41 @@ img {
 }
 
 @media (min-width: 780px) and (min-height: 640px) {
+  /* Dock to the right edge like the queue drawer — the library stays
+     browsable while lyrics/queue/track info stay visible (the Spotify
+     desktop pattern). Single column, art on top. */
   .now-sheet {
-    top: 50%;
-    bottom: auto;
-    left: 50%;
-    right: auto;
-    grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+    top: max(0.85rem, env(safe-area-inset-top, 0px));
+    bottom: max(0.85rem, env(safe-area-inset-bottom, 0px));
+    left: auto;
+    right: max(0.85rem, env(safe-area-inset-right, 0px));
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "art copy"
-      "art progress"
-      "art controls"
-      "art settings"
-      "art next"
-      "art issue"
-      "art lyrics"
-      "art classic";
+      "art"
+      "copy"
+      "progress"
+      "controls"
+      "settings"
+      "next"
+      "issue"
+      "lyrics"
+      "classic";
     align-items: start;
     justify-items: stretch;
-    gap: 0.9rem 1.2rem;
-    width: min(92vw, 920px);
-    max-height: min(86svh, 720px);
-    padding: clamp(1rem, 2vw, 1.35rem);
-    overflow: hidden;
-    transform: translate(-50%, -50%);
+    gap: 0.9rem;
+    width: min(calc(100vw - 1.7rem), 420px);
+    max-height: none;
+    padding: clamp(1rem, 1.6vw, 1.25rem);
+    overflow-y: auto;
+    transform: none;
+    border-radius: 12px;
   }
 
   .now-art-wrap {
     grid-area: art;
-    width: 100%;
-    max-height: min(64svh, 520px);
+    width: min(100%, 260px);
+    max-height: min(38svh, 300px);
+    justify-self: center;
   }
 
   .now-copy {
@@ -9269,7 +9307,7 @@ img {
   }
 
   .now-copy h2 {
-    font-size: clamp(1.35rem, 2.4vw, 2.25rem);
+    font-size: clamp(1.3rem, 2vw, 1.7rem);
   }
 
   .now-progress {

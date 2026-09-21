@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { AutoplayIcon, ChevronDownIcon, ChevronUpIcon, ListIcon, MusicIcon, PauseIcon, PlayIcon, SkipForwardIcon, XIcon } from '../icons';
 import { formatClock, type PlayerState } from '../hooks/audio';
 import type { WatchTrack } from '../types';
@@ -48,9 +48,45 @@ const QueueTrackRow = memo(function QueueTrackRow({
   removeFromQueue,
 }: QueueTrackRowProps) {
   const durationLabel = trackDurationLabel(track);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const [swipeDelta, setSwipeDelta] = useState(0);
+
+  // Spotify-style: swipe left on a queue row removes it. The row visually
+  // follows the finger up to a threshold; release past it removes.
+  const onRowTouchStart = (event: ReactTouchEvent) => {
+    const touch = event.touches[0];
+    if (touch) swipeStart.current = { x: touch.clientX, y: touch.clientY };
+  };
+  const onRowTouchMove = (event: ReactTouchEvent) => {
+    const start = swipeStart.current;
+    if (!start) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    // Horizontal intent only — don't fight vertical page scroll.
+    if (Math.abs(dx) > Math.abs(dy) * 1.6) {
+      setSwipeDelta(Math.min(0, dx));
+      (event.currentTarget as HTMLElement).style.touchAction = 'none';
+    }
+  };
+  const onRowTouchEnd = () => {
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    if (start && swipeDelta <= -72) {
+      removeFromQueue(index);
+    }
+    setSwipeDelta(0);
+  };
 
   return (
-    <div className="queue-row">
+    <div
+      className={swipeDelta < 0 ? 'queue-row is-swiping' : 'queue-row'}
+      style={swipeDelta < 0 ? { transform: `translateX(${swipeDelta}px)`, transition: 'none' } : { transform: '', transition: 'transform .2s ease' }}
+      onTouchStart={onRowTouchStart}
+      onTouchMove={onRowTouchMove}
+      onTouchEnd={onRowTouchEnd}
+    >
       <span className="queue-position">{index + 1}</span>
       <img className="queue-row-art" src={trackArtwork(track)} alt="" loading="lazy" decoding="async" />
       <Button
