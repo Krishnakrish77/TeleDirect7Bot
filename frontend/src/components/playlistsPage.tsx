@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { createPlaylist, deletePlaylist, removeTrackFromPlaylist, renamePlaylist, reorderPlaylistTracks } from '../api';
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, ListIcon, ListPlusIcon, PauseIcon, PlayIcon, SearchIcon, ShuffleIcon, XIcon } from '../icons';
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, ListIcon, ListPlusIcon, MoreVerticalIcon, PauseIcon, PlayIcon, SearchIcon, ShuffleIcon, XIcon } from '../icons';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import type { PlayerState } from '../hooks/audio';
 import type { PlaylistDetailResponse, PlaylistsResponse, User, WatchTrack } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -387,11 +388,14 @@ export function PlaylistDetailPage({
                 >
                   {active && player.playing ? <PauseIcon /> : <PlayIcon />}
                 </Button>
+                {/* Secondary actions collapse behind an overflow menu on
+                    small screens (CSS) so the title column keeps its width.
+                    All visible on desktop. */}
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="playlist-track-action"
+                  className="playlist-track-action row-action-desktop"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -405,7 +409,7 @@ export function PlaylistDetailPage({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="playlist-track-action"
+                  className="playlist-track-action row-action-desktop"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -419,7 +423,7 @@ export function PlaylistDetailPage({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="playlist-track-action"
+                  className="playlist-track-action row-action-desktop"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -474,6 +478,76 @@ export function PlaylistDetailPage({
                 >
                   <XIcon />
                 </Button>
+                <span className="row-action-mobile">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="playlist-track-action"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        aria-label={`More actions for ${track.title}`}
+                      >
+                        <MoreVerticalIcon />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="account-menu playlist-row-menu" align="end" onClick={(event) => event.stopPropagation()}>
+                      <DropdownMenuItem
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          addToQueue(track, true);
+                        }}
+                      >
+                        <ListIcon /> Play next
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          addToQueue(track, false);
+                        }}
+                      >
+                        <span aria-hidden="true">+</span> Add to queue
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onAddToPlaylist(track);
+                        }}
+                      >
+                        <ListPlusIcon /> Add to playlist
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(event) => {
+                          if (!canReorder || sourceIndex <= 0) return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          moveTrack(track, -1);
+                        }}
+                        disabled={!canReorder || sourceIndex <= 0}
+                      >
+                        <ChevronUpIcon /> Move up
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(event) => {
+                          if (!canReorder || sourceIndex + 1 >= data.tracks.length) return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          moveTrack(track, 1);
+                        }}
+                        disabled={!canReorder || sourceIndex + 1 >= data.tracks.length}
+                      >
+                        <ChevronDownIcon /> Move down
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </span>
               </a>
             );
           })}

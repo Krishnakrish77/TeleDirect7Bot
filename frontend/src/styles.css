@@ -6804,6 +6804,31 @@ img {
   height: 40px;
 }
 
+/* The ⋮ overflow menu only exists on small screens (see ≤760px block). */
+.playlist-track-row .row-action-mobile {
+  display: none;
+}
+
+.playlist-row-menu button {
+  min-height: 38px;
+  padding: 0 0.6rem;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 650;
+  text-align: left;
+}
+
+.playlist-row-menu button:hover,
+.playlist-row-menu button:focus-visible {
+  background: rgba(249, 115, 22, 0.14);
+  outline: none;
+}
+
+.playlist-row-menu button:disabled {
+  opacity: 0.4;
+}
+
 .playlist-track-action[data-variant="destructive"] {
   color: #fff;
 }
@@ -12183,6 +12208,13 @@ select.edit-field-input {
     align-items: stretch;
   }
 
+  /* flex: 1 1 360px makes the search label 360px TALL once the tools panel
+     stacks vertically — the 44px input floats in a big empty box. In column
+     direction the basis is vertical, so collapse it. */
+  .playlist-tools .playlist-search {
+    flex: 0 0 auto;
+  }
+
   .playlist-sort {
     justify-content: space-between;
   }
@@ -12210,19 +12242,25 @@ select.edit-field-input {
   }
 
   .playlist-track-row {
-    grid-template-columns: 2rem 44px minmax(0, 1fr) repeat(5, 36px);
+    /* number, art, title, play, remove, overflow-menu */
+    grid-template-columns: 2rem 44px minmax(0, 1fr) 36px 36px 36px;
     gap: 0.45rem;
     min-height: 62px;
     padding: 0.45rem;
+  }
+
+  .playlist-track-row .track-duration,
+  .playlist-track-row .row-action-desktop,
+  .playlist-track-row .reorder-button {
+    display: none;
   }
 
   .playlist-track-row > img {
     width: 44px;
   }
 
-  .playlist-track-row .track-duration,
-  .playlist-track-row .reorder-button {
-    display: none;
+  .playlist-track-row .row-action-mobile {
+    display: grid;
   }
 
   .playlist-track-row .icon-button {
