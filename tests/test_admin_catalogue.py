@@ -568,5 +568,70 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
 
 
+class MaintenanceJobTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self._original_jobs = dict(admin_routes._maintenance_jobs)
+        admin_routes._maintenance_jobs.clear()
+
+    def tearDown(self):
+        admin_routes._maintenance_jobs.clear()
+        admin_routes._maintenance_jobs.update(self._original_jobs)
+
+    async def test_queue_maintenance_job_returns_before_coro_finishes(self):
+        finished = asyncio.Event()
+
+        async def slow_job() -> str:
+            await asyncio.wait_for(finished.wait(), timeout=5)
+            return "slow job done"
+
+        response = admin_routes._queue_maintenance_job(
+            "test-slow", slow_job(), label="Slow job",
+        )
+
+        self.assertEqual(response.status, 200)
+        payload = admin_routes._maintenance_job_state("test-slow")
+        self.assertTrue(payload["running"])
+
+        finished.set()
+        await asyncio.sleep(0.05)
+        state = admin_routes._maintenance_job_state("test-slow")
+        self.assertFalse(state["running"])
+        self.assertEqual(state["result"], "slow job done")
+        self.assertTrue(state["finished_at"] > 0)
+
+    async def test_queue_maintenance_job_rejects_second_run(self):
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def blocking_job() -> str:
+            started.set()
+            await asyncio.wait_for(release.wait(), timeout=5)
+            return "first"
+
+        admin_routes._queue_maintenance_job("test-dup", blocking_job(), label="Dup job")
+        await started.wait()
+
+        async def never_run() -> str:
+            raise AssertionError("second run must not execute")
+
+        response = admin_routes._queue_maintenance_job("test-dup", never_run(), label="Dup job")
+        self.assertIn("already running", response.text)
+        release.set()
+        await asyncio.sleep(0.05)
+        self.assertEqual(
+            admin_routes._maintenance_job_state("test-dup")["result"], "first",
+        )
+
+    async def test_queue_maintenance_job_reports_failure_in_result(self):
+        async def broken_job() -> str:
+            raise RuntimeError("boom")
+
+        admin_routes._queue_maintenance_job("test-broken", broken_job(), label="Broken job")
+        await asyncio.sleep(0.05)
+        state = admin_routes._maintenance_job_state("test-broken")
+        self.assertFalse(state["running"])
+        self.assertIn("failed", state["result"])
+
+
 if __name__ == "__main__":
     unittest.main()

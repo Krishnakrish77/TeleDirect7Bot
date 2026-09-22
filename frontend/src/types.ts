@@ -798,6 +798,7 @@ export interface AdminStatusResponse {
   episode_fill: AdminProgressState;
   migrate: AdminProgressState;
   prune_non_admin?: AdminProgressState;
+  maintenance?: Record<string, { running?: boolean; result?: string; started_at?: number; finished_at?: number }>;
   catalogue_size: number;
 }
 

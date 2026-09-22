@@ -570,8 +570,70 @@ def _admin_status_payload() -> dict:
         "episode_fill": media_index.episode_fill_state(),
         "migrate": media_index.migrate_state(),
         "prune_non_admin": media_index.prune_non_admin_state(),
+        "maintenance": _maintenance_payload(),
         "catalogue_size": media_index.size(),
     }
+
+
+# ── Inline maintenance jobs moved off the request path ────────────────────────
+# dedupe / prune-stale / thumb-cache clears each make per-item Telegram or
+# Mongo round trips. Awaiting them inside the handler blew through the
+# platform gateway timeout (504) on large catalogues, so they run as
+# detached tasks and report through the status payload like the
+# media_index pipelines. ``prune-non-admin`` lives in media_index because
+# its walk reports fine-grained progress there; these are fire-and-forget
+# jobs whose completion message lands in the state's ``result`` field.
+_MAINTENANCE_JOB_LABELS = {
+    "clear-audio-tmdb": "Audio TMDB fix",
+    "clear-audio-thumbs": "Audio thumb clear",
+    "clear-all-thumbs": "Thumbnail cache clear",
+    "dedupe": "De-duplicate pass",
+    "prune-stale": "Stale prune",
+}
+_maintenance_jobs: dict[str, dict] = {}
+
+
+def _maintenance_job_state(action: str) -> dict:
+    state = _maintenance_jobs.get(action)
+    if state is None:
+        return {"running": False, "started_at": 0.0, "finished_at": 0.0, "result": ""}
+    return dict(state)
+
+
+def _maintenance_payload() -> dict:
+    return {key: _maintenance_job_state(key) for key in _MAINTENANCE_JOB_LABELS}
+
+
+def _queue_maintenance_job(action: str, coro, *, label: str) -> web.Response:
+    """Run ``coro`` as a detached task; respond with a queued message at once.
+
+    ``coro`` must resolve to a user-facing completion message string.
+    """
+    state = _maintenance_jobs.setdefault(
+        action,
+        {"running": False, "started_at": 0.0, "finished_at": 0.0, "result": ""},
+    )
+    if state["running"]:
+        coro.close()
+        return _admin_json_message(f"{label} already running", status=_admin_status_payload())
+
+    # Flag synchronously: the task body only runs on the next loop tick, so
+    # setting it inside _runner would let a rapid second click queue a
+    # duplicate job.
+    state.update(running=True, result="", started_at=time.time(), finished_at=0.0)
+
+    async def _runner() -> None:
+        try:
+            state["result"] = await coro
+        except Exception:
+            logging.exception("admin: maintenance job %s failed", action)
+            state["result"] = "failed — see server logs"
+        finally:
+            state["running"] = False
+            state["finished_at"] = time.time()
+
+    asyncio.create_task(_runner())
+    return _admin_json_message(f"{label} queued", status=_admin_status_payload())
 
 
 def _require_api_admin(request: web.Request) -> dict:
@@ -823,31 +885,44 @@ async def _run_metadata_cleanup() -> None:
 async def admin_clear_audio_tmdb(request: web.Request) -> web.Response:
     """Strip TMDB fields from audio items that were mis-enriched as movies/series."""
     _require_session(request)
-    fixed = await media_index.clear_audio_tmdb_mismatches()
-    msg = f"Cleared TMDB data from {fixed} audio item(s)" if fixed else "No mis-enriched audio items found"
+    async def _clear_audio_tmdb_job() -> str:
+        fixed = await media_index.clear_audio_tmdb_mismatches()
+        return (
+            f"Cleared TMDB data from {fixed} audio item(s)"
+            if fixed else "No mis-enriched audio items found"
+        )
+    _queue_maintenance_job("clear-audio-tmdb", _clear_audio_tmdb_job(), label="Audio TMDB fix")
     if _is_htmx(request):
-        return web.Response(text=msg, status=200)
-    raise _redirect_with_flash(msg)
+        return web.Response(status=204)
+    raise _redirect_with_flash("Audio TMDB fix queued — see the maintenance panel for the result")
 
 
 @routes.post("/admin/clear-audio-thumbs")
 async def admin_clear_audio_thumbs(request: web.Request) -> web.Response:
     """Bust the L1+L2 thumbnail cache for every audio item."""
     _require_session(request)
-    msg = await _admin_clear_thumb_cache(audio_only=True)
+    _queue_maintenance_job(
+        "clear-audio-thumbs",
+        _admin_clear_thumb_cache(audio_only=True),
+        label="Audio thumb clear",
+    )
     if _is_htmx(request):
-        return web.Response(text=msg, status=200)
-    raise _redirect_with_flash(msg)
+        return web.Response(status=204)
+    raise _redirect_with_flash("Audio thumb clear queued — see the maintenance panel for the result")
 
 
 @routes.post("/admin/clear-all-thumbs")
 async def admin_clear_all_thumbs(request: web.Request) -> web.Response:
     """Bust the L1+L2 thumbnail cache for every item in the catalogue."""
     _require_session(request)
-    msg = await _admin_clear_thumb_cache(audio_only=False)
+    _queue_maintenance_job(
+        "clear-all-thumbs",
+        _admin_clear_thumb_cache(audio_only=False),
+        label="Thumbnail cache clear",
+    )
     if _is_htmx(request):
-        return web.Response(text=msg, status=200)
-    raise _redirect_with_flash(msg)
+        return web.Response(status=204)
+    raise _redirect_with_flash("Thumbnail cache clear queued — see the maintenance panel for the result")
 
 
 @routes.post("/admin/enrich")
@@ -1047,7 +1122,10 @@ async def admin_dedupe(request: web.Request) -> web.Response:
     forwarded into BIN_CHANNEL more than once.
     """
     _require_session(request)
-    raise _redirect_with_flash(await _admin_dedupe_uploads())
+    _queue_maintenance_job("dedupe", _admin_dedupe_uploads(), label="De-duplicate pass")
+    if _is_htmx(request):
+        return web.Response(status=204)
+    raise _redirect_with_flash("De-duplicate pass queued — see the maintenance panel for the result")
 
 
 @routes.get("/admin/series-list")
@@ -1131,7 +1209,10 @@ async def admin_prune_stale(request: web.Request) -> web.Response:
     in batches of 100 and removes any that come back empty.
     """
     _require_session(request)
-    raise _redirect_with_flash(await _admin_prune_stale_entries())
+    _queue_maintenance_job("prune-stale", _admin_prune_stale_entries(), label="Stale prune")
+    if _is_htmx(request):
+        return web.Response(status=204)
+    raise _redirect_with_flash("Stale prune queued — see the maintenance panel for the result")
 
 
 @routes.post("/admin/fetch-episodes")
@@ -2833,21 +2914,26 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
         )
 
     if action == "clear-audio-thumbs":
-        return _admin_json_message(await _admin_clear_thumb_cache(audio_only=True))
+        return _queue_maintenance_job(
+            action, _admin_clear_thumb_cache(audio_only=True), label="Audio thumb clear",
+        )
 
     if action == "clear-all-thumbs":
-        return _admin_json_message(await _admin_clear_thumb_cache(audio_only=False))
+        return _queue_maintenance_job(
+            action, _admin_clear_thumb_cache(audio_only=False), label="Thumbnail cache clear",
+        )
 
     if action == "clear-audio-tmdb":
-        fixed = await media_index.clear_audio_tmdb_mismatches()
-        msg = (
-            f"Cleared TMDB data from {fixed} audio item(s)"
-            if fixed else "No mis-enriched audio items found"
-        )
-        return _admin_json_message(msg)
+        async def _clear_audio_tmdb_job() -> str:
+            fixed = await media_index.clear_audio_tmdb_mismatches()
+            return (
+                f"Cleared TMDB data from {fixed} audio item(s)"
+                if fixed else "No mis-enriched audio items found"
+            )
+        return _queue_maintenance_job(action, _clear_audio_tmdb_job(), label="Audio TMDB fix")
 
     if action == "dedupe":
-        return _admin_json_message(await _admin_dedupe_uploads())
+        return _queue_maintenance_job(action, _admin_dedupe_uploads(), label="De-duplicate pass")
 
     if action == "prune-non-admin":
         if media_index.prune_non_admin_state().get("running"):
@@ -2864,7 +2950,9 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
         )
 
     if action == "prune-stale":
-        return _admin_json_message(await _admin_prune_stale_entries())
+        return _queue_maintenance_job(
+            action, _admin_prune_stale_entries(), label="Stale prune",
+        )
 
     if action == "migrate-to-mongo":
         import os

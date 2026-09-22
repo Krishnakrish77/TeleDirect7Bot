@@ -100,7 +100,8 @@ function statusRunning(status: AdminStatusResponse | null | undefined): boolean 
     status.probe?.running ||
     status.episode_fill?.running ||
     status.migrate?.running ||
-    status.prune_non_admin?.running,
+    status.prune_non_admin?.running ||
+    Object.values(status.maintenance || {}).some((job) => job?.running),
   );
 }
 
@@ -444,10 +445,12 @@ function AdminJobCenter({
 
 function MaintenancePanel({
   busy,
+  status,
   onRun,
   onMergeSeries,
 }: {
   busy: string;
+  status: AdminStatusResponse;
   onRun: (action: string, confirmMessage?: string) => void;
   onMergeSeries: (sourceKey: string, targetKey: string) => Promise<void>;
 }) {
@@ -474,16 +477,18 @@ function MaintenancePanel({
       <div className="maintenance-grid">
         {actions.map(([action, label, description, confirmMessage]) => {
           const dangerous = action === 'dedupe' || action === 'prune-non-admin' || action === 'prune-stale' || action === 'clear-all-thumbs' || action === 'migrate-to-mongo';
+          const job = status.maintenance?.[action];
+          const jobRunning = Boolean(job?.running);
           return (
             <button
               key={action}
               type="button"
               className={dangerous ? 'danger-zone' : ''}
-              disabled={Boolean(busy)}
+              disabled={Boolean(busy) || jobRunning}
               onClick={() => onRun(action, confirmMessage || (dangerous ? `Run ${label}?` : undefined))}
             >
-              <strong>{busy === action ? 'Running...' : label}</strong>
-              <span>{description}</span>
+              <strong>{jobRunning ? 'Queued...' : busy === action ? 'Running...' : label}</strong>
+              <span>{jobRunning ? 'Working — this panel updates when it finishes' : (job?.result || description)}</span>
             </button>
           );
         })}
@@ -1797,7 +1802,7 @@ export function AdminPage({
           {tab === 'ops' ? (
             <section className="admin-workspace admin-ops-rail" aria-label="Operations">
               <AdminJobCenter status={data.status} busy={busy} onRun={runMaintenanceAction} />
-              <MaintenancePanel busy={busy} onRun={runMaintenanceAction} onMergeSeries={runMergeSeriesAction} />
+              <MaintenancePanel busy={busy} status={data.status} onRun={runMaintenanceAction} onMergeSeries={runMergeSeriesAction} />
             </section>
           ) : (
             <section className="admin-workspace" aria-label="Catalogue worklist">
