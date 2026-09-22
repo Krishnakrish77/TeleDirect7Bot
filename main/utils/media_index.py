@@ -1200,7 +1200,7 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
                 if non_admin_off_catalogue <= 10:
                     logging.info(
                         "media_index: prune_non_admin note bin:%d → source bin:%d "
-                        "not in catalogue (stale note?)",
+                        "not in catalogue (normal: non-admin uploads are never indexed)",
                         int(getattr(message, "id", 0) or 0), source_file_id,
                     )
         high -= batch_size
@@ -1211,7 +1211,7 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
                          len(non_admin_ids))
         await asyncio.sleep(0)
 
-    unattributed = len(_items) - len(referenced_catalogue_ids)
+    unattributed = [mid for mid in _items if mid not in referenced_catalogue_ids]
     removed = 0
     for mid in sorted(non_admin_ids):
         if mid in _items:
@@ -1219,6 +1219,13 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
             removed += 1
     if removed:
         schedule_snapshot(bot)
+    if unattributed:
+        sample = sorted(unattributed)[:20]
+        logging.info(
+            "media_index: prune_non_admin — %d catalogue rows never referenced by any "
+            "note, sample ids: %s%s",
+            len(unattributed), sample, " …" if len(unattributed) > 20 else "",
+        )
     logging.info(
         "media_index: prune_non_admin done in %.1fs — %d notes: %d admin, "
         "%d non-admin in catalogue (%d removed), %d non-admin off-catalogue; "
