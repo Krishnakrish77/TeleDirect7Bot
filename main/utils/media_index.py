@@ -1232,7 +1232,7 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
         "%d catalogue rows never referenced by any note",
         time.time() - started, markers_seen, admin_notes,
         len(non_admin_ids), removed, non_admin_off_catalogue,
-        unattributed,
+        len(unattributed),
     )
     return removed
 
