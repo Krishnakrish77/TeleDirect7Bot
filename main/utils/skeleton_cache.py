@@ -27,6 +27,7 @@ from collections import OrderedDict
 from typing import Dict, Optional
 
 from .stream_range import chunk_size as _chunk_size, offset_fix as _offset_fix
+from .custom_dl import TelegramStreamTruncated
 
 
 HEAD_SIZE = 2 * 1024 * 1024     # 2 MB  — covers MKV header + SeekHead
@@ -116,10 +117,18 @@ async def _collect_range(
     part_count = (aligned_end_exclusive - aligned_start) // chunk_sz
 
     chunks = []
-    async for chunk in byte_streamer.yield_file(
-        file_id, index, aligned_start, 0, chunk_sz, part_count, chunk_sz
-    ):
-        chunks.append(chunk)
+    try:
+        async for chunk in byte_streamer.yield_file(
+            file_id, index, aligned_start, 0, chunk_sz, part_count, chunk_sz
+        ):
+            chunks.append(chunk)
+    except TelegramStreamTruncated as exc:
+        # yield_file's retries are exhausted; re-wrap so callers' skeleton
+        # error handling (503 + fallback to the next client) applies instead
+        # of this escaping to the generic 500 handler.
+        raise SkeletonFetchError(
+            f"telegram stream truncated for [{start},{end}]: {exc}"
+        ) from exc
     raw = b"".join(chunks)
     rel_start = start - aligned_start
     if len(raw) < rel_start + length:
