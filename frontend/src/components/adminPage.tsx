@@ -99,7 +99,8 @@ function statusRunning(status: AdminStatusResponse | null | undefined): boolean 
     status.reindex?.running ||
     status.probe?.running ||
     status.episode_fill?.running ||
-    status.migrate?.running,
+    status.migrate?.running ||
+    status.prune_non_admin?.running,
   );
 }
 
@@ -109,7 +110,7 @@ function progressPct(state: { total?: number; done?: number; scanned?: number } 
   return Math.max(0, Math.min(100, Math.round((done / state.total) * 100)));
 }
 
-type AdminJobKey = 'seed' | 'reconciliation' | 'enrich' | 'credits' | 'reindex' | 'probe' | 'intro_detect' | 'episode_fill' | 'migrate';
+type AdminJobKey = 'seed' | 'reconciliation' | 'enrich' | 'credits' | 'reindex' | 'probe' | 'intro_detect' | 'episode_fill' | 'migrate' | 'prune_non_admin';
 
 type AdminJobDefinition = {
   key: AdminJobKey;
@@ -197,6 +198,15 @@ const ADMIN_JOBS: AdminJobDefinition[] = [
     actionLabel: 'Run Mongo migration',
     confirmMessage: 'Run Mongo migration?',
     detail: (state) => state.running || state.phase ? `${state.phase || 'running'} - ${state.done ?? 0}/${state.total ?? 0}` : 'Requires Mongo configuration',
+  },
+  {
+    key: 'prune_non_admin',
+    label: 'Non-admin prune',
+    description: 'Removes known non-admin uploads from the public catalogue; private stream files stay in BIN.',
+    action: 'prune-non-admin',
+    actionLabel: 'Run non-admin prune',
+    confirmMessage: 'Remove known non-admin uploads from the catalogue? This keeps their private stream files in BIN.',
+    detail: (state) => state.running ? `${state.done ?? 0}/${state.total ?? 0} scanned - ${state.removed ?? 0} removed` : state.removed ? `Last run removed ${state.removed}` : 'Ready to tidy the catalogue',
   },
 ];
 

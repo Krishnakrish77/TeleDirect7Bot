@@ -797,6 +797,7 @@ export interface AdminStatusResponse {
   intro_detect?: AdminProgressState;
   episode_fill: AdminProgressState;
   migrate: AdminProgressState;
+  prune_non_admin?: AdminProgressState;
   catalogue_size: number;
 }
 

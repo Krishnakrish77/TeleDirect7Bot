@@ -569,6 +569,7 @@ def _admin_status_payload() -> dict:
         "intro_detect": intro_detect.state(),
         "episode_fill": media_index.episode_fill_state(),
         "migrate": media_index.migrate_state(),
+        "prune_non_admin": media_index.prune_non_admin_state(),
         "catalogue_size": media_index.size(),
     }
 
@@ -2849,9 +2850,17 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
         return _admin_json_message(await _admin_dedupe_uploads())
 
     if action == "prune-non-admin":
-        removed = await media_index.prune_non_admin_uploads(StreamBot, int(Var.BIN_CHANNEL))
+        if media_index.prune_non_admin_state().get("running"):
+            return _admin_json_message(
+                "Non-admin prune already running",
+                status=_admin_status_payload(),
+            )
+        asyncio.create_task(
+            media_index.prune_non_admin_background(StreamBot, int(Var.BIN_CHANNEL))
+        )
         return _admin_json_message(
-            f"Removed {removed} known non-admin upload{'' if removed == 1 else 's'} from the catalogue"
+            "Non-admin prune queued",
+            status=_admin_status_payload(),
         )
 
     if action == "prune-stale":

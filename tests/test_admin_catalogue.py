@@ -1,5 +1,6 @@
 import os
 import importlib
+import asyncio
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -485,6 +486,86 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
             media_index._latest_seen_id = original_latest
             media_index.schedule_snapshot = original_schedule
             media_index._persist_unlocked = original_persist
+            media_index._prune_non_admin_state.update(
+                running=False, done=0, total=0, removed=0,
+                started_at=0.0, finished_at=0.0,
+            )
+
+    async def test_prune_non_admin_background_reports_progress_and_clears_running(self):
+        original_items = dict(media_index._items)
+        original_hash_map = dict(media_index._hash_map)
+        original_latest = media_index._latest_seen_id
+        original_schedule = media_index.schedule_snapshot
+        original_persist = media_index._persist_unlocked
+        try:
+            media_index._items.clear()
+            media_index._hash_map.clear()
+            media_index._latest_seen_id = 0
+            media_index.schedule_snapshot = lambda bot: None
+            media_index._persist_unlocked = lambda: None
+            media_index._items[101] = _item(101, secure_hash="admin")
+            media_index._hash_map["admin"] = 101
+            messages = {
+                101: SimpleNamespace(
+                    id=101,
+                    empty=False,
+                    reply_to_message=SimpleNamespace(id=101),
+                    text="**Requested By :** User\n**User ID :** `42`",
+                ),
+            }
+
+            result = await media_index.prune_non_admin_background(FakeBot(messages, latest_id=104), -1001)
+
+            self.assertEqual(result, {"removed": 1})
+            state = media_index.prune_non_admin_state()
+            self.assertFalse(state["running"])
+            self.assertTrue(state["finished_at"] > 0)
+            self.assertEqual(state["removed"], 1)
+            self.assertGreater(state["done"], 0)
+            self.assertGreaterEqual(state["total"], state["done"])
+        finally:
+            media_index._items.clear()
+            media_index._items.update(original_items)
+            media_index._hash_map.clear()
+            media_index._hash_map.update(original_hash_map)
+            media_index._latest_seen_id = original_latest
+            media_index.schedule_snapshot = original_schedule
+            media_index._persist_unlocked = original_persist
+            media_index._prune_non_admin_state.update(
+                running=False, done=0, total=0, removed=0,
+                started_at=0.0, finished_at=0.0,
+            )
+
+    async def test_prune_non_admin_background_clears_running_on_cancellation(self):
+        class HangingBot(FakeBot):
+            async def get_messages(self, channel_id, ids):
+                await asyncio.sleep(60)
+                raise AssertionError("never reached")
+
+        original_items = dict(media_index._items)
+        try:
+            media_index._items.clear()
+            media_index._items[101] = _item(101, secure_hash="admin")
+            media_index._hash_map["admin"] = 101
+
+            task = asyncio.ensure_future(
+                media_index.prune_non_admin_background(HangingBot({}, latest_id=0), -1001)
+            )
+            await asyncio.sleep(0)
+            self.assertTrue(media_index.prune_non_admin_state()["running"])
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+            self.assertFalse(media_index.prune_non_admin_state()["running"])
+            self.assertTrue(media_index.prune_non_admin_state()["finished_at"] > 0)
+        finally:
+            media_index._items.clear()
+            media_index._items.update(original_items)
+            media_index._prune_non_admin_state.update(
+                running=False, done=0, total=0, removed=0,
+                started_at=0.0, finished_at=0.0,
+            )
 
 
 if __name__ == "__main__":

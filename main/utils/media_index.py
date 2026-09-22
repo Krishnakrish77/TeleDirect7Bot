@@ -113,6 +113,9 @@ _reindex_state: dict = {"running": False, "done": 0, "total": 0,
                         "series_changed": 0, "movie_changed": 0,
                         "quality_changed": 0,
                         "started_at": 0.0, "finished_at": 0.0}
+_prune_non_admin_state: dict = {"running": False, "done": 0, "total": 0,
+                                "removed": 0, "started_at": 0.0,
+                                "finished_at": 0.0}
 _reconcile_state: dict = {"running": False, "cursor": 0, "checked": 0,
                           "removed": 0, "last_started_at": 0.0,
                           "last_finished_at": 0.0, "last_error": ""}
@@ -292,6 +295,34 @@ def credits_backfill_state() -> dict:
 
 def reindex_state() -> dict:
     return dict(_reindex_state)
+
+
+def prune_non_admin_state() -> dict:
+    return dict(_prune_non_admin_state)
+
+
+async def prune_non_admin_background(bot, channel_id: int) -> dict:
+    """Queueable variant of :func:`prune_non_admin_uploads`.
+
+    The admin route used to await the full BIN walk inline, which blew
+    through the platform gateway timeout (504) on large channels. Running
+    it as a task with a progress state lets the response return at once
+    and the admin UI poll ``/admin/status`` — same shape as reindex.
+    """
+    if _prune_non_admin_state["running"]:
+        return {"already_running": True}
+
+    _prune_non_admin_state.update(
+        running=True, done=0, total=len(_items), removed=0,
+        started_at=time.time(), finished_at=0.0,
+    )
+    try:
+        removed = await prune_non_admin_uploads(bot, channel_id)
+        _prune_non_admin_state["removed"] = removed
+        return {"removed": removed}
+    finally:
+        _prune_non_admin_state["running"] = False
+        _prune_non_admin_state["finished_at"] = time.time()
 
 
 def reconciliation_state() -> dict:
@@ -1121,6 +1152,7 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
 
     non_admin_ids: set[int] = set()
     high = latest
+    _prune_non_admin_state["total"] = max(0, latest - floor + 1)
     while high >= floor:
         batch_ids = list(range(high, max(floor - 1, high - batch_size), -1))
         try:
@@ -1141,6 +1173,7 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
             if not is_admin_added and source_file_id in _items:
                 non_admin_ids.add(source_file_id)
         high -= batch_size
+        _prune_non_admin_state["done"] += len(batch_ids)
         await asyncio.sleep(0)
 
     removed = 0
