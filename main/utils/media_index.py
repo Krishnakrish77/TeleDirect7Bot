@@ -597,7 +597,12 @@ def _bin_attribution_marker(message) -> Optional[Tuple[int, bool]]:
     reply = getattr(message, "reply_to_message", None)
     reply_id = getattr(reply, "id", None)
     if not reply_id:
-        return None
+        # Batch history fetches (seed, prune) don't always get the nested
+        # reply object — kurigram hydrates it via an extra RPC that can
+        # silently no-op. The plain reply header id is always parsed.
+        reply_id = getattr(message, "reply_to_message_id", None)
+        if not reply_id:
+            return None
     text = (getattr(message, "text", None) or getattr(message, "caption", None) or "")
     if not text:
         return None
@@ -1157,6 +1162,7 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
         logging.debug("media_index: prune_non_admin probe failed", exc_info=True)
 
     non_admin_ids: set[int] = set()
+    markers_seen = 0
     high = latest
     _prune_non_admin_state["total"] = max(0, latest - floor + 1)
     started = time.time()
@@ -1178,6 +1184,7 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
             marker = _bin_attribution_marker(message)
             if marker is None:
                 continue
+            markers_seen += 1
             source_file_id, is_admin_added = marker
             if not is_admin_added and source_file_id in _items:
                 non_admin_ids.add(source_file_id)
@@ -1196,8 +1203,11 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
             removed += 1
     if removed:
         schedule_snapshot(bot)
-    logging.info("media_index: prune_non_admin done in %.1fs — %d candidates, %d catalogue rows removed",
-                 time.time() - started, len(non_admin_ids), removed)
+    logging.info(
+        "media_index: prune_non_admin done in %.1fs — %d attribution notes seen, "
+        "%d non-admin candidates, %d catalogue rows removed",
+        time.time() - started, markers_seen, len(non_admin_ids), removed,
+    )
     return removed
 
 

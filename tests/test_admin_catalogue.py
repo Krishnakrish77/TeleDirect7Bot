@@ -491,6 +491,59 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
                 started_at=0.0, finished_at=0.0,
             )
 
+    async def test_prune_non_admin_matches_notes_without_nested_reply_object(self):
+        """Batch history fetches don't always hydrate reply_to_message —
+        only the plain reply_to_message_id int. Attribution notes carried
+        solely by the int must still prune (regression: walk found 0
+        markers over 9.7k ids and removed nothing)."""
+        original_items = dict(media_index._items)
+        original_hash_map = dict(media_index._hash_map)
+        original_latest = media_index._latest_seen_id
+        original_schedule = media_index.schedule_snapshot
+        original_persist = media_index._persist_unlocked
+        try:
+            media_index._items.clear()
+            media_index._hash_map.clear()
+            media_index._latest_seen_id = 102
+            media_index.schedule_snapshot = lambda bot: None
+            media_index._persist_unlocked = lambda: None
+            admin_item = _item(101, secure_hash="admin")
+            non_admin_item = _item(102, secure_hash="user")
+            media_index._items[101] = admin_item
+            media_index._items[102] = non_admin_item
+            media_index._hash_map["admin"] = 101
+            media_index._hash_map["user"] = 102
+            messages = {
+                101: SimpleNamespace(id=101, empty=False),
+                102: SimpleNamespace(id=102, empty=False),
+                # No reply_to_message attribute at all — only the int.
+                103: SimpleNamespace(
+                    id=103,
+                    empty=False,
+                    reply_to_message_id=102,
+                    text="**Requested By :** User\n**User ID :** `42`",
+                ),
+            }
+            bot = FakeBot(messages, latest_id=104)
+
+            removed = await media_index.prune_non_admin_uploads(bot, -1001, batch_size=10)
+
+            self.assertEqual(removed, 1)
+            self.assertIn(101, media_index._items)
+            self.assertNotIn(102, media_index._items)
+        finally:
+            media_index._items.clear()
+            media_index._items.update(original_items)
+            media_index._hash_map.clear()
+            media_index._hash_map.update(original_hash_map)
+            media_index._latest_seen_id = original_latest
+            media_index.schedule_snapshot = original_schedule
+            media_index._persist_unlocked = original_persist
+            media_index._prune_non_admin_state.update(
+                running=False, done=0, total=0, removed=0,
+                started_at=0.0, finished_at=0.0,
+            )
+
     async def test_prune_non_admin_background_reports_progress_and_clears_running(self):
         original_items = dict(media_index._items)
         original_hash_map = dict(media_index._hash_map)
