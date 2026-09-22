@@ -479,6 +479,17 @@ function MaintenancePanel({
           const dangerous = action === 'dedupe' || action === 'prune-non-admin' || action === 'prune-stale' || action === 'clear-all-thumbs' || action === 'migrate-to-mongo';
           const job = status.maintenance?.[action];
           const jobRunning = Boolean(job?.running);
+          const jobDetail = (() => {
+            if (jobRunning) return 'Working — this panel updates when it finishes';
+            if (job?.result) {
+              const finished = job.finished_at ? new Date(job.finished_at * 1000) : undefined;
+              const when = finished && !Number.isNaN(finished.getTime())
+                ? finished.toLocaleTimeString()
+                : '';
+              return when ? `${job.result} (${when})` : job.result;
+            }
+            return description;
+          })();
           return (
             <button
               key={action}
@@ -488,7 +499,7 @@ function MaintenancePanel({
               onClick={() => onRun(action, confirmMessage || (dangerous ? `Run ${label}?` : undefined))}
             >
               <strong>{jobRunning ? 'Queued...' : busy === action ? 'Running...' : label}</strong>
-              <span>{jobRunning ? 'Working — this panel updates when it finishes' : (job?.result || description)}</span>
+              <span>{jobDetail}</span>
             </button>
           );
         })}

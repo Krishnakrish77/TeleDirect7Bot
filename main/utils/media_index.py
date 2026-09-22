@@ -1035,19 +1035,25 @@ async def prune_stale(bot, channel_id: int, batch_size: int = 100) -> int:
     """
     ids = list(_items.keys())
     removed = 0
+    started = time.time()
+    logging.info("media_index.prune_stale: checking %d entries in batches of %d",
+                 len(ids), batch_size)
     for i in range(0, len(ids), batch_size):
         batch = ids[i: i + batch_size]
         try:
             msgs = await bot.get_messages(channel_id, batch)
         except Exception:
-            logging.exception("media_index.prune_stale: batch fetch failed")
+            logging.exception("media_index.prune_stale: batch fetch failed for %d..%d",
+                              batch[-1], batch[0])
             continue
         for msg in msgs:
             if msg.empty:
                 await remove(msg.id, bot=bot)
                 removed += 1
-    if removed:
-        logging.info("media_index.prune_stale: removed %d stale entries", removed)
+        logging.info("media_index.prune_stale: %d/%d checked, %d removed so far",
+                     min(i + batch_size, len(ids)), len(ids), removed)
+    logging.info("media_index.prune_stale: done in %.1fs, removed %d stale entries",
+                 time.time() - started, removed)
     return removed
 
 
@@ -1153,6 +1159,9 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
     non_admin_ids: set[int] = set()
     high = latest
     _prune_non_admin_state["total"] = max(0, latest - floor + 1)
+    started = time.time()
+    logging.info("media_index: prune_non_admin scanning BIN %d..%d (%d ids, batches of %d)",
+                 floor, latest, _prune_non_admin_state["total"], batch_size)
     while high >= floor:
         batch_ids = list(range(high, max(floor - 1, high - batch_size), -1))
         try:
@@ -1174,6 +1183,10 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
                 non_admin_ids.add(source_file_id)
         high -= batch_size
         _prune_non_admin_state["done"] += len(batch_ids)
+        if len(non_admin_ids):
+            logging.info("media_index: prune_non_admin %d/%d scanned, %d candidates so far",
+                         _prune_non_admin_state["done"], _prune_non_admin_state["total"],
+                         len(non_admin_ids))
         await asyncio.sleep(0)
 
     removed = 0
@@ -1183,7 +1196,8 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
             removed += 1
     if removed:
         schedule_snapshot(bot)
-        logging.info("media_index: pruned %d non-admin catalogue rows", removed)
+    logging.info("media_index: prune_non_admin done in %.1fs — %d candidates, %d catalogue rows removed",
+                 time.time() - started, len(non_admin_ids), removed)
     return removed
 
 
@@ -4393,6 +4407,8 @@ async def clear_audio_tmdb_mismatches() -> int:
                 fixed += 1
         if fixed:
             _persist_unlocked()
+    if fixed:
+        logging.info("media_index: cleared TMDB data from %d mis-enriched audio item(s)", fixed)
     for item in to_upsert:
         await _store_upsert(item)
     return fixed

@@ -623,10 +623,14 @@ def _queue_maintenance_job(action: str, coro, *, label: str) -> web.Response:
     state.update(running=True, result="", started_at=time.time(), finished_at=0.0)
 
     async def _runner() -> None:
+        logging.info("admin: maintenance job %s started", action)
         try:
             state["result"] = await coro
+            logging.info("admin: maintenance job %s finished in %.1fs: %s",
+                         action, time.time() - state["started_at"], state["result"])
         except Exception:
-            logging.exception("admin: maintenance job %s failed", action)
+            logging.exception("admin: maintenance job %s failed after %.1fs",
+                              action, time.time() - state["started_at"])
             state["result"] = "failed — see server logs"
         finally:
             state["running"] = False
@@ -2682,11 +2686,17 @@ async def _admin_dedupe_uploads() -> str:
             continue
         by_key.setdefault((it.secure_hash, it.file_size), []).append(it)
 
+    duplicate_groups = [items for items in by_key.values() if len(items) > 1]
+    total_extra = sum(len(items) - 1 for items in duplicate_groups)
+    if duplicate_groups:
+        logging.info("admin: dedupe found %d duplicate group(s), %d extra upload(s) to delete",
+                     len(duplicate_groups), total_extra)
+    else:
+        logging.info("admin: dedupe found no duplicate groups")
+
     deleted = 0
     groups = 0
-    for items in by_key.values():
-        if len(items) <= 1:
-            continue
+    for items in duplicate_groups:
         groups += 1
         keepers = sorted(items, key=lambda v: v.message_id)
         for extra in keepers[1:]:
@@ -2700,6 +2710,8 @@ async def _admin_dedupe_uploads() -> str:
                 continue
             await media_index.remove(extra.message_id, bot=StreamBot)
             deleted += 1
+            logging.info("admin: dedupe deleted duplicate bin:%d (%d/%d)",
+                         extra.message_id, deleted, total_extra)
 
     return (
         f"De-dup pass: {deleted} extra upload{'' if deleted == 1 else 's'} "
@@ -2720,6 +2732,8 @@ async def _admin_prune_stale_entries() -> str:
                 if getattr(item, "media_kind", "") == "audio"
             )
             orphan_ids = [t for t in thumb_ids if t not in live_ids]
+            logging.info("admin: orphan thumb scan — %d stored, %d orphan(s)",
+                         len(thumb_ids), len(orphan_ids))
             for orphan in orphan_ids:
                 try:
                     await media_index._store.remove_thumb(orphan)
@@ -2747,6 +2761,8 @@ async def _admin_clear_thumb_cache(*, audio_only: bool) -> str:
         if not audio_only or getattr(it, "media_kind", "") == "audio"
     ]
     cleared = 0
+    logging.info("admin: clearing thumbnail cache for %d item(s) (audio_only=%s)",
+                 len(ids), audio_only)
     for mid in ids:
         try:
             await thumb_cache.clear(mid)
@@ -2754,6 +2770,7 @@ async def _admin_clear_thumb_cache(*, audio_only: bool) -> str:
         except Exception:
             pass
     scope = "audio item" if audio_only else "item"
+    logging.info("admin: thumbnail cache clear finished — %d/%d cleared", cleared, len(ids))
     return f"Cleared thumbnail cache for {cleared} {scope}(s)"
 
 
