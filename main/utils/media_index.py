@@ -1163,6 +1163,8 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
 
     non_admin_ids: set[int] = set()
     markers_seen = 0
+    admin_notes = 0
+    non_admin_off_catalogue = 0
     high = latest
     _prune_non_admin_state["total"] = max(0, latest - floor + 1)
     started = time.time()
@@ -1186,8 +1188,18 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
                 continue
             markers_seen += 1
             source_file_id, is_admin_added = marker
-            if not is_admin_added and source_file_id in _items:
+            if is_admin_added:
+                admin_notes += 1
+            elif source_file_id in _items:
                 non_admin_ids.add(source_file_id)
+            else:
+                non_admin_off_catalogue += 1
+                if non_admin_off_catalogue <= 10:
+                    logging.info(
+                        "media_index: prune_non_admin note bin:%d → source bin:%d "
+                        "not in catalogue (stale note?)",
+                        int(getattr(message, "id", 0) or 0), source_file_id,
+                    )
         high -= batch_size
         _prune_non_admin_state["done"] += len(batch_ids)
         if len(non_admin_ids):
@@ -1204,9 +1216,10 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
     if removed:
         schedule_snapshot(bot)
     logging.info(
-        "media_index: prune_non_admin done in %.1fs — %d attribution notes seen, "
-        "%d non-admin candidates, %d catalogue rows removed",
-        time.time() - started, markers_seen, len(non_admin_ids), removed,
+        "media_index: prune_non_admin done in %.1fs — %d notes: %d admin, "
+        "%d non-admin in catalogue (%d removed), %d non-admin off-catalogue",
+        time.time() - started, markers_seen, admin_notes,
+        len(non_admin_ids), removed, non_admin_off_catalogue,
     )
     return removed
 
