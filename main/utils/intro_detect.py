@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import os
 import re
 import struct
 import subprocess
@@ -54,7 +55,14 @@ MATCH_HAMMING_BITS = 18
 MIN_INTRO_POINTS = int(15 / POINT_SECONDS)   # 15 s
 MAX_INTRO_POINTS = int(150 / POINT_SECONDS)  # 150 s
 # Fingerprint this fraction of each episode (Jellyfin: first 25% or 10 min).
-_WINDOW_CAP_SECONDS = 600.0
+# INTRO_FP_WINDOW_CAP caps the per-episode audio window — lower it (e.g. 120)
+# on memory/CPU-constrained deploys (Koyeb free) where streaming 10 min of
+# audio per episode through ffmpeg starves the box and trips the timeout.
+_WINDOW_CAP_SECONDS = float(os.environ.get("INTRO_FP_WINDOW_CAP", "600") or 600)
+# Hard cap on the ffmpeg|fpcalc pipeline per episode. Must comfortably exceed
+# the audio window: streaming 600 s of audio over a slow Telegram DC can take
+# longer than the old fixed 180 s on a throttled CPU.
+_FP_TIMEOUT_SECONDS = float(os.environ.get("INTRO_FP_TIMEOUT", "600") or 600)
 # fpcalc needs a real file; stream via this command into stdout. -ac 2 -ar
 # 44100 matches chromaprint's expected input.
 _FPCALC = "fpcalc"
@@ -211,7 +219,7 @@ def _fingerprint_sync(item) -> List[int]:
         f"-t {window} -ac 2 -ar 44100 -f mp3 - | "
         f"{_FPCALC} -length {window} -"
     )
-    proc = subprocess.run(cmd, shell=True, capture_output=True, timeout=180)
+    proc = subprocess.run(cmd, shell=True, capture_output=True, timeout=_FP_TIMEOUT_SECONDS)
     if proc.returncode != 0:
         raise RuntimeError(f"fpcalc failed for bin:{item.message_id}")
     fp_line = next(
