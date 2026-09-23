@@ -234,12 +234,19 @@ def _meta_store_get(key: str):
     if loop is not None:
         asyncio.ensure_future(store.get_meta(key))  # async context: skip caching
         return None
-    if _main_loop is not None and _main_loop.is_running():
-        # Worker thread: block until the main loop answers.
+    if _main_loop is None or not _main_loop.is_running():
+        # Only reachable when a sync caller bypasses detect_series_intros —
+        # without the owning loop the Motor call cannot run anywhere.
+        log.warning("intro: no main loop captured; meta read for %s skipped", key)
+        return None
+    # Worker thread: block until the main loop answers.
+    try:
         return asyncio.run_coroutine_threadsafe(
             store.get_meta(key), _main_loop,
         ).result(timeout=60)
-    return None
+    except Exception:
+        log.exception("intro: meta read for %s failed (marshal to main loop)", key)
+        return None
 
 
 def media_index_meta_set(key: str, value: str) -> None:
@@ -253,10 +260,15 @@ def media_index_meta_set(key: str, value: str) -> None:
     if loop is not None:
         asyncio.ensure_future(store.set_meta(key, value))
         return
-    if _main_loop is not None and _main_loop.is_running():
+    if _main_loop is None or not _main_loop.is_running():
+        log.warning("intro: no main loop captured; meta write for %s skipped", key)
+        return
+    try:
         asyncio.run_coroutine_threadsafe(
             store.set_meta(key, value), _main_loop,
         ).result(timeout=60)
+    except Exception:
+        log.exception("intro: meta write for %s failed (marshal to main loop)", key)
 
 
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
