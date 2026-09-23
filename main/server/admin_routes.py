@@ -3319,9 +3319,10 @@ async def api_app_admin_series_detect_intro(request: web.Request) -> web.Respons
             {"error": "Series needs at least 2 episodes (with intros not set by hand)"},
             status=400,
         )
-    # Await directly — per-series runs are short (a handful of fingerprints)
-    # and the admin gets the result inline in the edit modal.
-    results = await asyncio.to_thread(intro_detect.detect_series_intros_sync, episodes)
+    # Per-series runs are short (a handful of fingerprints) and the admin
+    # gets the result inline in the edit modal. The wrapper marshals
+    # meta-store I/O back to this loop from the worker thread.
+    results = await intro_detect.detect_series_intros(episodes)
     for mid, (start, end) in results.items():
         item = media_index.get_item(mid)
         if item is None:

@@ -1424,10 +1424,11 @@ function EditModal({
                         <p className="edit-section-label">
                           Playback markers
                           {seriesKey && !isAudio && (
-                            <button
+                            <Button
                               type="button"
-                              className="edit-field-hint"
-                              style={{ cursor: 'pointer', color: 'var(--brand)', marginLeft: '0.5rem' }}
+                              variant="secondary"
+                              size="sm"
+                              style={{ marginLeft: '0.5rem' }}
                               onClick={async () => {
                                 setIntroDetecting(true);
                                 setIntroDetectStatus('');
@@ -1450,7 +1451,7 @@ function EditModal({
                               }}
                             >
                               {introDetecting ? 'Detecting…' : 'Auto-detect from this series'}
-                            </button>
+                            </Button>
                           )}
                         </p>
                         <div className="edit-field-row">

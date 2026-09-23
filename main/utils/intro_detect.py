@@ -218,19 +218,27 @@ def _fingerprint_sync(item) -> List[int]:
 
 
 def _meta_store_get(key: str):
-    """Sync access to the meta store (used from worker threads)."""
+    """Sync access to the meta store (used from worker threads).
+
+    Motor clients bind their futures to the loop they were created on
+    (the main loop), so a fresh ``asyncio.run`` here would fail with
+    "attached to a different loop" — marshal to the captured main loop
+    instead."""
     store = media_index._store
     if store is None:
         return None
-    import asyncio as _asyncio
     try:
-        loop = _asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
-    if loop is None:
-        # No running loop (worker thread) — run a fresh one.
-        return _asyncio.run(store.get_meta(key))
-    asyncio.ensure_future(store.get_meta(key))  # async context: skip caching
+    if loop is not None:
+        asyncio.ensure_future(store.get_meta(key))  # async context: skip caching
+        return None
+    if _main_loop is not None and _main_loop.is_running():
+        # Worker thread: block until the main loop answers.
+        return asyncio.run_coroutine_threadsafe(
+            store.get_meta(key), _main_loop,
+        ).result(timeout=60)
     return None
 
 
@@ -238,13 +246,28 @@ def media_index_meta_set(key: str, value: str) -> None:
     store = media_index._store
     if store is None:
         return
-    import asyncio as _asyncio
     try:
-        loop = _asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
     except RuntimeError:
-        _asyncio.run(store.set_meta(key, value))
+        loop = None
+    if loop is not None:
+        asyncio.ensure_future(store.set_meta(key, value))
         return
-    _asyncio.ensure_future(store.set_meta(key, value))
+    if _main_loop is not None and _main_loop.is_running():
+        asyncio.run_coroutine_threadsafe(
+            store.set_meta(key, value), _main_loop,
+        ).result(timeout=60)
+
+
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+async def detect_series_intros(episodes: list) -> Dict[int, Tuple[float, float]]:
+    """Async entry — capture the loop that owns the Motor client, then
+    run the sync pipeline in a worker thread."""
+    global _main_loop
+    _main_loop = asyncio.get_running_loop()
+    return await asyncio.to_thread(detect_series_intros_sync, episodes)
 
 
 # ---------------------------------------------------------------- sweep
@@ -273,7 +296,7 @@ async def detect_all_intros() -> dict:
     try:
         for series_key, episodes in series_map.items():
             try:
-                results = await asyncio.to_thread(detect_series_intros_sync, episodes)
+                results = await detect_series_intros(episodes)
             except Exception:
                 log.exception("intro: series sweep failed for %s", series_key)
                 results = {}
