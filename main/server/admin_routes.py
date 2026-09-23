@@ -3319,23 +3319,19 @@ async def api_app_admin_series_detect_intro(request: web.Request) -> web.Respons
             {"error": "Series needs at least 2 episodes (with intros not set by hand)"},
             status=400,
         )
-    # Per-series runs are short (a handful of fingerprints) and the admin
-    # gets the result inline in the edit modal. The wrapper marshals
-    # meta-store I/O back to this loop from the worker thread.
-    results = await intro_detect.detect_series_intros(episodes)
-    for mid, (start, end) in results.items():
-        item = media_index.get_item(mid)
-        if item is None:
-            continue
-        item.intro_start = start
-        item.intro_end = end
-        item.intro_source = "auto"
-        await media_index._store_upsert(item)
-    async with media_index._lock:
-        media_index._persist_unlocked()
-    return _admin_json_message(
-        f"Detected {len(results)}/{len(episodes)} intros for this series",
-        **{"intros": {str(mid): {"start": s, "end": e} for mid, (s, e) in results.items()}},
+    if intro_detect.intro_state["series_running"]:
+        return web.json_response(
+            {"error": "Detection already running for another series"},
+            status=409,
+        )
+    # Fingerprinting streams up to 10 min of audio per episode, so this
+    # can run for many minutes — queue it in the background and let the
+    # modal poll /admin/status (intro_detect series_* fields) for live
+    # progress and the outcome.
+    asyncio.create_task(intro_detect.detect_series_intros_async(series_key, episodes))
+    return web.json_response(
+        {"started": True, "episodes": len(episodes)},
+        headers={"Cache-Control": "no-store"},
     )
 
 

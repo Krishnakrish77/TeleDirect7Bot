@@ -1431,17 +1431,41 @@ function EditModal({
                               style={{ marginLeft: '0.5rem' }}
                               onClick={async () => {
                                 setIntroDetecting(true);
-                                setIntroDetectStatus('');
+                                setIntroDetectStatus('Starting detection…');
                                 try {
                                   const res = await fetch(`/api/app/admin/series/${encodeURIComponent(seriesKey)}/detect-intro`, { method: 'POST' });
                                   const body = await res.json().catch(() => ({}));
-                                  setIntroDetectStatus(res.ok ? (body.message || 'Intros detected') : (body.error || `Failed (${res.status})`));
-                                  if (res.ok && body.intros) {
-                                    const mine = body.intros[String(messageId)];
-                                    if (mine) {
-                                      setField('introStart', mine.start);
-                                      setField('introEnd', mine.end);
+                                  if (!res.ok) {
+                                    setIntroDetectStatus(body.error || `Failed (${res.status})`);
+                                    return;
+                                  }
+                                  // Fingerprinting streams up to 10 min of audio
+                                  // per episode server-side — poll the admin
+                                  // status endpoint for live progress until the
+                                  // per-series run finishes.
+                                  const total = body.episodes ?? 0;
+                                  for (;;) {
+                                    await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+                                    let s = undefined;
+                                    try {
+                                      s = (await fetchAdminStatus()).intro_detect;
+                                    } catch {
+                                      continue; // transient poll error — detection still running server-side
                                     }
+                                    if (!s?.series_running) {
+                                      if (s?.series_error) {
+                                        setIntroDetectStatus(`Detection failed: ${s.series_error}`);
+                                      } else {
+                                        const found = s?.series_done_count ?? 0;
+                                        setIntroDetectStatus(
+                                          found > 0
+                                            ? `Detected intros on ${found}/${total} episodes — reload the item to see values`
+                                            : `No recurring intro found across ${total} episodes`,
+                                        );
+                                      }
+                                      break;
+                                    }
+                                    setIntroDetectStatus(`Detecting… ${s.series_done_count ?? 0}/${s.series_total ?? total} episodes`);
                                   }
                                 } catch {
                                   setIntroDetectStatus('Detection request failed');

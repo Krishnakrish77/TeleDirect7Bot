@@ -785,6 +785,11 @@ export interface AdminProgressState {
   cursor?: number;
   interval_seconds?: number;
   batch_size?: number;
+  series_running?: boolean;
+  series_key?: string;
+  series_done_count?: number;
+  series_total?: number;
+  series_error?: string;
 }
 
 export interface AdminStatusResponse {

@@ -68,7 +68,19 @@ intro_state: dict = {
     "started_at": 0.0,
     "finished_at": 0.0,
     "error": "",
+    # Per-series run (edit-modal "Auto-detect"): which series is being
+    # fingerprinted and how many of its episodes are done, so the SPA
+    # can show progress via /admin/status while the POST-based flow
+    # runs in the background.
+    "series_running": False,
+    "series_key": "",
+    "series_done_count": 0,
+    "series_total": 0,
+    "series_error": "",
 }
+
+# Per-series detect runs one at a time; waiters poll intro_state.
+_series_lock = asyncio.Lock()
 
 
 def state() -> dict:
@@ -280,6 +292,42 @@ async def detect_series_intros(episodes: list) -> Dict[int, Tuple[float, float]]
     global _main_loop
     _main_loop = asyncio.get_running_loop()
     return await asyncio.to_thread(detect_series_intros_sync, episodes)
+
+
+async def detect_series_intros_async(series_key: str, episodes: list) -> None:
+    """Background per-series detection. Updates ``intro_state["series_*"]``
+    so the SPA edit modal can poll /admin/status for live progress and the
+    outcome (intros_found > 0, series_error, or neither)."""
+    if _series_lock.locked():
+        raise RuntimeError("already running")
+    async with _series_lock:
+        st = intro_state
+        st.update(
+            series_running=True, series_key=series_key,
+            series_done_count=0, series_total=len(episodes), series_error="",
+        )
+        try:
+            results = await detect_series_intros(episodes)
+        except Exception as exc:
+            st["series_error"] = str(exc) or type(exc).__name__
+            log.exception("intro: per-series sweep failed for %s", series_key)
+            return
+        finally:
+            st["series_running"] = False
+            st["series_key"] = ""
+        applied = 0
+        for mid, (start, end) in results.items():
+            item = media_index.get_item(mid)
+            if item is None:
+                continue
+            item.intro_start = start
+            item.intro_end = end
+            item.intro_source = "auto"
+            await media_index._store_upsert(item)
+            applied += 1
+        async with media_index._lock:
+            media_index._persist_unlocked()
+        st["series_done_count"] = applied
 
 
 # ---------------------------------------------------------------- sweep
