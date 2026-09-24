@@ -27,7 +27,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from main import StreamBot
-from main.utils import hls, hub_query, media_index, thumb_cache, rec_engine, trending, share_meta
+from main.utils import hls, media_index, thumb_cache, rec_engine, trending, share_meta
 from main.utils.user_auth import get_user
 from main.utils.hub_query import HubItem
 from main.utils.human_readable import humanbytes
@@ -35,7 +35,6 @@ from main.vars import Var
 
 
 routes = web.RouteTableDef()
-_UI_COOKIE = "td_ui"
 
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
@@ -144,22 +143,6 @@ def _html(body: str, push_url: Optional[str] = None) -> web.Response:
         charset="utf-8",
         headers=headers,
     )
-
-
-def _prefers_react_ui(request: web.Request) -> bool:
-    return (
-        request.cookies.get(_UI_COOKIE) == "react"
-        and not _is_htmx(request)
-    )
-
-
-def _react_redirect(request: web.Request, app_path: str) -> web.HTTPFound | None:
-    if not _prefers_react_ui(request):
-        return None
-    if request.query_string:
-        joiner = "&" if "?" in app_path else "?"
-        app_path = f"{app_path}{joiner}{request.query_string}"
-    return web.HTTPFound(app_path)
 
 
 # ── Render cache ──────────────────────────────────────────────────────────

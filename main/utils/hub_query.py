@@ -189,18 +189,3 @@ async def query(
         before_id=before_id, limit=limit,
     )
 
-
-# Back-compat helpers used by tests / external callers; keep thin.
-async def browse(before_id: Optional[int] = None, limit: int = PAGE_SIZE
-                 ) -> Tuple[List[HubItem], Optional[int]]:
-    return await query(before_id=before_id, limit=limit)
-
-
-async def search(q: str, limit: int = PAGE_SIZE) -> List[HubItem]:
-    items, _ = await query(q=q, limit=limit)
-    return items
-
-
-async def by_tag(tag: str, limit: int = PAGE_SIZE) -> List[HubItem]:
-    items, _ = await query(tag=tag, limit=limit)
-    return items

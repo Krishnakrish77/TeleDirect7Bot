@@ -576,18 +576,6 @@ def _safe_next_url(raw: str | None, fallback: str) -> str:
     return raw
 
 
-def _ui_redirect(mode: str, next_url: str) -> web.HTTPFound:
-    response = web.HTTPFound(next_url)
-    response.set_cookie(
-        _UI_COOKIE,
-        mode,
-        max_age=60 * 60 * 24 * 365,
-        path="/",
-        samesite="Lax",
-    )
-    return response
-
-
 def _canonical_ui_url(next_url: str) -> str:
     if next_url == "/app":
         return "/"

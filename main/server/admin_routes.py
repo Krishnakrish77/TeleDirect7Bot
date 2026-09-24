@@ -710,13 +710,6 @@ def _format_chapters_text(chapters: list[dict] | None) -> str:
     return "\n".join(lines)
 
 
-def _prefers_react_admin(request: web.Request) -> bool:
-    return (
-        request.cookies.get("td_ui") == "react"
-        and request.headers.get("HX-Request", "").lower() != "true"
-    )
-
-
 @routes.get("/admin/login")
 async def admin_login_get(request: web.Request) -> web.Response:
     """Redirect legacy /admin/login URLs to /admin."""
@@ -748,107 +741,13 @@ def _redirect_with_flash(message: str, target: str = "/admin") -> web.Response:
     return resp
 
 
-def _pop_flash(request: web.Request, resp: web.Response) -> str:
-    """Read the flash cookie if present and immediately delete it.
-
-    Called from ``admin_home`` so the message renders exactly once
-    and clears whether or not the user refreshes.
-    """
-    raw = request.cookies.get(_FLASH_COOKIE)
-    if not raw:
-        return ""
-    from urllib.parse import unquote as _u
-    try:
-        msg = _u(raw)
-    except Exception:
-        msg = ""
-    resp.del_cookie(_FLASH_COOKIE, path="/admin")
-    return msg
-
-
 @routes.get("/admin")
 async def admin_home(request: web.Request) -> web.Response:
+    """Admin UI entry — the React SPA handles authentication itself via
+    the Telegram Login Widget; unauthenticated visitors see the app's
+    sign-in modal."""
     from main.server.spa_routes import _app_index_response
     return _app_index_response(request)
-
-    user = _get_admin_user(request)
-    if user is None:
-        # Not authenticated or not admin — show Telegram login page
-        bot_username = Var.BOT_USERNAME or (StreamBot.username or "")
-        return web.Response(
-            content_type="text/html",
-            charset="utf-8",
-            headers={"Cache-Control": "no-store"},
-            text=f"""<!doctype html>
-<html lang="en" class="h-full dark">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Admin — Sign in</title>
-</head>
-<body class="min-h-full bg-ink-900 flex items-center justify-center px-4">
-  <div class="w-full max-w-sm bg-ink-800/60 border border-white/10
-              rounded-2xl shadow-2xl p-8 text-center">
-    <h1 class="text-2xl font-bold text-white mb-1">Admin</h1>
-    <p class="text-sm text-slate-400 mb-8">Sign in with your Telegram account to continue.</p>
-    <div id="_tg-root" class="flex justify-center"></div>
-    <p class="mt-6 text-xs text-slate-600">Only the bot owner can access this panel.</p>
-  </div>
-  <script>
-    function onTelegramAuth(user) {{
-      fetch('/auth/telegram', {{
-        method: 'POST',
-        headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify(user)
-      }}).then(r => r.json()).then(d => {{
-        if (d.token) {{
-          // Store in sessionStorage for client-side JS use
-          try {{ sessionStorage.setItem('td:auth', d.token); }} catch(_) {{}}
-          // Cookie is set by the server — reload to get the authenticated page
-          window.location.reload();
-        }}
-      }});
-    }}
-    (function() {{
-      var s = document.createElement('script');
-      s.async = true;
-      s.src = 'https://telegram.org/js/telegram-widget.js?22';
-      s.setAttribute('data-telegram-login', '{bot_username}');
-      s.setAttribute('data-size', 'large');
-      s.setAttribute('data-radius', '8');
-      s.setAttribute('data-onauth', 'onTelegramAuth(user)');
-      s.setAttribute('data-request-access', 'write');
-      document.getElementById('_tg-root').appendChild(s);
-    }})();
-  </script>
-</body>
-</html>""",
-        )
-    _require_session(request)
-
-    ctx = _admin_catalogue_context(request)
-    tpl = _env.get_template("admin.html")
-    body = await tpl.render_async(
-        items=ctx["items"],
-        catalogue_size=ctx["catalogue_size"],
-        filtered_count=ctx["filtered_count"],
-        page=ctx["page"],
-        total_pages=ctx["total_pages"],
-        page_size=ctx["page_size"],
-        filter_name=ctx["filter_name"],
-        search_q=ctx["search_q"],
-        sort_col=ctx["sort_col"],
-        sort_dir=ctx["sort_dir"],
-        stats=ctx["stats"],
-        duplicate_message_ids=ctx["duplicate_message_ids"],
-        known_series=ctx["known_series"],
-        flash=ctx["flash"],
-        var=Var,
-    )
-    resp = _html(body)
-    if ctx["raw_flash"]:
-        resp.del_cookie(_FLASH_COOKIE, path="/admin")
-    return resp
 
 
 @routes.get("/api/app/admin")

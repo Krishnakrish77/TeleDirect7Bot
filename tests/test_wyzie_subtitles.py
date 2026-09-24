@@ -265,6 +265,9 @@ class WyzieDownloadReliabilityTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(wyzie_subtitles.WyzieError):
                 await wyzie_subtitles.download(7, item, "candidate-1")
         self.assertIn("/c/opensubtitles/id/candidate-1?format=srt", seen[1])  # default source fills in
+        # A "gone" link means the cached search result is stale — the cache
+        # entry must be dropped so the next search refetches fresh links.
+        self.assertNotIn(item.message_id, wyzie_subtitles._cache)
 
     async def test_expired_search_cache_researches_transparently(self):
         item = self._item()

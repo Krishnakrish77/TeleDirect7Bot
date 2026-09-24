@@ -190,10 +190,6 @@ def store_ready() -> bool:
     return not mongo_required() or _store_active()
 
 
-def store_error() -> str:
-    return _store_error
-
-
 async def _store_upsert(item: HubItem) -> None:
     if _store is None:
         return
@@ -3367,12 +3363,6 @@ def pick_heroes(limit: int = 6) -> List[HubItem]:
     pool_ids = {id(it) for it in pool}
     tier4 = _dedup_by_group([it for it in by_recent if id(it) not in pool_ids])
     return _dedup_by_group(pool + tier4)[:limit]
-
-
-def pick_hero() -> Optional[HubItem]:
-    """Backwards-compat single-pick for older callers."""
-    heroes = pick_heroes(limit=1)
-    return heroes[0] if heroes else None
 
 
 def _hub_int_env(name: str, default: int, *, lo: int = 1, hi: int = 50) -> int:

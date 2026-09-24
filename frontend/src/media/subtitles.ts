@@ -1,9 +1,5 @@
 import type { SubtitleTrack } from '../types';
 
-const SUB_CACHE_INDEX = 'td:sub:__index';
-const SUB_CACHE_PREFIX = 'td:sub:';
-const MAX_CACHED_SUBTITLES = 3;
-
 export function looksLikeVtt(text: string): boolean {
   return /^\s*WEBVTT\b/i.test(text);
 }
@@ -53,42 +49,6 @@ export async function subtitleFileToTrack(file: File, watchKey: string): Promise
     codec: 'webvtt',
     kind: 'custom',
   };
-}
-
-export function restoreCachedSubtitle(watchKey: string): SubtitleTrack | null {
-  try {
-    const raw = localStorage.getItem(SUB_CACHE_PREFIX + watchKey);
-    if (!raw) return null;
-    const cached = JSON.parse(raw) as { label?: string; vtt?: string };
-    if (!cached.vtt) return null;
-    return {
-      id: `custom:${watchKey}`,
-      url: subtitleUrl(cached.vtt),
-      language: 'und',
-      label: cached.label || 'Custom',
-      codec: 'webvtt',
-      kind: 'custom',
-    };
-  } catch (_) {
-    return null;
-  }
-}
-
-export function cacheSubtitle(watchKey: string, label: string, vtt: string): void {
-  if (!watchKey || !vtt) return;
-  try {
-    const parsed = JSON.parse(localStorage.getItem(SUB_CACHE_INDEX) || '[]');
-    const index = Array.isArray(parsed) ? parsed.filter((key) => typeof key === 'string' && key !== watchKey) : [];
-    while (index.length >= MAX_CACHED_SUBTITLES) {
-      const old = index.shift();
-      if (old) localStorage.removeItem(SUB_CACHE_PREFIX + old);
-    }
-    index.push(watchKey);
-    localStorage.setItem(SUB_CACHE_INDEX, JSON.stringify(index));
-    localStorage.setItem(SUB_CACHE_PREFIX + watchKey, JSON.stringify({ label, vtt, t: Date.now() }));
-  } catch (_) {
-    // Subtitle cache is a convenience; ignore storage quota/private-mode errors.
-  }
 }
 
 export function revokeSubtitleTrack(track: SubtitleTrack): void {

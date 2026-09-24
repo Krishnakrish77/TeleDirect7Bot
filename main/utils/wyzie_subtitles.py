@@ -419,13 +419,21 @@ async def download(user_id: int, item, candidate_id: str) -> tuple[bytes, dict[s
         try:
             return await _with_retry(candidate["url"])
         except _LinkGoneError:
-            pass
+            # The cached search result's download URL has expired — forget
+            # the stale cache entry so the next search refetches fresh
+            # links instead of serving the same dead one for hours.
+            _drop_cached(item)
         # Wyzie's own proxy serves the same subtitle by id and is not subject
         # to OpenSubtitles hotlink blocks. Try it before giving up.
         proxy = _proxy_url(candidate)
         logging.info("wyzie: direct download failed for item %s, falling back to proxy", item.message_id)
         try:
             return await _with_retry(proxy)
+        except _LinkGoneError as exc:
+            # The proxy path surfacing "gone" means the search result itself
+            # is stale — same remedy.
+            _drop_cached(item)
+            raise WyzieError("That subtitle is no longer offered. Pick another or search again.") from exc
         except WyzieError as exc:
             raise WyzieError("That subtitle is no longer offered. Pick another or search again.") from exc
 

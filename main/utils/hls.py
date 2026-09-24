@@ -22,7 +22,7 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from main.vars import Var
 
@@ -147,13 +147,9 @@ _segment_semaphore: Optional[asyncio.Semaphore] = None
 
 # Toggled to False the first time ffprobe/ffmpeg fails to launch with
 # FileNotFoundError — typically because the deploy is on a buildpack that
-# didn't install ffmpeg. After that the HLS routes 415 immediately instead
-# of error-spamming logs on every viewer request.
+# didn't install ffmpeg. Diagnostic only (visible in crashes/logs); the
+# routes handle the missing-binary error per-request.
 _ffmpeg_available: bool = True
-
-
-def ffmpeg_available() -> bool:
-    return _ffmpeg_available
 
 
 def _semaphore() -> asyncio.Semaphore:
@@ -568,82 +564,3 @@ def build_playlist(probe_result: ProbeResult, segment_url_template: str) -> str:
     lines.append("#EXT-X-ENDLIST")
     lines.append("")
     return "\n".join(lines)
-
-
-async def stream_segment(
-    source_url: str,
-    start_sec: float,
-    duration_sec: float,
-    audio_codec: Optional[str] = None,
-) -> AsyncIterator[bytes]:
-    """Spawn ffmpeg to transmux a segment of the source into MPEG-TS, yielding
-    bytes as they're produced. Caller is responsible for response framing.
-
-    Audio is copied when the source codec is already browser-friendly (AAC/MP3)
-    and transcoded to AAC otherwise. The codec hint should come from the
-    cached probe so we don't re-probe per segment.
-    """
-    if audio_codec and audio_codec in BROWSER_AUDIO_OK:
-        audio_args = ["-c:a", "copy"]
-    else:
-        # AC3/EAC3/DTS sources: encode to AAC for browser MSE compatibility.
-        audio_args = ["-c:a", "aac", "-b:a", "160k", "-ac", "2"]
-
-    args = [
-        "ffmpeg",
-        "-hide_banner", "-loglevel", "warning",
-        # Regenerate PTS starting at 0 for each subprocess so -output_ts_offset
-        # below gives the logical position rather than (keyframe_pts + offset).
-        "-fflags", "+genpts",
-        "-ss", f"{start_sec:.3f}",  # fast seek to nearest keyframe ≤ start
-        "-i", source_url,
-        "-t", f"{duration_sec:.3f}",
-        "-map", "0:v:0?",
-        "-map", "0:a:0?",
-        "-c:v", "copy",
-        *audio_args,
-        # Each segment's output PTS starts at its logical position
-        # (start_sec). Combined with +genpts above, this is the closest
-        # we can get to continuous timestamps across segments without
-        # re-encoding. The -copyts variant caused playback to stop ~11s
-        # in because adjacent segments had divergent PTS that MSE refused
-        # past the keyframe boundary of segment 1.
-        "-output_ts_offset", f"{start_sec:.3f}",
-        "-avoid_negative_ts", "disabled",
-        "-f", "mpegts",
-        "pipe:1",
-    ]
-
-    global _ffmpeg_available
-    sem = _semaphore()
-    await sem.acquire()
-    proc = None
-    try:
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except FileNotFoundError:
-            _ffmpeg_available = False
-            logging.warning("ffmpeg not installed on the deploy image; HLS disabled.")
-            return
-        assert proc.stdout is not None
-        while True:
-            chunk = await proc.stdout.read(64 * 1024)
-            if not chunk:
-                break
-            yield chunk
-        await proc.wait()
-        if proc.returncode != 0:
-            err = (await proc.stderr.read()).decode(errors="replace")[:500] if proc.stderr else ""
-            logging.warning("ffmpeg segment exit=%s: %s", proc.returncode, err)
-    finally:
-        if proc is not None and proc.returncode is None:
-            try:
-                proc.kill()
-                await proc.wait()
-            except ProcessLookupError:
-                pass
-        sem.release()

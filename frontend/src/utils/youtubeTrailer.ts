@@ -9,7 +9,3 @@ export function youtubeTrailerEmbedSrc(trailerKey: string): string {
   });
   return `https://www.youtube.com/embed/${encodeURIComponent(trailerKey)}?${params.toString()}`;
 }
-
-export function youtubeTrailerWatchUrl(trailerKey: string): string {
-  return `https://www.youtube.com/watch?v=${encodeURIComponent(trailerKey)}`;
-}

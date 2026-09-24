@@ -166,19 +166,6 @@ export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
   return request<MeResponse>('/api/me', { signal });
 }
 
-export async function fetchAiRecommendations(refresh = false, signal?: AbortSignal): Promise<AiRecResponse> {
-  return request<AiRecResponse>(`/api/app/ai/recommendations${refresh ? '?refresh=1' : ''}`, { signal });
-}
-
-export async function askAiRecommendations(query: string, signal?: AbortSignal): Promise<AiRecResponse> {
-  return request<AiRecResponse>('/api/app/ai/recommendations', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
-    signal,
-  });
-}
-
 /** Read the same-origin AI Picks SSE stream. POST keeps the user's ask out of URLs. */
 export async function streamAiRecommendations(
   input: { initial?: boolean; query?: string; refresh?: boolean },

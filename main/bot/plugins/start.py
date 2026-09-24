@@ -1,9 +1,7 @@
 import logging
 import time
-from urllib.parse import urljoin
 
 from main.bot import StreamBot
-from main.utils import admin_auth
 from main.vars import Var, NO_PREVIEW
 from pyrogram import filters
 from main.utils.Translation import Language, BUTTON
@@ -41,13 +39,15 @@ async def about(bot, update):
 
 @StreamBot.on_message(filters.command("admin") & filters.private)
 async def admin_link(bot, message):
-    """DM-only: owner sends /admin, gets a one-time admin URL.
+    """DM-only: owner sends /admin, gets the admin panel URL.
 
-    Non-owners get nothing in production so the admin surface stays
-    hidden. But if OWNER_ID is unset (defaulting to Telegram's 777000
-    system sentinel) we treat the first invocation as setup help and DM
-    the requester instructions plus their own Telegram id — otherwise
-    the failure mode is silent and undebuggable.
+    Admin authentication itself is the Telegram Login Widget in the SPA —
+    the link is a convenience deep link, not a credential. Non-owners get
+    nothing in production so the admin surface stays hidden. But if
+    OWNER_ID is unset (defaulting to Telegram's 777000 system sentinel)
+    we treat the first invocation as setup help and DM the requester
+    instructions plus their own Telegram id — otherwise the failure mode
+    is silent and undebuggable.
     """
     user = message.from_user
     if user is None:
@@ -66,7 +66,7 @@ async def admin_link(bot, message):
                 "⚠️ **Admin not configured**\n\n"
                 f"Set the `OWNER_ID` environment variable to `{requester_id}` "
                 "and redeploy — that's your Telegram user id. Once set, "
-                "`/admin` will return a one-time login link."
+                "`/admin` will return the admin panel link."
             ),
             link_preview_options=NO_PREVIEW,
         )
@@ -98,23 +98,12 @@ async def admin_link(bot, message):
         return
     _last_admin_msg[requester_id] = msg_id
 
-    token = admin_auth.issue_one_time_token(requester_id)
-    url = urljoin(Var.URL, f"admin/login?t={token}")
-    link_minutes = max(1, round(admin_auth.TOKEN_TTL / 60))
-    session_minutes = max(1, round(admin_auth.SESSION_TTL / 60))
-    # Pretty-format the session TTL: ``60 minutes`` reads worse than
-    # ``1 hour`` when the operator has set a multi-hour window.
-    if session_minutes >= 60 and session_minutes % 60 == 0:
-        hours = session_minutes // 60
-        session_human = f"{hours} hour" + ("s" if hours != 1 else "")
-    else:
-        session_human = f"{session_minutes} minutes"
     await message.reply_text(
         text=(
             "🔐 **Admin access**\n\n"
-            f"{url}\n\n"
-            f"• Open this link within **{link_minutes} minutes** — it expires after that.\n"
-            f"• Once you open it, your admin session stays signed in for **{session_human}**."
+            f"{Var.URL}admin\n\n"
+            "• Sign in with the Telegram Login Widget — only the bot owner "
+            "is accepted."
         ),
         link_preview_options=NO_PREVIEW,
     )

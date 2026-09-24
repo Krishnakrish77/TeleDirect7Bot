@@ -157,8 +157,6 @@ The essentials are in the Quick start `.env` example. The complete reference is 
 | `NO_PORT` | `false` | Omit the port from generated links when a proxy serves standard HTTP(S) ports. |
 | `JWT_SECRET` | generated per boot | A persistent, random secret for web sessions. Set this in production. |
 | `BOT_USERNAME` | — | Bot username for Telegram Login; omit `@`. |
-| `ADMIN_TOKEN_TTL_MIN` | `15` | Validity of one-time admin DM links. |
-| `ADMIN_SESSION_TTL_MIN` | `60` | Validity of an admin browser session. |
 
 ### Catalogue and metadata
 
