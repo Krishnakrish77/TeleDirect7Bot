@@ -456,6 +456,19 @@ describe('WatchPage video player', () => {
   });
 
   it('keeps video event handlers after switching between HLS audio tracks', async () => {
+    // MSE path: hls.js owns the video element, so the m3u8 source must be
+    // observed through loadSource, not the video src attribute.
+    const loadedSources: string[] = [];
+    class MockHls {
+      static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifest' };
+      static isSupported = () => true;
+      on() {}
+      off() {}
+      loadSource(source: string) { loadedSources.push(source); }
+      attachMedia() {}
+      destroy() {}
+    }
+    Object.defineProperty(window, 'Hls', { configurable: true, value: MockHls });
     const audioTracks: AudioTrackOption[] = [
       { index: 1, language: 'eng', label: 'English', codec: 'aac' },
       { index: 2, language: 'tam', label: 'Tamil', codec: 'aac' },
@@ -469,12 +482,12 @@ describe('WatchPage video player', () => {
 
     fireEvent.change(audioSelect, { target: { value: '1' } });
     await waitFor(() => {
-      expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/hls/video-key/master.m3u8?a=1');
+      expect(loadedSources[loadedSources.length - 1]).toBe('/hls/video-key/master.m3u8?a=1');
     });
 
     fireEvent.change(audioSelect, { target: { value: '2' } });
     await waitFor(() => {
-      expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/hls/video-key/master.m3u8?a=2');
+      expect(loadedSources[loadedSources.length - 1]).toBe('/hls/video-key/master.m3u8?a=2');
     });
 
     fireEvent.ended(view.container.querySelector('video') as HTMLVideoElement);
@@ -572,9 +585,10 @@ describe('WatchPage video player', () => {
       }
       on() {}
       off() {}
-      loadSource() {}
+      loadSource(source: string) { MockHls.lastSource = source; }
       attachMedia() {}
       destroy() {}
+      static lastSource = '';
     }
     Object.defineProperty(window, 'Hls', { configurable: true, value: MockHls });
     const view = renderWatchPage();
@@ -585,7 +599,7 @@ describe('WatchPage video player', () => {
     fireEvent.error(video);
     fireEvent.error(video);
 
-    await waitFor(() => expect(video.getAttribute('src')).toBe('/hls/video-key/master.m3u8'));
+    await waitFor(() => expect(MockHls.lastSource).toBe('/hls/video-key/master.m3u8'));
     expect(MockHls.config?.startPosition).toBe(42);
     expect(screen.queryByText('This video needs another player')).toBeNull();
   });

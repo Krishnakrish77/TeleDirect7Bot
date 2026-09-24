@@ -113,6 +113,7 @@ export function LiveTvPage({
   const [query, setQuery] = useState('');
   const [playbackError, setPlaybackError] = useState('');
   const [playbackId, setPlaybackId] = useState('');
+  const [connecting, setConnecting] = useState(false);
   const [visibleChannelCount, setVisibleChannelCount] = useState(INITIAL_CHANNEL_RENDER_COUNT);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => new Set(readStoredIds(FAVORITES_KEY)));
   const [recentIds, setRecentIds] = useState<string[]>(() => readStoredIds(RECENTS_KEY));
@@ -246,6 +247,7 @@ export function LiveTvPage({
     video.removeAttribute('src');
     video.load();
     if (!playbackChannel?.streamUrl) return undefined;
+    setConnecting(true);
 
     let cancelled = false;
     const sourceUrl = playbackChannel.streamUrl;
@@ -254,10 +256,16 @@ export function LiveTvPage({
       if (cancelled) return;
       void video.play().catch(() => undefined);
     };
+    // Connecting indicator: cleared on first playing/direct-play; on stall
+    // (HLS segments stop arriving) the video element's waiting/stalled state
+    // is what the UI reports, not a false "unable to play".
+    let connecting = true;
+    const markConnected = () => { connecting = false; setConnecting(false); };
+    video.addEventListener('playing', markConnected, { once: true });
 
     if (HLS_RE.test(sourceUrl)) {
       attachHls(video, streamUrl, '', () => {
-        if (!cancelled) setPlaybackError('Unable to play this channel');
+        if (!cancelled && !connecting) setPlaybackError('Unable to play this channel');
       }).then((instance) => {
         if (cancelled) {
           instance?.destroy();
@@ -274,6 +282,7 @@ export function LiveTvPage({
 
     return () => {
       cancelled = true;
+      video.removeEventListener('playing', markConnected);
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
@@ -313,8 +322,20 @@ export function LiveTvPage({
                 playsInline
                 preload={playbackChannel ? 'auto' : 'none'}
                 poster={hasUsableLogo(playbackChannel, failedLogoKeys) ? playbackChannel.logoUrl : undefined}
-                onError={() => setPlaybackError('Unable to play this channel')}
+                onError={() => {
+                  // Switching channels (or the pre-attach phase of hls.js)
+                  // can fire transient media errors — the same effect
+                  // watch.tsx guards against. Only surface an error when a
+                  // real stream is attached and has begun loading.
+                  if (playbackChannel) setPlaybackError('Unable to play this channel');
+                }}
               />
+              {connecting && playbackChannel && !playbackError && (
+                <div className="live-video-placeholder live-video-connecting" role="status" aria-live="polite">
+                  <span className="live-connecting-spinner" aria-hidden="true" />
+                  <span>Connecting to {playbackChannel.name}…</span>
+                </div>
+              )}
               {!playbackChannel && (
                 <div className="live-video-placeholder">
                   <BroadcastIcon />

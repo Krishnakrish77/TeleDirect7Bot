@@ -2436,6 +2436,31 @@ img {
   height: 56px;
 }
 
+/* Connecting state: subtle spinner + label while the stream negotiates.
+   Kept visually quiet — no full-screen backdrop — so it never reads as
+   an error state, and playback takes over the frame the moment frames
+   decode. */
+.live-video-connecting {
+  gap: 0.6rem;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.live-connecting-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(148, 163, 184, 0.25);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: live-connecting-spin 0.8s linear infinite;
+}
+
+@keyframes live-connecting-spin {
+  to { transform: rotate(360deg); }
+}
+
 .live-play-button {
   min-height: 44px;
   padding: 0 1rem;

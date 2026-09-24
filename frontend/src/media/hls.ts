@@ -64,8 +64,15 @@ export function attachHls(
   onFatalError: () => void,
   startPosition = -1,
 ): Promise<HlsInstance | null> {
-  video.src = source;
-  if (canPlayNativeHls(video)) return Promise.resolve(null);
+  // Native HLS (Safari) plays the m3u8 directly. Everywhere else, assigning
+  // an m3u8 to video.src makes the browser fire a spurious media error while
+  // hls.js is still loading — callers surface that as "unable to play" even
+  // though MSE playback is about to start. Only touch video.src when native
+  // playback is real; otherwise let hls.js own the element via attachMedia.
+  if (canPlayNativeHls(video)) {
+    video.src = source;
+    return Promise.resolve(null);
+  }
 
   return loadHlsLibrary().then((Hls) => {
     if (!Hls?.isSupported()) {
