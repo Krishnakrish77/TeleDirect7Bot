@@ -141,7 +141,7 @@ def rank_catalogue_cards(
     the first pass, then deliberately relax so small libraries still fill.
     """
     related_counts = related_counts or Counter()
-    max_message_id = max((it.message_id for it in media_index._items.values()), default=1)
+    max_message_id = media_index.max_message_id() or 1
     penalties = profile.get("impression_penalties") if isinstance(profile.get("impression_penalties"), Counter) else Counter()
     scored: list[tuple[object, float, float]] = []
     seen: set[tuple] = set()

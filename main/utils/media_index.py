@@ -82,6 +82,9 @@ _RECONCILE_META_KEY = "catalogue_reconcile_cursor"
 
 _items: Dict[int, HubItem] = {}
 _hash_map: Dict[str, int] = {}  # secure_hash → message_id for O(1) find_by_hash
+# Cached max(_items); invalidated by _invalidate_search_index so rec_engine
+# stops paying an O(catalogue) scan per ranking call.
+_max_message_id_cache: Optional[int] = None
 _lock = asyncio.Lock()
 _seeded = False
 # Highest BIN_CHANNEL message id we've ever observed. Persisted so a
@@ -133,6 +136,17 @@ _search_docs: dict[int, dict[str, object]] = {}
 _search_title_tokens: set[str] = set()
 _search_tokens_sorted: list[str] = []
 _search_index_stale = True
+# Background derived-index rebuild. Mutations only set the stale flags and
+# bump _derived_gen; a debounced worker rebuilds all derived structures
+# (search index, art buckets, group buckets) from a snapshot in a worker
+# thread. Without this, every mutation during a bulk upload made the next
+# search pay a full O(catalogue) rebuild ON the event loop, stalling every
+# in-flight byte stream — fatal on a fractional-CPU host.
+_derived_gen = 0
+_derived_rebuild_task: Optional[asyncio.Task] = None
+_DERIVED_REBUILD_DEBOUNCE = max(
+    0.2, float(os.environ.get("MEDIA_INDEX_REBUILD_DEBOUNCE", "1") or 1)
+)
 _SEARCH_STOP_WORDS = frozenset({"a", "an", "and", "at", "for", "from", "in", "of", "on", "the", "to", "with"})
 
 # Derived group buckets: series_key/movie_key/album_key → visible members,
@@ -1292,15 +1306,19 @@ def _invalidate_hub_caches() -> None:
 def _invalidate_search_index() -> None:
     """Mark the derived index stale after any catalogue mutation."""
     global _search_index_stale, _art_buckets_stale, _group_buckets_stale
+    global _derived_gen, _max_message_id_cache
     _search_index_stale = True
     _art_buckets_stale = True
     _group_buckets_stale = True
+    _derived_gen += 1
+    _max_message_id_cache = None
 
 
 def _mark_derived_stale() -> None:
     """Immediate, cheap invalidation shared by every mutation path."""
     _invalidate_search_index()
     _invalidate_hub_caches()
+    _schedule_derived_rebuild()
 
 
 def _persist_unlocked() -> None:
@@ -1879,13 +1897,22 @@ def _search_fields(item: HubItem) -> dict[str, str]:
     }
 
 
-def _rebuild_search_index() -> None:
-    global _search_index, _search_docs, _search_title_tokens, _search_tokens_sorted
-    global _search_index_stale
+def _build_derived_indexes(items: List[HubItem]) -> dict:
+    """Pure build of every derived structure over a stable snapshot.
+
+    Reads only the snapshot list, so it is safe to run in a worker thread
+    while the event loop keeps mutating ``_items``. All three derived
+    structures are always invalidated together (see
+    ``_invalidate_search_index``), so they are rebuilt together.
+    """
     postings: dict[str, set[int]] = {}
     docs: dict[int, dict[str, object]] = {}
     title_tokens: set[str] = set()
-    for item in _items.values():
+    art: dict[tuple[str, str], list[HubItem]] = {}
+    series: dict[str, list[HubItem]] = {}
+    movies: dict[str, list[HubItem]] = {}
+    albums: dict[str, list[HubItem]] = {}
+    for item in items:
         if item.hidden:
             continue
         fields = _search_fields(item)
@@ -1896,16 +1923,125 @@ def _rebuild_search_index() -> None:
         title_tokens.update(token_sets["title"])
         title_tokens.update(token_sets["series"])
         docs[item.message_id] = {"fields": fields, "tokens": token_sets}
-    _search_index = postings
-    _search_docs = docs
-    _search_title_tokens = title_tokens
-    _search_tokens_sorted = sorted(postings)
-    _search_index_stale = False
+        if (item.media_kind or "") != "audio":
+            if item.series_key:
+                art.setdefault(("series", item.series_key), []).append(item)
+            elif item.movie_key:
+                art.setdefault(("movie", item.movie_key), []).append(item)
+        if item.series_key:
+            series.setdefault(item.series_key, []).append(item)
+        elif item.movie_key:
+            movies.setdefault(item.movie_key, []).append(item)
+        if (item.media_kind or "") == "audio":
+            album_key = getattr(item, "album_key", "") or ""
+            if album_key:
+                albums.setdefault(album_key, []).append(item)
+    for bucket in series.values():
+        bucket.sort(key=lambda e: (e.season or 0, e.episode or 0, e.message_id))
+    for bucket in movies.values():
+        bucket.sort(key=lambda v: v.message_id, reverse=True)
+    for bucket in albums.values():
+        # Unnumbered tracks (no embedded track tag) sort FIRST rather than
+        # after #9999 — "unknown position" shouldn't rank below track 9 of
+        # a 6-track compilation with garbage tags. Upload order breaks ties.
+        bucket.sort(key=lambda t: (
+            0 if t.track_number is None else 1,
+            t.track_number if t.track_number is not None else 0,
+            t.message_id,
+        ))
+    return {
+        "postings": postings,
+        "docs": docs,
+        "title_tokens": title_tokens,
+        "tokens_sorted": sorted(postings),
+        "art": art,
+        "series": series,
+        "movies": movies,
+        "albums": albums,
+    }
+
+
+def _apply_derived_indexes(built: dict) -> None:
+    global _search_index, _search_docs, _search_title_tokens, _search_tokens_sorted
+    global _art_buckets, _series_buckets, _movie_buckets, _album_buckets
+    _search_index = built["postings"]
+    _search_docs = built["docs"]
+    _search_title_tokens = built["title_tokens"]
+    _search_tokens_sorted = built["tokens_sorted"]
+    _art_buckets = built["art"]
+    _series_buckets = built["series"]
+    _movie_buckets = built["movies"]
+    _album_buckets = built["albums"]
+
+
+def _rebuild_derived_sync() -> None:
+    """Synchronous fallback: rebuild on the loop when no background pass has
+    caught up yet (e.g. a search arriving inside the debounce window)."""
+    global _search_index_stale, _art_buckets_stale, _group_buckets_stale
+    _apply_derived_indexes(_build_derived_indexes(list(_items.values())))
+    _search_index_stale = _art_buckets_stale = _group_buckets_stale = False
+
+
+async def _derived_rebuild_worker() -> None:
+    """Debounced off-loop rebuild of the derived indexes.
+
+    Collapses rebuild storms during bulk uploads/enrichment sweeps into one
+    thread-pool pass per quiet window instead of one on-loop O(catalogue)
+    rebuild per search request.
+    """
+    global _search_index_stale, _art_buckets_stale, _group_buckets_stale
+    while True:
+        await asyncio.sleep(_DERIVED_REBUILD_DEBOUNCE)
+        if not (_search_index_stale or _art_buckets_stale or _group_buckets_stale):
+            return
+        gen = _derived_gen
+        # Snapshot on the loop so the worker thread never iterates _items
+        # while a mutation is in flight.
+        snapshot = list(_items.values())
+        try:
+            built = await asyncio.to_thread(_build_derived_indexes, snapshot)
+        except Exception:
+            logging.exception(
+                "derived index rebuild failed; falling back to lazy sync rebuild"
+            )
+            return
+        _apply_derived_indexes(built)
+        if gen == _derived_gen:
+            # No mutation raced the build — the snapshot is current.
+            _search_index_stale = _art_buckets_stale = _group_buckets_stale = False
+            return
+        # A mutation landed mid-build: the just-applied index is internally
+        # consistent but already stale. Loop and rebuild once things settle.
+
+
+def _schedule_derived_rebuild() -> None:
+    global _derived_rebuild_task
+    if _derived_rebuild_task is not None and not _derived_rebuild_task.done():
+        return
+    try:
+        _derived_rebuild_task = asyncio.create_task(_derived_rebuild_worker())
+    except RuntimeError:
+        # No running loop (import-time load); lazy sync rebuild covers it.
+        _derived_rebuild_task = None
 
 
 def _ensure_search_index() -> None:
     if _search_index_stale:
-        _rebuild_search_index()
+        _rebuild_derived_sync()
+
+
+def max_message_id() -> int:
+    """Highest message_id currently catalogued (0 when empty).
+
+    Cached across calls and invalidated by ``_invalidate_search_index`` (the
+    single mutation hook) so callers stop paying an O(catalogue) scan.
+    """
+    global _max_message_id_cache
+    cached = _max_message_id_cache
+    if cached is None:
+        cached = max(_items, default=0)
+        _max_message_id_cache = cached
+    return cached
 
 
 def _search_terms(q: str) -> tuple[str, list[str]]:
@@ -2147,20 +2283,12 @@ def _art_buckets_lookup() -> dict[tuple[str, str], list[HubItem]]:
     Returns (kind, series_key|movie_key) → non-hidden, non-audio sibling
     items. Rebuilt lazily after any mutation (same invalidation as the
     search index) so /api/hub stops rescanning _items.values() once per
-    request.
+    request. The rebuild itself is shared with the search index and group
+    buckets (``_build_derived_indexes``) and normally happens off-loop in
+    the debounced background worker.
     """
-    global _art_buckets, _art_buckets_stale
     if _art_buckets_stale:
-        buckets: dict[tuple[str, str], list[HubItem]] = {}
-        for candidate in _items.values():
-            if candidate.hidden or (candidate.media_kind or "") == "audio":
-                continue
-            if candidate.series_key:
-                buckets.setdefault(("series", candidate.series_key), []).append(candidate)
-            elif candidate.movie_key:
-                buckets.setdefault(("movie", candidate.movie_key), []).append(candidate)
-        _art_buckets = buckets
-        _art_buckets_stale = False
+        _rebuild_derived_sync()
     return _art_buckets
 
 
@@ -2633,41 +2761,11 @@ def _ensure_group_buckets() -> None:
     Every one of these lookups was previously an O(catalogue) scan plus sort,
     and _grouped_search_key calls them per card during query_grouped sorting —
     O(cards x catalogue) per search request. Buckets make each lookup O(1).
+    The build itself lives in ``_build_derived_indexes`` and normally runs
+    off-loop in the debounced background worker.
     """
-    global _series_buckets, _movie_buckets, _album_buckets, _group_buckets_stale
-    if not _group_buckets_stale:
-        return
-    series: dict[str, list[HubItem]] = {}
-    movies: dict[str, list[HubItem]] = {}
-    albums: dict[str, list[HubItem]] = {}
-    for it in _items.values():
-        if it.hidden:
-            continue
-        if it.series_key:
-            series.setdefault(it.series_key, []).append(it)
-        elif it.movie_key:
-            movies.setdefault(it.movie_key, []).append(it)
-        if (it.media_kind or "") == "audio":
-            ak = getattr(it, "album_key", "") or ""
-            if ak:
-                albums.setdefault(ak, []).append(it)
-    for bucket in series.values():
-        bucket.sort(key=lambda e: (e.season or 0, e.episode or 0, e.message_id))
-    for bucket in movies.values():
-        bucket.sort(key=lambda v: v.message_id, reverse=True)
-    for bucket in albums.values():
-        # Unnumbered tracks (no embedded track tag) sort FIRST rather than
-        # after #9999 — "unknown position" shouldn't rank below track 9 of
-        # a 6-track compilation with garbage tags. Upload order breaks ties.
-        bucket.sort(key=lambda t: (
-            0 if t.track_number is None else 1,
-            t.track_number if t.track_number is not None else 0,
-            t.message_id,
-        ))
-    _series_buckets = series
-    _movie_buckets = movies
-    _album_buckets = albums
-    _group_buckets_stale = False
+    if _group_buckets_stale:
+        _rebuild_derived_sync()
 
 
 def episodes_for_series(series_key: str) -> List[HubItem]:

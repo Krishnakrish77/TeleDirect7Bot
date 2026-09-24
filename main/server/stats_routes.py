@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -653,10 +655,29 @@ async def stats_page(request: web.Request) -> web.Response:
     return _app_index_response(request)
 
 
+# /api/app/stats runs 3 Mongo round-trips plus an O(history) aggregation per
+# request. The payload changes only when CW/WH writes land (already debounced
+# to one write per 30 s per title), so a short per-user TTL removes repeat
+# cost when the SPA polls or the user navigates back and forth. Set
+# STATS_CACHE_TTL=0 to disable. Keyed by user id → bounded by user count.
+_STATS_CACHE_TTL = max(0.0, float(os.environ.get("STATS_CACHE_TTL", "30") or 30))
+_stats_payload_cache: dict[int, tuple[dict, float]] = {}
+
+
 @routes.get("/api/app/stats")
 async def api_app_stats(request: web.Request) -> web.Response:
     user = get_user(request)
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
-    payload = await _stats_payload(int(user["sub"]))
+    uid = int(user["sub"])
+    now = time.monotonic()
+    cached = _stats_payload_cache.get(uid)
+    if cached and cached[1] > now:
+        return _json(cached[0])
+    payload = await _stats_payload(uid)
+    if _STATS_CACHE_TTL:
+        for key, (_, expiry) in list(_stats_payload_cache.items()):
+            if expiry <= now:
+                _stats_payload_cache.pop(key, None)
+        _stats_payload_cache[uid] = (payload, now + _STATS_CACHE_TTL)
     return _json(payload)

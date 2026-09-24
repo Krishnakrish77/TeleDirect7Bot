@@ -65,6 +65,11 @@ _VALID_VIEWS = {"", "list", "movies", "series", "music"}
 _APP_ROUTE_RE = re.compile(r"^/app(?:/.*)?$")
 _UI_COOKIE = "td_ui"
 _API_CACHE_TTL = 30.0
+# Bound the landing-payload cache: every entry holds the JSON text AND its
+# pre-gzipped copy (hundreds of KB each on a large catalogue), and the key
+# includes sorted query params — distinct filter combinations would grow it
+# without limit. 32 entries ≈ a few MB worst case, safe on a 512 MB host.
+_API_CACHE_MAX = max(4, int(os.environ.get("SPA_API_CACHE_MAX", "32") or 32))
 _SLOW_HUB_LOG_MS = 1000.0
 _HOME_SHELF_LIMIT_DEFAULT = 7
 _HOME_RECOMMENDATIONS_TIMEOUT = 2.5
@@ -78,7 +83,7 @@ _HOME_OPTIONAL_SHELVES_TIMEOUT = max(
 _HOME_REC_REASONS_TIMEOUT = 0.6
 _VISIBLE_ART_RECOVERY_LIMIT = 3
 _VISIBLE_ART_RECOVERY_TIMEOUT = 6.0
-_api_response_cache: dict[str, tuple[str, float]] = {}
+_api_response_cache: dict[str, tuple[str, bytes, float]] = {}
 _filter_cache: tuple[dict, float] | None = None
 _HUB_CARD_PAYLOAD_KEYS = (
     "type",
@@ -282,6 +287,11 @@ def _cache_set(key: str, text: str) -> None:
     # Compress once at cache-fill time so every cache hit skips the
     # synchronous re-compression the gzip middleware would otherwise do.
     gz = gzip.compress(text.encode("utf-8"), compresslevel=6, mtime=0)
+    if len(_api_response_cache) >= _API_CACHE_MAX and key not in _api_response_cache:
+        # Evict the entry closest to expiry (all share one TTL, so this is
+        # approximately oldest-first). O(_API_CACHE_MAX) — trivial at 32.
+        oldest = min(_api_response_cache, key=lambda k: _api_response_cache[k][2])
+        _api_response_cache.pop(oldest, None)
     _api_response_cache[key] = (text, gz, time.monotonic() + _API_CACHE_TTL)
 
 
