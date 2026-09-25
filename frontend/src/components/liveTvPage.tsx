@@ -401,7 +401,6 @@ export function LiveTvPage({
                 controls={Boolean(playbackChannel)}
                 playsInline
                 preload={playbackChannel ? 'auto' : 'none'}
-                poster={hasUsableLogo(playbackChannel, failedLogoKeys) ? playbackChannel.logoUrl : undefined}
                 onError={() => {
                   // Switching channels (or the pre-attach phase of hls.js)
                   // can fire transient media errors — the same effect
