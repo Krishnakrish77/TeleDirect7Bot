@@ -133,7 +133,11 @@ function sameIds(a: string[], b: string[]): boolean {
 }
 
 function channelCategory(channel: IptvChannel): string {
-  return channel.category?.trim() || 'Uncategorized';
+  const category = channel.category?.trim();
+  // Source playlists ship literal "Undefined"/"undefined" group-titles;
+  // present them with the same label as missing categories.
+  if (!category || category.toLowerCase() === 'undefined') return 'Uncategorized';
+  return category;
 }
 
 function categoryCounts(channels: IptvChannel[]): Array<[string, number]> {
@@ -180,6 +184,17 @@ export function LiveTvPage({
   const [recentIds, setRecentIds] = useState<string[]>(() => readStoredIds(RECENTS_KEY));
   const [failedLogoKeys, setFailedLogoKeys] = useState<Set<string>>(() => new Set(failedLiveLogoKeys));
   const healthStatuses = useChannelHealth(channels);
+  // Probe ok ≠ playable: geo-blocks, token gates and codec gaps only surface
+  // when actually playing. Remember local playback failures as "down" so the
+  // dot flips red and Active only hides the channel for this viewer.
+  const [localFailures, setLocalFailures] = useState<Record<string, IptvHealthStatus>>({});
+  const healthById = useMemo(
+    () => ({ ...healthStatuses, ...localFailures }),
+    [healthStatuses, localFailures],
+  );
+  const markPlaybackFailed = useCallback((channelId: string) => {
+    setLocalFailures((current) => current[channelId] === 'down' ? current : { ...current, [channelId]: 'down' });
+  }, []);
 
   useEffect(() => {
     if (!channels.length) {
@@ -215,11 +230,11 @@ export function LiveTvPage({
       if (categoryFilterActive && channelCategory(channel) !== activeCategory) return false;
       // "Active only" hides channels probed offline. Unprobed (undefined)
       // stay listed so the rail doesn't empty out while probes run.
-      if (activeOnly && healthStatuses[channel.id] === 'down') return false;
+      if (activeOnly && healthById[channel.id] === 'down') return false;
       if (!needle) return true;
       return `${channel.name} ${channel.category}`.toLowerCase().includes(needle);
     });
-  }, [activeCategory, activeOnly, channels, favoriteChannels, healthStatuses, query, recentChannels]);
+  }, [activeCategory, activeOnly, channels, favoriteChannels, healthById, query, recentChannels]);
   // Browsing/searching must not replace or stop an active stream. Keep selection
   // and playback tied to the full catalogue, while filters only change the rail.
   const selected = channelById.get(selectedId) || channels[0] || null;
@@ -327,7 +342,13 @@ export function LiveTvPage({
 
     let cancelled = false;
     const sourceUrl = playbackChannel.streamUrl;
+    const channelId = playbackChannel.id;
     const streamUrl = liveTvStreamUrl(playbackChannel);
+    const fail = () => {
+      if (cancelled) return;
+      markPlaybackFailed(channelId);
+      setPlaybackError('Unable to play this channel');
+    };
     const play = () => {
       if (cancelled) return;
       void video.play().catch(() => undefined);
@@ -345,13 +366,13 @@ export function LiveTvPage({
     // origin can leave "Connecting…" up indefinitely. Bound it: if no frame
     // decoded within the window, surface the failure.
     const timeoutId = window.setTimeout(() => {
-      if (!cancelled && connecting) setPlaybackError('Unable to play this channel');
+      if (!cancelled && connecting) fail();
     }, CONNECT_TIMEOUT_MS);
     video.addEventListener('playing', markConnected, { once: true });
 
     if (HLS_RE.test(sourceUrl)) {
       attachHls(video, streamUrl, '', () => {
-        if (!cancelled) setPlaybackError('Unable to play this channel');
+        if (!cancelled) fail();
       }).then((instance) => {
         if (cancelled) {
           instance?.destroy();
@@ -373,7 +394,7 @@ export function LiveTvPage({
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [playbackChannel?.id, playbackChannel?.streamUrl]);
+  }, [markPlaybackFailed, playbackChannel?.id, playbackChannel?.streamUrl]);
 
   return (
     <main className="live-tv-main">
@@ -413,7 +434,10 @@ export function LiveTvPage({
                   // can fire transient media errors — the same effect
                   // watch.tsx guards against. Only surface an error when a
                   // real stream is attached and has begun loading.
-                  if (playbackChannel) setPlaybackError('Unable to play this channel');
+                  if (playbackChannel) {
+                    markPlaybackFailed(playbackChannel.id);
+                    setPlaybackError('Unable to play this channel');
+                  }
                 }}
               />
               {connecting && playbackChannel && !playbackError && (
@@ -459,9 +483,9 @@ export function LiveTvPage({
                           ? 'Offline'
                           : playbackChannel
                             ? 'Playing'
-                            : healthStatuses[selected.id] === 'down'
+                            : healthById[selected.id] === 'down'
                               ? 'Offline'
-                              : healthStatuses[selected.id] === 'ok'
+                              : healthById[selected.id] === 'ok'
                                 ? 'Online'
                                 : 'Selected'}
                       </span>
@@ -560,7 +584,7 @@ export function LiveTvPage({
             </div>
             <div className="live-channel-list">
               {visibleChannels.map((channel) => {
-                const health = healthStatuses[channel.id];
+                const health = healthById[channel.id];
                 const rowClass = [
                   'live-channel-row h-auto justify-start p-0',
                   selected?.id === channel.id ? 'active' : '',
