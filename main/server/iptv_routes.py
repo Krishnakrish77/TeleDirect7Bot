@@ -546,6 +546,9 @@ async def _health_probe_channel(channel: dict) -> bool:
     except (ValueError, aiohttp.ClientError, TimeoutError):
         return False
 
+def _health_status_name(healthy: bool) -> str:
+    return "ok" if healthy else "down"
+
 def _health_cached(channel_id: str) -> bool | None:
     entry = _HEALTH_CACHE.get(channel_id)
     if not entry:
@@ -569,7 +572,7 @@ async def live_tv_health(request: web.Request) -> web.Response:
         return _json({"statuses": {}})
 
     all_channels = {channel["id"]: channel for channel in await iptv_store.list_channels(include_disabled=False)}
-    statuses: dict[str, bool | str] = {}
+    statuses: dict[str, str] = {}
     stale: list[tuple[str, dict]] = []
     for channel_id in ids:
         channel = all_channels.get(channel_id)
@@ -580,7 +583,7 @@ async def live_tv_health(request: web.Request) -> web.Response:
         if cached is None:
             stale.append((channel_id, channel))
         else:
-            statuses[channel_id] = cached
+            statuses[channel_id] = _health_status_name(cached)
 
     if stale:
         async with _HEALTH_CACHE_LOCK:
@@ -596,7 +599,7 @@ async def live_tv_health(request: web.Request) -> web.Response:
 
             await asyncio.gather(*(_guarded(cid, channel) for cid, channel in still_stale))
         for channel_id, _channel in stale:
-            statuses[channel_id] = _health_cached(channel_id) or False
+            statuses[channel_id] = _health_status_name(_health_cached(channel_id) or False)
 
     return _json({"statuses": statuses})
 
