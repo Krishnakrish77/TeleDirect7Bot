@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { fetchLiveTvHealth } from '../api';
 import { attachHls } from '../media/hls';
 import { BroadcastIcon, HeartIcon, PlayIcon, SearchIcon, XIcon } from '../icons';
 import { ErrorPanel, LoadingRows } from './common';
-import type { IptvChannel, LiveTvResponse } from '../types';
+import type { IptvChannel, IptvHealthStatus, LiveTvResponse } from '../types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
@@ -16,6 +17,15 @@ const CHANNEL_RENDER_INCREMENT = 80;
 const ALL_CHANNELS = 'All';
 const FAVORITE_CHANNELS = '__favorites';
 const RECENT_CHANNELS = '__recent';
+// Health probing: batch ids in small groups so a 1,000-channel catalogue
+// gets coverage without one giant request, and re-check after the server
+// TTLs expire so currently-dead channels eventually recover their dot.
+const HEALTH_BATCH_SIZE = 100;
+const HEALTH_REFRESH_MS = 5 * 60 * 1000;
+// How long "Connecting…" may hang before we declare the channel dead.
+// hls.js retries non-fatal segment errors forever, so without this the
+// spinner can spin indefinitely on a half-dead origin.
+const CONNECT_TIMEOUT_MS = 20_000;
 const failedLiveLogoKeys = new Set<string>();
 
 function channelLogoKey(channel: IptvChannel): string {
@@ -25,6 +35,56 @@ function channelLogoKey(channel: IptvChannel): string {
 function hasUsableLogo(channel: IptvChannel | null | undefined, failedLogoKeys: Set<string>): channel is IptvChannel {
   if (!channel?.logoUrl) return false;
   return !failedLogoKeys.has(channelLogoKey(channel));
+}
+
+function useChannelHealth(channels: IptvChannel[]): Record<string, IptvHealthStatus> {
+  const [statuses, setStatuses] = useState<Record<string, IptvHealthStatus>>({});
+  const catalogueKey = useMemo(
+    () => channels.map((channel) => `${channel.id}:${channel.updatedAt}`).join(','),
+    [channels],
+  );
+  useEffect(() => {
+    if (!channels.length) {
+      setStatuses({});
+      return undefined;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    const probe = async () => {
+      // Probe in batches; merge as results land so early batches light up
+      // the rail while later ones are still in flight.
+      for (let offset = 0; offset < channels.length; offset += HEALTH_BATCH_SIZE) {
+        if (cancelled) return;
+        const batch = channels.slice(offset, offset + HEALTH_BATCH_SIZE).map((channel) => channel.id);
+        try {
+          const result = await fetchLiveTvHealth(batch, controller.signal);
+          if (cancelled) return;
+          setStatuses((current) => ({ ...current, ...result.statuses }));
+        } catch {
+          if (cancelled) return;
+          // Health is advisory: a failed poll just leaves dots blank.
+          return;
+        }
+      }
+    };
+    void probe();
+    const interval = window.setInterval(probe, HEALTH_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearInterval(interval);
+    };
+    // catalogueKey covers channels + updatedAt; eslint-disable not needed as
+    // channels is only used through the memoised key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogueKey]);
+  return statuses;
+}
+
+function HealthDot({ status, className }: { status: IptvHealthStatus | undefined; className: string }) {
+  if (!status || status === 'unknown') return null;
+  const label = status === 'ok' ? 'Channel is online' : 'Channel is currently offline';
+  return <i className={`${className} ${status === 'ok' ? 'online' : 'offline'}`} role="img" aria-label={label} title={label} />;
 }
 
 function ChannelLogo({
@@ -118,6 +178,7 @@ export function LiveTvPage({
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => new Set(readStoredIds(FAVORITES_KEY)));
   const [recentIds, setRecentIds] = useState<string[]>(() => readStoredIds(RECENTS_KEY));
   const [failedLogoKeys, setFailedLogoKeys] = useState<Set<string>>(() => new Set(failedLiveLogoKeys));
+  const healthStatuses = useChannelHealth(channels);
 
   useEffect(() => {
     if (!channels.length) {
@@ -222,6 +283,14 @@ export function LiveTvPage({
     setPlaybackId(selected.id);
   };
 
+  const retryPlayback = () => {
+    if (!playbackChannel) return;
+    // Re-running the effect (via streamUrl identity) tears down the old
+    // hls instance and reconnects from scratch.
+    setPlaybackId('');
+    window.requestAnimationFrame(() => setPlaybackId(playbackChannel.id));
+  };
+
   const selectAndPlay = (channelId: string) => {
     setSelectedId(channelId);
     setPlaybackId(channelId);
@@ -260,12 +329,22 @@ export function LiveTvPage({
     // (HLS segments stop arriving) the video element's waiting/stalled state
     // is what the UI reports, not a false "unable to play".
     let connecting = true;
-    const markConnected = () => { connecting = false; setConnecting(false); };
+    const markConnected = () => {
+      connecting = false;
+      setConnecting(false);
+      window.clearTimeout(timeoutId);
+    };
+    // hls.js retries non-fatal segment/manifest errors forever, so a dead
+    // origin can leave "Connecting…" up indefinitely. Bound it: if no frame
+    // decoded within the window, surface the failure.
+    const timeoutId = window.setTimeout(() => {
+      if (!cancelled && connecting) setPlaybackError('Unable to play this channel');
+    }, CONNECT_TIMEOUT_MS);
     video.addEventListener('playing', markConnected, { once: true });
 
     if (HLS_RE.test(sourceUrl)) {
       attachHls(video, streamUrl, '', () => {
-        if (!cancelled && !connecting) setPlaybackError('Unable to play this channel');
+        if (!cancelled) setPlaybackError('Unable to play this channel');
       }).then((instance) => {
         if (cancelled) {
           instance?.destroy();
@@ -282,6 +361,7 @@ export function LiveTvPage({
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
       video.removeEventListener('playing', markConnected);
       hlsRef.current?.destroy();
       hlsRef.current = null;
@@ -336,6 +416,18 @@ export function LiveTvPage({
                   <span>Connecting to {playbackChannel.name}…</span>
                 </div>
               )}
+              {playbackError && playbackChannel && (
+                <div className="live-video-placeholder live-video-error" role="alert">
+                  <BroadcastIcon />
+                  <strong>Unable to play {playbackChannel.name}</strong>
+                  <span>The stream may be offline or temporarily unavailable.</span>
+                  <div className="live-error-actions">
+                    <Button type="button" variant="secondary" size="sm" onClick={retryPlayback}>
+                      Retry
+                    </Button>
+                  </div>
+                </div>
+              )}
               {!playbackChannel && (
                 <div className="live-video-placeholder">
                   <BroadcastIcon />
@@ -355,7 +447,19 @@ export function LiveTvPage({
                   <strong>{selected?.name || 'No channel selected'}</strong>
                   <small>
                     {selected ? channelCategory(selected) : 'Live TV'}
-                    {selected && <span>{playbackChannel ? 'Playing' : 'Selected'}</span>}
+                    {selected && (
+                      <span className="live-now-state">
+                        {playbackError && playbackChannel?.id === selected.id
+                          ? 'Offline'
+                          : playbackChannel
+                            ? 'Playing'
+                            : healthStatuses[selected.id] === 'down'
+                              ? 'Offline'
+                              : healthStatuses[selected.id] === 'ok'
+                                ? 'Online'
+                                : 'Selected'}
+                      </span>
+                    )}
                   </small>
                 </div>
               </div>
@@ -432,23 +536,32 @@ export function LiveTvPage({
               </Tabs>
             </div>
             <div className="live-channel-list">
-              {visibleChannels.map((channel) => (
-                <Button
-                  key={channel.id}
-                  type="button"
-                  variant="ghost"
-                  className={selected?.id === channel.id ? 'live-channel-row active h-auto justify-start p-0' : 'live-channel-row h-auto justify-start p-0'}
-                  onClick={() => selectAndPlay(channel.id)}
-                >
-                  <ChannelLogo channel={channel} failedLogoKeys={failedLogoKeys} onLogoError={markLogoFailed} />
-                  <strong>{channel.name}</strong>
-                  <small>{channelCategory(channel)}</small>
-                  <em className="live-channel-icons">
-                    {favoriteIds.has(channel.id) && <HeartIcon filled />}
-                    <PlayIcon />
-                  </em>
-                </Button>
-              ))}
+              {visibleChannels.map((channel) => {
+                const health = healthStatuses[channel.id];
+                const rowClass = [
+                  'live-channel-row h-auto justify-start p-0',
+                  selected?.id === channel.id ? 'active' : '',
+                  health === 'down' ? 'offline' : '',
+                ].filter(Boolean).join(' ');
+                return (
+                  <Button
+                    key={channel.id}
+                    type="button"
+                    variant="ghost"
+                    className={rowClass}
+                    onClick={() => selectAndPlay(channel.id)}
+                  >
+                    <ChannelLogo channel={channel} failedLogoKeys={failedLogoKeys} onLogoError={markLogoFailed} />
+                    <strong>{channel.name}</strong>
+                    <small>{channelCategory(channel)}</small>
+                    <em className="live-channel-icons">
+                      {favoriteIds.has(channel.id) && <HeartIcon filled />}
+                      <HealthDot status={health} className="live-health-dot" />
+                      <PlayIcon />
+                    </em>
+                  </Button>
+                );
+              })}
               {remainingChannelCount > 0 && (
                 <Button
                   type="button"

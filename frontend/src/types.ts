@@ -224,6 +224,12 @@ export interface LiveTvResponse {
   channels: IptvChannel[];
 }
 
+export type IptvHealthStatus = 'ok' | 'down' | 'unknown';
+
+export interface LiveTvHealthResponse {
+  statuses: Record<string, IptvHealthStatus>;
+}
+
 export interface AdminIptvResponse {
   channels: IptvChannel[];
   mongoAvailable?: boolean;

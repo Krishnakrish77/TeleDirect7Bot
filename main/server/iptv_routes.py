@@ -532,6 +532,78 @@ async def _proxy_channel_stream(request: web.Request, channel: dict, target_url:
         await resolver.close()
 
 
+_HEALTH_OK_TTL_SECONDS = int(os.environ.get("IPTV_HEALTH_OK_TTL_SECONDS", str(5 * 60)))
+_HEALTH_FAIL_TTL_SECONDS = int(os.environ.get("IPTV_HEALTH_FAIL_TTL_SECONDS", str(2 * 60)))
+_HEALTH_MAX_IDS = int(os.environ.get("IPTV_HEALTH_MAX_IDS", "100"))
+_HEALTH_PROBE_CONCURRENCY = int(os.environ.get("IPTV_HEALTH_PROBE_CONCURRENCY", "12"))
+# Channels must exist and be enabled for the public page to ever play them;
+# probing anything else just burns upstream requests.
+_HEALTH_MAX_AGE_SECONDS = 6 * 60 * 60
+_HEALTH_CACHE: dict[str, tuple[float, bool]] = {}
+_HEALTH_CACHE_LOCK = asyncio.Lock()
+
+async def _health_probe_channel(channel: dict) -> bool:
+    try:
+        await _probe_stream_url(channel["streamUrl"], channel.get("streamHeaders") or {})
+        return True
+    except (ValueError, aiohttp.ClientError, TimeoutError):
+        return False
+
+def _health_cached(channel_id: str) -> bool | None:
+    entry = _HEALTH_CACHE.get(channel_id)
+    if not entry:
+        return None
+    checked_at, healthy = entry
+    ttl = _HEALTH_OK_TTL_SECONDS if healthy else _HEALTH_FAIL_TTL_SECONDS
+    if time.time() - checked_at > ttl:
+        return None
+    return healthy
+
+@routes.get("/api/live-tv/health")
+async def live_tv_health(request: web.Request) -> web.Response:
+    """Batch playability status for the Live TV rail.
+
+    Probe results are cached server-side (shared across visitors) with short
+    TTLs so recurring polls mostly hit the cache instead of upstream origins.
+    """
+    raw_ids = str(request.query.get("ids") or "")
+    ids = [part for part in (piece.strip() for piece in raw_ids.split(",")) if part][: _HEALTH_MAX_IDS]
+    if not ids:
+        return _json({"statuses": {}})
+
+    all_channels = {channel["id"]: channel for channel in await iptv_store.list_channels(include_disabled=False)}
+    statuses: dict[str, bool | str] = {}
+    stale: list[tuple[str, dict]] = []
+    for channel_id in ids:
+        channel = all_channels.get(channel_id)
+        if channel is None or time.time() - float(channel.get("updatedAt") or 0) > _HEALTH_MAX_AGE_SECONDS:
+            statuses[channel_id] = "unknown"
+            continue
+        cached = _health_cached(channel_id)
+        if cached is None:
+            stale.append((channel_id, channel))
+        else:
+            statuses[channel_id] = cached
+
+    if stale:
+        async with _HEALTH_CACHE_LOCK:
+            # A concurrent request may have probed the same channels while we
+            # awaited the lock — re-check so fresh results are not overwritten.
+            still_stale = [(cid, channel) for cid, channel in stale if _health_cached(cid) is None]
+            semaphore = asyncio.Semaphore(_HEALTH_PROBE_CONCURRENCY)
+
+            async def _guarded(channel_id: str, channel: dict) -> None:
+                async with semaphore:
+                    healthy = await _health_probe_channel(channel)
+                _HEALTH_CACHE[channel_id] = (time.time(), healthy)
+
+            await asyncio.gather(*(_guarded(cid, channel) for cid, channel in still_stale))
+        for channel_id, _channel in stale:
+            statuses[channel_id] = _health_cached(channel_id) or False
+
+    return _json({"statuses": statuses})
+
+
 @routes.get("/api/live-tv/channels")
 async def live_tv_channels(_: web.Request) -> web.Response:
     channels = await iptv_store.list_channels(include_disabled=False)

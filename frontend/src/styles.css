@@ -2434,6 +2434,10 @@ img {
 .live-video-placeholder > svg {
   width: 56px;
   height: 56px;
+  /* Grid items can stretch beyond these caps on tall frames; the icon must
+   * never scale with its container (it once filled the whole video frame). */
+  flex: 0 0 auto;
+  place-self: center;
 }
 
 /* Connecting state: subtle spinner + label while the stream negotiates.
@@ -2446,6 +2450,38 @@ img {
   color: var(--muted);
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+/* Stream failure: distinct from "connecting" — backdrop + message + retry. */
+.live-video-error {
+  gap: 0.5rem;
+  padding: 1.5rem;
+  background: rgba(2, 3, 4, 0.72);
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.live-video-error > svg {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-self: center;
+  color: #fb7185;
+}
+
+.live-video-error strong {
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.live-video-error span {
+  max-width: 26rem;
+  line-height: 1.45;
+}
+
+.live-error-actions {
+  margin-top: 0.4rem;
 }
 
 .live-connecting-spinner {
@@ -2786,6 +2822,37 @@ img {
 
 .live-channel-icons svg:first-child:not(:only-child) {
   color: #fb7185;
+}
+
+/* Health dot: green = probed online, red = probed offline. Absent until a
+ * probe result arrives so the rail starts clean. */
+.live-health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.live-health-dot.online {
+  background: #34d399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.7);
+}
+
+.live-health-dot.offline {
+  background: #fb7185;
+  opacity: 0.9;
+}
+
+/* Probed-offline channels stay browsable but read as inactive. */
+.live-channel-row.offline strong,
+.live-channel-row.offline small {
+  opacity: 0.45;
+}
+
+.live-channel-row.offline img,
+.live-channel-row.offline > span {
+  opacity: 0.4;
+  filter: grayscale(0.8);
 }
 
 .live-channel-row.active .live-channel-icons {

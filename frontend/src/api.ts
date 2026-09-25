@@ -16,6 +16,7 @@ import type {
   HubResponse,
   IptvChannelPayload,
   LiveTvResponse,
+  LiveTvHealthResponse,
   AdminIptvResponse,
   AdminIptvActionResponse,
   MeResponse,
@@ -510,6 +511,10 @@ export async function fetchStats(signal?: AbortSignal): Promise<StatsResponse> {
 
 export async function fetchLiveTvChannels(signal?: AbortSignal): Promise<LiveTvResponse> {
   return request<LiveTvResponse>('/api/live-tv/channels', { signal });
+}
+
+export async function fetchLiveTvHealth(ids: string[], signal?: AbortSignal): Promise<LiveTvHealthResponse> {
+  return request<LiveTvHealthResponse>(`/api/live-tv/health?ids=${ids.map((id) => encodeURIComponent(id)).join(',')}`, { signal });
 }
 
 export async function fetchAdmin(search = '', signal?: AbortSignal): Promise<AdminResponse> {
