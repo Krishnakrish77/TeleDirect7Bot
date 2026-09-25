@@ -2826,6 +2826,59 @@ img {
 
 /* Health dot: green = probed online, red = probed offline. Absent until a
  * probe result arrives so the rail starts clean. */
+.live-active-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.live-active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 32px;
+  padding: 0 0.7rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(21, 23, 26, 0.58);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.live-active-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.5);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.live-active-chip:hover {
+  color: #fff;
+  border-color: rgba(52, 211, 153, 0.5);
+}
+
+.live-active-chip.on {
+  color: #fff;
+  border-color: rgba(52, 211, 153, 0.65);
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.live-active-chip.on .live-active-chip-dot {
+  background: #34d399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.7);
+}
+
+.live-active-count {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .live-health-dot {
   width: 8px;
   height: 8px;

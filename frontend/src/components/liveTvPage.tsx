@@ -171,6 +171,7 @@ export function LiveTvPage({
   const [selectedId, setSelectedId] = useState('');
   const [activeCategory, setActiveCategory] = useState(ALL_CHANNELS);
   const [query, setQuery] = useState('');
+  const [activeOnly, setActiveOnly] = useState(false);
   const [playbackError, setPlaybackError] = useState('');
   const [playbackId, setPlaybackId] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -212,10 +213,13 @@ export function LiveTvPage({
     const categoryFilterActive = ![ALL_CHANNELS, FAVORITE_CHANNELS, RECENT_CHANNELS].includes(activeCategory);
     return scopedChannels.filter((channel) => {
       if (categoryFilterActive && channelCategory(channel) !== activeCategory) return false;
+      // "Active only" hides channels probed offline. Unprobed (undefined)
+      // stay listed so the rail doesn't empty out while probes run.
+      if (activeOnly && healthStatuses[channel.id] === 'down') return false;
       if (!needle) return true;
       return `${channel.name} ${channel.category}`.toLowerCase().includes(needle);
     });
-  }, [activeCategory, channels, favoriteChannels, query, recentChannels]);
+  }, [activeCategory, activeOnly, channels, favoriteChannels, healthStatuses, query, recentChannels]);
   // Browsing/searching must not replace or stop an active stream. Keep selection
   // and playback tied to the full catalogue, while filters only change the rail.
   const selected = channelById.get(selectedId) || channels[0] || null;
@@ -227,17 +231,20 @@ export function LiveTvPage({
   );
   const remainingChannelCount = Math.max(0, filteredChannels.length - visibleChannels.length);
   const activeViewLabel = activeCategoryLabel(activeCategory);
-  const filterActive = activeCategory !== ALL_CHANNELS || Boolean(query.trim());
+  const filterActive = activeCategory !== ALL_CHANNELS || Boolean(query.trim()) || activeOnly;
   const emptyMessage = query.trim()
     ? `No matches for "${query.trim()}" in ${activeViewLabel}.`
     : activeCategory === FAVORITE_CHANNELS
       ? 'No favorites yet. Use the heart on a channel to save it here.'
       : activeCategory === RECENT_CHANNELS
         ? 'No recent channels yet. Play a channel and it will appear here.'
-        : 'No channels match this view.';
+        : activeOnly && healthStatuses && Object.values(healthStatuses).some((status) => status === 'ok')
+          ? 'No online channels in this view. The offline filter may still be sweeping the catalogue.'
+          : 'No channels match this view.';
   const clearChannelFilters = () => {
     setQuery('');
     setActiveCategory(ALL_CHANNELS);
+    setActiveOnly(false);
   };
 
   useEffect(() => {
@@ -507,6 +514,23 @@ export function LiveTvPage({
                   </Button>
                 )}
               </label>
+              <div className="live-active-toggle" role="group" aria-label="Channel health filter">
+                <button
+                  type="button"
+                  className={activeOnly ? 'live-active-chip on' : 'live-active-chip'}
+                  aria-pressed={activeOnly}
+                  onClick={() => setActiveOnly((current) => !current)}
+                  title="Hide channels that probed offline"
+                >
+                  <span className="live-active-chip-dot" aria-hidden="true" />
+                  Active only
+                </button>
+                {activeOnly && (
+                  <span className="live-active-count">
+                    {filteredChannels.length.toLocaleString()} online
+                  </span>
+                )}
+              </div>
               <Tabs value={activeCategory} onValueChange={setActiveCategory}>
                 <TabsList className="live-category-tabs" aria-label="Channel categories">
                 <TabsTrigger value={ALL_CHANNELS} onClick={() => setActiveCategory(ALL_CHANNELS)}>

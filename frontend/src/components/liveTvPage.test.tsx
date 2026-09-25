@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveTvResponse } from '../types';
 import { LiveTvPage } from './liveTvPage';
 
@@ -133,6 +133,26 @@ describe('LiveTvPage', () => {
     render(<LiveTvPage data={{ channels: [] }} loading={false} error="" />);
 
     expect(screen.getByText('No IPTV channels are available')).toBeTruthy();
+  });
+
+  it('hides probed-offline channels when Active only is toggled', async () => {
+    const api = await import('../api');
+    const fetchMock = vi
+      .spyOn(api, 'fetchLiveTvHealth')
+      .mockResolvedValue({ statuses: { news: 'down', movies: 'ok' } });
+    const view = render(<LiveTvPage data={liveTvData} loading={false} error="" />);
+    const rail = screen.getByLabelText('Channels');
+    // No health data yet: every channel listed.
+    expect(within(rail).getByRole('button', { name: /News 24/i })).toBeTruthy();
+
+    // Health lands while the toggle is still off — nothing hidden yet.
+    await waitFor(() => expect(within(rail).getByRole('button', { name: /Movie One/i }).className).toContain('active'));
+
+    fireEvent.click(screen.getByRole('button', { name: /Active only/i }));
+    expect(within(rail).queryByRole('button', { name: /News 24/i })).toBeNull();
+    expect(within(rail).getByRole('button', { name: /Movie One/i })).toBeTruthy();
+    view.unmount();
+    fetchMock.mockRestore();
   });
 
   it('falls back to the broadcast icon when a channel logo fails', async () => {
