@@ -536,9 +536,6 @@ _HEALTH_OK_TTL_SECONDS = int(os.environ.get("IPTV_HEALTH_OK_TTL_SECONDS", str(5 
 _HEALTH_FAIL_TTL_SECONDS = int(os.environ.get("IPTV_HEALTH_FAIL_TTL_SECONDS", str(2 * 60)))
 _HEALTH_MAX_IDS = int(os.environ.get("IPTV_HEALTH_MAX_IDS", "100"))
 _HEALTH_PROBE_CONCURRENCY = int(os.environ.get("IPTV_HEALTH_PROBE_CONCURRENCY", "12"))
-# Channels must exist and be enabled for the public page to ever play them;
-# probing anything else just burns upstream requests.
-_HEALTH_MAX_AGE_SECONDS = 6 * 60 * 60
 _HEALTH_CACHE: dict[str, tuple[float, bool]] = {}
 _HEALTH_CACHE_LOCK = asyncio.Lock()
 
@@ -576,7 +573,7 @@ async def live_tv_health(request: web.Request) -> web.Response:
     stale: list[tuple[str, dict]] = []
     for channel_id in ids:
         channel = all_channels.get(channel_id)
-        if channel is None or time.time() - float(channel.get("updatedAt") or 0) > _HEALTH_MAX_AGE_SECONDS:
+        if channel is None:
             statuses[channel_id] = "unknown"
             continue
         cached = _health_cached(channel_id)
