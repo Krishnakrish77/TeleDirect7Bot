@@ -712,8 +712,9 @@ async def admin_iptv_import_m3u(request: web.Request) -> web.Response:
     if not text.strip():
         return _json({"ok": False, "error": "M3U content is required"}, status=400)
     result = await iptv_store.import_m3u(text)
-    channels = await iptv_store.list_channels(include_disabled=True)
-    return _json({"ok": True, **result, "channels": channels})
+    # No channels list: a 10k-channel import would be a multi-MB response.
+    # Clients refresh via GET /api/app/admin/iptv after importing.
+    return _json({"ok": True, **result, "channels": []})
 
 
 @routes.post("/api/app/admin/iptv/import-m3u-url")
@@ -728,8 +729,7 @@ async def admin_iptv_import_m3u_url(request: web.Request) -> web.Response:
     except (aiohttp.ClientError, TimeoutError) as exc:
         return _json({"ok": False, "error": f"Unable to fetch playlist URL: {type(exc).__name__}"}, status=400)
     result = await iptv_store.import_m3u(text)
-    channels = await iptv_store.list_channels(include_disabled=True)
-    return _json({"ok": True, **result, "sourceUrl": source_url, "channels": channels})
+    return _json({"ok": True, **result, "sourceUrl": source_url, "channels": []})
 
 
 @routes.post("/api/app/admin/iptv/test")

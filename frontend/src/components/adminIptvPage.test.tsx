@@ -46,6 +46,7 @@ const initialData: AdminIptvResponse = {
 };
 
 function renderAdmin(data = initialData) {
+  let swapData: AdminIptvResponse | null = null;
   function Wrapper() {
     const [state, setState] = useState<AdminIptvResponse | null>(data);
     return (
@@ -55,12 +56,20 @@ function renderAdmin(data = initialData) {
         loading={false}
         error=""
         onSignIn={vi.fn()}
-        reload={vi.fn()}
+        reload={vi.fn((): (() => void) | undefined => {
+          if (swapData) setState(swapData);
+          return undefined;
+        })}
         setData={setState}
       />
     );
   }
-  return render(<Wrapper />);
+  return {
+    swapOnReload(next: AdminIptvResponse) {
+      swapData = next;
+    },
+    ...render(<Wrapper />),
+  };
 }
 
 describe('AdminIptvPage', () => {
@@ -116,19 +125,23 @@ describe('AdminIptvPage', () => {
       parsed: 1,
       imported: 1,
       skipped: 0,
-      channels: [...initialData.channels, imported],
+      channels: [],
     });
 
-    renderAdmin();
+    const admin = renderAdmin();
 
     fireEvent.change(screen.getByPlaceholderText('#EXTM3U'), {
       target: { value: '#EXTM3U\n#EXTINF:-1,Sports Live\nhttps://example.test/sports.m3u8' },
+    });
+    admin.swapOnReload({
+      mongoAvailable: true,
+      channels: [...initialData.channels, imported],
     });
     fireEvent.click(screen.getByRole('button', { name: 'Import M3U' }));
 
     await waitFor(() => expect(importAdminIptvM3u).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('Imported 1 of 1 channels')).toBeTruthy();
-    expect(screen.getByText('Sports Live')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Sports Live')).toBeTruthy());
   });
 
   it('imports an M3U playlist URL and refreshes the list', async () => {
@@ -152,16 +165,20 @@ describe('AdminIptvPage', () => {
       channels: [...initialData.channels, imported],
     });
 
-    renderAdmin();
+    const admin = renderAdmin();
 
     fireEvent.change(screen.getByLabelText('Playlist URL'), {
       target: { value: 'https://iptv-org.github.io/iptv/languages/hin.m3u' },
+    });
+    admin.swapOnReload({
+      mongoAvailable: true,
+      channels: [...initialData.channels, imported],
     });
     fireEvent.click(screen.getByRole('button', { name: 'Import URL' }));
 
     await waitFor(() => expect(importAdminIptvM3uUrl).toHaveBeenCalledWith('https://iptv-org.github.io/iptv/languages/hin.m3u'));
     expect(await screen.findByText('Imported 1 of 1 channels')).toBeTruthy();
-    expect(screen.getByText('News India')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('News India')).toBeTruthy());
   });
 
   it('round-trips imported IPTV metadata when editing a channel', async () => {

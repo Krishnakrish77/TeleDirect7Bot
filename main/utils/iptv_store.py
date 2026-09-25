@@ -368,37 +368,80 @@ def parse_m3u(text: str) -> list[dict]:
 
 async def import_m3u(text: str) -> dict:
     parsed = parse_m3u(text)
+    max_channels = int(os.environ.get("IPTV_IMPORT_MAX_CHANNELS", "10000"))
     imported = 0
     skipped = 0
-    channels: list[dict] = []
+
+    # In-memory dedupe mirrors the JSON path rules: same stream_url or same
+    # tvg_id collapses into the earliest channel (keeping its channel_id).
+    deduped: list[dict] = []
+    by_stream_url: dict[str, dict] = {}
+    by_tvg_id: dict[str, dict] = {}
+    for raw in parsed[:max_channels]:
+        _name = _clean(raw.get("name"), 160)
+        _url = _normalise_url(raw.get("stream_url") or raw.get("streamUrl") or "")
+        if not _name or not _url:
+            skipped += 1
+            continue
+        tvg_id = _clean(_first_present(raw, "tvg_id", "tvgId", default=""), 180)
+        existing = by_stream_url.get(_url) or (by_tvg_id.get(tvg_id) if tvg_id else None)
+        if existing is not None:
+            skipped += 1
+            continue
+        channel = _normalise_channel(raw)
+        deduped.append(channel)
+        by_stream_url[channel["stream_url"]] = channel
+        if channel["tvg_id"]:
+            by_tvg_id[channel["tvg_id"]] = channel
 
     db = _get_db()
     if db is not None:
-        # MongoDB path: sequential save (each handles its own dedup)
-        for raw in parsed[:1000]:
-            ok, channel, _ = await save_channel(raw)
-            if ok and channel:
-                imported += 1
-                channels.append(channel)
-            else:
-                skipped += 1
+        col = db["iptv_channels"]
+        # Load only the keys we need to reconcile against, once.
+        projection = {"_id": 0}
+        existing_by_id = {doc["channel_id"]: doc async for doc in col.find({}, projection)}
+        stream_urls = [channel["stream_url"] for channel in deduped]
+        existing_by_url = {
+            doc["stream_url"]: doc
+            async for doc in col.find({"stream_url": {"$in": stream_urls}}, projection)
+        }
+        tvg_ids = [channel["tvg_id"] for channel in deduped if channel["tvg_id"]]
+        existing_by_tvg = {
+            doc["tvg_id"]: doc
+            async for doc in col.find({"tvg_id": {"$in": tvg_ids}}, projection)
+            if doc.get("tvg_id")
+        }
+        merged: list[dict] = []
+        for channel in deduped:
+            existing = (
+                existing_by_id.get(channel["channel_id"])
+                or existing_by_url.get(channel["stream_url"])
+                or existing_by_tvg.get(channel["tvg_id"])
+            )
+            if existing:
+                channel = _normalise_channel({**channel, "channel_id": existing["channel_id"]}, existing)
+            merged.append(channel)
+
+        # Bulk upsert in batches — one roundtrip per batch instead of per channel.
+        from pymongo import UpdateOne  # Mongo-only path; driver is optional
+
+        operations: list = [
+            UpdateOne({"channel_id": channel["channel_id"]}, {"$set": channel}, upsert=True)
+            for channel in merged
+        ]
+        try:
+            for offset in range(0, len(operations), 500):
+                await col.bulk_write(operations[offset:offset + 500], ordered=False)
+            imported = len(merged)
+        except Exception:
+            logging.exception("iptv_store: bulk import failed")
+            return {"parsed": len(parsed), "imported": 0, "skipped": skipped, "channels": []}
         return {"parsed": len(parsed), "imported": imported, "skipped": skipped, "channels": channels}
 
     # JSON path: hold lock once, write file once at the end instead of per-channel
     async with _lock:
         await _load_json_unlocked()
-        for raw in parsed[:1000]:
-            # Pre-validate before normalising so we don't generate a throwaway
-            # UUID on the first call only to discard it when calling again with
-            # the resolved `existing` record.
-            _name = _clean(raw.get("name"), 160)
-            _url = _normalise_url(raw.get("stream_url") or raw.get("streamUrl") or "")
-            if not _name or not _url:
-                skipped += 1
-                continue
-            _raw_id = _clean(raw.get("channel_id") or raw.get("id") or "", 64)
-            existing = _channels.get(_raw_id) or None
-            channel = _normalise_channel(raw, existing)
+        for channel in deduped:
             duplicate = next(
                 (
                     item for item in _channels.values()
@@ -415,7 +458,6 @@ async def import_m3u(text: str) -> dict:
                 channel["created_at"] = duplicate.get("created_at", channel["created_at"])
             _channels[channel["channel_id"]] = channel
             imported += 1
-            channels.append(_public_channel(channel))
         if imported:
             _persist_json_unlocked()
 

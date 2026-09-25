@@ -62,6 +62,7 @@ export function AdminIptvPage({
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
+  const [adminChannelLimit, setAdminChannelLimit] = useState(200);
 
   const channels = data?.channels ?? [];
   const filteredChannels = useMemo(() => {
@@ -69,6 +70,11 @@ export function AdminIptvPage({
     if (!needle) return channels;
     return channels.filter((channel) => `${channel.name} ${channel.category} ${channel.streamUrl}`.toLowerCase().includes(needle));
   }, [channels, query]);
+  // A 10k-channel import makes a naive .map() unusable; render a bounded window.
+  const visibleChannels = useMemo(
+    () => filteredChannels.slice(0, adminChannelLimit),
+    [filteredChannels, adminChannelLimit],
+  );
 
   if (!user?.is_admin) return <AdminGate user={user} onSignIn={onSignIn} />;
 
@@ -107,9 +113,11 @@ export function AdminIptvPage({
     setNotice('');
     try {
       const response = await importAdminIptvM3u(m3u);
-      applyResponse(response);
       setM3u('');
       setNotice(`Imported ${response.imported || 0} of ${response.parsed || 0} channels`);
+      // Import responses no longer carry the full channel list (10k+ channels
+      // would be a multi-MB body) — refetch instead.
+      reload();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Unable to import M3U');
     } finally {
@@ -122,9 +130,9 @@ export function AdminIptvPage({
     setNotice('');
     try {
       const response = await importAdminIptvM3uUrl(m3uUrl.trim());
-      applyResponse(response);
       setM3uUrl('');
       setNotice(`Imported ${response.imported || 0} of ${response.parsed || 0} channels`);
+      reload();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Unable to import M3U URL');
     } finally {
@@ -293,7 +301,7 @@ export function AdminIptvPage({
             </label>
           </div>
           <div className="iptv-channel-admin-list">
-            {filteredChannels.map((channel) => (
+            {visibleChannels.map((channel) => (
               <article key={channel.id} className={channel.enabled ? 'iptv-admin-row' : 'iptv-admin-row disabled'}>
                 {channel.logoUrl ? <img src={channel.logoUrl} alt="" /> : <span><BroadcastIcon /></span>}
                 <div>
@@ -319,6 +327,11 @@ export function AdminIptvPage({
                 <BroadcastIcon />
                 <strong>No channels found</strong>
               </div>
+            )}
+            {filteredChannels.length > visibleChannels.length && (
+              <Button type="button" variant="outline" size="sm" onClick={() => setAdminChannelLimit((current) => current + 200)}>
+                Show more ({(filteredChannels.length - visibleChannels.length).toLocaleString()} hidden)
+              </Button>
             )}
           </div>
         </Card>
