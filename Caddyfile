@@ -1,0 +1,9 @@
+# Caddy terminates TLS and proxies to the app container.
+# Replace with your FQDN. First start issues a Let's Encrypt cert
+# automatically; make sure DNS points here and ports 80/443 are open
+# (VCN security list AND instance iptables).
+
+media.example.com {
+	reverse_proxy app:8080
+	flush_interval -1	# stream media chunks without buffering
+}

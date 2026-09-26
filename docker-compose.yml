@@ -1,0 +1,47 @@
+# TeleDirect7Bot — self-hosted stack for Oracle free tier (Ampere A1).
+#
+#   docker compose up -d
+#
+# Requires a .env next to this file (same keys as the Koyeb deploy, minus
+# the KOYEB_* vars). The bot image is built from the repo Dockerfile, which
+# builds the React frontend and includes ffmpeg/ffprobe.
+
+services:
+  app:
+    build: .
+    image: teledirect7bot:local
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "8080"
+    volumes:
+      # Scratch space for HLS transcodes, URL grabs, and index snapshots.
+      # Persistent across restarts — unlike /tmp on Koyeb.
+      - app_scratch:/tmp
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5); sys.exit(0 if r.status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s   # catalogue seed + Telegram connect can be slow
+    depends_on: []
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  app_scratch:
+  caddy_data:
+  caddy_config:
