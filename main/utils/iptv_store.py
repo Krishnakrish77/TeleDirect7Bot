@@ -436,7 +436,7 @@ async def import_m3u(text: str) -> dict:
         except Exception:
             logging.exception("iptv_store: bulk import failed")
             return {"parsed": len(parsed), "imported": 0, "skipped": skipped, "channels": []}
-        return {"parsed": len(parsed), "imported": imported, "skipped": skipped, "channels": channels}
+        return {"parsed": len(parsed), "imported": imported, "skipped": skipped, "channels": []}
 
     # JSON path: hold lock once, write file once at the end instead of per-channel
     async with _lock:
@@ -461,4 +461,4 @@ async def import_m3u(text: str) -> dict:
         if imported:
             _persist_json_unlocked()
 
-    return {"parsed": len(parsed), "imported": imported, "skipped": skipped, "channels": channels}
+    return {"parsed": len(parsed), "imported": imported, "skipped": skipped, "channels": []}
