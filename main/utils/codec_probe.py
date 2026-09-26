@@ -149,7 +149,13 @@ def needs_probe(item) -> bool:
     # once so the admin "No subtitles" queue is based on verified streams,
     # rather than assuming every legacy item has none.
     missing_subtitle_probe = not is_audio and not getattr(item, "subtitles_probed_at", 0)
-    return never_probed or missing_duration or missing_artist or suspicious_duration or missing_subtitle_probe
+    # Probes before the EAC3-fix never recorded the video's audio codec —
+    # without it the watch page can't start AC3/EAC3 sources in the HLS
+    # rendition (silent audio on Edge). One-shot re-probe, same pattern as
+    # the subtitle backfill: fires once, then the field is set.
+    missing_source_audio = not is_audio and not getattr(item, "source_audio_codec", "")
+    return (never_probed or missing_duration or missing_artist or suspicious_duration
+            or missing_subtitle_probe or missing_source_audio)
 
 
 def _apply_probed_duration(item, payload: dict, *, overwrite: bool = False) -> bool:

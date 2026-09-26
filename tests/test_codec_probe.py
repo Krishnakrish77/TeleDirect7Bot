@@ -132,5 +132,36 @@ class ProbeItemSourceAudioCodecTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.video_codec, "h264")
 
 
+class NeedsProbeMigrationTests(unittest.TestCase):
+    """Videos probed before the EAC3 fix lack source_audio_codec — the
+    sweep must re-probe them once so preferHls can work on legacy items."""
+
+    def _video(self, **kw):
+        defaults = dict(
+            media_kind="video", probed_at=123.0, duration=600,
+            subtitles_probed_at=123.0, source_audio_codec="",
+            artist="", secure_hash="h", message_id=1,
+        )
+        defaults.update(kw)
+        return SimpleNamespace(**defaults)
+
+    def test_legacy_probed_video_reprobes_for_source_audio(self):
+        from main.utils.codec_probe import needs_probe
+        self.assertTrue(needs_probe(self._video()))
+
+    def test_probed_video_with_source_audio_is_skipped(self):
+        from main.utils.codec_probe import needs_probe
+        self.assertFalse(needs_probe(self._video(source_audio_codec="aac")))
+
+    def test_audio_items_do_not_need_source_audio_field(self):
+        from main.utils.codec_probe import needs_probe
+        item = SimpleNamespace(
+            media_kind="audio", probed_at=123.0, duration=180,
+            subtitles_probed_at=0.0, source_audio_codec="",
+            artist="Someone", album_title="", secure_hash="h", message_id=2,
+        )
+        self.assertFalse(needs_probe(item))
+
+
 if __name__ == "__main__":
     unittest.main()
