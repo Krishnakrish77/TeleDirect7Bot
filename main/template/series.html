@@ -280,8 +280,10 @@ details[data-season][open]>summary .season-chevron{transform:rotate(180deg)}
                                   bg-ink-900/70 text-slate-300 border border-white/5
                                   hover:border-brand-400/40 hover:text-brand-300
                                   transition-colors tabular-nums">
+                          {% if v.source_type %}<span class="text-amber-300">{{ v.source_type }}</span>{% endif %}
+                          {% if v.source_type and v.quality %} · {% endif %}
                           {% if v.quality %}{{ v.quality }}{% endif %}
-                          {% if v.quality and v.file_size %} · {% endif %}
+                          {% if (v.source_type or v.quality) and v.file_size %} · {% endif %}
                           {% if v.file_size %}{{ v.file_size | humansize }}{% endif %}
                         </a>
                       {% endfor %}

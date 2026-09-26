@@ -36,6 +36,10 @@ class HubItem:
     file_size: int
     has_thumb: bool
     quality: str = ""  # parsed resolution bucket: 480p / 720p / 1080p / 4K / ""
+    # Theatre-print release tag: "PreDVD" / "DVDScr" / "HDTS" / "TS" / "TC" /
+    # "CAM" or "" for a clean source. Parsed from the filename/caption at
+    # index time, overridable via the admin bulk action.
+    source_type: str = ""
     file_name: str = ""  # original media filename, retained for sidecar matching
     subtitles: List[ExternalSubtitle] = field(default_factory=list)
     # Text or image subtitle streams discovered by the codec probe. The

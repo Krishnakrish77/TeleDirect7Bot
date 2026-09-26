@@ -53,6 +53,7 @@ const adminData: AdminResponse = {
       title: 'Kalki',
       year: 2024,
       quality: '1080p',
+      sourceType: '',
       tags: ['action'],
       fileName: 'kalki.mkv',
       fileSize: 1024,

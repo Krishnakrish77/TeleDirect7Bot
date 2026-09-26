@@ -51,8 +51,8 @@
           Unhide
         </button>
 
-        {# Edit ▼ popover — collapses the four 'set a field' compound
-           actions (tags, quality, series, TMDB) into one button so the
+        {# Edit ▼ popover — collapses the five 'set a field' compound
+           actions (tags, quality, print, series, TMDB) into one button so the
            toolbar isn't a wall of inputs. Each row inside the popover
            has its own submit button so admin can apply one field at a
            time without affecting the others. #}
@@ -112,6 +112,31 @@
                   <option value="4K">4K</option>
                 </select>
                 <button type="submit" name="action" value="quality"
+                        class="px-3 py-1.5 rounded text-xs font-medium
+                               bg-ink-800 text-slate-200 border border-white/5
+                               hover:bg-ink-700 transition-colors">
+                  Set
+                </button>
+              </div>
+            </div>
+
+            {# Source / theatre-print tag #}
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">Print</label>
+              <div class="flex items-center gap-1.5">
+                <select name="source_type"
+                        class="flex-1 px-2 py-1.5 text-xs rounded bg-ink-800/70 text-slate-100
+                               border border-white/5
+                               focus:outline-none focus:ring-1 focus:ring-brand-400/60">
+                  <option value="">Clean</option>
+                  <option value="PreDVD">PreDVD</option>
+                  <option value="DVDScr">DVDScr</option>
+                  <option value="HDTS">HDTS</option>
+                  <option value="TS">TS</option>
+                  <option value="TC">TC</option>
+                  <option value="CAM">CAM</option>
+                </select>
+                <button type="submit" name="action" value="source"
                         class="px-3 py-1.5 rounded text-xs font-medium
                                bg-ink-800 text-slate-200 border border-white/5
                                hover:bg-ink-700 transition-colors">

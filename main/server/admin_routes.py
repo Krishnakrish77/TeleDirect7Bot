@@ -240,6 +240,9 @@ _ADMIN_FILTERS = [
 ]
 _ADMIN_SORT_COLUMNS = {"date", "title", "size", "quality"}
 _ADMIN_QUALITY_ORDER = {"4K": 4, "2160p": 4, "1080p": 3, "720p": 2, "480p": 1, "": 0}
+# Canonical theatre-print source tags accepted by the bulk "source" action.
+# "" clears the tag (a clean-source correction).
+_ADMIN_SOURCE_TYPES = ("", "PreDVD", "DVDScr", "HDTS", "TS", "TC", "CAM")
 
 
 def _admin_duplicate_candidates(items: list) -> tuple[dict[int, dict], int, int]:
@@ -476,6 +479,7 @@ def _admin_item_payload(item, duplicate_details) -> dict:
         "title": item.title or "",
         "year": item.year,
         "quality": item.quality or "",
+        "sourceType": getattr(item, "source_type", "") or "",
         "tags": list(item.tags or []),
         "fileName": item.file_name or "",
         "fileSize": item.file_size or 0,
@@ -1233,6 +1237,14 @@ async def admin_action(request: web.Request) -> web.Response:
             raise _redirect_with_flash("Invalid quality", target=_target)
         n = await _bulk_quality(ids, quality)
         raise _redirect_with_flash(f"Updated quality on {n} entries", target=_target)
+
+    if action == "source":
+        source_type = (form.get("source_type") or "").strip()
+        if source_type not in _ADMIN_SOURCE_TYPES:
+            raise _redirect_with_flash("Invalid source type", target=_target)
+        n = await _bulk_source_type(ids, source_type)
+        label = source_type or "clean source"
+        raise _redirect_with_flash(f"Marked {n} entries as {label}", target=_target)
 
     if action == "series":
         series_title = (form.get("series_title_bulk") or "").strip()
@@ -2407,6 +2419,15 @@ def _apply_local_only(message_id: int, entry) -> None:
     existing.year = entry.year
     existing.description = entry.description
     existing.tags = list(entry.tags)
+    # Re-derive the parsed fields from the new text — same haystacks the
+    # index-time _item_from_message path uses (minus the caption, which
+    # this entry was built from in the first place).
+    existing.quality = media_index._extract_quality(
+        entry.title, existing.file_name, entry.description,
+    )
+    existing.source_type = media_index._extract_source_type(
+        existing.file_name, entry.description,
+    )
 
 
 async def _bulk_retag(ids: List[int], tags: List[str]) -> int:
@@ -2432,6 +2453,34 @@ async def _bulk_quality(ids: List[int], quality: str) -> int:
                 desc = desc[len(q):].lstrip(" ·-—")
                 break
         entry.description = (quality + (" · " + desc if desc else "")).strip()
+    n = 0
+    for mid in ids:
+        status, _reason = await _rewrite_caption(mid, apply)
+        if status in ("written", "local-only"):
+            n += 1
+    return n
+
+
+async def _bulk_source_type(ids: List[int], source_type: str) -> int:
+    """Set (or clear) the theatre-print tag on selected entries.
+
+    Encoded into the description head — same round-trip trick as
+    _bulk_quality — so the existing _extract_source_type() regex picks it
+    up again on a re-seed or re-index.
+    """
+    tag = source_type.strip()
+
+    def apply(entry, item):
+        desc = (item.description or "").strip()
+        # Strip any existing source tag (ours or filename-detected variant
+        # spellings) off the description head before applying the new one.
+        for token in ("PreDVD", "DVDScr", "HDTS", "Telesync", "Telecine",
+                      "TS", "TC", "CAM", "HDCAM", "CAMRip", "PreHD"):
+            if desc.lower().startswith(token.lower()):
+                desc = desc[len(token):].lstrip(" ·-—")
+                break
+        entry.description = (" · ".join(part for part in (tag, desc) if part))
+
     n = 0
     for mid in ids:
         status, _reason = await _rewrite_caption(mid, apply)
@@ -2710,6 +2759,14 @@ async def api_app_admin_action(request: web.Request) -> web.Response:
             return web.json_response({"error": "Invalid quality"}, status=400)
         n = await _bulk_quality(ids, quality)
         return _admin_json_message(f"Updated quality on {n} entries")
+
+    if action == "source":
+        source_type = (data.get("sourceType") or "").strip()
+        if source_type not in _ADMIN_SOURCE_TYPES:
+            return web.json_response({"error": "Invalid source type"}, status=400)
+        n = await _bulk_source_type(ids, source_type)
+        label = source_type or "clean source"
+        return _admin_json_message(f"Marked {n} entries as {label}")
 
     if action == "series":
         series_title = (data.get("seriesTitle") or "").strip()

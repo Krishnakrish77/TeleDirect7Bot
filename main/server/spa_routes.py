@@ -780,6 +780,7 @@ def _item_common(item: HubItem) -> dict:
         "fileSize": item.file_size or 0,
         "fileSizeLabel": humanbytes(item.file_size) if item.file_size else "",
         "quality": item.quality or "",
+        "sourceType": item.source_type or "",
         "genres": item.tmdb_genres or [],
         # Internal card consumers (AI recommendations) use this for better
         # grounding. The compact hub-card API intentionally omits it.
@@ -872,6 +873,7 @@ def _video_subtitle(item: HubItem, common: dict) -> str:
     parts = [
         str(item.year) if item.year else "",
         common["durationLabel"],
+        item.source_type or "",
         item.quality or "",
     ]
     return " - ".join(part for part in parts if part)
@@ -894,7 +896,7 @@ def _card_from_item(item: HubItem, art_cache: dict | None = None) -> dict:
         "itemId": str(item.message_id),
         "subtitle": subtitle,
         "eyebrow": "Music" if is_audio else "Movie",
-        "badge": item.quality or common["durationLabel"],
+        "badge": item.source_type or item.quality or common["durationLabel"],
         "href": _detail_url(item),
         "playHref": _play_url(item),
         "detailsHref": _detail_url(item),
@@ -1566,7 +1568,7 @@ def _episode_label(item: HubItem) -> str:
 def _video_choice_payload(item: HubItem, watched_keys: set[str] | None = None) -> dict:
     common = _item_common(item)
     key = f"{item.secure_hash}{item.message_id}"
-    label_bits = [item.quality or "", common["durationLabel"]]
+    label_bits = [item.source_type or "", item.quality or "", common["durationLabel"]]
     payload = {
         **common,
         "key": key,
@@ -1614,7 +1616,7 @@ def _episode_navigator_payload(item: HubItem) -> dict | None:
             "label": _episode_label(preferred) or "Episode",
             "posterUrl": _tmdb_image(preferred.episode_still_path, "w300") or _thumb(preferred),
             "durationLabel": _duration(preferred.duration or 0),
-            "quality": preferred.quality or "",
+            "quality": preferred.source_type or preferred.quality or "",
             "playHref": _app_watch_url(preferred),
             "current": preferred.message_id == item.message_id,
             "_order": (episode_number is None, episode_number or 0, episode_end or 0),

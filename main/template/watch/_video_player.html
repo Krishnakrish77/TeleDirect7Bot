@@ -132,8 +132,10 @@
                           bg-white/10 text-slate-300 border border-white/10
                           hover:border-brand-400/40 hover:text-brand-300
                           transition-colors">
+                  {{ v.source_type or '' }}
+                  {%- if v.source_type and v.quality %} · {% endif %}
                   {{ v.quality or '' }}
-                  {%- if v.quality and v.file_size %} · {% endif %}
+                  {%- if (v.source_type or v.quality) and v.file_size %} · {% endif %}
                   {%- if v.file_size %}{{ v.file_size | humansize }}{% endif %}
                 </a>
               {% endfor %}
@@ -232,7 +234,7 @@
         {# Current item shown as active chip #}
         <span class="px-3 py-1.5 rounded-lg text-xs font-semibold
                      bg-brand-500/20 text-brand-300 border border-brand-400/40">
-          {%- set _qlabel = (meta.quality or '') if meta else '' -%}
+          {%- set _qlabel = ((meta.source_type or '') + (' · ' if meta and meta.source_type and meta.quality else '') + (meta.quality or '')) if meta else '' -%}
           {%- set _slabel = (meta.file_size | humansize) if (meta and meta.file_size) else '' -%}
           {{ _qlabel }}{% if _qlabel and _slabel %} · {% endif %}{{ _slabel or ('Current' if not _qlabel) }}
         </span>
@@ -242,8 +244,10 @@
                     bg-ink-800/70 text-slate-300 border border-white/5
                     hover:border-brand-400/40 hover:text-brand-300
                     transition-colors">
+            {{ v.source_type or '' }}
+            {%- if v.source_type and v.quality %} · {% endif %}
             {{ v.quality or '' }}
-            {%- if v.quality and v.file_size %} · {% endif %}
+            {%- if (v.source_type or v.quality) and v.file_size %} · {% endif %}
             {%- if v.file_size %}{{ v.file_size | humansize }}{% endif %}
           </a>
         {% endfor %}

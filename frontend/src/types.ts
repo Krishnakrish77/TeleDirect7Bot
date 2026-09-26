@@ -721,6 +721,7 @@ export interface AdminItem {
   title: string;
   year: number | null;
   quality: string;
+  sourceType: string;
   tags: string[];
   fileName: string;
   fileSize: number;

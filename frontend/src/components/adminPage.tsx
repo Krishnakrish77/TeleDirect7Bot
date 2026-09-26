@@ -72,6 +72,7 @@ function getCachedAiModels(): Array<{ id: string; name: string }> | null {
 type Navigate = (href: string, replace?: boolean) => void;
 
 const QUALITY_OPTIONS = ['480p', '720p', '1080p', '4K'];
+const SOURCE_TYPE_OPTIONS = ['PreDVD', 'DVDScr', 'HDTS', 'TS', 'TC', 'CAM'];
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '';
@@ -633,6 +634,7 @@ function BulkBar({
 }) {
   const [tags, setTags] = useState('');
   const [quality, setQuality] = useState('1080p');
+  const [sourceType, setSourceType] = useState('PreDVD');
   const [seriesTitle, setSeriesTitle] = useState('');
   const [season, setSeason] = useState('1');
   const [tmdbId, setTmdbId] = useState('');
@@ -675,6 +677,17 @@ function BulkBar({
             <SelectContent>{QUALITY_OPTIONS.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
           </Select>
           <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('quality', { quality })}>Apply</Button>
+        </label>
+        <label>
+          <span>Print</span>
+          <Select value={sourceType} onValueChange={setSourceType}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Clean</SelectItem>
+              {SOURCE_TYPE_OPTIONS.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => onAction('source', { sourceType })}>Apply</Button>
         </label>
         <label>
           <span>Series</span>
@@ -787,6 +800,7 @@ function AdminItemRow({
       </div>
       <div className="admin-chip-row admin-row-issues">
         {item.year && <i>{item.year}</i>}
+        {item.sourceType && <i className="warn">{item.sourceType}</i>}
         {item.quality && <i>{item.quality}</i>}
         {item.mediaKind === 'audio' && <i>Music</i>}
         {item.hidden && <i>Hidden</i>}

@@ -68,6 +68,41 @@ def _extract_quality(*texts: str) -> str:
     return ""
 
 
+# Theatre-print release tags — camcorder/telesync/leaked-screener sources
+# that appear before a proper digital release. ``TS``/``TC`` are anchored
+# so they don't match inside ordinary words. Checked against the filename
+# + caption, never the cleaned title (a film literally titled "Cam"
+# shouldn't flip the switch).
+_SOURCE_TYPE_PATTERNS: List[Tuple[str, "re.Pattern"]] = [
+    ("PreDVD",  re.compile(r"\bpre[-]?dvd(?:rip)?\b|\bpre[-]?hd\b", re.IGNORECASE)),
+    ("DVDScr",  re.compile(r"\bdvd[-]?(?:scr(?:eener)?)\b", re.IGNORECASE)),
+    ("HDTS",    re.compile(r"\bhd[-]?ts\b", re.IGNORECASE)),
+    ("TS",      re.compile(r"\b(?:tcsync|telesync|ts)\b", re.IGNORECASE)),
+    ("TC",      re.compile(r"\b(?:telecine|tc)\b", re.IGNORECASE)),
+    ("CAM",     re.compile(r"\b(?:hd[-]?)?cam(?:rip)?\b", re.IGNORECASE)),
+]
+
+
+def _extract_source_type(*texts: str) -> str:
+    """Detect a theatre-print release tag in the given haystacks.
+
+    Returns the canonical label ("PreDVD", "DVDScr", "HDTS", "TS", "TC",
+    "CAM") or "" for a clean source. A trailing media-file extension is
+    stripped first so a ``.ts`` transport-stream container isn't mistaken
+    for a telesync tag. Callers pass filenames/descriptions, never the
+    cleaned title — a film literally titled "Cam" must not flag.
+    """
+    stripped = [
+        re.sub(r"\.[a-z0-9]{2,4}\s*$", "", t, flags=re.IGNORECASE)
+        for t in texts if t
+    ]
+    haystack = " ".join(stripped)
+    for label, pat in _SOURCE_TYPE_PATTERNS:
+        if pat.search(haystack):
+            return label
+    return ""
+
+
 _INDEX_FILE = Path(os.environ.get("MEDIA_INDEX_PATH", "/tmp/media_index.json"))
 _SEED_DEPTH = int(os.environ.get("MEDIA_INDEX_SEED_DEPTH", "800"))
 # Re-read a small tail on a warm start. It covers uploads that raced the
@@ -295,6 +330,7 @@ def _to_serializable(item: HubItem) -> dict:
         "file_size": item.file_size,
         "has_thumb": item.has_thumb,
         "quality": item.quality,
+        "source_type": getattr(item, "source_type", "") or "",
         "file_name": item.file_name,
         "series_key": item.series_key,
         "series_title": item.series_title,
@@ -383,6 +419,7 @@ def _from_serializable(d: dict) -> HubItem:
         file_size=d.get("file_size", 0) or 0,
         has_thumb=d.get("has_thumb", False),
         quality=d.get("quality", "") or "",
+        source_type=d.get("source_type", "") or "",
         file_name=_clean_file_name(d.get("file_name", "") or ""),
         series_key=d.get("series_key", "") or "",
         series_title=d.get("series_title", "") or "",
@@ -724,6 +761,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         # Video/Document have thumbs (list); Audio.thumb is singular.
         has_thumb=bool(getattr(media, "thumbs", None) or getattr(media, "thumb", None)),
         quality="" if is_book else _extract_quality(parsed.title, file_name, parsed.description),
+        source_type="" if is_book else _extract_source_type(file_name, parsed.description, message.caption or ""),
         file_name=file_name or _synthesize_filename(parsed.title, parsed.year, media),
         series_key=series_key,
         series_title=series_title,
@@ -2076,7 +2114,10 @@ def _matches(item: HubItem, q: str, year: Optional[int], quality: str,
     if year is not None and item.year != year:
         return False
     if quality and item.quality.lower() != quality.lower():
-        return False
+        # A theatre-print tag filter (PreDVD / CAM / …) matches on
+        # source_type instead of the resolution bucket.
+        if quality.lower() != (getattr(item, "source_type", "") or "").lower():
+            return False
     if tag and tag.lstrip("#").lower() not in item.tags:
         return False
     if genre:
@@ -4664,6 +4705,7 @@ async def reindex_all(bot=None) -> dict:
                         it.title or it.file_name, it.year, it.file_name,
                     )
                 new_quality = _extract_quality(it.title, it.file_name, it.description)
+                new_source_type = _extract_source_type(it.file_name, it.description)
 
                 if (it.series_key, it.season, it.episode) != (new_series_key, new_season, new_episode):
                     _reindex_state["series_changed"] += 1
@@ -4678,6 +4720,7 @@ async def reindex_all(bot=None) -> dict:
                 it.episode = new_episode
                 it.movie_key = new_movie_key
                 it.quality = new_quality
+                it.source_type = new_source_type
                 _reindex_state["done"] += 1
             _persist_unlocked()
     finally:
@@ -4706,10 +4749,15 @@ def distinct_years() -> List[int]:
 
 
 def distinct_qualities() -> List[str]:
-    """Qualities present, ordered by resolution from 4K to 480p."""
+    """Filter options for the quality dropdown: theatre-print source tags
+    first (they dominate resolution — a PreDVD rip has no meaningful
+    "1080p"), then resolution buckets present, ordered 4K → 480p."""
     present = {it.quality for it in _items.values() if it.quality}
     order = ["4K", "1080p", "720p", "480p"]
-    return [q for q in order if q in present]
+    sources = {getattr(it, "source_type", "") or "" for it in _items.values()}
+    sources.discard("")
+    source_order = ["PreDVD", "DVDScr", "HDTS", "TS", "TC", "CAM"]
+    return [s for s in source_order if s in sources] + [q for q in order if q in present]
 
 
 def distinct_genres() -> List[str]:

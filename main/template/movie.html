@@ -133,6 +133,12 @@
                 {{ v.file_name or '—' }}
               </p>
               <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                {% if v.source_type %}
+                  <span class="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300
+                               border border-amber-400/30 font-medium">
+                    {{ v.source_type }}
+                  </span>
+                {% endif %}
                 {% if v.quality %}
                   <span class="px-2 py-0.5 rounded bg-brand-500/15 text-brand-300
                                border border-brand-400/30 font-medium">
