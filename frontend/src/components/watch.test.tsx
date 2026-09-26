@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { attachUserSubtitle, deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchRating, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, searchUserSubtitles, setRating } from '../api';
 import type { AudioPlayerHandle, PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleTrack, VideoChoice, WatchTrack, WatchVideo } from '../types';
+import { resetHlsLibrary } from '../media/hls';
 import { STILL_WATCHING_TIMEOUT_MS, WatchPage } from './watch';
 
 vi.mock('../api', () => ({
@@ -689,23 +690,29 @@ describe('WatchPage video player', () => {
     expect(screen.queryByText('This video needs another player')).toBeNull();
   });
 
-  it('returns to direct playback when native HLS reports a media error', async () => {
-    const nativeHls = vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+  it('falls back to direct playback after the hls.js CDN times out and native is unsupported', async () => {
+    // Covers the loader-timeout path: no Hls global, canPlayType '',
+    // attachHls must not leave the video sourceless — it should attach
+    // the direct stream instead.
+    const nativeHls = vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+    Reflect.deleteProperty(window, 'Hls');
+    document.querySelector('script[data-hls-js]')?.remove();
+    resetHlsLibrary();
     try {
       const view = renderWatchPage();
 
       await screen.findByRole('heading', { name: 'Pilot' });
       fireEvent.click(screen.getByLabelText('More video options'));
       fireEvent.click(screen.getByRole('menuitem', { name: /Source/i }));
-      const video = view.container.querySelector('video') as HTMLVideoElement;
-      await waitFor(() => expect(video.getAttribute('src')).toBe('/hls/video-key/master.m3u8'));
 
-      fireEvent.error(video);
-
-      await waitFor(() => expect(video.getAttribute('src')).toBe('/stream/video-key'));
+      await waitFor(
+        () => expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/stream/video-key'),
+        { timeout: 12000 },
+      );
       expect(screen.queryByText('This video needs another player')).toBeNull();
     } finally {
       nativeHls.mockRestore();
+      resetHlsLibrary();
     }
   });
 

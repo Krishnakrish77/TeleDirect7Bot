@@ -25,15 +25,10 @@
       const hlsSrc = video.dataset.hlsSrc;
       const directSrc = video.dataset.directSrc;
 
-      // Safari and iOS play HLS natively — set the source and let the browser
-      // handle it. No JS lib needed.
-      if (hlsSrc && video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = hlsSrc;
-        window._playerHls = null;
-        return;
-      }
-
-      // Chrome/Firefox/Edge: use hls.js if HLS source is offered.
+      // Prefer hls.js (MSE): one consistent pipeline everywhere, including
+      // Safari. Some Chromium builds (Edge with media packs, WebViews)
+      // report 'maybe' for native HLS but stall at zero decoded frames —
+      // native is only the fallback when hls.js is unavailable.
       if (hlsSrc && window.Hls && Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
@@ -60,6 +55,13 @@
         hls.loadSource(hlsSrc);
         hls.attachMedia(video);
         window._playerHls = hls;
+        return;
+      }
+
+      // Safari without hls.js: native HLS plays the m3u8 directly.
+      if (hlsSrc && video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = hlsSrc;
+        window._playerHls = null;
         return;
       }
 

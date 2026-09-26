@@ -24,7 +24,14 @@ declare global {
 let hlsPromise: Promise<HlsConstructor | null> | null = null;
 
 export function canPlayNativeHls(video: HTMLVideoElement): boolean {
-  return Boolean(video.canPlayType('application/vnd.apple.mpegurl'));
+  // hls.js (MSE) is supported in every browser that can also play HLS
+  // natively, so this only matters when hls.js is unavailable. Some
+  // Chromium builds (Edge with media packs, WebViews) return 'maybe'
+  // for mpegurl without being able to play it — video stalls at zero
+  // decoded frames. 'maybe' is not trusted; only 'probably' counts.
+  // (Safari without hls.js is the intended consumer; Safari WITH hls.js
+  // goes through the MSE pipeline via the caller's hls.js-first check.)
+  return !window.Hls && video.canPlayType('application/vnd.apple.mpegurl') === 'probably';
 }
 
 export function hlsUrl(base: string, audioIndex = 0): string {
@@ -57,59 +64,83 @@ export function loadHlsLibrary(): Promise<HlsConstructor | null> {
   return hlsPromise;
 }
 
-export function attachHls(
+/** Test seam: clears the memoized loader promise so the next
+ * loadHlsLibrary() call re-reads window.Hls / the document. */
+export function resetHlsLibrary(): void {
+  hlsPromise = null;
+}
+
+export async function attachHls(
   video: HTMLVideoElement,
   source: string,
   fallbackSource: string,
   onFatalError: () => void,
   startPosition = -1,
 ): Promise<HlsInstance | null> {
-  // Native HLS (Safari) plays the m3u8 directly. Everywhere else, assigning
-  // an m3u8 to video.src makes the browser fire a spurious media error while
-  // hls.js is still loading — callers surface that as "unable to play" even
-  // though MSE playback is about to start. Only touch video.src when native
-  // playback is real; otherwise let hls.js own the element via attachMedia.
-  if (canPlayNativeHls(video)) {
-    video.src = source;
-    return Promise.resolve(null);
+  // Prefer hls.js: it plays through MSE in every browser that supports it
+  // (including Safari), giving one consistent pipeline. Native HLS is the
+  // fallback for browsers without MSE-hls.js support. Some Chromium builds
+  // (Edge with media packs, WebViews) return 'maybe' for mpegurl but
+  // cannot actually play it — trusting that stalled playback at zero
+  // decoded frames, so native is only tried when hls.js is unavailable.
+  // The CDN script may hang (blocked network); time out to native/direct
+  // instead of leaving the player dead.
+  const Hls = await Promise.race([
+    loadHlsLibrary(),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
+  ]);
+  if (Hls?.isSupported()) {
+    return attachWithHlsJs(Hls, video, source, fallbackSource, onFatalError, startPosition);
   }
 
-  return loadHlsLibrary().then((Hls) => {
-    if (!Hls?.isSupported()) {
-      if (fallbackSource) video.src = fallbackSource;
-      onFatalError();
-      return null;
-    }
-    const hls = new Hls({
-      enableWorker: true,
-      lowLatencyMode: false,
-      maxBufferLength: 30,
-      maxMaxBufferLength: 120,
-      maxBufferSize: 60 * 1024 * 1024,
-      // Starting from the saved playhead prevents hls.js from downloading
-      // segments 0/1 before it discovers that the viewer resumed much later.
-      // It also lets the server begin the compatibility rendition at the
-      // relevant HLS boundary instead of needlessly encoding from the start.
-      startPosition: startPosition > 0 ? startPosition : -1,
-      manifestLoadingTimeOut: 30000,
-      manifestLoadingMaxRetry: 4,
-      levelLoadingTimeOut: 30000,
-      fragLoadingTimeOut: 60000,
-      fragLoadingMaxRetry: 4,
-    });
-    hls.on(Hls.Events.ERROR, (_event, data) => {
-      const fatal = Boolean((data as { fatal?: boolean } | undefined)?.fatal);
-      if (!fatal) return;
-      try {
-        hls.destroy();
-      } catch (_) {
-        // Best-effort cleanup before falling back to the direct stream.
-      }
-      if (fallbackSource) video.src = fallbackSource;
-      onFatalError();
-    });
-    hls.loadSource(source);
-    hls.attachMedia(video);
-    return hls;
+  // Native HLS (Safari without hls.js): play the m3u8 directly.
+  if (canPlayNativeHls(video)) {
+    video.src = source;
+    return null;
+  }
+
+  if (fallbackSource) video.src = fallbackSource;
+  onFatalError();
+  return null;
+}
+
+function attachWithHlsJs(
+  Hls: HlsConstructor,
+  video: HTMLVideoElement,
+  source: string,
+  fallbackSource: string,
+  onFatalError: () => void,
+  startPosition: number,
+): HlsInstance | null {
+  const hls = new Hls({
+    enableWorker: true,
+    lowLatencyMode: false,
+    maxBufferLength: 30,
+    maxMaxBufferLength: 120,
+    maxBufferSize: 60 * 1024 * 1024,
+    // Starting from the saved playhead prevents hls.js from downloading
+    // segments 0/1 before it discovers that the viewer resumed much later.
+    // It also lets the server begin the compatibility rendition at the
+    // relevant HLS boundary instead of needlessly encoding from the start.
+    startPosition: startPosition > 0 ? startPosition : -1,
+    manifestLoadingTimeOut: 30000,
+    manifestLoadingMaxRetry: 4,
+    levelLoadingTimeOut: 30000,
+    fragLoadingTimeOut: 60000,
+    fragLoadingMaxRetry: 4,
   });
+  hls.on(Hls.Events.ERROR, (_event, data) => {
+    const fatal = Boolean((data as { fatal?: boolean } | undefined)?.fatal);
+    if (!fatal) return;
+    try {
+      hls.destroy();
+    } catch {
+      // Best-effort cleanup before falling back to the direct stream.
+    }
+    if (fallbackSource) video.src = fallbackSource;
+    onFatalError();
+  });
+  hls.loadSource(source);
+  hls.attachMedia(video);
+  return hls;
 }
