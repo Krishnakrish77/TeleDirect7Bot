@@ -46,7 +46,6 @@ from main.utils import series as series_parse
 from main.utils.dedup import movie_key as compute_movie_key
 from main.utils.subtitles import stem_for_pairing
 from main.utils import tmdb
-from main.utils import state_doc
 from main.utils import store as _store_module
 
 
@@ -90,10 +89,6 @@ _seeded = False
 # Highest BIN_CHANNEL message id we've ever observed. Persisted so a
 # warm-restart can resume scanning without sending a probe.
 _latest_seen_id: int = 0
-# Message id of the most recent snapshot doc uploaded to BIN_CHANNEL.
-# Persisted so subsequent saves can delete the prior snapshot even when
-# pinning silently failed (bot may lack pin permission).
-_snapshot_msg_id: int = 0
 _reconcile_cursor: int = 0
 _catalogue_ready = False
 _pending_bin_deletions: set[int] = set()
@@ -234,61 +229,6 @@ async def init_store() -> bool:
         _store_error = "MongoDB is temporarily unavailable."
         logging.exception("media_index: Mongo store init failed")
         return False
-
-
-# --- Snapshot debouncer ----------------------------------------------------
-# Pinned-snapshot writes are expensive (upload+pin+delete-prior) and noisy
-# (each shows up in BIN_CHANNEL until the delete-prior succeeds). Calls
-# made within ``_SNAPSHOT_DEBOUNCE`` of each other collapse into one
-# actual save once the window settles. Bulk-uploading a TV-show season
-# (70+ episodes triggering enrich_one each) used to fan-out into 70+
-# snapshot saves — now it's one.
-_SNAPSHOT_DEBOUNCE: float = 30.0
-_pending_snapshot_task = None
-
-
-def schedule_snapshot(bot) -> None:
-    """Queue a coalesced ``snapshot_to_telegram`` after a quiet window.
-
-    Each call cancels the previous pending task and starts a new one,
-    so a rapid burst of mutations produces exactly one snapshot save
-    after the burst finishes. Pass ``bot=None`` to disable (we can't
-    save without a client).
-
-    When the durable Mongo store is active the pinned-snapshot
-    mechanism is redundant — every mutation has already been written
-    through to Mongo, so we skip the upload entirely.
-    """
-    global _pending_snapshot_task
-    if _store_active() or mongo_required():
-        return
-    if bot is None:
-        return
-    try:
-        if _pending_snapshot_task is not None and not _pending_snapshot_task.done():
-            _pending_snapshot_task.cancel()
-    except Exception:
-        pass
-    try:
-        _pending_snapshot_task = asyncio.create_task(_deferred_snapshot(bot))
-    except RuntimeError:
-        # No running loop (e.g. called from a sync context outside the
-        # web/bot event loop). Skip silently — the next event-loop call
-        # will reschedule.
-        pass
-
-
-async def _deferred_snapshot(bot) -> None:
-    try:
-        await asyncio.sleep(_SNAPSHOT_DEBOUNCE)
-    except asyncio.CancelledError:
-        return
-    try:
-        await snapshot_to_telegram(bot)
-    except Exception:
-        logging.exception(
-            "media_index: deferred snapshot_to_telegram failed (non-fatal)"
-        )
 
 
 def seed_state() -> dict:
@@ -987,8 +927,6 @@ async def _remove_catalogue_ids(
                 await _store.remove_thumb(mid)
             except Exception:
                 logging.debug("remove: thumb cleanup failed for bin:%d", mid, exc_info=True)
-    if removed_ids and bot is not None:
-        schedule_snapshot(bot)  # No-op when Mongo is active.
     return len(removed_ids)
 
 
@@ -1227,8 +1165,6 @@ async def prune_non_admin_uploads(bot, channel_id: int, batch_size: int = _FETCH
         if mid in _items:
             await remove(mid)
             removed += 1
-    if removed:
-        schedule_snapshot(bot)
     if unattributed:
         sample = sorted(unattributed)[:20]
         logging.info(
@@ -1351,7 +1287,6 @@ def _persist_write_now() -> None:
         _INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "latest_seen_id": _latest_seen_id,
-            "snapshot_msg_id": _snapshot_msg_id,
             "reconcile_cursor": _reconcile_cursor,
             "items": [_to_serializable(it) for it in _items.values()],
         }
@@ -1379,7 +1314,7 @@ async def _debounced_persist_flush() -> None:
         pass
 
 def _load() -> None:
-    global _latest_seen_id, _snapshot_msg_id, _reconcile_cursor, _art_buckets_stale
+    global _latest_seen_id, _reconcile_cursor, _art_buckets_stale
     _art_buckets_stale = True
     if not _INDEX_FILE.exists():
         return
@@ -1390,12 +1325,10 @@ def _load() -> None:
         if isinstance(raw, list):
             data = raw
             persisted_latest = 0
-            persisted_snapshot = 0
             persisted_cursor = 0
         else:
             data = raw.get("items") or []
             persisted_latest = int(raw.get("latest_seen_id") or 0)
-            persisted_snapshot = int(raw.get("snapshot_msg_id") or 0)
             persisted_cursor = int(raw.get("reconcile_cursor") or 0)
         for d in data:
             try:
@@ -1408,11 +1341,10 @@ def _load() -> None:
         # file still gives us a sensible floor.
         local_max = max((it.message_id for it in _items.values()), default=0)
         _latest_seen_id = max(persisted_latest, local_max)
-        _snapshot_msg_id = persisted_snapshot
         _reconcile_cursor = max(0, persisted_cursor)
         logging.info(
-            "media_index: loaded %d entries from %s (latest_seen_id=%d, snapshot=%d)",
-            len(_items), _INDEX_FILE, _latest_seen_id, _snapshot_msg_id,
+            "media_index: loaded %d entries from %s (latest_seen_id=%d)",
+            len(_items), _INDEX_FILE, _latest_seen_id,
         )
     except Exception:
         logging.warning("media_index: failed to load %s", _INDEX_FILE, exc_info=True)
@@ -1516,20 +1448,7 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
                 len(_items), _latest_seen_id,
             )
         except Exception:
-            logging.exception(
-                "media_index: Mongo load_all failed — falling through to"
-                " legacy snapshot restore",
-            )
-
-    # If neither /tmp nor Mongo populated _items, try the
-    # Telegram-pinned snapshot as a last resort.
-    if not _items:
-        try:
-            await restore_from_telegram(bot)
-        except Exception:
-            logging.exception(
-                "media_index: telegram-snapshot restore failed (non-fatal)"
-            )
+            logging.exception("media_index: Mongo load_all failed")
 
     # Capture the restored high-water mark before probing. Do not advance it
     # until the complete scan succeeds: a partially fetched range must be
@@ -1784,7 +1703,6 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
             # every boot even after being deleted from BIN_CHANNEL.
             for mid in stale_ids:
                 await _store_remove(mid)
-            schedule_snapshot(bot)
         if scan_complete:
             _latest_seen_id = max(previous_latest, latest_id)
             _persist_unlocked()
@@ -3604,83 +3522,6 @@ def shelves(per_shelf: int = 25) -> List[dict]:
     return out
 
 
-async def snapshot_to_telegram(bot) -> Optional[int]:
-    """Upload a JSON snapshot of the catalogue to BIN_CHANNEL.
-
-    Called at the end of admin actions that meaningfully change state
-    (enrich, reindex). The pinned snapshot is what cold-start restarts
-    read from — /tmp/media_index.json is just a hot cache on top.
-    Failures don't block the caller; the catalogue is still in memory
-    and the BIN captions remain a fallback recovery path.
-
-    Remembers the message id of the new snapshot so the next save can
-    delete the previous copy even when pinning is unavailable.
-
-    No-op when the durable Mongo store is active — every mutation is
-    already written through to Mongo, so the Telegram snapshot is
-    redundant. This guard applies regardless of how this function was
-    called (schedule_snapshot, enrich_all, reindex, etc.).
-    """
-    if _store_active() or mongo_required():
-        return None
-    global _snapshot_msg_id
-    try:
-        payload = {
-            "version": 1,
-            "saved_at": time.time(),
-            "latest_seen_id": _latest_seen_id,
-            "items": [_to_serializable(it) for it in _items.values()],
-        }
-        new_id = await state_doc.save(bot, payload, prev_id_hint=_snapshot_msg_id)
-        if new_id:
-            async with _lock:
-                _snapshot_msg_id = new_id
-                _persist_unlocked()
-        return new_id
-    except Exception:
-        logging.exception("media_index: snapshot_to_telegram failed (non-fatal)")
-        return None
-
-
-async def restore_from_telegram(bot) -> bool:
-    """Try to repopulate ``_items`` from the pinned Telegram snapshot.
-
-    Returns True if the snapshot existed and was loaded. Called early in
-    ``seed()`` when ``/tmp`` is empty — recovers full enrichment state
-    (poster paths, tmdb_ids, etc.) without re-hitting TMDB.
-    """
-    global _latest_seen_id, _snapshot_msg_id
-    result = await state_doc.load(bot)
-    if result is None:
-        return False
-    payload, snapshot_id = result
-    items_data = payload.get("items") or []
-    persisted_latest = int(payload.get("latest_seen_id") or 0)
-    loaded = 0
-    async with _lock:
-        for d in items_data:
-            try:
-                item = _from_serializable(d)
-                _items[item.message_id] = item
-                _hash_map[item.secure_hash] = item.message_id
-                loaded += 1
-            except Exception:
-                continue
-        local_max = max((it.message_id for it in _items.values()), default=0)
-        _latest_seen_id = max(_latest_seen_id, persisted_latest, local_max)
-        # Remember the snapshot's message id so the next snapshot_to_telegram
-        # call can delete it before uploading the replacement. Without this
-        # hint, cold-start saves can't dedup and BIN_CHANNEL accumulates
-        # an unbounded stream of stale snapshot docs.
-        _snapshot_msg_id = snapshot_id
-        _persist_unlocked()
-    logging.info(
-        "media_index: restored %d entries from Telegram snapshot (latest=%d)",
-        loaded, _latest_seen_id,
-    )
-    return loaded > 0
-
-
 async def persist_canonical_to_bin(bot, message_id: int) -> bool:
     """Edit a BIN_CHANNEL message's caption to reflect the HubItem's
     current canonical state.
@@ -4248,11 +4089,6 @@ async def enrich_one(message_id: int, bot=None) -> bool:
         # Best-effort caption write-back. A failure here doesn't undo the
         # in-memory enrichment; the next enrich pass will retry.
         await persist_canonical_to_bin(bot, message_id)
-        # Coalesce snapshot saves — bulk uploads fire enrich_one per
-        # episode and we don't want 70 snapshot writes back-to-back.
-        # The debouncer collapses them into one save after the burst
-        # quiets down.
-        schedule_snapshot(bot)
     return True
 
 
@@ -4327,10 +4163,6 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
         logging.debug("request reconciliation failed for bin:%d", item.message_id, exc_info=True)
     if bot is not None:
         await persist_canonical_to_bin(bot, message_id)
-        # Manual admin override — coalesce snapshot like the auto path.
-        # If the admin makes several override edits in a row, only one
-        # snapshot lands at the end.
-        schedule_snapshot(bot)
     return True
 
 
@@ -4490,8 +4322,6 @@ async def fill_episode_details(bot=None) -> dict:
                 logging.exception(
                     "media_index: post-fill_episodes Mongo flush failed"
                 )
-        if bot is not None:
-            schedule_snapshot(bot)
     finally:
         _episode_fill_state["running"] = False
         _episode_fill_state["finished_at"] = time.time()
@@ -4597,16 +4427,6 @@ async def enrich_all(bot=None, force: bool = False) -> dict:
     finally:
         _enrich_state["running"] = False
         _enrich_state["finished_at"] = time.time()
-
-    # Snapshot the freshly-enriched state to Telegram so a future cold
-    # start picks up the work without re-running TMDB.
-    if bot is not None and (_enrich_state["enriched"] or force):
-        try:
-            await snapshot_to_telegram(bot)
-        except Exception:
-            logging.exception(
-                "media_index: post-enrich snapshot failed (non-fatal)"
-            )
 
     return {
         "total": len(targets),
@@ -4742,9 +4562,6 @@ async def backfill_missing_credits(bot=None) -> dict:
         _credits_state["running"] = False
         _credits_state["finished_at"] = time.time()
 
-    if bot is not None and _credits_state["updated"]:
-        schedule_snapshot(bot)
-
     return {
         "total": len(targets),
         "updated": _credits_state["updated"],
@@ -4875,13 +4692,6 @@ async def reindex_all(bot=None) -> dict:
         except Exception:
             logging.exception("media_index: post-reindex Mongo flush failed")
 
-    if bot is not None:
-        try:
-            await snapshot_to_telegram(bot)  # No-op when Mongo active.
-        except Exception:
-            logging.exception(
-                "media_index: post-reindex snapshot failed (non-fatal)"
-            )
     return {
         "total": _reindex_state["total"],
         "series_changed": _reindex_state["series_changed"],

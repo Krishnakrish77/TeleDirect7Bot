@@ -35,12 +35,12 @@ The service is intended for a private media library. You are responsible for ens
 ```text
 Telegram bot / BIN channel
            │
-           ├── media files + durable catalogue snapshots
+           ├── media files
            │
            ▼
 Python service ──► React web app ──► private library, player & admin tools
            │
-           ├── optional MongoDB durable catalogue
+           ├── catalogue store: MongoDB (recommended) or local JSON file
            ├── optional TMDB enrichment
            └── optional Gemini AI Picks / metadata assistance
 ```
@@ -207,7 +207,7 @@ The essentials are in the Quick start `.env` example. The complete reference is 
 
 ## MongoDB migration
 
-The default catalogue is backed by Telegram snapshots. For a large or long-lived library, MongoDB is recommended.
+The default catalogue is a local JSON file under `/tmp` (ephemeral — it does not survive container restarts). For a large or long-lived library, MongoDB is recommended.
 
 1. Set `MONGO_URI` but leave `STORE_BACKEND` unset.
 2. Start the service and open `/admin`.

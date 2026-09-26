@@ -97,7 +97,6 @@ class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
             patch.object(media_index.tmdb, "fetch_by_id", new=AsyncMock(return_value=hit)) as fetch_by_id,
             patch.object(media_index, "_persist_unlocked"),
             patch.object(media_index, "_store_upsert", new=AsyncMock()),
-            patch.object(media_index, "schedule_snapshot"),
         ):
             result = await media_index.backfill_missing_credits(bot=object())
 
@@ -148,7 +147,6 @@ class MediaIndexCreditsBackfillTests(unittest.IsolatedAsyncioTestCase):
             patch.object(media_index.tmdb, "fetch_by_id", new=AsyncMock(return_value=hit)) as fetch_by_id,
             patch.object(media_index, "_persist_unlocked"),
             patch.object(media_index, "_store_upsert", new=AsyncMock()),
-            patch.object(media_index, "schedule_snapshot"),
         ):
             result = await media_index.backfill_missing_credits(bot=object())
 

@@ -176,11 +176,6 @@ async def _index_bin_message_impl(bot: Client, bin_msg: Message) -> None:
         logging.debug("media_index add failed for bin:%d", bin_msg.id, exc_info=True)
         return
 
-    # Snapshot the catalogue so the new entry survives a Koyeb restart
-    # even when TMDB never matches (enrich_one is the only other code
-    # path that snapshots, and it returns early on no-match). Coalesced
-    # via the debouncer so a 70-episode burst is one upload, not 70.
-    media_index.schedule_snapshot(bot)
 
     # AWAIT (not fire-and-forget) the TMDB enrichment so the
     # indexer's semaphore slot also bounds parallel enrichments —

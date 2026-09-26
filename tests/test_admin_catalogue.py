@@ -349,12 +349,10 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
         original_hash_map = dict(media_index._hash_map)
         original_bot = admin_routes.StreamBot
         original_persist = media_index._persist_unlocked
-        original_schedule = media_index.schedule_snapshot
         try:
             media_index._items.clear()
             media_index._hash_map.clear()
             media_index._persist_unlocked = lambda: None
-            media_index.schedule_snapshot = lambda bot: None
             item = _item(3736, secure_hash="delete-ok")
             media_index._items[3736] = item
             media_index._hash_map["delete-ok"] = 3736
@@ -375,19 +373,16 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
             media_index._hash_map.clear()
             media_index._hash_map.update(original_hash_map)
             media_index._persist_unlocked = original_persist
-            media_index.schedule_snapshot = original_schedule
 
     async def test_bulk_delete_removes_stale_row_when_bin_message_is_none(self):
         original_items = dict(media_index._items)
         original_hash_map = dict(media_index._hash_map)
         original_bot = admin_routes.StreamBot
         original_persist = media_index._persist_unlocked
-        original_schedule = media_index.schedule_snapshot
         try:
             media_index._items.clear()
             media_index._hash_map.clear()
             media_index._persist_unlocked = lambda: None
-            media_index.schedule_snapshot = lambda bot: None
             item = _item(3736, secure_hash="already-gone")
             media_index._items[3736] = item
             media_index._hash_map["already-gone"] = 3736
@@ -406,19 +401,16 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
             media_index._hash_map.clear()
             media_index._hash_map.update(original_hash_map)
             media_index._persist_unlocked = original_persist
-            media_index.schedule_snapshot = original_schedule
 
     async def test_bulk_delete_removes_stale_row_when_bin_message_is_empty(self):
         original_items = dict(media_index._items)
         original_hash_map = dict(media_index._hash_map)
         original_bot = admin_routes.StreamBot
         original_persist = media_index._persist_unlocked
-        original_schedule = media_index.schedule_snapshot
         try:
             media_index._items.clear()
             media_index._hash_map.clear()
             media_index._persist_unlocked = lambda: None
-            media_index.schedule_snapshot = lambda bot: None
             item = _item(3736, secure_hash="already-empty")
             media_index._items[3736] = item
             media_index._hash_map["already-empty"] = 3736
@@ -440,19 +432,16 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
             media_index._hash_map.clear()
             media_index._hash_map.update(original_hash_map)
             media_index._persist_unlocked = original_persist
-            media_index.schedule_snapshot = original_schedule
 
     async def test_prune_non_admin_uploads_removes_catalogue_only(self):
         original_items = dict(media_index._items)
         original_hash_map = dict(media_index._hash_map)
         original_latest = media_index._latest_seen_id
-        original_schedule = media_index.schedule_snapshot
         original_persist = media_index._persist_unlocked
         try:
             media_index._items.clear()
             media_index._hash_map.clear()
             media_index._latest_seen_id = 102
-            media_index.schedule_snapshot = lambda bot: None
             media_index._persist_unlocked = lambda: None
             admin_item = _item(101, secure_hash="admin")
             non_admin_item = _item(102, secure_hash="user")
@@ -484,7 +473,6 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
             media_index._hash_map.clear()
             media_index._hash_map.update(original_hash_map)
             media_index._latest_seen_id = original_latest
-            media_index.schedule_snapshot = original_schedule
             media_index._persist_unlocked = original_persist
             media_index._prune_non_admin_state.update(
                 running=False, done=0, total=0, removed=0,
@@ -499,13 +487,11 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
         original_items = dict(media_index._items)
         original_hash_map = dict(media_index._hash_map)
         original_latest = media_index._latest_seen_id
-        original_schedule = media_index.schedule_snapshot
         original_persist = media_index._persist_unlocked
         try:
             media_index._items.clear()
             media_index._hash_map.clear()
             media_index._latest_seen_id = 102
-            media_index.schedule_snapshot = lambda bot: None
             media_index._persist_unlocked = lambda: None
             admin_item = _item(101, secure_hash="admin")
             non_admin_item = _item(102, secure_hash="user")
@@ -537,7 +523,6 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
             media_index._hash_map.clear()
             media_index._hash_map.update(original_hash_map)
             media_index._latest_seen_id = original_latest
-            media_index.schedule_snapshot = original_schedule
             media_index._persist_unlocked = original_persist
             media_index._prune_non_admin_state.update(
                 running=False, done=0, total=0, removed=0,
@@ -548,13 +533,11 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
         original_items = dict(media_index._items)
         original_hash_map = dict(media_index._hash_map)
         original_latest = media_index._latest_seen_id
-        original_schedule = media_index.schedule_snapshot
         original_persist = media_index._persist_unlocked
         try:
             media_index._items.clear()
             media_index._hash_map.clear()
             media_index._latest_seen_id = 0
-            media_index.schedule_snapshot = lambda bot: None
             media_index._persist_unlocked = lambda: None
             media_index._items[101] = _item(101, secure_hash="admin")
             media_index._hash_map["admin"] = 101
@@ -582,7 +565,6 @@ class AdminCatalogueAsyncTest(unittest.IsolatedAsyncioTestCase):
             media_index._hash_map.clear()
             media_index._hash_map.update(original_hash_map)
             media_index._latest_seen_id = original_latest
-            media_index.schedule_snapshot = original_schedule
             media_index._persist_unlocked = original_persist
             media_index._prune_non_admin_state.update(
                 running=False, done=0, total=0, removed=0,

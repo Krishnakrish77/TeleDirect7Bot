@@ -99,7 +99,6 @@ class MediaIndexSeedTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(media_index, "_load"),
-            patch.object(media_index, "restore_from_telegram", new=AsyncMock(return_value=False)),
             patch.object(media_index, "_persist_unlocked"),
             patch.object(media_index, "_item_from_message", return_value=None),
         ):
@@ -129,7 +128,7 @@ class MediaIndexSeedTests(unittest.IsolatedAsyncioTestCase):
         media_index._hash_map["deleted"] = 99
         media_index._catalogue_ready = False
 
-        with patch.object(media_index, "_persist_unlocked"), patch.object(media_index, "schedule_snapshot"):
+        with patch.object(media_index, "_persist_unlocked"):
             removed_early = await media_index.record_bin_deletions([99])
             await media_index._mark_catalogue_ready()
 
@@ -150,7 +149,7 @@ class MediaIndexSeedTests(unittest.IsolatedAsyncioTestCase):
                     SimpleNamespace(id=ids[1], empty=True),
                 ]
 
-        with patch.object(media_index, "_persist_unlocked"), patch.object(media_index, "schedule_snapshot"):
+        with patch.object(media_index, "_persist_unlocked"):
             removed = await media_index.reconcile_next_batch(ReconcileBot(), -100)
 
         self.assertEqual(removed, 1)
@@ -185,7 +184,7 @@ class MediaIndexSeedTests(unittest.IsolatedAsyncioTestCase):
                 requested_ids.append(message_id)
                 return SimpleNamespace(id=30, empty=True)
 
-        with patch.object(media_index, "_persist_unlocked"), patch.object(media_index, "schedule_snapshot"):
+        with patch.object(media_index, "_persist_unlocked"):
             removed = await media_index.confirm_and_remove_missing(MissingBot(), -100, 30)
 
         self.assertTrue(removed)

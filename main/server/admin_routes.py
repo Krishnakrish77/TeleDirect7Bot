@@ -3087,7 +3087,6 @@ async def api_app_admin_item_upload_subtitle(request: web.Request) -> web.Respon
         item = media_index.get_item(message_id)
         if item is not None:
             await media_index._store_upsert(item)
-            media_index.schedule_snapshot(StreamBot)
         return web.json_response({
             "ok": True,
             "item": _admin_item_payload(item, set()) if item else None,
@@ -3162,7 +3161,6 @@ async def api_admin_item_subtitle_fetch(request: web.Request) -> web.Response:
         item = media_index.get_item(message_id)
         if item is not None:
             await media_index._store_upsert(item)
-            media_index.schedule_snapshot(StreamBot)
         return web.json_response({
             "ok": True,
             "item": _admin_item_payload(item, set()) if item else None,

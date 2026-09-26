@@ -88,9 +88,7 @@ class AdminSubtitleEndpointsTest(unittest.IsolatedAsyncioTestCase):
             admin_routes.media_index, "attach_subtitle", fake_attach,
         ), patch.object(
             admin_routes.media_index, "_store_upsert", AsyncMock(),
-        ) as upsert_mock, patch.object(
-            admin_routes.media_index, "schedule_snapshot", lambda *_: None,
-        ):
+        ) as upsert_mock:
             response = await admin_routes.api_admin_item_subtitle_fetch(_request({"id": "c1"}))
 
         payload = json.loads(response.text)
