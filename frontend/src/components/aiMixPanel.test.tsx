@@ -26,6 +26,7 @@ const track = (id: number): WatchTrack => ({
   fileSize: 1,
   fileSizeLabel: '1 MB',
   quality: '',
+      sourceType: '',
   genres: [],
   tags: [],
   overview: '',

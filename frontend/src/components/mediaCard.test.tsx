@@ -21,6 +21,7 @@ function card(overrides: Partial<HubCard> = {}): HubCard {
     fileSize: 1000,
     fileSizeLabel: '1 KB',
     quality: '720p',
+      sourceType: '',
     genres: ['Action'],
     tags: [],
     overview: '',

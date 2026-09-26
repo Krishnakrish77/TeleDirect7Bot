@@ -657,7 +657,7 @@ function SeriesDetail({
                         {entry.variants.length > 1 && (
                           <div className="variant-chips">
                             {entry.variants.map((variant) => (
-                              <a key={variant.key} href={variant.playHref}>{variant.quality || variant.durationLabel || 'Version'}</a>
+                              <a key={variant.key} href={variant.playHref}>{variant.quality || variant.sourceType || 'Version'}</a>
                             ))}
                           </div>
                         )}

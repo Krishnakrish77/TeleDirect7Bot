@@ -97,6 +97,7 @@ function makeVideo(overrides: Partial<WatchVideo> = {}): WatchVideo {
     fileSize: 1000,
     fileSizeLabel: '1 KB',
     quality: '1080p',
+      sourceType: '',
     genres: [],
     tags: [],
     overview: 'Episode overview',
@@ -166,6 +167,7 @@ function makeVideoChoice(overrides: Partial<VideoChoice> = {}): VideoChoice {
     itemId: 'item-video-key-720',
     title: 'Pilot 720p',
     quality: '720p',
+      sourceType: '',
     appHref: '/app/watch/video-key-720',
     classicHref: '/watch/video-key-720',
   });
@@ -198,6 +200,7 @@ function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
     fileSize: 1000,
     fileSizeLabel: '1 KB',
     quality: 'mp3',
+      sourceType: '',
     genres: [],
     tags: [],
     overview: '',

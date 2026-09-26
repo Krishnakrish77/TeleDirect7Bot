@@ -66,7 +66,7 @@ describe('AiRecPanel reliability status', () => {
         itemId: 'x', href: '/x', title: 'Picked', bucket: 'comfort', type: 'item',
         subtitle: '', year: null, mediaKind: '', posterUrl: '', posterSrcSet: '', thumbUrl: '',
         backdropUrl: '', duration: 0, durationLabel: '', fileSize: 0, fileSizeLabel: '',
-        quality: '', genres: [], tags: [], overview: '', artist: '', albumTitle: '',
+        quality: '', sourceType: '', genres: [], tags: [], overview: '', artist: '', albumTitle: '',
         trailerKey: '', streamHref: '', watchKey: '', eyebrow: '', badge: '', aspect: 'poster',
       }], externalItems: [], message: '', coldStart: false,
       recommendationMeta: { origin: 'agent', cached: false, fallback: false, generatedAt: Math.floor(Date.now() / 1000) },

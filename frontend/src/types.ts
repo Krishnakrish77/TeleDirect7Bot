@@ -60,6 +60,7 @@ export interface HubCard {
   fileSize: number;
   fileSizeLabel: string;
   quality: string;
+  sourceType: string;
   genres: string[];
   tags: string[];
   overview: string;
@@ -262,6 +263,7 @@ export interface WatchTrack {
   fileSize: number;
   fileSizeLabel: string;
   quality: string;
+  sourceType: string;
   genres: string[];
   tags: string[];
   overview: string;
@@ -359,6 +361,7 @@ export interface WatchVideo {
   fileSize: number;
   fileSizeLabel: string;
   quality: string;
+  sourceType: string;
   genres: string[];
   tags: string[];
   overview: string;

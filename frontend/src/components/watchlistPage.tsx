@@ -72,6 +72,7 @@ export function watchlistCard(item: WatchlistItem): HubCard {
     fileSize: 0,
     fileSizeLabel: '',
     quality: '',
+    sourceType: '',
     genres: [],
     tags: [],
     overview: '',

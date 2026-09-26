@@ -40,6 +40,7 @@ function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
     fileSize: 1000,
     fileSizeLabel: '1 KB',
     quality: '',
+      sourceType: '',
     genres: [],
     tags: [],
     overview: '',
