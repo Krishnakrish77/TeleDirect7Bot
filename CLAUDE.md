@@ -5,10 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Running the bot
 
 ```sh
-virtualenv -p /usr/bin/python3 venv
-. ./venv/bin/activate
+python3 -m venv .venv
+. .venv/bin/activate
 pip install -r requirements.txt
-python3 -m main          # entry point is main/__main__.py
+python -m main          # entry point is main/__main__.py
 ```
 
 Production uses the **Python 3.12** Docker image in `Dockerfile`; it also
