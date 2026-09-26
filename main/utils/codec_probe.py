@@ -55,9 +55,36 @@ from main.vars import Var
 # because MP4 doesn't take VP9.
 _BROWSER_FRIENDLY_VIDEO_CODECS = {"h264", "avc1"}
 
+# Audio codecs inside video containers that Chromium-family browsers
+# (Chrome/Edge) decode natively. AC3/E-AC3/DTS need licensed decoders
+# Edge doesn't ship — such files play video with silent audio unless
+# the HLS rendition (which transcodes to AAC) is used. Safari does
+# decode AC3/E-AC3, but preferHls is harmless there.
+_BROWSER_FRIENDLY_AUDIO_CODECS = {"aac", "mp3", "mp2", "opus", "vorbis", "flac", "pcm_", "alac", "aac_latm"}
+
 # Pixel formats that are 10-bit or higher. Browsers can decode 8-bit
 # H.264 and 8-bit HEVC but not 10-bit anything in MSE.
 _HIGH_BIT_DEPTH_HINTS = ("10le", "10be", "p010", "p012", "12le")
+
+
+def is_browser_audio_ok(audio_codec: str) -> bool:
+    """True when the given VIDEO-file audio codec decodes natively in
+    Chromium-family browsers. Blank/unknown → True (don't gate on
+    missing information). Prefix matching covers pcm_* variants."""
+    ac = (audio_codec or "").lower()
+    if not ac:
+        return True
+    return any(ac == ok or ac.startswith(ok) for ok in _BROWSER_FRIENDLY_AUDIO_CODECS)
+
+
+def source_needs_hls_for_audio(item) -> bool:
+    """True iff the probe ran AND the source's audio can't play in
+    Chromium-family browsers — the caller should prefer the HLS
+    rendition (EAC3 → AAC transcode) over the direct stream."""
+    if not item or not getattr(item, "probed_at", 0):
+        return False
+    ac = getattr(item, "source_audio_codec", "") or ""
+    return bool(ac) and not is_browser_audio_ok(ac)
 
 
 def is_browser_playable(video_codec: str, pix_fmt: str) -> bool:
@@ -399,6 +426,14 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     item.subtitles_probed_at = time.time()
     item.video_codec = (s.get("codec_name") or "").lower()
     item.pix_fmt = (s.get("pix_fmt") or "").lower()
+    # Record the first audio stream's codec for VIDEO files. Chromium/
+    # Edge can't decode AC3/E-AC3/DTS natively — the watch payload uses
+    # this to start those sources in the HLS rendition (AAC) instead of
+    # a silent direct stream.
+    first_audio = next(
+        (st for st in streams if st.get("codec_type") == "audio"), None,
+    ) or {}
+    item.source_audio_codec = (first_audio.get("codec_name") or "").lower()
     # Fill duration from ffprobe if Telegram didn't extract it (e.g. document uploads).
     _apply_probed_duration(item, payload)
     # Use the embedded title tag as a filename fallback for video-type
@@ -424,9 +459,9 @@ async def probe_item(item, *, timeout: float = 30.0) -> bool:
     await media_index.persist_soon()
     await media_index._store_upsert(item)
     logging.info(
-        "codec_probe: bin:%d → codec=%s pix_fmt=%s height=%s quality=%s",
+        "codec_probe: bin:%d → codec=%s pix_fmt=%s audio=%s height=%s quality=%s",
         item.message_id, item.video_codec, item.pix_fmt,
-        height or "?", item.quality or "?",
+        item.source_audio_codec or "?", height or "?", item.quality or "?",
     )
     return True
 

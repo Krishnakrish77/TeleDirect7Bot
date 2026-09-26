@@ -801,7 +801,10 @@ function VideoWatchPage({
   // Start with the original stream. Modern devices can hardware-decode some
   // formats (including this library's 10-bit HEVC uploads) that a static
   // codec allow-list would reject. HLS remains an automatic fallback.
-  const [sourceMode, setSourceMode] = useState<'direct' | 'hls'>('direct');
+  // Exception: sources whose audio codec Chromium can't decode (AC3/EAC3/
+  // DTS) start in HLS — video would render with silent audio and never
+  // raise a media error to trigger the fallback path.
+  const [sourceMode, setSourceMode] = useState<'direct' | 'hls'>(video.preferHls ? 'hls' : 'direct');
   const [audioIndex, setAudioIndex] = useState(0);
   const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
   const [activeSub, setActiveSub] = useState('');

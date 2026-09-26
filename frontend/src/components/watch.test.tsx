@@ -571,8 +571,26 @@ describe('WatchPage video player', () => {
     expect(screen.queryByText('Source')).toBeNull();
   });
 
-  it('tries the direct stream first even when a compatible HLS fallback exists', async () => {
-    const view = renderWatchPage(makeVideo({ preferHls: true }));
+  it('starts in HLS mode when the payload prefers it (EAC3/AC3 audio)', async () => {
+    class MockHls {
+      static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifest' };
+      static isSupported = () => true;
+      static lastSource = '';
+      on() {}
+      off() {}
+      loadSource(source: string) { MockHls.lastSource = source; }
+      attachMedia() {}
+      destroy() {}
+    }
+    Object.defineProperty(window, 'Hls', { configurable: true, value: MockHls });
+    const view = renderWatchPage(makeVideo({ preferHls: true, hlsSrc: '/hls/video-key/master.m3u8' }));
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    await waitFor(() => expect(MockHls.lastSource).toBe('/hls/video-key/master.m3u8'));
+  });
+
+  it('tries the direct stream first when the payload does not prefer HLS', async () => {
+    const view = renderWatchPage(makeVideo({ preferHls: false }));
 
     await screen.findByRole('heading', { name: 'Pilot' });
     await waitFor(() => expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/stream/video-key'));

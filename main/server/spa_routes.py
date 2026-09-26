@@ -2729,7 +2729,10 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
         # A known-bad source is playable through the transcode HLS fallback;
         # reserve the blocking overlay for the (rare) case with no fallback.
         "knownUnplayable": needs_hls_transcode and not hls_src,
-        "preferHls": False,
+        # AC3/E-AC3/DTS audio can't decode in Chromium-family browsers —
+        # start those sources in the HLS rendition (transcoded to AAC)
+        # instead of a silent direct stream.
+        "preferHls": codec_probe.source_needs_hls_for_audio(item),
         "videoCodec": item.video_codec or "",
         "pixFmt": item.pix_fmt or "",
         "qualityVariants": [_video_choice_payload(variant) for variant in quality_variants],

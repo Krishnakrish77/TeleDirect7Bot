@@ -87,6 +87,12 @@ class HubItem:
     video_codec: str = ""
     pix_fmt: str = ""
     probed_at: float = 0.0
+    # Audio codec inside a VIDEO file (first audio stream), e.g. "eac3".
+    # Video-only field — ``audio_codec`` above is for music uploads.
+    # Drives the direct-vs-HLS source choice: Edge/Chromium can't decode
+    # AC3/E-AC3/DTS, so such sources must start in the HLS rendition
+    # (which transcodes to AAC) instead of playing silently.
+    source_audio_codec: str = ""
     # --- TMDB per-episode metadata (only meaningful for TV) -----------------
     # Populated by enrich_one / enrich_with_tmdb_id when both season and
     # episode are known and a successful /tv/{id}/season/{S} payload was
