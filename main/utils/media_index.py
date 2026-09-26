@@ -49,13 +49,25 @@ from main.utils import tmdb
 from main.utils import store as _store_module
 
 
+# Tag boundary for release-name matching. ``\b`` is wrong here: underscore
+# is a word character, so ``\bPreDVD\b`` never matches ``HQ_PreDVD_720p`` —
+# the ``_``-joined naming that dominates scene filenames. The same bug
+# silently broke ``\b720p\b`` quality extraction on those names. Boundary
+# = not adjacent to a letter/digit; ``_``, ``.``, ``-``, spaces and string
+# edges all count as separators.
+_SEP_L = r"(?<![A-Za-z0-9])"
+_SEP_R = r"(?![A-Za-z0-9])"
+
 # Buckets we recognise in filenames/captions. Order matters: longest match
-# first so "2160p" wins over "p", "4K" wins over "K" alone.
+# first so "2160p" wins over "p", "4K" wins over "K" alone. Boundaries are
+# the alphanumeric-rejection lookarounds (_SEP_L/_SEP_R), NOT ``\b`` —
+# underscore is a word character, so ``\b720p\b`` never matched the
+# ``_720p_``-style scene filenames.
 _QUALITY_PATTERNS: List[Tuple[str, "re.Pattern"]] = [
-    ("4K",    re.compile(r"\b(2160p|uhd|4k)\b", re.IGNORECASE)),
-    ("1080p", re.compile(r"\b1080p?\b|\bfhd\b", re.IGNORECASE)),
-    ("720p",  re.compile(r"\b720p?\b|\bhd\b", re.IGNORECASE)),
-    ("480p",  re.compile(r"\b480p?\b|\bsd\b", re.IGNORECASE)),
+    ("4K",    re.compile(_SEP_L + r"(?:2160p|uhd|4k)" + _SEP_R, re.IGNORECASE)),
+    ("1080p", re.compile(_SEP_L + r"(?:1080p?|fhd)" + _SEP_R, re.IGNORECASE)),
+    ("720p",  re.compile(_SEP_L + r"(?:720p?|hd)" + _SEP_R, re.IGNORECASE)),
+    ("480p",  re.compile(_SEP_L + r"(?:480p?|sd)" + _SEP_R, re.IGNORECASE)),
 ]
 
 
@@ -74,12 +86,12 @@ def _extract_quality(*texts: str) -> str:
 # + caption, never the cleaned title (a film literally titled "Cam"
 # shouldn't flip the switch).
 _SOURCE_TYPE_PATTERNS: List[Tuple[str, "re.Pattern"]] = [
-    ("PreDVD",  re.compile(r"\bpre[-]?dvd(?:rip)?\b|\bpre[-]?hd\b", re.IGNORECASE)),
-    ("DVDScr",  re.compile(r"\bdvd[-]?(?:scr(?:eener)?)\b", re.IGNORECASE)),
-    ("HDTS",    re.compile(r"\bhd[-]?ts\b", re.IGNORECASE)),
-    ("TS",      re.compile(r"\b(?:tcsync|telesync|ts)\b", re.IGNORECASE)),
-    ("TC",      re.compile(r"\b(?:telecine|tc)\b", re.IGNORECASE)),
-    ("CAM",     re.compile(r"\b(?:hd[-]?)?cam(?:rip)?\b", re.IGNORECASE)),
+    ("PreDVD",  re.compile(_SEP_L + r"pre[-]?dvd(?:rip)?|pre[-]?hd" + _SEP_R, re.IGNORECASE)),
+    ("DVDScr",  re.compile(_SEP_L + r"dvd[-]?(?:scr(?:eener)?)" + _SEP_R, re.IGNORECASE)),
+    ("HDTS",    re.compile(_SEP_L + r"hd[-]?ts" + _SEP_R, re.IGNORECASE)),
+    ("TS",      re.compile(_SEP_L + r"(?:tcsync|telesync|ts)" + _SEP_R, re.IGNORECASE)),
+    ("TC",      re.compile(_SEP_L + r"(?:telecine|tc)" + _SEP_R, re.IGNORECASE)),
+    ("CAM",     re.compile(_SEP_L + r"(?:hd[-]?)?cam(?:rip)?" + _SEP_R, re.IGNORECASE)),
 ]
 
 

@@ -65,6 +65,37 @@ class ExtractSourceTypeTests(unittest.TestCase):
         # passed by admins do not go through this path.
         self.assertEqual(media_index._extract_source_type("Movie.2025.CAM.x264"), "CAM")
 
+    def test_underscore_joined_scene_filenames(self):
+        # ``\b`` treats ``_`` as a word char, so underscore-joined release
+        # names never matched. This is the exact shape of real uploads.
+        self.assertEqual(
+            media_index._extract_source_type("Once_More_2026_HQ_PreDVD_720p_HD.mp4"),
+            "PreDVD",
+        )
+        self.assertEqual(
+            media_index._extract_source_type("Once_More_2026_Tamil_HQ_PreDVD_720p_x264_HQ_Clean.mkv"),
+            "PreDVD",
+        )
+
+
+class ExtractQualityUnderscoreTests(unittest.TestCase):
+    """The _SEP lookarounds replaced ``\b`` in _QUALITY_PATTERNS too —
+    underscore-joined filenames silently produced empty quality before."""
+
+    def test_underscore_joined_quality(self):
+        self.assertEqual(media_index._extract_quality("Once_More_2026_HQ_PreDVD_720p_HD.mp4"), "720p")
+        self.assertEqual(media_index._extract_quality("Movie_2025_2160p_UHD.mkv"), "4K")
+        self.assertEqual(media_index._extract_quality("Show_S01E01_1080p_x264.mkv"), "1080p")
+
+    def test_hd_inside_hdcam_does_not_count_as_quality(self):
+        # ``HD`` must not match when followed by another letter —
+        # ``HDCAM`` is a source tag, not a 720p claim.
+        self.assertEqual(media_index._extract_quality("Movie.2025.HDCAM.x264.mkv"), "")
+
+    def test_dot_separated_unchanged(self):
+        self.assertEqual(media_index._extract_quality("Movie.2025.1080p.WEB-DL.mkv"), "1080p")
+        self.assertEqual(media_index._extract_quality("no tokens here"), "")
+
 
 class SourceTypeFilterTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
