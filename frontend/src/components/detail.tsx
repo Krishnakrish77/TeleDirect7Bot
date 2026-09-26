@@ -376,6 +376,7 @@ function MovieDetail({
     // "1 version" is noise; only show when there are alternates.
     data.variants.length > 1 ? detailCountLabel(data.variants.length, 'version') : '',
     firstVariant?.fileSizeLabel,
+    firstVariant?.sourceType,
     firstVariant?.quality,
   ]);
   return (
@@ -657,7 +658,7 @@ function SeriesDetail({
                         {entry.variants.length > 1 && (
                           <div className="variant-chips">
                             {entry.variants.map((variant) => (
-                              <a key={variant.key} href={variant.playHref}>{variant.quality || variant.sourceType || 'Version'}</a>
+                              <a key={variant.key} href={variant.playHref}>{[variant.sourceType, variant.quality].filter(Boolean).join(' · ') || 'Version'}</a>
                             ))}
                           </div>
                         )}

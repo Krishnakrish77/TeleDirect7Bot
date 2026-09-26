@@ -20,9 +20,9 @@ describe('playbackOptionInfo', () => {
     });
   });
 
-  it('prefers a real resolution over the source tag', () => {
+  it('shows the source tag alongside the resolution when both parse', () => {
     expect(playbackOptionInfo({ quality: '720p', sourceType: 'PreDVD' })).toEqual({
-      label: '720p',
+      label: 'PreDVD · 720p',
     });
   });
 });
