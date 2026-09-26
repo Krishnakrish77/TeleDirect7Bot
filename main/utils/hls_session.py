@@ -193,8 +193,14 @@ class HlsSession:
             "-fflags", "+genpts+discardcorrupt",
             "-ss", f"{start_sec:.3f}",
             "-i", self.source_url,
-            "-map", "0:v:0?",
-            "-map", f"0:a:{self.audio_index}?",
+            # Known-audio files map the stream REQUIRED — with '?', a transient
+            # cold-read failure (loopback contention on a mid-file seek)
+            # silently drops the audio and every later segment plays muted,
+            # worse than failing the session so the next request restarts it.
+            # Video-only files (audio_codec None) keep both maps optional.
+            *(["-map", "0:v:0?", "-map", f"0:a:{self.audio_index}"]
+              if self.audio_codec
+              else ["-map", "0:v:0?", "-map", f"0:a:{self.audio_index}?"]),
             *video_args,
             *audio_args,
             "-f", "segment",

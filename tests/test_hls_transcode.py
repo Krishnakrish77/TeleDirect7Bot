@@ -84,6 +84,32 @@ class HlsTranscodeTest(unittest.TestCase):
         finally:
             session.cleanup_disk()
 
+    def test_known_audio_track_is_mapped_required(self):
+        """With '?', a transient cold-read failure silently dropped the
+        audio map and every later segment played muted."""
+        session = HlsSession(
+            123, "http://127.0.0.1/input", 60, "eac3", audio_index=2,
+            transcode_video=True,
+        )
+        try:
+            args = session._ffmpeg_args(0)
+            i = args.index("-map", args.index("-map") + 1)  # second -map
+            self.assertEqual(args[i + 1], "0:a:2")
+        finally:
+            session.cleanup_disk()
+
+    def test_video_only_file_keeps_optional_audio_map(self):
+        session = HlsSession(
+            123, "http://127.0.0.1/input", 60, None, audio_index=0,
+            transcode_video=True,
+        )
+        try:
+            args = session._ffmpeg_args(0)
+            i = args.index("-map", args.index("-map") + 1)
+            self.assertEqual(args[i + 1], "0:a:0?")
+        finally:
+            session.cleanup_disk()
+
 
 if __name__ == "__main__":
     unittest.main()
