@@ -13992,3 +13992,96 @@ select.edit-field-input {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+
+/* ── Photos revamp: scrubber, selection, zoom, lightbox chrome ─────────── */
+
+/* Date scrubber — a thin drag strip docked to the viewport's right edge. */
+.photos-scrubber {
+  position: fixed;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.4rem;
+  height: min(55vh, 26rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  cursor: ns-resize;
+  touch-action: none;
+  z-index: 40;
+}
+.photos-scrubber__grip { width: 3px; height: 42%; border-radius: 2px; background: rgba(203, 213, 225, 0.75); }
+.photos-scrubber:hover, .photos-scrubber:focus-visible { background: rgba(148, 163, 184, 0.32); outline: none; }
+.photos-scrubber-bubble {
+  position: fixed;
+  right: 2.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0.45rem 0.9rem;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #fff;
+  font-weight: 750;
+  font-size: 0.95rem;
+  pointer-events: none;
+  z-index: 41;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Selection: check chip on tiles + bottom action bar. */
+.photos-selection-bar {
+  position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.7rem;
+  padding: 0.6rem 1rem; border-radius: 14px;
+  background: rgba(15, 23, 42, 0.96); color: #fff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); z-index: 60;
+}
+.photos-selection-bar__count { font-weight: 750; font-size: 0.9rem; }
+
+/* Zoom density control. */
+.photos-zoom { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); padding: 0.1rem 0 0.4rem; }
+.photos-zoom input[type="range"] { width: 9rem; accent-color: #fb923c; }
+.photos-zoom__min, .photos-zoom__max { font-size: 0.7rem; }
+
+/* Lightbox extras: our toolbar buttons + meta panel + album chips. */
+.photos-lightbox-root { position: relative; z-index: 90; }
+.photos-lb-toolbar { display: flex; align-items: center; gap: 0.4rem; margin-right: 0.5rem; }
+.photos-lb-btn {
+  min-width: 2rem; height: 2rem; border-radius: 8px; border: 1px solid rgba(255,255,255,.25);
+  background: rgba(0,0,0,.3); color: #fff; cursor: pointer; font-size: .95rem;
+}
+.photos-lb-btn:hover { background: rgba(255,255,255,.16); }
+.photos-lb-btn--danger:hover { background: rgba(239, 68, 68, .4); border-color: rgba(239, 68, 68, .6); }
+.photos-lb-captions { display: grid; gap: .15rem; justify-items: center; color: rgba(255,255,255,.85); font-size: .84rem; }
+.photos-lb-meta-wrap {
+  position: fixed; right: 1rem; top: 5rem; z-index: 95; max-width: 19rem;
+}
+.photos-lb-albums {
+  position: fixed; left: 50%; bottom: 4.4rem; transform: translateX(-50%);
+  display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; z-index: 95;
+  max-width: min(90vw, 40rem); justify-content: center;
+}
+.photos-lightbox__album-chip {
+  padding: 0.22rem 0.6rem; border-radius: 999px; border: 1px solid rgba(255,255,255,.3);
+  background: rgba(0,0,0,.35); color: #fff; cursor: pointer; font: inherit; font-size: .78rem;
+}
+.photos-lb-albums select {
+  min-height: 1.9rem; border-radius: 999px; border: 1px solid rgba(255,255,255,.3);
+  background: rgba(0,0,0,.35); color: #fff; font: inherit; font-size: .78rem; padding: 0 .6rem;
+}
+.photos-lb-albums select option { color: #0f172a; }
+
+/* Metadata panel. */
+.photos-meta {
+  padding: 0.9rem 1rem; border-radius: 12px;
+  background: rgba(15, 23, 42, 0.96); color: #e2e8f0;
+  box-shadow: 0 10px 30px rgba(0,0,0,.5);
+}
+.photos-meta__rows { display: grid; gap: 0.3rem; margin: 0; }
+.photos-meta__row { display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.5rem; font-size: 0.8rem; }
+.photos-meta__row dt { color: rgba(226, 232, 240, 0.55); }
+.photos-meta__row dd { margin: 0; word-break: break-word; }
+.photos-meta__hint { margin: 0 0 0.4rem; font-size: 0.76rem; color: rgba(226, 232, 240, 0.5); }
+.photos-meta__map-link { display: inline-block; margin-top: 0.6rem; color: #fdba74; font-size: 0.8rem; }
