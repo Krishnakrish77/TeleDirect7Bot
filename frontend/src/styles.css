@@ -14195,10 +14195,15 @@ select.edit-field-input {
 .photos-selection-bar .photos-iconbtn:hover { background: rgba(255, 255, 255, 0.14); }
 .photos-selection-bar button[variant] { white-space: nowrap; }
 
-/* Zoom density control. */
-.photos-zoom { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); padding: 0.1rem 0 0.4rem; }
-.photos-zoom input[type="range"] { width: 9rem; accent-color: #fb923c; }
-.photos-zoom__min, .photos-zoom__max { font-size: 0.7rem; }
+/* Zoom density control — compact, lives in the header actions. */
+.photos-zoom { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); }
+.photos-zoom input[type="range"] { width: 7rem; accent-color: #fb923c; }
+.photos-zoom__min { width: 0.85rem; height: 0.85rem; }
+.photos-zoom__max { width: 1.2rem; height: 1.2rem; }
+/* Pinch-to-zoom covers density on touch layouts. */
+@media (max-width: 680px) {
+  .photos-zoom { display: none; }
+}
 
 /* Lightbox chrome: GPhotos-style top bar over the YARL stage. */
 .photos-lightbox-root { position: relative; z-index: 90; }
@@ -14215,9 +14220,14 @@ select.edit-field-input {
 .photos-lb-topbar {
   position: absolute; top: 0; left: 0; right: 0; z-index: 5;
   display: flex; align-items: center; gap: 0.35rem;
-  padding: 0.6rem 4.5rem 0.6rem 0.8rem;
+  /* Right padding reserves the strip where YARL pins its own toolbar
+     (zoom-in, zoom-out, close) — our action buttons must end before it. */
+  padding: 0.6rem 10rem 0.6rem 0.8rem;
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent);
   pointer-events: none;
+}
+@media (max-width: 680px) {
+  .photos-lb-topbar { padding-right: 8.5rem; }
 }
 .photos-lb-topbar > * { pointer-events: auto; }
 .photos-lb-topbar__spacer { flex: 1; }
@@ -14239,7 +14249,6 @@ select.edit-field-input {
 .photos-lb-btn.is-active { color: #fbbf24; }
 .photos-lb-btn--danger:hover { background: rgba(239, 68, 68, 0.4); }
 a.photos-lb-btn { text-decoration: none; }
-.photos-lb-captions { display: grid; gap: .15rem; justify-items: center; color: rgba(255,255,255,.85); font-size: .84rem; }
 
 /* Info slide-over: EXIF + album membership, GPhotos' right drawer. */
 .photos-info {
@@ -14294,6 +14303,11 @@ a.photos-lb-btn { text-decoration: none; }
    touch-action keeps vertical panning native and hands two-finger pinch
    to the density handler. */
 .photos-timeline--scroll {
+  /* Block flow, NOT the .photos-timeline grid: with a fixed height and little
+     content, grid's align-content:stretch inflates the sticky-header track
+     and shoves the photo rows hundreds of px down (2-photo library showed a
+     ~320px-tall header band). */
+  display: block;
   overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;

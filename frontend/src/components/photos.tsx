@@ -29,16 +29,10 @@ import {
 } from '../icons';
 import LightboxRoot from 'yet-another-react-lightbox';
 import type { Slide } from 'yet-another-react-lightbox';
-import Captions from 'yet-another-react-lightbox/plugins/captions';
-import Counter from 'yet-another-react-lightbox/plugins/counter';
-import Fullscreen from 'yet-another-react-lightbox/plugins/fullscreen';
-import Slideshow from 'yet-another-react-lightbox/plugins/slideshow';
 import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
 import Video from 'yet-another-react-lightbox/plugins/video';
 import Zoom from 'yet-another-react-lightbox/plugins/zoom';
 import 'yet-another-react-lightbox/styles.css';
-import 'yet-another-react-lightbox/plugins/captions.css';
-import 'yet-another-react-lightbox/plugins/counter.css';
 import 'yet-another-react-lightbox/plugins/thumbnails.css';
 import {
   connectPhotosChannel,
@@ -894,7 +888,6 @@ function PhotosTimeline({
   onToggleDay,
   onPinchStep,
   rowHeight,
-  onRowHeightChange,
   emptyView,
   activeAlbumName,
 }: {
@@ -909,7 +902,6 @@ function PhotosTimeline({
   onToggleDay: (group: DayGroup) => void;
   onPinchStep: (delta: number) => void;
   rowHeight: number;
-  onRowHeightChange: (value: number) => void;
   /** Which lens is empty — drives the empty-state copy. */
   emptyView?: 'timeline' | 'favorites' | 'albums' | 'trash';
   activeAlbumName?: string;
@@ -975,19 +967,6 @@ function PhotosTimeline({
 
   return (
     <div className="photos-timeline-wrap" ref={timelineRef}>
-      <div className="photos-zoom" role="group" aria-label="Thumbnail size">
-        <span className="photos-zoom__min" aria-hidden="true">▪</span>
-        <input
-          type="range"
-          min={0}
-          max={ROW_HEIGHT_STEPS.length - 1}
-          step={1}
-          value={ROW_HEIGHT_STEPS.indexOf(rowHeight as never)}
-          onChange={(event) => onRowHeightChange(ROW_HEIGHT_STEPS[Number(event.target.value)])}
-          aria-label="Thumbnail size"
-        />
-        <span className="photos-zoom__max" aria-hidden="true">◆</span>
-      </div>
       <TimelineFlow
         photos={data.items}
         width={width}
@@ -1703,6 +1682,21 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
               )}
             </div>
             <div className="photos-header__actions">
+              {/* Thumbnail density — GPhotos keeps this in the header too.
+                  Hidden on touch layouts, where pinch covers it. */}
+              <div className="photos-zoom" role="group" aria-label="Thumbnail size" title="Thumbnail size">
+                <ImageIcon className="photos-zoom__min" />
+                <input
+                  type="range"
+                  min={0}
+                  max={ROW_HEIGHT_STEPS.length - 1}
+                  step={1}
+                  value={ROW_HEIGHT_STEPS.indexOf(rowHeight as never)}
+                  onChange={(event) => setRowHeight(ROW_HEIGHT_STEPS[Number(event.target.value)])}
+                  aria-label="Thumbnail size"
+                />
+                <ImageIcon className="photos-zoom__max" />
+              </div>
               <div className="photos-search">
                 <SearchIcon aria-hidden="true" />
                 <input
@@ -1783,7 +1777,6 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
               onToggleDay={toggleDay}
               onPinchStep={onPinchStep}
               rowHeight={rowHeight}
-              onRowHeightChange={setRowHeight}
               emptyView={view}
               activeAlbumName={activeAlbum?.name}
             />
@@ -1981,12 +1974,11 @@ function PhotoLightbox({
         close={onClose}
         index={index}
         slides={slides}
-        plugins={[Zoom, Thumbnails, Captions, Counter, Fullscreen, Slideshow, Video]}
-        captions={{
-          // Captions plugin reads description from the slide; our slides
-          // carry alt only, so render the caption footer ourselves.
-          descriptionTextAlign: 'center',
-        }}
+        /* Lean chrome on purpose: Counter/Captions/Fullscreen/Slideshow each
+           pin their own UI into the same corners our topbar owns — they
+           rendered as overlapping text/icons. Zoom (wheel/double-tap),
+           filmstrip and video are the GPhotos-equivalent set. */
+        plugins={[Zoom, Thumbnails, Video]}
         animation={{ fade: 220, swipe: 280 }}
         render={{
           iconPrev: () => <ChevronLeftIcon />,
@@ -2069,12 +2061,6 @@ function PhotoLightbox({
               ))}
             </div>
           ),
-          slideFooter: photo ? () => (
-            <div className="photos-lb-captions">
-              <span>{dayLabel(photo.takenAt)}</span>
-              <span>{photo.fileName}</span>
-            </div>
-          ) : undefined,
         }}
         on={{
           // Back/forward: parent state is the single source of truth.
