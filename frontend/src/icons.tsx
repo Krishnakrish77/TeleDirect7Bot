@@ -245,11 +245,14 @@ export function FilmIcon(props: Props) {
 }
 
 export function PhotosIcon(props: Props) {
+  // A small stack of photos rather than a single frame: this section is a
+  // library, and one frame read as another media icon next to Movies/TV.
   return (
     <IconBase {...props}>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <circle cx="9" cy="9" r="2" />
-      <path d="m21 15-3.5-3.5a1.5 1.5 0 0 0-2.1 0L7 20" />
+      <path d="M8 17H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+      <rect x="8" y="8" width="14" height="13" rx="2" />
+      <circle cx="12.4" cy="12.4" r="1.4" />
+      <path d="m21.5 18.6-2.6-2.6-3.9 4.2" />
     </IconBase>
   );
 }
