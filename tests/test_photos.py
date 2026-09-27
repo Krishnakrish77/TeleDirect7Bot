@@ -407,6 +407,16 @@ class PendingChannelHandshakeTest(unittest.TestCase):
         )
         self.assertIsNone(self.plugin.pending_link_for(7, now=9999.0))
 
+    def test_remember_prunes_stale_entries(self):
+        # A linking attempt that is never polled must not leave the map
+        # growing one entry per user forever.
+        self.plugin.remember_pending_link(1, -1001, "Old", now=0.0)
+        self.plugin.remember_pending_link(
+            2, -1002, "New", now=self.plugin._PENDING_TTL_SECONDS + 10
+        )
+        self.assertNotIn(1, self.plugin._PENDING_LINKS)
+        self.assertIn(2, self.plugin._PENDING_LINKS)
+
     def test_clear_forgets_the_entry(self):
         self.plugin.remember_pending_link(7, -100123, "Vault")
         self.plugin.clear_pending_link(7)

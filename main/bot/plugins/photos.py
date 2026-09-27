@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from pyrogram import Client
 
@@ -34,20 +35,27 @@ _PENDING_TTL_SECONDS = 900.0
 _PENDING_LINKS: dict[int, dict] = {}
 
 
+def _prune_pending_links(now: float) -> None:
+    """Drop stale handshakes so the map cannot grow one entry per attempt."""
+    for user_id, entry in list(_PENDING_LINKS.items()):
+        if now - entry["at"] > _PENDING_TTL_SECONDS:
+            _PENDING_LINKS.pop(user_id, None)
+
+
 def remember_pending_link(user_id: int, channel_id: int, title: str,
                           *, now: float | None = None) -> None:
     """Record "this user just added the bot to this channel"."""
-    import time
+    stamp = time.time() if now is None else now
+    _prune_pending_links(stamp)
     _PENDING_LINKS[int(user_id)] = {
         "channel_id": int(channel_id),
         "title": title or "",
-        "at": time.time() if now is None else now,
+        "at": stamp,
     }
 
 
 def pending_link_for(user_id: int, *, now: float | None = None) -> dict | None:
     """The user's recent pending channel, or None once it goes stale."""
-    import time
     entry = _PENDING_LINKS.get(int(user_id))
     if not entry:
         return None

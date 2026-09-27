@@ -73,7 +73,8 @@ export function PhotosConnectPage({
   const [busy, setBusy] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [showManual, setShowManual] = useState(false);
-  const manualTimeout = useRef(false);
+  const detectCancelled = useRef(false);
+  const detectAbort = useRef<AbortController | null>(null);
 
   const botLabel = status?.botUsername ? `@${status.botUsername}` : 'the bot';
   const addUrl = status?.addToChannelUrl;
@@ -102,13 +103,22 @@ export function PhotosConnectPage({
    * needed. Polls briefly because the user may still be in Telegram when they
    * press it, then falls back to the manual field.
    */
+  // Leaving the page must stop the polling loop, not keep it running for a
+  // minute against an unmounted component.
+  useEffect(() => () => {
+    detectCancelled.current = true;
+    detectAbort.current?.abort();
+  }, []);
+
   const detectChannel = async () => {
     setError('');
     setDetecting(true);
-    manualTimeout.current = false;
+    detectCancelled.current = false;
+    const controller = new AbortController();
+    detectAbort.current = controller;
     try {
-      for (let attempt = 0; attempt < 20 && !manualTimeout.current; attempt += 1) {
-        const pending = await fetchPendingPhotoChannel();
+      for (let attempt = 0; attempt < 20 && !detectCancelled.current; attempt += 1) {
+        const pending = await fetchPendingPhotoChannel(controller.signal);
         if (pending.channelId) {
           const result = await connectPhotosChannel(String(pending.channelId));
           if (result.error) {
@@ -120,7 +130,7 @@ export function PhotosConnectPage({
         }
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
-      if (!manualTimeout.current) {
+      if (!detectCancelled.current) {
         setError(
           `The bot has not reported a channel yet. Check that ${botLabel} is an administrator of it, `
           + 'then press Continue again. Added the bot earlier? Remove and re-add it, or link it manually below.',
@@ -128,10 +138,12 @@ export function PhotosConnectPage({
         setShowManual(true);
       }
     } catch (err) {
+      if (detectCancelled.current) return; // unmounted or cancelled: stay quiet
       setError(describeError(err, 'Could not check for the channel'));
       setShowManual(true);
     } finally {
-      setDetecting(false);
+      if (detectAbort.current === controller) detectAbort.current = null;
+      if (!detectCancelled.current) setDetecting(false);
     }
   };
 
@@ -185,7 +197,9 @@ export function PhotosConnectPage({
           type="button"
           className="photos-connect__manual-toggle"
           onClick={() => {
-            manualTimeout.current = true;
+            detectCancelled.current = true;
+            detectAbort.current?.abort();
+            setDetecting(false);
             setShowManual(true);
           }}
         >
