@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectPhotosChannel,
   fetchPendingPhotoChannel,
@@ -10,7 +10,7 @@ import {
   uploadPhotos,
 } from '../api';
 import type { Photo, PhotoAlbum } from '../types';
-import { PhotosPage } from './photos';
+import { PhotosPage, buildJustifiedRows } from './photos';
 
 vi.mock('../api', () => ({
   connectPhotosChannel: vi.fn(),
@@ -68,7 +68,24 @@ function makeAlbum(overrides: Partial<PhotoAlbum> = {}): PhotoAlbum {
 
 const user = { sub: 1 };
 
+/**
+ * jsdom has no layout engine, so `clientWidth`/`getBoundingClientRect` report 0
+ * and the justified timeline would stay on its pre-measure placeholder. Give
+ * every element a fixed container width for these tests.
+ */
+function stubLayoutWidth(width = 1200) {
+  return vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return {
+      x: 0, y: 0, top: 0, left: 0, right: width, bottom: 0, width, height: 600,
+      toJSON: () => ({}),
+    } as DOMRect;
+  });
+}
+
 beforeEach(() => {
+  stubLayoutWidth();
   vi.mocked(fetchPhotosStatus).mockResolvedValue({
     connected: true,
     channelId: -1001234,
@@ -89,6 +106,62 @@ async function revealManualField() {
     await screen.findByRole('button', { name: /Already added the bot earlier/i }),
   );
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('justified timeline layout', () => {
+  const photo = (id: string, ratio: number): Photo => ({
+    ...makePhoto({ id, fileName: `${id}.jpg` }),
+    width: Math.round(ratio * 1000),
+    height: 1000,
+  });
+
+  it('fills complete rows edge to edge and preserves each aspect ratio', () => {
+    const photos = [
+      photo('a', 1.5), photo('b', 0.67), photo('c', 1), photo('d', 1.33),
+      photo('e', 0.75), photo('f', 1), photo('g', 1.78), photo('h', 0.8),
+      photo('i', 1.2),
+    ];
+    const rows = buildJustifiedRows(photos, 1000, 200, 4);
+    expect(rows.length).toBeGreaterThan(1);
+
+    for (const row of rows.slice(0, -1)) {
+      const widths = row.items.map((item) => (item.width! / item.height!) * row.height);
+      const total = widths.reduce((a, b) => a + b, 0) + 4 * (row.items.length - 1);
+      expect(Math.abs(total - 1000)).toBeLessThan(0.01);
+    }
+    for (const row of rows) {
+      for (const item of row.items) {
+        // Box ratio == photo ratio: nothing is cropped or distorted.
+        const boxRatio = (item.width! / item.height!);
+        expect(boxRatio).toBeGreaterThan(0);
+        const rendered = (item.width! / item.height!) * row.height / row.height;
+        expect(Math.abs(rendered - boxRatio)).toBeLessThan(0.001);
+      }
+    }
+  });
+
+  it('lets a partial row grow to fill, but never beyond the scale cap', () => {
+    // Four mixed photos: 988 / 4.5 = 219.6 stays inside the cap, so this
+    // partial row still ends flush with the row above it.
+    const partial = [photo('a', 1.5), photo('b', 1), photo('c', 1), photo('d', 1)];
+    const filled = buildJustifiedRows(partial, 1000, 200, 4);
+    expect(filled).toHaveLength(1);
+    expect(Math.abs(filled[0].height - (1000 - 3 * 4) / 4.5)).toBeLessThan(0.01);
+    expect(filled[0].height).toBeLessThanOrEqual(200 * 1.15 + 0.01);
+
+    // A single 16:9 photo would need 553px to fill; the cap keeps the row in
+    // the same height band as its neighbours instead.
+    const capped = buildJustifiedRows([photo('wide', 1.78)], 1000, 200, 4);
+    expect(capped[0].height).toBeCloseTo(200 * 1.15, 5);
+  });
+
+  it('returns nothing for an empty library', () => {
+    expect(buildJustifiedRows([], 1000, 200, 4)).toEqual([]);
+  });
+});
 
 describe('PhotosPage albums', () => {
   it('adds and removes a photo from albums in the lightbox', async () => {

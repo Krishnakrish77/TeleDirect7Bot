@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   connectPhotosChannel,
   createPhotoAlbum,
@@ -18,16 +18,28 @@ import {
   trashPhotos,
   uploadPhotos,
 } from '../api';
-import type { Photo, PhotoAlbum, PhotosChannelStatus, TimelineResponse } from '../types';
+import type { Photo, PhotoAlbum, PhotosChannelStatus } from '../types';
+import { PhotosIcon } from '../icons';
 import { Button } from './ui/button';
 
 type TimelineData = { items: Photo[]; nextCursor: string | null };
+
+/** Gutter between justified rows/items — kept in sync with the CSS. */
+const PHOTO_GAP = 4;
 
 function dayLabel(iso: string | null): string {
   if (!iso) return 'Unknown date';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return 'Unknown date';
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+/** mm:ss for video tiles, matching how photo apps label clips. */
+function formatDuration(seconds: number | null): string {
+  if (!seconds || seconds < 1) return '';
+  const total = Math.round(seconds);
+  const minutes = Math.floor(total / 60);
+  return `${minutes}:${String(total % 60).padStart(2, '0')}`;
 }
 
 /** Consistent, user-visible description for a failed Photos API call. */
@@ -322,18 +334,142 @@ function Lightbox({
   );
 }
 
-// ── Timeline grid ─────────────────────────────────────────────────────────
+// ── Timeline (justified rows) ─────────────────────────────────────────────
 
-function PhotoTile({ photo, onOpen }: { photo: Photo; onOpen: (photo: Photo) => void }) {
+/** Aspect ratio of a photo, tolerating missing dimensions. */
+function aspectRatio(photo: Photo): number {
+  const w = Number(photo.width) || 0;
+  const h = Number(photo.height) || 0;
+  if (w > 0 && h > 0) return Math.min(3, Math.max(0.33, w / h));
+  return 1;
+}
+
+export interface JustifiedRow {
+  items: Photo[];
+  height: number;
+}
+
+/** How far a trailing partial row may grow. Deliberately small: a big
+ *  growth here makes the last row a visibly different height band from the
+ *  rows above it, which reads worse than a ragged right edge. */
+const PARTIAL_ROW_MAX_SCALE = 1.15;
+
+/**
+ * Flickr/Google-Photos style justified layout: rows are filled edge to edge
+ * with the photos' true aspect ratios (nothing is centre-cropped), and the
+ * row height is what flexes. Square grids crop every portrait shot, which is
+ * why serious photo apps do not use them for browsing.
+ */
+export function buildJustifiedRows(
+  photos: Photo[],
+  containerWidth: number,
+  targetHeight: number,
+  gap: number,
+): JustifiedRow[] {
+  const rows: JustifiedRow[] = [];
+  if (!photos.length || containerWidth <= 0) {
+    return photos.length ? [{ items: photos, height: targetHeight }] : [];
+  }
+  let current: Photo[] = [];
+  let ratioSum = 0;
+  const pushRow = (items: Photo[], ratios: number[], fill: boolean) => {
+    const available = containerWidth - gap * Math.max(0, items.length - 1);
+    const ratioSum = ratios.reduce((a, b) => a + b, 0);
+    // Full rows are scaled so they end exactly at the right edge (the classic
+    // justified look); the trailing partial row keeps the target height and
+    // stays left-aligned instead of blowing one photo up to fill the width.
+    // Complete rows are scaled so they end exactly at the right edge (the
+    // classic justified look). A trailing partial row also tries to fill, but
+    // only up to PARTIAL_ROW_MAX_SCALE — otherwise a day with one photo would
+    // become a single full-width monster. Sub-pixel values on purpose:
+    // rounding here would leave every row a few pixels short of the edge.
+    const filled = ratioSum ? available / ratioSum : targetHeight;
+    const height = fill ? filled : Math.min(filled, targetHeight * PARTIAL_ROW_MAX_SCALE);
+    rows.push({ items, height });
+  };
+
+  for (const photo of photos) {
+    const ratio = aspectRatio(photo);
+    current.push(photo);
+    ratioSum += ratio;
+    // Close the row once the photos at the target height overflow the width.
+    if (ratioSum * targetHeight + gap * (current.length - 1) >= containerWidth) {
+      pushRow(current, current.map(aspectRatio), true);
+      current = [];
+      ratioSum = 0;
+    }
+  }
+  if (current.length) {
+    // Trailing partial row keeps its natural size (not stretched to fill).
+    pushRow(current, current.map(aspectRatio), false);
+  }
+  return rows;
+}
+
+/**
+ * Container width for the justified layout, measured as soon as the node is
+ * attached and kept current across resizes.
+ *
+ * A callback ref on purpose: the timeline renders loading/empty markup first,
+ * so an effect keyed on a stable ref object would run once with no node and
+ * never measure — leaving the grid stuck on its placeholder.
+ */
+function useMeasuredWidth<T extends HTMLElement>(): [React.RefCallback<T>, number] {
+  const [width, setWidth] = useState(0);
+  const cleanup = useRef<(() => void) | null>(null);
+
+  const attach = useCallback((node: T | null) => {
+    cleanup.current?.();
+    cleanup.current = null;
+    if (!node) return;
+    const measure = () => {
+      const next = Math.round(node.getBoundingClientRect().width);
+      setWidth((current) => (Math.abs(current - next) > 0.5 ? next : current));
+    };
+    measure();
+    // First paint can land before layout resolves; re-measure next frame and
+    // rely on the observer (plus a resize fallback) afterwards.
+    const frame = requestAnimationFrame(measure);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(node);
+    window.addEventListener('resize', measure);
+    cleanup.current = () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
+  useEffect(() => () => cleanup.current?.(), []);
+  return [attach, width];
+}
+
+function PhotoItem({
+  photo,
+  height,
+  width,
+  onOpen,
+}: {
+  photo: Photo;
+  height: number;
+  width: number;
+  onOpen: (photo: Photo) => void;
+}) {
   return (
-    <button className="photos-tile" onClick={() => onOpen(photo)} aria-label={photo.fileName}>
-      <img
-        src={photoThumbUrl(photo.id, 'grid')}
-        alt={photo.fileName}
-        loading="lazy"
-      />
-      {photo.kind === 'video' && <span className="photos-tile__badge">▶</span>}
-      {photo.favorite && <span className="photos-tile__fav">★</span>}
+    <button
+      className="photos-item"
+      style={{ height: `${height}px`, width: `${width}px` }}
+      onClick={() => onOpen(photo)}
+      aria-label={photo.fileName}
+    >
+      <img src={photoThumbUrl(photo.id, 'grid')} alt={photo.fileName} loading="lazy" />
+      <span className="photos-item__shade" aria-hidden="true" />
+      {photo.kind === 'video' && (
+        <span className="photos-item__badge" aria-label="Video">
+          ▶{formatDuration(photo.duration) && ` ${formatDuration(photo.duration)}`}
+        </span>
+      )}
+      {photo.favorite && <span className="photos-item__fav" aria-label="Favorite">★</span>}
     </button>
   );
 }
@@ -344,59 +480,106 @@ function PhotosTimeline({
   onLoadMore,
   onOpen,
   onScan,
+  onUpload,
 }: {
   data: TimelineData | null;
   loading: boolean;
   onLoadMore: () => void;
   onOpen: (photo: Photo) => void;
   onScan?: () => void;
+  onUpload?: () => void;
 }) {
-  const groups = useMemo(() => {
-    const out: Array<{ day: string; items: Photo[] }> = [];
-    for (const photo of data?.items ?? []) {
-      const day = dayLabel(photo.takenAt);
-      const last = out[out.length - 1];
-      if (last && last.day === day) last.items.push(photo);
-      else out.push({ day, items: [photo] });
-    }
-    return out;
-  }, [data]);
+  const [timelineRef, width] = useMeasuredWidth<HTMLDivElement>();
 
+  // One continuous justified flow with date anchors, the way Google Photos
+  // and Immich browse: restarting the rows for every day leaves a tall ragged
+  // strip whenever a day holds one or two photos.
   if (loading && !data) return <div className="photos-loading">Loading your library…</div>;
   if (!data?.items.length) {
     return (
       <div className="photos-empty">
-        <h2>Nothing here yet</h2>
-        <p>Post photos to your connected Telegram channel, or drop them anywhere on this page.</p>
-        {onScan && (
-          <Button variant="secondary" onClick={onScan}>
-            Scan channel history
-          </Button>
-        )}
+        <span className="photos-empty__icon" aria-hidden="true">
+          <PhotosIcon />
+        </span>
+        <h2>Your library is empty</h2>
+        <p>Add photos and videos here, or post them to your private Telegram channel from any device.</p>
+        <div className="photos-empty__actions">
+          {onUpload && <Button onClick={onUpload}>Upload photos</Button>}
+          {onScan && (
+            <Button variant="secondary" onClick={onScan}>
+              Import from Telegram
+            </Button>
+          )}
+        </div>
         <p className="photos-empty__hint">
-          Already posted to the channel? Scanning imports those posts — it runs in the background,
-          so refresh in a moment.
+          Already posted to the channel? “Import from Telegram” adds those photos — it runs in the
+          background, so refresh in a moment.
         </p>
       </div>
     );
   }
+
   return (
-    <div className="photos-timeline">
-      {groups.map((group) => (
-        <section key={group.day} className="photos-day">
-          <h2 className="photos-day__label">{group.day}</h2>
-          <div className="photos-day__grid">
-            {group.items.map((photo) => (
-              <PhotoTile key={photo.id} photo={photo} onOpen={onOpen} />
-            ))}
-          </div>
-        </section>
-      ))}
+    <div className="photos-timeline" ref={timelineRef}>
+      <TimelineFlow photos={data.items} width={width} onOpen={onOpen} />
       {data.nextCursor && (
-        <button className="photos-more" onClick={onLoadMore} disabled={loading}>
+        <Button variant="secondary" className="photos-more" onClick={onLoadMore} disabled={loading}>
           {loading ? 'Loading…' : 'Load more'}
-        </button>
+        </Button>
       )}
+    </div>
+  );
+}
+
+function TimelineFlow({
+  photos,
+  width,
+  onOpen,
+}: {
+  photos: Photo[];
+  width: number;
+  onOpen: (photo: Photo) => void;
+}) {
+  const targetHeight = width < 640 ? 130 : width < 1100 ? 180 : 230;
+  const rows = useMemo(
+    () => buildJustifiedRows(photos, width, targetHeight, PHOTO_GAP),
+    [photos, width, targetHeight],
+  );
+  if (!width) {
+    // Placeholder of the same height instead of a wrong (unmeasured) layout,
+    // so the first paint does not jump when the width arrives.
+    return (
+      <div className="photos-rows" aria-busy="true">
+        <div className="photos-row photos-row--skeleton" style={{ height: `${targetHeight}px` }} />
+      </div>
+    );
+  }
+  let lastDay: string | null = null;
+  return (
+    <div className="photos-rows">
+      {rows.map((row) => {
+        const day = dayLabel(row.items[0].takenAt);
+        // A date anchor whenever the flow reaches a new day — the row may also
+        // continue with the next day's photos, exactly like Google Photos.
+        const anchor = day !== lastDay ? day : null;
+        lastDay = day;
+        return (
+          <Fragment key={row.items[0].id}>
+            {anchor && <h2 className="photos-day__label">{anchor}</h2>}
+            <div className="photos-row" style={{ height: `${row.height}px` }}>
+              {row.items.map((photo) => (
+                <PhotoItem
+                  key={photo.id}
+                  photo={photo}
+                  height={row.height}
+                  width={aspectRatio(photo) * row.height}
+                  onOpen={onOpen}
+                />
+              ))}
+            </div>
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -413,7 +596,8 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const [albums, setAlbums] = useState<PhotoAlbum[]>([]);
   const [activeAlbum, setActiveAlbum] = useState<PhotoAlbum | null>(null);
   const [lightbox, setLightbox] = useState<number>(-1);
-  const [uploads, setUploads] = useState<Array<{ name: string; percent: number }>>([]);
+  const [uploads, setUploads] = useState<Array<{ name: string; url: string }>>([]);
+  const [uploadPercent, setUploadPercent] = useState(0);
   // Action errors (upload, favorite, album, scan) are user-initiated and
   // dismissible; load failures stay until a refresh actually succeeds — a
   // successful reload must not silently clear them, and vice versa.
@@ -480,14 +664,17 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
     const list = Array.from(files);
     if (!list.length) return;
     setError('');
-    setUploads(list.map((f) => ({ name: f.name, percent: 0 })));
+    setUploadPercent(0);
+    // Object-URL previews, like a real photo app's upload tray.
+    const previews = list.map((file) => ({ name: file.name, url: URL.createObjectURL(file) }));
+    setUploads(previews);
     try {
       // A 200 response can still carry per-file failures (duplicates,
       // over-limit, unsupported type) — a backup UI must not report
       // success for files the vault never received.
       const { results } = await uploadPhotos(list, {
         albumId: activeAlbum?.id || undefined,
-        onProgress: (percent) => setUploads((current) => current.map((u) => ({ ...u, percent }))),
+        onProgress: setUploadPercent,
       });
       const problems = (results ?? []).filter((r) => r.error || r.duplicate);
       if (problems.length) {
@@ -504,7 +691,9 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
     } catch (err) {
       setError(describeError(err, 'Upload failed'));
     } finally {
+      previews.forEach((preview) => URL.revokeObjectURL(preview.url));
       setUploads([]);
+      setUploadPercent(0);
     }
   };
 
@@ -635,36 +824,59 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
     >
-      {status?.beta && <span className="photos-beta-badge" title="TeleDirect Photos is in beta — features may change">Beta</span>}
-      <nav className="photos-nav" aria-label="Photos sections">
+      <header className="photos-header">
+        <div>
+          <h1 className="photos-title">
+            Photos
+            {status?.beta && (
+              <span
+                className="photos-beta-badge"
+                title="TeleDirect Photos is in beta — features may change"
+              >
+                Beta
+              </span>
+            )}
+          </h1>
+          {typeof status?.photoCount === 'number' && status.photoCount > 0 && (
+            <p className="photos-subtitle">
+              {status.photoCount.toLocaleString()}{' '}
+              {status.photoCount === 1 ? 'item' : 'items'} in your private channel
+            </p>
+          )}
+        </div>
+        <div className="photos-header__actions">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*,video/*"
+            hidden
+            onChange={(event) => {
+              if (event.target.files?.length) void handleFiles(event.target.files);
+              event.target.value = '';
+            }}
+          />
+          <Button onClick={() => fileInputRef.current?.click()}>Upload</Button>
+          <Button
+            variant="secondary"
+            title="Look for photos in your channel that are not in this library yet"
+            onClick={() => void syncLibrary()}
+          >
+            Import from Telegram
+          </Button>
+        </div>
+      </header>
+      <nav className="photos-tabs" aria-label="Photos sections">
         {(['timeline', 'favorites', 'albums', 'trash'] as View[]).map((v) => (
           <button
             key={v}
             className={view === v ? 'active' : ''}
+            aria-current={view === v ? 'page' : undefined}
             onClick={() => { setView(v); setActiveAlbum(null); }}
           >
             {v[0].toUpperCase() + v.slice(1)}
           </button>
         ))}
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept="image/*,video/*"
-          hidden
-          onChange={(event) => {
-            if (event.target.files?.length) void handleFiles(event.target.files);
-            event.target.value = '';
-          }}
-        />
-        <button className="photos-upload-btn" onClick={() => fileInputRef.current?.click()}>Upload</button>
-        <button
-          className="photos-sync-btn"
-          title="Re-scan the channel for posts the bot missed while offline"
-          onClick={() => void syncLibrary()}
-        >
-          Sync
-        </button>
       </nav>
 
       {isAlbumDetail && (
@@ -735,6 +947,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
           onLoadMore={() => void loadTimeline(false, undefined, activeAlbum?.id)}
           onOpen={(photo) => setLightbox(photos.findIndex((p) => p.id === photo.id))}
           onScan={() => void syncLibrary()}
+          onUpload={() => fileInputRef.current?.click()}
         />
       )}
 
@@ -763,13 +976,21 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
         </div>
       )}
       {uploads.length > 0 && (
-        <div className="photos-uploads" role="status">
-          {uploads.map((u) => (
-            <div key={u.name} className="photos-uploads__row">
-              <span>{u.name}</span>
-              <progress max={100} value={u.percent} />
-            </div>
-          ))}
+        <div className="photos-uploads" role="status" aria-label="Uploading">
+          <div className="photos-uploads__head">
+            <span>
+              Uploading {uploads.length} {uploads.length === 1 ? 'file' : 'files'}…
+            </span>
+            <span>{uploadPercent}%</span>
+          </div>
+          <span className="photos-uploads__bar" aria-hidden="true">
+            <span style={{ width: `${uploadPercent}%` }} />
+          </span>
+          <div className="photos-uploads__grid">
+            {uploads.map((u) => (
+              <img key={u.name} src={u.url} alt={u.name} title={u.name} />
+            ))}
+          </div>
         </div>
       )}
       {dragOver && <div className="photos-dropzone-hint">Drop to upload</div>}
