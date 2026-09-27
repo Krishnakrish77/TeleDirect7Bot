@@ -238,6 +238,7 @@ _RESCAN_BATCH = 100
 _RESCAN_MAX_BATCHES = 200          # per pass: 20k ids, then resume next trigger
 _RESCAN_EMPTY_BATCHES_STOP = 5     # 500 consecutive empty ids == end of space
 _RESCAN_OVERLAP = 200              # re-check the tail for posts missed while live
+_RESCAN_BINDING_CHECK_BATCHES = 25 # how often to confirm the vault is still bound
 
 
 def schedule_rescan(owner_user_id: int, channel_id: int) -> None:
@@ -280,6 +281,17 @@ async def rescan_channel(owner_user_id: int, channel_id: int) -> int:
         batches = 0
         empty_streak = 0
         while batches < _RESCAN_MAX_BATCHES:
+            if batches and batches % _RESCAN_BINDING_CHECK_BATCHES == 0:
+                # A disconnect mid-scan must not keep indexing a vault the user
+                # just detached (and must not index a channel re-bound to
+                # somebody else).
+                binding = await photo_store.get_channel(channel_id)
+                if not binding or binding.get("owner_user_id") != owner_user_id:
+                    log.info(
+                        "rescan cid=%d: no longer bound to uid=%d, stopping at id=%d",
+                        channel_id, owner_user_id, start,
+                    )
+                    return enqueued
             ids = list(range(start, start + _RESCAN_BATCH))
             messages = await bot.get_messages(channel_id, ids)
             if not isinstance(messages, list):

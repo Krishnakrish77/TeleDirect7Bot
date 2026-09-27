@@ -525,7 +525,7 @@ class RescanProbeTest(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace
         return SimpleNamespace(id=message_id, empty=False, document=None, video=None, photo=None)
 
-    async def _rescan(self, batches, *, cursor=0, indexed=()):
+    async def _rescan(self, batches, *, cursor=0, indexed=(), binding="bound", checks=25):
         from unittest.mock import AsyncMock, MagicMock, patch
         from main.utils import photo_store
 
@@ -552,6 +552,18 @@ class RescanProbeTest(unittest.IsolatedAsyncioTestCase):
                 patch.object(photo_store, "list_indexed_message_ids", AsyncMock(return_value=set(indexed))), \
                 patch.object(photo_store, "get_scan_cursor", AsyncMock(return_value=cursor)), \
                 patch.object(photo_store, "set_scan_cursor", AsyncMock(side_effect=fake_set_cursor)), \
+                patch.object(
+                    photo_store,
+                    "get_channel",
+                    AsyncMock(
+                        return_value=(
+                            {"channel_id": self.CHANNEL, "owner_user_id": 7}
+                            if binding == "bound"
+                            else binding
+                        )
+                    ),
+                ), \
+                patch.object(self.plugin, "_RESCAN_BINDING_CHECK_BATCHES", checks), \
                 patch.object(self.plugin, "_ensure_worker", MagicMock()):
             enqueued = await self.plugin.rescan_channel(7, self.CHANNEL)
         return enqueued
@@ -578,6 +590,29 @@ class RescanProbeTest(unittest.IsolatedAsyncioTestCase):
     async def test_resumes_from_the_saved_cursor_with_overlap(self):
         await self._rescan([[self._empty(i) for i in range(1, 101)]], cursor=1000)
         self.assertEqual(self.calls[0][0], 1000 - self.plugin._RESCAN_OVERLAP)
+
+    async def test_stops_when_the_vault_is_no_longer_bound(self):
+        from unittest.mock import AsyncMock, patch
+        from main.utils import photo_store
+
+        # Media in every batch, so the empty-run stop cannot end the scan first.
+        batches = [[self._media(i) for i in range(1, 101)] for _ in range(4)]
+        enqueued = await self._rescan(batches, binding=None, checks=2)
+
+        # Two batches queued, then the binding check stopped the walk instead of
+        # indexing a channel the user had just detached.
+        self.assertEqual(len(self.calls), 2)
+        self.assertGreater(enqueued, 0)
+
+    async def test_stops_when_the_channel_now_belongs_to_someone_else(self):
+        from unittest.mock import AsyncMock, patch
+        from main.utils import photo_store
+
+        batches = [[self._media(i) for i in range(1, 101)] for _ in range(4)]
+        await self._rescan(
+            batches, binding={"channel_id": self.CHANNEL, "owner_user_id": 999}, checks=2
+        )
+        self.assertEqual(len(self.calls), 2)
 
     async def test_full_queue_keeps_the_cursor_on_the_unfinished_batch(self):
         import asyncio

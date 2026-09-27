@@ -18,7 +18,7 @@ import {
   trashPhotos,
   uploadPhotos,
 } from '../api';
-import type { Photo, PhotoAlbum, PhotosChannelStatus, TimelineResponse } from '../types';
+import type { Photo, PhotoAlbum, PhotosChannelStatus } from '../types';
 import { PhotosIcon } from '../icons';
 import { Button } from './ui/button';
 
