@@ -22,6 +22,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import re
 import time
 import weakref
@@ -69,9 +70,26 @@ def _json_default(value):
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
+def _reject_nan(obj):
+    """Convert NaN/Infinity floats to None — bare NaN is invalid JSON and the
+    browser throws "Unexpected token 'N'" (documents from before the GPS
+    sanitiser still carry some)."""
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    if isinstance(obj, dict):
+        return {k: _reject_nan(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_reject_nan(v) for v in obj]
+    return obj
+
+
 def _json(data: dict, *, status: int = 200) -> web.Response:
     return web.json_response(
-        data, status=status, dumps=lambda payload: json.dumps(payload, default=_json_default)
+        data,
+        status=status,
+        dumps=lambda payload: json.dumps(
+            _reject_nan(payload), default=_json_default, allow_nan=False
+        ),
     )
 
 

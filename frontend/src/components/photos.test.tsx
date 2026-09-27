@@ -11,7 +11,13 @@ import {
   uploadPhotos,
 } from '../api';
 import type { Photo, PhotoAlbum } from '../types';
-import { PhotosPage, buildJustifiedRows } from './photos';
+import {
+  PhotosPage,
+  buildJustifiedRows,
+  buildLightboxSlides,
+  buildVirtualModel,
+  trashBatches,
+} from './photos';
 
 vi.mock('../api', () => ({
   connectPhotosChannel: vi.fn(),
@@ -110,6 +116,79 @@ async function revealManualField() {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe('lightbox slides and bulk trash', () => {
+  it('downloads the original, not the preview thumbnail', () => {
+    const slides = buildLightboxSlides([
+      makePhoto({ id: 'p1' }),
+      makePhoto({ id: 'p2', kind: 'video', mime: 'video/mp4', duration: 12 }),
+    ]);
+
+    // The stage keeps the preview (HEIC-safe, no original fetch while browsing).
+    expect(slides[0]).toMatchObject({
+      type: 'image',
+      src: '/api/photos/thumb/p1/preview',
+      download: '/api/photos/file/p1',
+    });
+    // YARL's download plug-in falls back to `src`, which saved a webp.
+    expect(slides[1]).toMatchObject({ type: 'video', download: '/api/photos/file/p2' });
+    expect(JSON.stringify(slides[1])).toContain('/api/photos/file/p2');
+  });
+
+  it('batches bulk trash at the API cap so select-all cannot 400', () => {
+    const ids = Array.from({ length: 1200 }, (_, i) => `id${i}`);
+    const batches = trashBatches(ids);
+    expect(batches.map((b) => b.length)).toEqual([500, 500, 200]);
+    expect(batches.flat()).toEqual(ids);
+    expect(trashBatches([])).toEqual([]);
+  });
+});
+
+describe('virtual timeline model', () => {
+  const photo = (id: string, day: string): Photo => ({
+    ...makePhoto({ id, fileName: `${id}.jpg` }),
+    takenAt: `${day}T10:00:00Z`,
+  });
+  const group = (key: string, label: string, photos: Photo[]) => ({
+    key,
+    label,
+    takenAt: photos[0].takenAt,
+    photos,
+  });
+
+  it('flows rows across day boundaries and headers the day that starts a row', () => {
+    // Three photos per day. Restarting rows per day would leave each day's row
+    // half empty; flowing across the boundary fills it (the density fix).
+    const groups = [
+      group('2026-09-21', 'September 21, 2026', [photo('a', '2026-09-21'), photo('b', '2026-09-21'), photo('c', '2026-09-21')]),
+      group('2026-09-20', 'September 20, 2026', [photo('d', '2026-09-20'), photo('e', '2026-09-20'), photo('f', '2026-09-20')]),
+    ];
+    const entries = buildVirtualModel(groups, 800, 190);
+    const headers = entries.filter((e) => e.kind === 'header');
+    const rows = entries.flatMap((e) => (e.kind === 'row' ? [e.row] : []));
+
+    // The boundary row closes mid-day, so September 20 starts the next row and
+    // still gets its header — while its earlier photos share the first row.
+    expect(headers.map((h) => h.group.label)).toEqual(['September 21, 2026', 'September 20, 2026']);
+    // Every photo appears exactly once, in order.
+    expect(rows.flatMap((row) => row.items.map((p) => p.id))).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+    // A row mixing both days is the point of the change.
+    expect(rows.some((row) => new Set(row.items.map((p) => p.takenAt?.slice(0, 10))).size > 1)).toBe(true);
+  });
+
+  it('documented tradeoff: a day inside another day\'s row gets no header', () => {
+    // Six photos fit one row at this width, so September 20 never starts a row
+    // and its photos sit under the September 21 header — Google Photos behaves
+    // the same way; each tile still shows its own date on hover.
+    const groups = [
+      group('2026-09-21', 'September 21, 2026', [photo('a', '2026-09-21'), photo('b', '2026-09-21'), photo('c', '2026-09-21')]),
+      group('2026-09-20', 'September 20, 2026', [photo('d', '2026-09-20'), photo('e', '2026-09-20'), photo('f', '2026-09-20')]),
+    ];
+    const rows = buildVirtualModel(groups, 1400, 150).flatMap((e) => (e.kind === 'row' ? [e.row] : []));
+    expect(rows).toHaveLength(1);
+    expect(new Set(rows[0].items.map((p) => p.takenAt?.slice(0, 10))).size).toBe(2);
+  });
 });
 
 describe('justified timeline layout', () => {

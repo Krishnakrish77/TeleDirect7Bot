@@ -2,15 +2,15 @@ import {
   Fragment,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { PhotosIcon } from '../icons';
 import LightboxRoot from 'yet-another-react-lightbox';
+import type { Slide } from 'yet-another-react-lightbox';
 import Captions from 'yet-another-react-lightbox/plugins/captions';
 import Counter from 'yet-another-react-lightbox/plugins/counter';
 import Download from 'yet-another-react-lightbox/plugins/download';
@@ -42,6 +42,7 @@ import {
   uploadPhotos,
 } from '../api';
 import type { Photo, PhotoAlbum, PendingPhotoChannel, PhotosChannelStatus, TimelineResponse } from '../types';
+import { resyncPhotosLibrary } from '../api';
 import { Button } from './ui/button';
 
 type TimelineData = { items: Photo[]; nextCursor: string | null };
@@ -291,6 +292,18 @@ function emptySelection(): SelectionState {
 /** Click or keyboard activation on a tile — only modifiers are read. */
 type TileClickEvent = Pick<React.MouseEvent, 'shiftKey' | 'metaKey' | 'ctrlKey'>;
 
+/** The trash endpoint accepts at most this many ids per request. */
+const TRASH_BATCH_SIZE = 500;
+
+/** Split a selection into request-sized batches so "select all" never 400s. */
+export function trashBatches(ids: string[]): string[][] {
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += TRASH_BATCH_SIZE) {
+    batches.push(ids.slice(i, i + TRASH_BATCH_SIZE));
+  }
+  return batches;
+}
+
 /** Drag-range select: indices between anchor and head, both inclusive. */
 function rangeIndices(anchor: number, head: number): [number, number] {
   return anchor <= head ? [anchor, head] : [head, anchor];
@@ -360,15 +373,38 @@ type VirtualEntry =
   | { kind: 'header'; group: DayGroup; height: number }
   | { kind: 'row'; row: JustifiedRow; group: DayGroup; height: number };
 
-function buildVirtualModel(groups: DayGroup[], width: number, targetHeight: number): VirtualEntry[] {
+/**
+ * Virtualizer model: date headers interleaved with justified rows.
+ *
+ * Rows flow across day boundaries instead of restarting per day — restarting
+ * leaves a wide ragged gap on every sparse day (measured 285–976px of dead
+ * space per row on a 3-photos-a-day library), which is what makes the grid
+ * read as a list of strips rather than a photo library. A day still gets a
+ * header, emitted at the row where its photos begin.
+ */
+export function buildVirtualModel(groups: DayGroup[], width: number, targetHeight: number): VirtualEntry[] {
   const entries: VirtualEntry[] = [];
   const headerH = 44;
-  for (const group of groups) {
-    entries.push({ kind: 'header', group, height: headerH });
-    const rows = buildJustifiedRows(group.photos, width, targetHeight, PHOTO_GAP);
-    for (const row of rows) {
-      entries.push({ kind: 'row', row, group, height: row.height });
+  const byKey = new Map(groups.map((group) => [group.key, group]));
+  const flat = groups.flatMap((group) => group.photos);
+  const rows = buildJustifiedRows(flat, width, targetHeight, PHOTO_GAP);
+  let lastKey = '';
+  for (const row of rows) {
+    const key = dayKey(row.items[0].takenAt);
+    let group = byKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        label: dayLabel(row.items[0].takenAt),
+        takenAt: row.items[0].takenAt,
+        photos: row.items,
+      };
     }
+    if (key !== lastKey) {
+      entries.push({ kind: 'header', group, height: headerH });
+      lastKey = key;
+    }
+    entries.push({ kind: 'row', row, group, height: row.height });
   }
   return entries;
 }
@@ -403,7 +439,8 @@ function PhotoTile({
       aria-label={photo.fileName}
       aria-pressed={selected}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
           if (selectionActive) onSelect(photo, event);
           else onOpen(photo);
         }
@@ -419,6 +456,9 @@ function PhotoTile({
         draggable={false}
       />
       <span className="photos-item__shade" aria-hidden="true" />
+      <span className="photos-item__meta" aria-hidden="true">
+        <span>{dayLabel(photo.takenAt)}</span>
+      </span>
       {photo.kind === 'video' && (
         <span className="photos-item__badge" aria-label="Video">
           ▶{formatDuration(photo.duration) && ` ${formatDuration(photo.duration)}`}
@@ -463,27 +503,24 @@ function TimelineFlow({
     return out;
   }, [entries]);
 
-  // The page scrolls the WINDOW (the app shell is not a scroll container).
-  // jsdom / first-paint: window height is 0 → the virtualizer would render
-  // nothing, so fall back to rendering everything until measurable.
+  // Own scroll container — element-based virtualization is deterministic
+  // (no document-offset math). The window-virtualizer variant produced
+  // offsets relative to the document while tiles were positioned relative
+  // to this list, so tiles floated out of the page when listOffset lagged.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const canMeasure = typeof window !== 'undefined' && window.innerHeight > 0 && mounted;
-  const virtualizer = useWindowVirtualizer({
+  const canMeasure = mounted;
+  const virtualizer = useVirtualizer({
     count: entries.length,
+    getScrollElement: () => scrollRef.current,
     estimateSize: (i) => entries[i].height + (entries[i].kind === 'header' ? 8 : PHOTO_GAP),
     overscan: 6,
-    enabled: canMeasure,
   });
-  const virtualItems = canMeasure ? virtualizer.getVirtualItems() : null;
-  // Window virtualizer offsets are relative to the document; entries sit
-  // below the page header, so subtract this container's document offset.
-  const listRef = useRef<HTMLDivElement>(null);
-  const [listOffset, setListOffset] = useState(0);
-  useLayoutEffect(() => {
-    if (!canMeasure || !listRef.current) return;
-    setListOffset(listRef.current.getBoundingClientRect().top + window.scrollY);
-  }, [canMeasure, width, targetHeight, entries.length]);
+  // jsdom / first paint: the scroll element has no height → the virtualizer
+  // would render nothing; render everything until it measures.
+  const virtualItems = canMeasure && (scrollRef.current?.clientHeight || 0) > 0
+    ? virtualizer.getVirtualItems()
+    : null;
 
   // Scrubber state: the bubble shows the month/year under the drag head.
   const [scrubLabel, setScrubLabel] = useState<string | null>(null);
@@ -516,8 +553,34 @@ function TimelineFlow({
     jumpToPhotoIndex(photoIndex);
   }, [photos, jumpToPhotoIndex]);
 
+  // Floating "current day" label — GPhotos pins the day you're scrolling
+  // through. Virtualized headers are absolutely positioned (sticky can't
+  // work), so track the group under the scroll top and render it pinned.
+  const [floatingDay, setFloatingDay] = useState<string | null>(null);
+  useEffect(() => {
+    if (!virtualItems || !virtualItems.length) return;
+    const scrollOffset = virtualizer.scrollOffset ?? 0;
+    let current = '';
+    for (const item of virtualItems) {
+      const entry = entries[item.index];
+      if (entry.kind === 'header' && item.start <= scrollOffset + 4) {
+        current = entry.group.label;
+      }
+    }
+    // Rows visible above their own header (continuation rows) keep the
+    // last header passed.
+    if (!current) {
+      const first = entries[virtualItems[0].index];
+      if (first) current = first.group.label;
+    }
+    setFloatingDay(current || null);
+  }, [virtualItems, entries, virtualizer.scrollOffset]);
+
   return (
-    <div className="photos-timeline" ref={listRef}>
+    <div className="photos-timeline photos-timeline--scroll" ref={scrollRef}>
+      {floatingDay && !scrubLabel && (
+        <div className="photos-floating-day" aria-hidden="true">{floatingDay}</div>
+      )}
       {scrubLabel !== null && (
         <div className="photos-scrubber-bubble" role="presentation">{scrubLabel}</div>
       )}
@@ -537,9 +600,12 @@ function TimelineFlow({
             top: 0,
             left: 0,
             width: '100%',
-            transform: virtualItems ? `translateY(${virtualRow.start - listOffset}px)` : undefined,
+            transform: virtualItems ? `translateY(${virtualRow.start}px)` : undefined,
           };
           if (entry.kind === 'header') {
+            // The floating pinned header already shows this day — an
+            // in-flow copy right under it reads as a duplicate.
+            if (virtualItems && floatingDay === entry.group.label) return null;
             return (
               <h2 key={`h-${entry.group.key}`} className="photos-day__label" style={style}>
                 {entry.group.label}
@@ -588,6 +654,11 @@ function DateScrubber({
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const active = useRef(false);
+  const [ratio, setRatio] = useState(0.5);
+  const applyRatio = useCallback((next: number) => {
+    setRatio(next);
+    onScrub(next);
+  }, [onScrub]);
 
   const ratioFromEvent = useCallback((clientY: number) => {
     const el = trackRef.current;
@@ -616,7 +687,6 @@ function DateScrubber({
     };
   }, [disabled, onScrub, onEnd, ratioFromEvent]);
 
-  const lastRatio = useRef(0.5);
   if (disabled) return null;
   return (
     <div
@@ -626,16 +696,14 @@ function DateScrubber({
         event.preventDefault();
         active.current = true;
         (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
-        const ratio = ratioFromEvent(event.clientY);
-        lastRatio.current = ratio;
-        onScrub(ratio);
+        applyRatio(ratioFromEvent(event.clientY));
       }}
       role="slider"
       aria-label="Scroll by date"
       aria-orientation="vertical"
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-valuenow={Math.round(lastRatio.current * 100)}
+      aria-valuenow={Math.round(ratio * 100)}
       tabIndex={0}
       onKeyDown={(event) => {
         // 10% steps: a keyboard scrub spans a decade in ten presses —
@@ -643,9 +711,7 @@ function DateScrubber({
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
           event.preventDefault();
           const delta = event.key === 'ArrowDown' ? 0.1 : -0.1;
-          const next = Math.min(1, Math.max(0, lastRatio.current + delta));
-          lastRatio.current = next;
-          onScrub(next);
+          applyRatio(Math.min(1, Math.max(0, ratio + delta)));
         }
       }}
     >
@@ -665,6 +731,8 @@ function PhotosTimeline({
   onTileClick,
   rowHeight,
   onRowHeightChange,
+  emptyView,
+  activeAlbumName,
 }: {
   data: TimelineData | null;
   loading: boolean;
@@ -676,30 +744,59 @@ function PhotosTimeline({
   onTileClick: (photo: Photo, index: number, event: TileClickEvent) => void;
   rowHeight: number;
   onRowHeightChange: (value: number) => void;
+  /** Which lens is empty — drives the empty-state copy. */
+  emptyView?: 'timeline' | 'favorites' | 'albums' | 'trash';
+  activeAlbumName?: string;
 }) {
   const [timelineRef, width] = useMeasuredWidth<HTMLDivElement>();
 
   if (loading && !data) return <div className="photos-loading">Loading your library…</div>;
   if (!data?.items.length) {
+    // A filtered view (Favorites/Trash/album) is not an empty library —
+    // saying "Your library is empty" with upload CTAs is wrong when the
+    // timeline has items and this lens just doesn't match any.
+    const emptyCopy = {
+      timeline: {
+        title: 'Your library is empty',
+        body: 'Add photos and videos here, or post them to your private Telegram channel from any device.',
+      },
+      favorites: {
+        title: 'No favorites yet',
+        body: 'Tap the star on a photo to pin it here.',
+      },
+      albums: {
+        title: activeAlbumName ? `Nothing in “${activeAlbumName}” yet` : 'No albums yet',
+        body: 'Add photos to an album from the lightbox, or create one below the timeline.',
+      },
+      trash: {
+        title: 'Trash is empty',
+        body: 'Deleted photos land here first — nothing to restore.',
+      },
+    }[emptyView ?? 'timeline'];
+    const isPlainLibrary = (emptyView ?? 'timeline') === 'timeline' && !activeAlbumName;
     return (
       <div className="photos-empty">
         <span className="photos-empty__icon" aria-hidden="true">
           <PhotosIcon />
         </span>
-        <h2>Your library is empty</h2>
-        <p>Add photos and videos here, or post them to your private Telegram channel from any device.</p>
-        <div className="photos-empty__actions">
-          {onUpload && <Button onClick={onUpload}>Upload photos</Button>}
-          {onScan && (
-            <Button variant="secondary" onClick={onScan}>
-              Find missing photos
-            </Button>
-          )}
-        </div>
-        <p className="photos-empty__hint">
-          Already posted to the channel? “Find missing photos” adds whatever is not in your library
-          yet — it runs in the background, so refresh in a moment.
-        </p>
+        <h2>{emptyCopy.title}</h2>
+        <p>{emptyCopy.body}</p>
+        {isPlainLibrary && (
+          <>
+            <div className="photos-empty__actions">
+              {onUpload && <Button onClick={onUpload}>Upload photos</Button>}
+              {onScan && (
+                <Button variant="secondary" onClick={onScan}>
+                  Find missing photos
+                </Button>
+              )}
+            </div>
+            <p className="photos-empty__hint">
+              Already posted to the channel? “Find missing photos” adds whatever is not in your
+              library yet — it runs in the background, so refresh in a moment.
+            </p>
+          </>
+        )}
       </div>
     );
   }
@@ -1024,7 +1121,9 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
 
   const trash = async (ids: string[]) => {
     try {
-      await trashPhotos(ids);
+      for (const batch of trashBatches(ids)) {
+        await trashPhotos(batch);
+      }
       setLightboxIndex(-1);
       clearSelection();
       await loadTimeline(true, undefined, activeAlbum?.id);
@@ -1273,6 +1372,8 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
           onTileClick={onTileClick}
           rowHeight={rowHeight}
           onRowHeightChange={setRowHeight}
+          emptyView={view}
+          activeAlbumName={activeAlbum?.name}
         />
       )}
 
@@ -1351,6 +1452,32 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
 
 // ── Lightbox (YARL-based) ────────────────────────────────────────────────
 
+/**
+ * YARL slides: the stage shows the preview webp (browsers can't render HEIC and
+ * browsing must not pull originals), while the download plug-in and video get
+ * the owner-scoped original — it defaults to `src`, which saved a webp.
+ */
+export function buildLightboxSlides(photos: Photo[]): Slide[] {
+  return photos.map((p) => {
+    const download = photoFileUrl(p.id);
+    return p.kind === 'video'
+      ? {
+          type: 'video' as const,
+          sources: [{ src: download, type: p.mime || 'video/mp4' }],
+          poster: photoThumbUrl(p.id, 'preview'),
+          download,
+        }
+      : {
+          type: 'image' as const,
+          src: photoThumbUrl(p.id, 'preview'),
+          alt: p.fileName,
+          width: p.width || undefined,
+          height: p.height || undefined,
+          download,
+        };
+  });
+}
+
 function PhotoLightbox({
   photos,
   index,
@@ -1373,21 +1500,7 @@ function PhotoLightbox({
   const photo = photos[index];
   const [metaOpen, setMetaOpen] = useState(false);
 
-  const slides = useMemo(() => photos.map((p) => (
-    p.kind === 'video'
-      ? {
-          type: 'video' as const,
-          sources: [{ src: photoFileUrl(p.id), type: p.mime || 'video/mp4' }],
-          poster: photoThumbUrl(p.id, 'preview'),
-        }
-      : {
-          type: 'image' as const,
-          src: photoThumbUrl(p.id, 'preview'),
-          alt: p.fileName,
-          width: p.width || undefined,
-          height: p.height || undefined,
-        }
-  )), [photos]);
+  const slides = useMemo(() => buildLightboxSlides(photos), [photos]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1505,6 +1618,3 @@ function PhotoLightbox({
 
 // Re-exports for callers that want the connect page directly.
 export { PhotosConnectPage as default };
-
-// Keep resync import adjacent to its use (tree-shaking clarity).
-import { resyncPhotosLibrary } from '../api';

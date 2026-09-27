@@ -14085,3 +14085,49 @@ select.edit-field-input {
 .photos-meta__row dd { margin: 0; word-break: break-word; }
 .photos-meta__hint { margin: 0 0 0.4rem; font-size: 0.76rem; color: rgba(226, 232, 240, 0.5); }
 .photos-meta__map-link { display: inline-block; margin-top: 0.6rem; color: #fdba74; font-size: 0.8rem; }
+
+/* Timeline scroll container: the virtualizer owns this element's scroll,
+   so its height must be bounded by the viewport, not the content. */
+.photos-timeline--scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Viewport minus header/tabs chrome — keeps the scrubber + tabs visible. */
+  height: calc(100vh - 14rem);
+  min-height: 24rem;
+  padding-right: 0.25rem;
+}
+
+/* Floating current-day header (pinned by scroll position). */
+.photos-floating-day {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  padding: .45rem .75rem .35rem;
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--text, #e7e9ea);
+  background: linear-gradient(to bottom, rgba(10,10,12,.97) 65%, rgba(10,10,12,0));
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+/* Sticky per-group headers (fallback: keeps in-flow headers pinned too). */
+.photos-day__label {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: linear-gradient(to bottom, rgba(10,10,12,.96) 70%, rgba(10,10,12,0));
+  padding: .45rem .75rem .35rem;
+  font-size: .95rem;
+  backdrop-filter: blur(4px);
+}
+/* Hover meta overlay on tiles. */
+.photos-item__meta {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: .8rem .5rem .35rem;
+  background: linear-gradient(to top, rgba(0,0,0,.75), transparent);
+  color: #fff; font-size: .72rem; font-weight: 600;
+  opacity: 0; transition: opacity .15s ease;
+  display: flex; justify-content: space-between; gap: .4rem;
+  pointer-events: none;
+}
+.photos-item:hover .photos-item__meta { opacity: 1; }
