@@ -43,6 +43,10 @@ import type {
   WatchResponse,
   WatchTrack,
   WatchlistPageResponse,
+  PhotosChannelStatus,
+  PhotoAlbum,
+  PhotoUploadResult,
+  TimelineResponse,
 } from './types';
 import { getDeviceId, getDeviceLabel } from './utils/device';
 
@@ -793,4 +797,117 @@ export async function signInTelegram(user: TelegramAuthUser): Promise<{ ok: bool
 
 export async function signOut(): Promise<void> {
   await request('/auth/logout', { method: 'POST' });
+}
+
+// ── TeleDirect Photos ─────────────────────────────────────────────────────
+
+export async function fetchPhotosStatus(signal?: AbortSignal): Promise<PhotosChannelStatus> {
+  return request<PhotosChannelStatus>('/api/photos/status', { signal });
+}
+
+export async function connectPhotosChannel(channel: string): Promise<{ ok: boolean; channelId?: number; title?: string; error?: string }> {
+  return request('/api/photos/connect', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel }),
+  });
+}
+
+export async function disconnectPhotosChannel(): Promise<void> {
+  await request('/api/photos/disconnect', { method: 'POST' });
+}
+
+export async function fetchPhotosTimeline(
+  options: { cursor?: string; view?: string; album?: string; limit?: number; signal?: AbortSignal } = {},
+): Promise<TimelineResponse> {
+  const qs = new URLSearchParams();
+  if (options.cursor) qs.set('cursor', options.cursor);
+  if (options.view) qs.set('view', options.view);
+  if (options.album) qs.set('album', options.album);
+  if (options.limit) qs.set('limit', String(options.limit));
+  return request<TimelineResponse>(`/api/photos/timeline?${qs}`, { signal: options.signal });
+}
+
+export async function fetchPhotoAlbums(signal?: AbortSignal): Promise<{ albums: PhotoAlbum[] }> {
+  return request('/api/photos/albums', { signal });
+}
+
+export async function createPhotoAlbum(name: string): Promise<{ album: PhotoAlbum }> {
+  return request('/api/photos/albums', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+  });
+}
+
+export async function renamePhotoAlbum(albumId: string, name: string): Promise<void> {
+  await request(`/api/photos/albums/${encodeURIComponent(albumId)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+  });
+}
+
+export async function deletePhotoAlbum(albumId: string): Promise<void> {
+  await request(`/api/photos/albums/${encodeURIComponent(albumId)}`, { method: 'DELETE' });
+}
+
+export async function setPhotoFavorite(photoId: string, favorite: boolean): Promise<void> {
+  await request(`/api/photos/${encodeURIComponent(photoId)}/favorite`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ favorite }),
+  });
+}
+
+export async function trashPhotos(ids: string[]): Promise<void> {
+  await request('/api/photos/trash', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+  });
+}
+
+export async function restorePhotos(ids: string[]): Promise<void> {
+  await request('/api/photos/restore', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+  });
+}
+
+export async function setAlbumPhotos(albumId: string, ids: string[], member: boolean): Promise<void> {
+  await request(`/api/photos/albums/${encodeURIComponent(albumId)}/photos`, {
+    method: member ? 'POST' : 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+}
+
+export function photoThumbUrl(messageId: number, size: 'grid' | 'preview'): string {
+  return `/api/photos/thumb/${messageId}/${size}`;
+}
+
+export function photoFileUrl(messageId: number): string {
+  return `/api/photos/file/${messageId}`;
+}
+
+/** Upload files to the user's photo vault. onProgress reports 0-100 per file batch. */
+export async function uploadPhotos(
+  files: File[],
+  options: { albumId?: string; onProgress?: (percent: number) => void; signal?: AbortSignal } = {},
+): Promise<{ results: PhotoUploadResult[] }> {
+  const form = new FormData();
+  if (options.albumId) form.append('album_id', options.albumId);
+  for (const file of files) form.append('file', file, file.name);
+  const xhr = new XMLHttpRequest();
+  const done = new Promise<{ results: PhotoUploadResult[] }>((resolve, reject) => {
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && options.onProgress) {
+        options.onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('Bad upload response')); }
+      } else {
+        reject(new Error(`Upload failed (${xhr.status})`));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+    xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
+  });
+  xhr.open('POST', '/api/photos/upload');
+  xhr.withCredentials = true;
+  xhr.send(form);
+  options.signal?.addEventListener('abort', () => xhr.abort());
+  return done;
 }

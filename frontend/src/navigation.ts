@@ -77,7 +77,7 @@ function normalizeAppHref(href: string): string {
 
 function isReactAppPath(pathname: string): boolean {
   return pathname === '/' || pathname === '/app' || pathname.startsWith('/app/') ||
-    /^(?:\/(?:filters|books|watchlist|requests|liked-songs|playlists|playlist|live-tv|stats|admin|play|movie|series|album|artist|person))(?:\/|$)/.test(pathname);
+    /^(?:\/(?:filters|books|watchlist|requests|liked-songs|playlists|playlist|live-tv|photos|stats|admin|play|movie|series|album|artist|person))(?:\/|$)/.test(pathname);
 }
 
 export function useAppNavigation() {
@@ -132,6 +132,7 @@ export type AppRoute =
   | { kind: 'admin-dashboard' }
   | { kind: 'admin-trending' }
   | { kind: 'admin-requests' }
+  | { kind: 'photos' }
   | { kind: 'watch'; key: string }
   | { kind: 'detail'; detailKind: 'movie' | 'series' | 'album' | 'artist' | 'person'; key: string };
 
@@ -146,6 +147,7 @@ export function parseRoute(pathname: string): AppRoute {
   const playlist = canonicalPath.match(/^\/playlist\/([a-f0-9]{32})/);
   if (playlist) return { kind: 'playlist', playlistId: playlist[1] };
   if (canonicalPath === '/live-tv') return { kind: 'live-tv' };
+  if (canonicalPath === '/photos') return { kind: 'photos' };
   if (canonicalPath === '/stats') return { kind: 'stats' };
   if (canonicalPath === '/admin/dashboard') return { kind: 'admin-dashboard' };
   if (canonicalPath === '/admin/trending') return { kind: 'admin-trending' };
