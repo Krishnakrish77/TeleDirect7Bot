@@ -14205,17 +14205,20 @@ select.edit-field-input {
   .photos-zoom { display: none; }
 }
 
-/* Lightbox chrome: GPhotos-style top bar over the YARL stage. */
-.photos-lightbox-root { position: relative; z-index: 90; }
-.photos-lightbox-root .yarl__container { animation: photos-lb-in 0.22s ease; }
-.photos-lightbox-root .yarl__button { filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.6)); }
-.photos-lightbox-root .yarl__button svg { width: 1.5rem; height: 1.5rem; }
+/* Lightbox chrome: GPhotos-style top bar over the YARL stage.
+   YARL renders through its OWN portal (z-index 9999), not inside
+   .photos-lightbox-root — so our selectors for it are global, and all of
+   our chrome (topbar, info drawer) renders through YARL's `controls` slot
+   because YARL inerts every other document.body child while open. */
+.yarl__container { animation: photos-lb-in 0.22s ease; }
+.yarl__button { filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.6)); }
+.yarl__button svg { width: 1.5rem; height: 1.5rem; }
 @keyframes photos-lb-in {
   from { opacity: 0; transform: scale(0.985); }
   to { opacity: 1; transform: scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .photos-lightbox-root .yarl__container { animation: none; }
+  .yarl__container { animation: none; }
 }
 .photos-lb-topbar {
   position: absolute; top: 0; left: 0; right: 0; z-index: 5;

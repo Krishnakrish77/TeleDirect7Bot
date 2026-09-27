@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectPhotosChannel,
@@ -371,11 +372,31 @@ describe('Photos missing-photo search', () => {
     render(<PhotosPage user={user} />);
     await screen.findByRole('button', { name: 'IMG_1.jpg' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Find missing photos' }));
+    // The scan is a maintenance action in the header overflow menu.
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Find missing photos' }));
 
-    expect(await screen.findByRole('button', { name: 'Looking…' })).toBeTruthy();
     const status = await screen.findByRole('status');
     expect(status.textContent).toContain('Checking your Telegram channel');
+  });
+});
+
+describe('Photos info panel', () => {
+  it('renders without crashing when stored GPS has null components', async () => {
+    // Older Mongo docs can carry {lat: null, lon: null} — a truthy object
+    // whose parts are not numbers. The panel must skip Location, not die.
+    vi.mocked(fetchPhotosTimeline).mockResolvedValue({
+      items: [makePhoto({ gps: { lat: null, lon: null } as never })],
+      nextCursor: null,
+    });
+
+    render(<PhotosPage user={user} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'IMG_1.jpg' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Info' }));
+
+    // The drawer's close button only exists when the panel rendered.
+    expect(await screen.findByRole('button', { name: 'Close info' })).toBeTruthy();
+    expect(screen.queryByText('Location')).toBeNull();
   });
 });
 

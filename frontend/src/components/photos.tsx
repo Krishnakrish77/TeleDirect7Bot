@@ -17,6 +17,7 @@ import {
   DownloadIcon,
   ImageIcon,
   InfoIcon,
+  MoreVerticalIcon,
   PencilIcon,
   PhotosIcon,
   PlayIcon,
@@ -55,6 +56,12 @@ import {
 import type { Photo, PhotoAlbum, PendingPhotoChannel, PhotosChannelStatus, TimelineResponse } from '../types';
 import { resyncPhotosLibrary } from '../api';
 import { Button } from './ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 type TimelineData = { items: Photo[]; nextCursor: string | null };
 
@@ -1067,6 +1074,16 @@ function MetaPanel({ photo }: { photo: Photo }) {
     return () => { cancelled = true; };
   }, [photo.id, photo.kind]);
 
+  // Location: EXIF first, stored GPS second. Both legs verify the numbers
+  // themselves — older Mongo docs and partial EXIF can carry null
+  // components inside a truthy object, and `null.toFixed` killed the panel.
+  const coords = (lat: unknown, lon: unknown): string =>
+    typeof lat === 'number' && typeof lon === 'number' && Number.isFinite(lat) && Number.isFinite(lon)
+      ? `${lat.toFixed(4)}, ${lon.toFixed(4)}`
+      : '';
+  const location = coords(exif?.latitude, exif?.longitude) || coords(photo.gps?.lat, photo.gps?.lon);
+  const hasGps = Boolean(coords(photo.gps?.lat, photo.gps?.lon));
+
   const rows: Array<[string, string]> = ([
     ['Taken', dayLabel(photo.takenAt)],
     ['File', photo.fileName],
@@ -1077,7 +1094,7 @@ function MetaPanel({ photo }: { photo: Photo }) {
     ['Aperture', exif?.FNumber ? `f/${exif.FNumber}` : ''],
     ['ISO', exif?.ISO ? String(exif.ISO) : ''],
     ['Focal length', exif?.FocalLength ? `${Math.round(exif.FocalLength)}mm` : ''],
-    ['Location', exif?.latitude != null ? `${exif.latitude.toFixed(4)}, ${exif.longitude?.toFixed(4)}` : (photo.gps ? `${photo.gps.lat.toFixed(4)}, ${photo.gps.lon.toFixed(4)}` : '')],
+    ['Location', location],
   ] as Array<[string, string]>).filter(([, v]) => v);
 
   return (
@@ -1091,7 +1108,7 @@ function MetaPanel({ photo }: { photo: Photo }) {
           </div>
         ))}
       </dl>
-      {photo.gps && (
+      {hasGps && photo.gps && (
         <a
           className="photos-meta__map-link"
           href={`https://www.openstreetmap.org/?mlat=${photo.gps.lat}&mlon=${photo.gps.lon}#map=15/${photo.gps.lat}/${photo.gps.lon}`}
@@ -1722,14 +1739,24 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
                 }}
               />
               <Button onClick={() => fileInputRef.current?.click()}>Upload</Button>
-              <Button
-                variant="secondary"
-                title="Check your Telegram channel for photos that are not in this library yet"
-                disabled={importState === 'running'}
-                onClick={() => void syncLibrary()}
-              >
-                {importState === 'running' ? 'Looking…' : 'Find missing photos'}
-              </Button>
+              {/* Maintenance actions live in an overflow menu — a library
+                  scan is not a primary CTA on the gallery home. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className="photos-iconbtn" aria-label="More actions" title="More actions">
+                    <MoreVerticalIcon />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="account-menu" align="end">
+                  <DropdownMenuItem
+                    disabled={importState === 'running'}
+                    onSelect={() => void syncLibrary()}
+                  >
+                    <SearchIcon />
+                    {importState === 'running' ? 'Looking for missing photos…' : 'Find missing photos'}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </header>
 
@@ -1984,82 +2011,140 @@ function PhotoLightbox({
           iconPrev: () => <ChevronLeftIcon />,
           iconNext: () => <ChevronRightIcon />,
           // Toolbar chrome renders through the `controls` slot (absolute
-          // positioned over the lightbox stage).
+          // positioned over the lightbox stage). The info drawer MUST live in
+          // here too: YARL marks every other document.body child inert +
+          // aria-hidden while open, so anything in our own portal (the old
+          // drawer location) renders visually but is dead to clicks and
+          // screen readers.
           controls: () => (
-            <div className="photos-lb-topbar">
-              <button
-                type="button"
-                className="photos-lb-btn"
-                onClick={onClose}
-                aria-label="Back to library"
-                title="Back"
-              >
-                <ArrowLeftIcon />
-              </button>
-              {photo && (
-                <div className="photos-lb-title">
-                  <span className="photos-lb-title__name">{photo.fileName}</span>
-                  <span className="photos-lb-title__date">{dayLabel(photo.takenAt)}</span>
-                </div>
-              )}
-              <span className="photos-lb-topbar__spacer" />
-              {photo && !trashView && (
-                <>
+            <>
+              <div className="photos-lb-topbar">
+                <button
+                  type="button"
+                  className="photos-lb-btn"
+                  onClick={onClose}
+                  aria-label="Back to library"
+                  title="Back"
+                >
+                  <ArrowLeftIcon />
+                </button>
+                {photo && (
+                  <div className="photos-lb-title">
+                    <span className="photos-lb-title__name">{photo.fileName}</span>
+                    <span className="photos-lb-title__date">{dayLabel(photo.takenAt)}</span>
+                  </div>
+                )}
+                <span className="photos-lb-topbar__spacer" />
+                {photo && !trashView && (
+                  <>
+                    <button
+                      type="button"
+                      className={`photos-lb-btn${photo.favorite ? ' is-active' : ''}`}
+                      onClick={() => onToggleFavorite(photo)}
+                      aria-label={photo.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                      aria-pressed={photo.favorite}
+                      title="Favorite"
+                    >
+                      <StarIcon filled={photo.favorite} />
+                    </button>
+                    <a
+                      className="photos-lb-btn"
+                      href={photoFileUrl(photo.id)}
+                      download
+                      aria-label="Download original"
+                      title="Download original"
+                    >
+                      <DownloadIcon />
+                    </a>
+                  </>
+                )}
+                {photo && (
                   <button
                     type="button"
-                    className={`photos-lb-btn${photo.favorite ? ' is-active' : ''}`}
-                    onClick={() => onToggleFavorite(photo)}
-                    aria-label={photo.favorite ? 'Remove from favorites' : 'Add to favorites'}
-                    aria-pressed={photo.favorite}
-                    title="Favorite"
-                  >
-                    <StarIcon filled={photo.favorite} />
-                  </button>
-                  <a
                     className="photos-lb-btn"
-                    href={photoFileUrl(photo.id)}
-                    download
-                    aria-label="Download original"
-                    title="Download original"
+                    onClick={() => setMetaOpen((v) => !v)}
+                    aria-label="Info"
+                    aria-pressed={metaOpen}
+                    title="Info (i)"
                   >
-                    <DownloadIcon />
-                  </a>
-                </>
+                    <InfoIcon />
+                  </button>
+                )}
+                {photo && (trashView ? (
+                  <button
+                    type="button"
+                    className="photos-lb-btn"
+                    onClick={() => onRestore(photo)}
+                    aria-label="Restore"
+                    title="Restore"
+                  >
+                    <RestoreIcon />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="photos-lb-btn photos-lb-btn--danger"
+                    onClick={() => onTrash(photo)}
+                    aria-label="Move to trash"
+                    title="Move to trash"
+                  >
+                    <TrashIcon />
+                  </button>
+                ))}
+              </div>
+              {metaOpen && photo && (
+                <aside className="photos-info" aria-label="Photo details">
+                  <div className="photos-info__head">
+                    <h2>Info</h2>
+                    <button
+                      type="button"
+                      className="photos-iconbtn"
+                      aria-label="Close info"
+                      onClick={() => setMetaOpen(false)}
+                    >
+                      <XIcon />
+                    </button>
+                  </div>
+                  <MetaPanel photo={photo} />
+                  <section className="photos-info__albums" aria-label="Albums">
+                    <h3>Albums</h3>
+                    <div className="photos-info__chips">
+                      {albums
+                        .filter((album) => photo.albumIds.includes(album.id))
+                        .map((album) => (
+                          <button
+                            key={album.id}
+                            type="button"
+                            className="photos-album-chip"
+                            title={`Remove from ${album.name}`}
+                            onClick={() => onAssignAlbum(photo, album.id, false)}
+                          >
+                            {album.name}
+                            <XIcon />
+                          </button>
+                        ))}
+                      {albums.filter((album) => photo.albumIds.includes(album.id)).length === 0 && (
+                        <p className="photos-info__hint">Not in any album yet.</p>
+                      )}
+                    </div>
+                    <select
+                      value=""
+                      aria-label="Add to album"
+                      onChange={(event) => {
+                        if (event.target.value) onAssignAlbum(photo, event.target.value, true);
+                      }}
+                    >
+                      <option value="">Add to album…</option>
+                      {albums
+                        .filter((album) => !photo.albumIds.includes(album.id))
+                        .map((album) => (
+                          <option key={album.id} value={album.id}>{album.name}</option>
+                        ))}
+                    </select>
+                  </section>
+                </aside>
               )}
-              {photo && (
-                <button
-                  type="button"
-                  className="photos-lb-btn"
-                  onClick={() => setMetaOpen((v) => !v)}
-                  aria-label="Info"
-                  aria-pressed={metaOpen}
-                  title="Info (i)"
-                >
-                  <InfoIcon />
-                </button>
-              )}
-              {photo && (trashView ? (
-                <button
-                  type="button"
-                  className="photos-lb-btn"
-                  onClick={() => onRestore(photo)}
-                  aria-label="Restore"
-                  title="Restore"
-                >
-                  <RestoreIcon />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="photos-lb-btn photos-lb-btn--danger"
-                  onClick={() => onTrash(photo)}
-                  aria-label="Move to trash"
-                  title="Move to trash"
-                >
-                  <TrashIcon />
-                </button>
-              ))}
-            </div>
+            </>
           ),
         }}
         on={{
@@ -2074,58 +2159,6 @@ function PhotoLightbox({
         }}
         toolbar={{ buttons: ['close'] }}
       />
-      {metaOpen && photo && (
-        <aside className="photos-info" aria-label="Photo details">
-          <div className="photos-info__head">
-            <h2>Info</h2>
-            <button
-              type="button"
-              className="photos-iconbtn"
-              aria-label="Close info"
-              onClick={() => setMetaOpen(false)}
-            >
-              <XIcon />
-            </button>
-          </div>
-          <MetaPanel photo={photo} />
-          <section className="photos-info__albums" aria-label="Albums">
-            <h3>Albums</h3>
-            <div className="photos-info__chips">
-              {albums
-                .filter((album) => photo.albumIds.includes(album.id))
-                .map((album) => (
-                  <button
-                    key={album.id}
-                    type="button"
-                    className="photos-album-chip"
-                    title={`Remove from ${album.name}`}
-                    onClick={() => onAssignAlbum(photo, album.id, false)}
-                  >
-                    {album.name}
-                    <XIcon />
-                  </button>
-                ))}
-              {albums.filter((album) => photo.albumIds.includes(album.id)).length === 0 && (
-                <p className="photos-info__hint">Not in any album yet.</p>
-              )}
-            </div>
-            <select
-              value=""
-              aria-label="Add to album"
-              onChange={(event) => {
-                if (event.target.value) onAssignAlbum(photo, event.target.value, true);
-              }}
-            >
-              <option value="">Add to album…</option>
-              {albums
-                .filter((album) => !photo.albumIds.includes(album.id))
-                .map((album) => (
-                  <option key={album.id} value={album.id}>{album.name}</option>
-                ))}
-            </select>
-          </section>
-        </aside>
-      )}
     </div>,
     document.body,
   );
