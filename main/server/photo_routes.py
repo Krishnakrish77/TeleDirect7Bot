@@ -26,7 +26,7 @@ from aiohttp import web
 from main import Var
 from main.bot import StreamBot, multi_clients
 from main.utils import photo_store
-from main.utils.custom_dl import ByteStreamer, MediaSessionUnavailable, TelegramStreamTruncated
+from main.utils.custom_dl import ByteStreamer, MediaSessionUnavailable
 from main.utils.user_auth import get_user
 
 routes = web.RouteTableDef()
@@ -34,12 +34,6 @@ routes = web.RouteTableDef()
 # Channel input: @username, t.me/username link, or -100… numeric id.
 _CHANNEL_INPUT_RE = re.compile(r"^(?:@|https?://t\.me/)?([A-Za-z0-9_]{4,64})$")
 _CHANNEL_ID_RE = re.compile(r"^-100\d{6,}$")
-
-# Telegram bots can fetch at most 20 MB via GetFile unless the file was
-# posted by the bot itself. We send uploads AS the bot, so bot-posted
-# documents are exempt — but user-posted originals (native Telegram
-# backup path) hit this cap. Surfaced as 410 on the file route.
-_BOT_GETFILE_CAP = 20 * 1024 * 1024
 
 _channels_cache_ttl = 30.0
 _channels_cache: dict[int, tuple[float, dict]] = {}
@@ -123,17 +117,11 @@ async def _verify_channel_access(channel_ref: int | str, requester_id: int) -> t
     if member_status not in ("administrator", "creator"):
         return None, "You must be the channel creator (or an admin) to connect it"
 
-    # Anonymous-admin channels can hide the real creator; treat a documented
-    # creator_user_id of the bot itself as a hard no.
-    if member_status == "creator":
-        creator_id = requester_id
-    else:
-        try:
-            full = await bot.get_chat(chat_id, )
-            creator_id = getattr(getattr(full, "link", None), "__self__", None)  # not reliable
-        except Exception:
-            creator_id = None
-        creator_id = requester_id if requester_id else creator_id
+    # The requester just proved admin/creator status via get_chat_member.
+    # Anonymous-admin channels can hide who the real creator is from the
+    # API, so record the verified requester — re-verify (reverify_channel)
+    # re-runs the same membership check, which is the actual trust bound.
+    creator_id = requester_id
     return {
         "chat_id": chat_id,
         "creator_id": creator_id or requester_id,
@@ -413,17 +401,11 @@ async def photo_thumb(request: web.Request) -> web.StreamResponse:
         data = await generate_thumbs_for(user_id, channel_id, message_id, size)
     if not data:
         raise web.HTTPNotFound(text="Thumbnail unavailable")
-    if request.if_none_match:
-        pass  # handled implicitly by weak etag support below
-    resp = web.Response(
+    return web.Response(
         body=data,
         content_type="image/webp",
-        headers={
-            "Cache-Control": "private, max-age=86400",
-        },
+        headers={"Cache-Control": "private, max-age=86400"},
     )
-    resp.enable_compression = getattr(resp, "enable_compression", None)  # no-op; keep type checkers calm
-    return resp
 
 
 # ── Original bytes ────────────────────────────────────────────────────────
@@ -611,11 +593,6 @@ async def photos_upload(request: web.Request) -> web.Response:
                 continue
             continue
         size = 0
-        hashes = None
-        try:
-            from main.utils import dedup as _dedup_mod  # noqa: F401  (hash helper parity)
-        except Exception:
-            pass
         import hashlib
         hasher = hashlib.sha256()
         # Buffer each file's bytes in memory only for the sha + send call —
