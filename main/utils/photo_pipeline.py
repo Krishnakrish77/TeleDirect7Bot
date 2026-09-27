@@ -12,6 +12,7 @@ CPU-bound work is shielded from the event loop with run_in_executor.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import io
 import logging
 import os
@@ -38,7 +39,8 @@ def _piexif_exif(data: bytes) -> dict:
     try:
         import piexif
         exif_dict = piexif.load(data)
-    except Exception:
+    except Exception as exc:
+        log.debug("piexif exif load failed: %r", exc)
         return {}
     flat: Dict[str, Any] = {}
     for ifd_name in ("0th", "Exif", "GPS"):
@@ -90,21 +92,27 @@ def _image_probe(data: bytes, mime: str, file_name: str) -> dict:
                 exif_data = {
                     TAGS.get(k, str(k)): v for k, v in raw_exif.items()
                 }
-                # IFD sub-blocks (Exif, GPSInfo)
+                # IFD sub-blocks: DateTimeOriginal/camera live in the Exif
+                # IFD, coordinates in the GPS IFD. Both hang off IFD0 as
+                # numeric pointers (0x8769 / 0x8825) — PIL.Image.ExifID does
+                # NOT exist, so the previous form raised AttributeError and
+                # silently dropped capture time + GPS for every image.
                 try:
-                    from PIL import Image as _I
-                    exif_ifd = raw_exif.get_ifd(_I.ExifID.EXIF_IFD)
                     from PIL.ExifTags import TAGS as _T2
+                    exif_ifd = raw_exif.get_ifd(0x8769)
                     for k, v in exif_ifd.items():
                         exif_data[_T2.get(k, str(k))] = v
-                    gps_ifd = raw_exif.get_ifd(_I.ExifID.GPSINFO_IFD)
-                    gps_pairs = {}
-                    for k, v in gps_ifd.items():
-                        gps_pairs[GPSTAGS.get(k, str(k))] = v
+                    gps_pairs = {
+                        GPSTAGS.get(k, str(k)): v
+                        for k, v in raw_exif.get_ifd(0x8825).items()
+                    }
                     if gps_pairs:
                         exif_data["GPSInfo"] = gps_pairs
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Hostile/malformed EXIF must not fail the probe, but it
+                    # must not be silent either — a swallowed error here is
+                    # how the capture-time/GPS regression went unnoticed.
+                    log.warning("exif sub-ifd parse failed: %s", exc)
         except Exception:
             pass
 
@@ -139,7 +147,7 @@ def _image_probe(data: bytes, mime: str, file_name: str) -> dict:
         if preview:
             out["thumb_preview"] = preview
     except Exception as exc:
-        log.warning("image probe failed: %s", exc)
+        log.warning("image probe failed (%s, %s): %r", mime, file_name, exc, exc_info=True)
     return out
 
 
@@ -220,6 +228,11 @@ def _ffprobe_bytes(data: bytes) -> dict:
         input=data, capture_output=True, timeout=30,
     )
     if result.returncode != 0:
+        log.warning(
+            "ffprobe failed (rc=%d): %s",
+            result.returncode,
+            (result.stderr or b"").decode("utf-8", "replace").strip()[:400] or "no stderr",
+        )
         return {}
     import json
     return json.loads(result.stdout or b"{}")
@@ -239,8 +252,13 @@ def _video_poster_stdin(data: bytes, edge: int) -> Optional[bytes]:
         )
         if result.returncode == 0 and result.stdout:
             return _webp_resize(result.stdout, edge) or result.stdout
+        log.warning(
+            "ffmpeg poster failed (rc=%d): %s",
+            result.returncode,
+            (result.stderr or b"").decode("utf-8", "replace").strip()[:400] or "no stderr",
+        )
     except Exception as exc:
-        log.warning("video poster failed: %s", exc)
+        log.warning("video poster failed: %r", exc, exc_info=True)
     return None
 
 
@@ -255,15 +273,51 @@ def _webp_resize(data: bytes, edge: int) -> Optional[bytes]:
         buf = BytesIO()
         img.save(buf, format="WEBP", quality=82, method=4)
         return buf.getvalue()
-    except Exception:
+    except Exception as exc:
+        log.debug("webp resize failed (edge=%d): %r", edge, exc)
         return None
 
 
 # ── Public entry points ───────────────────────────────────────────────────
 
 
+_pipeline_exec: Optional[concurrent.futures.ThreadPoolExecutor] = None
+_download_sem: Optional[asyncio.Semaphore] = None
+
+
+def download_slot() -> asyncio.Semaphore:
+    """Shared cap on simultaneously-buffered originals.
+
+    An original is held in RAM from download through thumbnailing, and
+    ingest runs one worker per bound channel, so without this N channels can
+    buffer N files at once (``PHOTOS_UPLOAD_MAX_FILE`` each). Callers await
+    the slot; ingest is queue-paced, so waiting only delays the next photo.
+    """
+    global _download_sem
+    if _download_sem is None:
+        _download_sem = asyncio.Semaphore(Var.PHOTOS_FETCH_CONCURRENCY)
+    return _download_sem
+
+
+def _pipeline_executor() -> concurrent.futures.ThreadPoolExecutor:
+    """Bounded executor for decode/probe/thumbnail work.
+
+    Ingest runs one worker per bound channel and the thumb route can ask for
+    regeneration on demand, so an unbounded pool lets concurrent users run
+    that many Pillow/ffmpeg jobs — each holding a fully decoded image.
+    ``Var.PHOTOS_PIPELINE_WORKERS`` caps the real concurrency.
+    """
+    global _pipeline_exec
+    if _pipeline_exec is None:
+        _pipeline_exec = concurrent.futures.ThreadPoolExecutor(
+            max_workers=Var.PHOTOS_PIPELINE_WORKERS,
+            thread_name_prefix="photopipe",
+        )
+    return _pipeline_exec
+
+
 def process_sync(data: bytes, mime: str, file_name: str) -> dict:
-    """Synchronous pipeline step (runs in executor)."""
+    """Synchronous pipeline step (runs in the pipeline executor)."""
     kind = "video" if (mime or "").startswith("video/") else "image"
     if kind == "image":
         result = _image_probe(data, mime, file_name)
@@ -277,7 +331,9 @@ def process_sync(data: bytes, mime: str, file_name: str) -> dict:
 
 async def process(data: bytes, mime: str, file_name: str) -> dict:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, process_sync, data, mime, file_name)
+    return await loop.run_in_executor(
+        _pipeline_executor(), process_sync, data, mime, file_name
+    )
 
 
 async def generate_thumbs_for(owner_user_id: int, channel_id: int,
@@ -286,27 +342,35 @@ async def generate_thumbs_for(owner_user_id: int, channel_id: int,
     Telegram (rare — only when ingest-time generation failed)."""
     doc = await photo_store.get_photo(owner_user_id, message_id, channel_id=channel_id)
     if not doc:
+        log.info("thumb regen: no photo doc mid=%d cid=%d size=%s", message_id, channel_id, size)
         return None
     from main.bot import multi_clients
     client = multi_clients.get(0)
     if client is None:
+        log.warning("thumb regen: no bot client available mid=%d", message_id)
         return None
     from pyrogram.file_id import FileId
     try:
         FileId.decode(doc["file_id"])
-    except Exception:
+    except Exception as exc:
+        log.warning("thumb regen: stored file id undecodable mid=%d: %r", message_id, exc)
         return None
     try:
-        client_msg = await client.get_messages(channel_id, message_id)
-        if not client_msg:
-            return None
-        data = await client_msg.download(in_memory=True)
-        # download(in_memory=True) returns BytesIO, not bytes.
-        if isinstance(data, io.BytesIO):
-            data = data.getvalue()
-        if not data:
-            return None
-        result = await process(data, doc.get("mime") or "", doc.get("file_name") or "")
+        # Same memory bound as ingest: this buffers a whole original.
+        async with download_slot():
+            client_msg = await client.get_messages(channel_id, message_id)
+            if not client_msg:
+                log.warning(
+                    "thumb regen: channel message missing mid=%d cid=%d", message_id, channel_id
+                )
+                return None
+            data = await client_msg.download(in_memory=True)
+            # download(in_memory=True) returns BytesIO, not bytes.
+            if isinstance(data, io.BytesIO):
+                data = data.getvalue()
+            if not data:
+                return None
+            result = await process(data, doc.get("mime") or "", doc.get("file_name") or "")
         thumb = result.get("thumb_preview" if size == "preview" else "thumb_grid")
         if thumb:
             await photo_store.put_thumb(
@@ -318,7 +382,7 @@ async def generate_thumbs_for(owner_user_id: int, channel_id: int,
             )
         return thumb
     except Exception as exc:
-        log.warning("thumb regen failed mid=%d: %s", message_id, exc)
+        log.warning("thumb regen failed mid=%d size=%s: %r", message_id, size, exc, exc_info=True)
         return None
 
 

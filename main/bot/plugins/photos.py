@@ -56,7 +56,20 @@ async def _worker(channel_id: int) -> None:
             return
         owner_user_id, message = item
         try:
-            await photo_pipeline.ingest_message(owner_user_id, channel_id, message)
+            # Global cap on simultaneously-buffered originals — ingest holds a
+            # whole photo/video in RAM and there is one worker per channel.
+            # FloodWait must escape the worker for requeue, so it is caught
+            # outside this block.
+            slot = photo_pipeline.download_slot()
+            if slot.locked():
+                # Explains "ingest is slow" without guessing: another channel
+                # is holding the memory budget.
+                log.debug(
+                    "ingest waiting for a download slot cid=%d mid=%d",
+                    channel_id, getattr(message, "id", -1),
+                )
+            async with slot:
+                await photo_pipeline.ingest_message(owner_user_id, channel_id, message)
         except FloodWait as e:
             log.warning("ingest FloodWait %ss cid=%d", getattr(e, "value", getattr(e, "x", 1)), channel_id)
             await asyncio.sleep(float(getattr(e, "value", getattr(e, "x", 1))))

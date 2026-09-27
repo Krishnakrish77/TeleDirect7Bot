@@ -13846,19 +13846,46 @@ select.edit-field-input {
 
 .photos-page {
   width: min(100%, 1320px);
+  /* Same centering contract as .hub-main: without the auto margins the page
+     hugs the left edge of the full-width app shell. */
+  margin: 0 auto;
   display: grid;
   gap: 1.25rem;
-  padding-top: clamp(1rem, 3vw, 2.5rem);
+  padding: clamp(1rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2rem);
 }
 
-.photos-connect { display: grid; gap: 1rem; max-width: 40rem; padding: clamp(1.25rem, 3vw, 2.4rem); border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+/* Single-message states (sign-in notice, library check) read as a centered
+   panel rather than a left-aligned paragraph. */
+.photos-page--centered { justify-items: center; text-align: center; }
+
+.photos-connect { display: grid; gap: 1rem; width: min(100%, 40rem); margin-inline: auto; padding: clamp(1.25rem, 3vw, 2.4rem); border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
 .photos-connect h1 { margin: 0; font-size: clamp(1.6rem, 3.5vw, 2.4rem); letter-spacing: -0.03em; }
 .photos-connect__lede { margin: 0; color: var(--muted); line-height: 1.6; }
-.photos-connect__steps { display: grid; gap: 0.45rem; margin: 0; padding-left: 1.2rem; color: var(--muted); font-size: 0.9rem; }
-.photos-connect__form { display: flex; gap: 0.6rem; }
-.photos-connect__form input { flex: 1; min-height: 2.7rem; padding: 0.45rem 0.8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
-.photos-connect__form input:focus-visible { border-color: var(--brand); outline: 2px solid rgba(249, 115, 22, 0.25); outline-offset: 1px; }
+.photos-connect__steps { display: grid; gap: 0.9rem; margin: 0; padding-left: 1.35rem; color: var(--muted); font-size: 0.9rem; }
+/* Keep the list markers (display:grid on the <li> would drop them) and put
+   the step title/hint on their own lines under the number. */
+.photos-connect__steps li { padding-left: 0.15rem; }
+.photos-connect__steps li::marker { color: var(--brand); font-weight: 700; }
+.photos-connect__step-title { display: block; margin-bottom: 0.15rem; color: var(--text); font-weight: 650; }
+.photos-connect__step-hint { display: block; line-height: 1.55; }
+.photos-connect__step-hint code { padding: 0.05rem 0.3rem; border-radius: 4px; background: rgba(148, 163, 184, 0.24); color: var(--text); font-size: 0.85em; }
+/* Secondary by design: the final CTA is "Connect channel", not this link. */
+.photos-connect__bot-link { display: inline-flex; align-items: center; margin-top: 0.35rem; min-height: 2.2rem; padding: 0.3rem 0.9rem; border: 1px solid var(--line-strong, var(--line)); border-radius: 8px; background: transparent; color: var(--text); text-decoration: none; font-size: 0.84rem; font-weight: 650; }
+.photos-connect__bot-link:hover { border-color: var(--brand); color: #fff; }
+.photos-connect__footnote { margin: 0; padding-top: 0.5rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
+.photos-connect__form { display: grid; gap: 0.4rem; }
+.photos-connect__label { color: var(--muted); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.photos-connect__field-row { display: flex; gap: 0.6rem; align-items: center; }
+.photos-connect__field-row input { flex: 1; min-width: 0; min-height: 2.6rem; padding: 0.45rem 0.8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
+.photos-connect__field-row input:focus-visible { border-color: var(--brand); outline: 2px solid rgba(249, 115, 22, 0.25); outline-offset: 1px; }
 .photos-connect__error { margin: 0; color: #f87171; font-size: 0.86rem; }
+
+/* Narrow screens: the link/id field needs the full width, so stack it above
+   the button instead of squeezing the label onto two lines. */
+@media (max-width: 520px) {
+  .photos-connect__field-row { flex-direction: column; align-items: stretch; }
+  .photos-connect__field-row button { width: 100%; }
+}
 
 .photos-nav { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .photos-nav button { min-height: 2.35rem; padding: 0.35rem 0.85rem; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); cursor: pointer; font: inherit; font-size: 0.84rem; font-weight: 650; }
@@ -13879,8 +13906,10 @@ select.edit-field-input {
 
 .photos-more { justify-self: center; min-height: 2.5rem; padding: 0.4rem 1.2rem; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); cursor: pointer; font: inherit; font-size: 0.86rem; }
 .photos-more:hover, .photos-more:focus-visible { border-color: rgba(249, 115, 22, 0.7); color: var(--text); outline: none; }
-.photos-loading, .photos-empty { display: grid; gap: 0.4rem; justify-items: start; padding: 2rem 0; color: var(--muted); }
+.photos-loading, .photos-empty { display: grid; gap: 0.4rem; justify-items: center; text-align: center; padding: 2.5rem 0; color: var(--muted); }
 .photos-empty h2 { margin: 0; color: var(--text); }
+.photos-empty p { margin: 0; max-width: 34rem; }
+.photos-empty__hint { color: var(--muted); font-size: 0.8rem; }
 
 .photos-lightbox { position: fixed; inset: 0; z-index: 90; display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: 1fr auto; align-items: center; background: rgba(8, 9, 10, 0.94); }
 .photos-lightbox__stage { position: relative; display: grid; gap: 0.6rem; justify-items: center; padding: 1rem; min-width: 0; }
@@ -13892,6 +13921,13 @@ select.edit-field-input {
 .photos-lightbox__actions { grid-column: 1 / -1; display: flex; justify-content: center; gap: 0.6rem; padding-bottom: 1rem; }
 .photos-lightbox__actions button { min-height: 2.3rem; padding: 0.3rem 0.9rem; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; background: transparent; color: rgba(255, 255, 255, 0.85); cursor: pointer; font: inherit; font-size: 0.82rem; }
 .photos-lightbox__actions button:hover { border-color: #fff; color: #fff; }
+.photos-lightbox__actions .photos-lightbox__albums { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.photos-lightbox__actions .photos-lightbox__album-chip { border-color: rgba(249, 115, 22, 0.6); background: rgba(249, 115, 22, 0.16); color: #fdba74; }
+.photos-lightbox__actions .photos-lightbox__album-chip:hover { border-color: #fb923c; color: #fff; }
+.photos-lightbox__actions select { min-height: 2.3rem; padding: 0.3rem 0.7rem; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.85); font: inherit; font-size: 0.82rem; }
+.photos-lightbox__actions select option { background: #14161a; color: #f4f4f5; }
+.photos-lightbox__actions a.photos-lightbox__download { display: inline-flex; align-items: center; min-height: 2.3rem; padding: 0.3rem 0.9rem; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; color: rgba(255, 255, 255, 0.85); text-decoration: none; font-size: 0.82rem; }
+.photos-lightbox__actions a.photos-lightbox__download:hover { border-color: #fff; color: #fff; }
 
 .photos-albums { display: grid; gap: 0.5rem; max-width: 30rem; }
 .photos-albums input[type="text"] { min-height: 2.6rem; padding: 0.4rem 0.8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
@@ -13911,7 +13947,6 @@ select.edit-field-input {
 .photos-uploads__row progress { width: 5rem; }
 .photos-dropzone-hint { position: fixed; inset: 0; z-index: 85; display: grid; place-items: center; background: rgba(249, 115, 22, 0.12); border: 3px dashed rgba(249, 115, 22, 0.7); color: var(--text); font-size: 1.3rem; font-weight: 700; pointer-events: none; }
 .photos-banner { padding: 0.8rem 1rem; border: 1px solid rgba(251, 191, 36, 0.5); border-radius: 10px; background: rgba(251, 191, 36, 0.1); color: var(--text); display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
-.photos-banner--warn button { min-height: 2.1rem; padding: 0.2rem 0.8rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
 
 .photos-beta-badge {
   display: inline-block;
