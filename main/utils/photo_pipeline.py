@@ -311,7 +311,7 @@ async def generate_thumbs_for(owner_user_id: int, channel_id: int,
                               message_id: int, size: str) -> Optional[bytes]:
     """Regenerate one thumb on demand. Requires an original fetch from
     Telegram (rare — only when ingest-time generation failed)."""
-    doc = await photo_store.get_photo(owner_user_id, message_id)
+    doc = await photo_store.get_photo(owner_user_id, message_id, channel_id=channel_id)
     if not doc:
         return None
     from main.bot import multi_clients
@@ -328,9 +328,12 @@ async def generate_thumbs_for(owner_user_id: int, channel_id: int,
         if not client_msg:
             return None
         data = await client_msg.download(in_memory=True)
+        # download(in_memory=True) returns BytesIO, not bytes.
+        if isinstance(data, io.BytesIO):
+            data = data.getvalue()
         if not data:
             return None
-        result = await process(bytes(data), doc.get("mime") or "", doc.get("file_name") or "")
+        result = await process(data, doc.get("mime") or "", doc.get("file_name") or "")
         thumb = result.get("thumb_preview" if size == "preview" else "thumb_grid")
         if thumb:
             await photo_store.put_thumb(
@@ -369,6 +372,21 @@ async def ingest_message(owner_user_id: int, channel_id: int, message) -> None:
         else:
             mime = getattr(media, "mime_type", "") or "application/octet-stream"
             file_name = getattr(media, "file_name", "") or f"file_{message.id}"
+        # Photos vaults hold images and videos only — skip PDFs and
+        # arbitrary documents posted to a bound channel.
+        if not (mime.startswith("image/") or mime.startswith("video/")):
+            log.info("ingest skip mid=%d: unsupported mime %s", message.id, mime)
+            return
+        # RAM bound: a direct channel post bypasses the web-upload caps.
+        # Skip anything wildly larger than a photo/video backup needs
+        # (Telegram bot uploads cap at 2 GB anyway); thumbnail generation
+        # buffers the whole file, so guard process memory.
+        media_size = int(getattr(media, "file_size", 0) or 0)
+        if media_size > Var.PHOTOS_UPLOAD_MAX_FILE:
+            log.warning(
+                "ingest skip mid=%d: %d bytes exceeds per-file cap", message.id, media_size
+            )
+            return
         doc = await photo_store.get_photo(owner_user_id, message.id)
         if doc and doc.get("sha256"):
             return  # already processed

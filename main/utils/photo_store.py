@@ -22,6 +22,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+try:
+    from bson.errors import DuplicateKeyError
+except ImportError:  # pragma: no cover — only matters for Mongo deployments
+    DuplicateKeyError = Exception  # type: ignore[assignment,misc]
+
 _PAGE_CAP = 200
 
 
@@ -95,15 +100,17 @@ async def get_channel_by_owner(owner_user_id: int) -> Optional[dict]:
 
 
 async def get_channel(channel_id: int) -> Optional[dict]:
+    """Fetch a channel binding.
+
+    Raises on DB errors — the stream.py caller is fail-closed and MUST be
+    able to distinguish "not a vault" (None) from "cannot tell" (exception).
+    Other callers wrap this in try/except themselves.
+    """
     await _ensure_indexes()
     db = _get_db()
     if db is None:
         return None
-    try:
-        return await db["photo_channels"].find_one({"channel_id": channel_id})
-    except Exception:
-        logging.exception("photo_store: get_channel failed cid=%d", channel_id)
-        return None
+    return await db["photo_channels"].find_one({"channel_id": channel_id})
 
 
 async def bind_channel(
@@ -209,37 +216,44 @@ def _serialize_photo(doc: dict) -> dict:
 async def upsert_photo(doc: dict) -> Optional[str]:
     """Insert a photo doc keyed by (channel_id, message_id).
 
-    Returns an error string on failure, None on success. ``doc`` must carry
-    channel_id, message_id, owner_user_id. Returns the string "duplicate"
-    when the exact (channel_id, message_id) already exists.
+    Race-safe against a concurrent upload tagging `album_ids`: the insert
+    is unconditional (unique index arbitrates), and on loss the caller's
+    album tag — written before the doc existed — is merged in, never
+    overwritten.
+
+    Returns an error string on failure, None on success, "duplicate" when
+    the (channel_id, message_id) or (owner, sha256) already exists.
     """
     await _ensure_indexes()
     db = _get_db()
     if db is None:
         return "MongoDB is not configured"
     try:
-        existing = await db["photos"].find_one(
-            {
-                "channel_id": doc["channel_id"],
-                "message_id": doc["message_id"],
-            },
-            projection={"_id": 1, "deleted": 1},
-        )
-        if existing:
-            if existing.get("deleted"):
-                # Re-ingest of a trashed message (user restored/reposted):
-                # undelete rather than stay trashed.
-                await db["photos"].update_one(
-                    {"_id": existing["_id"]}, {"$set": {"deleted": False}}
-                )
-            return "duplicate"
         doc.setdefault("uploaded_at", _now())
         doc.setdefault("album_ids", [])
         doc.setdefault("favorite", False)
         doc.setdefault("deleted", False)
         doc.setdefault("thumb", {"grid": False, "preview": False})
-        await db["photos"].insert_one(dict(doc))
-        return None
+        try:
+            await db["photos"].insert_one(dict(doc))
+            return None
+        except DuplicateKeyError:
+            pass  # already exists — fall through to the merge below
+        existing = await db["photos"].find_one(
+            {"channel_id": doc["channel_id"], "message_id": doc["message_id"]},
+            projection={"_id": 1, "deleted": 1, "sha256": 1},
+        )
+        if not existing:
+            # DuplicateKeyError came from (owner, sha256) — same bytes,
+            # different message. That is a genuine per-user duplicate.
+            return "duplicate"
+        if existing.get("deleted"):
+            # Re-ingest of a trashed message: undelete rather than stay
+            # trashed.
+            await db["photos"].update_one(
+                {"_id": existing["_id"]}, {"$set": {"deleted": False}}
+            )
+        return "duplicate"
     except Exception:
         logging.exception(
             "photo_store: upsert_photo failed cid=%s mid=%s",

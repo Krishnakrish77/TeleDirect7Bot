@@ -88,10 +88,10 @@ async def photo_channel_post(client: Client, message):
     """Ingest any post in a bound photo channel.
 
     ``_photos_channel_filter`` is a dynamic filter that can't know the bound
-    channel ids at import time, so this handler checks the binding here and
-    stops (returns) when the channel is not bound. The stream.py handler at
-    group=-1 runs first and explicitly skips bound channels (see
-    ``exclude_photo_channels``).
+    channel ids at import time, so this handler checks the binding here.
+    DB errors on the binding lookup are contained (logged, post dropped) —
+    the fail-closed privacy concern lives in stream.py, which skips bound
+    channels before this handler sees the post.
     """
     try:
         channel_id = int(message.chat.id)

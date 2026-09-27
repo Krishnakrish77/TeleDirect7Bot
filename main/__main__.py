@@ -75,10 +75,13 @@ async def _photos_channel_reverify_loop() -> None:
             db = photo_store._get_db()
             if db is None:
                 continue
-            owners = await db["photo_channels"].find(
+            # Page through ALL active bindings — no cap that silently
+            # skips later channels.
+            cursor = db["photo_channels"].find(
                 {"status": "active"}, projection={"owner_user_id": 1}
-            ).to_list(length=100)
-            for row in owners:
+            )
+            stale = False
+            async for row in cursor:
                 try:
                     status = await reverify_channel(row["owner_user_id"])
                     if status and status != "active":
@@ -90,7 +93,10 @@ async def _photos_channel_reverify_loop() -> None:
                     logging.exception(
                         "photos: reverify failed for owner %s", row["owner_user_id"]
                     )
-                    break  # store likely down; skip the rest of this pass
+                    stale = True
+                    break  # store likely down; resume next pass
+            if stale:
+                continue
         except Exception:
             logging.exception("photos: reverify loop pass failed")
 

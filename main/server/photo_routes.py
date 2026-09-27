@@ -117,6 +117,10 @@ async def _verify_channel_access(channel_ref: int | str, requester_id: int) -> t
     bot_status = getattr(bot_member, "status", "")
     if bot_status not in ("administrator", "creator"):
         return None, "The bot must be a channel administrator with post rights"
+    privileges = getattr(bot_member, "privileges", None)
+    if bot_status == "administrator" and privileges is not None:
+        if not getattr(privileges, "can_post_messages", True):
+            return None, "The bot needs post-messages rights to ingest uploads"
 
     try:
         member = await bot.get_chat_member(chat_id, requester_id)
@@ -535,7 +539,14 @@ async def _stream_bytes(
     streamer = _class_streamer()
     # Probing the session first mirrors stream_routes.media_streamer: a
     # dead media session must 503 cleanly instead of erroring mid-stream.
-    await streamer.generate_media_session(streamer.client, file_id)
+    try:
+        await streamer.generate_media_session(streamer.client, file_id)
+    except MediaSessionUnavailable as exc:
+        logging.warning("photos file route: media session unavailable: %s", exc)
+        raise web.HTTPServiceUnavailable(
+            text="Media session unavailable; retry",
+            headers={"Retry-After": "5"},
+        )
     req_length = until_b - from_b + 1
     cs = chunk_size(req_length)
     offset = offset_fix(from_b, cs)
@@ -677,10 +688,18 @@ async def photos_upload(request: web.Request) -> web.Response:
             results.append({"fileName": part.filename or "?", "error": "Telegram send failed"})
             continue
         count += 1
-        # Record the album tag now — the async channel_post ingest must not
-        # silently drop it (it merges, never overwrites).
+        # Record the album tag. The async channel_post ingest may not have
+        # inserted the photo doc yet — retry briefly so the tag isn't lost
+        # (ingest merges album_ids, never overwrites).
         if album_id:
-            await photo_store.append_album_ids(user_id, msg.id, [album_id])
+            for _ in range(10):
+                await photo_store.append_album_ids(user_id, msg.id, [album_id])
+                tagged = await photo_store.get_photo(
+                    user_id, msg.id, channel_id=channel_id
+                )
+                if tagged and album_id in (tagged.get("album_ids") or []):
+                    break
+                await asyncio.sleep(0.5)
         # The channel_post plugin ingests asynchronously; we still return
         # the message id so the UI can link the upload.
         results.append({
