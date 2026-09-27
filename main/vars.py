@@ -126,3 +126,12 @@ class Var(object):
     # Thumbnail long edge (px) for the two generated webp sizes.
     PHOTO_THUMB_GRID = max(100, int(environ.get("PHOTO_THUMB_GRID", "400") or 400))
     PHOTO_THUMB_PREVIEW = max(400, int(environ.get("PHOTO_THUMB_PREVIEW", "1600") or 1600))
+    # Concurrent decode/EXIF/ffmpeg jobs. Ingest runs one worker per bound
+    # channel and the thumb route regenerates on demand, so without a cap
+    # every call lands on the default executor and that many users can run
+    # that many Pillow/ffmpeg jobs, each holding a decoded image in RAM.
+    PHOTOS_PIPELINE_WORKERS = max(1, int(environ.get("PHOTOS_PIPELINE_WORKERS", "2") or 2))
+    # Simultaneously-buffered originals. A whole photo/video is held in RAM
+    # from download through thumbnail generation, and there is one ingest
+    # worker per bound channel — this is the cross-channel memory bound.
+    PHOTOS_FETCH_CONCURRENCY = max(1, int(environ.get("PHOTOS_FETCH_CONCURRENCY", "2") or 2))

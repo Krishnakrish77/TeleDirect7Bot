@@ -75,19 +75,24 @@ export function PhotosConnectPage({ onConnected }: { onConnected: () => void }) 
       <h1>TeleDirect Photos <span className="photos-beta-badge" title="TeleDirect Photos is in beta — features may change">Beta</span></h1>
       <p className="photos-connect__lede">
         Private photo backup backed by your own Telegram channel. Create a private channel,
-        add this bot as an administrator, then paste the channel link or @username below.
+        add this bot as an administrator, then paste the channel&apos;s numeric id below.
       </p>
       <ol className="photos-connect__steps">
         <li>Create a <strong>private channel</strong> in Telegram (any name).</li>
         <li>Add the bot as an <strong>administrator</strong> with post rights.</li>
-        <li>Paste the channel&apos;s @username or <code>-100…</code> id here.</li>
+        <li>
+          Get the channel&apos;s <code>-100…</code> id — forward any post from it to
+          <strong> @userinfobot</strong>, or copy a message link and read the number after
+          <code> t.me/c/</code> (prefix it with <code>-100</code>).
+        </li>
+        <li>Paste the id here. (A private channel has no @username — a public one is rejected.)</li>
       </ol>
       <form onSubmit={submit} className="photos-connect__form">
         <input
           value={channel}
           onChange={(event) => setChannel(event.target.value)}
-          placeholder="@myphotovault or -1001234567890"
-          aria-label="Channel username or id"
+          placeholder="-1001234567890"
+          aria-label="Channel id"
           disabled={busy}
         />
         <button type="submit" disabled={busy || !channel.trim()}>
@@ -103,18 +108,22 @@ export function PhotosConnectPage({ onConnected }: { onConnected: () => void }) 
 
 function Lightbox({
   photo,
+  albums,
   onClose,
   onPrev,
   onNext,
   onToggleFavorite,
   onTrash,
+  onAssignAlbum,
 }: {
   photo: Photo;
+  albums: PhotoAlbum[];
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
   onToggleFavorite: (photo: Photo) => void;
   onTrash: (photo: Photo) => void;
+  onAssignAlbum: (photo: Photo, albumId: string, member: boolean) => void;
 }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -147,6 +156,34 @@ function Lightbox({
       </div>
       <button className="photos-lightbox__nav photos-lightbox__nav--next" onClick={onNext} aria-label="Next">›</button>
       <div className="photos-lightbox__actions">
+        <div className="photos-lightbox__albums">
+          {albums
+            .filter((album) => photo.albumIds.includes(album.id))
+            .map((album) => (
+              <button
+                key={album.id}
+                className="photos-lightbox__album-chip"
+                title={`Remove from ${album.name}`}
+                onClick={() => onAssignAlbum(photo, album.id, false)}
+              >
+                {album.name} ×
+              </button>
+            ))}
+          <select
+            value=""
+            aria-label="Add to album"
+            onChange={(event) => {
+              if (event.target.value) onAssignAlbum(photo, event.target.value, true);
+            }}
+          >
+            <option value="">Add to album…</option>
+            {albums
+              .filter((album) => !photo.albumIds.includes(album.id))
+              .map((album) => (
+                <option key={album.id} value={album.id}>{album.name}</option>
+              ))}
+          </select>
+        </div>
         <button onClick={() => onToggleFavorite(photo)}>{photo.favorite ? '★ Favorited' : '☆ Favorite'}</button>
         <a href={photoFileUrl(photo.id)} download={photo.fileName || true} className="photos-lightbox__download">Download original</a>
         <button onClick={() => onTrash(photo)}>Delete</button>
@@ -347,6 +384,17 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
     await loadTimeline(true);
   };
 
+  const assignAlbum = async (photo: Photo, albumId: string, member: boolean) => {
+    try {
+      await setAlbumPhotos(albumId, [photo.id], member);
+      // Album membership changes the album view too: refresh it in place so
+      // a removal from an open album actually drops the tile.
+      await loadTimeline(true, undefined, activeAlbum?.id);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Could not update album');
+    }
+  };
+
   if (!signedIn) {
     return <div className="photos-page"><p className="photos-connect__lede">Sign in to use TeleDirect Photos.</p></div>;
   }
@@ -517,11 +565,13 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
       {openPhoto && (
         <Lightbox
           photo={openPhoto}
+          albums={albums}
           onClose={() => setLightbox(-1)}
           onPrev={() => step(-1)}
           onNext={() => step(1)}
           onToggleFavorite={(p) => void toggleFavorite(p)}
           onTrash={(p) => void trash(p)}
+          onAssignAlbum={(p, albumId, member) => void assignAlbum(p, albumId, member)}
         />
       )}
     </div>

@@ -13892,6 +13892,13 @@ select.edit-field-input {
 .photos-lightbox__actions { grid-column: 1 / -1; display: flex; justify-content: center; gap: 0.6rem; padding-bottom: 1rem; }
 .photos-lightbox__actions button { min-height: 2.3rem; padding: 0.3rem 0.9rem; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; background: transparent; color: rgba(255, 255, 255, 0.85); cursor: pointer; font: inherit; font-size: 0.82rem; }
 .photos-lightbox__actions button:hover { border-color: #fff; color: #fff; }
+.photos-lightbox__actions .photos-lightbox__albums { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.photos-lightbox__actions .photos-lightbox__album-chip { border-color: rgba(249, 115, 22, 0.6); background: rgba(249, 115, 22, 0.16); color: #fdba74; }
+.photos-lightbox__actions .photos-lightbox__album-chip:hover { border-color: #fb923c; color: #fff; }
+.photos-lightbox__actions select { min-height: 2.3rem; padding: 0.3rem 0.7rem; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.85); font: inherit; font-size: 0.82rem; }
+.photos-lightbox__actions select option { background: #14161a; color: #f4f4f5; }
+.photos-lightbox__actions a.photos-lightbox__download { display: inline-flex; align-items: center; min-height: 2.3rem; padding: 0.3rem 0.9rem; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; color: rgba(255, 255, 255, 0.85); text-decoration: none; font-size: 0.82rem; }
+.photos-lightbox__actions a.photos-lightbox__download:hover { border-color: #fff; color: #fff; }
 
 .photos-albums { display: grid; gap: 0.5rem; max-width: 30rem; }
 .photos-albums input[type="text"] { min-height: 2.6rem; padding: 0.4rem 0.8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }

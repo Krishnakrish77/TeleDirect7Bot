@@ -22,6 +22,7 @@ import io
 import logging
 import re
 import time
+import weakref
 from typing import Optional
 
 from aiohttp import web
@@ -29,7 +30,7 @@ from aiohttp import web
 from main import Var
 from main.bot import StreamBot, multi_clients
 from main.utils import photo_store
-from main.utils.custom_dl import ByteStreamer, MediaSessionUnavailable, TelegramStreamTruncated
+from main.utils.custom_dl import ByteStreamer, MediaSessionUnavailable
 from main.utils.user_auth import get_user
 
 routes = web.RouteTableDef()
@@ -37,6 +38,7 @@ routes = web.RouteTableDef()
 # Channel input: @username, t.me/username link, or -100… numeric id.
 _CHANNEL_INPUT_RE = re.compile(r"^(?:@|https?://t\.me/)?([A-Za-z0-9_]{4,64})$")
 _CHANNEL_ID_RE = re.compile(r"^-100\d{6,}$")
+_OBJECT_ID_RE = re.compile(r"^[0-9a-f]{24}$")
 
 _channels_cache_ttl = 30.0
 _channels_cache: dict[int, tuple[float, dict]] = {}
@@ -190,7 +192,7 @@ async def connect_channel(request: web.Request) -> web.Response:
     channel_ref = _parse_channel_input(str(body.get("channel", "")))
     if channel_ref is None:
         return _json(
-            {"error": "Paste the channel @username or the -100… id"},
+            {"error": "Paste the channel's -100… id (a private channel has no @username)"},
             status=400,
         )
     user_id = int(user["sub"])
@@ -315,6 +317,11 @@ async def _apply_trash(request: web.Request, *, deleted: bool) -> web.Response:
         raise web.HTTPBadRequest(text="No photo ids supplied")
     if len(ids) > 500:
         raise web.HTTPBadRequest(text="Too many ids")
+    if any(not _OBJECT_ID_RE.match(photo_id) for photo_id in ids):
+        # ObjectId() would raise inside the store and be reported as
+        # "modified: 0" on a 200 — a malformed request must not look like a
+        # successful no-op.
+        raise web.HTTPBadRequest(text="Malformed photo id")
     count = await photo_store.soft_delete(user_id, ids, deleted)
     return _json({"ok": True, "modified": count})
 
@@ -418,6 +425,53 @@ async def _album_membership(request: web.Request, *, member: bool) -> web.Respon
 
 # ── Thumbnails ────────────────────────────────────────────────────────────
 
+# On-demand regeneration pulls the FULL original from Telegram and decodes it
+# on the request path, and video posters routinely fail (ffmpeg cannot seek a
+# piped mp4). Without coalescing + a failure backoff, every grid tile that
+# scrolls into view would re-download the original.
+_thumb_regen_locks: "weakref.WeakValueDictionary[str, asyncio.Lock]" = weakref.WeakValueDictionary()
+_thumb_regen_after: dict[str, float] = {}
+_THUMB_REGEN_BACKOFF_SECONDS = 300.0
+
+
+def _prune_thumb_regen_after() -> None:
+    """Keep the failure memo (keyed per photo/size) bounded."""
+    now = time.monotonic()
+    for key in [k for k, until in _thumb_regen_after.items() if until <= now]:
+        _thumb_regen_after.pop(key, None)
+
+
+async def _thumb_bytes(user_id: int, channel_id: int, message_id: int,
+                       size: str) -> Optional[bytes]:
+    """Serve one thumb, regenerating at most once per photo/size per window.
+
+    Concurrent requests for the same thumb share one regeneration; a failed
+    regeneration is remembered for ``_THUMB_REGEN_BACKOFF_SECONDS`` so an
+    unrenderable video poster cannot be retried on every scroll.
+    """
+    key = photo_store.thumb_key(channel_id, message_id, size)
+    data = await photo_store.get_thumb(key)
+    if data:
+        return data
+    if time.monotonic() < _thumb_regen_after.get(key, 0.0):
+        return None
+    lock = _thumb_regen_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _thumb_regen_locks[key] = lock
+    async with lock:
+        # Another waiter may have generated it while we queued.
+        data = await photo_store.get_thumb(key)
+        if not data:
+            from main.utils.photo_pipeline import generate_thumbs_for
+            data = await generate_thumbs_for(user_id, channel_id, message_id, size)
+    if data:
+        _thumb_regen_after.pop(key, None)
+    else:
+        _thumb_regen_after[key] = time.monotonic() + _THUMB_REGEN_BACKOFF_SECONDS
+        _prune_thumb_regen_after()
+    return data
+
 
 @routes.get(r"/api/photos/thumb/{photo_id}/{size:grid|preview}")
 async def photo_thumb(request: web.Request) -> web.StreamResponse:
@@ -434,15 +488,13 @@ async def photo_thumb(request: web.Request) -> web.StreamResponse:
     doc = await photo_store.get_photo_by_id(user_id, photo_id)
     if not doc:
         raise web.HTTPNotFound(text="Photo not found")
-    channel_id = doc.get("channel_id")
-    message_id = doc.get("message_id")
-    key = photo_store.thumb_key(channel_id, message_id, size)
-    data = await photo_store.get_thumb(key)
-    if not data:
-        # Regenerate synchronously on first hit; pipeline flags miss when
-        # generation failed permanently (e.g. unsupported format).
-        from main.utils.photo_pipeline import generate_thumbs_for
-        data = await generate_thumbs_for(user_id, channel_id, message_id, size)
+    # Same contract as the byte route: a trashed photo is gone, not merely
+    # hidden from the timeline.
+    if doc.get("deleted"):
+        raise web.HTTPGone(text="Photo is in the trash")
+    data = await _thumb_bytes(
+        user_id, doc.get("channel_id"), doc.get("message_id"), size
+    )
     if not data:
         raise web.HTTPNotFound(text="Thumbnail unavailable")
     return web.Response(
@@ -455,14 +507,29 @@ async def photo_thumb(request: web.Request) -> web.StreamResponse:
 # ── Original bytes ────────────────────────────────────────────────────────
 
 
-def _class_streamer() -> ByteStreamer:
-    client = multi_clients.get(0) or StreamBot
-    from main.server.stream_routes import class_cache
-    streamer = class_cache.get(client)
-    if streamer is None:
-        streamer = ByteStreamer(client)
-        class_cache[client] = streamer
-    return streamer
+async def _choose_streamer(file_id) -> tuple[int, ByteStreamer]:
+    """Least-loaded client that holds a live media session for this file.
+
+    Photo originals are Telegram GetFile calls just like catalogue streams,
+    so they must go through the catalogue's selection (``_client_indexes``)
+    and cooldown bookkeeping: pinning them to ``multi_clients[0]`` would
+    bypass balancing and inflate that client's ``work_loads`` entry, which
+    the catalogue sorts on.
+    """
+    from main.server import stream_routes as _sr
+    last_exc: Optional[Exception] = None
+    for index in _sr._client_indexes():
+        _client, streamer = _sr._streamer_for_index(index)
+        try:
+            await streamer.generate_media_session(streamer.client, file_id)
+            return index, streamer
+        except MediaSessionUnavailable as exc:
+            last_exc = exc
+            _sr._mark_client_cooldown(index, f"photos file: {exc}")
+    raise web.HTTPServiceUnavailable(
+        text="Media session unavailable; retry",
+        headers={"Retry-After": "5"},
+    ) from last_exc
 
 
 async def _fresh_file_id(doc: dict, channel_id: int) -> str:
@@ -594,35 +661,44 @@ async def _stream_bytes(
             )
         until_b = min(until_b, file_size - 1)
 
-    streamer = _class_streamer()
+    if request.method == "HEAD":
+        # StreamResponse.write() ignores must_be_empty_body (aiohttp only
+        # honors it in Response.write_eof), so streaming for a HEAD would
+        # pull the whole range from Telegram and emit a body after the
+        # headers. Answer from headers alone, like media_streamer does.
+        headers = {
+            "Content-Type": mime,
+            "Accept-Ranges": "bytes",
+            "Content-Disposition": _inline_disposition(file_name),
+            "Content-Length": str(until_b - from_b + 1),
+        }
+        if range_header:
+            headers["Content-Range"] = f"bytes {from_b}-{until_b}/{file_size}"
+        return web.Response(status=206 if range_header else 200, headers=headers)
+
     # Probing the session first mirrors stream_routes.media_streamer: a
     # dead media session must 503 cleanly instead of erroring mid-stream.
-    try:
-        await streamer.generate_media_session(streamer.client, file_id)
-    except MediaSessionUnavailable as exc:
-        logging.warning("photos file route: media session unavailable: %s", exc)
-        raise web.HTTPServiceUnavailable(
-            text="Media session unavailable; retry",
-            headers={"Retry-After": "5"},
-        )
+    index, streamer = await _choose_streamer(file_id)
 
     # Share the catalogue's stream-slot budget — photos originals are
     # Telegram GetFile calls just like catalogue streams, so unbounded
     # concurrent photo streams could starve the media hub.
     from main.server import stream_routes as _sr
     client_ip = _sr._real_ip(request)
+    is_loopback = client_ip in _sr._LOOPBACK
     if _sr._total_active >= _sr._MAX_STREAMS_TOTAL:
         raise web.HTTPServiceUnavailable(
             text="Server is at stream capacity. Try again shortly.",
             headers={"Retry-After": "10"},
         )
-    if client_ip not in _sr._LOOPBACK and _sr._ip_active.get(client_ip, 0) >= _sr._MAX_STREAMS_PER_IP:
+    if not is_loopback and _sr._ip_active.get(client_ip, 0) >= _sr._MAX_STREAMS_PER_IP:
         raise web.HTTPTooManyRequests(
             text="Too many concurrent streams from this IP.",
             headers={"Retry-After": "5"},
         )
     _sr._total_active += 1
-    _sr._ip_active[client_ip] = _sr._ip_active.get(client_ip, 0) + 1
+    if not is_loopback:
+        _sr._ip_active[client_ip] = _sr._ip_active.get(client_ip, 0) + 1
 
     req_length = until_b - from_b + 1
     cs = chunk_size(req_length)
@@ -632,7 +708,7 @@ async def _stream_bytes(
     part_count = (until_b // cs) - (from_b // cs) + 1
 
     body = streamer.yield_file(
-        file_id, 0, offset, first_part_cut, last_part_cut, part_count, cs
+        file_id, index, offset, first_part_cut, last_part_cut, part_count, cs
     )
     status = 206 if range_header else 200
     # yield_file is an async generator — stream it with StreamResponse
@@ -645,20 +721,18 @@ async def _stream_bytes(
     if status == 206:
         resp.headers["Content-Range"] = f"bytes {from_b}-{until_b}/{file_size}"
     resp.content_length = max(0, until_b - from_b + 1)
-    await resp.prepare(request)
     try:
+        # prepare() is inside the try: a client that disconnects between the
+        # admission check and the header write must still return its slot,
+        # or the global budget leaks until restart.
+        await resp.prepare(request)
         async for chunk in body:
             await resp.write(chunk)
-    except (MediaSessionUnavailable, ConnectionResetError, TelegramStreamTruncated):
-        # Mid-stream failure: aborting the response is the only honest
-        # outcome — the client sees a truncated body against the promised
-        # Content-Length (same contract as the catalogue stream route).
-        raise
+        await resp.write_eof()
     finally:
         # Slot must be released on every exit path (success, error, client
         # disconnect) or the shared budget leaks.
         _sr._release_stream_slot(client_ip)
-    await resp.write_eof()
     return resp
 
 

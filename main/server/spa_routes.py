@@ -3110,6 +3110,7 @@ async def spa_app_fallback(request: web.Request) -> web.Response:
 @routes.get("/playlists")
 @routes.get(r"/playlist/{playlist_id:[a-f0-9]{32}}")
 @routes.get("/live-tv")
+@routes.get("/photos")
 @routes.get(r"/play/{key:[A-Za-z0-9_-]+}")
 @routes.get("/admin/iptv")
 @routes.get("/admin/trending")

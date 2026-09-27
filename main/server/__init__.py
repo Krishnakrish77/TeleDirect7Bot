@@ -10,7 +10,7 @@ import os
 
 from aiohttp import web
 
-from .stream_routes import routes as stream_routes
+from .stream_routes import routes as stream_route_table
 from .hls_routes import routes as hls_route_table
 from .hub_routes import routes as hub_routes
 from .admin_routes import routes as admin_routes
@@ -290,5 +290,5 @@ def web_server():
     web_app.add_routes(hls_route_table)
     if os.path.isdir(STATIC_DIR):
         web_app.add_routes([web.static("/static", STATIC_DIR)])
-    web_app.add_routes(stream_routes)
+    web_app.add_routes(stream_route_table)
     return web_app
