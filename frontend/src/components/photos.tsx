@@ -5,6 +5,7 @@ import {
   deletePhotoAlbum,
   disconnectPhotosChannel,
   fetchPhotoAlbums,
+  fetchPendingPhotoChannel,
   fetchPhotosStatus,
   fetchPhotosTimeline,
   photoFileUrl,
@@ -70,6 +71,12 @@ export function PhotosConnectPage({
   const [channel, setChannel] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const manualTimeout = useRef(false);
+
+  const botLabel = status?.botUsername ? `@${status.botUsername}` : 'the bot';
+  const addUrl = status?.addToChannelUrl;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -89,8 +96,44 @@ export function PhotosConnectPage({
     }
   };
 
-  const botLabel = status?.botUsername ? `@${status.botUsername}` : 'the bot';
-  const addUrl = status?.addToChannelUrl;
+  /**
+   * "Continue": ask the server which channel the bot was just added to.
+   * The bot receives Telegram's own membership update, so no id or link is
+   * needed. Polls briefly because the user may still be in Telegram when they
+   * press it, then falls back to the manual field.
+   */
+  const detectChannel = async () => {
+    setError('');
+    setDetecting(true);
+    manualTimeout.current = false;
+    try {
+      for (let attempt = 0; attempt < 20 && !manualTimeout.current; attempt += 1) {
+        const pending = await fetchPendingPhotoChannel();
+        if (pending.channelId) {
+          const result = await connectPhotosChannel(String(pending.channelId));
+          if (result.error) {
+            setError(result.error);
+            return;
+          }
+          onConnected();
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+      if (!manualTimeout.current) {
+        setError(
+          `The bot has not reported a channel yet. Check that ${botLabel} is an administrator of it, `
+          + 'then press Continue again. Added the bot earlier? Remove and re-add it, or link it manually below.',
+        );
+        setShowManual(true);
+      }
+    } catch (err) {
+      setError(describeError(err, 'Could not check for the channel'));
+      setShowManual(true);
+    } finally {
+      setDetecting(false);
+    }
+  };
 
   return (
     <div className="photos-connect">
@@ -119,33 +162,56 @@ export function PhotosConnectPage({
           )}
         </li>
         <li>
-          <span className="photos-connect__step-title">Link the channel</span>
+          <span className="photos-connect__step-title">Press Continue</span>
           <span className="photos-connect__step-hint">
-            In the channel, open any post, use its <strong>Copy Link</strong> action (the ⋯ menu),
-            and paste it below. A <code>-100…</code> channel id works too.
+            Telegram reports the new channel to {botLabel} automatically — no ids or links to copy.
+            {addUrl ? '' : ' Add the bot as an administrator first.'}
           </span>
         </li>
       </ol>
-      <form onSubmit={submit} className="photos-connect__form">
-        <label className="photos-connect__label" htmlFor="photos-channel-input">
-          Channel link or id
-        </label>
-        <div className="photos-connect__field-row">
-          <input
-            id="photos-channel-input"
-            value={channel}
-            onChange={(event) => setChannel(event.target.value)}
-            placeholder="e.g. https://t.me/c/1234567890/12"
-            inputMode="url"
-            autoComplete="off"
-            disabled={busy}
-          />
-          <Button type="submit" disabled={busy || !channel.trim()}>
-            {busy ? 'Verifying…' : 'Connect channel'}
-          </Button>
-        </div>
-      </form>
+      <div className="photos-connect__detect">
+        <Button onClick={() => void detectChannel()} disabled={detecting || busy}>
+          {detecting ? 'Looking for the channel…' : 'Continue'}
+        </Button>
+        {detecting && (
+          <span className="photos-connect__detect-status" role="status">
+            Waiting for Telegram to report the channel…
+          </span>
+        )}
+      </div>
       {error && <p className="photos-connect__error" role="alert">{error}</p>}
+      {!showManual ? (
+        <button
+          type="button"
+          className="photos-connect__manual-toggle"
+          onClick={() => {
+            manualTimeout.current = true;
+            setShowManual(true);
+          }}
+        >
+          Already added the bot earlier? Paste a link or id instead
+        </button>
+      ) : (
+        <form onSubmit={submit} className="photos-connect__form">
+          <label className="photos-connect__label" htmlFor="photos-channel-input">
+            Channel link or id
+          </label>
+          <div className="photos-connect__field-row">
+            <input
+              id="photos-channel-input"
+              value={channel}
+              onChange={(event) => setChannel(event.target.value)}
+              placeholder="e.g. https://t.me/c/1234567890/12"
+              inputMode="url"
+              autoComplete="off"
+              disabled={busy}
+            />
+            <Button type="submit" disabled={busy || !channel.trim()}>
+              {busy ? 'Verifying…' : 'Connect channel'}
+            </Button>
+          </div>
+        </form>
+      )}
       <p className="photos-connect__footnote">
         New posts import automatically. Photos you posted before connecting can be pulled in with
         <strong> Scan channel history</strong> once you are set up.

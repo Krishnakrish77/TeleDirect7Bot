@@ -1172,6 +1172,11 @@ export interface PhotosChannelStatus {
   addToChannelUrl?: string | null;
 }
 
+export interface PendingPhotoChannel {
+  channelId: number | null;
+  title?: string | null;
+}
+
 export interface TimelineResponse {
   items: Photo[];
   nextCursor: string | null;

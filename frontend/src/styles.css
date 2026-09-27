@@ -13869,6 +13869,11 @@ select.edit-field-input {
 .photos-connect__step-title { display: block; margin-bottom: 0.15rem; color: var(--text); font-weight: 650; }
 .photos-connect__step-hint { display: block; line-height: 1.55; }
 .photos-connect__step-hint code { padding: 0.05rem 0.3rem; border-radius: 4px; background: rgba(148, 163, 184, 0.24); color: var(--text); font-size: 0.85em; }
+.photos-connect__detect { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.photos-connect__detect-status { color: var(--muted); font-size: 0.82rem; }
+.photos-connect__manual-toggle { justify-self: start; padding: 0; border: 0; background: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font: inherit; font-size: 0.8rem; }
+.photos-connect__manual-toggle:hover { color: var(--text); }
+
 /* Secondary by design: the final CTA is "Connect channel", not this link. */
 .photos-connect__bot-link { display: inline-flex; align-items: center; margin-top: 0.35rem; min-height: 2.2rem; padding: 0.3rem 0.9rem; border: 1px solid var(--line-strong, var(--line)); border-radius: 8px; background: transparent; color: var(--text); text-decoration: none; font-size: 0.84rem; font-weight: 650; }
 .photos-connect__bot-link:hover { border-color: var(--brand); color: #fff; }
