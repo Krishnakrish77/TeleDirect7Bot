@@ -22,6 +22,11 @@ from typing import Any, Dict, Optional
 from main import Var
 from main.utils import photo_store
 
+try:
+    from pyrogram.errors import FloodWait
+except ImportError:  # pragma: no cover
+    FloodWait = Exception  # type: ignore[assignment,misc]
+
 log = logging.getLogger("photos.pipeline")
 
 # Pillow de/encoders that might legitimately fail on hostile bytes —
@@ -152,9 +157,10 @@ def _image_probe(data: bytes, mime: str, file_name: str) -> dict:
         except Exception:
             pass
 
-        # Thumbnails.
-        grid = _image_thumb(img, Var.PHOTO_THUMB_GRID)
-        preview = _image_thumb(img, Var.PHOTO_THUMB_PREVIEW)
+        # Thumbnails. thumbnail() mutates in place — copy the source image
+        # per size so the grid thumb doesn't shrink the preview input.
+        grid = _image_thumb(_copy_image(img), Var.PHOTO_THUMB_GRID)
+        preview = _image_thumb(_copy_image(img), Var.PHOTO_THUMB_PREVIEW)
         if grid:
             out["thumb_grid"] = grid
         if preview:
@@ -178,6 +184,14 @@ def _dms_to_deg(dms, ref) -> Optional[float]:
         return None
 
 
+def _copy_image(img):
+    """Fresh decode-preserving copy — Image.thumbnail mutates in place, so
+    each thumbnail size needs its own instance."""
+    clone = img.copy()
+    clone.load()
+    return clone
+
+
 def _image_thumb(img, edge: int) -> Optional[bytes]:
     try:
         from PIL import ImageOps
@@ -198,27 +212,17 @@ def _image_thumb(img, edge: int) -> Optional[bytes]:
 # ── Video probing ─────────────────────────────────────────────────────────
 
 
-def _ffprobe(args: list[str]) -> dict:
-    result = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-print_format", "json", *args],
-        capture_output=True, timeout=30,
-    )
-    if result.returncode != 0:
-        return {}
-    import json
-    return json.loads(result.stdout or b"{}")
-
-
 def _video_probe(data: bytes, mime: str, file_name: str) -> dict:
-    """Probe duration + generate a poster frame for video, via a temp file."""
+    """Probe duration + generate a poster frame for video.
+
+    Bytes are piped through ffmpeg/ffprobe stdin — originals never touch
+    disk (feature contract). mp4/mov demuxers need seekable input, so for
+    those we accept the one-pass limitation: probing works, poster falls
+    back to inputseek 0.
+    """
     out: Dict[str, Any] = {}
-    import tempfile
-    tmp = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=_suffix_for(file_name, mime), delete=False) as fh:
-            fh.write(data)
-            tmp = fh.name
-        info = _ffprobe(["-show_streams", "-show_format", tmp])
+        info = _ffprobe_bytes(data)
         vstream = next((s for s in info.get("streams", []) if s.get("codec_type") == "video"), {})
         duration = float(info.get("format", {}).get("duration") or vstream.get("duration") or 0)
         if duration:
@@ -226,40 +230,39 @@ def _video_probe(data: bytes, mime: str, file_name: str) -> dict:
         if vstream:
             out["width"] = int(vstream.get("width") or 0) or None
             out["height"] = int(vstream.get("height") or 0) or None
-        # Poster frame at ~1s in, scaled to preview size, in webp.
-        poster = _video_poster(tmp, Var.PHOTO_THUMB_PREVIEW)
+        poster = _video_poster_stdin(data, Var.PHOTO_THUMB_PREVIEW)
         if poster:
             out["thumb_preview"] = poster
-        if out.get("width"):
-            out["thumb_grid"] = _webp_resize(poster or b"", Var.PHOTO_THUMB_GRID) or poster
+            if out.get("width"):
+                out["thumb_grid"] = _webp_resize(poster, Var.PHOTO_THUMB_GRID) or poster
     except Exception as exc:
         log.warning("video probe failed: %s", exc)
-    finally:
-        if tmp:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
     return out
 
 
-def _suffix_for(file_name: str, mime: str) -> str:
-    base = os.path.splitext(file_name or "")[1].lower()
-    if base:
-        return base
-    import mimetypes
-    return mimetypes.guess_extension(mime or "") or ".bin"
+def _ffprobe_bytes(data: bytes) -> dict:
+    result = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json",
+         "-show_streams", "-show_format", "-"],
+        input=data, capture_output=True, timeout=30,
+    )
+    if result.returncode != 0:
+        return {}
+    import json
+    return json.loads(result.stdout or b"{}")
 
 
-def _video_poster(path: str, edge: int) -> Optional[bytes]:
+def _video_poster_stdin(data: bytes, edge: int) -> Optional[bytes]:
     try:
         result = subprocess.run(
             [
-                "ffmpeg", "-v", "quiet", "-ss", "1", "-i", path,
-                "-frames:v", "1", "-vf", f"scale='min({edge},iw)':-2",
+                "ffmpeg", "-v", "quiet",
+                "-i", "-",               # bytes from stdin
+                "-frames:v", "1",
+                "-vf", f"scale='min({edge},iw)':-2",
                 "-f", "image2pipe", "-vcodec", "png", "-",
             ],
-            capture_output=True, timeout=60,
+            input=data, capture_output=True, timeout=60,
         )
         if result.returncode == 0 and result.stdout:
             return _webp_resize(result.stdout, edge) or result.stdout
@@ -344,21 +347,28 @@ async def generate_thumbs_for(owner_user_id: int, channel_id: int,
 
 
 async def ingest_message(owner_user_id: int, channel_id: int, message) -> None:
-    """Full ingest for one channel post. Fire-and-forget safe."""
+    """Full ingest for one channel post.
+
+    Raises FloodWait to the caller (the ingest worker requeues it); all
+    other exceptions are logged and swallowed — one bad file must not
+    stall the channel queue.
+    """
     try:
+        # Telegram video messages carry .video, not .document — pick the
+        # most specific media attribute and read mime/name from it.
         media = message.document or message.video or message.photo
-        if message.photo and not message.document:
-            # Telegram-recompressed photo — extract its largest blob.
-            data = await message.download(in_memory=True)
+        if media is None:
+            return
+        data = await message.download(in_memory=True)
+        # download(in_memory=True) returns a BytesIO, not bytes.
+        if isinstance(data, io.BytesIO):
+            data = data.getvalue()
+        if message.photo and not (message.document or message.video):
             mime = "image/jpeg"
             file_name = f"photo_{message.id}.jpg"
         else:
-            if not media:
-                return
-            # Download the document bytes in memory.
-            data = await message.download(in_memory=True)
-            mime = getattr(message.document, "mime_type", "") or "application/octet-stream"
-            file_name = getattr(message.document, "file_name", "") or f"file_{message.id}"
+            mime = getattr(media, "mime_type", "") or "application/octet-stream"
+            file_name = getattr(media, "file_name", "") or f"file_{message.id}"
         doc = await photo_store.get_photo(owner_user_id, message.id)
         if doc and doc.get("sha256"):
             return  # already processed
@@ -369,7 +379,7 @@ async def ingest_message(owner_user_id: int, channel_id: int, message) -> None:
             "owner_user_id": owner_user_id,
             "channel_id": channel_id,
             "message_id": message.id,
-            "file_id": str(getattr(media, "file_id", "")) if media else "",
+            "file_id": str(getattr(media, "file_id", "")),
             "kind": result["kind"],
             "file_name": file_name,
             "mime": mime,
@@ -403,6 +413,8 @@ async def ingest_message(owner_user_id: int, channel_id: int, message) -> None:
             grid=bool(result.get("thumb_grid")),
             preview=bool(result.get("thumb_preview")),
         )
+    except FloodWait:
+        raise
     except Exception:
         log.exception("ingest failed cid=%d mid=%d", channel_id, getattr(message, "id", -1))
 

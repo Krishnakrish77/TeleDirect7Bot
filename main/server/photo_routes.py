@@ -16,6 +16,8 @@ send_document call — original bytes never touch disk.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import io
 import logging
 import re
 import time
@@ -97,9 +99,16 @@ async def _verify_channel_access(channel_ref: int | str, requester_id: int) -> t
         return None, f"Could not resolve that channel: {exc}"
 
     chat_id = chat.id
-    # Negative -100… ids only; users/groups are not valid vaults.
+    # Must be a channel (broadcast), not a user/group/supergroup. Public
+    # channels also carry -100 ids, so the type check is what enforces the
+    # private-vault invariant — and Telegram only offers private channels
+    # here since bots cannot join public ones, but verify explicitly.
+    chat_type = getattr(chat, "type", None)
+    type_name = getattr(chat_type, "name", "") or str(chat_type or "")
+    if type_name.upper() != "CHANNEL":
+        return None, "Only channels (not groups or users) can be used"
     if not str(chat_id).startswith("-100"):
-        return None, "Only private channels (supergroups with -100 ids) can be used"
+        return None, "Only private channels can be used"
 
     try:
         bot_member = await bot.get_chat_member(chat_id, (await bot.get_me()).id)
@@ -388,7 +397,14 @@ async def photo_thumb(request: web.Request) -> web.StreamResponse:
     message_id = int(request.match_info["message_id"])
     size = request.match_info["size"]
 
-    doc = await photo_store.get_photo(user_id, message_id)
+    # Prefer the active binding's channel scope; fall back to a bare
+    # lookup so disconnected-channel thumbs still render (with the
+    # reconnect banner on the page).
+    channel_doc = await _channel_doc(user_id)
+    doc = await photo_store.get_photo(
+        user_id, message_id,
+        channel_id=channel_doc["channel_id"] if channel_doc else None,
+    )
     if not doc:
         raise web.HTTPNotFound(text="Photo not found")
     channel_id = doc.get("channel_id")
@@ -430,19 +446,22 @@ async def photo_file(request: web.Request) -> web.StreamResponse:
     user_id = int(user["sub"])
     message_id = int(request.match_info["message_id"])
 
-    doc = await photo_store.get_photo(user_id, message_id)
-    if not doc:
-        raise web.HTTPNotFound(text="Photo not found")
-    if doc.get("deleted"):
-        raise web.HTTPGone(text="Photo is in the trash")
     channel_doc = await _channel_doc(user_id)
     if not channel_doc or channel_doc.get("status") != "active":
         raise web.HTTPServiceUnavailable(
             text="Channel disconnected — reconnect to stream originals",
             headers={"Retry-After": "0"},
         )
+    # Scoped to the active binding's channel: a stale doc from a previously
+    # disconnected channel (same per-channel message id) must not stream.
+    doc = await photo_store.get_photo(
+        user_id, message_id, channel_id=channel_doc["channel_id"]
+    )
+    if not doc:
+        raise web.HTTPNotFound(text="Photo not found")
+    if doc.get("deleted"):
+        raise web.HTTPGone(text="Photo is in the trash")
 
-    channel_id = doc["channel_id"]
     file_id_str = doc.get("file_id")
     if not file_id_str:
         raise web.HTTPNotFound(text="File reference missing")
@@ -452,7 +471,9 @@ async def photo_file(request: web.Request) -> web.StreamResponse:
     except Exception:
         raise web.HTTPNotFound(text="File reference invalid")
 
-    file_size = int(getattr(file_id, "file_size", 0) or 0)
+    # FileId.decode does not carry the media size (see get_file_ids in
+    # file_properties.py) — use the size persisted at ingest.
+    file_size = int(doc.get("size") or 0) or int(getattr(file_id, "file_size", 0) or 0)
     range_header = "Range" in request.headers
     try:
         http_range = request.http_range
@@ -460,7 +481,6 @@ async def photo_file(request: web.Request) -> web.StreamResponse:
         raise web.HTTPRequestRangeNotSatisfiable(
             headers={"Content-Range": f"bytes */{max(0, file_size)}"}
         )
-    from main.utils.stream_range import normalise as normalise_range
     return await _stream_bytes(
         request, file_id, file_size, http_range, range_header,
         mime=doc.get("mime") or "application/octet-stream",
@@ -513,7 +533,9 @@ async def _stream_bytes(
         until_b = min(until_b, file_size - 1)
 
     streamer = _class_streamer()
-    tg_connect = await streamer.generate_media_session(streamer.client, file_id)
+    # Probing the session first mirrors stream_routes.media_streamer: a
+    # dead media session must 503 cleanly instead of erroring mid-stream.
+    await streamer.generate_media_session(streamer.client, file_id)
     req_length = until_b - from_b + 1
     cs = chunk_size(req_length)
     offset = offset_fix(from_b, cs)
@@ -521,7 +543,7 @@ async def _stream_bytes(
     last_part_cut = (until_b % cs) + 1
     part_count = (until_b // cs) - (from_b // cs) + 1
 
-    body = tg_connect.yield_file(
+    body = streamer.yield_file(
         file_id, 0, offset, first_part_cut, last_part_cut, part_count, cs
     )
     status = 206 if range_header else 200
@@ -593,18 +615,25 @@ async def photos_upload(request: web.Request) -> web.Response:
                 continue
             continue
         size = 0
-        import hashlib
         hasher = hashlib.sha256()
-        # Buffer each file's bytes in memory only for the sha + send call —
+        # Buffer each file's bytes in memory for the sha + send call —
         # aiohttp gives us a stream; we need one pass to send as document.
+        # Per-file cap bounds process memory: concurrent authenticated
+        # requests each buffer one file at a time.
         payload = bytearray()
+        per_file_overflow = False
         while True:
             chunk = await part.read_chunk(262144)
             if not chunk:
                 break
+            size += len(chunk)
+            if size > Var.PHOTOS_UPLOAD_MAX_FILE:
+                per_file_overflow = True
+                hasher = hashlib.sha256()
+                payload.clear()
+                continue  # keep draining the stream to keep multipart in sync
             payload.extend(chunk)
             hasher.update(chunk)
-            size += len(chunk)
             sent += len(chunk)
             if sent > Var.PHOTOS_UPLOAD_MAX_TOTAL:
                 return _json(
@@ -612,6 +641,12 @@ async def photos_upload(request: web.Request) -> web.Response:
                     status=413,
                 )
         if size == 0:
+            continue
+        if per_file_overflow:
+            results.append({
+                "fileName": part.filename or "?",
+                "error": f"File exceeds the {Var.PHOTOS_UPLOAD_MAX_FILE // (1024 * 1024)} MB per-file limit",
+            })
             continue
         files += 1
         sha = hasher.hexdigest()
@@ -626,17 +661,26 @@ async def photos_upload(request: web.Request) -> web.Response:
         if count >= Var.PHOTOS_PER_USER_CAP:
             results.append({"fileName": part.filename or "?", "error": "Library cap reached"})
             continue
+        if album_id:
+            album = await photo_store.get_album(user_id, album_id)
+            if not album:
+                album_id = ""  # stale/foreign id — drop rather than fail the batch
         try:
-            msg = await bot.send_document(
-                chat_id=channel_id,
-                document=bytes(payload),
-                file_name=part.filename or "upload.bin",
-            )
+            # send_document has no file_name kwarg — name the bytes via a
+            # file-like object's .name, which Pyrogram uses as the caption
+            # filename.
+            source = io.BytesIO(bytes(payload))
+            source.name = part.filename or "upload.bin"
+            msg = await bot.send_document(chat_id=channel_id, document=source)
         except Exception as exc:
             logging.warning("photos upload: send_document failed uid=%d: %s", user_id, exc)
             results.append({"fileName": part.filename or "?", "error": "Telegram send failed"})
             continue
         count += 1
+        # Record the album tag now — the async channel_post ingest must not
+        # silently drop it (it merges, never overwrites).
+        if album_id:
+            await photo_store.append_album_ids(user_id, msg.id, [album_id])
         # The channel_post plugin ingests asynchronously; we still return
         # the message id so the UI can link the upload.
         results.append({

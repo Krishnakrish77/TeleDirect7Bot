@@ -116,6 +116,11 @@ class Var(object):
     PHOTOS_UPLOAD_MAX_TOTAL = max(
         1, int(environ.get("PHOTOS_UPLOAD_MAX_TOTAL", str(2 * 1024 * 1024 * 1024))) or 2 * 1024 * 1024 * 1024
     )
+    # Per-file memory bound: each concurrent upload request buffers one
+    # file at a time, so this caps peak RAM per in-flight request.
+    PHOTOS_UPLOAD_MAX_FILE = max(
+        1, int(environ.get("PHOTOS_UPLOAD_MAX_FILE", str(200 * 1024 * 1024))) or 200 * 1024 * 1024
+    )
     # Thumbnail long edge (px) for the two generated webp sizes.
     PHOTO_THUMB_GRID = max(100, int(environ.get("PHOTO_THUMB_GRID", "400") or 400))
     PHOTO_THUMB_PREVIEW = max(400, int(environ.get("PHOTO_THUMB_PREVIEW", "1600") or 1600))

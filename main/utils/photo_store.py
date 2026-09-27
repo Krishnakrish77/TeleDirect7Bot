@@ -53,7 +53,7 @@ async def _ensure_indexes() -> None:
         return
     try:
         photos = db["photos"]
-        await photos.create_index([("owner_user_id", 1), ("taken_at", -1)])
+        await photos.create_index([("owner_user_id", 1), ("taken_at", -1), ("_id", -1)])
         await photos.create_index(
             [("owner_user_id", 1), ("sha256", 1)], unique=True, sparse=True
         )
@@ -261,15 +261,24 @@ async def find_by_sha(owner_user_id: int, sha256: str) -> Optional[dict]:
         return None
 
 
-async def get_photo(owner_user_id: int, message_id: int) -> Optional[dict]:
+async def get_photo(owner_user_id: int, message_id: int,
+                    channel_id: Optional[int] = None) -> Optional[dict]:
+    """Fetch one photo doc.
+
+    Telegram message ids are scoped per channel, so callers that know the
+    channel (file/thumb routes via the active binding) must pass it —
+    otherwise a reconnect to a different channel could surface a stale doc
+    sharing the same message id. Ingest dedup passes channel_id too.
+    """
     await _ensure_indexes()
     db = _get_db()
     if db is None:
         return None
     try:
-        return await db["photos"].find_one(
-            {"owner_user_id": owner_user_id, "message_id": message_id}
-        )
+        query: Dict[str, Any] = {"owner_user_id": owner_user_id, "message_id": message_id}
+        if channel_id is not None:
+            query["channel_id"] = channel_id
+        return await db["photos"].find_one(query)
     except Exception:
         logging.exception("photo_store: get_photo failed uid=%d mid=%d", owner_user_id, message_id)
         return None
@@ -356,9 +365,10 @@ async def timeline_page(
 ) -> dict:
     """Cursor-paginated timeline, newest first.
 
-    Cursor is the opaque ``taken_at`` ISO string of the last item; items
-    strictly older than the cursor are returned. Day-grouping happens in
-    the route layer (it is a display concern over the same sorted list).
+    Cursor is opaque: "<taken_at ISO>|<_id>". Photos commonly share an EXIF
+    second, so paging on taken_at alone would skip the tie — the _id
+    tie-breaker makes pagination stable. Day-grouping is a display concern
+    in the route layer.
     """
     await _ensure_indexes()
     db = _get_db()
@@ -376,9 +386,14 @@ async def timeline_page(
         query["album_ids"] = album_id
     if cursor:
         try:
-            cursor_dt = datetime.fromisoformat(cursor)
-            query["taken_at"] = {"$lt": cursor_dt}
-        except ValueError:
+            cursor_taken, cursor_id = cursor.split("|", 1)
+            from bson import ObjectId
+            query["$or"] = [
+                {"taken_at": {"$lt": datetime.fromisoformat(cursor_taken)}},
+                {"taken_at": datetime.fromisoformat(cursor_taken),
+                 "_id": {"$lt": ObjectId(cursor_id)}},
+            ]
+        except (ValueError, TypeError):
             pass
     try:
         docs = await db["photos"].find(
@@ -387,12 +402,14 @@ async def timeline_page(
                         "height": 1, "duration": 1, "taken_at": 1, "camera": 1,
                         "gps": 1, "favorite": 1, "album_ids": 1, "deleted": 1,
                         "thumb": 1, "message_id": 1, "uploaded_at": 1},
-        ).sort("taken_at", -1).to_list(length=limit + 1)
+        ).sort([("taken_at", -1), ("_id", -1)]).to_list(length=limit + 1)
         next_cursor = None
         if len(docs) > limit:
             docs = docs[:limit]
-            last_taken = docs[-1].get("taken_at")
-            next_cursor = last_taken.isoformat() if last_taken else None
+            last = docs[-1]
+            last_taken = last.get("taken_at")
+            if last_taken:
+                next_cursor = f"{last_taken.isoformat()}|{last['_id']}"
         return {
             "items": [_serialize_photo(d) for d in docs],
             "nextCursor": next_cursor,
@@ -564,6 +581,39 @@ async def set_album_photos(owner_user_id: int, album_id: str,
     except Exception:
         logging.exception("photo_store: set_album_photos failed uid=%d", owner_user_id)
         return 0
+
+
+async def get_album(owner_user_id: int, album_id: str) -> Optional[dict]:
+    """Ownership-checked album fetch — used to validate upload album tags."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return None
+    try:
+        from bson import ObjectId
+        return await db["photo_albums"].find_one(
+            {"_id": ObjectId(album_id), "owner_user_id": owner_user_id}
+        )
+    except Exception:
+        return None
+
+
+async def append_album_ids(owner_user_id: int, message_id: int, album_ids: List[str]) -> None:
+    """Tag an uploaded message with album ids (upload path). Merges —
+    the async ingest must not overwrite this with its empty default."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        await db["photos"].update_many(
+            {"owner_user_id": owner_user_id, "message_id": message_id},
+            {"$addToSet": {"album_ids": {"$each": album_ids}}},
+        )
+    except Exception:
+        logging.exception(
+            "photo_store: append_album_ids failed uid=%d mid=%d", owner_user_id, message_id
+        )
 
 
 async def set_album_cover(owner_user_id: int, album_id: str, message_id: int) -> bool:

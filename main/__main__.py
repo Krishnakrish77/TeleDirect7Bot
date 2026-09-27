@@ -59,6 +59,42 @@ async def _connect_catalogue_store() -> None:
     asyncio.create_task(seed_then_reconcile())
 
 
+async def _photos_channel_reverify_loop() -> None:
+    """Periodically re-verify bound photo channels (plan §4).
+
+    Detects bot-kicked / ownership-transferred channels and flips their
+    status so originals stop streaming and the UI shows the banner. Runs
+    only while the catalogue store is connected; failures just delay the
+    next pass.
+    """
+    from main.utils import photo_store
+    from main.server.photo_routes import reverify_channel
+    while True:
+        await asyncio.sleep(3600)  # hourly
+        try:
+            db = photo_store._get_db()
+            if db is None:
+                continue
+            owners = await db["photo_channels"].find(
+                {"status": "active"}, projection={"owner_user_id": 1}
+            ).to_list(length=100)
+            for row in owners:
+                try:
+                    status = await reverify_channel(row["owner_user_id"])
+                    if status and status != "active":
+                        logging.warning(
+                            "photos: channel for owner %s re-verified as %s",
+                            row["owner_user_id"], status,
+                        )
+                except Exception:
+                    logging.exception(
+                        "photos: reverify failed for owner %s", row["owner_user_id"]
+                    )
+                    break  # store likely down; skip the rest of this pass
+        except Exception:
+            logging.exception("photos: reverify loop pass failed")
+
+
 async def start_services():
     print()
     print("-------------------- Initializing Telegram Bot --------------------")
@@ -80,6 +116,8 @@ async def start_services():
     # The server is intentionally live before Mongo connects, so visitors get
     # a styled maintenance page rather than a platform-level connection error.
     asyncio.create_task(_connect_catalogue_store())
+    if Var.PHOTOS_ENABLED:
+        asyncio.create_task(_photos_channel_reverify_loop())
     hls_session.ensure_reaper_running()
     if Var.ON_KOYEB:
         print("------------------ Starting Keep Alive Service ------------------")

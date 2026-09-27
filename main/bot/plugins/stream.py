@@ -23,14 +23,24 @@ async def _is_photo_channel(channel_id: int) -> bool:
 
     Bound photo channels are private byte vaults: their posts must never be
     copied to BIN_CHANNEL, indexed, or given public stream links.
+
+    FAIL-CLOSED on purpose: when Photos is disabled or the binding store is
+    unreachable we cannot prove the channel is NOT a vault, so we skip the
+    catalogue path rather than risk publishing private photos. Cost: during
+    a Mongo outage, channel posts won't be indexed (they still stream via
+    the public route for catalogue channels once the store recovers).
     """
+    if not Var.PHOTOS_ENABLED:
+        return False
+    from main.utils import photo_store
     try:
-        from main.utils import photo_store
-        if not Var.PHOTOS_ENABLED:
-            return False
         return bool(await photo_store.get_channel(channel_id))
     except Exception:
-        return False
+        logging.warning(
+            "photo channel lookup failed for %s; treating as vault (fail-closed)",
+            channel_id,
+        )
+        return True
 
 
 def _from_admin(m: Message) -> bool:
