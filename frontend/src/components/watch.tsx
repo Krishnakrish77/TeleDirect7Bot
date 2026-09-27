@@ -7,7 +7,7 @@ import { ErrorPanel, LoadingRows } from './common';
 import { LyricsFlipCard, LyricsPanel } from './lyrics';
 import { RatingControls } from './rating';
 import { AudioPlaybackIssue, AudioSettingsControls, AudioSettingsDisclosure, useCompactAudioLayout } from './audioPlayer';
-import { attachHls, hlsUrl } from '../media/hls';
+import { attachHls, enablePauseBuffering, hlsUrl } from '../media/hls';
 import { revokeSubtitleTrack, subtitleFileToTrack, subtitleTextToTrack } from '../media/subtitles';
 import { buildVlcHref } from '../media/vlc';
 import { markLocallyWatched } from '../utils/localWatched';
@@ -792,6 +792,7 @@ function VideoWatchPage({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
+  const pauseBufferCleanupRef = useRef<(() => void) | null>(null);
   const subInputRef = useRef<HTMLInputElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -1094,6 +1095,8 @@ function VideoWatchPage({
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return undefined;
+    pauseBufferCleanupRef.current?.();
+    pauseBufferCleanupRef.current = null;
     hlsRef.current?.destroy();
     hlsRef.current = null;
     if (video.knownUnplayable) {
@@ -1123,6 +1126,9 @@ function VideoWatchPage({
           return;
         }
         hlsRef.current = instance;
+        if (instance) {
+          pauseBufferCleanupRef.current = enablePauseBuffering(el, instance, 30);
+        }
         hlsLoadingRef.current = false;
         if (savedTime > 0 && Number.isFinite(savedTime)) {
           try { el.currentTime = savedTime; } catch (_) { /* ignore invalid seek */ }
@@ -1138,6 +1144,8 @@ function VideoWatchPage({
     return () => {
       cancelled = true;
       hlsLoadingRef.current = false;
+      pauseBufferCleanupRef.current?.();
+      pauseBufferCleanupRef.current = null;
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
@@ -1491,6 +1499,8 @@ function VideoWatchPage({
       el.removeEventListener('ended', onEnded);
       el.removeEventListener('error', onError);
       window.removeEventListener('beforeunload', onBeforeUnload);
+      pauseBufferCleanupRef.current?.();
+      pauseBufferCleanupRef.current = null;
       cancelled = true;
       pendingServerResumeRef.current = false;
       saveResume(true);
@@ -1686,6 +1696,8 @@ function VideoWatchPage({
   }, [hasHls, sourceMode]);
 
   const retryPlayback = useCallback(() => {
+    pauseBufferCleanupRef.current?.();
+    pauseBufferCleanupRef.current = null;
     hlsRef.current?.destroy();
     hlsRef.current = null;
     hlsFailedRef.current = false;

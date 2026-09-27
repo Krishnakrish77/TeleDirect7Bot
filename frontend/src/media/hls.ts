@@ -11,6 +11,9 @@ type HlsInstance = {
   loadSource: (source: string) => void;
   attachMedia: (video: HTMLVideoElement) => void;
   destroy: () => void;
+  // Runtime-mutable: hls.js re-reads these on every fragment load, which is
+  // how enablePauseBuffering adjusts buffering while paused.
+  config: { maxBufferLength: number; maxMaxBufferLength: number };
   on: (event: string, handler: (...args: unknown[]) => void) => void;
   off: (event: string, handler: (...args: unknown[]) => void) => void;
 };
@@ -22,6 +25,43 @@ declare global {
 }
 
 let hlsPromise: Promise<HlsConstructor | null> | null = null;
+
+/**
+ * While the video is paused, let hls.js keep filling the buffer far ahead
+ * (like YouTube/VLC) so resume after a pause or a long network stall is
+ * seamless. Restores the normal buffer on play/ended. The hls.js instance
+ * reads `config.maxBufferLength` / `maxMaxBufferLength` on every fragment
+ * load, so mutating them at runtime takes effect without reattaching.
+ */
+export function enablePauseBuffering(
+  video: HTMLVideoElement,
+  hls: HlsInstance,
+  normalAheadSeconds: number,
+): () => void {
+  const PAUSED_AHEAD_SECONDS = 300;
+  const PAUSED_MAX_SECONDS = 600;
+
+  const onPaused = () => {
+    if (video.paused && !video.ended) {
+      hls.config.maxBufferLength = PAUSED_AHEAD_SECONDS;
+      hls.config.maxMaxBufferLength = PAUSED_MAX_SECONDS;
+    }
+  };
+  const onResumed = () => {
+    hls.config.maxBufferLength = normalAheadSeconds;
+    hls.config.maxMaxBufferLength = normalAheadSeconds * 4;
+  };
+
+  video.addEventListener('pause', onPaused);
+  video.addEventListener('play', onResumed);
+  video.addEventListener('ended', onResumed);
+  if (video.paused) onPaused();
+  return () => {
+    video.removeEventListener('pause', onPaused);
+    video.removeEventListener('play', onResumed);
+    video.removeEventListener('ended', onResumed);
+  };
+}
 
 export function canPlayNativeHls(video: HTMLVideoElement): boolean {
   // hls.js (MSE) is supported in every browser that can also play HLS
