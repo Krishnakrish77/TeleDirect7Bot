@@ -1,4 +1,4 @@
-"""Photos (Darkroom) backend self-checks.
+"""TeleDirect Photos backend self-checks.
 
 Pure helpers — no Mongo, no network, no bot client. Covers channel input
 parsing (connect endpoint), serialization shapes, and the pipeline's

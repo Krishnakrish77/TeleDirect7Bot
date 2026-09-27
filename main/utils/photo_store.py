@@ -1,4 +1,4 @@
-"""Photos (Darkroom) persistence — per-user photo libraries in MongoDB.
+"""TeleDirect Photos persistence — per-user photo libraries in MongoDB.
 
 Reuses the Motor client already held by the catalogue's MongoStore so we
 don't open a second connection pool. Falls back gracefully (empty results,

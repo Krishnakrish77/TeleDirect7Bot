@@ -1,4 +1,4 @@
-"""Photos (Darkroom) channel_post handler.
+"""TeleDirect Photos channel_post handler.
 
 Any post landing in a bound ``photo_channels`` channel is enqueued into the
 ingest pipeline (EXIF, sha256 dedup, thumbnails). Bytes stay in the channel;

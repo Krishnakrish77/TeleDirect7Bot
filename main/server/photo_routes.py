@@ -1,4 +1,4 @@
-"""Photos (Darkroom) HTTP API — session-guarded, owner-scoped.
+"""TeleDirect Photos HTTP API — session-guarded, owner-scoped.
 
 Every handler resolves the user from the ``td_session`` JWT and filters all
 reads/writes by that user id server-side. Photos never appear on the public

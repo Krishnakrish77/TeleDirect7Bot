@@ -19,7 +19,7 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 
 async def _is_photo_channel(channel_id: int) -> bool:
-    """True when this channel is a bound Darkroom (photos) vault.
+    """True when this channel is a bound TeleDirect Photos vault.
 
     Bound photo channels are private byte vaults: their posts must never be
     copied to BIN_CHANNEL, indexed, or given public stream links.
@@ -251,7 +251,7 @@ async def channel_receive_handler(bot, broadcast: Message):
         await bot.leave_chat(broadcast.chat.id)
         return
     if await _is_photo_channel(int(broadcast.chat.id)):
-        return  # Darkroom vault — handled by photos.py, not the catalogue
+        return  # TeleDirect Photos vault — handled by photos.py, not the catalogue
     try:
         # See private_receive_handler — copy keeps the bin caption
         # editable. The reply-text below still carries the source
