@@ -375,6 +375,10 @@ async def _album_membership(request: web.Request, *, member: bool) -> web.Respon
     user = _require_user(request)
     user_id = int(user["sub"])
     album_id = request.match_info["album_id"]
+    # Album id is caller-supplied — it must exist and belong to the caller,
+    # or photos would carry dangling/foreign album tags.
+    if not await photo_store.get_album(user_id, album_id):
+        raise web.HTTPNotFound(text="Album not found")
     try:
         body = await request.json()
         ids = [str(x) for x in (body.get("ids") or []) if x]
