@@ -273,6 +273,7 @@ async def rescan_channel(owner_user_id: int, channel_id: int) -> int:
     """
     from main.bot import multi_clients
     bot = multi_clients.get(0) or StreamBot
+    await photo_store.set_scan_status(channel_id, state="running")
     try:
         indexed = await photo_store.list_indexed_message_ids(owner_user_id, channel_id)
         cursor = await photo_store.get_scan_cursor(channel_id)
@@ -330,15 +331,24 @@ async def rescan_channel(owner_user_id: int, channel_id: int) -> int:
             "rescan cid=%d: batches=%d enqueued=%d cursor=%d",
             channel_id, batches, enqueued, start,
         )
+        await photo_store.set_scan_status(
+            channel_id, state="done", enqueued=enqueued, scanned_to=start
+        )
         return enqueued
     except FloodWait as e:
         wait = float(getattr(e, "value", getattr(e, "x", 1)))
         log.warning(
             "rescan FloodWait %ss cid=%d; resuming from the saved cursor", wait, channel_id
         )
+        await photo_store.set_scan_status(
+            channel_id, state="paused", error=f"Telegram rate limit ({wait:.0f}s)"
+        )
         return 0
-    except Exception:
+    except Exception as exc:
         log.exception("rescan failed cid=%d", channel_id)
+        await photo_store.set_scan_status(
+            channel_id, state="error", error=f"{type(exc).__name__}: {exc}"
+        )
         return 0
 
 

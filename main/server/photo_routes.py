@@ -304,6 +304,8 @@ async def photos_status(request: web.Request) -> web.Response:
         "status": doc.get("status", "active"),
         "beta": Var.PHOTOS_BETA,
         "photoCount": await photo_store.count_photos(user_id),
+        # Last background import outcome, so a failed scan is visible.
+        "scan": doc.get("scan"),
         **_onboarding_payload(),
     })
 
@@ -946,50 +948,57 @@ async def photos_upload(request: web.Request) -> web.Response:
             album = await photo_store.get_album(user_id, album_id)
             if not album:
                 album_id = ""  # stale/foreign id — drop rather than fail the batch
+        data = bytes(payload)
+        file_name = part.filename or "upload.bin"
         try:
             # send_document has no file_name kwarg — name the bytes via a
             # file-like object's .name, which Pyrogram uses as the caption
             # filename.
-            source = io.BytesIO(bytes(payload))
-            source.name = part.filename or "upload.bin"
+            source = io.BytesIO(data)
+            source.name = file_name
             msg = await bot.send_document(chat_id=channel_id, document=source)
         except Exception as exc:
             logging.warning("photos upload: send_document failed uid=%d: %s", user_id, exc)
-            results.append({"fileName": part.filename or "?", "error": "Telegram send failed"})
+            results.append({"fileName": file_name, "error": "Telegram send failed"})
             continue
         count += 1
-        # Record the album tag. The async channel_post ingest may not have
-        # inserted the photo doc yet — retry briefly so the tag isn't lost
-        # (ingest merges album_ids, never overwrites).
+        # Index the bytes we already hold. Telegram does not send the bot a
+        # channel_post for its own message, so waiting for that echo left
+        # uploads sitting in the channel and never in the library.
+        media = getattr(msg, "document", None) or getattr(msg, "video", None) or getattr(msg, "photo", None)
+        file_id = str(getattr(media, "file_id", "") or "")
+        from main.utils import photo_pipeline
+        ingest_error = None
+        if not file_id:
+            ingest_error = "Telegram did not return a file reference"
+            logging.warning(
+                "photos upload: no file id on the sent message uid=%d mid=%d", user_id, msg.id
+            )
+        else:
+            try:
+                ingest_error = await photo_pipeline.ingest_bytes(
+                    user_id, channel_id, msg.id,
+                    file_id=file_id, data=data, mime=mime, file_name=file_name,
+                )
+            except Exception as exc:
+                logging.exception("photos upload: ingest failed uid=%d mid=%d", user_id, msg.id)
+                ingest_error = f"indexing failed: {exc}"
+        if ingest_error:
+            logging.warning(
+                "photos upload: %s uid=%d mid=%d", ingest_error, user_id, msg.id
+            )
         if album_id:
-            for _ in range(10):
-                await photo_store.append_album_ids(user_id, channel_id, msg.id, [album_id])
-                tagged = await photo_store.get_photo(
-                    user_id, msg.id, channel_id=channel_id
-                )
-                if tagged and album_id in (tagged.get("album_ids") or []):
-                    break
-                await asyncio.sleep(0.5)
-            else:
-                logging.warning(
-                    "photos upload: album tag %s not applied to mid=%d uid=%d "
-                    "(ingest did not land within 5s)",
-                    album_id, msg.id, user_id,
-                )
-        # The channel_post plugin ingests asynchronously; we still return
-        # the message id so the UI can link the upload.
+            # The doc exists by now (or is a duplicate of an earlier upload),
+            # so one merge is enough — no polling loop needed.
+            await photo_store.append_album_ids(user_id, channel_id, msg.id, [album_id])
         results.append({
-            "fileName": part.filename or "?",
+            "fileName": file_name,
             "sha256": sha,
             "messageId": msg.id,
             "albumId": album_id or None,
             "duplicate": False,
-            # Dedup race: a concurrent request with identical bytes may
-            # win the (owner, sha256) unique index after our pre-send
-            # check. This upload still lands as its own channel message;
-            # the ingest worker resolves it against the winning doc, so
-            # the flag just tells the UI an extra vault copy may exist.
-            "raceProne": True,
+            "indexed": ingest_error is None,
+            **({"error": f"Saved to Telegram, but not indexed: {ingest_error}"} if ingest_error else {}),
         })
     return _json({"results": results})
 

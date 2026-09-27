@@ -386,6 +386,54 @@ async def generate_thumbs_for(owner_user_id: int, channel_id: int,
         return None
 
 
+async def ingest_bytes(owner_user_id: int, channel_id: int, message_id: int, *,
+                       file_id: str, data: bytes, mime: str, file_name: str) -> Optional[str]:
+    """Run the pipeline on bytes we already hold and persist the result.
+
+    Shared by the channel_post worker and the web upload path — Telegram does
+    not deliver a channel_post back to the bot for its own message, so an
+    upload must index its own bytes instead of waiting for an echo.
+    Returns an error string, or None on success (including "duplicate").
+    """
+    result = await process(data, mime, file_name)
+    # Dedup (race-safe): if another ingest/upload with the same (owner, sha256)
+    # already inserted a doc, the unique index makes our insert a no-op
+    # ("duplicate") — the extra channel copy is simply not double-indexed.
+    err = await photo_store.upsert_photo({
+        "owner_user_id": owner_user_id,
+        "channel_id": channel_id,
+        "message_id": message_id,
+        "file_id": file_id,
+        "kind": result["kind"],
+        "file_name": file_name,
+        "mime": mime,
+        "size": len(data),
+        "width": result.get("width"),
+        "height": result.get("height"),
+        "duration": result.get("duration"),
+        "taken_at": result.get("taken_at") or _now_utc(),
+        "camera": result.get("camera"),
+        "gps": result.get("gps"),
+        "sha256": result["sha256"],
+        "uploaded_at": _now_utc(),
+    })
+    if err and err != "duplicate":
+        return err
+    for size, key in (("grid", "thumb_grid"), ("preview", "thumb_preview")):
+        if result.get(key):
+            await photo_store.put_thumb(
+                owner_user_id,
+                photo_store.thumb_key(channel_id, message_id, size),
+                result[key],
+            )
+    await photo_store.set_thumb_flags(
+        owner_user_id, channel_id, message_id,
+        grid=bool(result.get("thumb_grid")),
+        preview=bool(result.get("thumb_preview")),
+    )
+    return None
+
+
 async def ingest_message(owner_user_id: int, channel_id: int, message) -> None:
     """Full ingest for one channel post.
 
@@ -434,49 +482,17 @@ async def ingest_message(owner_user_id: int, channel_id: int, message) -> None:
         doc = await photo_store.get_photo(owner_user_id, message.id, channel_id=channel_id)
         if doc and doc.get("sha256"):
             return  # already processed
-        result = await process(data, mime, file_name)
-        # Dedup (race-safe): if another ingest/upload with the same
-        # (owner, sha256) already inserted a doc, the unique index makes
-        # our insert a no-op ("duplicate") — the extra channel copy the
-        # losing request sent to Telegram is simply not double-indexed.
-        err = await photo_store.upsert_photo({
-            "owner_user_id": owner_user_id,
-            "channel_id": channel_id,
-            "message_id": message.id,
-            "file_id": str(getattr(media, "file_id", "")),
-            "kind": result["kind"],
-            "file_name": file_name,
-            "mime": mime,
-            "size": len(data),
-            "width": result.get("width"),
-            "height": result.get("height"),
-            "duration": result.get("duration"),
-            "taken_at": result.get("taken_at") or _now_utc(),
-            "camera": result.get("camera"),
-            "gps": result.get("gps"),
-            "sha256": result["sha256"],
-            "uploaded_at": _now_utc(),
-        })
-        if err and err != "duplicate":
-            log.warning("ingest mid=%d: %s", message.id, err)
-            return
-        if result.get("thumb_grid"):
-            await photo_store.put_thumb(
-                owner_user_id,
-                photo_store.thumb_key(channel_id, message.id, "grid"),
-                result["thumb_grid"],
-            )
-        if result.get("thumb_preview"):
-            await photo_store.put_thumb(
-                owner_user_id,
-                photo_store.thumb_key(channel_id, message.id, "preview"),
-                result["thumb_preview"],
-            )
-        await photo_store.set_thumb_flags(
-            owner_user_id, channel_id, message.id,
-            grid=bool(result.get("thumb_grid")),
-            preview=bool(result.get("thumb_preview")),
+        err = await ingest_bytes(
+            owner_user_id,
+            channel_id,
+            message.id,
+            file_id=str(getattr(media, "file_id", "") or ""),
+            data=data,
+            mime=mime,
+            file_name=file_name,
         )
+        if err:
+            log.warning("ingest mid=%d: %s", message.id, err)
     except FloodWait:
         raise
     except Exception:

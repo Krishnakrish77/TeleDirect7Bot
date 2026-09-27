@@ -223,6 +223,32 @@ async def set_scan_cursor(channel_id: int, next_id: int) -> None:
         )
 
 
+async def set_scan_status(channel_id: int, *, state: str, enqueued: int = 0,
+                          scanned_to: int = 0, error: str = "") -> None:
+    """Record the last backfill outcome.
+
+    Background imports used to fail invisibly (the route returned ok while the
+    scan died), so the result lives on the channel doc and the UI reports it.
+    """
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        await db["photo_channels"].update_one(
+            {"channel_id": channel_id},
+            {"$set": {"scan": {
+                "state": state,
+                "enqueued": int(enqueued),
+                "scanned_to": int(scanned_to),
+                "error": error[:200],
+                "at": _now(),
+            }}},
+        )
+    except Exception:
+        logging.exception("photo_store: set_scan_status failed cid=%d", channel_id)
+
+
 async def unbind_channel(owner_user_id: int) -> bool:
     await _ensure_indexes()
     db = _get_db()

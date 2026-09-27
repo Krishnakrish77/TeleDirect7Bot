@@ -25,7 +25,7 @@ import { Button } from './ui/button';
 type TimelineData = { items: Photo[]; nextCursor: string | null };
 
 /** Gutter between justified rows/items — kept in sync with the CSS. */
-const PHOTO_GAP = 4;
+const PHOTO_GAP = 3;
 
 function dayLabel(iso: string | null): string {
   if (!iso) return 'Unknown date';
@@ -56,13 +56,16 @@ function usePhotoStatus() {
     setLoading(true);
     setError('');
     try {
-      setStatus(await fetchPhotosStatus());
+      const fresh = await fetchPhotosStatus();
+      setStatus(fresh);
+      return fresh;
     } catch (err) {
       // Distinguish "feature/Mongo unavailable" from "no channel yet" —
       // otherwise onboarding invites the user into a connect flow that can
       // only fail.
       setStatus(null);
       setError(err instanceof Error ? err.message : 'Photos is unavailable');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -240,7 +243,7 @@ export function PhotosConnectPage({
       )}
       <p className="photos-connect__footnote">
         New posts import automatically. Photos you posted before connecting can be pulled in with
-        <strong> Scan channel history</strong> once you are set up.
+        <strong> Import from Telegram</strong> once you are set up.
       </p>
     </div>
   );
@@ -455,6 +458,7 @@ function PhotoItem({
   width: number;
   onOpen: (photo: Photo) => void;
 }) {
+  const [loaded, setLoaded] = useState(false);
   return (
     <button
       className="photos-item"
@@ -462,7 +466,13 @@ function PhotoItem({
       onClick={() => onOpen(photo)}
       aria-label={photo.fileName}
     >
-      <img src={photoThumbUrl(photo.id, 'grid')} alt={photo.fileName} loading="lazy" />
+      <img
+        src={photoThumbUrl(photo.id, 'grid')}
+        alt={photo.fileName}
+        loading="lazy"
+        className={loaded ? 'is-loaded' : undefined}
+        onLoad={() => setLoaded(true)}
+      />
       <span className="photos-item__shade" aria-hidden="true" />
       {photo.kind === 'video' && (
         <span className="photos-item__badge" aria-label="Video">
@@ -540,7 +550,7 @@ function TimelineFlow({
   width: number;
   onOpen: (photo: Photo) => void;
 }) {
-  const targetHeight = width < 640 ? 130 : width < 1100 ? 180 : 230;
+  const targetHeight = width < 640 ? 118 : width < 1100 ? 150 : 190;
   const rows = useMemo(
     () => buildJustifiedRows(photos, width, targetHeight, PHOTO_GAP),
     [photos, width, targetHeight],
@@ -598,6 +608,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const [lightbox, setLightbox] = useState<number>(-1);
   const [uploads, setUploads] = useState<Array<{ name: string; url: string }>>([]);
   const [uploadPercent, setUploadPercent] = useState(0);
+  const [importState, setImportState] = useState<'idle' | 'running' | 'done' | 'paused' | 'error'>('idle');
   // Action errors (upload, favorite, album, scan) are user-initiated and
   // dismissible; load failures stay until a refresh actually succeeds — a
   // successful reload must not silently clear them, and vice versa.
@@ -747,13 +758,33 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
     }
   };
 
+  /**
+   * Import: kick the background scan, then follow it. Ingest is queue-paced,
+   * so the library fills over seconds — without polling, the button looked
+   * like it did nothing.
+   */
   const syncLibrary = async () => {
+    setImportState('running');
+    setError('');
     try {
       await resyncPhotosLibrary();
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        const status = await reloadStatus();
+        const scan = status?.scan;
+        if (scan && scan.state !== 'running') {
+          setImportState(scan.state);
+          if (scan.state === 'error' || scan.state === 'paused') {
+            setError(scan.error || 'The import could not finish');
+          }
+          break;
+        }
+        await loadTimeline(true, undefined, activeAlbum?.id);
+      }
       await loadTimeline(true, undefined, activeAlbum?.id);
-      await reloadStatus();
     } catch (err) {
-      setError(describeError(err, 'Could not start the channel scan'));
+      setImportState('error');
+      setError(describeError(err, 'Could not start the import'));
     }
   };
 
@@ -843,6 +874,16 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
               {status.photoCount === 1 ? 'item' : 'items'} in your private channel
             </p>
           )}
+          {importState === 'running' && (
+            <p className="photos-import-line" role="status">
+              Looking through your Telegram channel — new photos appear as they finish.
+            </p>
+          )}
+          {importState === 'done' && status?.scan && (
+            <p className="photos-import-line">
+              Import finished{status.scan.enqueued ? `: ${status.scan.enqueued} new item(s) found` : ': nothing new to add'}.
+            </p>
+          )}
         </div>
         <div className="photos-header__actions">
           <input
@@ -860,9 +901,10 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
           <Button
             variant="secondary"
             title="Look for photos in your channel that are not in this library yet"
+            disabled={importState === 'running'}
             onClick={() => void syncLibrary()}
           >
-            Import from Telegram
+            {importState === 'running' ? 'Importing…' : 'Import from Telegram'}
           </Button>
         </div>
       </header>

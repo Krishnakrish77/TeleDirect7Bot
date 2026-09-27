@@ -1170,6 +1170,12 @@ export interface PhotosChannelStatus {
   photoCount?: number;
   botUsername?: string | null;
   addToChannelUrl?: string | null;
+  scan?: {
+    state: 'running' | 'done' | 'paused' | 'error';
+    enqueued?: number;
+    error?: string;
+    at?: string;
+  } | null;
 }
 
 export interface PendingPhotoChannel {
