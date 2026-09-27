@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { PhotosIcon } from '../icons';
 import LightboxRoot from 'yet-another-react-lightbox';
+import type { Slide } from 'yet-another-react-lightbox';
 import Captions from 'yet-another-react-lightbox/plugins/captions';
 import Counter from 'yet-another-react-lightbox/plugins/counter';
 import Download from 'yet-another-react-lightbox/plugins/download';
@@ -41,6 +42,7 @@ import {
   uploadPhotos,
 } from '../api';
 import type { Photo, PhotoAlbum, PendingPhotoChannel, PhotosChannelStatus, TimelineResponse } from '../types';
+import { resyncPhotosLibrary } from '../api';
 import { Button } from './ui/button';
 
 type TimelineData = { items: Photo[]; nextCursor: string | null };
@@ -290,6 +292,18 @@ function emptySelection(): SelectionState {
 /** Click or keyboard activation on a tile — only modifiers are read. */
 type TileClickEvent = Pick<React.MouseEvent, 'shiftKey' | 'metaKey' | 'ctrlKey'>;
 
+/** The trash endpoint accepts at most this many ids per request. */
+const TRASH_BATCH_SIZE = 500;
+
+/** Split a selection into request-sized batches so "select all" never 400s. */
+export function trashBatches(ids: string[]): string[][] {
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += TRASH_BATCH_SIZE) {
+    batches.push(ids.slice(i, i + TRASH_BATCH_SIZE));
+  }
+  return batches;
+}
+
 /** Drag-range select: indices between anchor and head, both inclusive. */
 function rangeIndices(anchor: number, head: number): [number, number] {
   return anchor <= head ? [anchor, head] : [head, anchor];
@@ -359,15 +373,38 @@ type VirtualEntry =
   | { kind: 'header'; group: DayGroup; height: number }
   | { kind: 'row'; row: JustifiedRow; group: DayGroup; height: number };
 
-function buildVirtualModel(groups: DayGroup[], width: number, targetHeight: number): VirtualEntry[] {
+/**
+ * Virtualizer model: date headers interleaved with justified rows.
+ *
+ * Rows flow across day boundaries instead of restarting per day — restarting
+ * leaves a wide ragged gap on every sparse day (measured 285–976px of dead
+ * space per row on a 3-photos-a-day library), which is what makes the grid
+ * read as a list of strips rather than a photo library. A day still gets a
+ * header, emitted at the row where its photos begin.
+ */
+export function buildVirtualModel(groups: DayGroup[], width: number, targetHeight: number): VirtualEntry[] {
   const entries: VirtualEntry[] = [];
   const headerH = 44;
-  for (const group of groups) {
-    entries.push({ kind: 'header', group, height: headerH });
-    const rows = buildJustifiedRows(group.photos, width, targetHeight, PHOTO_GAP);
-    for (const row of rows) {
-      entries.push({ kind: 'row', row, group, height: row.height });
+  const byKey = new Map(groups.map((group) => [group.key, group]));
+  const flat = groups.flatMap((group) => group.photos);
+  const rows = buildJustifiedRows(flat, width, targetHeight, PHOTO_GAP);
+  let lastKey = '';
+  for (const row of rows) {
+    const key = dayKey(row.items[0].takenAt);
+    let group = byKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        label: dayLabel(row.items[0].takenAt),
+        takenAt: row.items[0].takenAt,
+        photos: row.items,
+      };
     }
+    if (key !== lastKey) {
+      entries.push({ kind: 'header', group, height: headerH });
+      lastKey = key;
+    }
+    entries.push({ kind: 'row', row, group, height: row.height });
   }
   return entries;
 }
@@ -402,7 +439,8 @@ function PhotoTile({
       aria-label={photo.fileName}
       aria-pressed={selected}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
           if (selectionActive) onSelect(photo, event);
           else onOpen(photo);
         }
@@ -420,7 +458,6 @@ function PhotoTile({
       <span className="photos-item__shade" aria-hidden="true" />
       <span className="photos-item__meta" aria-hidden="true">
         <span>{dayLabel(photo.takenAt)}</span>
-        {photo.kind === 'video' && <span>{formatDuration(photo.duration)}</span>}
       </span>
       {photo.kind === 'video' && (
         <span className="photos-item__badge" aria-label="Video">
@@ -617,6 +654,11 @@ function DateScrubber({
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const active = useRef(false);
+  const [ratio, setRatio] = useState(0.5);
+  const applyRatio = useCallback((next: number) => {
+    setRatio(next);
+    onScrub(next);
+  }, [onScrub]);
 
   const ratioFromEvent = useCallback((clientY: number) => {
     const el = trackRef.current;
@@ -645,7 +687,6 @@ function DateScrubber({
     };
   }, [disabled, onScrub, onEnd, ratioFromEvent]);
 
-  const lastRatio = useRef(0.5);
   if (disabled) return null;
   return (
     <div
@@ -655,16 +696,14 @@ function DateScrubber({
         event.preventDefault();
         active.current = true;
         (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
-        const ratio = ratioFromEvent(event.clientY);
-        lastRatio.current = ratio;
-        onScrub(ratio);
+        applyRatio(ratioFromEvent(event.clientY));
       }}
       role="slider"
       aria-label="Scroll by date"
       aria-orientation="vertical"
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-valuenow={Math.round(lastRatio.current * 100)}
+      aria-valuenow={Math.round(ratio * 100)}
       tabIndex={0}
       onKeyDown={(event) => {
         // 10% steps: a keyboard scrub spans a decade in ten presses —
@@ -672,9 +711,7 @@ function DateScrubber({
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
           event.preventDefault();
           const delta = event.key === 'ArrowDown' ? 0.1 : -0.1;
-          const next = Math.min(1, Math.max(0, lastRatio.current + delta));
-          lastRatio.current = next;
-          onScrub(next);
+          applyRatio(Math.min(1, Math.max(0, ratio + delta)));
         }
       }}
     >
@@ -1084,7 +1121,9 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
 
   const trash = async (ids: string[]) => {
     try {
-      await trashPhotos(ids);
+      for (const batch of trashBatches(ids)) {
+        await trashPhotos(batch);
+      }
       setLightboxIndex(-1);
       clearSelection();
       await loadTimeline(true, undefined, activeAlbum?.id);
@@ -1413,6 +1452,32 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
 
 // ── Lightbox (YARL-based) ────────────────────────────────────────────────
 
+/**
+ * YARL slides: the stage shows the preview webp (browsers can't render HEIC and
+ * browsing must not pull originals), while the download plug-in and video get
+ * the owner-scoped original — it defaults to `src`, which saved a webp.
+ */
+export function buildLightboxSlides(photos: Photo[]): Slide[] {
+  return photos.map((p) => {
+    const download = photoFileUrl(p.id);
+    return p.kind === 'video'
+      ? {
+          type: 'video' as const,
+          sources: [{ src: download, type: p.mime || 'video/mp4' }],
+          poster: photoThumbUrl(p.id, 'preview'),
+          download,
+        }
+      : {
+          type: 'image' as const,
+          src: photoThumbUrl(p.id, 'preview'),
+          alt: p.fileName,
+          width: p.width || undefined,
+          height: p.height || undefined,
+          download,
+        };
+  });
+}
+
 function PhotoLightbox({
   photos,
   index,
@@ -1435,21 +1500,7 @@ function PhotoLightbox({
   const photo = photos[index];
   const [metaOpen, setMetaOpen] = useState(false);
 
-  const slides = useMemo(() => photos.map((p) => (
-    p.kind === 'video'
-      ? {
-          type: 'video' as const,
-          sources: [{ src: photoFileUrl(p.id), type: p.mime || 'video/mp4' }],
-          poster: photoThumbUrl(p.id, 'preview'),
-        }
-      : {
-          type: 'image' as const,
-          src: photoThumbUrl(p.id, 'preview'),
-          alt: p.fileName,
-          width: p.width || undefined,
-          height: p.height || undefined,
-        }
-  )), [photos]);
+  const slides = useMemo(() => buildLightboxSlides(photos), [photos]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1567,6 +1618,3 @@ function PhotoLightbox({
 
 // Re-exports for callers that want the connect page directly.
 export { PhotosConnectPage as default };
-
-// Keep resync import adjacent to its use (tree-shaking clarity).
-import { resyncPhotosLibrary } from '../api';

@@ -40,7 +40,7 @@ os.environ.setdefault("PHOTOS_ENABLED", "true")
 
 from aiohttp import web
 
-FAKE_CHANNEL_ID = -1004429033256
+FAKE_CHANNEL_ID = -1001234567890
 _FAKE_FILE_SEQ = 0
 
 
