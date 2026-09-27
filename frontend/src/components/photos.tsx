@@ -243,7 +243,11 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
     try {
       const effectiveView = view_ ?? view;
       const qs = effectiveView !== 'timeline' ? effectiveView : undefined;
+      // Pagination: pass the current cursor when appending, none when
+      // replacing (fresh view / reload).
+      const cursor = replace ? undefined : timeline?.nextCursor ?? undefined;
       const data = await fetchPhotosTimeline({
+        cursor,
         view: qs === 'albums' ? 'timeline' : qs,
         album: albumId || undefined,
       });
@@ -253,7 +257,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
     } finally {
       setTimelineLoading(false);
     }
-  }, [view]);
+  }, [view, timeline?.nextCursor]);
 
   const loadAlbums = useCallback(async () => {
     try {
@@ -330,7 +334,12 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   if (!status?.connected) {
     return (
       <div className="photos-page">
-        <PhotosConnectPage onConnected={() => { void reloadStatus(); }} />
+        <PhotosConnectPage
+          onConnected={() => {
+            void reloadStatus();
+            void loadTimeline(true);
+          }}
+        />
       </div>
     );
   }
