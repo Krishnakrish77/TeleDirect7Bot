@@ -13912,3 +13912,18 @@ select.edit-field-input {
 .photos-dropzone-hint { position: fixed; inset: 0; z-index: 85; display: grid; place-items: center; background: rgba(249, 115, 22, 0.12); border: 3px dashed rgba(249, 115, 22, 0.7); color: var(--text); font-size: 1.3rem; font-weight: 700; pointer-events: none; }
 .photos-banner { padding: 0.8rem 1rem; border: 1px solid rgba(251, 191, 36, 0.5); border-radius: 10px; background: rgba(251, 191, 36, 0.1); color: var(--text); display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
 .photos-banner--warn button { min-height: 2.1rem; padding: 0.2rem 0.8rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
+
+.photos-beta-badge {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 0.5rem;
+  padding: 0.12rem 0.55rem;
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.14);
+  color: #fbbf24;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

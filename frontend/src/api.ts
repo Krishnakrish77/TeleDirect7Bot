@@ -872,12 +872,12 @@ export async function setAlbumPhotos(albumId: string, ids: string[], member: boo
   });
 }
 
-export function photoThumbUrl(messageId: number, size: 'grid' | 'preview'): string {
-  return `/api/photos/thumb/${messageId}/${size}`;
+export function photoThumbUrl(photoId: string, size: 'grid' | 'preview'): string {
+  return `/api/photos/thumb/${encodeURIComponent(photoId)}/${size}`;
 }
 
-export function photoFileUrl(messageId: number): string {
-  return `/api/photos/file/${messageId}`;
+export function photoFileUrl(photoId: string): string {
+  return `/api/photos/file/${encodeURIComponent(photoId)}`;
 }
 
 /** Upload files to the user's photo vault. onProgress reports 0-100 per file batch. */

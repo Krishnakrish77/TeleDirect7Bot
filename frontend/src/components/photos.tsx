@@ -71,7 +71,7 @@ export function PhotosConnectPage({ onConnected }: { onConnected: () => void }) 
 
   return (
     <div className="photos-connect">
-      <h1>TeleDirect Photos</h1>
+      <h1>TeleDirect Photos <span className="photos-beta-badge" title="TeleDirect Photos is in beta — features may change">Beta</span></h1>
       <p className="photos-connect__lede">
         Private photo backup backed by your own Telegram channel. Create a private channel,
         add this bot as an administrator, then paste the channel link or @username below.
@@ -132,9 +132,9 @@ function Lightbox({
       <button className="photos-lightbox__nav photos-lightbox__nav--prev" onClick={onPrev} aria-label="Previous">‹</button>
       <div className="photos-lightbox__stage">
         {isVideo ? (
-          <video controls autoPlay src={photoFileUrl(photo.messageId)} />
+          <video controls autoPlay src={photoFileUrl(photo.id)} />
         ) : (
-          <img src={photoFileUrl(photo.messageId)} alt={photo.fileName} />
+          <img src={photoFileUrl(photo.id)} alt={photo.fileName} />
         )}
         <div className="photos-lightbox__meta">
           <span>{dayLabel(photo.takenAt)}</span>
@@ -157,7 +157,7 @@ function PhotoTile({ photo, onOpen }: { photo: Photo; onOpen: (photo: Photo) => 
   return (
     <button className="photos-tile" onClick={() => onOpen(photo)} aria-label={photo.fileName}>
       <img
-        src={photoThumbUrl(photo.messageId, 'grid')}
+        src={photoThumbUrl(photo.id, 'grid')}
         alt={photo.fileName}
         loading="lazy"
       />
@@ -232,6 +232,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const [activeAlbum, setActiveAlbum] = useState<PhotoAlbum | null>(null);
   const [lightbox, setLightbox] = useState<number>(-1);
   const [uploads, setUploads] = useState<Array<{ name: string; percent: number }>>([]);
+  const [uploadError, setUploadError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const albumInputRef = useRef<HTMLInputElement>(null);
@@ -286,14 +287,19 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const handleFiles = async (files: FileList | File[]) => {
     const list = Array.from(files);
     if (!list.length) return;
+    setUploadError('');
     setUploads(list.map((f) => ({ name: f.name, percent: 0 })));
     try {
       await uploadPhotos(list, {
         albumId: activeAlbum?.id || undefined,
         onProgress: (percent) => setUploads((current) => current.map((u) => ({ ...u, percent }))),
       });
-      await loadTimeline(true);
+      // Keep the active album's filter — an upload landing inside an
+      // album detail must refresh that album, not the whole library.
+      await loadTimeline(true, undefined, activeAlbum?.id);
       await reloadStatus();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploads([]);
     }
@@ -316,7 +322,8 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const trash = async (photo: Photo) => {
     await trashPhotos([photo.id]);
     setLightbox(-1);
-    await loadTimeline(true);
+    // Album-scoped delete must refresh the album view, not the library.
+    await loadTimeline(true, undefined, activeAlbum?.id);
     await reloadStatus();
   };
 
@@ -364,6 +371,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
     >
+      {status?.beta && <span className="photos-beta-badge" title="TeleDirect Photos is in beta — features may change">Beta</span>}
       <nav className="photos-nav" aria-label="Photos sections">
         {(['timeline', 'favorites', 'albums', 'trash'] as View[]).map((v) => (
           <button
@@ -443,7 +451,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
           {currentPhotos.length === 0 && <p className="photos-empty">Trash is empty.</p>}
           {currentPhotos.map((photo) => (
             <div key={photo.id} className="photos-trash-row">
-              <img src={photoThumbUrl(photo.messageId, 'grid')} alt={photo.fileName} loading="lazy" />
+              <img src={photoThumbUrl(photo.id, 'grid')} alt={photo.fileName} loading="lazy" />
               <span>{dayLabel(photo.takenAt)}</span>
               <button onClick={() => void restore(photo)}>Restore</button>
             </div>
@@ -458,6 +466,12 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
         />
       )}
 
+      {uploadError && (
+        <div className="photos-banner photos-banner--warn" role="alert">
+          {uploadError}
+          <button onClick={() => setUploadError('')}>Dismiss</button>
+        </div>
+      )}
       {uploads.length > 0 && (
         <div className="photos-uploads" role="status">
           {uploads.map((u) => (

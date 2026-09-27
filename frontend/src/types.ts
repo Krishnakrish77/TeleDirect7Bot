@@ -1166,6 +1166,7 @@ export interface PhotosChannelStatus {
   connected: boolean;
   channelId?: number;
   status?: 'active' | 'disconnected' | 'frozen';
+  beta?: boolean;
   photoCount?: number;
 }
 
