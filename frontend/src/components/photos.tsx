@@ -1748,12 +1748,18 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="account-menu" align="end">
+                  {/* asChild + real <button>: .account-menu styles only match
+                      a/button children; a bare DropdownMenuItem renders a
+                      div[role=menuitem] and gets no row styling. */}
                   <DropdownMenuItem
+                    asChild
                     disabled={importState === 'running'}
                     onSelect={() => void syncLibrary()}
                   >
-                    <SearchIcon />
-                    {importState === 'running' ? 'Looking for missing photos…' : 'Find missing photos'}
+                    <button type="button">
+                      <SearchIcon />
+                      <span>{importState === 'running' ? 'Looking for missing photos…' : 'Find missing photos'}</span>
+                    </button>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
