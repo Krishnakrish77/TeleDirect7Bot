@@ -35,8 +35,13 @@ from main.utils.user_auth import get_user
 
 routes = web.RouteTableDef()
 
-# Channel input: @username, t.me/username link, or -100… numeric id.
-_CHANNEL_INPUT_RE = re.compile(r"^(?:@|https?://t\.me/)?([A-Za-z0-9_]{4,64})$")
+# Channel input: @username, t.me/<username>[/<msg>] link, t.me/c/<internal>[/<msg>]
+# message link, or -100… numeric id.
+_CHANNEL_INPUT_RE = re.compile(r"^(?:@|https?://t\.me/)?([A-Za-z0-9_]{4,64})(?:/\d+)?$")
+_CHANNEL_LINK_RE = re.compile(
+    r"^(?:https?://)?(?:t\.me|telegram\.me)/c/(\d{5,14})(?:/\d+)?/?(?:\?.*)?$",
+    re.IGNORECASE,
+)
 _CHANNEL_ID_RE = re.compile(r"^-100\d{6,}$")
 _OBJECT_ID_RE = re.compile(r"^[0-9a-f]{24}$")
 
@@ -62,10 +67,39 @@ def _require_user(request: web.Request) -> dict:
     return user
 
 
+def _bot_admin_link(bot_username: str) -> Optional[str]:
+    """Telegram deep link that adds the bot to a channel with post rights."""
+    if not bot_username:
+        return None
+    return f"https://t.me/{bot_username}?startchannel=true&admin=post_messages"
+
+
+def _onboarding_payload() -> dict:
+    """Bot identity the connect wizard needs to render its steps."""
+    bot_username = Var.BOT_USERNAME or getattr(StreamBot, "username", "") or ""
+    return {
+        "botUsername": bot_username or None,
+        "addToChannelUrl": _bot_admin_link(bot_username),
+    }
+
+
+_unavailable_logged = False
+
+
 def _photos_disabled() -> Optional[web.Response]:
+    global _unavailable_logged
     if not Var.PHOTOS_ENABLED:
+        if not _unavailable_logged:
+            _unavailable_logged = True
+            logging.warning("photos: requests rejected because PHOTOS_ENABLED is off")
         return _json({"error": "Photos feature is disabled"}, status=503)
     if not photo_store.is_available():
+        if not _unavailable_logged:
+            _unavailable_logged = True
+            logging.warning(
+                "photos: requests rejected because MongoDB is unavailable — "
+                "check the catalogue store connection (see photo_store logs)"
+            )
         return _json({"error": "MongoDB is required for photos"}, status=503)
     return None
 
@@ -74,14 +108,24 @@ def _photos_disabled() -> Optional[web.Response]:
 
 
 def _parse_channel_input(raw: str) -> Optional[int | str]:
-    """Return an int channel id or a username string, None if malformed."""
+    """Return an int channel id or a username string, None if malformed.
+
+    Accepted forms, easiest first:
+      * ``t.me/c/<internal_id>/<message>`` — the "Copy Link" URL of any post
+        in a private channel. The internal id is the channel id without the
+        ``-100`` prefix, so users never have to know the numeric id.
+      * ``-100…`` numeric channel id.
+      * ``@username`` / ``t.me/<username>[/<message>]`` — resolved by
+        Telegram, then rejected by the privacy check if the channel is public.
+    """
     text = (raw or "").strip()
     if not text:
         return None
+    link = _CHANNEL_LINK_RE.match(text)
+    if link:
+        return int(f"-100{link.group(1)}")
     if text.startswith("-100"):
-        if _CHANNEL_ID_RE.match(text):
-            return int(text)
-        return None
+        return int(text) if _CHANNEL_ID_RE.match(text) else None
     if text.lstrip("-").isdigit():
         return None  # raw channel ids must be -100… form
     match = _CHANNEL_INPUT_RE.match(text)
@@ -112,6 +156,10 @@ async def _verify_channel_access(channel_ref: int | str, requester_id: int) -> t
     try:
         chat = await bot.get_chat(channel_ref)
     except Exception as exc:
+        logging.warning(
+            "photos connect: could not resolve %r for uid=%d: %r",
+            channel_ref, requester_id, exc, exc_info=True,
+        )
         return None, f"Could not resolve that channel: {exc}", False
 
     chat_id = chat.id
@@ -129,8 +177,12 @@ async def _verify_channel_access(channel_ref: int | str, requester_id: int) -> t
 
     try:
         bot_member = await bot.get_chat_member(chat_id, (await bot.get_me()).id)
-    except Exception:
+    except Exception as exc:
         # Unknown, not disproved — the bot may still be admin (RPC error).
+        logging.warning(
+            "photos connect: bot membership lookup failed cid=%s uid=%d: %r",
+            chat_id, requester_id, exc, exc_info=True,
+        )
         return None, "Add the bot as an administrator of the channel first", False
     bot_status = _status_name(getattr(bot_member, "status", ""))
     # "creator" is Telegram's raw name; pyrogram 2.x calls it "owner".
@@ -143,9 +195,13 @@ async def _verify_channel_access(channel_ref: int | str, requester_id: int) -> t
 
     try:
         member = await bot.get_chat_member(chat_id, requester_id)
-    except Exception:
+    except Exception as exc:
         # Non-definitive: a transient RPC error is not proof the requester
         # lost access; reverify must not flip the channel off the back of it.
+        logging.warning(
+            "photos connect: requester membership lookup failed cid=%s uid=%d: %r",
+            chat_id, requester_id, exc, exc_info=True,
+        )
         return None, "Could not verify your membership in that channel", False
     member_status = _status_name(getattr(member, "status", ""))
     if member_status not in ("administrator", "creator", "owner"):
@@ -192,7 +248,7 @@ async def connect_channel(request: web.Request) -> web.Response:
     channel_ref = _parse_channel_input(str(body.get("channel", "")))
     if channel_ref is None:
         return _json(
-            {"error": "Paste the channel's -100… id (a private channel has no @username)"},
+            {"error": "Paste a message link from the channel (⋯ → Copy Link) or its -100… id"},
             status=400,
         )
     user_id = int(user["sub"])
@@ -235,13 +291,14 @@ async def photos_status(request: web.Request) -> web.Response:
     user_id = int(user["sub"])
     doc = await _channel_doc(user_id, fresh=True)
     if not doc:
-        return _json({"connected": False})
+        return _json({"connected": False, **_onboarding_payload()})
     return _json({
         "connected": True,
         "channelId": doc.get("channel_id"),
         "status": doc.get("status", "active"),
         "beta": Var.PHOTOS_BETA,
         "photoCount": await photo_store.count_photos(user_id),
+        **_onboarding_payload(),
     })
 
 
@@ -454,6 +511,7 @@ async def _thumb_bytes(user_id: int, channel_id: int, message_id: int,
     if data:
         return data
     if time.monotonic() < _thumb_regen_after.get(key, 0.0):
+        logging.debug("photos thumb: regeneration for %s is in back-off", key)
         return None
     lock = _thumb_regen_locks.get(key)
     if lock is None:
@@ -468,6 +526,12 @@ async def _thumb_bytes(user_id: int, channel_id: int, message_id: int,
     if data:
         _thumb_regen_after.pop(key, None)
     else:
+        # Persistent 404s are then answerable from the logs instead of
+        # looking like a permanently missing thumbnail.
+        logging.warning(
+            "photos thumb: regeneration produced nothing for %s; backing off %.0fs",
+            key, _THUMB_REGEN_BACKOFF_SECONDS,
+        )
         _thumb_regen_after[key] = time.monotonic() + _THUMB_REGEN_BACKOFF_SECONDS
         _prune_thumb_regen_after()
     return data
@@ -877,6 +941,12 @@ async def photos_upload(request: web.Request) -> web.Response:
                 if tagged and album_id in (tagged.get("album_ids") or []):
                     break
                 await asyncio.sleep(0.5)
+            else:
+                logging.warning(
+                    "photos upload: album tag %s not applied to mid=%d uid=%d "
+                    "(ingest did not land within 5s)",
+                    album_id, msg.id, user_id,
+                )
         # The channel_post plugin ingests asynchronously; we still return
         # the message id so the UI can link the upload.
         results.append({

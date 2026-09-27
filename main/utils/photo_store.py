@@ -34,8 +34,18 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+_db_error_logged = False
+
+
 def _get_db():
-    """Return the Motor database object if MongoDB backend is active."""
+    """Return the Motor database object if MongoDB backend is active.
+
+    Every failure here means the whole Photos feature reports "MongoDB is not
+    configured", so the underlying error is logged once — a swallowed
+    ImportError/attribute error is otherwise impossible to diagnose from the
+    API responses alone.
+    """
+    global _db_error_logged
     try:
         from main.utils import media_index as _mi
         s = _mi._store
@@ -43,6 +53,9 @@ def _get_db():
             return None
         return s._client[s._db_name]
     except Exception:
+        if not _db_error_logged:
+            _db_error_logged = True
+            logging.exception("photo_store: Mongo client unavailable; Photos is disabled")
         return None
 
 
@@ -320,6 +333,7 @@ async def find_by_sha(owner_user_id: int, sha256: str) -> Optional[dict]:
             {"owner_user_id": owner_user_id, "sha256": sha256}
         )
     except Exception:
+        logging.exception("photo_store: find_by_sha failed uid=%d", owner_user_id)
         return None
 
 
@@ -357,6 +371,9 @@ async def get_photo_by_id(owner_user_id: int, photo_id: str) -> Optional[dict]:
             {"_id": ObjectId(photo_id), "owner_user_id": owner_user_id}
         )
     except Exception:
+        logging.exception(
+            "photo_store: get_photo_by_id failed uid=%d pid=%s", owner_user_id, photo_id
+        )
         return None
 
 
@@ -491,6 +508,7 @@ async def count_photos(owner_user_id: int) -> int:
             {"owner_user_id": owner_user_id, "deleted": False}
         )
     except Exception:
+        logging.exception("photo_store: count_photos failed uid=%d", owner_user_id)
         return 0
 
 
@@ -594,6 +612,9 @@ async def rename_album(owner_user_id: int, album_id: str, name: str) -> bool:
         )
         return result.matched_count > 0
     except Exception:
+        logging.exception(
+            "photo_store: rename_album failed uid=%d aid=%s", owner_user_id, album_id
+        )
         return False
 
 
@@ -657,6 +678,9 @@ async def get_album(owner_user_id: int, album_id: str) -> Optional[dict]:
             {"_id": ObjectId(album_id), "owner_user_id": owner_user_id}
         )
     except Exception:
+        logging.exception(
+            "photo_store: get_album failed uid=%d aid=%s", owner_user_id, album_id
+        )
         return None
 
 
@@ -694,6 +718,9 @@ async def set_album_cover(owner_user_id: int, album_id: str, message_id: int) ->
         )
         return result.matched_count > 0
     except Exception:
+        logging.exception(
+            "photo_store: set_album_cover failed uid=%d aid=%s", owner_user_id, album_id
+        )
         return False
 
 

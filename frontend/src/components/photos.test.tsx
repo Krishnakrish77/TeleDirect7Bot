@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  connectPhotosChannel,
   fetchPhotoAlbums,
   fetchPhotosStatus,
   fetchPhotosTimeline,
@@ -99,6 +100,68 @@ describe('PhotosPage albums', () => {
     // "Work" is not a member yet: the picker adds it.
     fireEvent.change(screen.getByLabelText('Add to album'), { target: { value: 'a2' } });
     await waitFor(() => expect(setAlbumPhotos).toHaveBeenCalledWith('a2', ['p1'], true));
+  });
+});
+
+describe('Photos onboarding', () => {
+  it('deep-links the bot into a channel and accepts a message link', async () => {
+    vi.mocked(fetchPhotosStatus).mockResolvedValue({
+      connected: false,
+      botUsername: 'tdphotosbot',
+      addToChannelUrl: 'https://t.me/tdphotosbot?startchannel=true&admin=post_messages',
+    });
+    vi.mocked(connectPhotosChannel).mockResolvedValue({ ok: true });
+
+    render(<PhotosPage user={user} />);
+
+    const link = await screen.findByRole('link', { name: /Add @tdphotosbot to a channel/i });
+    expect(link.getAttribute('href')).toBe(
+      'https://t.me/tdphotosbot?startchannel=true&admin=post_messages',
+    );
+
+    fireEvent.change(screen.getByLabelText('Channel link or id'), {
+      target: { value: 'https://t.me/c/1234567890/12' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect channel' }));
+    await waitFor(() =>
+      expect(connectPhotosChannel).toHaveBeenCalledWith('https://t.me/c/1234567890/12'),
+    );
+  });
+
+  it('reports a connect failure without leaving the wizard stuck', async () => {
+    vi.mocked(fetchPhotosStatus).mockResolvedValue({ connected: false, botUsername: null, addToChannelUrl: null });
+    vi.mocked(connectPhotosChannel).mockResolvedValue({
+      ok: false,
+      error: 'That channel is public — use a private channel (no @username)',
+    });
+
+    render(<PhotosPage user={user} />);
+    fireEvent.change(await screen.findByLabelText('Channel link or id'), {
+      target: { value: 'https://t.me/mychannel/42' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect channel' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('That channel is public');
+    // Still on the wizard with the field intact, not a blank page.
+    expect((screen.getByLabelText('Channel link or id') as HTMLInputElement).value).toBe(
+      'https://t.me/mychannel/42',
+    );
+  });
+
+  it('explains an unavailable feature instead of offering a doomed connect flow', async () => {
+    vi.mocked(fetchPhotosStatus).mockRejectedValue(new Error('MongoDB is required for photos'));
+
+    render(<PhotosPage user={user} />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('TeleDirect Photos isn’t available right now');
+    expect(alert.textContent).toContain('MongoDB is required for photos');
+    expect(screen.queryByLabelText('Channel link or id')).toBeNull();
+
+    vi.mocked(fetchPhotosStatus).mockResolvedValue({ connected: false });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByLabelText('Channel link or id')).toBeTruthy();
   });
 });
 

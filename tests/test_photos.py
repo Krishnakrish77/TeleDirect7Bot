@@ -21,7 +21,12 @@ from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 
 from main.server import photo_routes
-from main.server.photo_routes import _parse_channel_input, _inline_disposition, _status_name
+from main.server.photo_routes import (
+    _parse_channel_input,
+    _inline_disposition,
+    _status_name,
+    _bot_admin_link,
+)
 from main.utils.custom_dl import MediaSessionUnavailable
 from main.utils.photo_store import thumb_key, _iso_utc, _serialize_photo
 from main.utils.photo_pipeline import _parse_exif_datetime, _dms_to_deg
@@ -75,6 +80,38 @@ class ChannelInputParseTest(unittest.TestCase):
         self.assertIsNone(_parse_channel_input("@ab"))             # <4 chars
         self.assertIsNone(_parse_channel_input("@has space"))
         self.assertIsNone(_parse_channel_input("not a channel!"))
+
+
+class ChannelMessageLinkTest(unittest.TestCase):
+    """A channel post's "Copy Link" URL is the friendliest way to hand us a
+    private channel — the internal id is the channel id without -100."""
+
+    def test_private_message_link_becomes_channel_id(self):
+        self.assertEqual(_parse_channel_input("https://t.me/c/1234567890/12"), -1001234567890)
+        self.assertEqual(_parse_channel_input("t.me/c/1234567890/12"), -1001234567890)
+        self.assertEqual(_parse_channel_input("telegram.me/c/1234567890"), -1001234567890)
+        self.assertEqual(
+            _parse_channel_input("https://t.me/c/1234567890/12?thread=5"), -1001234567890
+        )
+
+    def test_public_message_link_yields_username(self):
+        # Resolved by Telegram, then rejected with the privacy message.
+        self.assertEqual(_parse_channel_input("https://t.me/mychannel/42"), "mychannel")
+
+    def test_malformed_links_stay_rejected(self):
+        self.assertIsNone(_parse_channel_input("https://t.me/c/abc/12"))
+        self.assertIsNone(_parse_channel_input("https://t.me/c/12"))
+
+
+class BotAdminLinkTest(unittest.TestCase):
+    def test_deep_link_requests_post_rights(self):
+        self.assertEqual(
+            _bot_admin_link("tdbot"),
+            "https://t.me/tdbot?startchannel=true&admin=post_messages",
+        )
+
+    def test_missing_username_has_no_link(self):
+        self.assertIsNone(_bot_admin_link(""))
 
 
 class InlineDispositionTest(unittest.TestCase):

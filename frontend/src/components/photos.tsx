@@ -18,6 +18,7 @@ import {
   uploadPhotos,
 } from '../api';
 import type { Photo, PhotoAlbum, PhotosChannelStatus, TimelineResponse } from '../types';
+import { Button } from './ui/button';
 
 type TimelineData = { items: Photo[]; nextCursor: string | null };
 
@@ -28,26 +29,44 @@ function dayLabel(iso: string | null): string {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
+/** Consistent, user-visible description for a failed Photos API call. */
+function describeError(err: unknown, fallback: string): string {
+  const detail = err instanceof Error && err.message ? err.message : '';
+  return detail ? `${fallback}: ${detail}` : fallback;
+}
+
 function usePhotoStatus() {
   const [status, setStatus] = useState<PhotosChannelStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const reload = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       setStatus(await fetchPhotosStatus());
-    } catch {
-      setStatus({ connected: false });
+    } catch (err) {
+      // Distinguish "feature/Mongo unavailable" from "no channel yet" —
+      // otherwise onboarding invites the user into a connect flow that can
+      // only fail.
+      setStatus(null);
+      setError(err instanceof Error ? err.message : 'Photos is unavailable');
     } finally {
       setLoading(false);
     }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
-  return { status, loading, reload };
+  return { status, loading, error, reload };
 }
 
 // ── Connect wizard ────────────────────────────────────────────────────────
 
-export function PhotosConnectPage({ onConnected }: { onConnected: () => void }) {
+export function PhotosConnectPage({
+  onConnected,
+  status,
+}: {
+  onConnected: () => void;
+  status?: PhotosChannelStatus | null;
+}) {
   const [channel, setChannel] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -70,36 +89,67 @@ export function PhotosConnectPage({ onConnected }: { onConnected: () => void }) 
     }
   };
 
+  const botLabel = status?.botUsername ? `@${status.botUsername}` : 'the bot';
+  const addUrl = status?.addToChannelUrl;
+
   return (
     <div className="photos-connect">
       <h1>TeleDirect Photos <span className="photos-beta-badge" title="TeleDirect Photos is in beta — features may change">Beta</span></h1>
       <p className="photos-connect__lede">
-        Private photo backup backed by your own Telegram channel. Create a private channel,
-        add this bot as an administrator, then paste the channel&apos;s numeric id below.
+        Your photos stay in your own private Telegram channel. This app only streams them back to
+        you — nothing is copied to the public library. Setup takes about a minute.
       </p>
       <ol className="photos-connect__steps">
-        <li>Create a <strong>private channel</strong> in Telegram (any name).</li>
-        <li>Add the bot as an <strong>administrator</strong> with post rights.</li>
         <li>
-          Get the channel&apos;s <code>-100…</code> id — forward any post from it to
-          <strong> @userinfobot</strong>, or copy a message link and read the number after
-          <code> t.me/c/</code> (prefix it with <code>-100</code>).
+          <span className="photos-connect__step-title">Create a private channel in Telegram</span>
+          <span className="photos-connect__step-hint">
+            Open Telegram → New Channel. Leave the public link (@username) empty — a public
+            channel is rejected, since anyone could then read your vault.
+          </span>
         </li>
-        <li>Paste the id here. (A private channel has no @username — a public one is rejected.)</li>
+        <li>
+          <span className="photos-connect__step-title">Add {botLabel} as an administrator</span>
+          <span className="photos-connect__step-hint">
+            Post rights are enough: the bot only ever posts what you send through this page.
+          </span>
+          {addUrl && (
+            <a className="photos-connect__bot-link" href={addUrl} target="_blank" rel="noreferrer">
+              Add {botLabel} to a channel
+            </a>
+          )}
+        </li>
+        <li>
+          <span className="photos-connect__step-title">Link the channel</span>
+          <span className="photos-connect__step-hint">
+            In the channel, open any post, use its <strong>Copy Link</strong> action (the ⋯ menu),
+            and paste it below. A <code>-100…</code> channel id works too.
+          </span>
+        </li>
       </ol>
       <form onSubmit={submit} className="photos-connect__form">
-        <input
-          value={channel}
-          onChange={(event) => setChannel(event.target.value)}
-          placeholder="-1001234567890"
-          aria-label="Channel id"
-          disabled={busy}
-        />
-        <button type="submit" disabled={busy || !channel.trim()}>
-          {busy ? 'Verifying…' : 'Connect channel'}
-        </button>
+        <label className="photos-connect__label" htmlFor="photos-channel-input">
+          Channel link or id
+        </label>
+        <div className="photos-connect__field-row">
+          <input
+            id="photos-channel-input"
+            value={channel}
+            onChange={(event) => setChannel(event.target.value)}
+            placeholder="e.g. https://t.me/c/1234567890/12"
+            inputMode="url"
+            autoComplete="off"
+            disabled={busy}
+          />
+          <Button type="submit" disabled={busy || !channel.trim()}>
+            {busy ? 'Verifying…' : 'Connect channel'}
+          </Button>
+        </div>
       </form>
       {error && <p className="photos-connect__error" role="alert">{error}</p>}
+      <p className="photos-connect__footnote">
+        New posts import automatically. Photos you posted before connecting can be pulled in with
+        <strong> Scan channel history</strong> once you are set up.
+      </p>
     </div>
   );
 }
@@ -213,11 +263,13 @@ function PhotosTimeline({
   loading,
   onLoadMore,
   onOpen,
+  onScan,
 }: {
   data: TimelineData | null;
   loading: boolean;
   onLoadMore: () => void;
   onOpen: (photo: Photo) => void;
+  onScan?: () => void;
 }) {
   const groups = useMemo(() => {
     const out: Array<{ day: string; items: Photo[] }> = [];
@@ -235,7 +287,16 @@ function PhotosTimeline({
     return (
       <div className="photos-empty">
         <h2>Nothing here yet</h2>
-        <p>Drop photos below, or post them to your connected Telegram channel from any device.</p>
+        <p>Post photos to your connected Telegram channel, or drop them anywhere on this page.</p>
+        {onScan && (
+          <Button variant="secondary" onClick={onScan}>
+            Scan channel history
+          </Button>
+        )}
+        <p className="photos-empty__hint">
+          Already posted to the channel? Scanning imports those posts — it runs in the background,
+          so refresh in a moment.
+        </p>
       </div>
     );
   }
@@ -265,7 +326,7 @@ function PhotosTimeline({
 type View = 'timeline' | 'favorites' | 'albums' | 'trash';
 
 export function PhotosPage({ user }: { user: { sub: number | string } | null }) {
-  const { status, loading: statusLoading, reload: reloadStatus } = usePhotoStatus();
+  const { status, loading: statusLoading, error: statusError, reload: reloadStatus } = usePhotoStatus();
   const [view, setView] = useState<View>('timeline');
   const [timeline, setTimeline] = useState<TimelineData | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(true);
@@ -273,7 +334,11 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const [activeAlbum, setActiveAlbum] = useState<PhotoAlbum | null>(null);
   const [lightbox, setLightbox] = useState<number>(-1);
   const [uploads, setUploads] = useState<Array<{ name: string; percent: number }>>([]);
-  const [uploadError, setUploadError] = useState('');
+  // Action errors (upload, favorite, album, scan) are user-initiated and
+  // dismissible; load failures stay until a refresh actually succeeds — a
+  // successful reload must not silently clear them, and vice versa.
+  const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const albumInputRef = useRef<HTMLInputElement>(null);
@@ -294,7 +359,11 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
         album: albumId || undefined,
       });
       setTimeline((current) => (replace ? data : { items: [...(current?.items ?? []), ...data.items], nextCursor: data.nextCursor }));
-    } catch {
+      setLoadError('');
+    } catch (err) {
+      // Never leave the user staring at an empty library that only *looks*
+      // like "no photos" — say the load failed and offer a retry.
+      setLoadError(describeError(err, 'Could not load your library'));
       if (replace) setTimeline({ items: [], nextCursor: null });
     } finally {
       setTimelineLoading(false);
@@ -304,7 +373,9 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const loadAlbums = useCallback(async () => {
     try {
       setAlbums((await fetchPhotoAlbums()).albums ?? []);
-    } catch { /* stays empty */ }
+    } catch (err) {
+      setError(describeError(err, 'Could not load your albums'));
+    }
   }, []);
 
   useEffect(() => {
@@ -328,7 +399,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const handleFiles = async (files: FileList | File[]) => {
     const list = Array.from(files);
     if (!list.length) return;
-    setUploadError('');
+    setError('');
     setUploads(list.map((f) => ({ name: f.name, percent: 0 })));
     try {
       // A 200 response can still carry per-file failures (duplicates,
@@ -340,7 +411,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
       });
       const problems = (results ?? []).filter((r) => r.error || r.duplicate);
       if (problems.length) {
-        setUploadError(
+        setError(
           problems
             .map((r) => `${r.fileName}: ${r.error || 'already in your library (duplicate)'}`)
             .join(' · '),
@@ -351,7 +422,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
       await loadTimeline(true, undefined, activeAlbum?.id);
       await reloadStatus();
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+      setError(describeError(err, 'Upload failed'));
     } finally {
       setUploads([]);
     }
@@ -364,24 +435,36 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   };
 
   const toggleFavorite = async (photo: Photo) => {
-    await setPhotoFavorite(photo.id, !photo.favorite);
-    setTimeline((current) => current && ({
-      ...current,
-      items: current.items.map((p) => p.id === photo.id ? { ...p, favorite: !p.favorite } : p),
-    }));
+    try {
+      await setPhotoFavorite(photo.id, !photo.favorite);
+      setTimeline((current) => current && ({
+        ...current,
+        items: current.items.map((p) => p.id === photo.id ? { ...p, favorite: !p.favorite } : p),
+      }));
+    } catch (err) {
+      setError(describeError(err, 'Could not update the favorite'));
+    }
   };
 
   const trash = async (photo: Photo) => {
-    await trashPhotos([photo.id]);
-    setLightbox(-1);
-    // Album-scoped delete must refresh the album view, not the library.
-    await loadTimeline(true, undefined, activeAlbum?.id);
-    await reloadStatus();
+    try {
+      await trashPhotos([photo.id]);
+      setLightbox(-1);
+      // Album-scoped delete must refresh the album view, not the library.
+      await loadTimeline(true, undefined, activeAlbum?.id);
+      await reloadStatus();
+    } catch (err) {
+      setError(describeError(err, 'Could not move the photo to the trash'));
+    }
   };
 
   const restore = async (photo: Photo) => {
-    await restorePhotos([photo.id]);
-    await loadTimeline(true);
+    try {
+      await restorePhotos([photo.id]);
+      await loadTimeline(true);
+    } catch (err) {
+      setError(describeError(err, 'Could not restore the photo'));
+    }
   };
 
   const assignAlbum = async (photo: Photo, albumId: string, member: boolean) => {
@@ -391,36 +474,74 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
       // a removal from an open album actually drops the tile.
       await loadTimeline(true, undefined, activeAlbum?.id);
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Could not update album');
+      setError(describeError(err, 'Could not update the album'));
+    }
+  };
+
+  const syncLibrary = async () => {
+    try {
+      await resyncPhotosLibrary();
+      await loadTimeline(true, undefined, activeAlbum?.id);
+      await reloadStatus();
+    } catch (err) {
+      setError(describeError(err, 'Could not start the channel scan'));
     }
   };
 
   if (!signedIn) {
-    return <div className="photos-page"><p className="photos-connect__lede">Sign in to use TeleDirect Photos.</p></div>;
+    return (
+      <main className="photos-page photos-page--centered">
+        <p className="photos-connect__lede">Sign in to use TeleDirect Photos.</p>
+      </main>
+    );
+  }
+  if (statusError) {
+    // 503 (feature off / Mongo down) and auth/network failures both land here
+    // — say so instead of dropping the user into a connect flow that cannot
+    // succeed.
+    return (
+      <main className="photos-page photos-page--centered">
+        <div className="photos-banner photos-banner--warn" role="alert">
+          TeleDirect Photos isn’t available right now: {statusError}
+          <Button variant="secondary" size="sm" onClick={() => void reloadStatus()}>Retry</Button>
+        </div>
+      </main>
+    );
   }
   if (statusLoading) {
-    return <div className="photos-page"><div className="photos-loading">Checking your library…</div></div>;
+    return (
+      <main className="photos-page photos-page--centered">
+        <div className="photos-loading">Checking your library…</div>
+      </main>
+    );
   }
   if (!status?.connected) {
     return (
-      <div className="photos-page">
+      <main className="photos-page">
         <PhotosConnectPage
+          status={status}
           onConnected={() => {
             void reloadStatus();
             void loadTimeline(true);
           }}
         />
-      </div>
+      </main>
     );
   }
   if (status.status && status.status !== 'active') {
     return (
-      <div className="photos-page">
+      <main className="photos-page">
         <div className="photos-banner photos-banner--warn" role="alert">
           Your channel is {status.status}. Reconnect it to keep streaming originals.
-          <button onClick={async () => { await disconnectPhotosChannel(); await reloadStatus(); }}>Reconnect</button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={async () => { await disconnectPhotosChannel(); await reloadStatus(); }}
+          >
+            Reconnect
+          </Button>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -428,7 +549,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const currentPhotos = photos;
 
   return (
-    <div
+    <main
       className="photos-page"
       onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
@@ -460,15 +581,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
         <button
           className="photos-sync-btn"
           title="Re-scan the channel for posts the bot missed while offline"
-          onClick={() => {
-            // Ingest is async and queue-paced; new items land in the
-            // timeline as the worker drains — refresh immediately and let
-            // the user see progress on subsequent loads.
-            void resyncPhotosLibrary().then(async () => {
-              await loadTimeline(true, undefined, activeAlbum?.id);
-              await reloadStatus();
-            });
-          }}
+          onClick={() => void syncLibrary()}
         >
           Sync
         </button>
@@ -535,19 +648,38 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
             </div>
           ))}
         </div>
-      ) : (
+      ) : loadError ? null : (
         <PhotosTimeline
           data={timeline}
           loading={timelineLoading}
           onLoadMore={() => void loadTimeline(false, undefined, activeAlbum?.id)}
           onOpen={(photo) => setLightbox(photos.findIndex((p) => p.id === photo.id))}
+          onScan={() => void syncLibrary()}
         />
       )}
 
-      {uploadError && (
+      {(error || loadError) && (
         <div className="photos-banner photos-banner--warn" role="alert">
-          {uploadError}
-          <button onClick={() => setUploadError('')}>Dismiss</button>
+          {error || loadError}
+          {loadError && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void loadTimeline(true, undefined, activeAlbum?.id)}
+            >
+              Retry
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setError('');
+              setLoadError('');
+            }}
+          >
+            Dismiss
+          </Button>
         </div>
       )}
       {uploads.length > 0 && (
@@ -574,7 +706,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
           onAssignAlbum={(p, albumId, member) => void assignAlbum(p, albumId, member)}
         />
       )}
-    </div>
+    </main>
   );
 }
 

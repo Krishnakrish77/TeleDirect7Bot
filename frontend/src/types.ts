@@ -1168,6 +1168,8 @@ export interface PhotosChannelStatus {
   status?: 'active' | 'disconnected' | 'frozen';
   beta?: boolean;
   photoCount?: number;
+  botUsername?: string | null;
+  addToChannelUrl?: string | null;
 }
 
 export interface TimelineResponse {

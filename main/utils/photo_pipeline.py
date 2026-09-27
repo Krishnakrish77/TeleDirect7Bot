@@ -39,7 +39,8 @@ def _piexif_exif(data: bytes) -> dict:
     try:
         import piexif
         exif_dict = piexif.load(data)
-    except Exception:
+    except Exception as exc:
+        log.debug("piexif exif load failed: %r", exc)
         return {}
     flat: Dict[str, Any] = {}
     for ifd_name in ("0th", "Exif", "GPS"):
@@ -146,7 +147,7 @@ def _image_probe(data: bytes, mime: str, file_name: str) -> dict:
         if preview:
             out["thumb_preview"] = preview
     except Exception as exc:
-        log.warning("image probe failed: %s", exc)
+        log.warning("image probe failed (%s, %s): %r", mime, file_name, exc, exc_info=True)
     return out
 
 
@@ -227,6 +228,11 @@ def _ffprobe_bytes(data: bytes) -> dict:
         input=data, capture_output=True, timeout=30,
     )
     if result.returncode != 0:
+        log.warning(
+            "ffprobe failed (rc=%d): %s",
+            result.returncode,
+            (result.stderr or b"").decode("utf-8", "replace").strip()[:400] or "no stderr",
+        )
         return {}
     import json
     return json.loads(result.stdout or b"{}")
@@ -246,8 +252,13 @@ def _video_poster_stdin(data: bytes, edge: int) -> Optional[bytes]:
         )
         if result.returncode == 0 and result.stdout:
             return _webp_resize(result.stdout, edge) or result.stdout
+        log.warning(
+            "ffmpeg poster failed (rc=%d): %s",
+            result.returncode,
+            (result.stderr or b"").decode("utf-8", "replace").strip()[:400] or "no stderr",
+        )
     except Exception as exc:
-        log.warning("video poster failed: %s", exc)
+        log.warning("video poster failed: %r", exc, exc_info=True)
     return None
 
 
@@ -262,7 +273,8 @@ def _webp_resize(data: bytes, edge: int) -> Optional[bytes]:
         buf = BytesIO()
         img.save(buf, format="WEBP", quality=82, method=4)
         return buf.getvalue()
-    except Exception:
+    except Exception as exc:
+        log.debug("webp resize failed (edge=%d): %r", edge, exc)
         return None
 
 
@@ -330,21 +342,27 @@ async def generate_thumbs_for(owner_user_id: int, channel_id: int,
     Telegram (rare — only when ingest-time generation failed)."""
     doc = await photo_store.get_photo(owner_user_id, message_id, channel_id=channel_id)
     if not doc:
+        log.info("thumb regen: no photo doc mid=%d cid=%d size=%s", message_id, channel_id, size)
         return None
     from main.bot import multi_clients
     client = multi_clients.get(0)
     if client is None:
+        log.warning("thumb regen: no bot client available mid=%d", message_id)
         return None
     from pyrogram.file_id import FileId
     try:
         FileId.decode(doc["file_id"])
-    except Exception:
+    except Exception as exc:
+        log.warning("thumb regen: stored file id undecodable mid=%d: %r", message_id, exc)
         return None
     try:
         # Same memory bound as ingest: this buffers a whole original.
         async with download_slot():
             client_msg = await client.get_messages(channel_id, message_id)
             if not client_msg:
+                log.warning(
+                    "thumb regen: channel message missing mid=%d cid=%d", message_id, channel_id
+                )
                 return None
             data = await client_msg.download(in_memory=True)
             # download(in_memory=True) returns BytesIO, not bytes.
@@ -364,7 +382,7 @@ async def generate_thumbs_for(owner_user_id: int, channel_id: int,
             )
         return thumb
     except Exception as exc:
-        log.warning("thumb regen failed mid=%d: %s", message_id, exc)
+        log.warning("thumb regen failed mid=%d size=%s: %r", message_id, size, exc, exc_info=True)
         return None
 
 
