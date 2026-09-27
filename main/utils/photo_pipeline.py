@@ -15,6 +15,7 @@ import asyncio
 import concurrent.futures
 import io
 import logging
+import math
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -133,7 +134,10 @@ def _image_probe(data: bytes, mime: str, file_name: str) -> dict:
         try:
             lat = _dms_to_deg(gps.get("GPSLatitude"), gps.get("GPSLatitudeRef", "N"))
             lon = _dms_to_deg(gps.get("GPSLongitude"), gps.get("GPSLongitudeRef", "E"))
-            if lat is not None and lon is not None:
+            # Degenerate EXIF (0/0 rationals) yields NaN; JSON cannot carry it
+            # (json.dumps emits bare NaN — invalid JSON the browser rejects).
+            if lat is not None and lon is not None and math.isfinite(lat) and math.isfinite(lon) \
+                    and not (lat == 0 and lon == 0):
                 out["gps"] = {"lat": round(lat, 6), "lon": round(lon, 6)}
         except Exception:
             pass
