@@ -243,7 +243,7 @@ export function PhotosConnectPage({
       )}
       <p className="photos-connect__footnote">
         New posts import automatically. Photos you posted before connecting can be pulled in with
-        <strong> Import from Telegram</strong> once you are set up.
+        <strong> Find missing photos</strong> once you are set up.
       </p>
     </div>
   );
@@ -517,13 +517,13 @@ function PhotosTimeline({
           {onUpload && <Button onClick={onUpload}>Upload photos</Button>}
           {onScan && (
             <Button variant="secondary" onClick={onScan}>
-              Import from Telegram
+              Find missing photos
             </Button>
           )}
         </div>
         <p className="photos-empty__hint">
-          Already posted to the channel? “Import from Telegram” adds those photos — it runs in the
-          background, so refresh in a moment.
+          Already posted to the channel? “Find missing photos” adds whatever is not in your library
+          yet — it runs in the background, so refresh in a moment.
         </p>
       </div>
     );
@@ -759,9 +759,9 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   };
 
   /**
-   * Import: kick the background scan, then follow it. Ingest is queue-paced,
-   * so the library fills over seconds — without polling, the button looked
-   * like it did nothing.
+   * Search the channel for photos missing from the library, then follow the
+   * scan: ingest is queue-paced, so the library fills over seconds and the
+   * button looked like it did nothing without polling.
    */
   const syncLibrary = async () => {
     setImportState('running');
@@ -876,12 +876,14 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
           )}
           {importState === 'running' && (
             <p className="photos-import-line" role="status">
-              Looking through your Telegram channel — new photos appear as they finish.
+              Checking your Telegram channel — new photos appear as they finish.
             </p>
           )}
           {importState === 'done' && status?.scan && (
             <p className="photos-import-line">
-              Import finished{status.scan.enqueued ? `: ${status.scan.enqueued} new item(s) found` : ': nothing new to add'}.
+              {status.scan.enqueued
+                ? `Found ${status.scan.enqueued} new ${status.scan.enqueued === 1 ? 'item' : 'items'}.`
+                : 'Nothing new to add.'}
             </p>
           )}
         </div>
@@ -900,11 +902,11 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
           <Button onClick={() => fileInputRef.current?.click()}>Upload</Button>
           <Button
             variant="secondary"
-            title="Look for photos in your channel that are not in this library yet"
+            title="Check your Telegram channel for photos that are not in this library yet"
             disabled={importState === 'running'}
             onClick={() => void syncLibrary()}
           >
-            {importState === 'running' ? 'Importing…' : 'Import from Telegram'}
+            {importState === 'running' ? 'Looking…' : 'Find missing photos'}
           </Button>
         </div>
       </header>

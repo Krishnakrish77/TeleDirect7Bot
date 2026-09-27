@@ -283,18 +283,18 @@ describe('Photos onboarding', () => {
   });
 });
 
-describe('Photos import', () => {
-  it('reports that an import is running instead of silently doing nothing', async () => {
+describe('Photos missing-photo search', () => {
+  it('reports that a search for missing photos is running', async () => {
     vi.mocked(resyncPhotosLibrary).mockResolvedValue(undefined);
 
     render(<PhotosPage user={user} />);
     await screen.findByRole('button', { name: 'IMG_1.jpg' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import from Telegram' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find missing photos' }));
 
-    expect(await screen.findByRole('button', { name: 'Importing…' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Looking…' })).toBeTruthy();
     const status = await screen.findByRole('status');
-    expect(status.textContent).toContain('Looking through your Telegram channel');
+    expect(status.textContent).toContain('Checking your Telegram channel');
   });
 });
 
