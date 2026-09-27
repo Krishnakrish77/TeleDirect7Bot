@@ -71,16 +71,74 @@ async def _worker(channel_id: int) -> None:
             q.task_done()
 
 
-def _resolve_owner_sync(channel_id: int):
-    """Best-effort synchronous cache check — the async lookup happens in
-    the worker; here we just need to reject obviously unbound channels."""
-    return channel_id in _CHANNEL_QUEUES
-
-
 def _photos_channel_filter():
     """Match everything channel-shaped; binding is checked in the handler."""
     from pyrogram import filters
     return filters.channel & (filters.document | filters.video | filters.photo)
+
+
+# ── Rescan (catch-up for downtime / dropped posts) ───────────────────────
+
+_RESCAN_TASKS: dict[int, asyncio.Task] = {}
+# History page size; get_chat_history yields newest-first and handles
+# pagination internally — we just bound total items scanned per pass.
+_RESCAN_MAX_ITEMS = 20000
+
+
+def schedule_rescan(owner_user_id: int, channel_id: int) -> None:
+    """Kick off a background history scan; coalesces repeat calls."""
+    if not Var.PHOTOS_ENABLED:
+        return
+    task = _RESCAN_TASKS.get(channel_id)
+    if task is not None and not task.done():
+        return  # one already running for this channel
+    _RESCAN_TASKS[channel_id] = asyncio.create_task(rescan_channel(owner_user_id, channel_id))
+
+
+async def rescan_channel(owner_user_id: int, channel_id: int) -> int:
+    """Walk the vault's history and enqueue posts that were never indexed.
+
+    channel_post only fires while the bot is live, and a full ingest queue
+    drops posts — without this, photos sent during downtime would sit in
+    the channel but never appear in the gallery. Idempotent: the pipeline
+    dedups on (channel_id, message_id) and (owner, sha256). Returns the
+    number of messages enqueued.
+    """
+    from main.bot import multi_clients
+    bot = multi_clients.get(0) or StreamBot
+    try:
+        indexed = await photo_store.list_indexed_message_ids(owner_user_id, channel_id)
+        enqueued = 0
+        scanned = 0
+        async for message in bot.get_chat_history(channel_id):
+            scanned += 1
+            if scanned > _RESCAN_MAX_ITEMS:
+                log.warning("rescan truncated at %d items cid=%d", _RESCAN_MAX_ITEMS, channel_id)
+                break
+            if message.empty or not (message.document or message.video or message.photo):
+                continue
+            if message.id in indexed:
+                continue
+            q = _queue_for(channel_id)
+            try:
+                q.put_nowait((owner_user_id, message))
+            except asyncio.QueueFull:
+                # Drain is FIFO and rescan is repeatable — stop here, the
+                # next pass picks up the rest.
+                log.warning("rescan queue full at %d enqueued cid=%d", enqueued, channel_id)
+                break
+            enqueued += 1
+        if enqueued:
+            _ensure_worker(channel_id)
+        log.info("rescan cid=%d: scanned=%d enqueued=%d", channel_id, scanned, enqueued)
+        return enqueued
+    except FloodWait as e:
+        wait = float(getattr(e, "value", getattr(e, "x", 1)))
+        log.warning("rescan FloodWait %ss cid=%d; will retry on next trigger", wait, channel_id)
+        return 0
+    except Exception:
+        log.exception("rescan failed cid=%d", channel_id)
+        return 0
 
 
 @StreamBot.on_message(_photos_channel_filter(), group=-3)
@@ -112,9 +170,3 @@ async def photo_channel_post(client: Client, message):
         _ensure_worker(channel_id)
     except Exception:
         log.exception("photo_channel_post failed")
-
-
-def _photos_channel_filter():
-    """Match everything channel-shaped; binding is checked in the handler."""
-    from pyrogram import filters
-    return filters.channel & (filters.document | filters.video | filters.photo)

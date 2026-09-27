@@ -190,6 +190,39 @@ async def unbind_channel(owner_user_id: int) -> bool:
 # ── Photo documents ───────────────────────────────────────────────────────
 
 
+async def update_file_id(owner_user_id: int, channel_id: int, message_id: int,
+                         file_id: str) -> None:
+    """Persist a refreshed Telegram file reference (stored ones expire)."""
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        await db["photos"].update_one(
+            {"owner_user_id": owner_user_id, "channel_id": channel_id,
+             "message_id": message_id},
+            {"$set": {"file_id": file_id}},
+        )
+    except Exception:
+        logging.exception("photo_store: update_file_id failed mid=%d", message_id)
+
+
+async def list_indexed_message_ids(owner_user_id: int, channel_id: int) -> set:
+    """All message ids already indexed for this vault — used by rescan to
+    find posts the live channel_post handler missed (downtime, full queue)."""
+    db = _get_db()
+    if db is None:
+        return set()
+    try:
+        cursor = db["photos"].find(
+            {"owner_user_id": owner_user_id, "channel_id": channel_id},
+            projection={"message_id": 1},
+        )
+        return {doc["message_id"] async for doc in cursor}
+    except Exception:
+        logging.exception("photo_store: list_indexed_message_ids failed cid=%d", channel_id)
+        return set()
+
+
 def _serialize_photo(doc: dict) -> dict:
     """Public shape for the SPA. ObjectId and internal fields stripped."""
     return {
@@ -216,10 +249,10 @@ def _serialize_photo(doc: dict) -> dict:
 async def upsert_photo(doc: dict) -> Optional[str]:
     """Insert a photo doc keyed by (channel_id, message_id).
 
-    Race-safe against a concurrent upload tagging `album_ids`: the insert
-    is unconditional (unique index arbitrates), and on loss the caller's
-    album tag — written before the doc existed — is merged in, never
-    overwritten.
+    The insert is unconditional and the unique indexes arbitrate races:
+    a concurrent upload tagging `album_ids` via append_album_ids writes
+    directly to the existing doc, and this function never touches
+    `album_ids` on the merge path — tags survive regardless of ordering.
 
     Returns an error string on failure, None on success, "duplicate" when
     the (channel_id, message_id) or (owner, sha256) already exists.

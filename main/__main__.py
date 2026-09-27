@@ -101,6 +101,31 @@ async def _photos_channel_reverify_loop() -> None:
             logging.exception("photos: reverify loop pass failed")
 
 
+async def _photos_boot_rescan() -> None:
+    """Catch-up pass on startup: enqueue vault posts missed while the bot
+    was down (channel_post only fires live). Waits for Mongo first —
+    photo_store reports unavailable until the catalogue store connects.
+    """
+    from main.utils import photo_store
+    from main.bot.plugins.photos import schedule_rescan
+    for _ in range(30):  # up to ~5 min for Mongo to come up
+        if photo_store.is_available():
+            break
+        await asyncio.sleep(10)
+    else:
+        return
+    try:
+        db = photo_store._get_db()
+        cursor = db["photo_channels"].find(
+            {"status": "active"},
+            projection={"owner_user_id": 1, "channel_id": 1},
+        )
+        async for row in cursor:
+            schedule_rescan(row["owner_user_id"], row["channel_id"])
+    except Exception:
+        logging.exception("photos: boot rescan failed")
+
+
 async def start_services():
     print()
     print("-------------------- Initializing Telegram Bot --------------------")
@@ -124,6 +149,7 @@ async def start_services():
     asyncio.create_task(_connect_catalogue_store())
     if Var.PHOTOS_ENABLED:
         asyncio.create_task(_photos_channel_reverify_loop())
+        asyncio.create_task(_photos_boot_rescan())
     hls_session.ensure_reaper_running()
     if Var.ON_KOYEB:
         print("------------------ Starting Keep Alive Service ------------------")

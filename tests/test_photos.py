@@ -13,9 +13,40 @@ os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
 os.environ.setdefault("OWNER_ID", "1")
 
-from main.server.photo_routes import _parse_channel_input, _inline_disposition
+from main.server.photo_routes import _parse_channel_input, _inline_disposition, _status_name
 from main.utils.photo_store import thumb_key, _serialize_photo
 from main.utils.photo_pipeline import _parse_exif_datetime, _dms_to_deg
+
+
+class StatusNameTest(unittest.TestCase):
+    """Regression: pyrogram ChatMemberStatus is a PLAIN enum —
+    ``ChatMemberStatus.ADMINISTRATOR == "administrator"`` is False, so the
+    connect/reverify checks must compare through .value. This test fails
+    if anyone reverts to raw string comparison against enum members."""
+
+    def test_enum_members_normalize(self):
+        from pyrogram import enums
+        self.assertEqual(_status_name(enums.ChatMemberStatus.ADMINISTRATOR), "administrator")
+        # pyrogram 2.x names the creator value "owner" (Telegram's raw API
+        # says "creator") — the production check accepts both.
+        self.assertEqual(_status_name(enums.ChatMemberStatus.OWNER), "owner")
+        self.assertEqual(_status_name(enums.ChatMemberStatus.MEMBER), "member")
+
+    def test_enum_members_match_admin_check(self):
+        from pyrogram import enums
+        # The exact predicate _verify_channel_access applies.
+        for good in (enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER):
+            self.assertIn(_status_name(good), ("administrator", "creator", "owner"))
+        self.assertNotIn(_status_name(enums.ChatMemberStatus.MEMBER), ("administrator", "creator", "owner"))
+
+    def test_plain_strings_pass_through(self):
+        self.assertEqual(_status_name("administrator"), "administrator")
+        self.assertEqual(_status_name(""), "")
+
+    def test_chat_type_normalizes(self):
+        from pyrogram import enums
+        self.assertEqual(_status_name(enums.ChatType.CHANNEL).upper(), "CHANNEL")
+
 
 
 class ChannelInputParseTest(unittest.TestCase):

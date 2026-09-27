@@ -29,25 +29,6 @@ except ImportError:  # pragma: no cover
 
 log = logging.getLogger("photos.pipeline")
 
-# Pillow de/encoders that might legitimately fail on hostile bytes —
-# never let one bad file kill the ingest worker.
-_EXIF_DATETIME_KEYS = ("DateTimeOriginal", "DateTime", "DateTimeDigitized")
-
-
-def _executor():
-    import concurrent.futures
-    return concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="photopipe")
-
-
-_exec = None
-
-
-def _run_sync(fn, *args):
-    global _exec
-    if _exec is None:
-        _exec = _executor()
-    return _exec.submit(fn, *args).result()
-
 
 # ── Image probing ─────────────────────────────────────────────────────────
 
@@ -84,17 +65,9 @@ def _parse_exif_datetime(raw) -> Optional[datetime]:
         return None
 
 
-def _parse_gps(flat: dict) -> Optional[dict]:
-    lat = flat.get("GPSInfoIFD") or flat.get("GPSLatitude")
-    # piexif nests GPS under exif_dict["GPS"] with numeric ids; we flattened
-    # with names like "GPS1" (lat ref) — reconstruct from piexif directly.
-    return None
-
-
 def _image_probe(data: bytes, mime: str, file_name: str) -> dict:
     """Probe + EXIF + thumbnails for an image. Returns pipeline fields."""
     out: Dict[str, Any] = {}
-    heic_opened = False
     try:
         from PIL import Image
         try:

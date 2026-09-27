@@ -11,6 +11,7 @@ import {
   photoThumbUrl,
   renamePhotoAlbum,
   restorePhotos,
+  resyncPhotosLibrary,
   setAlbumPhotos,
   setPhotoFavorite,
   trashPhotos,
@@ -134,7 +135,9 @@ function Lightbox({
         {isVideo ? (
           <video controls autoPlay src={photoFileUrl(photo.id)} />
         ) : (
-          <img src={photoFileUrl(photo.id)} alt={photo.fileName} />
+          // Preview webp, not the original: browsers can't render HEIC/RAW,
+          // and casual browsing must not pull full originals from Telegram.
+          <img src={photoThumbUrl(photo.id, 'preview')} alt={photo.fileName} />
         )}
         <div className="photos-lightbox__meta">
           <span>{dayLabel(photo.takenAt)}</span>
@@ -145,6 +148,7 @@ function Lightbox({
       <button className="photos-lightbox__nav photos-lightbox__nav--next" onClick={onNext} aria-label="Next">›</button>
       <div className="photos-lightbox__actions">
         <button onClick={() => onToggleFavorite(photo)}>{photo.favorite ? '★ Favorited' : '☆ Favorite'}</button>
+        <a href={photoFileUrl(photo.id)} download={photo.fileName || true} className="photos-lightbox__download">Download original</a>
         <button onClick={() => onTrash(photo)}>Delete</button>
       </div>
     </div>
@@ -290,10 +294,21 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
     setUploadError('');
     setUploads(list.map((f) => ({ name: f.name, percent: 0 })));
     try {
-      await uploadPhotos(list, {
+      // A 200 response can still carry per-file failures (duplicates,
+      // over-limit, unsupported type) — a backup UI must not report
+      // success for files the vault never received.
+      const { results } = await uploadPhotos(list, {
         albumId: activeAlbum?.id || undefined,
         onProgress: (percent) => setUploads((current) => current.map((u) => ({ ...u, percent }))),
       });
+      const problems = (results ?? []).filter((r) => r.error || r.duplicate);
+      if (problems.length) {
+        setUploadError(
+          problems
+            .map((r) => `${r.fileName}: ${r.error || 'already in your library (duplicate)'}`)
+            .join(' · '),
+        );
+      }
       // Keep the active album's filter — an upload landing inside an
       // album detail must refresh that album, not the whole library.
       await loadTimeline(true, undefined, activeAlbum?.id);
@@ -394,6 +409,21 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
           }}
         />
         <button className="photos-upload-btn" onClick={() => fileInputRef.current?.click()}>Upload</button>
+        <button
+          className="photos-sync-btn"
+          title="Re-scan the channel for posts the bot missed while offline"
+          onClick={() => {
+            // Ingest is async and queue-paced; new items land in the
+            // timeline as the worker drains — refresh immediately and let
+            // the user see progress on subsequent loads.
+            void resyncPhotosLibrary().then(async () => {
+              await loadTimeline(true, undefined, activeAlbum?.id);
+              await reloadStatus();
+            });
+          }}
+        >
+          Sync
+        </button>
       </nav>
 
       {isAlbumDetail && (

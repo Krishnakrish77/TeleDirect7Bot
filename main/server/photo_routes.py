@@ -6,8 +6,9 @@ bearer-by-hash stream routes.
 
 Serving:
   * thumbs  — generated webp from Mongo (photo_thumbs)
-  * originals — /api/photos/file/{message_id}: ownership check, then
-    byte-range stream from the user's own channel via ByteStreamer.
+  * originals — /api/photos/file/{photo_id}: ownership check, fresh file
+    reference from the live channel message, then byte-range stream from
+    the user's own channel via ByteStreamer.
 
 Uploads stream through the multipart reader directly into the bot's
 send_document call — original bytes never touch disk.
@@ -28,7 +29,7 @@ from aiohttp import web
 from main import Var
 from main.bot import StreamBot, multi_clients
 from main.utils import photo_store
-from main.utils.custom_dl import ByteStreamer, MediaSessionUnavailable
+from main.utils.custom_dl import ByteStreamer, MediaSessionUnavailable, TelegramStreamTruncated
 from main.utils.user_auth import get_user
 
 routes = web.RouteTableDef()
@@ -87,50 +88,66 @@ def _parse_channel_input(raw: str) -> Optional[int | str]:
     return None
 
 
-async def _verify_channel_access(channel_ref: int | str, requester_id: int) -> tuple[Optional[dict], str]:
+def _status_name(status) -> str:
+    """Normalize a ChatMemberStatus to its string value.
+
+    Pyrogram 2.x statuses are plain enums — ``ChatMemberStatus.ADMINISTRATOR
+    == "administrator"`` is False, so comparisons must go through ``.value``.
+    Plain strings pass through unchanged (kurigram/other forks).
+    """
+    return str(getattr(status, "value", status) or "")
+
+
+async def _verify_channel_access(channel_ref: int | str, requester_id: int) -> tuple[Optional[dict], str, bool]:
     """Run the three trust checks from the plan (§4).
 
-    Returns (chat_dict, "") on success or (None, reason).
+    Returns (chat_dict, "", True) on success or (None, reason, definitive).
+    ``definitive`` is False when we could not get an answer from Telegram
+    (FloodWait, network, RPC error) — callers that mutate state on failure
+    (reverify_channel) must not treat an unknown as a negative.
     """
     bot = multi_clients.get(0) or StreamBot
     try:
         chat = await bot.get_chat(channel_ref)
     except Exception as exc:
-        return None, f"Could not resolve that channel: {exc}"
+        return None, f"Could not resolve that channel: {exc}", False
 
     chat_id = chat.id
     # Must be a channel (broadcast), not a user/group/supergroup. Public
     # channels also carry -100 ids, so the type check is what enforces the
     # private-vault invariant — and a resolvable @username means the
     # channel is public, which must never be bound as a private vault.
-    chat_type = getattr(chat, "type", None)
-    type_name = getattr(chat_type, "name", "") or str(chat_type or "")
-    if type_name.upper() != "CHANNEL":
-        return None, "Only channels (not groups or users) can be used"
+    type_name = _status_name(getattr(chat, "type", "")).upper()
+    if type_name != "CHANNEL":
+        return None, "Only channels (not groups or users) can be used", True
     if not str(chat_id).startswith("-100"):
-        return None, "Only private channels can be used"
+        return None, "Only private channels can be used", True
     if getattr(chat, "username", None):
-        return None, "That channel is public — use a private channel (no @username)"
+        return None, "That channel is public — use a private channel (no @username)", True
 
     try:
         bot_member = await bot.get_chat_member(chat_id, (await bot.get_me()).id)
     except Exception:
-        return None, "Add the bot as an administrator of the channel first"
-    bot_status = getattr(bot_member, "status", "")
-    if bot_status not in ("administrator", "creator"):
-        return None, "The bot must be a channel administrator with post rights"
+        # Unknown, not disproved — the bot may still be admin (RPC error).
+        return None, "Add the bot as an administrator of the channel first", False
+    bot_status = _status_name(getattr(bot_member, "status", ""))
+    # "creator" is Telegram's raw name; pyrogram 2.x calls it "owner".
+    if bot_status not in ("administrator", "creator", "owner"):
+        return None, "The bot must be a channel administrator with post rights", True
     privileges = getattr(bot_member, "privileges", None)
     if bot_status == "administrator" and privileges is not None:
         if not getattr(privileges, "can_post_messages", True):
-            return None, "The bot needs post-messages rights to ingest uploads"
+            return None, "The bot needs post-messages rights to ingest uploads", True
 
     try:
         member = await bot.get_chat_member(chat_id, requester_id)
     except Exception:
-        return None, "Could not verify your membership in that channel"
-    member_status = getattr(member, "status", "")
-    if member_status not in ("administrator", "creator"):
-        return None, "You must be the channel creator (or an admin) to connect it"
+        # Non-definitive: a transient RPC error is not proof the requester
+        # lost access; reverify must not flip the channel off the back of it.
+        return None, "Could not verify your membership in that channel", False
+    member_status = _status_name(getattr(member, "status", ""))
+    if member_status not in ("administrator", "creator", "owner"):
+        return None, "You must be the channel creator (or an admin) to connect it", True
 
     # The requester just proved admin/creator status via get_chat_member.
     # Anonymous-admin channels can hide who the real creator is from the
@@ -141,7 +158,7 @@ async def _verify_channel_access(channel_ref: int | str, requester_id: int) -> t
         "chat_id": chat_id,
         "creator_id": creator_id or requester_id,
         "title": getattr(chat, "title", "") or "",
-    }, ""
+    }, "", True
 
 
 async def _channel_doc(owner_user_id: int, *, fresh: bool = False) -> Optional[dict]:
@@ -178,7 +195,7 @@ async def connect_channel(request: web.Request) -> web.Response:
         )
     user_id = int(user["sub"])
 
-    verified, reason = await _verify_channel_access(channel_ref, user_id)
+    verified, reason, _definitive = await _verify_channel_access(channel_ref, user_id)
     if verified is None:
         return _json({"error": reason}, status=400)
 
@@ -188,6 +205,10 @@ async def connect_channel(request: web.Request) -> web.Response:
     if err:
         return _json({"error": err}, status=409 if "another user" in err else 400)
     _invalidate_channel_cache(user_id)
+    # Catch-up: index anything posted while the channel was unbound (and
+    # backfill posts a previous queue drop or downtime missed).
+    from main.bot.plugins.photos import schedule_rescan
+    schedule_rescan(user_id, verified["chat_id"])
     return _json({"ok": True, "channelId": verified["chat_id"], "title": verified["title"]})
 
 
@@ -444,6 +465,34 @@ def _class_streamer() -> ByteStreamer:
     return streamer
 
 
+async def _fresh_file_id(doc: dict, channel_id: int) -> str:
+    """Re-derive the file id from the live channel message.
+
+    Falls back to the stored (possibly expired) id when the message can't
+    be fetched right now — the decode/stream attempt then fails honestly
+    rather than the route pretending the file is gone.
+    """
+    stored = str(doc.get("file_id") or "")
+    message_id = doc.get("message_id")
+    if not message_id:
+        return stored
+    bot = multi_clients.get(0) or StreamBot
+    try:
+        msg = await bot.get_messages(channel_id, int(message_id))
+        media = msg and (msg.document or msg.video or msg.photo)
+        fresh = str(getattr(media, "file_id", "") or "")
+    except Exception as exc:
+        logging.info("photos file: refresh failed mid=%s: %s", message_id, exc)
+        return stored
+    if fresh and fresh != stored:
+        # Persist so future requests start from a valid reference and the
+        # regen path (generate_thumbs_for) sees it too.
+        await photo_store.update_file_id(
+            doc["owner_user_id"], channel_id, int(message_id), fresh
+        )
+    return fresh or stored
+
+
 @routes.get(r"/api/photos/file/{photo_id}", allow_head=True)
 async def photo_file(request: web.Request) -> web.StreamResponse:
     disabled = _photos_disabled()
@@ -470,7 +519,12 @@ async def photo_file(request: web.Request) -> web.StreamResponse:
     if doc.get("channel_id") != channel_doc.get("channel_id"):
         raise web.HTTPGone(text="Photo belongs to a previously disconnected channel")
 
-    file_id_str = doc.get("file_id")
+    # Stored file_ids embed a Telegram file_reference that EXPIRES — a doc
+    # ingested days ago will fail GetFile with FILE_REFERENCE_EXPIRED.
+    # Refresh from the live channel message (same trick the catalogue's
+    # _resolve_file uses), falling back to the stored id when the message
+    # is momentarily unreachable.
+    file_id_str = await _fresh_file_id(doc, channel_doc["channel_id"])
     if not file_id_str:
         raise web.HTTPNotFound(text="File reference missing")
     from pyrogram.file_id import FileId
@@ -770,14 +824,45 @@ async def photos_upload(request: web.Request) -> web.Response:
 # ── Internal: called by the channel_post plugin on re-verify ─────────────
 
 
+@routes.post("/api/photos/resync")
+async def photos_resync(request: web.Request) -> web.Response:
+    """Re-scan the bound channel's history and ingest anything missing.
+
+    Covers posts made while the bot was down or dropped by a full ingest
+    queue — the gallery must eventually reflect the whole vault.
+    """
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    user_id = int(user["sub"])
+    channel_doc = await _channel_doc(user_id)
+    if not channel_doc or channel_doc.get("status") != "active":
+        return _json({"error": "Connect a channel first"}, status=400)
+    from main.bot.plugins.photos import schedule_rescan
+    schedule_rescan(user_id, channel_doc["channel_id"])
+    return _json({"ok": True})
+
+
 async def reverify_channel(owner_user_id: int) -> Optional[str]:
-    """Periodic re-verify. Returns new status, None when the doc vanished."""
+    """Periodic re-verify. Returns new status, None when the doc vanished.
+
+    Only flips to ``disconnected`` on a DEFINITIVE negative (we fetched the
+    member record and the bot/owner lost the required role). Transient
+    Telegram errors leave the status untouched — an hourly FloodWait must
+    not take a healthy library's originals offline.
+    """
     doc = await photo_store.get_channel_by_owner(owner_user_id)
     if not doc:
         return None
     channel_id = doc["channel_id"]
-    verified, _reason = await _verify_channel_access(channel_id, doc.get("creator_user_id") or owner_user_id)
-    status = "active" if verified else "disconnected"
+    verified, _reason, definitive = await _verify_channel_access(channel_id, doc.get("creator_user_id") or owner_user_id)
+    if verified:
+        status = "active"
+    elif definitive:
+        status = "disconnected"
+    else:
+        return doc.get("status", "active")  # unknown — keep current status
     await photo_store.set_channel_status(channel_id, status)
     _invalidate_channel_cache(owner_user_id)
     return status

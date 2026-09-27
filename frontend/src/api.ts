@@ -815,6 +815,10 @@ export async function disconnectPhotosChannel(): Promise<void> {
   await request('/api/photos/disconnect', { method: 'POST' });
 }
 
+export async function resyncPhotosLibrary(): Promise<void> {
+  await request('/api/photos/resync', { method: 'POST' });
+}
+
 export async function fetchPhotosTimeline(
   options: { cursor?: string; view?: string; album?: string; limit?: number; signal?: AbortSignal } = {},
 ): Promise<TimelineResponse> {
