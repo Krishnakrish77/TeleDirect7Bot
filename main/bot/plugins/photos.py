@@ -228,9 +228,16 @@ def _photos_channel_filter():
 # ── Rescan (catch-up for downtime / dropped posts) ───────────────────────
 
 _RESCAN_TASKS: dict[int, asyncio.Task] = {}
-# History page size; get_chat_history yields newest-first and handles
-# pagination internally — we just bound total items scanned per pass.
-_RESCAN_MAX_ITEMS = 20000
+# Bots may NOT page a chat's history — messages.GetHistory answers
+# BOT_METHOD_INVALID (this used to crash every scan). Instead the backfill
+# probes message ids with channels.GetMessages, the same call the live ingest
+# already makes: up to 100 ids per request, empty slots (deleted or unused
+# ids) arrive as MessageEmpty and are skipped. A persisted cursor makes
+# repeated passes continue instead of restarting.
+_RESCAN_BATCH = 100
+_RESCAN_MAX_BATCHES = 200          # per pass: 20k ids, then resume next trigger
+_RESCAN_EMPTY_BATCHES_STOP = 5     # 500 consecutive empty ids == end of space
+_RESCAN_OVERLAP = 200              # re-check the tail for posts missed while live
 
 
 def schedule_rescan(owner_user_id: int, channel_id: int) -> None:
@@ -243,46 +250,80 @@ def schedule_rescan(owner_user_id: int, channel_id: int) -> None:
     _RESCAN_TASKS[channel_id] = asyncio.create_task(rescan_channel(owner_user_id, channel_id))
 
 
-async def rescan_channel(owner_user_id: int, channel_id: int) -> int:
-    """Walk the vault's history and enqueue posts that were never indexed.
+def _enqueue_pending(owner_user_id: int, channel_id: int, message) -> bool:
+    """Queue one message for ingest; False when the queue is saturated."""
+    q = _queue_for(channel_id)
+    try:
+        q.put_nowait((owner_user_id, message))
+    except asyncio.QueueFull:
+        return False
+    return True
 
-    channel_post only fires while the bot is live, and a full ingest queue
-    drops posts — without this, photos sent during downtime would sit in
-    the channel but never appear in the gallery. Idempotent: the pipeline
-    dedups on (channel_id, message_id) and (owner, sha256). Returns the
-    number of messages enqueued.
+
+async def rescan_channel(owner_user_id: int, channel_id: int) -> int:
+    """Backfill vault posts that were never indexed.
+
+    ``channel_post`` only fires while the bot is live and a full ingest queue
+    drops posts, so photos posted during downtime would never appear. The bot
+    cannot page history, hence the id-probing walk; steps are idempotent
+    (ingest dedups on channel/message and owner/sha256) and the cursor means a
+    pass interrupted by FloodWait, a full queue or shutdown resumes rather than
+    restarting. Returns the number of messages enqueued.
     """
     from main.bot import multi_clients
     bot = multi_clients.get(0) or StreamBot
     try:
         indexed = await photo_store.list_indexed_message_ids(owner_user_id, channel_id)
+        cursor = await photo_store.get_scan_cursor(channel_id)
+        start = max(1, cursor - _RESCAN_OVERLAP) if cursor else 1
         enqueued = 0
-        scanned = 0
-        async for message in bot.get_chat_history(channel_id):
-            scanned += 1
-            if scanned > _RESCAN_MAX_ITEMS:
-                log.warning("rescan truncated at %d items cid=%d", _RESCAN_MAX_ITEMS, channel_id)
+        batches = 0
+        empty_streak = 0
+        while batches < _RESCAN_MAX_BATCHES:
+            ids = list(range(start, start + _RESCAN_BATCH))
+            messages = await bot.get_messages(channel_id, ids)
+            if not isinstance(messages, list):
+                messages = [messages]
+            found = 0
+            drained = True
+            for message in messages:
+                if message is None or getattr(message, "empty", False):
+                    continue
+                if not (message.document or message.video or message.photo):
+                    continue
+                found += 1
+                if message.id in indexed:
+                    continue
+                if not _enqueue_pending(owner_user_id, channel_id, message):
+                    # Resume this batch on the next pass rather than skipping
+                    # the ids we could not queue.
+                    log.warning(
+                        "rescan queue full cid=%d at id=%d (%d enqueued)",
+                        channel_id, message.id, enqueued,
+                    )
+                    drained = False
+                    break
+                enqueued += 1
+            empty_streak = 0 if found else empty_streak + 1
+            batches += 1
+            if not drained:
                 break
-            if message.empty or not (message.document or message.video or message.photo):
-                continue
-            if message.id in indexed:
-                continue
-            q = _queue_for(channel_id)
-            try:
-                q.put_nowait((owner_user_id, message))
-            except asyncio.QueueFull:
-                # Drain is FIFO and rescan is repeatable — stop here, the
-                # next pass picks up the rest.
-                log.warning("rescan queue full at %d enqueued cid=%d", enqueued, channel_id)
+            start += _RESCAN_BATCH
+            await photo_store.set_scan_cursor(channel_id, start)
+            if empty_streak >= _RESCAN_EMPTY_BATCHES_STOP:
                 break
-            enqueued += 1
         if enqueued:
             _ensure_worker(channel_id)
-        log.info("rescan cid=%d: scanned=%d enqueued=%d", channel_id, scanned, enqueued)
+        log.info(
+            "rescan cid=%d: batches=%d enqueued=%d cursor=%d",
+            channel_id, batches, enqueued, start,
+        )
         return enqueued
     except FloodWait as e:
         wait = float(getattr(e, "value", getattr(e, "x", 1)))
-        log.warning("rescan FloodWait %ss cid=%d; will retry on next trigger", wait, channel_id)
+        log.warning(
+            "rescan FloodWait %ss cid=%d; resuming from the saved cursor", wait, channel_id
+        )
         return 0
     except Exception:
         log.exception("rescan failed cid=%d", channel_id)

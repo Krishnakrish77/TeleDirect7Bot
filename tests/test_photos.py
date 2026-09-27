@@ -498,5 +498,101 @@ class BotAddedHandlerTest(unittest.IsolatedAsyncioTestCase):
         plugin._PENDING_LINKS.clear()
 
 
+
+class RescanProbeTest(unittest.IsolatedAsyncioTestCase):
+    """Bots may not call messages.GetHistory (BOT_METHOD_INVALID — this used to
+    crash every scan), so the backfill probes ids through get_messages."""
+
+    CHANNEL = -1004429033256
+
+    def setUp(self):
+        from main.bot.plugins import photos as plugin
+        self.plugin = plugin
+        plugin._CHANNEL_QUEUES.clear()
+        self.calls: list[list[int]] = []
+        self.cursor_writes: list[int] = []
+        self.queued: list[int] = []
+
+    def _media(self, message_id):
+        from types import SimpleNamespace
+        return SimpleNamespace(id=message_id, empty=False, document=object(), video=None, photo=None)
+
+    def _empty(self, message_id):
+        from types import SimpleNamespace
+        return SimpleNamespace(id=message_id, empty=True, document=None, video=None, photo=None)
+
+    def _text(self, message_id):
+        from types import SimpleNamespace
+        return SimpleNamespace(id=message_id, empty=False, document=None, video=None, photo=None)
+
+    async def _rescan(self, batches, *, cursor=0, indexed=()):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from main.utils import photo_store
+
+        async def fake_get_messages(chat_id, ids):
+            self.assertIsInstance(ids, list)
+            self.calls.append(list(ids))
+            # Beyond the scripted batches the id space is empty, like Telegram.
+            return batches[len(self.calls) - 1] if len(self.calls) <= len(batches) else []
+
+        async def fake_set_cursor(channel_id, next_id):
+            self.cursor_writes.append(next_id)
+
+        from types import SimpleNamespace
+        queue = self.plugin._queue_for(self.CHANNEL)
+        original_put = queue.put_nowait
+
+        def spy_put(item):
+            self.queued.append(item[1].id)
+            original_put(item)
+
+        queue.put_nowait = spy_put
+        bot = SimpleNamespace(get_messages=fake_get_messages)
+        with patch("main.bot.multi_clients", {0: bot}), \
+                patch.object(photo_store, "list_indexed_message_ids", AsyncMock(return_value=set(indexed))), \
+                patch.object(photo_store, "get_scan_cursor", AsyncMock(return_value=cursor)), \
+                patch.object(photo_store, "set_scan_cursor", AsyncMock(side_effect=fake_set_cursor)), \
+                patch.object(self.plugin, "_ensure_worker", MagicMock()):
+            enqueued = await self.plugin.rescan_channel(7, self.CHANNEL)
+        return enqueued
+
+    async def test_probes_ids_in_batches_and_skips_empty_and_indexed(self):
+        batch = [self._empty(i) for i in range(1, 6)] + [self._media(6), self._text(7), self._media(8)]
+        enqueued = await self._rescan([batch + [self._empty(9)]], indexed={6})
+
+        self.assertEqual(enqueued, 1)
+        self.assertEqual(self.queued, [8])          # indexed + text + empty skipped
+        self.assertEqual(len(self.calls[0]), self.plugin._RESCAN_BATCH)
+        self.assertEqual(self.calls[0][0], 1)
+        # The cursor advances past the batch it finished; the fake returns
+        # empty space after the scripted batch, so the walk then stops.
+        self.assertEqual(self.cursor_writes[0], 1 + self.plugin._RESCAN_BATCH)
+        self.assertEqual(len(self.cursor_writes), self.plugin._RESCAN_EMPTY_BATCHES_STOP + 1)
+
+    async def test_stops_after_run_of_empty_batches(self):
+        batches = [[self._empty(i) for i in range(1, 101)] for _ in range(10)]
+        await self._rescan(batches)
+        # Five consecutive empty batches means the id space is exhausted.
+        self.assertEqual(len(self.calls), self.plugin._RESCAN_EMPTY_BATCHES_STOP)
+
+    async def test_resumes_from_the_saved_cursor_with_overlap(self):
+        await self._rescan([[self._empty(i) for i in range(1, 101)]], cursor=1000)
+        self.assertEqual(self.calls[0][0], 1000 - self.plugin._RESCAN_OVERLAP)
+
+    async def test_full_queue_keeps_the_cursor_on_the_unfinished_batch(self):
+        import asyncio
+        from unittest.mock import patch
+
+        class FullQueue:
+            def put_nowait(self, item):
+                raise asyncio.QueueFull
+
+        with patch.object(self.plugin, "_queue_for", lambda channel_id: FullQueue()):
+            enqueued = await self._rescan([[self._media(5)]])
+
+        self.assertEqual(enqueued, 0)
+        self.assertEqual(self.cursor_writes, [])  # this batch is retried next pass
+
+
 if __name__ == "__main__":
     unittest.main()

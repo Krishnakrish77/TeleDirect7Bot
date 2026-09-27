@@ -187,6 +187,42 @@ async def set_channel_status(channel_id: int, status: str) -> bool:
         return False
 
 
+async def get_scan_cursor(channel_id: int) -> int:
+    """Backfill watermark for a vault: next message id still to probe.
+
+    Bots cannot page history, so the scan walks ids in batches; persisting the
+    cursor lets a pass interrupted by FloodWait / a full queue / a restart
+    continue instead of restarting from id 1. 0 means "never scanned".
+    """
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return 0
+    try:
+        doc = await db["photo_channels"].find_one(
+            {"channel_id": channel_id}, projection={"scan_cursor": 1}
+        )
+        return int((doc or {}).get("scan_cursor") or 0)
+    except Exception:
+        logging.exception("photo_store: get_scan_cursor failed cid=%d", channel_id)
+        return 0
+
+
+async def set_scan_cursor(channel_id: int, next_id: int) -> None:
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        await db["photo_channels"].update_one(
+            {"channel_id": channel_id}, {"$set": {"scan_cursor": int(next_id)}}
+        )
+    except Exception:
+        logging.exception(
+            "photo_store: set_scan_cursor failed cid=%d next=%d", channel_id, next_id
+        )
+
+
 async def unbind_channel(owner_user_id: int) -> bool:
     await _ensure_indexes()
     db = _get_db()
