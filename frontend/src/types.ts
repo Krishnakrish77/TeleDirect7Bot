@@ -1131,3 +1131,56 @@ export interface TmdbPreviewResult {
   imdb_id: string;
   error?: string;
 }
+
+// ── TeleDirect Photos ─────────────────────────────────────────────────────
+
+export interface Photo {
+  id: string;
+  messageId: number;
+  kind: 'image' | 'video';
+  fileName: string;
+  mime: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  duration: number | null;
+  takenAt: string | null;
+  camera: string | null;
+  gps: { lat: number; lon: number } | null;
+  favorite: boolean;
+  albumIds: string[];
+  deleted: boolean;
+  thumbsReady: boolean;
+  uploadedAt: string | null;
+}
+
+export interface PhotoAlbum {
+  id: string;
+  name: string;
+  coverMessageId: number | null;
+  createdAt: string | null;
+  sort: number;
+}
+
+export interface PhotosChannelStatus {
+  connected: boolean;
+  channelId?: number;
+  status?: 'active' | 'disconnected' | 'frozen';
+  beta?: boolean;
+  photoCount?: number;
+}
+
+export interface TimelineResponse {
+  items: Photo[];
+  nextCursor: string | null;
+}
+
+export interface PhotoUploadResult {
+  fileName: string;
+  duplicate?: boolean;
+  id?: string;
+  messageId?: number;
+  albumId?: string | null;
+  sha256?: string;
+  error?: string;
+}

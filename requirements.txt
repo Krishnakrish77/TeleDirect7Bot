@@ -7,3 +7,6 @@ uvloop
 motor>=3.6
 PyJWT==2.9.0
 m3u-ipytv==1.0.0
+Pillow
+piexif
+pillow-heif

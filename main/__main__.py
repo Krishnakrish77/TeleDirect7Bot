@@ -59,6 +59,73 @@ async def _connect_catalogue_store() -> None:
     asyncio.create_task(seed_then_reconcile())
 
 
+async def _photos_channel_reverify_loop() -> None:
+    """Periodically re-verify bound photo channels (plan §4).
+
+    Detects bot-kicked / ownership-transferred channels and flips their
+    status so originals stop streaming and the UI shows the banner. Runs
+    only while the catalogue store is connected; failures just delay the
+    next pass.
+    """
+    from main.utils import photo_store
+    from main.server.photo_routes import reverify_channel
+    while True:
+        await asyncio.sleep(3600)  # hourly
+        try:
+            db = photo_store._get_db()
+            if db is None:
+                continue
+            # Page through ALL active bindings — no cap that silently
+            # skips later channels.
+            cursor = db["photo_channels"].find(
+                {"status": "active"}, projection={"owner_user_id": 1}
+            )
+            stale = False
+            async for row in cursor:
+                try:
+                    status = await reverify_channel(row["owner_user_id"])
+                    if status and status != "active":
+                        logging.warning(
+                            "photos: channel for owner %s re-verified as %s",
+                            row["owner_user_id"], status,
+                        )
+                except Exception:
+                    logging.exception(
+                        "photos: reverify failed for owner %s", row["owner_user_id"]
+                    )
+                    stale = True
+                    break  # store likely down; resume next pass
+            if stale:
+                continue
+        except Exception:
+            logging.exception("photos: reverify loop pass failed")
+
+
+async def _photos_boot_rescan() -> None:
+    """Catch-up pass on startup: enqueue vault posts missed while the bot
+    was down (channel_post only fires live). Waits for Mongo first —
+    photo_store reports unavailable until the catalogue store connects.
+    """
+    from main.utils import photo_store
+    from main.bot.plugins.photos import schedule_rescan
+    for _ in range(30):  # up to ~5 min for Mongo to come up
+        if photo_store.is_available():
+            break
+        await asyncio.sleep(10)
+    else:
+        return
+    try:
+        db = photo_store._get_db()
+        cursor = db["photo_channels"].find(
+            {"status": "active"},
+            projection={"owner_user_id": 1, "channel_id": 1},
+        )
+        async for row in cursor:
+            schedule_rescan(row["owner_user_id"], row["channel_id"])
+    except Exception:
+        logging.exception("photos: boot rescan failed")
+
+
 async def start_services():
     print()
     print("-------------------- Initializing Telegram Bot --------------------")
@@ -80,6 +147,9 @@ async def start_services():
     # The server is intentionally live before Mongo connects, so visitors get
     # a styled maintenance page rather than a platform-level connection error.
     asyncio.create_task(_connect_catalogue_store())
+    if Var.PHOTOS_ENABLED:
+        asyncio.create_task(_photos_channel_reverify_loop())
+        asyncio.create_task(_photos_boot_rescan())
     hls_session.ensure_reaper_running()
     if Var.ON_KOYEB:
         print("------------------ Starting Keep Alive Service ------------------")

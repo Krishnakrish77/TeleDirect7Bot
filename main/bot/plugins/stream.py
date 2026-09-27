@@ -18,6 +18,33 @@ from pyrogram.errors import FloodWait
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 
+async def _is_photo_channel(channel_id: int) -> bool:
+    """True when this channel is a bound TeleDirect Photos vault.
+
+    Bound photo channels are private byte vaults: their posts must never be
+    copied to BIN_CHANNEL, indexed, or given public stream links.
+
+    This check is deliberately INDEPENDENT of ``PHOTOS_ENABLED`` — a bound
+    channel is private forever, even after the feature is switched off
+    (disabling Photos must not retroactively publish someone's library).
+
+    FAIL-CLOSED on purpose: when the binding store is unreachable we
+    cannot prove the channel is NOT a vault, so we skip the catalogue path
+    rather than risk publishing private photos. Cost: during a Mongo
+    outage, channel posts won't be indexed (they still stream via the
+    public route for catalogue channels once the store recovers).
+    """
+    from main.utils import photo_store
+    try:
+        return bool(await photo_store.get_channel(channel_id))
+    except Exception:
+        logging.warning(
+            "photo channel lookup failed for %s; treating as vault (fail-closed)",
+            channel_id,
+        )
+        return True
+
+
 def _from_admin(m: Message) -> bool:
     user = getattr(m, "from_user", None)
     try:
@@ -235,6 +262,8 @@ async def channel_receive_handler(bot, broadcast: Message):
     if int(broadcast.chat.id) in Var.BANNED_CHANNELS:
         await bot.leave_chat(broadcast.chat.id)
         return
+    if await _is_photo_channel(int(broadcast.chat.id)):
+        return  # TeleDirect Photos vault — handled by photos.py, not the catalogue
     try:
         # See private_receive_handler — copy keeps the bin caption
         # editable. The reply-text below still carries the source
