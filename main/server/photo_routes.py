@@ -1069,7 +1069,7 @@ async def photos_resync(request: web.Request) -> web.Response:
     if not channel_doc or channel_doc.get("status") != "active":
         return _json({"error": "Connect a channel first"}, status=400)
     from main.bot.plugins.photos import schedule_rescan
-    schedule_rescan(user_id, channel_doc["channel_id"])
+    schedule_rescan(user_id, channel_doc["channel_id"], explicit=True)
     return _json({"ok": True})
 
 

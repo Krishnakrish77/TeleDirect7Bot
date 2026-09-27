@@ -525,7 +525,7 @@ class RescanProbeTest(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace
         return SimpleNamespace(id=message_id, empty=False, document=None, video=None, photo=None)
 
-    async def _rescan(self, batches, *, cursor=0, indexed=(), binding="bound", checks=25):
+    async def _rescan(self, batches, *, cursor=0, indexed=(), binding="bound", checks=25, explicit=False):
         from unittest.mock import AsyncMock, MagicMock, patch
         from main.utils import photo_store
 
@@ -565,7 +565,7 @@ class RescanProbeTest(unittest.IsolatedAsyncioTestCase):
                 ), \
                 patch.object(self.plugin, "_RESCAN_BINDING_CHECK_BATCHES", checks), \
                 patch.object(self.plugin, "_ensure_worker", MagicMock()):
-            enqueued = await self.plugin.rescan_channel(7, self.CHANNEL)
+            enqueued = await self.plugin.rescan_channel(7, self.CHANNEL, explicit=explicit)
         return enqueued
 
     async def test_probes_ids_in_batches_and_skips_empty_and_indexed(self):
@@ -627,6 +627,29 @@ class RescanProbeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(enqueued, 0)
         self.assertEqual(self.cursor_writes, [])  # this batch is retried next pass
+
+    async def test_explicit_rescan_starts_from_id_1(self):
+        # A parked cursor (2601 from connect-time empty scans) must not make
+        # the explicit walk blind to uploads at low ids.
+        await self._rescan([[self._empty(i) for i in range(1, 101)]], cursor=2601,
+                           explicit=True)
+        self.assertEqual(self.calls[0][0], 1)
+
+    async def test_explicit_rescan_does_not_regress_the_cursor(self):
+        # Walk from 1 stops at 5 empty batches (cursor would be 501) — the
+        # persisted cursor must stay at 2601 so automatic passes keep
+        # resuming from the real tail.
+        batches = [[self._empty(i) for i in range(1, 101)] for _ in range(10)]
+        await self._rescan(batches, cursor=2601, explicit=True)
+        self.assertEqual(self.cursor_writes, [])
+
+    async def test_explicit_rescan_finds_pics_below_parked_cursor(self):
+        # The user's exact failure: uploads at ids 3-4, cursor parked at 2601.
+        first = [self._media(i) if i in (3, 4) else self._empty(i) for i in range(1, 101)]
+        rest = [[self._empty(i) for i in range(101 + 100 * n, 201 + 100 * n)] for n in range(6)]
+        enqueued = await self._rescan([first, *rest], cursor=2601, explicit=True, indexed={4})
+        self.assertEqual(self.queued, [3])  # 4 already indexed, 3 rescued
+        self.assertEqual(self.cursor_writes, [])
 
 
 

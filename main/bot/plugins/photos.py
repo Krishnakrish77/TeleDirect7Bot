@@ -241,14 +241,21 @@ _RESCAN_OVERLAP = 200              # re-check the tail for posts missed while li
 _RESCAN_BINDING_CHECK_BATCHES = 25 # how often to confirm the vault is still bound
 
 
-def schedule_rescan(owner_user_id: int, channel_id: int) -> None:
-    """Kick off a background history scan; coalesces repeat calls."""
+def schedule_rescan(owner_user_id: int, channel_id: int, *,
+                    explicit: bool = False) -> None:
+    """Kick off a background history scan; coalesces repeat calls.
+
+    ``explicit`` (user pressed resync) scans from id 1 to cover ids below a
+    parked cursor; automatic triggers keep the cheap forward walk.
+    """
     if not Var.PHOTOS_ENABLED:
         return
     task = _RESCAN_TASKS.get(channel_id)
     if task is not None and not task.done():
         return  # one already running for this channel
-    _RESCAN_TASKS[channel_id] = asyncio.create_task(rescan_channel(owner_user_id, channel_id))
+    _RESCAN_TASKS[channel_id] = asyncio.create_task(
+        rescan_channel(owner_user_id, channel_id, explicit=explicit)
+    )
 
 
 def _enqueue_pending(owner_user_id: int, channel_id: int, message) -> bool:
@@ -261,7 +268,8 @@ def _enqueue_pending(owner_user_id: int, channel_id: int, message) -> bool:
     return True
 
 
-async def rescan_channel(owner_user_id: int, channel_id: int) -> int:
+async def rescan_channel(owner_user_id: int, channel_id: int, *,
+                         explicit: bool = False) -> int:
     """Backfill vault posts that were never indexed.
 
     ``channel_post`` only fires while the bot is live and a full ingest queue
@@ -269,7 +277,9 @@ async def rescan_channel(owner_user_id: int, channel_id: int) -> int:
     cannot page history, hence the id-probing walk; steps are idempotent
     (ingest dedups on channel/message and owner/sha256) and the cursor means a
     pass interrupted by FloodWait, a full queue or shutdown resumes rather than
-    restarting. Returns the number of messages enqueued.
+    restarting. ``explicit`` (user-triggered resync) scans from id 1 so the
+    walk covers ids a parked cursor has already passed. Returns the number of
+    messages enqueued.
     """
     from main.bot import multi_clients
     bot = multi_clients.get(0) or StreamBot
@@ -277,7 +287,13 @@ async def rescan_channel(owner_user_id: int, channel_id: int) -> int:
     try:
         indexed = await photo_store.list_indexed_message_ids(owner_user_id, channel_id)
         cursor = await photo_store.get_scan_cursor(channel_id)
-        start = max(1, cursor - _RESCAN_OVERLAP) if cursor else 1
+        # An explicit user-triggered rescan starts at id 1: the indexed set
+        # makes re-probing idempotent, and a forward-only walk from the
+        # cursor is blind to uploads that landed at ids below it (fresh
+        # channel + a cursor parked there by connect-time empty scans).
+        # Automatic trigger (upload self-index failure) keeps the cheap
+        # forward-from-cursor walk — it only needs to cover the new id.
+        start = 1 if explicit else max(1, cursor - _RESCAN_OVERLAP)
         enqueued = 0
         batches = 0
         empty_streak = 0
@@ -322,7 +338,11 @@ async def rescan_channel(owner_user_id: int, channel_id: int) -> int:
             if not drained:
                 break
             start += _RESCAN_BATCH
-            await photo_store.set_scan_cursor(channel_id, start)
+            # A from-1 explicit walk must never drag the persisted cursor
+            # backwards — it re-covers ground, but the cursor remembers
+            # the real tail so automatic passes keep resuming from it.
+            if not explicit or start > cursor:
+                await photo_store.set_scan_cursor(channel_id, start)
             if empty_streak >= _RESCAN_EMPTY_BATCHES_STOP:
                 break
         if enqueued:
