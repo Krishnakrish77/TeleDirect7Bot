@@ -17,8 +17,10 @@ send_document call — original bytes never touch disk.
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import hashlib
 import io
+import json
 import logging
 import re
 import time
@@ -49,8 +51,28 @@ _channels_cache_ttl = 30.0
 _channels_cache: dict[int, tuple[float, dict]] = {}
 
 
+def _json_default(value):
+    """Fallback for Mongo values that are not JSON-native.
+
+    Routes serialise explicitly, but one stray datetime or ObjectId must not
+    take a whole endpoint down with a 500 (that is exactly what the raw scan
+    subdocument did).
+    """
+    if isinstance(value, (_dt.datetime, _dt.date)):
+        return photo_store.iso_utc(value)
+    try:
+        from bson import ObjectId
+    except ImportError:  # pragma: no cover — bson ships with motor
+        ObjectId = None
+    if ObjectId is not None and isinstance(value, ObjectId):
+        return str(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 def _json(data: dict, *, status: int = 200) -> web.Response:
-    return web.json_response(data, status=status)
+    return web.json_response(
+        data, status=status, dumps=lambda payload: json.dumps(payload, default=_json_default)
+    )
 
 
 def _session_user(request: web.Request) -> Optional[dict]:
@@ -305,7 +327,7 @@ async def photos_status(request: web.Request) -> web.Response:
         "beta": Var.PHOTOS_BETA,
         "photoCount": await photo_store.count_photos(user_id),
         # Last background import outcome, so a failed scan is visible.
-        "scan": doc.get("scan"),
+        "scan": photo_store.scan_payload(doc.get("scan")),
         **_onboarding_payload(),
     })
 
