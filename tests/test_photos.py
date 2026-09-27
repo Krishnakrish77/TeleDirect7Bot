@@ -386,5 +386,117 @@ class PhotoFileStreamTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stream_routes._total_active, 0)
 
 
+
+class PendingChannelHandshakeTest(unittest.TestCase):
+    """The "add the bot, press Continue" handshake: Telegram reports the bot's
+    own membership change, so the wizard needs neither an id nor a link."""
+
+    def setUp(self):
+        from main.bot.plugins import photos as plugin
+        self.plugin = plugin
+        plugin._PENDING_LINKS.clear()
+
+    def test_remember_lookup_and_expiry(self):
+        self.plugin.remember_pending_link(7, -100123, "Vault", now=1000.0)
+        entry = self.plugin.pending_link_for(7, now=1000.0)
+        self.assertEqual(entry["channel_id"], -100123)
+        self.assertEqual(entry["title"], "Vault")
+        # A stale handshake must not silently link an old channel.
+        self.assertIsNone(
+            self.plugin.pending_link_for(7, now=1000.0 + self.plugin._PENDING_TTL_SECONDS + 1)
+        )
+        self.assertIsNone(self.plugin.pending_link_for(7, now=9999.0))
+
+    def test_remember_prunes_stale_entries(self):
+        # A linking attempt that is never polled must not leave the map
+        # growing one entry per user forever.
+        self.plugin.remember_pending_link(1, -1001, "Old", now=0.0)
+        self.plugin.remember_pending_link(
+            2, -1002, "New", now=self.plugin._PENDING_TTL_SECONDS + 10
+        )
+        self.assertNotIn(1, self.plugin._PENDING_LINKS)
+        self.assertIn(2, self.plugin._PENDING_LINKS)
+
+    def test_clear_forgets_the_entry(self):
+        self.plugin.remember_pending_link(7, -100123, "Vault")
+        self.plugin.clear_pending_link(7)
+        self.assertIsNone(self.plugin.pending_link_for(7))
+
+
+class BotMembershipChangeTest(unittest.TestCase):
+    BOT_ID = 5
+
+    @staticmethod
+    def _update(*, chat_type="channel", member_id=None, status="administrator", member=True):
+        from types import SimpleNamespace
+        chat = SimpleNamespace(id=-100123, type=chat_type, title="Vault")
+        new_member = (
+            SimpleNamespace(user=SimpleNamespace(id=member_id), status=status)
+            if member else None
+        )
+        return SimpleNamespace(
+            chat=chat, new_chat_member=new_member, from_user=SimpleNamespace(id=7)
+        )
+
+    def test_accepts_the_bot_becoming_a_channel_admin(self):
+        from main.bot.plugins.photos import _bot_membership_change
+        relevant, reason = _bot_membership_change(
+            self._update(member_id=self.BOT_ID), self.BOT_ID
+        )
+        self.assertTrue(relevant, reason)
+
+    def test_accepts_enum_valued_chat_type_and_status(self):
+        from pyrogram import enums
+        from main.bot.plugins.photos import _bot_membership_change
+        relevant, reason = _bot_membership_change(
+            self._update(member_id=self.BOT_ID, chat_type=enums.ChatType.CHANNEL,
+                         status=enums.ChatMemberStatus.OWNER),
+            self.BOT_ID,
+        )
+        self.assertTrue(relevant, reason)
+
+    def test_ignores_updates_that_are_not_the_bot_becoming_channel_admin(self):
+        from main.bot.plugins.photos import _bot_membership_change
+        cases = {
+            "another member": self._update(member_id=99),
+            "a group": self._update(member_id=self.BOT_ID, chat_type="supergroup"),
+            "bot added as plain member": self._update(member_id=self.BOT_ID, status="member"),
+            "no member payload": self._update(member=False),
+        }
+        for label, update in cases.items():
+            with self.subTest(label):
+                relevant, reason = _bot_membership_change(update, self.BOT_ID)
+                self.assertFalse(relevant, label)
+                self.assertTrue(reason)
+
+
+class BotAddedHandlerTest(unittest.IsolatedAsyncioTestCase):
+    async def test_records_a_pending_link_for_the_actor(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+        from main.bot.plugins import photos as plugin
+        from main.server import photo_routes
+
+        plugin._PENDING_LINKS.clear()
+        update = SimpleNamespace(
+            chat=SimpleNamespace(id=-100123, type="channel", title="Vault"),
+            new_chat_member=SimpleNamespace(
+                user=SimpleNamespace(id=5), status="administrator"
+            ),
+            from_user=SimpleNamespace(id=7),
+        )
+        verified = ({"chat_id": -100123, "creator_id": 7, "title": "Vault"}, "", True)
+        with patch.object(
+            photo_routes, "_verify_channel_access", AsyncMock(return_value=verified)
+        ):
+            await plugin.photo_bot_added_to_channel(
+                SimpleNamespace(me=SimpleNamespace(id=5)), update
+            )
+        entry = plugin.pending_link_for(7)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["channel_id"], -100123)
+        plugin._PENDING_LINKS.clear()
+
+
 if __name__ == "__main__":
     unittest.main()

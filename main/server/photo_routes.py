@@ -263,6 +263,12 @@ async def connect_channel(request: web.Request) -> web.Response:
     if err:
         return _json({"error": err}, status=409 if "another user" in err else 400)
     _invalidate_channel_cache(user_id)
+    # The detection handshake is done; stop the wizard polling it.
+    try:
+        from main.bot.plugins.photos import clear_pending_link
+        clear_pending_link(user_id)
+    except Exception:
+        logging.debug("photos connect: could not clear the pending link", exc_info=True)
     # Catch-up: index anything posted while the channel was unbound (and
     # backfill posts a previous queue drop or downtime missed).
     from main.bot.plugins.photos import schedule_rescan
@@ -303,6 +309,29 @@ async def photos_status(request: web.Request) -> web.Response:
 
 
 # ── Timeline / favorites / trash ─────────────────────────────────────────
+
+
+@routes.get("/api/photos/pending-channel")
+async def photos_pending_channel(request: web.Request) -> web.Response:
+    """The channel the bot was just added to, if any.
+
+    Backs the wizard's "Continue": the bot receives Telegram's own membership
+    update (which carries the actor), so linking needs no id or link.
+    """
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    user_id = int(user["sub"])
+    from main.bot.plugins.photos import pending_link_for
+
+    entry = pending_link_for(user_id)
+    if not entry:
+        return _json({"channelId": None})
+    return _json({
+        "channelId": entry["channel_id"],
+        "title": entry.get("title") or None,
+    })
 
 
 @routes.get("/api/photos/timeline")

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from pyrogram import Client
 
@@ -25,6 +26,140 @@ except ImportError:  # pragma: no cover
     FloodWait = Exception  # type: ignore[assignment,misc]
 
 log = logging.getLogger("photos.plugin")
+
+# ── Pending channel detection ("add the bot, press Continue") ─────────────
+# Telegram tells the bot when its own membership changes, including who made
+# the change, so a freshly added vault can be reported back to the web wizard
+# without the user ever handling a channel id or message link.
+_PENDING_TTL_SECONDS = 900.0
+_PENDING_LINKS: dict[int, dict] = {}
+
+
+def _prune_pending_links(now: float) -> None:
+    """Drop stale handshakes so the map cannot grow one entry per attempt."""
+    for user_id, entry in list(_PENDING_LINKS.items()):
+        if now - entry["at"] > _PENDING_TTL_SECONDS:
+            _PENDING_LINKS.pop(user_id, None)
+
+
+def remember_pending_link(user_id: int, channel_id: int, title: str,
+                          *, now: float | None = None) -> None:
+    """Record "this user just added the bot to this channel"."""
+    stamp = time.time() if now is None else now
+    _prune_pending_links(stamp)
+    _PENDING_LINKS[int(user_id)] = {
+        "channel_id": int(channel_id),
+        "title": title or "",
+        "at": stamp,
+    }
+
+
+def pending_link_for(user_id: int, *, now: float | None = None) -> dict | None:
+    """The user's recent pending channel, or None once it goes stale."""
+    entry = _PENDING_LINKS.get(int(user_id))
+    if not entry:
+        return None
+    if (time.time() if now is None else now) - entry["at"] > _PENDING_TTL_SECONDS:
+        _PENDING_LINKS.pop(int(user_id), None)
+        return None
+    return entry
+
+
+def clear_pending_link(user_id: int) -> None:
+    _PENDING_LINKS.pop(int(user_id), None)
+
+
+def _chat_type_name(chat_type) -> str:
+    """Pyrogram enums compare by identity, so normalise through .value."""
+    return str(getattr(chat_type, "value", chat_type) or "").lower()
+
+
+def _member_status_name(status) -> str:
+    return str(getattr(status, "value", status) or "").lower()
+
+
+def _bot_membership_change(update, bot_id: int) -> tuple[bool, str]:
+    """Classify a ChatMemberUpdated as "the bot just became a channel admin".
+
+    Returns ``(True, "")`` for the vault-adding event; otherwise
+    ``(False, reason)`` so the caller can log why an update was ignored.
+    """
+    chat = getattr(update, "chat", None)
+    new_member = getattr(update, "new_chat_member", None)
+    if chat is None or new_member is None:
+        return False, "no chat/member payload"
+    member_user = getattr(new_member, "user", None)
+    if member_user is None or int(getattr(member_user, "id", 0) or 0) != int(bot_id):
+        return False, "not about this bot"
+    if _chat_type_name(getattr(chat, "type", "")) != "channel":
+        return False, "not a channel"
+    if _member_status_name(getattr(new_member, "status", "")) not in (
+        "administrator", "owner", "creator",
+    ):
+        return False, "bot is not an administrator"
+    return True, ""
+
+
+async def _dm(user_id: int, text: str) -> None:
+    """Best-effort courtesy DM — the web poll works even when it fails."""
+    try:
+        await StreamBot.send_message(user_id, text)
+    except Exception as exc:
+        log.debug("photos: could not DM uid=%s: %r", user_id, exc)
+
+
+@StreamBot.on_chat_member_updated(group=-3)
+async def photo_bot_added_to_channel(client: Client, update):
+    """Turn "user added the bot to their channel" into a pending link.
+
+    The web wizard polls for this, so linking needs neither the numeric id
+    nor a message link. Updates missed while the bot was down fall back to
+    the manual link/id path in the wizard.
+    """
+    try:
+        if not Var.PHOTOS_ENABLED:
+            return
+        me = getattr(client, "me", None)
+        if me is None:
+            return
+        relevant, reason = _bot_membership_change(update, int(me.id))
+        if not relevant:
+            log.debug("photos: ignoring membership update (%s)", reason)
+            return
+        chat = update.chat
+        actor = getattr(update, "from_user", None)
+        if actor is None:
+            log.warning(
+                "photos: bot added to channel %s but the update carried no actor",
+                chat.id,
+            )
+            return
+        # Lazily imported: photo_routes owns the connect verification rules.
+        from main.server.photo_routes import _verify_channel_access
+
+        verified, reject_reason, _definitive = await _verify_channel_access(
+            chat.id, int(actor.id)
+        )
+        if verified is None:
+            log.warning(
+                "photos: channel %s added by uid=%s rejected: %s",
+                chat.id, actor.id, reject_reason,
+            )
+            await _dm(int(actor.id), f"Could not link that channel: {reject_reason}")
+            return
+        title = verified.get("title") or getattr(chat, "title", "") or ""
+        remember_pending_link(int(actor.id), int(chat.id), title)
+        log.info(
+            "photos: pending channel %s (%s) for uid=%s", chat.id, title, actor.id
+        )
+        await _dm(
+            int(actor.id),
+            f"✅ {title or 'Channel'} detected.\n"
+            "Return to the TeleDirect Photos page and press Continue to finish linking.",
+        )
+    except Exception:
+        log.exception("photo_bot_added_to_channel failed")
+
 
 # Ingest concurrency: one worker per channel keeps Telegram pacing sane and
 # caps CPU spent on thumbnail generation. Queue is drained FIFO so timeline

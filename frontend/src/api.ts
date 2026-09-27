@@ -43,6 +43,7 @@ import type {
   WatchResponse,
   WatchTrack,
   WatchlistPageResponse,
+  PendingPhotoChannel,
   PhotosChannelStatus,
   PhotoAlbum,
   PhotoUploadResult,
@@ -803,6 +804,11 @@ export async function signOut(): Promise<void> {
 
 export async function fetchPhotosStatus(signal?: AbortSignal): Promise<PhotosChannelStatus> {
   return request<PhotosChannelStatus>('/api/photos/status', { signal });
+}
+
+/** The channel the bot was just added to (backs the wizard's Continue). */
+export async function fetchPendingPhotoChannel(signal?: AbortSignal): Promise<PendingPhotoChannel> {
+  return request<PendingPhotoChannel>('/api/photos/pending-channel', { signal });
 }
 
 export async function connectPhotosChannel(channel: string): Promise<{ ok: boolean; channelId?: number; title?: string; error?: string }> {

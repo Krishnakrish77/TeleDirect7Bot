@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectPhotosChannel,
+  fetchPendingPhotoChannel,
   fetchPhotoAlbums,
   fetchPhotosStatus,
   fetchPhotosTimeline,
@@ -16,6 +17,7 @@ vi.mock('../api', () => ({
   createPhotoAlbum: vi.fn(),
   deletePhotoAlbum: vi.fn(),
   disconnectPhotosChannel: vi.fn(),
+  fetchPendingPhotoChannel: vi.fn(),
   fetchPhotoAlbums: vi.fn(),
   fetchPhotosStatus: vi.fn(),
   fetchPhotosTimeline: vi.fn(),
@@ -75,10 +77,18 @@ beforeEach(() => {
     photoCount: 1,
   });
   vi.mocked(fetchPhotoAlbums).mockResolvedValue({ albums: [] });
+  vi.mocked(fetchPendingPhotoChannel).mockResolvedValue({ channelId: null });
   vi.mocked(fetchPhotosTimeline).mockResolvedValue({ items: [makePhoto()], nextCursor: null });
   vi.mocked(setAlbumPhotos).mockResolvedValue(undefined);
   vi.mocked(uploadPhotos).mockResolvedValue({ results: [] });
 });
+
+/** The manual link/id field is opt-in now that Continue auto-detects. */
+async function revealManualField() {
+  fireEvent.click(
+    await screen.findByRole('button', { name: /Already added the bot earlier/i }),
+  );
+}
 
 describe('PhotosPage albums', () => {
   it('adds and removes a photo from albums in the lightbox', async () => {
@@ -119,6 +129,7 @@ describe('Photos onboarding', () => {
       'https://t.me/tdphotosbot?startchannel=true&admin=post_messages',
     );
 
+    await revealManualField();
     fireEvent.change(screen.getByLabelText('Channel link or id'), {
       target: { value: 'https://t.me/c/1234567890/12' },
     });
@@ -126,6 +137,37 @@ describe('Photos onboarding', () => {
     await waitFor(() =>
       expect(connectPhotosChannel).toHaveBeenCalledWith('https://t.me/c/1234567890/12'),
     );
+  });
+
+  it('links the channel from the bot handshake when Continue finds it', async () => {
+    vi.mocked(fetchPhotosStatus).mockResolvedValue({
+      connected: false,
+      botUsername: 'tdphotosbot',
+      addToChannelUrl: 'https://t.me/tdphotosbot?startchannel=true&admin=post_messages',
+    });
+    vi.mocked(fetchPendingPhotoChannel).mockResolvedValue({
+      channelId: -1001234567890,
+      title: 'Vault',
+    });
+    vi.mocked(connectPhotosChannel).mockResolvedValue({ ok: true });
+
+    render(<PhotosPage user={user} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+
+    await waitFor(() =>
+      expect(connectPhotosChannel).toHaveBeenCalledWith('-1001234567890'),
+    );
+  });
+
+  it('offers the manual field without waiting on the handshake', async () => {
+    vi.mocked(fetchPhotosStatus).mockResolvedValue({ connected: false, botUsername: 'tdphotosbot' });
+
+    render(<PhotosPage user={user} />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Already added the bot earlier/i }),
+    );
+
+    expect(await screen.findByLabelText('Channel link or id')).toBeTruthy();
   });
 
   it('reports a connect failure without leaving the wizard stuck', async () => {
@@ -136,6 +178,7 @@ describe('Photos onboarding', () => {
     });
 
     render(<PhotosPage user={user} />);
+    await revealManualField();
     fireEvent.change(await screen.findByLabelText('Channel link or id'), {
       target: { value: 'https://t.me/mychannel/42' },
     });
@@ -161,6 +204,7 @@ describe('Photos onboarding', () => {
 
     vi.mocked(fetchPhotosStatus).mockResolvedValue({ connected: false });
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await revealManualField();
     expect(await screen.findByLabelText('Channel link or id')).toBeTruthy();
   });
 });
