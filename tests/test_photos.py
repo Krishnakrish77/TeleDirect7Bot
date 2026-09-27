@@ -28,7 +28,9 @@ from main.server.photo_routes import (
     _bot_admin_link,
 )
 from main.utils.custom_dl import MediaSessionUnavailable
-from main.utils.photo_store import thumb_key, iso_utc, scan_payload, _serialize_photo
+from main.utils.photo_store import (
+    thumb_key, iso_utc, scan_payload, _serialize_photo, _serialize_album,
+)
 from main.utils.photo_pipeline import _parse_exif_datetime, _dms_to_deg
 
 
@@ -163,6 +165,32 @@ class SerializePhotoTest(unittest.TestCase):
         self.assertNotIn("file_id", out)
         self.assertNotIn("owner_user_id", out)
         self.assertNotIn("sha256", out)
+
+
+class SerializeAlbumTest(unittest.TestCase):
+    def test_count_and_cover_pass_through(self):
+        doc = {
+            "_id": "507f1f77bcf86cd799439022",
+            "name": "Trips",
+            "cover_message_id": 42,
+            "created_at": datetime(2026, 9, 21, tzinfo=timezone.utc),
+            "sort": 1,
+        }
+        out = _serialize_album(doc, count=7, cover_id="507f1f77bcf86cd799439011")
+        self.assertEqual(out["photoCount"], 7)
+        self.assertEqual(out["coverPhotoId"], "507f1f77bcf86cd799439011")
+
+    def test_defaults_empty_album(self):
+        doc = {
+            "_id": "507f1f77bcf86cd799439022",
+            "name": "Empty",
+            "cover_message_id": None,
+            "created_at": datetime(2026, 9, 21, tzinfo=timezone.utc),
+            "sort": 0,
+        }
+        out = _serialize_album(doc)
+        self.assertEqual(out["photoCount"], 0)
+        self.assertIsNone(out["coverPhotoId"])
 
 
 class ExifDatetimeTest(unittest.TestCase):

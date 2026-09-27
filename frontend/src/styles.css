@@ -13898,28 +13898,144 @@ select.edit-field-input {
 .photos-import-line { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.82rem; }
 .photos-header__actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 
-.photos-tabs { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
-.photos-tabs button { padding: 0.55rem 0.2rem; margin-right: 0.9rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 0.9rem; font-weight: 650; }
-.photos-tabs button:hover, .photos-tabs button:focus-visible { color: var(--text); outline: none; }
-.photos-tabs button.active { border-bottom-color: var(--brand); color: var(--text); }
+/* Shell: desktop gets a GPhotos-style left rail; mobile keeps a tab row. */
+.photos-shell { display: grid; gap: 1.1rem; align-items: start; }
+@media (min-width: 900px) {
+  .photos-shell { grid-template-columns: 11.5rem minmax(0, 1fr); gap: 1.6rem; }
+}
+.photos-main { display: grid; gap: 1rem; min-width: 0; }
+
+.photos-nav { display: flex; align-items: center; gap: 0.25rem; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.photos-nav button {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.55rem 0.75rem; margin-right: 0.35rem;
+  border: 0; border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0;
+  background: transparent; color: var(--muted); cursor: pointer;
+  font: inherit; font-size: 0.9rem; font-weight: 650; white-space: nowrap;
+}
+.photos-nav button svg { width: 1.1rem; height: 1.1rem; flex: 0 0 auto; }
+.photos-nav button:hover, .photos-nav button:focus-visible { color: var(--text); outline: none; }
+.photos-nav button.active { border-bottom-color: var(--brand); color: var(--text); }
+@media (min-width: 900px) {
+  .photos-nav {
+    position: sticky; top: 1rem;
+    flex-direction: column; align-items: stretch; gap: 0.15rem;
+    border-bottom: 0; overflow: visible;
+  }
+  .photos-nav button {
+    margin-right: 0; padding: 0.6rem 0.8rem;
+    border-bottom: 0; border-radius: 10px;
+  }
+  .photos-nav button:hover { background: rgba(148, 163, 184, 0.1); }
+  .photos-nav button.active { background: rgba(249, 115, 22, 0.14); color: var(--text); }
+}
+
+.photos-header__lead { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
+.photos-header__lead .photos-title { flex-wrap: wrap; }
+
+/* Icon button: circular, ghost — the shared chrome button for photos. */
+.photos-iconbtn {
+  display: inline-grid; place-items: center;
+  width: 2.3rem; height: 2.3rem; padding: 0;
+  border: 0; border-radius: 999px; background: transparent;
+  color: inherit; cursor: pointer;
+}
+.photos-iconbtn svg { width: 1.15rem; height: 1.15rem; }
+.photos-iconbtn:hover, .photos-iconbtn:focus-visible { background: rgba(148, 163, 184, 0.18); outline: none; }
+.photos-iconbtn--danger:hover { background: rgba(239, 68, 68, 0.22); color: #f87171; }
+
+/* Header search — file-name filter over the loaded timeline. */
+.photos-search {
+  display: flex; align-items: center; gap: 0.45rem;
+  min-height: 2.5rem; padding: 0 0.85rem;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--bg); color: var(--muted);
+}
+.photos-search svg { width: 1rem; height: 1rem; flex: 0 0 auto; }
+.photos-search input {
+  width: clamp(8rem, 18vw, 15rem); border: 0; padding: 0;
+  background: transparent; color: var(--text); font: inherit; font-size: 0.88rem;
+}
+.photos-search input:focus { outline: none; }
+.photos-search:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.18); }
+@media (max-width: 680px) {
+  /* Small screens: the search field takes a full row under the actions. */
+  .photos-search { order: 3; flex: 1 1 100%; }
+  .photos-search input { width: 100%; }
+}
 
 .photos-timeline { display: grid; gap: 0.35rem; }
-.photos-day__label { display: flex; align-items: baseline; gap: 0.6rem; margin: 1.6rem 0 0.2rem; font-size: 1.12rem; font-weight: 700; color: var(--text); letter-spacing: -0.015em; }
+.photos-day__label { display: flex; align-items: center; gap: 0.55rem; margin: 1.6rem 0 0.2rem; font-size: 1.12rem; font-weight: 700; color: var(--text); letter-spacing: -0.015em; }
 .photos-day__label:first-child { margin-top: 0; }
+
+/* Day select-all checkbox: revealed on header hover, GPhotos-style. */
+.photos-day__check {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 1.4rem; height: 1.4rem; padding: 0;
+  border: 2px solid var(--muted); border-radius: 999px;
+  background: transparent; color: transparent; cursor: pointer;
+  opacity: 0; transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.photos-day__check svg { width: 0.8rem; height: 0.8rem; }
+.photos-day__label:hover .photos-day__check,
+.photos-day__check:focus-visible,
+.photos-day__check[aria-pressed="true"] { opacity: 1; }
+.photos-day__check[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
 
 /* Justified rows: photos keep their own aspect ratio (no centre-cropping) and
    each complete row fills the width, the way Google Photos / Immich browse. */
-.photos-rows { display: grid; gap: 3px; }
 .photos-row { display: flex; gap: 3px; }
-.photos-row--skeleton { background: rgba(148, 163, 184, 0.08); border-radius: 4px; }
 .photos-item { position: relative; flex: 0 0 auto; padding: 0; border: 0; border-radius: 3px; overflow: hidden; background: rgba(148, 163, 184, 0.12); cursor: pointer; }
-.photos-item img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity 0.22s ease; }
+.photos-item img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity 0.22s ease, transform 0.18s ease; }
 .photos-item img.is-loaded { opacity: 1; }
+/* Selected photos shrink inside their cell — the GPhotos selection cue. */
+.photos-item.is-selected img { transform: scale(0.88); }
+.photos-item.is-selected { box-shadow: inset 0 0 0 3px var(--brand); }
 .photos-item__shade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0) 32%); transition: background 0.16s ease; }
 .photos-item:hover .photos-item__shade, .photos-item:focus-visible .photos-item__shade { background: rgba(0, 0, 0, 0.14); }
 .photos-item:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-.photos-item__badge { position: absolute; right: 0.45rem; bottom: 0.4rem; padding: 0.1rem 0.4rem; border-radius: 5px; background: rgba(0, 0, 0, 0.72); color: #fff; font-size: 0.68rem; line-height: 1.35; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
-.photos-item__fav { position: absolute; right: 0.45rem; top: 0.35rem; color: #fbbf24; font-size: 0.9rem; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85); }
+
+/* Select circle top-left: hover/focus/selection-mode reveals it. */
+.photos-item__check {
+  position: absolute; top: 0.45rem; left: 0.45rem; z-index: 2;
+  display: grid; place-items: center;
+  width: 1.5rem; height: 1.5rem; padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.9); border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35); color: transparent; cursor: pointer;
+  opacity: 0; transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.photos-item__check svg { width: 0.9rem; height: 0.9rem; }
+.photos-item:hover .photos-item__check,
+.photos-item:focus-within .photos-item__check,
+.photos-item.is-selecting .photos-item__check,
+.photos-item__check[aria-pressed="true"] { opacity: 1; }
+.photos-item__check[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
+/* Touch has no hover to reveal the circle; long-press selection does. */
+@media (hover: none) {
+  .photos-item__check { opacity: 0; }
+  .photos-item.is-selecting .photos-item__check,
+  .photos-item__check[aria-pressed="true"] { opacity: 1; }
+}
+
+.photos-item__badge { position: absolute; right: 0.45rem; bottom: 0.4rem; display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.12rem 0.4rem; border-radius: 5px; background: rgba(0, 0, 0, 0.72); color: #fff; font-size: 0.68rem; line-height: 1.35; }
+.photos-item__badge svg { width: 0.62rem; height: 0.62rem; }
+.photos-item__fav { position: absolute; right: 0.45rem; top: 0.4rem; display: grid; place-items: center; color: #fbbf24; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.85)); }
+.photos-item__fav svg { width: 0.85rem; height: 0.85rem; }
+
+/* Loading skeleton: shimmer rows standing in for the justified grid. */
+.photos-skeleton { display: grid; gap: 0.7rem; }
+.photos-skeleton__day { display: block; width: 9rem; height: 1.05rem; margin-top: 0.7rem; border-radius: 6px; background: rgba(148, 163, 184, 0.16); animation: photos-shimmer 1.4s ease-in-out infinite; }
+.photos-skeleton__row { display: flex; gap: 3px; }
+.photos-skeleton__tile { display: block; flex: 0 0 auto; height: 190px; border-radius: 3px; background: rgba(148, 163, 184, 0.12); animation: photos-shimmer 1.4s ease-in-out infinite; }
+.photos-skeleton__tile:nth-child(2n) { animation-delay: 0.15s; }
+.photos-skeleton__tile:nth-child(3n) { animation-delay: 0.3s; }
+@keyframes photos-shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .photos-skeleton__day, .photos-skeleton__tile { animation: none; }
+}
 
 .photos-more { justify-self: center; }
 
@@ -13931,36 +14047,64 @@ select.edit-field-input {
 .photos-empty p { margin: 0; max-width: 34rem; }
 .photos-empty__actions { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; margin-top: 0.35rem; }
 .photos-empty__hint { color: var(--muted); font-size: 0.8rem; }
-.photos-lightbox { position: fixed; inset: 0; z-index: 90; display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: 1fr auto; align-items: center; background: rgba(6, 7, 9, 0.92); backdrop-filter: blur(10px); }
-.photos-lightbox__stage { position: relative; display: grid; gap: 0.6rem; justify-items: center; padding: 1rem; min-width: 0; }
-.photos-lightbox__stage img, .photos-lightbox__stage video { max-width: 100%; max-height: 82vh; border-radius: 6px; object-fit: contain; }
-.photos-lightbox__meta { display: flex; flex-wrap: wrap; gap: 0.35rem 0.9rem; justify-content: center; max-width: 100%; padding: 0.5rem 0.85rem; border-radius: 10px; background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.82); font-size: 0.82rem; }
-.photos-lightbox__close { position: absolute; top: 0.8rem; right: 1rem; z-index: 2; border: 0; background: transparent; color: #fff; font-size: 1.7rem; cursor: pointer; line-height: 1; }
-.photos-lightbox__nav { border: 0; background: transparent; color: rgba(255, 255, 255, 0.8); font-size: 2.6rem; cursor: pointer; padding: 0 0.8rem; }
-.photos-lightbox__nav:hover { color: #fff; }
-.photos-lightbox__actions { grid-column: 1 / -1; display: flex; justify-content: center; gap: 0.6rem; padding-bottom: 1rem; }
-.photos-lightbox__actions button { min-height: 2.3rem; padding: 0.3rem 0.9rem; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; background: transparent; color: rgba(255, 255, 255, 0.85); cursor: pointer; font: inherit; font-size: 0.82rem; }
-.photos-lightbox__actions button:hover { border-color: #fff; color: #fff; }
-.photos-lightbox__actions .photos-lightbox__albums { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
-.photos-lightbox__actions .photos-lightbox__album-chip { border-color: rgba(249, 115, 22, 0.6); background: rgba(249, 115, 22, 0.16); color: #fdba74; }
-.photos-lightbox__actions .photos-lightbox__album-chip:hover { border-color: #fb923c; color: #fff; }
-.photos-lightbox__actions select { min-height: 2.3rem; padding: 0.3rem 0.7rem; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.85); font: inherit; font-size: 0.82rem; }
-.photos-lightbox__actions select option { background: #14161a; color: #f4f4f5; }
-.photos-lightbox__actions a.photos-lightbox__download { display: inline-flex; align-items: center; min-height: 2.3rem; padding: 0.3rem 0.9rem; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; color: rgba(255, 255, 255, 0.85); text-decoration: none; font-size: 0.82rem; }
-.photos-lightbox__actions a.photos-lightbox__download:hover { border-color: #fff; color: #fff; }
-
-.photos-albums { display: grid; gap: 0.5rem; max-width: 30rem; }
-.photos-albums input[type="text"] { min-height: 2.6rem; padding: 0.4rem 0.8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
-.photos-album-row { display: flex; align-items: center; gap: 0.5rem; }
-.photos-album-row > button:first-child { flex: 1; text-align: left; min-height: 2.5rem; padding: 0.3rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
-.photos-album-row > button:not(:first-child) { min-height: 2.2rem; padding: 0.2rem 0.6rem; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 0.78rem; }
-.photos-album-row > button:hover { color: var(--text); border-color: rgba(249, 115, 22, 0.6); }
-.photos-album-title { margin: 0; font-size: 1.3rem; letter-spacing: -0.02em; }
-
-.photos-trash-row { display: flex; align-items: center; gap: 0.8rem; padding: 0.3rem 0; }
-.photos-trash-row img { width: 64px; height: 64px; border-radius: 6px; object-fit: cover; }
-.photos-trash-row span { flex: 1; color: var(--muted); font-size: 0.86rem; }
-.photos-trash-row button { min-height: 2.1rem; padding: 0.2rem 0.75rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 0.8rem; }
+/* Albums: GPhotos-style cover cards. */
+.photos-albums-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 1rem;
+}
+.photos-album-card { display: grid; gap: 0.45rem; align-content: start; min-width: 0; }
+.photos-album-card__cover {
+  display: grid; place-items: center;
+  aspect-ratio: 1 / 1; padding: 0;
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  background: var(--panel); color: var(--muted); cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+.photos-album-card__cover:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35); }
+.photos-album-card__cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photos-album-card__placeholder { width: 2.2rem; height: 2.2rem; opacity: 0.6; }
+.photos-album-card__meta { position: relative; display: grid; gap: 0.1rem; padding-right: 4.4rem; min-height: 2.4rem; }
+.photos-album-card__name {
+  padding: 0; border: 0; background: transparent; color: var(--text);
+  font: inherit; font-size: 0.92rem; font-weight: 650; text-align: left; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.photos-album-card__name:hover { color: var(--brand); }
+.photos-album-card__count { color: var(--muted); font-size: 0.78rem; }
+.photos-album-card__actions {
+  position: absolute; right: 0; top: 0;
+  display: flex; gap: 0.1rem; opacity: 0; transition: opacity 0.15s ease;
+}
+.photos-album-card:hover .photos-album-card__actions,
+.photos-album-card:focus-within .photos-album-card__actions { opacity: 1; }
+.photos-album-card__actions .photos-iconbtn { width: 2rem; height: 2rem; color: var(--muted); }
+.photos-album-card__actions .photos-iconbtn:hover { color: var(--text); }
+.photos-album-card--new {
+  display: grid; place-content: center; justify-items: center; gap: 0.5rem;
+  aspect-ratio: 1 / 1.15; border: 1.5px dashed var(--line); border-radius: 12px;
+  background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-weight: 650;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.photos-album-card--new svg { width: 1.6rem; height: 1.6rem; }
+.photos-album-card--new:hover { border-color: var(--brand); color: var(--text); }
+.photos-album-card--form {
+  gap: 0.5rem; padding: 0.9rem; align-content: center;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  aspect-ratio: 1 / 1.15;
+}
+.photos-album-card__form-label { color: var(--muted); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.photos-album-card--form input {
+  min-width: 0; min-height: 2.4rem; padding: 0.4rem 0.7rem;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--text); font: inherit;
+}
+.photos-album-card--form input:focus-visible { border-color: var(--brand); outline: none; }
+.photos-album-card__form-actions { display: flex; gap: 0.4rem; }
+/* Rename/delete affordances must stay reachable on touch (no hover). */
+@media (hover: none) {
+  .photos-album-card__actions { opacity: 1; }
+}
 
 .photos-uploads { position: fixed; left: 16px; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); z-index: 83; display: grid; gap: 0.5rem; width: min(22rem, calc(100vw - 2rem)); padding: 0.85rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
 @media (min-width: 681px) {
@@ -14030,67 +14174,129 @@ select.edit-field-input {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
-/* Selection: check chip on tiles + bottom action bar. */
+/* Selection: contextual top toolbar (GPhotos pattern) + check on tiles. */
 .photos-selection-bar {
-  position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 0.7rem;
-  padding: 0.6rem 1rem; border-radius: 14px;
-  background: rgba(15, 23, 42, 0.96); color: #fff;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); z-index: 60;
+  position: fixed; left: 50%; top: 0.85rem; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.55rem;
+  width: min(46rem, calc(100vw - 1.5rem));
+  padding: 0.45rem 0.7rem; border-radius: 999px;
+  background: rgba(15, 23, 42, 0.97); color: #fff;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55); z-index: 60;
 }
-.photos-selection-bar__count { font-weight: 750; font-size: 0.9rem; }
+.photos-selection-bar__count { font-weight: 750; font-size: 0.9rem; white-space: nowrap; }
+.photos-selection-bar__spacer { flex: 1; }
+.photos-selection-bar__albums {
+  max-width: 11rem; min-height: 2.1rem; padding: 0 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06); color: #fff; font: inherit; font-size: 0.82rem;
+}
+.photos-selection-bar__albums option { color: #0f172a; }
+.photos-selection-bar .photos-iconbtn { color: #fff; }
+.photos-selection-bar .photos-iconbtn:hover { background: rgba(255, 255, 255, 0.14); }
+.photos-selection-bar button[variant] { white-space: nowrap; }
 
 /* Zoom density control. */
 .photos-zoom { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); padding: 0.1rem 0 0.4rem; }
 .photos-zoom input[type="range"] { width: 9rem; accent-color: #fb923c; }
 .photos-zoom__min, .photos-zoom__max { font-size: 0.7rem; }
 
-/* Lightbox extras: our toolbar buttons + meta panel + album chips. */
+/* Lightbox chrome: GPhotos-style top bar over the YARL stage. */
 .photos-lightbox-root { position: relative; z-index: 90; }
-.photos-lb-toolbar { display: flex; align-items: center; gap: 0.4rem; margin-right: 0.5rem; }
+.photos-lightbox-root .yarl__container { animation: photos-lb-in 0.22s ease; }
+.photos-lightbox-root .yarl__button { filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.6)); }
+.photos-lightbox-root .yarl__button svg { width: 1.5rem; height: 1.5rem; }
+@keyframes photos-lb-in {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .photos-lightbox-root .yarl__container { animation: none; }
+}
+.photos-lb-topbar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 5;
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.6rem 4.5rem 0.6rem 0.8rem;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent);
+  pointer-events: none;
+}
+.photos-lb-topbar > * { pointer-events: auto; }
+.photos-lb-topbar__spacer { flex: 1; }
+.photos-lb-title { display: grid; min-width: 0; margin-left: 0.25rem; }
+.photos-lb-title__name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #fff; font-size: 0.92rem; font-weight: 650;
+}
+.photos-lb-title__date { color: rgba(255, 255, 255, 0.7); font-size: 0.76rem; }
 .photos-lb-btn {
-  min-width: 2rem; height: 2rem; border-radius: 8px; border: 1px solid rgba(255,255,255,.25);
-  background: rgba(0,0,0,.3); color: #fff; cursor: pointer; font-size: .95rem;
+  display: inline-grid; place-items: center; flex: 0 0 auto;
+  width: 2.5rem; height: 2.5rem; padding: 0;
+  border: 0; border-radius: 999px;
+  background: transparent; color: #fff; cursor: pointer;
+  transition: background 0.15s ease;
 }
-.photos-lb-btn:hover { background: rgba(255,255,255,.16); }
-.photos-lb-btn--danger:hover { background: rgba(239, 68, 68, .4); border-color: rgba(239, 68, 68, .6); }
+.photos-lb-btn svg { width: 1.3rem; height: 1.3rem; }
+.photos-lb-btn:hover, .photos-lb-btn:focus-visible { background: rgba(255, 255, 255, 0.16); outline: none; }
+.photos-lb-btn.is-active { color: #fbbf24; }
+.photos-lb-btn--danger:hover { background: rgba(239, 68, 68, 0.4); }
+a.photos-lb-btn { text-decoration: none; }
 .photos-lb-captions { display: grid; gap: .15rem; justify-items: center; color: rgba(255,255,255,.85); font-size: .84rem; }
-.photos-lb-meta-wrap {
-  position: fixed; right: 1rem; top: 5rem; z-index: 95; max-width: 19rem;
-}
-.photos-lb-albums {
-  position: fixed; left: 50%; bottom: 4.4rem; transform: translateX(-50%);
-  display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; z-index: 95;
-  max-width: min(90vw, 40rem); justify-content: center;
-}
-.photos-lightbox__album-chip {
-  padding: 0.22rem 0.6rem; border-radius: 999px; border: 1px solid rgba(255,255,255,.3);
-  background: rgba(0,0,0,.35); color: #fff; cursor: pointer; font: inherit; font-size: .78rem;
-}
-.photos-lb-albums select {
-  min-height: 1.9rem; border-radius: 999px; border: 1px solid rgba(255,255,255,.3);
-  background: rgba(0,0,0,.35); color: #fff; font: inherit; font-size: .78rem; padding: 0 .6rem;
-}
-.photos-lb-albums select option { color: #0f172a; }
 
-/* Metadata panel. */
-.photos-meta {
-  padding: 0.9rem 1rem; border-radius: 12px;
-  background: rgba(15, 23, 42, 0.96); color: #e2e8f0;
-  box-shadow: 0 10px 30px rgba(0,0,0,.5);
+/* Info slide-over: EXIF + album membership, GPhotos' right drawer. */
+.photos-info {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 95;
+  width: min(22rem, 94vw);
+  display: grid; align-content: start; gap: 1rem;
+  padding: 1rem 1.1rem 2rem; overflow-y: auto;
+  background: rgba(13, 16, 22, 0.98); color: #e2e8f0;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: -16px 0 44px rgba(0, 0, 0, 0.5);
+  animation: photos-info-in 0.22s ease;
 }
-.photos-meta__rows { display: grid; gap: 0.3rem; margin: 0; }
-.photos-meta__row { display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.5rem; font-size: 0.8rem; }
+@keyframes photos-info-in {
+  from { transform: translateX(2.5rem); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .photos-info { animation: none; }
+}
+.photos-info__head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.photos-info__head h2 { margin: 0; font-size: 1.05rem; letter-spacing: -0.01em; }
+.photos-info__albums { display: grid; gap: 0.55rem; padding-top: 0.8rem; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+.photos-info__albums h3 { margin: 0; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: rgba(226, 232, 240, 0.55); }
+.photos-info__chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.photos-info__hint { margin: 0; color: rgba(226, 232, 240, 0.5); font-size: 0.8rem; }
+.photos-info__albums select {
+  min-height: 2.2rem; padding: 0 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05); color: #e2e8f0; font: inherit; font-size: 0.85rem;
+}
+.photos-info__albums select option { color: #0f172a; }
+.photos-album-chip {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.24rem 0.65rem; border-radius: 999px;
+  border: 1px solid rgba(249, 115, 22, 0.55); background: rgba(249, 115, 22, 0.14);
+  color: #fdba74; cursor: pointer; font: inherit; font-size: 0.8rem;
+}
+.photos-album-chip svg { width: 0.7rem; height: 0.7rem; }
+.photos-album-chip:hover { border-color: #fb923c; color: #fff; }
+
+/* Metadata panel lives inside the info drawer — no card chrome of its own. */
+.photos-meta { color: #e2e8f0; }
+.photos-meta__rows { display: grid; gap: 0.45rem; margin: 0; }
+.photos-meta__row { display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.5rem; font-size: 0.84rem; }
 .photos-meta__row dt { color: rgba(226, 232, 240, 0.55); }
 .photos-meta__row dd { margin: 0; word-break: break-word; }
 .photos-meta__hint { margin: 0 0 0.4rem; font-size: 0.76rem; color: rgba(226, 232, 240, 0.5); }
 .photos-meta__map-link { display: inline-block; margin-top: 0.6rem; color: #fdba74; font-size: 0.8rem; }
 
 /* Timeline scroll container: the virtualizer owns this element's scroll,
-   so its height must be bounded by the viewport, not the content. */
+   so its height must be bounded by the viewport, not the content.
+   touch-action keeps vertical panning native and hands two-finger pinch
+   to the density handler. */
 .photos-timeline--scroll {
   overflow-y: auto;
   overscroll-behavior: contain;
+  touch-action: pan-y;
   /* Viewport minus header/tabs chrome — keeps the scrubber + tabs visible. */
   height: calc(100vh - 14rem);
   min-height: 24rem;
@@ -14120,14 +14326,4 @@ select.edit-field-input {
   font-size: .95rem;
   backdrop-filter: blur(4px);
 }
-/* Hover meta overlay on tiles. */
-.photos-item__meta {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  padding: .8rem .5rem .35rem;
-  background: linear-gradient(to top, rgba(0,0,0,.75), transparent);
-  color: #fff; font-size: .72rem; font-weight: 600;
-  opacity: 0; transition: opacity .15s ease;
-  display: flex; justify-content: space-between; gap: .4rem;
-  pointer-events: none;
-}
-.photos-item:hover .photos-item__meta { opacity: 1; }
+

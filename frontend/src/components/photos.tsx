@@ -8,12 +8,29 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { PhotosIcon } from '../icons';
+import {
+  AlbumIcon,
+  ArrowLeftIcon,
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  DownloadIcon,
+  ImageIcon,
+  InfoIcon,
+  PencilIcon,
+  PhotosIcon,
+  PlayIcon,
+  PlusIcon,
+  RestoreIcon,
+  SearchIcon,
+  StarIcon,
+  TrashIcon,
+  XIcon,
+} from '../icons';
 import LightboxRoot from 'yet-another-react-lightbox';
 import type { Slide } from 'yet-another-react-lightbox';
 import Captions from 'yet-another-react-lightbox/plugins/captions';
 import Counter from 'yet-another-react-lightbox/plugins/counter';
-import Download from 'yet-another-react-lightbox/plugins/download';
 import Fullscreen from 'yet-another-react-lightbox/plugins/fullscreen';
 import Slideshow from 'yet-another-react-lightbox/plugins/slideshow';
 import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
@@ -427,13 +444,35 @@ function PhotoTile({
   selectionActive: boolean;
 }) {
   const [loaded, setLoaded] = useState(false);
+  // Long-press (touch) enters selection mode — Google Photos' gesture. The
+  // timer dies on movement or lift, and the synthetic click after a fired
+  // long-press must not also open the lightbox.
+  const pressTimer = useRef<number | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const longPressed = useRef(false);
+
+  const cancelPress = useCallback(() => {
+    if (pressTimer.current != null) {
+      window.clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+    pressStart.current = null;
+  }, []);
+
+  useEffect(() => cancelPress, [cancelPress]);
+
   return (
     <div
-      className={`photos-item${selected ? ' is-selected' : ''}`}
+      className={`photos-item${selected ? ' is-selected' : ''}${selectionActive ? ' is-selecting' : ''}`}
       style={{ height: `${height}px`, width: `${width}px` }}
-      onClick={(event) => (selectionActive || event.metaKey || event.ctrlKey
-        ? onSelect(photo, event)
-        : onOpen(photo))}
+      onClick={(event) => {
+        if (longPressed.current) {
+          longPressed.current = false;
+          return;
+        }
+        if (selectionActive || event.metaKey || event.ctrlKey) onSelect(photo, event);
+        else onOpen(photo);
+      }}
       role="button"
       tabIndex={0}
       aria-label={photo.fileName}
@@ -444,6 +483,27 @@ function PhotoTile({
           if (selectionActive) onSelect(photo, event);
           else onOpen(photo);
         }
+      }}
+      onPointerDown={(event) => {
+        if (event.pointerType !== 'touch') return;
+        longPressed.current = false;
+        pressStart.current = { x: event.clientX, y: event.clientY };
+        pressTimer.current = window.setTimeout(() => {
+          longPressed.current = true;
+          onSelect(photo, { shiftKey: false, metaKey: false, ctrlKey: false });
+        }, 450);
+      }}
+      onPointerMove={(event) => {
+        const start = pressStart.current;
+        if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) {
+          cancelPress();
+        }
+      }}
+      onPointerUp={cancelPress}
+      onPointerCancel={cancelPress}
+      onContextMenu={(event) => {
+        // Android Safari/Chrome fire contextmenu on the same long-press.
+        if (longPressed.current) event.preventDefault();
       }}
     >
       <img
@@ -456,16 +516,31 @@ function PhotoTile({
         draggable={false}
       />
       <span className="photos-item__shade" aria-hidden="true" />
-      <span className="photos-item__meta" aria-hidden="true">
-        <span>{dayLabel(photo.takenAt)}</span>
-      </span>
+      <button
+        type="button"
+        className="photos-item__check"
+        aria-label={`Select ${photo.fileName}`}
+        aria-pressed={selected}
+        tabIndex={-1}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect(photo, event);
+        }}
+      >
+        <CheckIcon />
+      </button>
       {photo.kind === 'video' && (
         <span className="photos-item__badge" aria-label="Video">
-          ▶{formatDuration(photo.duration) && ` ${formatDuration(photo.duration)}`}
+          <PlayIcon />
+          {formatDuration(photo.duration) && ` ${formatDuration(photo.duration)}`}
         </span>
       )}
-      {photo.favorite && <span className="photos-item__fav" aria-label="Favorite">★</span>}
-      {selected && <span className="photos-item__check" aria-hidden="true">✓</span>}
+      {photo.favorite && (
+        <span className="photos-item__fav" aria-label="Favorite">
+          <StarIcon filled />
+        </span>
+      )}
     </div>
   );
 }
@@ -477,6 +552,8 @@ function TimelineFlow({
   onOpen,
   selection,
   onTileClick,
+  onToggleDay,
+  onPinchStep,
 }: {
   photos: Photo[];
   width: number;
@@ -484,8 +561,52 @@ function TimelineFlow({
   onOpen: (photo: Photo) => void;
   selection: SelectionState;
   onTileClick: (photo: Photo, index: number, event: TileClickEvent) => void;
+  onToggleDay: (group: DayGroup) => void;
+  /** Pinch gesture changed density: +1 zoom in (larger thumbs), -1 zoom out. */
+  onPinchStep: (delta: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Two-pointer pinch → grid density (Google Photos' signature gesture).
+  // Steps fire when the pinch distance grows/shrinks past a ratio band, then
+  // re-baseline so a continuous pinch walks through multiple steps.
+  const pinch = useRef<{ base: number | null; points: Map<number, { x: number; y: number }> }>({
+    base: null,
+    points: new Map(),
+  });
+
+  const pinchHandlers = {
+    onPointerDown: (event: React.PointerEvent) => {
+      if (event.pointerType !== 'touch') return;
+      pinch.current.points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    },
+    onPointerMove: (event: React.PointerEvent) => {
+      if (!pinch.current.points.has(event.pointerId)) return;
+      pinch.current.points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const points = [...pinch.current.points.values()];
+      if (points.length < 2) return;
+      const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      const base = pinch.current.base;
+      if (base == null) {
+        pinch.current.base = dist;
+        return;
+      }
+      if (dist > base * 1.22) {
+        onPinchStep(1);
+        pinch.current.base = dist;
+      } else if (dist < base / 1.22) {
+        onPinchStep(-1);
+        pinch.current.base = dist;
+      }
+    },
+    onPointerUp: (event: React.PointerEvent) => {
+      pinch.current.points.delete(event.pointerId);
+      if (pinch.current.points.size < 2) pinch.current.base = null;
+    },
+    onPointerCancel: (event: React.PointerEvent) => {
+      pinch.current.points.delete(event.pointerId);
+      if (pinch.current.points.size < 2) pinch.current.base = null;
+    },
+  };
   const groups = useMemo(() => groupByDay(photos), [photos]);
   const entries = useMemo(
     () => (width > 0 ? buildVirtualModel(groups, width, targetHeight) : []),
@@ -577,7 +698,7 @@ function TimelineFlow({
   }, [virtualItems, entries, virtualizer.scrollOffset]);
 
   return (
-    <div className="photos-timeline photos-timeline--scroll" ref={scrollRef}>
+    <div className="photos-timeline photos-timeline--scroll" ref={scrollRef} {...pinchHandlers}>
       {floatingDay && !scrubLabel && (
         <div className="photos-floating-day" aria-hidden="true">{floatingDay}</div>
       )}
@@ -606,8 +727,19 @@ function TimelineFlow({
             // The floating pinned header already shows this day — an
             // in-flow copy right under it reads as a duplicate.
             if (virtualItems && floatingDay === entry.group.label) return null;
+            const allSelected = entry.group.photos.every((p) => selection.ids.has(p.id));
             return (
               <h2 key={`h-${entry.group.key}`} className="photos-day__label" style={style}>
+                <button
+                  type="button"
+                  className="photos-day__check"
+                  aria-label={`Select all from ${entry.group.label}`}
+                  aria-pressed={allSelected}
+                  tabIndex={-1}
+                  onClick={() => onToggleDay(entry.group)}
+                >
+                  <CheckIcon />
+                </button>
                 {entry.group.label}
               </h2>
             );
@@ -720,6 +852,36 @@ function DateScrubber({
   );
 }
 
+/** Shimmer placeholder rows while the first timeline page loads. */
+function TimelineSkeleton({ width }: { width: number }) {
+  const effective = width > 0 ? width : 1200;
+  const rows = [];
+  for (let r = 0; r < 6; r += 1) {
+    const tiles = [];
+    let remaining = effective;
+    let i = 0;
+    while (remaining > 150) {
+      // Deterministic pseudo-varied widths: stable across renders, mixed
+      // enough to read as a photo grid rather than a striped bar.
+      const w = Math.min(remaining, 150 + ((r * 7 + i * 13) % 4) * 55);
+      tiles.push(<span key={i} className="photos-skeleton__tile" style={{ width: w }} />);
+      remaining -= w + PHOTO_GAP;
+      i += 1;
+    }
+    rows.push(
+      <Fragment key={r}>
+        {r % 2 === 0 && <span className="photos-skeleton__day" />}
+        <div className="photos-skeleton__row">{tiles}</div>
+      </Fragment>,
+    );
+  }
+  return (
+    <div className="photos-skeleton" role="status" aria-label="Loading your library">
+      {rows}
+    </div>
+  );
+}
+
 function PhotosTimeline({
   data,
   loading,
@@ -729,6 +891,8 @@ function PhotosTimeline({
   onUpload,
   selection,
   onTileClick,
+  onToggleDay,
+  onPinchStep,
   rowHeight,
   onRowHeightChange,
   emptyView,
@@ -742,6 +906,8 @@ function PhotosTimeline({
   onUpload?: () => void;
   selection: SelectionState;
   onTileClick: (photo: Photo, index: number, event: TileClickEvent) => void;
+  onToggleDay: (group: DayGroup) => void;
+  onPinchStep: (delta: number) => void;
   rowHeight: number;
   onRowHeightChange: (value: number) => void;
   /** Which lens is empty — drives the empty-state copy. */
@@ -750,7 +916,13 @@ function PhotosTimeline({
 }) {
   const [timelineRef, width] = useMeasuredWidth<HTMLDivElement>();
 
-  if (loading && !data) return <div className="photos-loading">Loading your library…</div>;
+  if (loading && !data) {
+    return (
+      <div className="photos-timeline-wrap" ref={timelineRef}>
+        <TimelineSkeleton width={width} />
+      </div>
+    );
+  }
   if (!data?.items.length) {
     // A filtered view (Favorites/Trash/album) is not an empty library —
     // saying "Your library is empty" with upload CTAs is wrong when the
@@ -823,6 +995,8 @@ function PhotosTimeline({
         onOpen={onOpen}
         selection={selection}
         onTileClick={onTileClick}
+        onToggleDay={onToggleDay}
+        onPinchStep={onPinchStep}
       />
       {data.nextCursor && (
         <Button variant="secondary" className="photos-more" onClick={onLoadMore} disabled={loading}>
@@ -956,6 +1130,125 @@ function MetaPanel({ photo }: { photo: Photo }) {
 
 type View = 'timeline' | 'favorites' | 'albums' | 'trash';
 
+const PHOTOS_NAV: Array<{
+  key: View;
+  label: string;
+  icon: (props: React.SVGProps<SVGSVGElement>) => React.JSX.Element;
+}> = [
+  { key: 'timeline', label: 'Photos', icon: PhotosIcon },
+  { key: 'favorites', label: 'Favorites', icon: StarIcon },
+  { key: 'albums', label: 'Albums', icon: AlbumIcon },
+  { key: 'trash', label: 'Trash', icon: TrashIcon },
+];
+
+// ── Albums cover grid ─────────────────────────────────────────────────────
+
+function AlbumsGrid({
+  albums,
+  creating,
+  onStartCreate,
+  onCancelCreate,
+  onSubmitCreate,
+  nameInputRef,
+  onOpen,
+  onRename,
+  onDelete,
+}: {
+  albums: PhotoAlbum[];
+  creating: boolean;
+  onStartCreate: () => void;
+  onCancelCreate: () => void;
+  onSubmitCreate: () => void;
+  nameInputRef: React.RefObject<HTMLInputElement | null>;
+  onOpen: (album: PhotoAlbum) => void;
+  onRename: (album: PhotoAlbum) => void;
+  onDelete: (album: PhotoAlbum) => void;
+}) {
+  return (
+    <div className="photos-albums-grid">
+      {creating ? (
+        <form
+          className="photos-album-card photos-album-card--form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmitCreate();
+          }}
+        >
+          <label className="photos-album-card__form-label" htmlFor="photos-new-album">
+            Album name
+          </label>
+          <input
+            id="photos-new-album"
+            ref={nameInputRef}
+            type="text"
+            placeholder="e.g. Portugal 2026"
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- the card IS the focused task
+            autoFocus
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') onCancelCreate();
+            }}
+          />
+          <div className="photos-album-card__form-actions">
+            <Button size="sm" type="submit">Create</Button>
+            <Button size="sm" variant="ghost" onClick={onCancelCreate}>Cancel</Button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" className="photos-album-card photos-album-card--new" onClick={onStartCreate}>
+          <PlusIcon />
+          <span>New album</span>
+        </button>
+      )}
+      {albums.map((album) => (
+        <div key={album.id} className="photos-album-card">
+          <button
+            type="button"
+            className="photos-album-card__cover"
+            aria-label={`Open ${album.name}`}
+            onClick={() => onOpen(album)}
+          >
+            {album.coverPhotoId ? (
+              <img src={photoThumbUrl(album.coverPhotoId, 'grid')} alt="" loading="lazy" decoding="async" />
+            ) : (
+              <ImageIcon className="photos-album-card__placeholder" />
+            )}
+          </button>
+          <div className="photos-album-card__meta">
+            <button type="button" className="photos-album-card__name" onClick={() => onOpen(album)}>
+              {album.name}
+            </button>
+            {typeof album.photoCount === 'number' && (
+              <span className="photos-album-card__count">
+                {album.photoCount.toLocaleString()} {album.photoCount === 1 ? 'item' : 'items'}
+              </span>
+            )}
+            <span className="photos-album-card__actions">
+              <button
+                type="button"
+                className="photos-iconbtn"
+                aria-label={`Rename ${album.name}`}
+                title="Rename"
+                onClick={() => onRename(album)}
+              >
+                <PencilIcon />
+              </button>
+              <button
+                type="button"
+                className="photos-iconbtn photos-iconbtn--danger"
+                aria-label={`Delete ${album.name}`}
+                title="Delete album"
+                onClick={() => onDelete(album)}
+              >
+                <TrashIcon />
+              </button>
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function PhotosPage({ user }: { user: { sub: number | string } | null }) {
   const { status, loading: statusLoading, error: statusError, reload: reloadStatus } = usePhotoStatus();
   const [view, setView] = useState<View>('timeline');
@@ -973,12 +1266,25 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
   const [dragOver, setDragOver] = useState(false);
+  const [query, setQuery] = useState('');
+  const [creatingAlbum, setCreatingAlbum] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const albumInputRef = useRef<HTMLInputElement>(null);
 
   const signedIn = Boolean(user);
   const photos = timeline?.items ?? [];
-  const openPhoto = lightboxIndex >= 0 ? photos[lightboxIndex] : null;
+
+  // Client-side file-name search over the loaded pages — the API has no
+  // search endpoint, and the loaded window is what the grid can show anyway.
+  const visiblePhotos = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return photos;
+    return photos.filter((p) => p.fileName.toLowerCase().includes(needle));
+  }, [photos, query]);
+
+  // Grid, selection range math and lightbox all index the *visible* list so a
+  // search filter can't shift them onto photos the user isn't looking at.
+  const openPhoto = lightboxIndex >= 0 ? visiblePhotos[lightboxIndex] : null;
   const selectionActive = selection.ids.size > 0;
 
   const loadTimeline = useCallback(async (replace: boolean, view_?: View, albumId?: string) => {
@@ -1017,15 +1323,10 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedIn, view]);
 
-  const step = (delta: number) => {
-    setLightboxIndex((current) => {
-      if (!photos.length) return -1;
-      return (current + delta + photos.length) % photos.length;
-    });
-  };
-
   // Selection click handling: plain click in selection mode toggles; with
   // meta/ctrl toggles individually; shift extends a range from the anchor.
+  // Indices address the *visible* list so a search filter can't shift the
+  // range arithmetic onto photos the user isn't looking at.
   const onTileClick = useCallback((photo: Photo, index: number, event: TileClickEvent) => {
     setSelection((current) => {
       if (event.shiftKey && rangeAnchor != null) {
@@ -1033,7 +1334,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
         const ids = new Set(current.ids);
         const order = [...current.order];
         for (let i = from; i <= to; i += 1) {
-          const p = photos[i];
+          const p = visiblePhotos[i];
           if (p && !ids.has(p.id)) {
             ids.add(p.id);
             order.push(p.id);
@@ -1054,7 +1355,7 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
       return { ids, order };
     });
     if (!event.shiftKey) setRangeAnchor(index);
-  }, [photos, rangeAnchor]);
+  }, [visiblePhotos, rangeAnchor]);
 
   const clearSelection = useCallback(() => {
     setSelection(emptySelection());
@@ -1062,13 +1363,105 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   }, []);
 
   const selectAll = useCallback(() => {
-    const ids = new Set(photos.map((p) => p.id));
-    setSelection({ ids, order: photos.map((p) => p.id) });
-  }, [photos]);
+    const ids = new Set(visiblePhotos.map((p) => p.id));
+    setSelection({ ids, order: visiblePhotos.map((p) => p.id) });
+  }, [visiblePhotos]);
 
   const exitSelection = useCallback(() => {
     clearSelection();
   }, []);
+
+  // Day-header checkbox: toggle the whole day in/out of the selection.
+  const toggleDay = useCallback((group: DayGroup) => {
+    setSelection((current) => {
+      const ids = new Set(current.ids);
+      const order = [...current.order];
+      if (group.photos.every((p) => ids.has(p.id))) {
+        for (const p of group.photos) {
+          ids.delete(p.id);
+          const at = order.indexOf(p.id);
+          if (at >= 0) order.splice(at, 1);
+        }
+      } else {
+        for (const p of group.photos) {
+          if (!ids.has(p.id)) {
+            ids.add(p.id);
+            order.push(p.id);
+          }
+        }
+      }
+      return { ids, order };
+    });
+  }, []);
+
+  const onPinchStep = useCallback((delta: number) => {
+    setRowHeight((current) => {
+      const idx = ROW_HEIGHT_STEPS.indexOf(current as never);
+      const next = Math.min(ROW_HEIGHT_STEPS.length - 1, Math.max(0, idx + delta));
+      return ROW_HEIGHT_STEPS[next];
+    });
+  }, []);
+
+  /** Same-origin originals → anchor downloads; staggered so the browser
+   *  doesn't throttle the burst into silence. */
+  const downloadSelection = useCallback((ids: string[]) => {
+    ids.slice(0, 50).forEach((id, i) => {
+      window.setTimeout(() => {
+        const anchor = document.createElement('a');
+        anchor.href = photoFileUrl(id);
+        anchor.download = '';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      }, i * 350);
+    });
+  }, []);
+
+  const addSelectionToAlbum = useCallback(async (albumId: string) => {
+    const ids = [...selection.ids];
+    try {
+      await setAlbumPhotos(albumId, ids, true);
+      clearSelection();
+      await loadTimeline(true, undefined, activeAlbum?.id);
+      await loadAlbums();
+    } catch (err) {
+      setError(describeError(err, 'Could not add the photos to the album'));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection.ids, activeAlbum?.id, loadTimeline, loadAlbums, clearSelection]);
+
+  const restoreSelection = useCallback(async (ids: string[]) => {
+    try {
+      for (const batch of trashBatches(ids)) {
+        await restorePhotos(batch);
+      }
+      clearSelection();
+      await loadTimeline(true, undefined, activeAlbum?.id);
+      await reloadStatus();
+    } catch (err) {
+      setError(describeError(err, 'Could not restore the photos'));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAlbum?.id, loadTimeline, reloadStatus, clearSelection]);
+
+  const openAlbum = useCallback((album: PhotoAlbum) => {
+    setActiveAlbum(album);
+    clearSelection();
+    void loadTimeline(true, 'albums', album.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadTimeline, clearSelection]);
+
+  const submitCreateAlbum = useCallback(async () => {
+    const name = albumInputRef.current?.value.trim();
+    if (!name) return;
+    try {
+      await createPhotoAlbum(name);
+      setCreatingAlbum(false);
+      await loadAlbums();
+    } catch (err) {
+      setError(describeError(err, 'Could not create the album'));
+    }
+  }, [loadAlbums]);
 
   const handleFiles = async (files: FileList | File[]) => {
     const list = Array.from(files);
@@ -1133,19 +1526,11 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
     }
   };
 
-  const restore = async (photo: Photo) => {
-    try {
-      await restorePhotos([photo.id]);
-      await loadTimeline(true);
-    } catch (err) {
-      setError(describeError(err, 'Could not restore the photo'));
-    }
-  };
-
   const assignAlbum = async (photo: Photo, albumId: string, member: boolean) => {
     try {
       await setAlbumPhotos(albumId, [photo.id], member);
       await loadTimeline(true, undefined, activeAlbum?.id);
+      await loadAlbums();
     } catch (err) {
       setError(describeError(err, 'Could not update the album'));
     }
@@ -1231,6 +1616,12 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   }
 
   const isAlbumDetail = view === 'albums' && activeAlbum;
+  const searching = query.trim().length > 0;
+  const timelineData: TimelineData | null = timeline && {
+    items: visiblePhotos,
+    // "Load more" is meaningless while a client-side filter hides results.
+    nextCursor: searching ? null : timeline.nextCursor,
+  };
 
   return (
     <main
@@ -1239,154 +1630,217 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
     >
-      <header className="photos-header">
-        <div>
-          <h1 className="photos-title">
-            Photos
-            {status?.beta && (
-              <span className="photos-beta-badge" title="TeleDirect Photos is in beta — features may change">
-                Beta
-              </span>
-            )}
-          </h1>
-          {typeof status?.photoCount === 'number' && status.photoCount > 0 && (
-            <p className="photos-subtitle">
-              {status.photoCount.toLocaleString()}{' '}
-              {status.photoCount === 1 ? 'item' : 'items'} in your private channel
-            </p>
-          )}
-          {importState === 'running' && (
-            <p className="photos-import-line" role="status">
-              Checking your Telegram channel — new photos appear as they finish.
-            </p>
-          )}
-        </div>
-        <div className="photos-header__actions">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/*,video/*"
-            hidden
-            onChange={(event) => {
-              if (event.target.files?.length) void handleFiles(event.target.files);
-              event.target.value = '';
-            }}
-          />
-          <Button onClick={() => fileInputRef.current?.click()}>Upload</Button>
-          <Button
-            variant="secondary"
-            title="Check your Telegram channel for photos that are not in this library yet"
-            disabled={importState === 'running'}
-            onClick={() => void syncLibrary()}
-          >
-            {importState === 'running' ? 'Looking…' : 'Find missing photos'}
-          </Button>
-        </div>
-      </header>
-      <nav className="photos-tabs" aria-label="Photos sections">
-        {(['timeline', 'favorites', 'albums', 'trash'] as View[]).map((v) => (
-          <button
-            key={v}
-            className={view === v ? 'active' : ''}
-            aria-current={view === v ? 'page' : undefined}
-            onClick={() => { setView(v); setActiveAlbum(null); clearSelection(); }}
-          >
-            {v[0].toUpperCase() + v.slice(1)}
-          </button>
-        ))}
-      </nav>
-
-      {isAlbumDetail && <h1 className="photos-album-title">{activeAlbum!.name}</h1>}
-
-      {view === 'albums' && !activeAlbum && (
-        <div className="photos-albums">
-          <input
-            ref={albumInputRef}
-            type="text"
-            placeholder="New album name"
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && albumInputRef.current?.value.trim()) {
-                void createPhotoAlbum(albumInputRef.current.value.trim()).then(() => {
-                  if (albumInputRef.current) albumInputRef.current.value = '';
-                  void loadAlbums();
-                });
-              }
-            }}
-          />
-          {albums.map((album) => (
-            <div key={album.id} className="photos-album-row">
-              <button onClick={() => { setActiveAlbum(album); void loadTimeline(true, 'albums', album.id); }}>
-                {album.name}
-              </button>
-              <button
-                aria-label={`Rename ${album.name}`}
-                onClick={() => {
-                  const name = window.prompt('New album name', album.name);
-                  if (name && name.trim()) {
-                    void renamePhotoAlbum(album.id, name.trim()).then(loadAlbums);
-                  }
-                }}
-              >
-                Rename
-              </button>
-              <button
-                aria-label={`Delete ${album.name}`}
-                onClick={() => {
-                  if (window.confirm(`Delete album "${album.name}"? Photos are kept.`)) {
-                    void deletePhotoAlbum(album.id).then(() => { void loadAlbums(); void loadTimeline(true); });
-                  }
-                }}
-              >
-                Delete
-              </button>
-            </div>
+      <div className="photos-shell">
+        <nav className="photos-nav" aria-label="Photos sections">
+          {PHOTOS_NAV.map(({ key, label, icon: NavIcon }) => (
+            <button
+              key={key}
+              type="button"
+              className={view === key ? 'active' : ''}
+              aria-current={view === key ? 'page' : undefined}
+              onClick={() => {
+                setView(key);
+                setActiveAlbum(null);
+                setCreatingAlbum(false);
+                clearSelection();
+              }}
+            >
+              <NavIcon />
+              <span>{label}</span>
+            </button>
           ))}
-        </div>
-      )}
+        </nav>
 
-      {view === 'trash' ? (
-        <div className="photos-timeline">
-          {photos.length === 0 && <p className="photos-empty">Trash is empty.</p>}
-          {photos.map((photo) => (
-            <div key={photo.id} className="photos-trash-row">
-              <img src={photoThumbUrl(photo.id, 'grid')} alt={photo.fileName} loading="lazy" />
-              <span>{dayLabel(photo.takenAt)}</span>
-              <button onClick={() => void restore(photo)}>Restore</button>
+        <section className="photos-main">
+          <header className="photos-header">
+            <div className="photos-header__lead">
+              {isAlbumDetail ? (
+                <>
+                  <button
+                    type="button"
+                    className="photos-iconbtn"
+                    aria-label="Back to albums"
+                    onClick={() => {
+                      setActiveAlbum(null);
+                      clearSelection();
+                      void loadTimeline(true, 'albums');
+                    }}
+                  >
+                    <ArrowLeftIcon />
+                  </button>
+                  <div>
+                    <h1 className="photos-title">{activeAlbum!.name}</h1>
+                    {typeof activeAlbum!.photoCount === 'number' && (
+                      <p className="photos-subtitle">
+                        {activeAlbum!.photoCount.toLocaleString()}{' '}
+                        {activeAlbum!.photoCount === 1 ? 'item' : 'items'}
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <h1 className="photos-title">
+                    Photos
+                    {status?.beta && (
+                      <span className="photos-beta-badge" title="TeleDirect Photos is in beta — features may change">
+                        Beta
+                      </span>
+                    )}
+                  </h1>
+                  {typeof status?.photoCount === 'number' && status.photoCount > 0 && (
+                    <p className="photos-subtitle">
+                      {status.photoCount.toLocaleString()}{' '}
+                      {status.photoCount === 1 ? 'item' : 'items'} in your private channel
+                    </p>
+                  )}
+                  {importState === 'running' && (
+                    <p className="photos-import-line" role="status">
+                      Checking your Telegram channel — new photos appear as they finish.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      ) : loadError ? null : (
-        <PhotosTimeline
-          data={timeline}
-          loading={timelineLoading}
-          onLoadMore={() => void loadTimeline(false, undefined, activeAlbum?.id)}
-          onOpen={(photo) => {
-            // Selection-mode clicks reach onTileClick via PhotoTile; plain
-            // clicks open the lightbox.
-            setLightboxIndex(photos.findIndex((p) => p.id === photo.id));
-          }}
-          onScan={() => void syncLibrary()}
-          onUpload={() => fileInputRef.current?.click()}
-          selection={selection}
-          onTileClick={onTileClick}
-          rowHeight={rowHeight}
-          onRowHeightChange={setRowHeight}
-          emptyView={view}
-          activeAlbumName={activeAlbum?.name}
-        />
-      )}
+            <div className="photos-header__actions">
+              <div className="photos-search">
+                <SearchIcon aria-hidden="true" />
+                <input
+                  type="search"
+                  placeholder="Search file names"
+                  aria-label="Search photos by file name"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') setQuery('');
+                  }}
+                />
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,video/*"
+                hidden
+                onChange={(event) => {
+                  if (event.target.files?.length) void handleFiles(event.target.files);
+                  event.target.value = '';
+                }}
+              />
+              <Button onClick={() => fileInputRef.current?.click()}>Upload</Button>
+              <Button
+                variant="secondary"
+                title="Check your Telegram channel for photos that are not in this library yet"
+                disabled={importState === 'running'}
+                onClick={() => void syncLibrary()}
+              >
+                {importState === 'running' ? 'Looking…' : 'Find missing photos'}
+              </Button>
+            </div>
+          </header>
+
+          {view === 'albums' && !activeAlbum ? (
+            <AlbumsGrid
+              albums={albums}
+              creating={creatingAlbum}
+              onStartCreate={() => setCreatingAlbum(true)}
+              onCancelCreate={() => setCreatingAlbum(false)}
+              onSubmitCreate={() => void submitCreateAlbum()}
+              nameInputRef={albumInputRef}
+              onOpen={openAlbum}
+              onRename={(album) => {
+                const name = window.prompt('New album name', album.name);
+                if (name && name.trim()) {
+                  void renamePhotoAlbum(album.id, name.trim()).then(loadAlbums);
+                }
+              }}
+              onDelete={(album) => {
+                if (window.confirm(`Delete album "${album.name}"? Photos are kept.`)) {
+                  void deletePhotoAlbum(album.id).then(() => { void loadAlbums(); void loadTimeline(true); });
+                }
+              }}
+            />
+          ) : searching && !visiblePhotos.length && !timelineLoading ? (
+            <div className="photos-empty">
+              <span className="photos-empty__icon" aria-hidden="true"><SearchIcon /></span>
+              <h2>No matches</h2>
+              <p>No loaded file names contain “{query.trim()}”. Load more of the timeline to widen the search.</p>
+            </div>
+          ) : loadError ? null : (
+            <PhotosTimeline
+              data={timelineData}
+              loading={timelineLoading}
+              onLoadMore={() => void loadTimeline(false, undefined, activeAlbum?.id)}
+              onOpen={(photo) => {
+                // Selection-mode clicks reach onTileClick via PhotoTile; plain
+                // clicks open the lightbox.
+                setLightboxIndex(visiblePhotos.findIndex((p) => p.id === photo.id));
+              }}
+              onScan={() => void syncLibrary()}
+              onUpload={() => fileInputRef.current?.click()}
+              selection={selection}
+              onTileClick={onTileClick}
+              onToggleDay={toggleDay}
+              onPinchStep={onPinchStep}
+              rowHeight={rowHeight}
+              onRowHeightChange={setRowHeight}
+              emptyView={view}
+              activeAlbumName={activeAlbum?.name}
+            />
+          )}
+        </section>
+      </div>
 
       {selectionActive && (
         <div className="photos-selection-bar" role="toolbar" aria-label="Selected photos">
+          <button
+            type="button"
+            className="photos-iconbtn"
+            aria-label="Clear selection"
+            onClick={exitSelection}
+          >
+            <XIcon />
+          </button>
           <span className="photos-selection-bar__count">
             {selection.ids.size} selected
           </span>
-          <Button size="sm" variant="secondary" onClick={selectAll}>Select all</Button>
-          <Button size="sm" variant="secondary" onClick={() => void trash([...selection.ids])}>
-            Delete
-          </Button>
-          <Button size="sm" variant="ghost" onClick={exitSelection}>Cancel</Button>
+          <span className="photos-selection-bar__spacer" />
+          <Button size="sm" variant="ghost" onClick={selectAll}>Select all</Button>
+          {view !== 'trash' && albums.length > 0 && (
+            <select
+              className="photos-selection-bar__albums"
+              value=""
+              aria-label="Add selected to album"
+              onChange={(event) => {
+                if (event.target.value) void addSelectionToAlbum(event.target.value);
+              }}
+            >
+              <option value="">Add to album…</option>
+              {albums.map((album) => (
+                <option key={album.id} value={album.id}>{album.name}</option>
+              ))}
+            </select>
+          )}
+          {view !== 'trash' && (
+            <button
+              type="button"
+              className="photos-iconbtn"
+              aria-label="Download selected"
+              title="Download originals"
+              onClick={() => downloadSelection([...selection.ids])}
+            >
+              <DownloadIcon />
+            </button>
+          )}
+          {view === 'trash' ? (
+            <Button size="sm" variant="secondary" onClick={() => void restoreSelection([...selection.ids])}>
+              <RestoreIcon /> Restore
+            </Button>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => void trash([...selection.ids])}>
+              <TrashIcon /> Delete
+            </Button>
+          )}
         </div>
       )}
 
@@ -1436,13 +1890,18 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
 
       {openPhoto && (
         <PhotoLightbox
-          photos={photos}
+          photos={visiblePhotos}
           index={lightboxIndex}
           albums={albums}
+          trashView={view === 'trash'}
           onClose={() => setLightboxIndex(-1)}
           onNavigate={setLightboxIndex}
           onToggleFavorite={(p) => void toggleFavorite(p)}
           onTrash={(p) => void trash([p.id])}
+          onRestore={(p) => {
+            setLightboxIndex(-1);
+            void restoreSelection([p.id]);
+          }}
           onAssignAlbum={(p, albumId, member) => void assignAlbum(p, albumId, member)}
         />
       )}
@@ -1482,19 +1941,24 @@ function PhotoLightbox({
   photos,
   index,
   albums,
+  trashView,
   onClose,
   onNavigate,
   onToggleFavorite,
   onTrash,
+  onRestore,
   onAssignAlbum,
 }: {
   photos: Photo[];
   index: number;
   albums: PhotoAlbum[];
+  /** Trash swaps the destructive action for Restore, like GPhotos' trash viewer. */
+  trashView: boolean;
   onClose: () => void;
   onNavigate: (index: number) => void;
   onToggleFavorite: (photo: Photo) => void;
   onTrash: (photo: Photo) => void;
+  onRestore: (photo: Photo) => void;
   onAssignAlbum: (photo: Photo, albumId: string, member: boolean) => void;
 }) {
   const photo = photos[index];
@@ -1517,44 +1981,92 @@ function PhotoLightbox({
         close={onClose}
         index={index}
         slides={slides}
-        plugins={[Zoom, Thumbnails, Captions, Counter, Download, Fullscreen, Slideshow, Video]}
+        plugins={[Zoom, Thumbnails, Captions, Counter, Fullscreen, Slideshow, Video]}
         captions={{
           // Captions plugin reads description from the slide; our slides
           // carry alt only, so render the caption footer ourselves.
           descriptionTextAlign: 'center',
         }}
+        animation={{ fade: 220, swipe: 280 }}
         render={{
-          iconPrev: () => <span aria-hidden="true">‹</span>,
-          iconNext: () => <span aria-hidden="true">›</span>,
-          // Toolbar extras render through the `controls` slot (absolute
-          // positioned by the lightbox chrome).
+          iconPrev: () => <ChevronLeftIcon />,
+          iconNext: () => <ChevronRightIcon />,
+          // Toolbar chrome renders through the `controls` slot (absolute
+          // positioned over the lightbox stage).
           controls: () => (
-            <div className="photos-lb-toolbar">
+            <div className="photos-lb-topbar">
+              <button
+                type="button"
+                className="photos-lb-btn"
+                onClick={onClose}
+                aria-label="Back to library"
+                title="Back"
+              >
+                <ArrowLeftIcon />
+              </button>
               {photo && (
+                <div className="photos-lb-title">
+                  <span className="photos-lb-title__name">{photo.fileName}</span>
+                  <span className="photos-lb-title__date">{dayLabel(photo.takenAt)}</span>
+                </div>
+              )}
+              <span className="photos-lb-topbar__spacer" />
+              {photo && !trashView && (
                 <>
                   <button
-                    className="photos-lb-btn"
+                    type="button"
+                    className={`photos-lb-btn${photo.favorite ? ' is-active' : ''}`}
                     onClick={() => onToggleFavorite(photo)}
+                    aria-label={photo.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                    aria-pressed={photo.favorite}
                     title="Favorite"
                   >
-                    {photo.favorite ? '★' : '☆'}
+                    <StarIcon filled={photo.favorite} />
                   </button>
-                  <button
+                  <a
                     className="photos-lb-btn"
-                    onClick={() => setMetaOpen((v) => !v)}
-                    title="Info (i)"
+                    href={photoFileUrl(photo.id)}
+                    download
+                    aria-label="Download original"
+                    title="Download original"
                   >
-                    ⓘ
-                  </button>
-                  <button
-                    className="photos-lb-btn photos-lb-btn--danger"
-                    onClick={() => onTrash(photo)}
-                    title="Move to trash"
-                  >
-                    🗑
-                  </button>
+                    <DownloadIcon />
+                  </a>
                 </>
               )}
+              {photo && (
+                <button
+                  type="button"
+                  className="photos-lb-btn"
+                  onClick={() => setMetaOpen((v) => !v)}
+                  aria-label="Info"
+                  aria-pressed={metaOpen}
+                  title="Info (i)"
+                >
+                  <InfoIcon />
+                </button>
+              )}
+              {photo && (trashView ? (
+                <button
+                  type="button"
+                  className="photos-lb-btn"
+                  onClick={() => onRestore(photo)}
+                  aria-label="Restore"
+                  title="Restore"
+                >
+                  <RestoreIcon />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="photos-lb-btn photos-lb-btn--danger"
+                  onClick={() => onTrash(photo)}
+                  aria-label="Move to trash"
+                  title="Move to trash"
+                >
+                  <TrashIcon />
+                </button>
+              ))}
             </div>
           ),
           slideFooter: photo ? () => (
@@ -1572,44 +2084,61 @@ function PhotoLightbox({
         carousel={{ finite: false }}
         controller={{ closeOnBackdropClick: true }}
         styles={{
-          container: { backgroundColor: 'rgba(8, 9, 10, 0.94)' },
+          container: { backgroundColor: 'rgba(8, 9, 10, 0.96)' },
         }}
         toolbar={{ buttons: ['close'] }}
       />
       {metaOpen && photo && (
-        <div className="photos-lb-meta-wrap">
+        <aside className="photos-info" aria-label="Photo details">
+          <div className="photos-info__head">
+            <h2>Info</h2>
+            <button
+              type="button"
+              className="photos-iconbtn"
+              aria-label="Close info"
+              onClick={() => setMetaOpen(false)}
+            >
+              <XIcon />
+            </button>
+          </div>
           <MetaPanel photo={photo} />
-        </div>
-      )}
-      {photo && (
-        <div className="photos-lb-albums">
-          {albums
-            .filter((album) => photo.albumIds.includes(album.id))
-            .map((album) => (
-              <button
-                key={album.id}
-                className="photos-lightbox__album-chip"
-                title={`Remove from ${album.name}`}
-                onClick={() => onAssignAlbum(photo, album.id, false)}
-              >
-                {album.name} ×
-              </button>
-            ))}
-          <select
-            value=""
-            aria-label="Add to album"
-            onChange={(event) => {
-              if (event.target.value) onAssignAlbum(photo, event.target.value, true);
-            }}
-          >
-            <option value="">Add to album…</option>
-            {albums
-              .filter((album) => !photo.albumIds.includes(album.id))
-              .map((album) => (
-                <option key={album.id} value={album.id}>{album.name}</option>
-              ))}
-          </select>
-        </div>
+          <section className="photos-info__albums" aria-label="Albums">
+            <h3>Albums</h3>
+            <div className="photos-info__chips">
+              {albums
+                .filter((album) => photo.albumIds.includes(album.id))
+                .map((album) => (
+                  <button
+                    key={album.id}
+                    type="button"
+                    className="photos-album-chip"
+                    title={`Remove from ${album.name}`}
+                    onClick={() => onAssignAlbum(photo, album.id, false)}
+                  >
+                    {album.name}
+                    <XIcon />
+                  </button>
+                ))}
+              {albums.filter((album) => photo.albumIds.includes(album.id)).length === 0 && (
+                <p className="photos-info__hint">Not in any album yet.</p>
+              )}
+            </div>
+            <select
+              value=""
+              aria-label="Add to album"
+              onChange={(event) => {
+                if (event.target.value) onAssignAlbum(photo, event.target.value, true);
+              }}
+            >
+              <option value="">Add to album…</option>
+              {albums
+                .filter((album) => !photo.albumIds.includes(album.id))
+                .map((album) => (
+                  <option key={album.id} value={album.id}>{album.name}</option>
+                ))}
+            </select>
+          </section>
+        </aside>
       )}
     </div>,
     document.body,

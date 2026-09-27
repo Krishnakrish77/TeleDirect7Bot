@@ -1160,6 +1160,10 @@ export interface PhotoAlbum {
   coverMessageId: number | null;
   createdAt: string | null;
   sort: number;
+  /** Non-deleted member count; absent on backends predating the aggregation. */
+  photoCount?: number;
+  /** Photo id for the cover thumbnail; null/absent when the album is empty. */
+  coverPhotoId?: string | null;
 }
 
 export interface PhotosChannelStatus {

@@ -180,7 +180,7 @@ describe('virtual timeline model', () => {
   it('documented tradeoff: a day inside another day\'s row gets no header', () => {
     // Six photos fit one row at this width, so September 20 never starts a row
     // and its photos sit under the September 21 header — Google Photos behaves
-    // the same way; each tile still shows its own date on hover.
+    // the same way when days share a row.
     const groups = [
       group('2026-09-21', 'September 21, 2026', [photo('a', '2026-09-21'), photo('b', '2026-09-21'), photo('c', '2026-09-21')]),
       group('2026-09-20', 'September 20, 2026', [photo('d', '2026-09-20'), photo('e', '2026-09-20'), photo('f', '2026-09-20')]),
@@ -256,6 +256,8 @@ describe('PhotosPage albums', () => {
     render(<PhotosPage user={user} />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'IMG_1.jpg' }));
+    // Album membership lives in the info slide-over (GPhotos' right drawer).
+    fireEvent.click(await screen.findByRole('button', { name: 'Info' }));
     // The photo is already in "Holidays": its chip removes it.
     fireEvent.click(screen.getByTitle('Remove from Holidays'));
     await waitFor(() => expect(setAlbumPhotos).toHaveBeenCalledWith('a1', ['p1'], false));

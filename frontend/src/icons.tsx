@@ -409,6 +409,91 @@ export function TrashIcon(props: Props) {
   );
 }
 
+export function StarIcon(props: Props & { filled?: boolean }) {
+  const { filled, ...rest } = props;
+  return (
+    <IconBase {...rest} fill={filled ? 'currentColor' : 'none'}>
+      <path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+    </IconBase>
+  );
+}
+
+export function InfoIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </IconBase>
+  );
+}
+
+export function ArrowLeftIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="m12 19-7-7 7-7" />
+      <path d="M19 12H5" />
+    </IconBase>
+  );
+}
+
+export function ChevronLeftIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="m15 18-6-6 6-6" />
+    </IconBase>
+  );
+}
+
+export function PlusIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </IconBase>
+  );
+}
+
+export function AlbumIcon(props: Props) {
+  // Stacked rectangles with a folded corner — reads as a collection, not a
+  // single photo (that's PhotosIcon) nor a file folder.
+  return (
+    <IconBase {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M9 21V9" />
+    </IconBase>
+  );
+}
+
+export function RestoreIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </IconBase>
+  );
+}
+
+export function PencilIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      <path d="m15 5 4 4" />
+    </IconBase>
+  );
+}
+
+export function ImageIcon(props: Props) {
+  return (
+    <IconBase {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+    </IconBase>
+  );
+}
+
 export function HeartIcon(props: Props & { filled?: boolean }) {
   const { filled, ...rest } = props;
   return (

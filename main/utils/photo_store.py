@@ -682,11 +682,13 @@ async def create_album(owner_user_id: int, name: str) -> Optional[dict]:
         return None
 
 
-def _serialize_album(doc: dict) -> dict:
+def _serialize_album(doc: dict, count: int = 0, cover_id=None) -> dict:
     return {
         "id": str(doc["_id"]),
         "name": doc.get("name"),
         "coverMessageId": doc.get("cover_message_id"),
+        "photoCount": int(count),
+        "coverPhotoId": str(cover_id) if cover_id else None,
         "createdAt": iso_utc(doc.get("created_at")),
         "sort": doc.get("sort", 0),
     }
@@ -701,7 +703,62 @@ async def list_albums(owner_user_id: int) -> List[dict]:
         docs = await db["photo_albums"].find(
             {"owner_user_id": owner_user_id}
         ).sort("created_at", 1).to_list(length=_PAGE_CAP)
-        return [_serialize_album(d) for d in docs]
+        if not docs:
+            return []
+        album_ids = [str(d["_id"]) for d in docs]
+        # One aggregation over this owner's non-deleted photos: per-album
+        # member count plus the most recently taken member (taken_at desc,
+        # _id desc) as the fallback cover.
+        pipeline = [
+            {"$match": {
+                "owner_user_id": owner_user_id,
+                "deleted": False,
+                "album_ids": {"$in": album_ids},
+            }},
+            {"$unwind": "$album_ids"},
+            {"$match": {"album_ids": {"$in": album_ids}}},
+            {"$sort": {"taken_at": -1, "_id": -1}},
+            {"$group": {
+                "_id": "$album_ids",
+                "count": {"$sum": 1},
+                "cover": {"$first": "$_id"},
+            }},
+        ]
+        stats: Dict[str, dict] = {}
+        async for row in db["photos"].aggregate(pipeline):
+            stats[row["_id"]] = row
+        # Albums with an explicit cover_message_id: resolve the member doc
+        # carrying that message id in one batched query (explicit cover wins
+        # over the aggregation's latest-member fallback).
+        wanted = {
+            str(d["_id"]): d["cover_message_id"]
+            for d in docs
+            if d.get("cover_message_id") is not None
+        }
+        explicit: Dict[str, Any] = {}
+        if wanted:
+            cursor = db["photos"].find(
+                {
+                    "owner_user_id": owner_user_id,
+                    "deleted": False,
+                    "album_ids": {"$in": list(wanted)},
+                    "message_id": {"$in": list(wanted.values())},
+                },
+                {"_id": 1, "album_ids": 1, "message_id": 1},
+            )
+            async for photo in cursor:
+                for aid in photo.get("album_ids") or []:
+                    if wanted.get(aid) == photo.get("message_id"):
+                        explicit[aid] = photo["_id"]
+        return [
+            _serialize_album(
+                d,
+                count=stats.get(str(d["_id"]), {}).get("count", 0),
+                cover_id=explicit.get(str(d["_id"]))
+                or stats.get(str(d["_id"]), {}).get("cover"),
+            )
+            for d in docs
+        ]
     except Exception:
         logging.exception("photo_store: list_albums failed uid=%d", owner_user_id)
         return []
