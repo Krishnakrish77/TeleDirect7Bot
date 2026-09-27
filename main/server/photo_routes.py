@@ -989,6 +989,23 @@ async def photos_upload(request: web.Request) -> web.Response:
         # uploads sitting in the channel and never in the library.
         media = getattr(msg, "document", None) or getattr(msg, "video", None) or getattr(msg, "photo", None)
         file_id = str(getattr(media, "file_id", "") or "")
+        if not file_id:
+            # send_document to a channel sometimes returns a stub message
+            # with media unpopulated. Re-fetch — the message IS there (the
+            # bytes landed), only the returned object was thin.
+            try:
+                refetched = await bot.get_messages(channel_id, msg.id)
+                media = (
+                    getattr(refetched, "document", None)
+                    or getattr(refetched, "video", None)
+                    or getattr(refetched, "photo", None)
+                )
+                file_id = str(getattr(media, "file_id", "") or "")
+            except Exception:
+                logging.warning(
+                    "photos upload: re-fetch of sent message failed uid=%d mid=%d",
+                    user_id, msg.id, exc_info=True,
+                )
         from main.utils import photo_pipeline
         ingest_error = None
         if not file_id:
@@ -1009,6 +1026,14 @@ async def photos_upload(request: web.Request) -> web.Response:
             logging.warning(
                 "photos upload: %s uid=%d mid=%d", ingest_error, user_id, msg.id
             )
+        # Keep the backfill cursor honest: uploads to a fresh channel land
+        # at ids BELOW a cursor parked there by connect-time empty scans.
+        # Rewind so the next rescan re-covers this id (self-heals a failed
+        # self-index), and kick a scan now when the self-index failed.
+        await photo_store.rewind_scan_cursor(channel_id, msg.id)
+        if ingest_error:
+            from main.bot.plugins.photos import schedule_rescan
+            schedule_rescan(user_id, channel_id)
         if album_id:
             # The doc exists by now (or is a duplicate of an earlier upload),
             # so one merge is enough — no polling loop needed.

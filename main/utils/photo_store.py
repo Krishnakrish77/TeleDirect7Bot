@@ -223,6 +223,36 @@ async def set_scan_cursor(channel_id: int, next_id: int) -> None:
         )
 
 
+async def rewind_scan_cursor(channel_id: int, message_id: int) -> None:
+    """Pull the scan cursor back below ``message_id`` when an upload landed
+    under it.
+
+    The backfill only scans forward (cursor − overlap). Connect-time scans
+    sweep the empty channel and park the cursor high; uploads to a fresh
+    channel then land at LOW message ids the cursor has already passed, and
+    a failed self-index would leave them invisible to every future rescan.
+    Rewinding the cursor makes the next rescan re-cover the id.
+    """
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        doc = await db["photo_channels"].find_one(
+            {"channel_id": channel_id}, projection={"scan_cursor": 1}
+        )
+        cursor = int((doc or {}).get("scan_cursor") or 0)
+        target = max(1, int(message_id) - 200)  # 200 = photos plugin _RESCAN_OVERLAP
+        if cursor and cursor > target:
+            await db["photo_channels"].update_one(
+                {"channel_id": channel_id}, {"$set": {"scan_cursor": target}}
+            )
+    except Exception:
+        logging.exception(
+            "photo_store: rewind_scan_cursor failed cid=%d mid=%d", channel_id, message_id
+        )
+
+
 async def set_scan_status(channel_id: int, *, state: str, enqueued: int = 0,
                           scanned_to: int = 0, error: str = "") -> None:
     """Record the last backfill outcome.

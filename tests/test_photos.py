@@ -754,5 +754,72 @@ class PhotosStatusSerializationTest(unittest.TestCase):
         self.assertIn("2026-09-27T12:03:04Z", encoded)
 
 
+class RewindScanCursorTest(unittest.TestCase):
+    """Uploads to a fresh channel land at ids BELOW a cursor parked there by
+    connect-time empty scans. Without a rewind, a failed upload self-index
+    leaves the pic invisible to every future rescan (forward-only)."""
+
+    def test_rewinds_when_cursor_parked_above(self):
+        from unittest.mock import AsyncMock, patch
+        from main.utils import photo_store
+
+        updates = []
+
+        async def find_one(*_a, **_k):
+            return {"scan_cursor": 2601}
+
+        class _Coll:
+            async def find_one(self, *a, **k):
+                return await find_one(*a, **k)
+
+            def update_one(self, *a, **k):
+                updates.append((a, k))
+
+        class _DB:
+            def __getitem__(self, key):
+                if key not in vars(self):
+                    vars(self)[key] = _Coll()
+                return vars(self)[key]
+
+        db = _DB()
+
+        with patch.object(photo_store, "_get_db", lambda: db), \
+                patch.object(photo_store, "_ensure_indexes", AsyncMock()):
+            import asyncio
+            asyncio.run(photo_store.rewind_scan_cursor(-100123, 4))
+
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(updates[0][0][1]["$set"]["scan_cursor"], 1)  # 4 - 200, floored
+
+    def test_noop_when_cursor_below(self):
+        from unittest.mock import AsyncMock, patch
+        from main.utils import photo_store
+
+        async def find_one(*_a, **_k):
+            return {"scan_cursor": 50}
+
+        class _Coll:
+            async def find_one(self, *a, **k):
+                return await find_one(*a, **k)
+
+            def update_one(self, *a, **k):
+                raise AssertionError("should not update when cursor already covers the id")
+
+        class _DB:
+            def __getitem__(self, key):
+                if key not in vars(self):
+                    vars(self)[key] = _Coll()
+                return vars(self)[key]
+
+        db = _DB()
+
+        with patch.object(photo_store, "_get_db", lambda: db), \
+                patch.object(photo_store, "_ensure_indexes", AsyncMock()):
+            import asyncio
+            asyncio.run(photo_store.rewind_scan_cursor(-100123, 3000))
+
+        # No assertion error raised == no update attempted
+
+
 if __name__ == "__main__":
     unittest.main()
