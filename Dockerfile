@@ -13,6 +13,7 @@ RUN cd frontend \
 
 # ffmpeg + ffprobe for on-demand HLS, ca-certificates for HTTPS to Telegram,
 # libchromaprint-tools (fpcalc) for cross-episode intro fingerprinting.
+# zlib/libjpeg/webp libs back Pillow's thumbnail generation (TeleDirect Photos).
 FROM python:3.12-slim
 
 RUN apt-get update \
@@ -20,6 +21,9 @@ RUN apt-get update \
          ffmpeg \
          ca-certificates \
          libchromaprint-tools \
+         zlib1g \
+         libjpeg62-turbo \
+         libwebp7 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
