@@ -104,3 +104,18 @@ class Var(object):
     USER_SESSION = environ.get("USER_SESSION", "").strip()
     USER_API_ID = int(environ.get("USER_API_ID", "0") or "0")
     USER_API_HASH = environ.get("USER_API_HASH", "").strip()
+
+    # ── Photos (Darkroom) ────────────────────────────────────────────
+    # Personal photo-library feature: users back up photos/videos to their
+    # own private Telegram channel (bot as admin), browsable in the SPA.
+    PHOTOS_ENABLED = str(environ.get("PHOTOS_ENABLED", "true")).lower() in ("1", "true", "yes")
+    # Runaway guardrail, not a product limit — generous for personal use.
+    PHOTOS_PER_USER_CAP = max(100, int(environ.get("PHOTOS_PER_USER_CAP", "50000") or 50000))
+    # Web-upload guardrails per POST /api/photos/upload request.
+    PHOTOS_UPLOAD_MAX_FILES = max(1, int(environ.get("PHOTOS_UPLOAD_MAX_FILES", "50") or 50))
+    PHOTOS_UPLOAD_MAX_TOTAL = max(
+        1, int(environ.get("PHOTOS_UPLOAD_MAX_TOTAL", str(2 * 1024 * 1024 * 1024))) or 2 * 1024 * 1024 * 1024
+    )
+    # Thumbnail long edge (px) for the two generated webp sizes.
+    PHOTO_THUMB_GRID = max(100, int(environ.get("PHOTO_THUMB_GRID", "400") or 400))
+    PHOTO_THUMB_PREVIEW = max(400, int(environ.get("PHOTO_THUMB_PREVIEW", "1600") or 1600))

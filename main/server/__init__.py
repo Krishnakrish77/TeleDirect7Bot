@@ -279,6 +279,8 @@ def web_server():
     web_app.add_routes(dismiss_routes)
     web_app.add_routes(stats_routes)
     web_app.add_routes(iptv_routes)
+    from .photo_routes import routes as photo_routes
+    web_app.add_routes(photo_routes)
     web_app.add_routes(spa_route_table)
     web_app.add_routes(ai_rec_routes)
     web_app.add_routes(rec_feedback_routes)
