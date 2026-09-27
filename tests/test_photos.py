@@ -28,7 +28,7 @@ from main.server.photo_routes import (
     _bot_admin_link,
 )
 from main.utils.custom_dl import MediaSessionUnavailable
-from main.utils.photo_store import thumb_key, _iso_utc, _serialize_photo
+from main.utils.photo_store import thumb_key, iso_utc, scan_payload, _serialize_photo
 from main.utils.photo_pipeline import _parse_exif_datetime, _dms_to_deg
 
 
@@ -263,9 +263,9 @@ class IsoUtcTest(unittest.TestCase):
     def test_naive_and_aware_utc_render_identically(self):
         naive = datetime(2026, 9, 21, 14, 3, 11)
         aware = datetime(2026, 9, 21, 14, 3, 11, tzinfo=timezone.utc)
-        self.assertEqual(_iso_utc(naive), "2026-09-21T14:03:11Z")
-        self.assertEqual(_iso_utc(aware), "2026-09-21T14:03:11Z")
-        self.assertIsNone(_iso_utc(None))
+        self.assertEqual(iso_utc(naive), "2026-09-21T14:03:11Z")
+        self.assertEqual(iso_utc(aware), "2026-09-21T14:03:11Z")
+        self.assertIsNone(iso_utc(None))
 
 
 class _FakeStreamer:
@@ -686,6 +686,72 @@ class IngestBytesTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(error, "Could not save photo metadata")
         put_thumb.assert_not_called()
+
+
+
+class PhotosStatusSerializationTest(unittest.TestCase):
+    """A raw scan record 500'd /api/photos/status: Mongo hands back a datetime."""
+
+    def test_scan_payload_is_json_serializable(self):
+        import json
+        from datetime import datetime, timezone
+
+        payload = scan_payload({
+            "state": "done",
+            "enqueued": 3,
+            "scanned_to": 400,
+            "error": "",
+            "at": datetime(2026, 9, 27, 12, 3, 4, tzinfo=timezone.utc),
+        })
+        self.assertEqual(payload["state"], "done")
+        self.assertEqual(payload["at"], "2026-09-27T12:03:04Z")
+        json.dumps(payload)  # must not raise
+
+    def test_missing_scan_is_none(self):
+        self.assertIsNone(scan_payload(None))
+        self.assertIsNone(scan_payload({}))
+
+    async def test_status_route_serializes_the_scan_record(self):
+        # The shipped bug: the raw scan subdoc contains a datetime, so the
+        # status endpoint raised TypeError and 500'd for connected users.
+        import json
+        from aiohttp.test_utils import make_mocked_request
+        from datetime import datetime, timezone
+        from unittest.mock import AsyncMock, patch
+        from main.server import photo_routes
+        from main.utils import photo_store
+
+        scan = {
+            "state": "done", "enqueued": 3, "scanned_to": 400, "error": "",
+            "at": datetime(2026, 9, 27, 12, 3, 4, tzinfo=timezone.utc),
+        }
+        request = make_mocked_request("GET", "/api/photos/status")
+        with patch.object(photo_routes, "get_user", lambda _request: {"sub": "7"}), \
+                patch.object(photo_routes, "_photos_disabled", lambda: None), \
+                patch.object(
+                    photo_routes,
+                    "_channel_doc",
+                    AsyncMock(return_value={"channel_id": -100123, "status": "active", "scan": scan}),
+                ), \
+                patch.object(photo_store, "count_photos", AsyncMock(return_value=5)):
+            response = await photo_routes.photos_status(request)
+
+        self.assertEqual(response.status, 200)
+        body = json.loads(response.body.decode())
+        self.assertEqual(body["scan"]["at"], "2026-09-27T12:03:04Z")
+        self.assertEqual(body["scan"]["enqueued"], 3)
+        self.assertEqual(body["photoCount"], 5)
+
+    def test_json_encoder_tolerates_mongo_values(self):
+        import json
+        from datetime import datetime, timezone
+        from main.server.photo_routes import _json_default
+
+        encoded = json.dumps(
+            {"at": datetime(2026, 9, 27, 12, 3, 4, tzinfo=timezone.utc)},
+            default=_json_default,
+        )
+        self.assertIn("2026-09-27T12:03:04Z", encoded)
 
 
 if __name__ == "__main__":

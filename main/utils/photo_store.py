@@ -298,7 +298,7 @@ async def list_indexed_message_ids(owner_user_id: int, channel_id: int) -> set:
         return set()
 
 
-def _iso_utc(value) -> Optional[str]:
+def iso_utc(value) -> Optional[str]:
     """ISO-8601 with an explicit UTC offset for the SPA.
 
     Motor decodes BSON datetimes as NAIVE UTC (the shared client is not
@@ -313,6 +313,22 @@ def _iso_utc(value) -> Optional[str]:
     return value.isoformat().replace("+00:00", "Z")
 
 
+def scan_payload(scan: Optional[dict]) -> Optional[dict]:
+    """JSON-safe view of the background scan record.
+
+    Mongo stores the timestamp as a datetime, so returning the raw subdoc made
+    /api/photos/status fail to serialise and 500 for connected users.
+    """
+    if not scan:
+        return None
+    return {
+        "state": scan.get("state"),
+        "enqueued": int(scan.get("enqueued") or 0),
+        "error": scan.get("error") or "",
+        "at": iso_utc(scan.get("at")),
+    }
+
+
 def _serialize_photo(doc: dict) -> dict:
     """Public shape for the SPA. ObjectId and internal fields stripped."""
     return {
@@ -325,14 +341,14 @@ def _serialize_photo(doc: dict) -> dict:
         "width": doc.get("width"),
         "height": doc.get("height"),
         "duration": doc.get("duration"),
-        "takenAt": _iso_utc(doc.get("taken_at")),
+        "takenAt": iso_utc(doc.get("taken_at")),
         "camera": doc.get("camera"),
         "gps": doc.get("gps"),
         "favorite": bool(doc.get("favorite")),
         "albumIds": doc.get("album_ids", []),
         "deleted": bool(doc.get("deleted")),
         "thumbsReady": bool(doc.get("thumb", {}).get("grid")),
-        "uploadedAt": _iso_utc(doc.get("uploaded_at")),
+        "uploadedAt": iso_utc(doc.get("uploaded_at")),
     }
 
 
@@ -641,7 +657,7 @@ def _serialize_album(doc: dict) -> dict:
         "id": str(doc["_id"]),
         "name": doc.get("name"),
         "coverMessageId": doc.get("cover_message_id"),
-        "createdAt": _iso_utc(doc.get("created_at")),
+        "createdAt": iso_utc(doc.get("created_at")),
         "sort": doc.get("sort", 0),
     }
 
