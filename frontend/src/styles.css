@@ -13895,6 +13895,7 @@ select.edit-field-input {
 .photos-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .photos-title { display: flex; align-items: baseline; gap: 0.6rem; margin: 0; font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -0.03em; }
 .photos-subtitle { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.84rem; }
+.photos-import-line { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.82rem; }
 .photos-header__actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 
 .photos-tabs { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
@@ -13908,11 +13909,12 @@ select.edit-field-input {
 
 /* Justified rows: photos keep their own aspect ratio (no centre-cropping) and
    each complete row fills the width, the way Google Photos / Immich browse. */
-.photos-rows { display: grid; gap: 4px; }
-.photos-row { display: flex; gap: 4px; }
+.photos-rows { display: grid; gap: 3px; }
+.photos-row { display: flex; gap: 3px; }
 .photos-row--skeleton { background: rgba(148, 163, 184, 0.08); border-radius: 4px; }
 .photos-item { position: relative; flex: 0 0 auto; padding: 0; border: 0; border-radius: 3px; overflow: hidden; background: rgba(148, 163, 184, 0.12); cursor: pointer; }
-.photos-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photos-item img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity 0.22s ease; }
+.photos-item img.is-loaded { opacity: 1; }
 .photos-item__shade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0) 32%); transition: background 0.16s ease; }
 .photos-item:hover .photos-item__shade, .photos-item:focus-visible .photos-item__shade { background: rgba(0, 0, 0, 0.14); }
 .photos-item:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
@@ -13960,7 +13962,14 @@ select.edit-field-input {
 .photos-trash-row span { flex: 1; color: var(--muted); font-size: 0.86rem; }
 .photos-trash-row button { min-height: 2.1rem; padding: 0.2rem 0.75rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 0.8rem; }
 
-.photos-uploads { position: fixed; right: 1rem; bottom: 1rem; z-index: 80; display: grid; gap: 0.5rem; width: min(22rem, calc(100vw - 2rem)); padding: 0.85rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
+.photos-uploads { position: fixed; left: 16px; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); z-index: 83; display: grid; gap: 0.5rem; width: min(22rem, calc(100vw - 2rem)); padding: 0.85rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
+@media (min-width: 681px) {
+  .photos-uploads { left: 24px; bottom: 24px; }
+}
+.has-player .photos-uploads { bottom: calc(158px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 681px) {
+  .has-player .photos-uploads { bottom: 108px; }
+}
 .photos-uploads__head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: 0.82rem; color: var(--text); }
 .photos-uploads__bar { display: block; height: 4px; border-radius: 999px; background: rgba(148, 163, 184, 0.24); overflow: hidden; }
 .photos-uploads__bar > span { display: block; height: 100%; background: var(--brand); transition: width 0.16s ease; }

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectPhotosChannel,
+  resyncPhotosLibrary,
   fetchPendingPhotoChannel,
   fetchPhotoAlbums,
   fetchPhotosStatus,
@@ -279,6 +280,21 @@ describe('Photos onboarding', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await revealManualField();
     expect(await screen.findByLabelText('Channel link or id')).toBeTruthy();
+  });
+});
+
+describe('Photos missing-photo search', () => {
+  it('reports that a search for missing photos is running', async () => {
+    vi.mocked(resyncPhotosLibrary).mockResolvedValue(undefined);
+
+    render(<PhotosPage user={user} />);
+    await screen.findByRole('button', { name: 'IMG_1.jpg' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Find missing photos' }));
+
+    expect(await screen.findByRole('button', { name: 'Looking…' })).toBeTruthy();
+    const status = await screen.findByRole('status');
+    expect(status.textContent).toContain('Checking your Telegram channel');
   });
 });
 

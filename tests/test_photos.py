@@ -629,5 +629,64 @@ class RescanProbeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.cursor_writes, [])  # this batch is retried next pass
 
 
+
+class IngestBytesTest(unittest.IsolatedAsyncioTestCase):
+    """The web upload path indexes its own bytes — Telegram never echoes the
+    bot's own channel_post, which is why uploads used to vanish."""
+
+    @staticmethod
+    def _png() -> bytes:
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGB", (64, 48), (10, 20, 30)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    async def test_persists_metadata_thumbs_and_flags(self):
+        from unittest.mock import AsyncMock, patch
+        from main.utils import photo_pipeline, photo_store
+
+        upsert = AsyncMock(return_value=None)
+        put_thumb = AsyncMock()
+        flags = AsyncMock()
+        with patch.object(photo_store, "upsert_photo", upsert), \
+                patch.object(photo_store, "put_thumb", put_thumb), \
+                patch.object(photo_store, "set_thumb_flags", flags):
+            error = await photo_pipeline.ingest_bytes(
+                7, -100123, 42,
+                file_id="AgAC-file-id", data=self._png(),
+                mime="image/png", file_name="shot.png",
+            )
+
+        self.assertIsNone(error)
+        doc = upsert.await_args.args[0]
+        self.assertEqual(doc["owner_user_id"], 7)
+        self.assertEqual(doc["channel_id"], -100123)
+        self.assertEqual(doc["message_id"], 42)
+        self.assertEqual(doc["file_id"], "AgAC-file-id")
+        self.assertEqual(doc["size"], len(self._png()))
+        self.assertEqual(doc["kind"], "image")
+        self.assertEqual(len(doc["sha256"]), 64)
+        # put_thumb(owner, key, data) — key is "{channel}:{message}:{size}".
+        self.assertEqual({call.args[1].rsplit(":", 1)[-1] for call in put_thumb.await_args_list},
+                         {"grid", "preview"})
+        self.assertTrue(flags.await_args.kwargs["grid"])
+
+    async def test_returns_the_store_error_without_writing_thumbs(self):
+        from unittest.mock import AsyncMock, patch
+        from main.utils import photo_pipeline, photo_store
+
+        put_thumb = AsyncMock()
+        with patch.object(photo_store, "upsert_photo", AsyncMock(return_value="Could not save photo metadata")), \
+                patch.object(photo_store, "put_thumb", put_thumb), \
+                patch.object(photo_store, "set_thumb_flags", AsyncMock()):
+            error = await photo_pipeline.ingest_bytes(
+                7, -100123, 43, file_id="x", data=self._png(),
+                mime="image/png", file_name="shot.png",
+            )
+        self.assertEqual(error, "Could not save photo metadata")
+        put_thumb.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
