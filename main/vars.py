@@ -105,10 +105,12 @@ class Var(object):
     USER_API_ID = int(environ.get("USER_API_ID", "0") or "0")
     USER_API_HASH = environ.get("USER_API_HASH", "").strip()
 
-    # ── TeleDirect Photos ────────────────────────────────────────────
+    # ── Photos (TeleDirect Photos) ───────────────────────────────────
     # Personal photo-library feature: users back up photos/videos to their
     # own private Telegram channel (bot as admin), browsable in the SPA.
     PHOTOS_ENABLED = str(environ.get("PHOTOS_ENABLED", "true")).lower() in ("1", "true", "yes")
+    # Feature is in beta until it soaks; the SPA shows a badge off this.
+    PHOTOS_BETA = True
     # Runaway guardrail, not a product limit — generous for personal use.
     PHOTOS_PER_USER_CAP = max(100, int(environ.get("PHOTOS_PER_USER_CAP", "50000") or 50000))
     # Web-upload guardrails per POST /api/photos/upload request.

@@ -101,14 +101,16 @@ async def _verify_channel_access(channel_ref: int | str, requester_id: int) -> t
     chat_id = chat.id
     # Must be a channel (broadcast), not a user/group/supergroup. Public
     # channels also carry -100 ids, so the type check is what enforces the
-    # private-vault invariant — and Telegram only offers private channels
-    # here since bots cannot join public ones, but verify explicitly.
+    # private-vault invariant — and a resolvable @username means the
+    # channel is public, which must never be bound as a private vault.
     chat_type = getattr(chat, "type", None)
     type_name = getattr(chat_type, "name", "") or str(chat_type or "")
     if type_name.upper() != "CHANNEL":
         return None, "Only channels (not groups or users) can be used"
     if not str(chat_id).startswith("-100"):
         return None, "Only private channels can be used"
+    if getattr(chat, "username", None):
+        return None, "That channel is public — use a private channel (no @username)"
 
     try:
         bot_member = await bot.get_chat_member(chat_id, (await bot.get_me()).id)
@@ -215,6 +217,7 @@ async def photos_status(request: web.Request) -> web.Response:
         "connected": True,
         "channelId": doc.get("channel_id"),
         "status": doc.get("status", "active"),
+        "beta": Var.PHOTOS_BETA,
         "photoCount": await photo_store.count_photos(user_id),
     })
 
@@ -395,27 +398,23 @@ async def _album_membership(request: web.Request, *, member: bool) -> web.Respon
 # ── Thumbnails ────────────────────────────────────────────────────────────
 
 
-@routes.get(r"/api/photos/thumb/{message_id:\d+}/{size:grid|preview}")
+@routes.get(r"/api/photos/thumb/{photo_id}/{size:grid|preview}")
 async def photo_thumb(request: web.Request) -> web.StreamResponse:
     disabled = _photos_disabled()
     if disabled:
         return disabled
     user = _require_user(request)
     user_id = int(user["sub"])
-    message_id = int(request.match_info["message_id"])
+    photo_id = request.match_info["photo_id"]
     size = request.match_info["size"]
 
-    # Prefer the active binding's channel scope; fall back to a bare
-    # lookup so disconnected-channel thumbs still render (with the
-    # reconnect banner on the page).
-    channel_doc = await _channel_doc(user_id)
-    doc = await photo_store.get_photo(
-        user_id, message_id,
-        channel_id=channel_doc["channel_id"] if channel_doc else None,
-    )
+    # Doc-id keyed (message ids are channel-scoped and can collide after a
+    # reconnect). Ownership is enforced by the owner filter in the lookup.
+    doc = await photo_store.get_photo_by_id(user_id, photo_id)
     if not doc:
         raise web.HTTPNotFound(text="Photo not found")
     channel_id = doc.get("channel_id")
+    message_id = doc.get("message_id")
     key = photo_store.thumb_key(channel_id, message_id, size)
     data = await photo_store.get_thumb(key)
     if not data:
@@ -445,14 +444,22 @@ def _class_streamer() -> ByteStreamer:
     return streamer
 
 
-@routes.get(r"/api/photos/file/{message_id:\d+}", allow_head=True)
+@routes.get(r"/api/photos/file/{photo_id}", allow_head=True)
 async def photo_file(request: web.Request) -> web.StreamResponse:
     disabled = _photos_disabled()
     if disabled:
         return disabled
     user = _require_user(request)
     user_id = int(user["sub"])
-    message_id = int(request.match_info["message_id"])
+    photo_id = request.match_info["photo_id"]
+
+    # Keyed by the photo document id — Telegram message ids are
+    # channel-scoped and can collide after a channel reconnect.
+    doc = await photo_store.get_photo_by_id(user_id, photo_id)
+    if not doc:
+        raise web.HTTPNotFound(text="Photo not found")
+    if doc.get("deleted"):
+        raise web.HTTPGone(text="Photo is in the trash")
 
     channel_doc = await _channel_doc(user_id)
     if not channel_doc or channel_doc.get("status") != "active":
@@ -460,15 +467,8 @@ async def photo_file(request: web.Request) -> web.StreamResponse:
             text="Channel disconnected — reconnect to stream originals",
             headers={"Retry-After": "0"},
         )
-    # Scoped to the active binding's channel: a stale doc from a previously
-    # disconnected channel (same per-channel message id) must not stream.
-    doc = await photo_store.get_photo(
-        user_id, message_id, channel_id=channel_doc["channel_id"]
-    )
-    if not doc:
-        raise web.HTTPNotFound(text="Photo not found")
-    if doc.get("deleted"):
-        raise web.HTTPGone(text="Photo is in the trash")
+    if doc.get("channel_id") != channel_doc.get("channel_id"):
+        raise web.HTTPGone(text="Photo belongs to a previously disconnected channel")
 
     file_id_str = doc.get("file_id")
     if not file_id_str:
@@ -551,6 +551,25 @@ async def _stream_bytes(
             text="Media session unavailable; retry",
             headers={"Retry-After": "5"},
         )
+
+    # Share the catalogue's stream-slot budget — photos originals are
+    # Telegram GetFile calls just like catalogue streams, so unbounded
+    # concurrent photo streams could starve the media hub.
+    from main.server import stream_routes as _sr
+    client_ip = _sr._real_ip(request)
+    if _sr._total_active >= _sr._MAX_STREAMS_TOTAL:
+        raise web.HTTPServiceUnavailable(
+            text="Server is at stream capacity. Try again shortly.",
+            headers={"Retry-After": "10"},
+        )
+    if client_ip not in _sr._LOOPBACK and _sr._ip_active.get(client_ip, 0) >= _sr._MAX_STREAMS_PER_IP:
+        raise web.HTTPTooManyRequests(
+            text="Too many concurrent streams from this IP.",
+            headers={"Retry-After": "5"},
+        )
+    _sr._total_active += 1
+    _sr._ip_active[client_ip] = _sr._ip_active.get(client_ip, 0) + 1
+
     req_length = until_b - from_b + 1
     cs = chunk_size(req_length)
     offset = offset_fix(from_b, cs)
@@ -562,17 +581,31 @@ async def _stream_bytes(
         file_id, 0, offset, first_part_cut, last_part_cut, part_count, cs
     )
     status = 206 if range_header else 200
-    headers = {
+    # yield_file is an async generator — stream it with StreamResponse
+    # (web.Response(body=...) accepts only bytes/Payload, not async iterables).
+    resp = web.StreamResponse(status=status, headers={
         "Content-Type": mime,
         "Accept-Ranges": "bytes",
         "Content-Disposition": _inline_disposition(file_name),
-    }
+    })
     if status == 206:
-        headers["Content-Range"] = f"bytes {from_b}-{until_b}/{file_size}"
-        headers["Content-Length"] = str(max(0, until_b - from_b + 1))
-    else:
-        headers["Content-Length"] = str(file_size)
-    return web.Response(status=status, body=body, headers=headers)
+        resp.headers["Content-Range"] = f"bytes {from_b}-{until_b}/{file_size}"
+    resp.content_length = max(0, until_b - from_b + 1)
+    await resp.prepare(request)
+    try:
+        async for chunk in body:
+            await resp.write(chunk)
+    except (MediaSessionUnavailable, ConnectionResetError, TelegramStreamTruncated):
+        # Mid-stream failure: aborting the response is the only honest
+        # outcome — the client sees a truncated body against the promised
+        # Content-Length (same contract as the catalogue stream route).
+        raise
+    finally:
+        # Slot must be released on every exit path (success, error, client
+        # disconnect) or the shared budget leaks.
+        _sr._release_stream_slot(client_ip)
+    await resp.write_eof()
+    return resp
 
 
 def _inline_disposition(file_name: str) -> str:
@@ -635,6 +668,8 @@ async def photos_upload(request: web.Request) -> web.Response:
         # aiohttp gives us a stream; we need one pass to send as document.
         # Per-file cap bounds process memory: concurrent authenticated
         # requests each buffer one file at a time.
+        # Every drained byte counts toward the per-request total —
+        # including bytes of files rejected by any cap below.
         payload = bytearray()
         per_file_overflow = False
         while True:
@@ -642,6 +677,12 @@ async def photos_upload(request: web.Request) -> web.Response:
             if not chunk:
                 break
             size += len(chunk)
+            sent += len(chunk)
+            if sent > Var.PHOTOS_UPLOAD_MAX_TOTAL:
+                return _json(
+                    {"error": "Total upload size exceeded", "results": results},
+                    status=413,
+                )
             if size > Var.PHOTOS_UPLOAD_MAX_FILE:
                 per_file_overflow = True
                 hasher = hashlib.sha256()
@@ -649,18 +690,22 @@ async def photos_upload(request: web.Request) -> web.Response:
                 continue  # keep draining the stream to keep multipart in sync
             payload.extend(chunk)
             hasher.update(chunk)
-            sent += len(chunk)
-            if sent > Var.PHOTOS_UPLOAD_MAX_TOTAL:
-                return _json(
-                    {"error": "Total upload size exceeded", "results": results},
-                    status=413,
-                )
         if size == 0:
             continue
         if per_file_overflow:
             results.append({
                 "fileName": part.filename or "?",
                 "error": f"File exceeds the {Var.PHOTOS_UPLOAD_MAX_FILE // (1024 * 1024)} MB per-file limit",
+            })
+            continue
+        # Vaults hold images and videos only — same allowlist the ingest
+        # pipeline enforces. Reject early so the user isn't told an upload
+        # succeeded when it would never produce a Photos record.
+        mime = (part.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if not (mime.startswith("image/") or mime.startswith("video/")):
+            results.append({
+                "fileName": part.filename or "?",
+                "error": f"Unsupported file type: {mime or 'unknown'} (images and videos only)",
             })
             continue
         files += 1
@@ -697,7 +742,7 @@ async def photos_upload(request: web.Request) -> web.Response:
         # (ingest merges album_ids, never overwrites).
         if album_id:
             for _ in range(10):
-                await photo_store.append_album_ids(user_id, msg.id, [album_id])
+                await photo_store.append_album_ids(user_id, channel_id, msg.id, [album_id])
                 tagged = await photo_store.get_photo(
                     user_id, msg.id, channel_id=channel_id
                 )
@@ -712,6 +757,12 @@ async def photos_upload(request: web.Request) -> web.Response:
             "messageId": msg.id,
             "albumId": album_id or None,
             "duplicate": False,
+            # Dedup race: a concurrent request with identical bytes may
+            # win the (owner, sha256) unique index after our pre-send
+            # check. This upload still lands as its own channel message;
+            # the ingest worker resolves it against the winning doc, so
+            # the flag just tells the UI an extra vault copy may exist.
+            "raceProne": True,
         })
     return _json({"results": results})
 

@@ -94,6 +94,8 @@ async def photo_channel_post(client: Client, message):
     channels before this handler sees the post.
     """
     try:
+        if not Var.PHOTOS_ENABLED:
+            return  # feature off: no ingestion (stream.py's fail-closed skip already protected the vault from the catalogue path)
         channel_id = int(message.chat.id)
         owner_doc = await photo_store.get_channel(channel_id)
         if not owner_doc:

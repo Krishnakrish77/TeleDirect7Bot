@@ -362,10 +362,27 @@ async def ingest_message(owner_user_id: int, channel_id: int, message) -> None:
         media = message.document or message.video or message.photo
         if media is None:
             return
+        # RAM bound: a direct channel post bypasses the web-upload caps.
+        # Check the declared size BEFORE downloading so an oversized post
+        # never enters memory; thumbnail generation buffers the whole
+        # file, so guard process memory.
+        media_size = int(getattr(media, "file_size", 0) or 0)
+        if media_size > Var.PHOTOS_UPLOAD_MAX_FILE:
+            log.warning(
+                "ingest skip mid=%d: %d bytes exceeds per-file cap", message.id, media_size
+            )
+            return
         data = await message.download(in_memory=True)
         # download(in_memory=True) returns a BytesIO, not bytes.
         if isinstance(data, io.BytesIO):
             data = data.getvalue()
+        # Declared size can lie; enforce the cap on the actual bytes too.
+        if len(data) > Var.PHOTOS_UPLOAD_MAX_FILE:
+            log.warning(
+                "ingest skip mid=%d: actual %d bytes exceeds per-file cap",
+                message.id, len(data),
+            )
+            return
         if message.photo and not (message.document or message.video):
             mime = "image/jpeg"
             file_name = f"photo_{message.id}.jpg"
@@ -377,22 +394,14 @@ async def ingest_message(owner_user_id: int, channel_id: int, message) -> None:
         if not (mime.startswith("image/") or mime.startswith("video/")):
             log.info("ingest skip mid=%d: unsupported mime %s", message.id, mime)
             return
-        # RAM bound: a direct channel post bypasses the web-upload caps.
-        # Skip anything wildly larger than a photo/video backup needs
-        # (Telegram bot uploads cap at 2 GB anyway); thumbnail generation
-        # buffers the whole file, so guard process memory.
-        media_size = int(getattr(media, "file_size", 0) or 0)
-        if media_size > Var.PHOTOS_UPLOAD_MAX_FILE:
-            log.warning(
-                "ingest skip mid=%d: %d bytes exceeds per-file cap", message.id, media_size
-            )
-            return
-        doc = await photo_store.get_photo(owner_user_id, message.id)
+        doc = await photo_store.get_photo(owner_user_id, message.id, channel_id=channel_id)
         if doc and doc.get("sha256"):
             return  # already processed
         result = await process(data, mime, file_name)
-        # Dedup: if another doc in this library already carries this hash,
-        # skip storing a duplicate thumb set — metadata still recorded.
+        # Dedup (race-safe): if another ingest/upload with the same
+        # (owner, sha256) already inserted a doc, the unique index makes
+        # our insert a no-op ("duplicate") — the extra channel copy the
+        # losing request sent to Telegram is simply not double-indexed.
         err = await photo_store.upsert_photo({
             "owner_user_id": owner_user_id,
             "channel_id": channel_id,

@@ -612,16 +612,19 @@ async def get_album(owner_user_id: int, album_id: str) -> Optional[dict]:
         return None
 
 
-async def append_album_ids(owner_user_id: int, message_id: int, album_ids: List[str]) -> None:
+async def append_album_ids(owner_user_id: int, channel_id: int, message_id: int,
+                           album_ids: List[str]) -> None:
     """Tag an uploaded message with album ids (upload path). Merges —
-    the async ingest must not overwrite this with its empty default."""
+    the async ingest must not overwrite this with its empty default.
+    Channel-scoped: message ids repeat across channels after a reconnect."""
     await _ensure_indexes()
     db = _get_db()
     if db is None:
         return
     try:
         await db["photos"].update_many(
-            {"owner_user_id": owner_user_id, "message_id": message_id},
+            {"owner_user_id": owner_user_id, "channel_id": channel_id,
+             "message_id": message_id},
             {"$addToSet": {"album_ids": {"$each": album_ids}}},
         )
     except Exception:
