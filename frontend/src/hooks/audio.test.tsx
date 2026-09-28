@@ -1,8 +1,16 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { deleteContinueEntry, recordWatchHistory, reportAudioDuration, saveContinueEntry } from '../api';
 import { describeAudioPlaybackFailure, RESTORE_AUDIO_MEDIA_SESSION_EVENT, useAudioPlayer } from './audio';
 import { clearLyricsCache } from './lyrics';
 import type { WatchTrack } from '../types';
+
+vi.mock('../api', () => ({
+  deleteContinueEntry: vi.fn().mockResolvedValue(undefined),
+  recordWatchHistory: vi.fn().mockResolvedValue(undefined),
+  reportAudioDuration: vi.fn().mockResolvedValue(undefined),
+  saveContinueEntry: vi.fn().mockResolvedValue(true),
+}));
 
 function makeTrack(overrides: Partial<WatchTrack> = {}): WatchTrack {
   return {
@@ -118,6 +126,47 @@ describe('useAudioPlayer', () => {
 
     expect(screen.getByTestId('volume').textContent).toBe('1');
     expect(localStorage.getItem('td:speed')).toBeNull();
+  });
+
+  it('finalises a near-complete track without waiting for the ended event', async () => {
+    render(<AudioHarness />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'duration', { configurable: true, value: 200 });
+    Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+
+    // 96% — past the completion ratio; a tab closed here used to leave the
+    // entry (which never auto-resumes for songs) stuck on the CW shelf.
+    act(() => {
+      fireEvent.timeUpdate(primary);
+      Object.defineProperty(primary, 'currentTime', { configurable: true, value: 192 });
+      fireEvent.timeUpdate(primary);
+    });
+
+    await waitFor(() => expect(recordWatchHistory).toHaveBeenCalledWith('track-key', 'Theme'));
+    await waitFor(() => expect(deleteContinueEntry).toHaveBeenCalledWith('track-key'));
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['track-key']).toBeUndefined();
+  });
+
+  it('records only one completion per play when the ended event follows the 95% path', async () => {
+    render(<AudioHarness />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'duration', { configurable: true, value: 200 });
+    Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+
+    act(() => {
+      Object.defineProperty(primary, 'currentTime', { configurable: true, value: 196 });
+      fireEvent.timeUpdate(primary);
+      fireEvent.ended(primary);
+    });
+
+    await waitFor(() => expect(recordWatchHistory).toHaveBeenCalledTimes(1));
+    expect(deleteContinueEntry).toHaveBeenCalledTimes(1);
   });
 
   it('explains browser playback failures with actionable messages', () => {

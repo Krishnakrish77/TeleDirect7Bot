@@ -11,6 +11,16 @@ const AUDIO_RESUME_MIN_POS = 30; // don't resume a track barely started
 // normal songs restart, matching how music players behave. Cross-device resume
 // of short tracks isn't worth the "why did it start mid-song" surprise.
 const AUDIO_RESUME_MIN_DUR = 20 * 60;
+// Progress at/after this fraction counts as finished: CW is finalised
+// immediately instead of waiting for `ended`, so a closed/stalled tab can't
+// leave a near-complete song (which never auto-resumes anyway) lingering on
+// the shelf. Matches the video player and the server's _COMPLETE_RATIO.
+const AUDIO_COMPLETE_RATIO = 0.95;
+// In the final stretch of a track, sync CW on a tight cadence — the default
+// 30s throttle would park the stored position tens of seconds from the end,
+// below the completion ratio, when the tab closes mid-song.
+const AUDIO_NEAR_END_SECONDS = 45;
+const AUDIO_NEAR_END_SYNC_MS = 5000;
 
 // The local td:cw map is kept fresh from the server (App merges server→local on
 // load/focus), so reading it here resumes progress made on another device
@@ -264,6 +274,9 @@ export function useAudioPlayer() {
   const cwLastSyncRef = useRef(0);
   const cwSessionKeyRef = useRef('');
   const cwSessionStartedRef = useRef(0);
+  // Track keys whose end-of-playback was already finalised (history recorded,
+  // CW cleared) — dedupes the ≥95% timeupdate path against `ended`/crossfade.
+  const cwCompletedKeysRef = useRef<Set<string>>(new Set());
   const persistLastRef = useRef(0);
   // Track key of the last duration self-heal report — one report per track
   // per session, even if the server response is slow.
@@ -526,6 +539,9 @@ export function useAudioPlayer() {
       audio.load();
     }
     if (reset) {
+      // Fresh run of this track — re-arm end-of-playback finalisation so a
+      // replay (repeat mode, re-queued later) records history again.
+      cwCompletedKeysRef.current.delete(track.key);
       // Resume where this track left off (possibly on another device) rather
       // than restarting at 0. Apply once metadata is ready so the seek sticks.
       const resumePos = resumeForTrack(track);
@@ -1011,7 +1027,8 @@ export function useAudioPlayer() {
           preloadedKeyRef.current = '';
           crossfadeRef.current = false;
           // onEnded is skipped during crossfade — clean up CW for the faded track here.
-          if (fadedKey) {
+          if (fadedKey && !cwCompletedKeysRef.current.has(fadedKey)) {
+            cwCompletedKeysRef.current.add(fadedKey);
             void recordWatchHistory(fadedKey, fadedTitle).catch(() => undefined);
             void deleteContinueEntry(fadedKey).catch(() => undefined);
             try {
@@ -1068,7 +1085,7 @@ export function useAudioPlayer() {
         persistLastRef.current = now;
         persistNowPlaying({ ...current, currentTime, duration });
       }
-      if (current.track && currentTime > 5 && duration > 0 && now - cwLastSyncRef.current > 30000) {
+      if (current.track && currentTime > 5 && duration > 0 && now - cwLastSyncRef.current > (duration - currentTime < AUDIO_NEAR_END_SECONDS ? AUDIO_NEAR_END_SYNC_MS : 30000)) {
         if (cwSessionKeyRef.current !== current.track.key) {
           cwSessionKeyRef.current = current.track.key;
           cwSessionStartedRef.current = now;
@@ -1086,6 +1103,23 @@ export function useAudioPlayer() {
         // Local mirror so anonymous + cross-tab + this-device resume work.
         upsertLocalContinue(current.track.key, entry);
         void saveContinueEntry(current.track.key, entry).catch(() => undefined);
+      }
+      // Near-complete tracks count as finished even without `ended` — the tab
+      // can close or the stream can stall in the final seconds, and a song
+      // parked at 90%+ (which never auto-resumes anyway) is shelf noise.
+      // Same ratio as the video player and the server's stale-write guard.
+      if (current.track && duration > 0 && currentTime / duration >= AUDIO_COMPLETE_RATIO) {
+        const key = current.track.key;
+        if (!cwCompletedKeysRef.current.has(key)) {
+          cwCompletedKeysRef.current.add(key);
+          void recordWatchHistory(key, current.track.title).catch(() => undefined);
+          void deleteContinueEntry(key).catch(() => undefined);
+          try {
+            const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
+            delete cw[key];
+            localStorage.setItem('td:cw', JSON.stringify(cw));
+          } catch { /* ignore quota/private-mode */ }
+        }
       }
       if ('mediaSession' in navigator && current.track && duration > 0 && Math.floor(currentTime) !== lastMediaSessionPos) {
         lastMediaSessionPos = Math.floor(currentTime);
@@ -1119,7 +1153,8 @@ export function useAudioPlayer() {
       if (audio !== getActiveAudio() || crossfadeRef.current) return;
       clearPlaybackWatchdog();
       const current = playerRef.current;
-      if (current.track) {
+      if (current.track && !cwCompletedKeysRef.current.has(current.track.key)) {
+        cwCompletedKeysRef.current.add(current.track.key);
         void recordWatchHistory(current.track.key, current.track.title).catch(() => undefined);
         void deleteContinueEntry(current.track.key).catch(() => undefined);
         try {
@@ -1129,6 +1164,8 @@ export function useAudioPlayer() {
         } catch { /* ignore quota/private-mode */ }
       }
       if (current.repeatMode === 'one' && current.track) {
+        // Each loop is its own play — re-arm end-of-playback finalisation.
+        cwCompletedKeysRef.current.delete(current.track.key);
         audio.currentTime = 0;
         void audio.play();
         return;
