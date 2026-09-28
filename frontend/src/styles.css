@@ -2346,52 +2346,8 @@ img {
     font-size: 0.66rem;
   }
 
-  /* Photos mobile styles */
-  .photos-page {
-    padding-bottom: 60px; /* Space for fixed bottom nav */
-  }
-
-  .photos-shell {
-    grid-template-columns: 1fr; /* Stack main content */
-    grid-template-rows: minmax(0, 1fr) auto; /* Content then nav */
-  }
-
-  .photos-nav {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 60; /* Above main content, below modals */
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    height: 60px; /* Standard mobile nav height */
-    padding-bottom: env(safe-area-inset-bottom, 0px); /* Respect safe areas */
-    border-top: 1px solid var(--line);
-    background: var(--bg);
-  }
-
-  .photos-nav button {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex: 1; /* Distribute space evenly */
-    min-width: 0;
-    height: 100%;
-    gap: 0.2rem;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--muted);
-    font-size: 0.75rem;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  .photos-nav button.active {
-    color: var(--brand);
-  }
+  /* Photos touch layout lives in the Photos section at the end of this file:
+     it has to win over the base rules, which come later than this block. */
 
   .photos-nav button svg {
     width: 22px;
@@ -14461,3 +14417,109 @@ a.photos-lb-btn { text-decoration: none; }
   backdrop-filter: blur(4px);
 }
 
+/* The right-edge scrubber fights swipe scrolling on touch pointers. */
+@media (hover: none), (pointer: coarse) {
+  .photos-scrubber, .photos-scrubber-bubble { display: none; }
+}
+
+/* Touch targets: the section switcher, header actions and selection actions
+   measured 34-40px on a phone, under the 44px minimum. */
+@media (hover: none), (pointer: coarse) {
+  .photos-nav button,
+  .photos-header__actions button,
+  .photos-selection-bar button,
+  .photos-selection-bar__albums,
+  .photos-album-card__actions button { min-height: 2.75rem; }
+}
+
+/* ── Touch / narrow layouts ─────────────────────────────────────────────── */
+/* The grid views get a measured height (--photos-grid-height, set from JS) so
+   the single scroller ends above the section switcher and the fixed bottom nav,
+   and the page itself does not scroll. Desktop keeps its own sizing. */
+@media (max-width: 1179px) {
+  /* Measured page height; every wrapper below passes it down to the scroll
+     area, so the grid ends above the fixed bottom nav and the page itself
+     never scrolls. A missing link in this chain leaves the scroller at its
+     content height (measured 1877px on a phone). */
+  .photos-page--fill {
+    height: var(--photos-grid-height, auto);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* The base .photos-shell rules live later in this file than the mobile block
+     they were meant to override, so the shell's grid is restated here (last in
+     the file wins): row 1 = the grid view, row 2 = the section switcher, which
+     then sits above the app's own fixed bottom nav instead of under it. */
+  .photos-page--fill .photos-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+  }
+  .photos-page--fill .photos-main { grid-row: 1; }
+  .photos-page--fill .photos-nav { grid-row: 2; position: static; }
+  .photos-page--fill .photos-main {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+  .photos-page--fill .photos-timeline-wrap { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+  /* Measured height wins over the chain: the wrappers above change with other
+     layout work, this does not. */
+  .photos-page--fill .photos-timeline--scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: var(--photos-grid-height, auto);
+  }
+  /* Pagination must stay reachable now that the grid owns the viewport. */
+  .photos-page--fill .photos-more { flex: 0 0 auto; position: sticky; bottom: 0.4rem; align-self: center; }
+  /* The pinned day label must stay: the component suppresses the in-flow copy
+     while that day is the pinned one, so hiding the pinned element left the
+     current day with no header at all. */
+  .photos-floating-day { display: block; }
+}
+
+@media (max-width: 680px) {
+  /* Keep the chrome short: on a 844px-tall phone the page header used to eat
+     ~340px before the first photo. The nav already labels the section, so the
+     page title/beta block goes away on phones (Google Photos has no page
+     heading either) and only the actions row stays. */
+  .photos-header { align-items: center; gap: 0.4rem; }
+  .photos-header > div:first-child { display: none; }
+  .photos-subtitle, .photos-import-line { display: none; }
+  .photos-header__actions { justify-content: flex-end; width: 100%; }
+  .photos-header__actions { gap: 0.4rem; }
+  /* 44px minimum for touch, compact padding/type kept. */
+  .photos-header__actions button { min-height: 2.75rem; padding: 0 0.7rem; font-size: 0.8rem; }
+  .photos-tabs { gap: 0.1rem; }
+  .photos-tabs button { margin-right: 0.55rem; padding: 0.5rem 0.1rem; font-size: 0.86rem; }
+
+  /* Selection actions move to a bottom bar above the nav instead of covering
+     the app bar (and wrapping badly at 360px). */
+  .photos-selection-bar {
+    top: auto;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 0.5rem);
+    width: calc(100vw - 1rem);
+    border-radius: 14px;
+    padding: 0.45rem 0.55rem;
+    gap: 0.35rem;
+    row-gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  /* Two rows, not four: count + actions first, album picker under them. */
+  .photos-selection-bar__count { flex: 1 1 auto; font-size: 0.82rem; }
+  .photos-selection-bar__albums { flex: 1 1 7rem; max-width: none; min-height: 2.75rem; font-size: 0.78rem; }
+  .photos-selection-bar button { min-height: 2.75rem; padding: 0 0.7rem; font-size: 0.78rem; }
+}
+
+/* The floating-action button sits above the fixed bottom nav on every touch
+   layout — the old 681px breakpoint left it on top of the nav bar on tablets. */
+@media (max-width: 1179px) {
+  .ai-fab { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .has-player .ai-fab { bottom: calc(158px + env(safe-area-inset-bottom, 0px)); }
+}

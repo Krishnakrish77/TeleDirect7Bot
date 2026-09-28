@@ -1020,6 +1020,87 @@ function useMeasuredWidth<T extends HTMLElement>(): [React.RefCallback<T>, numbe
   return [attach, width];
 }
 
+/**
+ * Height for the timeline's scroll area on touch layouts.
+ *
+ * The virtualizer needs its own scroll element, and sizing that element from
+ * the viewport ignores both the app chrome above it and the space the shell
+ * reserves for the fixed bottom nav — the last rows ended up under the nav
+ * while the page scrolled too. Rather than thread a flex chain through the
+ * page wrappers (which changed twice already), measure the scroll element
+ * itself: viewport minus its top minus the reserved bottom space.
+ */
+function useGridHeight(active: boolean, revision: string): [React.RefCallback<HTMLElement>, number] {
+  const [height, setHeight] = useState(0);
+  const nodeRef = useRef<HTMLElement | null>(null);
+  const cleanup = useRef<(() => void) | null>(null);
+  const attempts = useRef(0);
+  const activeRef = useRef(false);
+
+  const measure = useCallback(() => {
+    const node = nodeRef.current;
+    if (!node) return;
+    if (!activeRef.current) return;
+    // Anchor on the scroll element itself when it is mounted: sizing it
+    // directly is robust against the page wrappers, whose grid/flex rules this
+    // file overrides in several places (an unbounded wrapper leaves the grid at
+    // its content height — measured 1877px on a phone).
+    const grid = document.querySelector<HTMLElement>('.photos-timeline--scroll');
+    if (!grid) {
+      // The grid mounts with the view; retry a few frames instead of leaving
+      // the height unset (an unset height left the grid at its content height).
+      if (attempts.current < 30) {
+        attempts.current += 1;
+        requestAnimationFrame(measure);
+      }
+      return;
+    }
+    attempts.current = 0;
+    // Reserve the section switcher's row as well: it sits between the grid and
+    // the app's fixed bottom nav, so the grid must end above it.
+    const sections = document.querySelector<HTMLElement>('.photos-nav');
+    const reserved =
+      parseFloat(getComputedStyle(document.querySelector('.app-shell') ?? document.body).paddingBottom || '0') +
+      (sections ? sections.getBoundingClientRect().height + 8 : 0);
+    setHeight(
+      Math.max(220, Math.round(window.innerHeight - grid.getBoundingClientRect().top - reserved))
+    );
+  }, []);
+
+  const attach = useCallback((node: HTMLElement | null) => {
+    cleanup.current?.();
+    cleanup.current = null;
+    nodeRef.current = node;
+    if (!node) return;
+    window.addEventListener('resize', measure);
+    // The mini-player changes the shell's reserve without a resize.
+    const shell = document.querySelector('.app-shell');
+    const observer = shell ? new MutationObserver(measure) : null;
+    observer?.observe(shell as Node, { attributes: true, attributeFilter: ['class'] });
+    cleanup.current = () => {
+      window.removeEventListener('resize', measure);
+      observer?.disconnect();
+    };
+  }, [measure]);
+
+  // Re-measure when the grid view (re)appears — the scroller mounts then.
+  // Re-measure whenever the grid's content changes (view switch, data arriving,
+  // load-more): keying only on `active` left the height unset when the grid
+  // mounted after the first pass, which is timing dependent and flaky.
+  useEffect(() => {
+    activeRef.current = active;
+    if (!active) {
+      attempts.current = 0;
+      return;
+    }
+    const frame = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(frame);
+  }, [active, revision, measure]);
+
+  useEffect(() => () => cleanup.current?.(), []);
+  return [attach, height];
+}
+
 // ── Metadata panel (lazy exifr) ───────────────────────────────────────────
 
 type ExifSummary = {
@@ -1255,7 +1336,11 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   const [selection, setSelection] = useState<SelectionState>(emptySelection);
   const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
-  const [rowHeight, setRowHeight] = useState<number>(190);
+  const [rowHeight, setRowHeight] = useState<number>(() => {
+    // Phones start denser: the zoom slider is hidden on touch layouts.
+    if (typeof window === 'undefined') return 190;
+    return window.innerWidth < 680 ? ROW_HEIGHT_STEPS[0] : window.innerWidth < 1100 ? ROW_HEIGHT_STEPS[1] : 190;
+  });
   const [uploads, setUploads] = useState<Array<{ name: string; url: string }>>([]);
   const [uploadPercent, setUploadPercent] = useState(0);
   const [importState, setImportState] = useState<'idle' | 'running' | 'done' | 'paused' | 'error'>('idle');
@@ -1266,6 +1351,12 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   const [creatingAlbum, setCreatingAlbum] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const albumInputRef = useRef<HTMLInputElement>(null);
+  // Hooks must run before the early returns below (a hook after a conditional
+  // return changes the hook count between renders and React unmounts the page).
+  const [fillRef, gridHeight] = useGridHeight(
+    view === 'timeline' || view === 'favorites',
+    `${view}:${timeline?.items.length ?? 0}`,
+  );
 
   const signedIn = Boolean(user);
   const photos = timeline?.items ?? [];
@@ -1612,6 +1703,10 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   }
 
   const isAlbumDetail = view === 'albums' && activeAlbum;
+  // Only the grid views get the measured fill height; the albums list and the
+  // trash rows scroll with the document (the shell already reserves the nav).
+  const fillsViewport = view === 'timeline' || view === 'favorites' || Boolean(isAlbumDetail);
+  const pageStyle = fillsViewport && gridHeight ? { ['--photos-grid-height' as string]: `${gridHeight}px` } : undefined;
   const searching = query.trim().length > 0;
   const timelineData: TimelineData | null = timeline && {
     items: visiblePhotos,
@@ -1621,7 +1716,9 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
 
   return (
     <main
-      className="photos-page"
+      ref={fillRef}
+      className={`photos-page${fillsViewport ? ' photos-page--fill' : ''}`}
+      style={pageStyle}
       onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
