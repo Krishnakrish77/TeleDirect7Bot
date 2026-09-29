@@ -21,7 +21,7 @@ from main.server.exceptions import FIleNotFound, InvalidHash
 from main import Var, utils, StartTime, __version__, StreamBot
 from main.utils.custom_dl import MediaSessionUnavailable
 from main.utils.download_urls import is_download_query
-from main.utils import media_index, skeleton_cache
+from main.utils import media_index, rec_engine, skeleton_cache
 from main.utils.file_properties import matches_secure_hash
 from main.utils.render_template import render_page
 
@@ -215,6 +215,7 @@ async def _vlc_track(user_id: int, message_id: int,
 
     if action == "complete":
         await wh_store.record(user_id, cw_key, title)
+        rec_engine.invalidate_profile(user_id)
         await cw_store.delete_one(user_id, cw_key)
         await rec_store.clear_cached(user_id)
         await ai_rec_store.clear_cached(user_id)

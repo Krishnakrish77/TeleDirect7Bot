@@ -58,6 +58,10 @@ async def empty_continue(_user_id: int) -> dict:
 
 
 class RecEngineSignalTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        # _collect_signal_profile caches per user — drop it so each test
+        # rebuilds the profile from that test's own mocked signals.
+        rec_engine.invalidate_profile()
     async def test_keywords_are_a_low_weight_recommendation_tiebreaker(self):
         previous = dict(rec_engine.media_index._items)
         try:

@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from collections import Counter
 from typing import List, Optional, Tuple
 
@@ -199,8 +200,37 @@ def _genre_link(genre: str) -> str:
     return "/?" + urlencode({"genre": genre})
 
 
+_profile_cache: dict[int, tuple[float, dict]] = {}
+_PROFILE_CACHE_TTL = 300.0  # 5 min — hub loads re-run 5 Mongo queries otherwise
+
+
+def invalidate_profile(user_id: Optional[int] = None) -> None:
+    """Drop cached signal profiles after a signal write (rating, watchlist
+    change, dismiss, watch-history event). Called from the write routes so a
+    cached profile never outlives the signals it was built from."""
+    if user_id is None:
+        _profile_cache.clear()
+    else:
+        _profile_cache.pop(user_id, None)
+
+
 async def _collect_signal_profile(user_id: int) -> dict:
-    """Collect lightweight local intent signals for ranking and shelves."""
+    """Collect lightweight local intent signals for ranking and shelves.
+
+    cached per user for _PROFILE_CACHE_TTL: the hub's optional-shelf budget
+    (2.5 s) was regularly eaten by the five Mongo round-trips here before
+    recommendation ranking even started, so the shelf timed out on every
+    load. Signals (history, ratings, watchlist) change slowly — a 5-minute
+    cache keeps shelves responsive without stale-looking results."""
+    cached = _profile_cache.get(user_id)
+    if cached and time.monotonic() - cached[0] < _PROFILE_CACHE_TTL:
+        return cached[1]
+    profile = await _collect_signal_profile_uncached(user_id)
+    _profile_cache[user_id] = (time.monotonic(), profile)
+    return profile
+
+
+async def _collect_signal_profile_uncached(user_id: int) -> dict:
     history, watchlist_ids, ratings, continue_map, feedback = await asyncio.gather(
         wh_store.get_recent(user_id, limit=80),
         watchlist_store.get_ids(user_id),

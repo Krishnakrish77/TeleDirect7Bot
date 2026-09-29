@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from aiohttp import web
 
-from main.utils import ai_rec_store, rec_feedback_store, rec_store
+from main.utils import ai_rec_store, rec_engine, rec_feedback_store, rec_store
 from main.utils.user_auth import get_user
 
 routes = web.RouteTableDef()
@@ -62,6 +62,7 @@ async def api_recommendation_events(request: web.Request) -> web.Response:
         return web.json_response({"error": "events must be a list"}, status=400)
     events = [event for event in (_clean_event(raw) for raw in raw_events[:_MAX_EVENTS]) if event]
     accepted = await rec_feedback_store.record_many(int(user["sub"]), events)
+    rec_engine.invalidate_profile(int(user["sub"]))
     # An affirmative engagement is useful immediately; discard derived
     # candidate/pick caches so the next recommendation request learns from it.
     if accepted and any(event["action"] in {"open", "play"} for event in events):

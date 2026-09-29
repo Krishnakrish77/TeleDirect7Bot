@@ -11,7 +11,7 @@ import re
 from aiohttp import web
 
 from main.utils.user_auth import get_user
-from main.utils import ai_rec_store, media_index, rec_store, wh_store
+from main.utils import ai_rec_store, media_index, rec_engine, rec_store, wh_store
 
 routes = web.RouteTableDef()
 
@@ -49,6 +49,7 @@ async def api_record(request: web.Request) -> web.Response:
     except Exception:
         return _json({"error": "invalid body"}, status=400)
     await wh_store.record(int(user["sub"]), key, title)
+    rec_engine.invalidate_profile(int(user["sub"]))
     await rec_store.clear_cached(int(user["sub"]))
     await ai_rec_store.clear_cached(int(user["sub"]))
     return _json({"ok": True})

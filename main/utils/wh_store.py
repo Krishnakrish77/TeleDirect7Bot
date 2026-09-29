@@ -14,7 +14,9 @@ features.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
 _WH_CAP = 200
@@ -142,18 +144,42 @@ async def get_events(user_id: int, limit: int = _EVENT_CAP) -> list:
 
 _top_plays_cache: dict = {"data": None, "at": 0.0}
 _TOP_PLAYS_TTL = 4 * 3600  # 4 hours
+_top_plays_refresh_task: "asyncio.Task | None" = None
 
 
 async def get_top_plays(limit: int = 20) -> list:
     """Return [{cw_key, play_count}] sorted by total plays across all users.
 
-    Results are cached for _TOP_PLAYS_TTL to avoid hammering the aggregation
-    pipeline on every hub page load.
+    Stale-while-revalidate: the aggregation regularly outlives the hub's
+    1 s shelf budget on slow Mongo links, and a plain cache held no value
+    until the first *successful* run — so the shelf could stay missing
+    forever (every request times out, cancels the aggregate, and the next
+    one starts from scratch). Now a timeout serves the last known result
+    (even an expired one) and lets the in-flight refresh finish in the
+    background so the cache warms for subsequent loads.
     """
-    import time as _time
-    global _top_plays_cache
-    if _time.time() - _top_plays_cache["at"] < _TOP_PLAYS_TTL and _top_plays_cache["data"] is not None:
+    global _top_plays_cache, _top_plays_refresh_task
+    fresh = time.time() - _top_plays_cache["at"] < _TOP_PLAYS_TTL
+    if fresh and _top_plays_cache["data"] is not None:
         return _top_plays_cache["data"][:limit]
+    # Expired or never-filled: refresh at most one aggregation at a time.
+    if _top_plays_refresh_task is None or _top_plays_refresh_task.done():
+        _top_plays_refresh_task = asyncio.create_task(_refresh_top_plays())
+    if _top_plays_cache["data"] is not None:
+        # Stale but present — answer immediately; refresh completes meanwhile.
+        return _top_plays_cache["data"][:limit]
+    # Never ran: await the refresh with a hard ceiling so the hub's own
+    # timeout fires first and cancels us, not the refresh task.
+    try:
+        return await asyncio.wait_for(
+            asyncio.shield(_top_plays_refresh_task),
+            timeout=0.9,
+        )[:limit]
+    except (asyncio.TimeoutError, Exception):
+        return (_top_plays_cache["data"] or [])[:limit]
+
+
+async def _refresh_top_plays() -> list:
     await _ensure_indexes()
     db = _get_db()
     if db is None:
@@ -165,12 +191,13 @@ async def get_top_plays(limit: int = 20) -> list:
                 "play_count": {"$sum": "$play_count"},
             }},
             {"$sort": {"play_count": -1}},
-            {"$limit": limit * 3},  # over-fetch so dedup in caller still has enough
+            {"$limit": 120},  # over-fetch so dedup in caller still has enough
         ]
-        docs = await db["watch_history"].aggregate(pipeline).to_list(length=limit * 3)
+        docs = await db["watch_history"].aggregate(pipeline).to_list(length=120)
         result = [{"cw_key": d["_id"], "play_count": d["play_count"]} for d in docs]
-        _top_plays_cache = {"data": result, "at": _time.time()}
-        return result[:limit]
+        global _top_plays_cache
+        _top_plays_cache = {"data": result, "at": time.time()}
+        return result
     except Exception:
         logging.exception("wh_store: get_top_plays failed")
         return []

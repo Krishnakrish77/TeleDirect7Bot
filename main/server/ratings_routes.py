@@ -11,7 +11,7 @@ import json
 from aiohttp import web
 
 from main.utils.user_auth import get_user
-from main.utils import ai_rec_store, ratings_store, rec_store
+from main.utils import ai_rec_store, ratings_store, rec_engine, rec_store
 
 routes = web.RouteTableDef()
 
@@ -55,9 +55,11 @@ async def api_set(request: web.Request) -> web.Response:
     if existing == rating:
         # Toggle off — clicking same button again removes the rating
         await ratings_store.delete_rating(int(user["sub"]), mid)
+        rec_engine.invalidate_profile(int(user["sub"]))
         rating = None
     else:
         await ratings_store.set_rating(int(user["sub"]), mid, rating)
+        rec_engine.invalidate_profile(int(user["sub"]))
     await rec_store.clear_cached(int(user["sub"]))
     await ai_rec_store.clear_cached(int(user["sub"]))
     _invalidate_spa_cache()

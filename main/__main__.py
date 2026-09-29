@@ -147,6 +147,7 @@ async def start_services():
     # The server is intentionally live before Mongo connects, so visitors get
     # a styled maintenance page rather than a platform-level connection error.
     asyncio.create_task(_connect_catalogue_store())
+    asyncio.create_task(utils.warm_hub_shelves())
     if Var.PHOTOS_ENABLED:
         asyncio.create_task(_photos_channel_reverify_loop())
         asyncio.create_task(_photos_boot_rescan())
