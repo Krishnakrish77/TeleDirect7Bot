@@ -212,6 +212,11 @@ def title_from_filename(filename: Optional[str]) -> str:
         return "(untitled)"
     # Lazy import to avoid a cycle (dedup → series; series stays leaf).
     from main.utils.dedup import clean_for_search
+    # Strip the trailing extension up front — any container (video, book,
+    # audio). clean_for_search only removes extensions it knows as noise
+    # tokens after dot-to-space conversion; an unknown/unlisted extension
+    # would otherwise leak into the display title ("Atomic Habits epub").
+    filename = re.sub(r"\.[A-Za-z0-9]{1,5}$", "", filename.strip())
     cleaned = clean_for_search(filename)
     if cleaned:
         return cleaned

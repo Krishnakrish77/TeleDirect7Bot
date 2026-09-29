@@ -35,8 +35,11 @@ _NOISE_TOKENS = re.compile(
     r"untouched|proper|repack|extended|directors?|cut|"
     r"hq|sunnxt|amzn|dsnp|nf|"
     # Container extensions — appear as standalone words after the
-    # dot-to-space normalization step.
-    r"mkv|mp4|avi|mov|m4v|wmv|flv|webm|mpg|mpeg|ts"
+    # dot-to-space normalization step. Includes book (.pdf/.epub) and
+    # audio (.mp3/.m4a/.flac) containers so non-video uploads don't
+    # leak extensions into display titles either.
+    r"mkv|mp4|avi|mov|m4v|wmv|flv|webm|mpg|mpeg|ts|"
+    r"epub|pdf|mp3|m4a|flac|wav|ogg|opus|azw3|mobi"
     r")\b",
     re.IGNORECASE,
 )
