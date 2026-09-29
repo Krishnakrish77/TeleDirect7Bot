@@ -46,12 +46,18 @@ POINT_SECONDS = 0.128
 # ±point tolerance when matching — chromaprint points are quantized gradients
 # that can differ by ±1 even for identical audio (different encodes).
 POINT_TOLERANCE = 1
-# Points "match" when ≤18 of 32 bits differ. Calibrated empirically on two
-# series (Silo, One Piece): 16 and 18 give stable runs with matching starts;
-# 20 over-extends backwards into cold-open music; ≤14 loses the intro.
-# Random-pair baseline is 16/32 — the *contiguous run* (not the individual
-# point) is what separates intro from noise.
-MATCH_HAMMING_BITS = 18
+# Points "match" when ≤6 of 32 bits differ — Jellyfin intro-skipper's production
+# value (MaximumFingerprintPointDifferences=6). Calibrated on real-library data:
+# unrelated chromaprint points have median Hamming 15-16/32 (P(≤6) ≈ 0.4%), so 6
+# bits separates shared audio from noise. Loose thresholds (18) compound 30-90s
+# phantom runs across unrelated episodes (measured on Silicon Valley) because
+# chromaprint points are smoothed/overlapping — adjacent points are correlated.
+MATCH_HAMMING_BITS = 6
+# Gaps up to ~3.5s inside a run are bridged (quiet intro passages, quantization
+# wobble) — Jellyfin's MaximumTimeSkip, in points. Safe only because the 6-bit
+# threshold makes chance matches rare (expected gap between noise matches
+# ≈ 250 points); at looser thresholds a 27-point bridge chains noise runs.
+MAX_GAP_POINTS = int(3.5 / POINT_SECONDS)
 MIN_INTRO_POINTS = int(15 / POINT_SECONDS)   # 15 s
 MAX_INTRO_POINTS = int(150 / POINT_SECONDS)  # 150 s
 # Fingerprint this fraction of each episode (Jellyfin: first 25% or 10 min).
@@ -98,7 +104,9 @@ def state() -> dict:
 # ---------------------------------------------------------------- fingerprint
 
 def _fingerprint_cache_key(message_id: int) -> str:
-    return f"intro_fp:{message_id}"
+    # v2: fingerprints are computed from lossless wav (previously mp3 —
+    # lossy decode shifted gradients and broke cross-episode matching).
+    return f"intro_fp:v2:{message_id}"
 
 
 def _decode_fingerprint(b64: str) -> List[int]:
@@ -140,8 +148,10 @@ def _longest_contiguous_match(a: List[int], b: List[int]) -> Tuple[int, int, int
       (matched ≈15/32 vs random ≈16/32). The *contiguous run* is the
       separator: at the true shift, sub-threshold points line up for
       tens of seconds; elsewhere runs are short.
-    - Threshold 18 balances run stability vs over-extension (sweep-validated:
-      starts agree between 16 and 18; 20 swallows cold-open music).
+    - Small gaps (≤ MAX_GAP_POINTS ≈ 3.5s — quiet intro passages, quant-
+      ization wobble) are bridged: a single dropped point must not split
+      or truncate the run. Bridged points count toward run length; the
+      silence snap compensates the end.
     - Brute-force scan over all shifts: O(len(a)·len(b)) Hamming ops per
       pair. ~1.4M ops for two 150s windows ≈ sub-second; series sweeps
       use short windows and this is simpler + more robust than Jellyfin's
@@ -151,14 +161,19 @@ def _longest_contiguous_match(a: List[int], b: List[int]) -> Tuple[int, int, int
     best = (0, 0, 0)
     for shift in range(-len(b) + 1, len(a)):
         run_best = run = best_start = 0
+        gap = 0
         for i in range(len(a)):
             j = i + shift
             if 0 <= j < len(b) and _hamming(a[i], b[j]) <= MATCH_HAMMING_BITS:
-                run += 1
+                run += 1 + gap
+                gap = 0
                 if run > run_best:
                     run_best, best_start = run, i - run + 1
+            elif run and gap < MAX_GAP_POINTS:
+                gap += 1  # tentative bridge — kept only if a match follows
             else:
                 run = 0
+                gap = 0
         if run_best > best[0]:
             best = (run_best, best_start, shift)
     return best
@@ -168,12 +183,15 @@ def _snap_end_to_silence(stream_url: str, approx_end: float, window: float) -> f
     """Move the intro's end to the first silence ≥ 0.5 s near the boundary.
 
     The theme outro usually ends in a hard cut to dialogue; the first quiet
-    stretch at/after the matched end is the true boundary. Falls back to
-    the matched end when nothing is found nearby.
+    stretch near the matched end is the true boundary. The search starts a
+    few seconds BEFORE the matched end too: the matcher's run can over-extend
+    past the theme into the following scene (contiguous noise), and the first
+    silence then sits earlier. Falls back to the matched end when nothing is
+    found nearby.
     """
     cmd = (
-        f'ffmpeg -hide_banner -nostats -ss {max(0.0, approx_end - 4.0):.2f} '
-        f'-t {min(20.0, window - approx_end + 4.0):.2f} -i "{stream_url}" '
+        f'ffmpeg -hide_banner -nostats -ss {max(0.0, approx_end - 6.0):.2f} '
+        f'-t {min(20.0, window - approx_end + 6.0):.2f} -i "{stream_url}" '
         f'-af "silencedetect=noise=-35dB:d=0.5" -f null - 2>&1'
     )
     try:
@@ -186,8 +204,8 @@ def _snap_end_to_silence(stream_url: str, approx_end: float, window: float) -> f
         if "silence_start" in line:
             try:
                 candidate = float(line.split("silence_start:")[1].split()[0])
-                snapped = approx_end - 4.0 + candidate
-                if snapped > approx_end - 2.0:  # don't move the end backwards
+                snapped = approx_end - 6.0 + candidate
+                if snapped > approx_end - 8.0 and snapped < approx_end + 4.0:
                     return snapped
             except (ValueError, IndexError):
                 break
@@ -216,7 +234,7 @@ def _fingerprint_sync(item) -> List[int]:
     window = int(_fingerprint_window_seconds(item))
     cmd = (
         f'ffmpeg -hide_banner -loglevel error -i "{stream_url}" '
-        f"-t {window} -ac 2 -ar 44100 -f mp3 - | "
+        f"-t {window} -ac 2 -ar 44100 -f wav - | "
         f"{_FPCALC} -length {window} -"
     )
     proc = subprocess.run(cmd, shell=True, capture_output=True, timeout=_FP_TIMEOUT_SECONDS)
@@ -341,13 +359,15 @@ async def detect_series_intros_async(series_key: str, episodes: list) -> None:
 # ---------------------------------------------------------------- sweep
 
 def _series_with_multiple_episodes() -> Dict[str, list]:
-    """Visible video episodes grouped by series_key, ≥2 episodes."""
+    """Visible video episodes grouped per series AND season (intros change
+    between seasons — cross-season matching dilutes consensus and mutes
+    detection). Key is f"{series_key}#s{season}"; ≥2 episodes per bucket."""
     buckets: Dict[str, list] = defaultdict(list)
     for it in media_index._items.values():
         if it.hidden or (it.media_kind or "") != "video":
             continue
         if getattr(it, "series_key", "") and getattr(it, "intro_source", "") != "manual":
-            buckets[it.series_key].append(it)
+            buckets[f"{it.series_key}#s{it.season}"].append(it)
     return {k: v for k, v in buckets.items() if len(v) >= 2}
 
 
@@ -414,26 +434,52 @@ def detect_series_intros_sync(episodes: list) -> Dict[int, Tuple[float, float]]:
     }
     window = _fingerprint_window_seconds(episodes[0])
     ids = list(fingerprints)
-    for pos, mid in enumerate(ids):
-        item = next((e for e in episodes if e.message_id == mid), None)
-        if item is None or mid in manual_ids:
+
+    # Consensus pass — first collect every sibling's best run before trusting any.
+    # A single pair's longest run is unreliable: even at a strict threshold, the
+    # "best of N siblings" maximum lands on a noise run for some pair. Real theme
+    # music appears at a *consistent offset* across most siblings; noise doesn't.
+    best_runs: Dict[int, Tuple[int, int, int]] = {}  # mid -> (run_pts, a_start_pts, shift)
+    for mid in ids:
+        if mid in manual_ids:
             continue
-        best = (0, 0)
+        best = (0, 0, 0)
         for other in ids:
             if other == mid:
                 continue
-            run, a_start, _s = _longest_contiguous_match(fingerprints[mid], fingerprints[other])
+            run, a_start, shift = _longest_contiguous_match(fingerprints[mid], fingerprints[other])
             if run > best[0]:
-                best = (run, a_start)
-        if best[0] < MIN_INTRO_POINTS or best[0] > MAX_INTRO_POINTS:
+                best = (run, a_start, shift)
+        if best[0] >= MIN_INTRO_POINTS:
+            best_runs[mid] = best
+
+    consensus_min = (len(ids) - 1) // 2 + 1  # strict majority of siblings
+    for mid, (run, a_start, shift) in best_runs.items():
+        # Count siblings whose best run agrees within ±3s of position and length.
+        s0, e0 = a_start * POINT_SECONDS, (a_start + run) * POINT_SECONDS
+        agreeing = 0
+        for other, (run2, a2, sh2) in best_runs.items():
+            if other == mid:
+                continue
+            s2 = a2 * POINT_SECONDS
+            e2 = (a2 + run2) * POINT_SECONDS
+            if abs(s2 - s0) <= 3.0 and abs((e2 - s2) - (e0 - s0)) <= 3.0:
+                agreeing += 1
+        if agreeing + 1 < max(2, consensus_min) and len(ids) >= 3:
+            log.info("intro: bin:%s run %.1f-%.1fs confirmed by %d/%d siblings — rejected as noise",
+                     mid, s0, e0, agreeing + 1, len(ids))
             continue
-        start = best[1] * POINT_SECONDS
-        end = (best[1] + best[0]) * POINT_SECONDS
+        if run < MIN_INTRO_POINTS or run > MAX_INTRO_POINTS:
+            continue
+        start = a_start * POINT_SECONDS
+        end = (a_start + run) * POINT_SECONDS
         if start > window * 0.9:
             continue
         if start <= 5:
             start = 0.0
-        end = _snap_end_to_silence(internal_stream_url(item.secure_hash, item.message_id), end, window)
+        end = _snap_end_to_silence(internal_stream_url(
+            next(e for e in episodes if e.message_id == mid).secure_hash, mid,
+        ), end, window)
         if end - start < 15:
             continue
         results[mid] = (round(start, 2), round(end, 2))

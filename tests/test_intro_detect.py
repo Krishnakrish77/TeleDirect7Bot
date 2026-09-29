@@ -219,6 +219,60 @@ class SeriesBucketTest(unittest.TestCase):
         self.assertEqual(buckets, {})
 
 
+class ConsensusTest(unittest.TestCase):
+    """Regression: a single noisy pair must not stamp phantom intros.
+
+    Real-library failure (Silicon Valley): with a lax threshold, the
+    best-of-siblings run landed on contiguous noise and every episode got a
+    ~32s 'intro' mid-dialogue. A detected run must be corroborated by a
+    majority of siblings at a consistent position/length."""
+
+    def test_three_episodes_share_intro_all_detected(self):
+        eps = [make_item(1, episode=1), make_item(2, episode=2), make_item(3, episode=3)]
+        intro_pts = int(60 / intro_detect.POINT_SECONDS)
+        a_start = int(45 / intro_detect.POINT_SECONDS)
+        f1, f2, f3 = fp_triplet(a_start + intro_pts + 300, a_start, intro_pts)
+        fps = {1: f1, 2: f2, 3: f3}
+        with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
+            results = intro_detect.detect_series_intros_sync(eps)
+        self.assertEqual(set(results), {1, 2, 3})
+
+    def test_one_noisy_pair_does_not_poison_sibling(self):
+        # Episodes 1 & 2 share a real intro; episode 3 is unrelated audio.
+        # At the 6-bit threshold ep3's cross-pairs produce no qualifying run,
+        # so only eps 1 & 2 enter the consensus vote — and each finds the
+        # other agreeing at the shared position. A phantom (longer, misplaced)
+        # run on either episode would be rejected: no sibling corroborates it.
+        eps = [make_item(1, episode=1), make_item(2, episode=2), make_item(3, episode=3)]
+        intro_pts = int(60 / intro_detect.POINT_SECONDS)
+        a_start = int(45 / intro_detect.POINT_SECONDS)
+        total = a_start + intro_pts + 300
+        f1, f2 = fp_pair(total, a_start, intro_pts)
+        f3 = episode_fp(total, drift_seed=5, salt=777)  # fully unrelated
+        fps = {1: f1, 2: f2, 3: f3}
+        with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
+            results = intro_detect.detect_series_intros_sync(eps)
+        # The two related episodes still detect; the unrelated one finds nothing.
+        self.assertEqual(set(results), {1, 2})
+        s1, e1 = results[1]
+        self.assertAlmostEqual(s1, 45.0, delta=7.0)
+
+    def test_two_episodes_still_detect_without_consensus(self):
+        # With only 2 episodes there is no majority to corroborate — the
+        # shared intro must still be found (consensus gate is skipped).
+        eps = [make_item(1, episode=1), make_item(2, episode=2)]
+        intro_pts = int(60 / intro_detect.POINT_SECONDS)
+        a_start = int(45 / intro_detect.POINT_SECONDS)
+        f1, f2 = fp_pair(a_start + intro_pts + 300, a_start, intro_pts)
+        fps = {1: f1, 2: f2}
+        with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
+            results = intro_detect.detect_series_intros_sync(eps)
+        self.assertEqual(set(results), {1, 2})
+
+
 class SweepIntegrationTest(unittest.IsolatedAsyncioTestCase):
     """End-to-end: seeded catalogue → detect_all_intros → persisted bounds."""
 
