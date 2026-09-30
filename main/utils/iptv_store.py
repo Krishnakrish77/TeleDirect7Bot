@@ -78,6 +78,11 @@ def _normalise_url(value: object) -> str:
 
 _MISSING = object()
 
+# Safety ceiling for list_channels — well above any real catalogue (largest
+# iptv-org playlist ≈ 10k) but prevents unbounded memory if something goes
+# wrong with imports.
+_LIST_HARD_CAP = int(os.environ.get("IPTV_LIST_HARD_CAP", "12000"))
+
 
 def _first_present(raw: dict, *keys: str, default: object = _MISSING) -> object:
     for key in keys:
@@ -212,8 +217,15 @@ async def list_channels(include_disabled: bool = False) -> list[dict]:
     if db is not None:
         query = {} if include_disabled else {"enabled": True}
         try:
+            # No sane cap: the catalogue can exceed 2000 after imports, and a
+            # silent cursor cap makes every consumer undercount. Full list or
+            # nothing.
             cursor = db["iptv_channels"].find(query, projection={"_id": 0})
-            docs = await cursor.to_list(length=2000)
+            docs = await cursor.to_list(length=_LIST_HARD_CAP)
+            if docs and len(docs) == _LIST_HARD_CAP:
+                logging.warning(
+                    "iptv_store: list_channels hit hard cap of %d channels — counts are truncated", _LIST_HARD_CAP,
+                )
             return [_public_channel(ch) for ch in sorted(docs, key=_sort_key)]
         except Exception:
             logging.exception("iptv_store: list_channels failed")
