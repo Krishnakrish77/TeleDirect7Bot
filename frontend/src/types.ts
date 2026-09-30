@@ -581,12 +581,14 @@ export interface BuddyChatResponse {
 /**
  * Opaque item reference the client passes to the buddy endpoints. The server
  * re-derives the real watch state; these fields are display hints only.
+ * A bare reference ({ itemId } without title/kind) is enough — the server
+ * resolves everything, including which episode you're on.
  */
 export interface BuddyChatContext {
   itemId: string;
   messageId?: number;
-  title: string;
-  kind: 'movie' | 'tv';
+  title?: string;
+  kind?: 'movie' | 'tv';
   seriesTitle?: string;
   season?: number | null;
   episode?: number | null;

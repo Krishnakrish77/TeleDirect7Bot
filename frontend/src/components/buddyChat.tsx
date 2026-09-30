@@ -14,8 +14,8 @@ function errorStatus(err: unknown): number {
 }
 
 type BannerSource = {
-  title: string;
-  kind: 'movie' | 'tv';
+  title?: string;
+  kind?: 'movie' | 'tv';
   seriesTitle?: string;
   season?: number | null;
   episode?: number | null;
@@ -25,7 +25,7 @@ type BannerSource = {
 
 function bannerFor(ctx: BannerSource): string {
   if (ctx.kind === 'tv' && ctx.episode != null) {
-    const title = ctx.seriesTitle || ctx.title;
+    const title = ctx.seriesTitle || ctx.title || 'this series';
     const code = ctx.cutoffLabel
       || (ctx.season != null
         ? `S${String(ctx.season).padStart(2, '0')}E${String(ctx.episode).padStart(2, '0')}`
@@ -33,7 +33,11 @@ function bannerFor(ctx: BannerSource): string {
     const progress = ctx.progress != null ? ` · ${Math.round(ctx.progress * 100)}% through` : '';
     return `Chatting about ${title} ${code}${progress} — no spoilers beyond this episode`;
   }
-  return `Chatting about ${ctx.title} — no spoilers`;
+  if (ctx.title) {
+    return `Chatting about ${ctx.title} — no spoilers`;
+  }
+  // Bare reference: the server hasn't echoed the resolved context yet.
+  return 'Chatting about this title — no spoilers';
 }
 
 /** One-tap openers shown in the empty state. */
