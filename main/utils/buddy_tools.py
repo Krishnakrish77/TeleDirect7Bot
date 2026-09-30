@@ -29,22 +29,23 @@ _TOOL_DECLARATIONS = [
     {
         "name": "search_catalogue",
         "description": (
-            "Search the platform's library for movies, series, albums or "
-            "tracks by title or keyword. Use it to answer 'is X available?', "
-            "to find something the user vaguely describes, or to ground a "
-            "recommendation in titles the user can actually play. Results "
-            "include a playHref the assistant may quote as plain text."
+            "Search the platform's library for movies, series, music "
+            "(albums/tracks) or books by title, artist or keyword. Use it to "
+            "answer 'is X available?', to find something the user vaguely "
+            "describes, or to ground a recommendation in titles the user can "
+            "actually play. Results include a playHref the assistant may "
+            "quote as plain text."
         ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
                 "query": {
                     "type": "STRING",
-                    "description": "Title or keyword to search for.",
+                    "description": "Title, artist or keyword to search for.",
                 },
                 "kind": {
                     "type": "STRING",
-                    "description": "Optional filter: 'movie', 'series', 'album' or 'audio'.",
+                    "description": "Optional filter: 'movie', 'series', 'album', 'audio' or 'book'.",
                 },
             },
             "required": ["query"],
@@ -72,10 +73,11 @@ _TOOL_DECLARATIONS = [
     {
         "name": "where_was_i",
         "description": (
-            "Report the user's exact watch position: what is in progress "
-            "right now (with percent through) and what they finished most "
-            "recently. Use it for 'what episode am I on?' and 'what was the "
-            "last thing I watched?'."
+            "Report the user's exact position across media: what is in "
+            "progress right now (with percent through), what they finished "
+            "most recently, and what they are reading (books, with percent "
+            "through). Use it for 'what episode am I on?', 'what was the "
+            "last thing I watched?' and 'where am I in that book?'."
         ),
         "parameters": {"type": "OBJECT", "properties": {}},
     },
@@ -109,12 +111,28 @@ def _suggestion_row(item) -> dict:
             "year": item.year,
             "overview": (getattr(item, "overview", "") or "")[:_OVERVIEW_CAP],
         }
+    if getattr(item, "album_key", ""):
+        return {
+            "title": getattr(item, "album_title", "") or item.title,
+            "kind": "album",
+            "playHref": f"/album/{item.album_key}",
+            "artist": getattr(item, "artist", "") or "",
+            "year": item.year,
+        }
+    if (getattr(item, "media_kind", "") or "") == "book":
+        return {
+            "title": item.title,
+            "kind": "book",
+            "playHref": f"/books",
+            "authors": list(getattr(item, "book_authors", None) or [])[:3],
+            "overview": (getattr(item, "overview", "") or "")[:_OVERVIEW_CAP],
+        }
     return {
         "title": item.title,
         "kind": "audio",
         "playHref": f"/play/{item.message_id}",
+        "artist": getattr(item, "artist", "") or "",
         "year": item.year,
-        "overview": "",
     }
 
 
@@ -138,9 +156,36 @@ def title_details(play_href: str) -> dict:
     """
     href = str(play_href or "").split("?", 1)[0].strip("/")
     parts = href.split("/", 1)
-    if len(parts) != 2 or parts[0] not in {"series", "movie", "play"}:
+    if len(parts) != 2 or parts[0] not in {"series", "movie", "album", "book", "play"}:
         return {"error": "unknown title — pass the playHref from search_catalogue"}
     key = parts[1]
+    if parts[0] == "album":
+        tracks = media_index.tracks_for_album(key)
+        if not tracks:
+            return {"error": "unknown title"}
+        first = tracks[0]
+        return {
+            "title": getattr(first, "album_title", "") or first.title,
+            "kind": "album",
+            "artist": getattr(first, "artist", "") or "",
+            "year": first.year,
+            "trackCount": len(tracks),
+            "tracks": [t.title for t in tracks[:_MAX_RESULTS]],
+        }
+    if parts[0] == "book":
+        for item in media_index._items.values():
+            if (getattr(item, "media_kind", "") or "") == "book" \
+                    and str(getattr(item, "book_source_key", "") or "") == key:
+                return {
+                    "title": item.title,
+                    "kind": "book",
+                    "authors": list(getattr(item, "book_authors", None) or [])[:3],
+                    "pageCount": getattr(item, "book_page_count", 0) or 0,
+                    "language": getattr(item, "book_language", "") or "",
+                    "subjects": list(getattr(item, "book_subjects", None) or [])[:6],
+                    "overview": (getattr(item, "overview", "") or "")[:_OVERVIEW_CAP],
+                }
+        return {"error": "unknown title"}
     if parts[0] == "series":
         episodes = media_index.episodes_for_series(key)
         if not episodes:
@@ -179,7 +224,7 @@ def title_details(play_href: str) -> dict:
 
 
 async def where_was_i(user_id: int) -> dict:
-    """The user's live watch position, straight from the trusted stores."""
+    """The user's live position across media, from the trusted stores."""
     in_progress: list[dict] = []
     try:
         cw = await cw_store.get_all(user_id)
@@ -204,7 +249,24 @@ async def where_was_i(user_id: int) -> dict:
             recent.append(_suggestion_row(item))
     except Exception:
         logging.exception("buddy_tools: where_was_i wh lookup failed uid=%d", user_id)
-    return {"inProgress": in_progress, "recentlyFinished": recent}
+    books: list[dict] = []
+    try:
+        from main.utils import book_progress_store
+        progress = await book_progress_store.get_all(user_id)
+        for book_id, entry in (progress or {}).items():
+            item = next((it for it in media_index._items.values()
+                         if (getattr(it, "media_kind", "") or "") == "book"
+                         and str(it.message_id) == str(book_id)), None)
+            if item is None:
+                continue
+            row = _suggestion_row(item)
+            row["progress"] = round(min(1.0, max(0.0, float(entry.get("progress", 0) or 0))), 3)
+            books.append(row)
+            if len(books) >= _MAX_RESULTS:
+                break
+    except Exception:
+        logging.exception("buddy_tools: where_was_i book lookup failed uid=%d", user_id)
+    return {"inProgress": in_progress, "recentlyFinished": recent, "reading": books}
 
 
 def execute(name: str, args: dict, user_id: int) -> dict:
