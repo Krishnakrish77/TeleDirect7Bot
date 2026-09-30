@@ -1,15 +1,25 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { streamAiRecommendationJob, streamAiRecommendations, submitAiRecommendationJob } from '../api';
+import { fetchBuddyHistory, fetchBuddyPrefs, streamAiRecommendationJob, streamAiRecommendations, submitAiRecommendationJob } from '../api';
+import type * as ApiModule from '../api';
 import { AiRecPanel } from './aiRecPanel';
 
-vi.mock('../api', () => ({
-  dismissRecommendation: vi.fn(),
-  streamAiRecommendations: vi.fn(),
-  submitAiRecommendationJob: vi.fn(),
-  streamAiRecommendationJob: vi.fn(),
-  trackRecommendationEvents: vi.fn(),
-}));
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof ApiModule>();
+  return {
+    ...actual,
+    dismissRecommendation: vi.fn(),
+    streamAiRecommendations: vi.fn(),
+    submitAiRecommendationJob: vi.fn(),
+    streamAiRecommendationJob: vi.fn(),
+    trackRecommendationEvents: vi.fn(),
+    fetchBuddyPrefs: vi.fn(),
+    setBuddyEnabled: vi.fn(),
+    fetchBuddyHistory: vi.fn(),
+    sendBuddyMessage: vi.fn(),
+    deleteBuddyHistory: vi.fn(),
+  };
+});
 
 function renderPanel() {
   return render(
@@ -80,5 +90,36 @@ describe('AiRecPanel reliability status', () => {
     await waitFor(() => expect(screen.getByText('Picked')).toBeTruthy());
     // The status line clears and the shelf appears — the ask never blocked on the request lifetime.
     expect(submitAiRecommendationJob).toHaveBeenCalledWith({ query: 'something fun' }, expect.any(AbortSignal));
+  });
+});
+
+describe('AiRecPanel tabs', () => {
+  it('keeps Picks as the default tab and swaps to the buddy chat on Buddy', async () => {
+    vi.mocked(streamAiRecommendations).mockResolvedValue({
+      items: [], externalItems: [], message: '', coldStart: false,
+    });
+    vi.mocked(fetchBuddyPrefs).mockResolvedValue({ enabled: false });
+    renderPanel();
+
+    // Picks is the default: the ask box is present, the buddy composer is not.
+    await waitFor(() => expect(screen.getByLabelText('Ask the recommender')).toBeTruthy());
+    expect(screen.queryByLabelText('Message your movie buddy')).toBeNull();
+
+    vi.mocked(fetchBuddyHistory).mockResolvedValue({ messages: [] });
+    // Radix tab triggers activate on pointer/mouse down, not on click.
+    fireEvent.pointerDown(screen.getByRole('tab', { name: 'Buddy' }), { button: 0 });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Buddy' }), { button: 0 });
+    fireEvent.click(screen.getByRole('tab', { name: 'Buddy' }));
+
+    // Buddy tab hosts the general (context-free) chat; the flag is off here,
+    // so the opt-in empty state shows instead of the composer.
+    expect(await screen.findByRole('button', { name: 'Enable Movie Buddy' })).toBeTruthy();
+    expect(screen.queryByLabelText('Ask the recommender')).toBeNull();
+    expect(fetchBuddyPrefs).toHaveBeenCalled();
+
+    fireEvent.pointerDown(screen.getByRole('tab', { name: 'Picks' }), { button: 0 });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Picks' }), { button: 0 });
+    fireEvent.click(screen.getByRole('tab', { name: 'Picks' }));
+    await waitFor(() => expect(screen.getByLabelText('Ask the recommender')).toBeTruthy());
   });
 });

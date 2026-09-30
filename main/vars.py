@@ -83,6 +83,12 @@ class Var(object):
     # AI Picks uses function calling plus structured JSON. Keep its model
     # independent from the admin metadata-suggestion selector.
     GEMINI_AI_REC_MODEL = environ.get("GEMINI_AI_REC_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+    # Movie Buddy chat model. Spoiler-guardrail adherence matters more than
+    # cost here, so prefer a strong instruction-following model.
+    GEMINI_BUDDY_MODEL = environ.get("GEMINI_BUDDY_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+    # Per-user daily Movie Buddy message cap — keeps the opt-in chat from
+    # doubling as a free general-purpose chatbot.
+    BUDDY_DAILY_LIMIT = max(1, int(environ.get("BUDDY_DAILY_LIMIT", "100") or 100))
     # Optional Wyzie subtitle provider key.  This is intentionally consumed
     # by server-side routes only; never expose it to the browser bundle.
     WYZIE_API_KEY = environ.get("WYZIE_API_KEY", "").strip()

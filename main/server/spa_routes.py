@@ -27,6 +27,7 @@ from main.server.google_books_images import google_books_cover_proxy
 from main.utils import codec_probe
 from main.utils import cw_store
 from main.utils import book_progress_store
+from main.utils import buddy_store
 from main.utils import media_index
 from main.utils import playlist_store
 from main.utils import ratings_store
@@ -1172,11 +1173,20 @@ def _app_query(params: dict, *, offset: Optional[int] = None) -> str:
 @routes.get("/api/me")
 async def api_me(request: web.Request) -> web.Response:
     user = get_user(request)
+    # Movie Buddy surfaces only for signed-in users who opted in, and only
+    # when Gemini is configured. A Mongo hiccup must never break /api/me.
+    buddy = False
+    if user and Var.GEMINI_API_KEY:
+        try:
+            buddy = await buddy_store.get_enabled(int(user["sub"]))
+        except Exception:
+            buddy = False
     return _json({
         "user": user,
         "botUsername": Var.BOT_USERNAME,
         # AI recommendation FAB shows only for signed-in users when Gemini is configured.
         "gemini": bool(Var.GEMINI_API_KEY) and bool(user),
+        "buddy": buddy,
         "app": {
             "name": "TeleDirect",
             "spaPath": "/",

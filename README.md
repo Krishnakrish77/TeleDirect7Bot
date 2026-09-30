@@ -165,6 +165,8 @@ The essentials are in the Quick start `.env` example. The complete reference is 
 | `TMDB_API_KEY` | — | Enables TMDB movie/series metadata, artwork, trailers, and discovery. |
 | `GEMINI_API_KEY` | — | Enables Gemini-backed, library-grounded AI Picks and admin metadata assistance. |
 | `GEMINI_AI_REC_MODEL` | `gemini-2.5-flash` | Gemini model used only by the AI Picks agent (tool discovery and final ranking). Use a model your API key exposes that supports function calling and structured JSON. |
+| `GEMINI_BUDDY_MODEL` | `gemini-2.5-flash` | Gemini model used by the opt-in Movie Buddy chat. Spoiler-guardrail adherence matters more than cost here, so prefer a strong instruction-following model. |
+| `BUDDY_DAILY_LIMIT` | `100` | Per-user daily Movie Buddy message cap (UTC day). Resets at midnight UTC. |
 | `AI_REC_AGENT_MAX_TOOL_CALLS` | `5` | Maximum catalogue calls per AI Picks run. `5` fills the candidate pool efficiently; use up to `10` only after confirming Gemini latency stays within the request budget. |
 | `WYZIE_API_KEY` | — | Enables server-side subtitle search. Never expose this key to the browser. |
 | `STORE_BACKEND` | — | Set to `mongo` to use MongoDB for the durable catalogue. |

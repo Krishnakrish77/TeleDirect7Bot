@@ -4,11 +4,13 @@ import type { AiRecItem, AiRecResponse, HubCard, RequestTitle } from '../types';
 import { FilmIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
 import type { WatchTrack } from '../types';
 import { AiMixPanel } from './aiMixPanel';
+import { BuddyChat } from './buddyChat';
 import { MediaCard } from './mediaCard';
 import { LoadingRows } from './common';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { tmdbImageUrl } from '../utils/tmdb';
 
 const PROGRESS_STEPS = ['Search library', 'Explore matches', 'Curate picks'];
@@ -64,6 +66,7 @@ export function AiRecPanel({
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<'picks' | 'mix'>('picks');
+  const [tab, setTab] = useState<'picks' | 'buddy'>('picks');
   const ctrl = useRef<AbortController | null>(null);
   const trackedImpressions = useRef<Set<string>>(new Set());
 
@@ -221,13 +224,26 @@ export function AiRecPanel({
             <DialogTitle asChild><h2>AI picks</h2></DialogTitle>
           </div>
           <div className="ai-rec-head-actions">
-            {mode === 'picks' && <Button type="button" variant="outline" size="sm" className="ai-rec-mix-launch" onClick={() => setMode('mix')}><SparkleIcon /> Mix</Button>}
-            {mode === 'picks' && <Button type="button" variant="ghost" size="sm" className="text-button" onClick={() => runAgent({ refresh: true })} disabled={busy}>Refresh</Button>}
+            {mode === 'picks' && tab === 'picks' && <Button type="button" variant="outline" size="sm" className="ai-rec-mix-launch" onClick={() => setMode('mix')}><SparkleIcon /> Mix</Button>}
+            {mode === 'picks' && tab === 'picks' && <Button type="button" variant="ghost" size="sm" className="text-button" onClick={() => runAgent({ refresh: true })} disabled={busy}>Refresh</Button>}
             <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button" aria-label="Close"><XIcon /></Button></DialogClose>
           </div>
         </div>
 
-        {mode === 'mix' ? <AiMixPanel onBack={() => setMode('picks')} onPlay={onPlayMix} onShuffle={onShuffleMix} /> : <>
+        {mode === 'picks' && (
+          <Tabs value={tab} onValueChange={(value) => setTab(value as 'picks' | 'buddy')}>
+            <TabsList className="ai-rec-tabs" aria-label="AI panel sections">
+              <TabsTrigger value="picks">Picks</TabsTrigger>
+              <TabsTrigger value="buddy">Buddy</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+
+        {mode === 'mix' ? <AiMixPanel onBack={() => setMode('picks')} onPlay={onPlayMix} onShuffle={onShuffleMix} /> : tab === 'buddy' ? (
+          <div className="ai-rec-buddy">
+            <BuddyChat />
+          </div>
+        ) : <>
           {agentStatus ? <section className="ai-rec-progress" role="status" aria-live="polite">
             <div className="ai-rec-progress-top">
               <SparkleIcon className="ai-rec-progress-icon" aria-hidden="true" />
