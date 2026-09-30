@@ -14,6 +14,7 @@ serialises them into the functionResponse part verbatim.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from typing import Any, Optional
 
 from main.utils import cw_store, media_index, wh_store
@@ -78,6 +79,17 @@ _TOOL_DECLARATIONS = [
             "most recently, and what they are reading (books, with percent "
             "through). Use it for 'what episode am I on?', 'what was the "
             "last thing I watched?' and 'where am I in that book?'."
+        ),
+        "parameters": {"type": "OBJECT", "properties": {}},
+    },
+    {
+        "name": "my_taste",
+        "description": (
+            "Summarise the user's taste profile: favourite genres, "
+            "directors, frequently watched titles, explicit likes/dislikes "
+            "and what they are currently partway through. Use it whenever "
+            "the user asks for a recommendation, or asks 'what should I "
+            "watch?' — personalise the answer with it."
         ),
         "parameters": {"type": "OBJECT", "properties": {}},
     },
@@ -221,6 +233,35 @@ def title_details(play_href: str) -> dict:
     if item is None:
         return {"error": "unknown title"}
     return _suggestion_row(item)
+
+
+async def my_taste(user_id: int) -> dict:
+    """The user's taste profile — the same cached signals AI Picks ranks on.
+
+    Exposes only summarisable preference data (genres, directors, keywords,
+    counts); never raw ids, so a prompt-injected reply still can't leak
+    anything the user hasn't already watched in-app.
+    """
+    from main.utils import rec_engine
+    try:
+        profile = await rec_engine._collect_signal_profile(user_id)
+    except Exception:
+        logging.exception("buddy_tools: my_taste profile failed uid=%d", user_id)
+        return {"error": "profile unavailable"}
+
+    def top(counter, n=6):
+        return [name for name, _ in counter.most_common(n) if name]
+
+    return {
+        "favouriteGenres": top(profile.get("seed_genres") or Counter()),
+        "favouriteDirectors": top(profile.get("seed_directors") or Counter(), 4),
+        "favouriteKeywords": top(profile.get("seed_keywords") or Counter(), 8),
+        "genresToAvoid": top(profile.get("negative_genres") or Counter(), 4),
+        "likedCount": len(profile.get("liked_tmdb") or ()),
+        "dislikedCount": len(profile.get("disliked_tmdb") or ()),
+        "partwayThroughCount": len(profile.get("partial_tmdb") or ()),
+        "inLibraryCount": len(profile.get("exclude_tmdb") or ()),
+    }
 
 
 async def where_was_i(user_id: int) -> dict:

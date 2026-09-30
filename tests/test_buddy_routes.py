@@ -161,6 +161,26 @@ class ChatRouteTest(unittest.IsolatedAsyncioTestCase):
             # No final text ever arrived → 502.
             self.assertEqual(response.status, 502)
 
+    async def test_my_taste_tool_is_dispatched_and_personalises(self):
+        """'What should I watch?' reaches the taste profile, not a guess."""
+        with ExitStack() as stack:
+            call_data = {"candidates": [{"content": {"parts": [
+                {"functionCall": {"name": "my_taste", "args": {}}},
+            ]}}]}
+            final_data = {"candidates": [{"content": {"parts": [{"text": "Try **Arrival** tonight."}]}}]}
+            patches = self._enter(stack, gemini_reply=None)
+            patches["generate"].side_effect = [call_data, final_data]
+            with patch.object(buddy_routes.buddy_tools, "my_taste", new=AsyncMock(
+                    return_value={"favouriteGenres": ["Sci-Fi"], "likedCount": 3})):
+                response = await buddy_routes.buddy_chat(_Request({"message": "what should I watch?"}))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(json.loads(response.text)["reply"], "Try **Arrival** tonight.")
+            second_contents = patches["generate"].await_args_list[1].args[0] if patches["generate"].await_args_list[1].args else patches["generate"].await_args_list[1].kwargs["contents"]
+            fr = second_contents[-1]["parts"][0]["functionResponse"]
+            self.assertEqual(fr["name"], "my_taste")
+            self.assertEqual(fr["response"]["result"]["favouriteGenres"], ["Sci-Fi"])
+
     async def test_404_when_gemini_not_configured(self):
         with patch.object(buddy_routes.gemini, "available", return_value=False):
             response = await buddy_routes.buddy_chat(_Request({"message": "hi"}))

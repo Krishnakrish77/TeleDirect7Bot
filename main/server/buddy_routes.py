@@ -184,11 +184,14 @@ async def buddy_chat(request: web.Request) -> web.Response:
         contents = contents + [data["candidates"][0]["content"]]
         responses = []
         for call_name, call_args in calls:
-            if call_name == "where_was_i":
+            if call_name in ("where_was_i", "my_taste"):
                 try:
-                    result = await buddy_tools.where_was_i(uid)
+                    result = await (
+                        buddy_tools.where_was_i(uid) if call_name == "where_was_i"
+                        else buddy_tools.my_taste(uid)
+                    )
                 except Exception:
-                    logging.exception("buddy_tools: where_was_i failed uid=%d", uid)
+                    logging.exception("buddy_tools: %s failed uid=%d", call_name, uid)
                     result = {"error": "tool failed"}
             else:
                 result = buddy_tools.execute(call_name, call_args, uid)
