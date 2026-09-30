@@ -28,6 +28,7 @@ from .iptv_routes import routes as iptv_routes
 # module (breaking spa_routes._card / .invalidate_api_cache lookups).
 from .spa_routes import routes as spa_route_table
 from .ai_rec_routes import routes as ai_rec_routes
+from .buddy_routes import routes as buddy_routes
 from .rec_feedback_routes import routes as rec_feedback_routes
 from .request_routes import routes as request_routes
 
@@ -283,6 +284,7 @@ def web_server():
     web_app.add_routes(photo_routes)
     web_app.add_routes(spa_route_table)
     web_app.add_routes(ai_rec_routes)
+    web_app.add_routes(buddy_routes)
     web_app.add_routes(rec_feedback_routes)
     web_app.add_routes(request_routes)
     web_app.add_routes(admin_routes)

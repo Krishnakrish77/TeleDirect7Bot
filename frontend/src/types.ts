@@ -490,6 +490,7 @@ export interface MeResponse {
   user: User | null;
   botUsername: string;
   gemini?: boolean;
+  buddy?: boolean;
   app: {
     name: string;
     spaPath: string;
@@ -550,6 +551,44 @@ export interface AiRecResponse {
     fallback: boolean;
     generatedAt: number;
   };
+}
+
+// ── Movie Buddy ───────────────────────────────────────────────────────────
+
+export interface BuddyMessage {
+  role: 'user' | 'buddy';
+  text: string;
+  t: number;
+}
+
+/** Server-derived spoiler-safe context echoed back with each buddy reply. */
+export interface BuddyContextInfo {
+  title: string;
+  kind: 'movie' | 'tv';
+  seriesTitle?: string;
+  season?: number | null;
+  episode: number | null;
+  completed: boolean;
+  cutoffLabel?: string;
+}
+
+export interface BuddyChatResponse {
+  reply: string;
+  context: BuddyContextInfo | null;
+}
+
+/**
+ * Opaque item reference the client passes to the buddy endpoints. The server
+ * re-derives the real watch state; these fields are display hints only.
+ */
+export interface BuddyChatContext {
+  itemId: string;
+  messageId?: number;
+  title: string;
+  kind: 'movie' | 'tv';
+  seriesTitle?: string;
+  season?: number | null;
+  episode?: number | null;
 }
 
 export interface Suggestion {

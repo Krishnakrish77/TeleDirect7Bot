@@ -91,6 +91,8 @@ async def generate_content(
     tool_config: Optional[dict] = None,
     model: str = "gemini-2.5-flash-lite",
     timeout: float = 25.0,
+    system_instruction: Optional[str] = None,
+    max_output_tokens: Optional[int] = None,
 ) -> Optional[dict]:
     """Make one raw ``generateContent`` request.
 
@@ -99,11 +101,19 @@ async def generate_content(
     a model response from ever gaining direct access to the catalogue or any
     other service.  As with :func:`generate_json`, failures are deliberately
     opaque to callers so product paths can use a safe local fallback.
+
+    ``system_instruction`` maps to the API's systemInstruction slot (persona /
+    guardrails the user turns can't dilute); ``max_output_tokens`` hard-caps
+    the reply length. Both default off so existing callers are unaffected.
     """
     if not Var.GEMINI_API_KEY or not contents:
         return None
     url = _ENDPOINT.format(model=model, key=Var.GEMINI_API_KEY)
     payload: dict = {"contents": contents}
+    if system_instruction:
+        payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+    if max_output_tokens:
+        payload["generationConfig"] = {"maxOutputTokens": int(max_output_tokens)}
     if tools:
         payload["tools"] = tools
     if tool_config:

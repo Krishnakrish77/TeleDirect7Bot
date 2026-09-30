@@ -28,6 +28,8 @@ import type {
   BookProgressMap,
   BookReaderData,
   BookMetadataCandidate,
+  BuddyChatResponse,
+  BuddyMessage,
   ContinueEntry,
   ContinueMap,
   SubtitleTrack,
@@ -306,6 +308,49 @@ export async function searchRequestTitles(query: string, signal?: AbortSignal): 
   const qs = new URLSearchParams({ q: query });
   const data = await request<{ items: RequestTitle[] }>(`/api/app/requests/search?${qs}`, { signal });
   return data.items || [];
+}
+
+// ── Movie Buddy ─────────────────────────────────────────────────────────────
+// Per-user opt-in chat companion. 401s surface as ApiError(401) so the UI can
+// show a sign-in hint; 404 means Gemini isn't configured on this server.
+
+export async function fetchBuddyPrefs(signal?: AbortSignal): Promise<{ enabled: boolean }> {
+  return request<{ enabled: boolean }>('/api/app/buddy/prefs', { signal });
+}
+
+export async function setBuddyEnabled(enabled: boolean): Promise<{ enabled: boolean }> {
+  return request<{ enabled: boolean }>('/api/app/buddy/prefs', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function fetchBuddyHistory(
+  ctx: { itemId?: string; messageId?: number } = {},
+  signal?: AbortSignal,
+): Promise<{ messages: BuddyMessage[] }> {
+  const qs = new URLSearchParams();
+  if (ctx.itemId) qs.set('itemId', ctx.itemId);
+  if (ctx.messageId != null) qs.set('messageId', String(ctx.messageId));
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request<{ messages: BuddyMessage[] }>(`/api/app/ai/buddy/history${suffix}`, { signal });
+}
+
+/** No ctx = clear every buddy session; with ctx = clear that one session. */
+export async function deleteBuddyHistory(ctx?: { itemId?: string; messageId?: number }): Promise<{ ok: boolean }> {
+  const qs = new URLSearchParams();
+  if (ctx?.itemId) qs.set('itemId', ctx.itemId);
+  if (ctx?.messageId != null) qs.set('messageId', String(ctx.messageId));
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request<{ ok: boolean }>(`/api/app/ai/buddy/history${suffix}`, { method: 'DELETE' });
+}
+
+export async function sendBuddyMessage(
+  input: { message: string; itemId?: string; messageId?: number },
+  signal?: AbortSignal,
+): Promise<BuddyChatResponse> {
+  return request<BuddyChatResponse>('/api/app/ai/buddy/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal,
+  });
 }
 
 export async function fetchRequestTitle(tmdbId: number, kind: 'movie' | 'tv', signal?: AbortSignal): Promise<RequestTitle> {

@@ -2,7 +2,8 @@ import { type CSSProperties, DragEvent, MouseEvent, TouchEvent, useCallback, use
 import { attachUserSubtitle, deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, searchUserSubtitles } from '../api';
 import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, SearchIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, RESTORE_AUDIO_MEDIA_SESSION_EVENT, type AudioPlayerHandle, type PlayerState } from '../hooks/audio';
-import type { AudioTrackOption, SubtitleSearchResult, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
+import type { AudioTrackOption, BuddyChatContext, SubtitleSearchResult, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
+import { BuddyChat } from './buddyChat';
 import { ErrorPanel, LoadingRows } from './common';
 import { LyricsFlipCard, LyricsPanel } from './lyrics';
 import { RatingControls } from './rating';
@@ -24,6 +25,32 @@ function isWatchTrack(item: WatchResponse['item']): item is WatchTrack {
 
 function isWatchVideo(item: WatchResponse['item']): item is WatchVideo {
   return item.type === 'video' && 'directSrc' in item;
+}
+
+// Leading-prefix matches: labels can be multi-episode ('S03E05-E06') or
+// season-less ('Episode 5'). Cosmetic only — the server re-derives the cutoff.
+const EPISODE_CODE_RE = /^S(\d{1,3})E(\d{1,3})/i;
+const EPISODE_NUMBER_RE = /^Episode\s+(\d{1,3})/i;
+
+/**
+ * Display hints for the buddy banner. The server re-derives the real spoiler
+ * cutoff from itemId/messageId — nothing here is trusted for that.
+ */
+function buddyContextFor(video: WatchVideo): BuddyChatContext {
+  const label = video.episodeLabel || '';
+  const code = EPISODE_CODE_RE.exec(label);
+  const bare = code ? null : EPISODE_NUMBER_RE.exec(label);
+  const isEpisode = Boolean(label);
+  const seriesTitle = isEpisode ? video.episodeNavigator?.title || video.metadata.title || '' : '';
+  return {
+    itemId: video.itemId,
+    messageId: video.messageId,
+    title: isEpisode ? seriesTitle || video.title : video.title || video.metadata.title,
+    kind: video.mediaKind === 'movie' ? 'movie' : 'tv',
+    seriesTitle: seriesTitle || undefined,
+    season: code ? Number(code[1]) : null,
+    episode: code ? Number(code[2]) : bare ? Number(bare[1]) : null,
+  };
 }
 
 export const STILL_WATCHING_TIMEOUT_MS = 45 * 60 * 1000;
@@ -2467,6 +2494,16 @@ function VideoWatchPage({
       </section>
 
       <VideoInfoSection video={video} />
+
+      <section className="buddy-section" aria-label="Discuss this title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Discuss</p>
+            <h2>Movie buddy</h2>
+          </div>
+        </div>
+        <BuddyChat context={buddyContextFor(video)} />
+      </section>
 
       {chapters.length > 0 && (
         <section className="chapter-section" aria-label="Video chapters">
