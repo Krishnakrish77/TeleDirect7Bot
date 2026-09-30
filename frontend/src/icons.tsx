@@ -82,23 +82,29 @@ export function SparkleIcon(props: Props) {
 }
 
 /**
- * CouchMate — the Movie Buddy's face. A couch whose backrest reads as a
- * play triangle, so one mark says both "assistant" and "watch". Drawn as a
- * filled brand-coloured body so it survives tiny FAB sizes.
+ * CouchMate — the assistant's face. A rounded robot head with the spark of
+ * agency: antenna tip glows, visor eyes read as "attentive", and the mouth
+ * bar is a play triangle so the mark still says "watch" at a glance.
+ * Filled shapes + generous negative space survive tiny FAB sizes.
  */
 export function CouchMateIcon(props: Props) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true" {...props}>
-      {/* backrest: play triangle pointing right */}
-      <path d="M9 5.8a1 1 0 0 1 1.53-.85l6.1 3.87a1 1 0 0 1 0 1.7l-6.1 3.86A1 1 0 0 1 9 13.5z" opacity="0.55" />
-      {/* seat cushion */}
-      <rect x="3.5" y="13" width="17" height="4.4" rx="2.2" />
-      {/* armrests */}
-      <rect x="2" y="11" width="4" height="7.4" rx="2" />
-      <rect x="18" y="11" width="4" height="7.4" rx="2" />
-      {/* feet */}
-      <rect x="4.6" y="18.4" width="2.6" height="2.4" rx="1" />
-      <rect x="16.8" y="18.4" width="2.6" height="2.4" rx="1" />
+      {/* antenna: the agent is live/reachable */}
+      <rect x="11.2" y="1.6" width="1.6" height="3.4" rx="0.8" opacity="0.9" />
+      <circle cx="12" cy="1.9" r="1.5" />
+      {/* head: rounded bot shell */}
+      <path d="M6.2 5.4h11.6A3.2 3.2 0 0 1 21 8.6v7.2a3.2 3.2 0 0 1-3.2 3.2H6.2A3.2 3.2 0 0 1 3 15.8V8.6a3.2 3.2 0 0 1 3.2-3.2z" />
+      {/* visor: recessed face plate */}
+      <rect x="5.4" y="7.9" width="13.2" height="8" rx="2.4" opacity="0.22" />
+      {/* eyes: evenly spaced, upper half of the visor */}
+      <circle cx="9.1" cy="10.7" r="1.35" fill="var(--bg, #0b0c0e)" />
+      <circle cx="14.9" cy="10.7" r="1.35" fill="var(--bg, #0b0c0e)" />
+      {/* mouth: small play triangle, centred like a chin badge */}
+      <path d="M11.05 13.1a.62.62 0 0 1 .95-.53l2.3 1.4a.62.62 0 0 1 0 1.06l-2.3 1.4a.62.62 0 0 1-.95-.53z" fill="var(--bg, #0b0c0e)" opacity="0.92" />
+      {/* ear pods */}
+      <rect x="0.9" y="10.2" width="2" height="4" rx="1" opacity="0.85" />
+      <rect x="21.1" y="10.2" width="2" height="4" rx="1" opacity="0.85" />
     </svg>
   );
 }
