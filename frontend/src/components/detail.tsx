@@ -444,11 +444,11 @@ function MovieDetail({
           })}
         </div>
       </section>
-      <section className="buddy-section" aria-label="Discuss this title">
+      <section className="buddy-section" aria-label="Discuss with CouchMate">
         <div className="section-heading">
           <div>
             <p className="eyebrow">Discuss</p>
-            <h2>Movie buddy</h2>
+            <h2>CouchMate</h2>
           </div>
         </div>
         <BuddyChat context={{ itemId: `movie:${data.key}`, title: data.title, kind: 'movie' }} />
@@ -682,11 +682,11 @@ function SeriesDetail({
           ))}
         </div>
       </section>
-      <section className="buddy-section" aria-label="Discuss this series">
+      <section className="buddy-section" aria-label="Discuss with CouchMate">
         <div className="section-heading">
           <div>
             <p className="eyebrow">Discuss</p>
-            <h2>Movie buddy</h2>
+            <h2>CouchMate</h2>
           </div>
         </div>
         <BuddyChat context={{ itemId: `series:${data.key}`, title: data.title, kind: 'tv', seriesTitle: data.title }} />

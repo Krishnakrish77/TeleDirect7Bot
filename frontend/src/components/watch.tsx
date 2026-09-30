@@ -2495,11 +2495,11 @@ function VideoWatchPage({
 
       <VideoInfoSection video={video} />
 
-      <section className="buddy-section" aria-label="Discuss this title">
+      <section className="buddy-section" aria-label="Discuss with CouchMate">
         <div className="section-heading">
           <div>
             <p className="eyebrow">Discuss</p>
-            <h2>Movie buddy</h2>
+            <h2>CouchMate</h2>
           </div>
         </div>
         <BuddyChat context={buddyContextFor(video)} />

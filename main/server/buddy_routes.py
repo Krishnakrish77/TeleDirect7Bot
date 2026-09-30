@@ -13,7 +13,7 @@ from typing import Optional
 
 from aiohttp import web
 
-from main.utils import buddy_context, buddy_store, gemini
+from main.utils import buddy_context, buddy_store, buddy_tools, gemini
 from main.utils.user_auth import get_user
 from main.vars import Var
 
@@ -160,15 +160,47 @@ async def buddy_chat(request: web.Request) -> web.Response:
     session_key = buddy_store.session_key_for(item_id, message_id)
     history = await buddy_store.get_history(uid, session_key)
     system_instruction, contents = buddy_context.build_prompt(context, history, message)
-    data = await gemini.generate_content(
-        contents,
-        model=Var.GEMINI_BUDDY_MODEL,
-        timeout=45,
-        system_instruction=system_instruction,
-        # Hard output cap: even a jailbroken buddy stays useless as a
-        # general-purpose assistant.
-        max_output_tokens=400,
-    )
+
+    # Function-call loop: the model may request up to
+    # buddy_tools.max_calls_per_turn() tool runs per user message. Every tool
+    # executes server-side against trusted state (the model only names the
+    # tool and its args); results return as functionResponse parts. Any
+    # tool failure feeds the model an error response so it can recover.
+    data = None
+    for _turn in range(buddy_tools.max_calls_per_turn() + 1):
+        data = await gemini.generate_content(
+            contents,
+            model=Var.GEMINI_BUDDY_MODEL,
+            timeout=45,
+            system_instruction=system_instruction,
+            tools=buddy_tools.declarations(),
+            # Hard output cap: even a jailbroken buddy stays useless as a
+            # general-purpose assistant.
+            max_output_tokens=400,
+        )
+        calls = _tool_calls(data)
+        if not calls:
+            break
+        contents = contents + [data["candidates"][0]["content"]]
+        responses = []
+        for call_name, call_args in calls:
+            if call_name == "where_was_i":
+                try:
+                    result = await buddy_tools.where_was_i(uid)
+                except Exception:
+                    logging.exception("buddy_tools: where_was_i failed uid=%d", uid)
+                    result = {"error": "tool failed"}
+            else:
+                result = buddy_tools.execute(call_name, call_args, uid)
+            responses.append({
+                "functionResponse": {
+                    "name": call_name,
+                    "response": {"result": result},
+                },
+            })
+        contents.append({"role": "user", "parts": responses})
+    if data is None:
+        data = {}
     reply = _extract_reply(data)
     if not reply:
         # Never persist a dangling user message — the pair goes in atomically
@@ -179,6 +211,21 @@ async def buddy_chat(request: web.Request) -> web.Response:
         )
     await buddy_store.append_exchange(uid, session_key, message, reply)
     return web.json_response({"reply": reply, "context": _public_context(context)})
+
+
+def _tool_calls(data: Optional[dict]) -> list[tuple[str, dict]]:
+    """Extract functionCall parts from a generateContent response, or []."""
+    try:
+        parts = data["candidates"][0]["content"]["parts"]
+    except (AttributeError, IndexError, KeyError, TypeError):
+        return []
+    calls = []
+    for part in parts or []:
+        call = (part or {}).get("functionCall") if isinstance(part, dict) else None
+        if isinstance(call, dict) and call.get("name"):
+            args = call.get("args")
+            calls.append((str(call["name"]), args if isinstance(args, dict) else {}))
+    return calls
 
 
 def _extract_reply(data: Optional[dict]) -> Optional[str]:

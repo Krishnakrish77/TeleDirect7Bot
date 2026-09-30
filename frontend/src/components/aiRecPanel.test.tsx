@@ -94,32 +94,32 @@ describe('AiRecPanel reliability status', () => {
 });
 
 describe('AiRecPanel tabs', () => {
-  it('keeps Picks as the default tab and swaps to the buddy chat on Buddy', async () => {
+  it('keeps Picks as the default tab and swaps to the CouchMate chat on the assistant tab', async () => {
     vi.mocked(streamAiRecommendations).mockResolvedValue({
       items: [], externalItems: [], message: '', coldStart: false,
     });
     vi.mocked(fetchBuddyPrefs).mockResolvedValue({ enabled: false });
     renderPanel();
 
-    // Picks is the default: the ask box is present, the buddy composer is not.
+    // CouchMate is not yet enabled so Picks is the default: the ask box is present, the buddy composer is not.
     await waitFor(() => expect(screen.getByLabelText('Ask the recommender')).toBeTruthy());
-    expect(screen.queryByLabelText('Message your movie buddy')).toBeNull();
+    expect(screen.queryByLabelText('Message CouchMate')).toBeNull();
 
     vi.mocked(fetchBuddyHistory).mockResolvedValue({ messages: [] });
     // Radix tab triggers activate on pointer/mouse down, not on click.
-    fireEvent.pointerDown(screen.getByRole('tab', { name: 'Buddy' }), { button: 0 });
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Buddy' }), { button: 0 });
-    fireEvent.click(screen.getByRole('tab', { name: 'Buddy' }));
+    fireEvent.pointerDown(screen.getByRole('tab', { name: 'CouchMate' }), { button: 0 });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'CouchMate' }), { button: 0 });
+    fireEvent.click(screen.getByRole('tab', { name: 'CouchMate' }));
 
     // Buddy tab hosts the general (context-free) chat; the flag is off here,
     // so the opt-in empty state shows instead of the composer.
-    expect(await screen.findByRole('button', { name: 'Enable Movie Buddy' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Enable CouchMate' })).toBeTruthy();
     expect(screen.queryByLabelText('Ask the recommender')).toBeNull();
     expect(fetchBuddyPrefs).toHaveBeenCalled();
 
-    fireEvent.pointerDown(screen.getByRole('tab', { name: 'Picks' }), { button: 0 });
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Picks' }), { button: 0 });
-    fireEvent.click(screen.getByRole('tab', { name: 'Picks' }));
+    fireEvent.pointerDown(screen.getByRole('tab', { name: 'AI Picks' }), { button: 0 });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'AI Picks' }), { button: 0 });
+    fireEvent.click(screen.getByRole('tab', { name: 'AI Picks' }));
     await waitFor(() => expect(screen.getByLabelText('Ask the recommender')).toBeTruthy());
   });
 });

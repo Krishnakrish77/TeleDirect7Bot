@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { deleteBuddyHistory, fetchBuddyHistory, fetchBuddyPrefs, sendBuddyMessage, setBuddyEnabled } from '../api';
 import type { BuddyChatContext, BuddyContextInfo, BuddyMessage } from '../types';
-import { SparkleIcon } from '../icons';
+import { CouchMateIcon, SparkleIcon } from '../icons';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 
@@ -49,7 +51,7 @@ const SUGGESTIONS: ReadonlyArray<{ label: string; prompt: string }> = [
 ];
 
 /**
- * Shared Movie Buddy chat. All spoiler decisions happen server-side; this
+ * Shared CouchMate chat. All spoiler decisions happen server-side; this
  * component only forwards the opaque item reference it is given and renders
  * whatever state the prefs/chat endpoints report.
  */
@@ -131,13 +133,13 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
         setStatus('on');
         loadHistory(gen);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Could not enable Movie Buddy.'))
+      .catch((err) => setError(err instanceof Error ? err.message : 'Could not enable CouchMate.'))
       .finally(() => setEnabling(false));
   };
 
   const clearChat = () => {
     if (clearing || sending) return;
-    const scope = context ? 'this conversation' : 'all buddy conversations';
+    const scope = context ? 'this conversation' : 'all CouchMate conversations';
     if (!window.confirm(`Clear ${scope}? This cannot be undone.`)) return;
     const gen = generation.current;
     setClearing(true);
@@ -174,7 +176,7 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
         setMessages((current) => current.filter((entry) => entry !== optimistic));
         setDraft(message);
         setFailedMessage(message);
-        setError(err instanceof Error ? err.message : 'Your buddy missed that one. Try again.');
+        setError(err instanceof Error ? err.message : 'CouchMate missed that one. Try again.');
       })
       .finally(() => setSending(false));
   };
@@ -183,16 +185,16 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
 
   return (
     <div className="buddy-chat">
-      {status === 'signed-out' && <p className="buddy-note">Sign in to chat with your movie buddy.</p>}
-      {status === 'unavailable' && <p className="buddy-note">Movie Buddy isn't available on this server right now.</p>}
+      {status === 'signed-out' && <p className="buddy-note">Sign in to chat with CouchMate.</p>}
+      {status === 'unavailable' && <p className="buddy-note">CouchMate isn't available on this server right now.</p>}
 
       {status === 'off' && (
         <div className="buddy-enable">
           <p className="buddy-enable-pitch">
-            <SparkleIcon /> Chat about what you're watching — plot so far, characters, where you know that actor from. Always spoiler-safe.
+            <CouchMateIcon /> Hi, I'm CouchMate — your movie assistant. Chat about what you're watching, find something to play, or ask what to watch next. Always spoiler-safe.
           </p>
           <Button type="button" onClick={enable} disabled={enabling}>
-            {enabling ? 'Enabling…' : 'Enable Movie Buddy'}
+            {enabling ? 'Enabling…' : 'Enable CouchMate'}
           </Button>
           {error && <p className="buddy-error" role="alert">{error}</p>}
         </div>
@@ -231,10 +233,22 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
             )}
             {messages.map((message, index) => (
               <div key={`${message.t}:${index}`} className={`buddy-message buddy-message--${message.role}`} dir="auto">
-                {message.text}
+                {message.role === 'buddy'
+                  ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        // Assistant links stay internal: same-tab, app-relative.
+                        a: ({ node, ...props }) => <a {...props} onClick={(e) => { e.preventDefault(); if (props.href) window.location.assign(props.href); }} />,
+                      }}
+                    >
+                      {message.text}
+                    </ReactMarkdown>
+                  )
+                  : message.text}
               </div>
             ))}
-            {sending && <p className="buddy-typing" role="status">Buddy is thinking…</p>}
+            {sending && <p className="buddy-typing" role="status">CouchMate is thinking…</p>}
           </div>
           {error && status === 'on' && (
             <div className="buddy-error" role="alert">
@@ -256,9 +270,9 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
             <Input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder={context ? 'Ask about this title…' : 'Ask your movie buddy…'}
+              placeholder={context ? 'Ask about this title…' : "Ask CouchMate — 'what should I watch?'…"}
               disabled={sending || status === 'loading'}
-              aria-label="Message your movie buddy"
+              aria-label="Message CouchMate"
               maxLength={2000}
             />
             {status === 'on' && (

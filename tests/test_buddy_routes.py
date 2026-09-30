@@ -124,6 +124,43 @@ class ChatRouteTest(unittest.IsolatedAsyncioTestCase):
             response = await buddy_routes.buddy_chat(_Request({"message": "hi"}))
         self.assertEqual(response.status, 401)
 
+    async def test_tool_call_loop_executes_and_feeds_back(self):
+        """A functionCall turn is answered server-side; the final text lands."""
+        with ExitStack() as stack:
+            call_data = {"candidates": [{"content": {"parts": [
+                {"functionCall": {"name": "where_was_i", "args": {}}},
+            ]}}]}
+            final_data = {"candidates": [{"content": {"parts": [{"text": "You're on S01E02."}]}}]}
+            patches = self._enter(stack, gemini_reply=None)
+            patches["generate"].side_effect = [call_data, final_data]
+            with patch.object(buddy_routes.buddy_tools, "where_was_i",
+                              new=AsyncMock(return_value={"inProgress": [], "recentlyFinished": []})):
+                response = await buddy_routes.buddy_chat(_Request({"message": "where am I?"}))
+
+            self.assertEqual(response.status, 200)
+            body = json.loads(response.text)
+            self.assertEqual(body["reply"], "You're on S01E02.")
+            # Two generate calls: tool turn, then follow-up with the functionResponse.
+            self.assertEqual(patches["generate"].await_count, 2)
+            second_contents = patches["generate"].await_args_list[1].args[0] if patches["generate"].await_args_list[1].args else patches["generate"].await_args_list[1].kwargs["contents"]
+            fr = second_contents[-1]["parts"][0]["functionResponse"]
+            self.assertEqual(fr["name"], "where_was_i")
+
+    async def test_tool_loop_is_capped_per_turn(self):
+        """The loop never spins past max_calls_per_turn on a hostile model."""
+        with ExitStack() as stack:
+            call_data = {"candidates": [{"content": {"parts": [
+                {"functionCall": {"name": "search_catalogue", "args": {"query": "x"}}},
+            ]}}]}
+            patches = self._enter(stack, gemini_reply=None)
+            patches["generate"].side_effect = [call_data] * 99
+            with patch.object(buddy_routes.buddy_tools, "search_catalogue", return_value={"results": []}):
+                response = await buddy_routes.buddy_chat(_Request({"message": "search"}))
+
+            self.assertEqual(patches["generate"].await_count, buddy_routes.buddy_tools.max_calls_per_turn() + 1)
+            # No final text ever arrived → 502.
+            self.assertEqual(response.status, 502)
+
     async def test_404_when_gemini_not_configured(self):
         with patch.object(buddy_routes.gemini, "available", return_value=False):
             response = await buddy_routes.buddy_chat(_Request({"message": "hi"}))

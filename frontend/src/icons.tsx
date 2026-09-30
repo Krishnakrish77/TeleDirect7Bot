@@ -74,12 +74,32 @@ export function ShuffleIcon(props: Props) {
 }
 
 export function SparkleIcon(props: Props) {
-  // A single 4-point star centered on (12,12) so it sits dead-centre in a
-  // circular FAB — a second off-centre accent star made the mark look skewed.
   return (
     <IconBase {...props}>
       <path d="M12 4l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" />
     </IconBase>
+  );
+}
+
+/**
+ * CouchMate — the Movie Buddy's face. A couch whose backrest reads as a
+ * play triangle, so one mark says both "assistant" and "watch". Drawn as a
+ * filled brand-coloured body so it survives tiny FAB sizes.
+ */
+export function CouchMateIcon(props: Props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true" {...props}>
+      {/* backrest: play triangle pointing right */}
+      <path d="M9 5.8a1 1 0 0 1 1.53-.85l6.1 3.87a1 1 0 0 1 0 1.7l-6.1 3.86A1 1 0 0 1 9 13.5z" opacity="0.55" />
+      {/* seat cushion */}
+      <rect x="3.5" y="13" width="17" height="4.4" rx="2.2" />
+      {/* armrests */}
+      <rect x="2" y="11" width="4" height="7.4" rx="2" />
+      <rect x="18" y="11" width="4" height="7.4" rx="2" />
+      {/* feet */}
+      <rect x="4.6" y="18.4" width="2.6" height="2.4" rx="1" />
+      <rect x="16.8" y="18.4" width="2.6" height="2.4" rx="1" />
+    </svg>
   );
 }
 

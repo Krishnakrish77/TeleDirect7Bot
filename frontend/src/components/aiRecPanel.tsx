@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { dismissRecommendation, streamAiRecommendationJob, streamAiRecommendations, submitAiRecommendationJob, trackRecommendationEvents } from '../api';
 import type { AiRecItem, AiRecResponse, HubCard, RequestTitle } from '../types';
-import { FilmIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
+import { CouchMateIcon, FilmIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
 import type { WatchTrack } from '../types';
 import { AiMixPanel } from './aiMixPanel';
 import { BuddyChat } from './buddyChat';
@@ -38,6 +38,7 @@ function recommendationStatus(meta: AiRecResponse['recommendationMeta']) {
 export function AiRecPanel({
   open,
   onClose,
+  buddyEnabled = false,
   saved,
   onToggleSaved,
   onPlayMix,
@@ -46,6 +47,8 @@ export function AiRecPanel({
 }: {
   open: boolean;
   onClose: () => void;
+  /** When the user opted into CouchMate, the panel opens on the chat tab. */
+  buddyEnabled?: boolean;
   saved: Set<string>;
   onToggleSaved: (card: HubCard) => void;
   onPlayMix: (tracks: WatchTrack[]) => void;
@@ -66,7 +69,7 @@ export function AiRecPanel({
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<'picks' | 'mix'>('picks');
-  const [tab, setTab] = useState<'picks' | 'buddy'>('picks');
+  const [tab, setTab] = useState<'picks' | 'buddy'>(buddyEnabled ? 'buddy' : 'picks');
   const ctrl = useRef<AbortController | null>(null);
   const trackedImpressions = useRef<Set<string>>(new Set());
 
@@ -220,11 +223,15 @@ export function AiRecPanel({
       <DialogContent className={`ai-rec-panel${mode === 'mix' ? ' ai-rec-panel--mix' : ''}`} showOverlay={false} aria-describedby={undefined}>
         <div className="ai-rec-head">
           <div className="ai-rec-heading">
-            <p className="eyebrow"><SparkleIcon /> For you</p>
-            <DialogTitle asChild><h2>{mode === 'mix' || tab === 'picks' ? 'AI picks' : 'Movie Buddy'}</h2></DialogTitle>
+            <p className="eyebrow"><CouchMateIcon /> Your movie assistant</p>
+            <DialogTitle asChild><h2>{mode === 'mix' || tab === 'picks' ? 'AI Picks' : 'CouchMate'}</h2></DialogTitle>
           </div>
           <div className="ai-rec-head-actions">
-            {mode === 'picks' && tab === 'picks' && <Button type="button" variant="outline" size="sm" className="ai-rec-mix-launch" onClick={() => setMode('mix')}><SparkleIcon /> Mix</Button>}
+            {mode === 'picks' && tab === 'buddy' && (
+              <Button type="button" variant="outline" size="sm" className="ai-rec-mix-launch" onClick={() => setTab('picks')}>
+                <SparkleIcon /> AI Picks
+              </Button>
+            )}
             {mode === 'picks' && tab === 'picks' && <Button type="button" variant="ghost" size="sm" className="text-button" onClick={() => runAgent({ refresh: true })} disabled={busy}>Refresh</Button>}
             <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button" aria-label="Close"><XIcon /></Button></DialogClose>
           </div>
@@ -233,8 +240,8 @@ export function AiRecPanel({
         {mode === 'picks' && (
           <Tabs value={tab} onValueChange={(value) => setTab(value as 'picks' | 'buddy')}>
             <TabsList className="ai-rec-tabs" aria-label="AI panel sections">
-              <TabsTrigger value="picks">Picks</TabsTrigger>
-              <TabsTrigger value="buddy">Buddy</TabsTrigger>
+              <TabsTrigger value="buddy">CouchMate</TabsTrigger>
+              <TabsTrigger value="picks">AI Picks</TabsTrigger>
             </TabsList>
           </Tabs>
         )}

@@ -38,12 +38,12 @@ describe('BuddyChat', () => {
     vi.mocked(fetchBuddyHistory).mockResolvedValue({ messages: [] });
     render(<BuddyChat />);
 
-    const enableButton = await screen.findByRole('button', { name: 'Enable Movie Buddy' });
+    const enableButton = await screen.findByRole('button', { name: 'Enable CouchMate' });
     fireEvent.click(enableButton);
 
     await waitFor(() => expect(setBuddyEnabled).toHaveBeenCalledWith(true));
     await waitFor(() => expect(fetchBuddyHistory).toHaveBeenCalled());
-    expect(await screen.findByLabelText('Message your movie buddy')).toBeTruthy();
+    expect(await screen.findByLabelText('Message CouchMate')).toBeTruthy();
   });
 
   it('shows the spoiler-safe context banner and sends messages with the item reference', async () => {
@@ -60,7 +60,7 @@ describe('BuddyChat', () => {
 
     expect(await screen.findByText('Chatting about The Wire S03E05 — no spoilers beyond this episode')).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText('Message your movie buddy'), { target: { value: 'Who is Stringer?' } });
+    fireEvent.change(screen.getByLabelText('Message CouchMate'), { target: { value: 'Who is Stringer?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
     await waitFor(() => expect(sendBuddyMessage).toHaveBeenCalledWith({ message: 'Who is Stringer?', itemId: 'item-1', messageId: 42 }));
@@ -73,17 +73,17 @@ describe('BuddyChat', () => {
     vi.mocked(fetchBuddyPrefs).mockRejectedValue(new ApiError('Unauthorized', 401));
     render(<BuddyChat />);
 
-    expect(await screen.findByText('Sign in to chat with your movie buddy.')).toBeTruthy();
-    expect(screen.queryByLabelText('Message your movie buddy')).toBeNull();
+    expect(await screen.findByText('Sign in to chat with CouchMate.')).toBeTruthy();
+    expect(screen.queryByLabelText('Message CouchMate')).toBeNull();
   });
 
   it('shows an unavailable note when prefs fail for a non-auth reason', async () => {
     vi.mocked(fetchBuddyPrefs).mockRejectedValue(new ApiError('Not Found', 404));
     render(<BuddyChat />);
 
-    expect(await screen.findByText("Movie Buddy isn't available on this server right now.")).toBeTruthy();
-    expect(screen.queryByLabelText('Message your movie buddy')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Enable Movie Buddy' })).toBeNull();
+    expect(await screen.findByText("CouchMate isn't available on this server right now.")).toBeTruthy();
+    expect(screen.queryByLabelText('Message CouchMate')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Enable CouchMate' })).toBeNull();
   });
 
   it('shows watch progress in the banner and offers suggestion chips in the empty state', async () => {
@@ -114,18 +114,18 @@ describe('BuddyChat', () => {
     vi.mocked(setBuddyEnabled).mockRejectedValueOnce(new ApiError('Buddy preferences need the database. Try again shortly.', 503));
     render(<BuddyChat />);
 
-    const enableButton = await screen.findByRole('button', { name: 'Enable Movie Buddy' });
+    const enableButton = await screen.findByRole('button', { name: 'Enable CouchMate' });
     fireEvent.click(enableButton);
 
     expect((await screen.findByRole('alert')).textContent).toContain('Buddy preferences need the database. Try again shortly.');
     // The opt-in state is preserved: the button is back and can be retried.
-    expect(screen.getByRole('button', { name: 'Enable Movie Buddy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Enable CouchMate' })).toBeTruthy();
     expect(fetchBuddyHistory).not.toHaveBeenCalled();
 
     vi.mocked(setBuddyEnabled).mockResolvedValueOnce({ enabled: true });
     vi.mocked(fetchBuddyHistory).mockResolvedValue({ messages: [] });
-    fireEvent.click(screen.getByRole('button', { name: 'Enable Movie Buddy' }));
-    expect(await screen.findByLabelText('Message your movie buddy')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Enable CouchMate' }));
+    expect(await screen.findByLabelText('Message CouchMate')).toBeTruthy();
   });
 
   it('keeps a failed message retryable and restores it to the input', async () => {
@@ -134,7 +134,7 @@ describe('BuddyChat', () => {
     vi.mocked(sendBuddyMessage).mockRejectedValueOnce(new ApiError('Buddy is thinking too hard.', 502));
     render(<BuddyChat context={episodeContext} />);
 
-    const input = await screen.findByLabelText('Message your movie buddy');
+    const input = await screen.findByLabelText('Message CouchMate');
     fireEvent.change(input, { target: { value: 'Is this safe to ask?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
@@ -183,7 +183,7 @@ describe('BuddyChat', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
 
     await waitFor(() => expect(deleteBuddyHistory).toHaveBeenCalledWith(undefined));
-    expect(confirmMock.mock.calls[0][0]).toContain('all buddy conversations');
+    expect(confirmMock.mock.calls[0][0]).toContain('all CouchMate conversations');
     await waitFor(() => expect(screen.queryByText('Hi')).toBeNull());
   });
 

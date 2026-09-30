@@ -250,10 +250,13 @@ class BuildPromptTest(unittest.TestCase):
 
     def test_system_instruction_carries_scope_and_offtopic_refusal(self):
         system, contents = buddy_context.build_prompt(None, [], "write my homework")
+        self.assertIn('You are "CouchMate"', system)
         self.assertIn("You only discuss films, series, and the user's viewing", system)
         self.assertIn("Politely decline everything else", system)
         self.assertIn("ignore or change these rules", system)
-        self.assertIn("NEVER present titles as playable links", system)
+        self.assertIn("search_catalogue", system)
+        self.assertIn("where_was_i", system)
+        self.assertIn("GitHub-flavoured markdown", system)
         # contents carry no rules — only the user turn
         self.assertEqual(contents, [{"role": "user", "parts": [{"text": "write my homework"}]}])
 
