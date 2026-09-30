@@ -1326,7 +1326,7 @@ function AlbumsGrid({
   );
 }
 
-export function PhotosPage({ user }: { user: { sub: number | string } | null }) {
+export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } | null; onSignIn?: () => void }) {
   const { status, loading: statusLoading, error: statusError, reload: reloadStatus } = usePhotoStatus();
   const [view, setView] = useState<View>('timeline');
   const [timeline, setTimeline] = useState<TimelineData | null>(null);
@@ -1651,7 +1651,39 @@ export function PhotosPage({ user }: { user: { sub: number | string } | null }) 
   if (!signedIn) {
     return (
       <main className="photos-page photos-page--centered">
-        <p className="photos-connect__lede">Sign in to use TeleDirect Photos.</p>
+        <section className="photos-signin" aria-labelledby="photos-signin-title">
+          <div className="photos-signin__visual" aria-hidden="true">
+            <span className="photos-signin__photo photos-signin__photo--a" />
+            <span className="photos-signin__photo photos-signin__photo--b" />
+            <span className="photos-signin__photo photos-signin__photo--c">
+              <ImageIcon />
+            </span>
+          </div>
+          <h1 id="photos-signin-title">TeleDirect Photos</h1>
+          <p className="photos-signin__lede">
+            Your private photo vault — backed by your own Telegram channel and
+            streamed straight from Telegram's servers. Nothing is stored on ours.
+          </p>
+          <ul className="photos-signin__perks">
+            <li>
+              <CheckIcon />
+              <span>Unlimited-duration backup on your own channel</span>
+            </li>
+            <li>
+              <CheckIcon />
+              <span>Timeline search, albums, favorites and a lightbox</span>
+            </li>
+            <li>
+              <CheckIcon />
+              <span>Private by design — only your account can browse it</span>
+            </li>
+          </ul>
+          {onSignIn ? (
+            <Button type="button" onClick={onSignIn}>Sign in to use Photos</Button>
+          ) : (
+            <p className="photos-signin__hint">Use the Sign in button in the header, then come back.</p>
+          )}
+        </section>
       </main>
     );
   }

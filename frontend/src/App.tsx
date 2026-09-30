@@ -600,7 +600,7 @@ function App() {
         ) : route.kind === 'books' ? (
           <BooksPage user={user} />
         ) : route.kind === 'photos' ? (
-          <PhotosPage user={user} />
+          <PhotosPage user={user} onSignIn={() => setSignInOpen(true)} />
         ) : route.kind === 'admin-dashboard' ? (
           <AdminFrame routeKind={route.kind} locationSearch={location.search}>
             <AdminDashboard user={user} onSignIn={() => setSignInOpen(true)} />
@@ -717,7 +717,7 @@ function App() {
           />
         </Suspense>
       )}
-      {user && me?.gemini && <AiRecFab saved={saved} onToggleSaved={onToggleSaved} onRequestTitle={(title) => { setRequestSeed(title); setRequestOpen(true); }} onPlayMix={(tracks) => {
+      {user && me?.gemini && <AiRecFab buddyEnabled={me?.buddy === true} saved={saved} onToggleSaved={onToggleSaved} onRequestTitle={(title) => { setRequestSeed(title); setRequestOpen(true); }} onPlayMix={(tracks) => {
         if (tracks[0]) audio.playTrack(tracks[0], tracks);
       }} onShuffleMix={(tracks) => audio.shuffleQueue(tracks)} />}
       <ScrollToTop />

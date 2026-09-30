@@ -365,6 +365,25 @@ describe('Photos onboarding', () => {
   });
 });
 
+describe('Photos signed-out gate', () => {
+  it('invites the user with a sign-in card instead of a bare sentence', () => {
+    const onSignIn = vi.fn();
+    render(<PhotosPage user={null} onSignIn={onSignIn} />);
+
+    expect(screen.getByRole('heading', { name: 'TeleDirect Photos' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in to use Photos' }));
+    expect(onSignIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('still explains itself when no sign-in trigger is wired', () => {
+    render(<PhotosPage user={null} />);
+
+    expect(screen.getByRole('heading', { name: 'TeleDirect Photos' })).toBeTruthy();
+    expect(screen.getByText(/Use the Sign in button in the header/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Sign in to use Photos' })).toBeNull();
+  });
+});
+
 describe('Photos missing-photo search', () => {
   it('reports that a search for missing photos is running', async () => {
     vi.mocked(resyncPhotosLibrary).mockResolvedValue(undefined);

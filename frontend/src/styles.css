@@ -7772,6 +7772,30 @@ img {
   color: var(--text);
 }
 
+/* Assistant replies arrive as markdown — keep the bubble typography tight. */
+.buddy-message--buddy > * { margin: 0; }
+.buddy-message--buddy > * + * { margin-top: 0.45em; }
+.buddy-message--buddy ul,
+.buddy-message--buddy ol {
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+}
+.buddy-message--buddy a {
+  color: #fdba74;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.buddy-message--buddy strong { color: #fff; }
+.buddy-message--buddy code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
 .buddy-typing {
   margin: 0;
   align-self: flex-start;
@@ -14185,6 +14209,44 @@ select.edit-field-input {
 .photos-connect__field-row input { flex: 1; min-width: 0; min-height: 2.6rem; padding: 0.45rem 0.8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
 .photos-connect__field-row input:focus-visible { border-color: var(--brand); outline: 2px solid rgba(249, 115, 22, 0.25); outline-offset: 1px; }
 .photos-connect__error { margin: 0; color: #f87171; font-size: 0.86rem; }
+
+/* Signed-out gate — a proper invitation card, not a bare sentence. */
+.photos-signin {
+  display: grid;
+  justify-items: center;
+  gap: 1.1rem;
+  width: min(100%, 26rem);
+  margin-block: clamp(2rem, 8vh, 5rem);
+  padding: clamp(1.5rem, 4vw, 2.4rem);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--brand-soft) 0%, transparent 55%),
+    var(--panel);
+  box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.6);
+}
+.photos-signin h1 { margin: 0; font-size: clamp(1.4rem, 3vw, 1.8rem); letter-spacing: -0.02em; }
+.photos-signin__lede { margin: 0; color: var(--muted); line-height: 1.6; font-size: 0.92rem; }
+.photos-signin__perks { display: grid; gap: 0.55rem; margin: 0; padding: 0; list-style: none; text-align: left; }
+.photos-signin__perks li { display: flex; align-items: center; gap: 0.6rem; color: var(--muted); font-size: 0.88rem; }
+.photos-signin__perks svg { width: 16px; height: 16px; flex: none; color: var(--teal); }
+.photos-signin__hint { margin: 0; color: var(--dim); font-size: 0.84rem; }
+/* Fanned photo stack — echoes a photo timeline without real assets. */
+.photos-signin__visual { position: relative; width: 7.5rem; height: 5rem; }
+.photos-signin__photo {
+  position: absolute;
+  width: 4.6rem;
+  height: 3.4rem;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.7);
+  display: grid;
+  place-items: center;
+}
+.photos-signin__photo svg { width: 22px; height: 22px; color: rgba(255, 255, 255, 0.75); }
+.photos-signin__photo--a { left: 0; top: 0.7rem; background: linear-gradient(135deg, #7c2d12, var(--brand)); transform: rotate(-9deg); z-index: 1; }
+.photos-signin__photo--b { right: 0; top: 0.7rem; background: linear-gradient(135deg, #115e59, var(--teal)); transform: rotate(9deg); z-index: 1; }
+.photos-signin__photo--c { left: 50%; top: 0; transform: translateX(-50%); background: linear-gradient(160deg, #1f2227, #374151); z-index: 2; }
 
 /* Narrow screens: the link/id field needs the full width, so stack it above
    the button instead of squeezing the label onto two lines. */
