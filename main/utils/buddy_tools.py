@@ -19,6 +19,7 @@ from typing import Any, Optional
 
 from main.utils import cw_store, media_index, wh_store
 from main.utils.buddy_context import _item_for_cw_key, _ratio
+from main.server.tmdb_images import tmdb_image_url
 
 # Result caps: keep every tool response small enough that a chatty model
 # can't blow the context window by calling tools in a loop.
@@ -135,7 +136,7 @@ def _suggestion_row(item) -> dict:
         return {
             "title": item.title,
             "kind": "book",
-            "playHref": f"/books",
+            "playHref": f"/books?book={item.message_id}",
             "authors": list(getattr(item, "book_authors", None) or [])[:3],
             "overview": (getattr(item, "overview", "") or "")[:_OVERVIEW_CAP],
         }
@@ -149,12 +150,46 @@ def _suggestion_row(item) -> dict:
 
 
 def search_catalogue(query: str, kind: str = "") -> dict:
-    """Search the catalogue, collapsing series/movies to one row each."""
-    results = media_index.suggest((query or "").strip(), limit=_MAX_RESULTS + 4)
-    if kind:
-        wanted = kind.strip().lower()
-        if wanted == "audio":
-            wanted = "audio"
+    """Search the catalogue, collapsing series/movies to one row each.
+
+    media_index.suggest returns nav-dropdown rows (``url``, and books
+    mislabeled as movies with an unplayable /watch href); remap them to the
+    same shape as ``_suggestion_row`` so every tool speaks one row dialect
+    with a ``playHref``.
+    """
+    raw = media_index.suggest((query or "").strip(), limit=_MAX_RESULTS + 8)
+    results: list[dict] = []
+    for row in raw:
+        item = media_index.get_item(int(row.get("message_id") or 0))
+        poster_path = media_index.poster_path_for_item(item) if item else ""
+        # Cards need a browser-ready URL: TMDB path proxied, else thumb route.
+        if poster_path:
+            poster = tmdb_image_url(poster_path, "w185")
+        elif item is not None:
+            suffix = "?v=audio3" if (getattr(item, "media_kind", "") or "") == "audio" else ""
+            poster = f"/thumb/{item.secure_hash}{item.message_id}.jpg{suffix}"
+        else:
+            poster = ""
+        overview = (getattr(item, "overview", "") or "")[:_OVERVIEW_CAP] if item else ""
+        if row.get("media_kind") == "book":
+            mapped = {"title": row.get("title"), "kind": "book",
+                      "playHref": f"/books?book={row.get('message_id')}",
+                      "poster": poster, "year": row.get("year"), "overview": overview}
+        else:
+            href = str(row.get("url") or "")
+            mapped = {
+                "title": row.get("title"),
+                "kind": row.get("kind"),
+                "playHref": href,
+                "poster": poster,
+                "year": row.get("year"),
+                "overview": overview,
+            }
+            if href.startswith("/album/"):
+                mapped["kind"] = "album"
+        results.append(mapped)
+    wanted = (kind or "").strip().lower()
+    if wanted:
         results = [r for r in results if r.get("kind") == wanted]
     return {"results": results[:_MAX_RESULTS]}
 
@@ -185,19 +220,23 @@ def title_details(play_href: str) -> dict:
             "tracks": [t.title for t in tracks[:_MAX_RESULTS]],
         }
     if parts[0] == "book":
-        for item in media_index._items.values():
-            if (getattr(item, "media_kind", "") or "") == "book" \
-                    and str(getattr(item, "book_source_key", "") or "") == key:
-                return {
-                    "title": item.title,
-                    "kind": "book",
-                    "authors": list(getattr(item, "book_authors", None) or [])[:3],
-                    "pageCount": getattr(item, "book_page_count", 0) or 0,
-                    "language": getattr(item, "book_language", "") or "",
-                    "subjects": list(getattr(item, "book_subjects", None) or [])[:6],
-                    "overview": (getattr(item, "overview", "") or "")[:_OVERVIEW_CAP],
-                }
-        return {"error": "unknown title"}
+        # /api/app/books keys books by message_id (book_progress_store uses
+        # the same id), so resolve directly instead of scanning the catalogue.
+        try:
+            item = media_index.get_item(int(key))
+        except (TypeError, ValueError):
+            item = None
+        if item is None or (getattr(item, "media_kind", "") or "") != "book":
+            return {"error": "unknown title"}
+        return {
+            "title": item.title,
+            "kind": "book",
+            "authors": list(getattr(item, "book_authors", None) or [])[:3],
+            "pageCount": getattr(item, "book_page_count", 0) or 0,
+            "language": getattr(item, "book_language", "") or "",
+            "subjects": list(getattr(item, "book_subjects", None) or [])[:6],
+            "overview": (getattr(item, "overview", "") or "")[:_OVERVIEW_CAP],
+        }
     if parts[0] == "series":
         episodes = media_index.episodes_for_series(key)
         if not episodes:

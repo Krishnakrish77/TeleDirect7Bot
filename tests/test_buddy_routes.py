@@ -410,6 +410,26 @@ class HistoryDeleteRouteTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await buddy_routes.buddy_history_delete(_Request())).status, 403)
 
 
+class CardsFromToolResultsTest(unittest.TestCase):
+    def test_only_catalogue_rows_with_spa_hrefs_become_cards(self):
+        cards = buddy_routes._cards_from_tool_results([
+            {"results": [
+                {"title": "Arrival", "kind": "movie", "playHref": "/movie/arrival",
+                 "poster": "/api/tmdb-image/w185/x.jpg", "year": 2016, "overview": "o"},
+                {"title": "Some Book", "kind": "book", "playHref": "/books?book=5",
+                 "year": 2020, "overview": "b"},
+                {"title": "Junk", "kind": "movie", "playHref": "", "year": None, "overview": ""},
+            ]},
+        ])
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]["title"], "Arrival")
+        self.assertEqual(cards[0]["href"], "/movie/arrival")
+
+    def test_no_results_yields_no_items(self):
+        self.assertEqual(buddy_routes._cards_from_tool_results([{"error": "x"}]), [])
+        self.assertEqual(buddy_routes._cards_from_tool_results([]), [])
+
+
 class _FakeGeminiResponse:
     status = 200
 

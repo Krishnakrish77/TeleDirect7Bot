@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { deleteBuddyHistory, fetchBuddyHistory, fetchBuddyPrefs, sendBuddyMessage, setBuddyEnabled } from '../api';
 import type { BuddyChatContext, BuddyContextInfo, BuddyMessage } from '../types';
-import { CouchMateIcon, SparkleIcon } from '../icons';
+import { CouchMateIcon, FilmIcon, SparkleIcon } from '../icons';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 
@@ -168,7 +168,12 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
     Promise.resolve()
       .then(() => sendBuddyMessage({ message, itemId: context?.itemId, messageId: context?.messageId }))
       .then((res) => {
-        setMessages((current) => [...current, { role: 'buddy' as const, text: res.reply, t: Math.floor(Date.now() / 1000) }]);
+        setMessages((current) => [...current, {
+          role: 'buddy' as const,
+          text: res.reply,
+          t: Math.floor(Date.now() / 1000),
+          ...(res.items?.length ? { items: res.items } : {}),
+        }]);
         if (res.context) setServerContext(res.context);
       })
       .catch((err) => {
@@ -232,20 +237,40 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
               </>
             )}
             {messages.map((message, index) => (
-              <div key={`${message.t}:${index}`} className={`buddy-message buddy-message--${message.role}`} dir="auto">
-                {message.role === 'buddy'
-                  ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        // Assistant links stay internal: same-tab, app-relative.
-                        a: ({ node, ...props }) => <a {...props} onClick={(e) => { e.preventDefault(); if (props.href) window.location.assign(props.href); }} />,
-                      }}
-                    >
-                      {message.text}
-                    </ReactMarkdown>
-                  )
-                  : message.text}
+              <div key={`${message.t}:${index}`} className="buddy-turn">
+                <div className={`buddy-message buddy-message--${message.role}`} dir="auto">
+                  {message.role === 'buddy'
+                    ? (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          // Internal links ride the SPA router (the app shell's
+                          // click handler intercepts same-origin anchors); never
+                          // a full page reload.
+                          a: (props) => <a href={props.href} onClick={(e) => { if (!props.href?.startsWith('/')) { e.preventDefault(); window.open(props.href, '_blank', 'noreferrer'); } }} />,
+                        }}
+                      >
+                        {message.text}
+                      </ReactMarkdown>
+                    )
+                    : message.text}
+                </div>
+                {message.items && message.items.length > 0 && (
+                  <div className="buddy-cards" role="list" aria-label="Titles from your library">
+                    {message.items.map((card) => (
+                      <a key={card.href} role="listitem" className="buddy-card" href={card.href}>
+                        {card.posterUrl
+                          ? <img src={card.posterUrl} alt="" loading="lazy" decoding="async" />
+                          : <span className="buddy-card-fallback"><FilmIcon /></span>}
+                        <span className="buddy-card-body">
+                          <strong>{card.title}</strong>
+                          <small>{[card.kind === 'album' ? card.artist : null, card.kind, card.year].filter(Boolean).join(' · ')}</small>
+                          {card.overview && <p>{card.overview}</p>}
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             {sending && <p className="buddy-typing" role="status">CouchMate is thinking…</p>}

@@ -86,6 +86,28 @@ describe('BuddyChat', () => {
     expect(screen.queryByRole('button', { name: 'Enable CouchMate' })).toBeNull();
   });
 
+  it('renders library cards the assistant surfaced with its reply', async () => {
+    vi.mocked(fetchBuddyPrefs).mockResolvedValue({ enabled: true });
+    vi.mocked(fetchBuddyHistory).mockResolvedValue({ messages: [] });
+    vi.mocked(sendBuddyMessage).mockResolvedValue({
+      reply: 'You might like **Arrival** tonight.',
+      context: null,
+      items: [{
+        title: 'Arrival', kind: 'movie', href: '/movie/arrival-2016',
+        posterUrl: '/thumb/h1.jpg', year: 2016, overview: 'First contact, slower.',
+      }],
+    });
+    render(<BuddyChat />);
+
+    const input = await screen.findByLabelText('Message CouchMate');
+    fireEvent.change(input, { target: { value: 'what should I watch?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    const card = await screen.findByRole('listitem');
+    expect(card.getAttribute('href')).toBe('/movie/arrival-2016');
+    expect(card.textContent).toContain('Arrival');
+  });
+
   it('shows watch progress in the banner and offers suggestion chips in the empty state', async () => {
     vi.mocked(fetchBuddyPrefs).mockResolvedValue({ enabled: true });
     vi.mocked(fetchBuddyHistory).mockResolvedValue({ messages: [] });

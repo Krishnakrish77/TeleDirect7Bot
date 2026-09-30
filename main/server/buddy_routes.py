@@ -167,6 +167,7 @@ async def buddy_chat(request: web.Request) -> web.Response:
     # tool and its args); results return as functionResponse parts. Any
     # tool failure feeds the model an error response so it can recover.
     data = None
+    tool_results: list[dict] = []
     for _turn in range(buddy_tools.max_calls_per_turn() + 1):
         data = await gemini.generate_content(
             contents,
@@ -195,6 +196,8 @@ async def buddy_chat(request: web.Request) -> web.Response:
                     result = {"error": "tool failed"}
             else:
                 result = buddy_tools.execute(call_name, call_args, uid)
+                if call_name == "search_catalogue":
+                    tool_results.append(result)
             responses.append({
                 "functionResponse": {
                     "name": call_name,
@@ -213,7 +216,12 @@ async def buddy_chat(request: web.Request) -> web.Response:
             status=502,
         )
     await buddy_store.append_exchange(uid, session_key, message, reply)
-    return web.json_response({"reply": reply, "context": _public_context(context)})
+    cards = _cards_from_tool_results(tool_results)
+    return web.json_response({
+        "reply": reply,
+        "context": _public_context(context),
+        **({"items": cards} if cards else {}),
+    })
 
 
 def _tool_calls(data: Optional[dict]) -> list[tuple[str, dict]]:
@@ -229,6 +237,34 @@ def _tool_calls(data: Optional[dict]) -> list[tuple[str, dict]]:
             args = call.get("args")
             calls.append((str(call["name"]), args if isinstance(args, dict) else {}))
     return calls
+
+
+def _cards_from_tool_results(collected: list[dict]) -> list[dict]:
+    """Compact cards for titles the tools surfaced this turn.
+
+    Only catalogue rows with a real SPA href become cards — the client
+    renders them tappable, exactly like AI Picks rows.
+    """
+    cards = []
+    for result in collected:
+        for row in (result or {}).get("results") or []:
+            href = str(row.get("playHref") or "")
+            if not href.startswith(("/series/", "/movie/", "/album/", "/play/")):
+                continue
+            kind = row.get("kind")
+            if kind not in ("movie", "series", "album", "audio"):
+                continue
+            cards.append({
+                "title": row.get("title") or "",
+                "kind": kind,
+                "href": href,
+                "posterUrl": row.get("poster") or "",
+                "year": row.get("year"),
+                "overview": row.get("overview") or "",
+            })
+            if len(cards) >= 8:
+                return cards
+    return cards
 
 
 def _extract_reply(data: Optional[dict]) -> Optional[str]:

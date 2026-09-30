@@ -559,6 +559,8 @@ export interface BuddyMessage {
   role: 'user' | 'buddy';
   text: string;
   t: number;
+  /** Library cards the assistant surfaced with this reply (history-safe). */
+  items?: BuddyCard[];
 }
 
 /** Server-derived spoiler-safe context echoed back with each buddy reply. */
@@ -576,6 +578,22 @@ export interface BuddyContextInfo {
 export interface BuddyChatResponse {
   reply: string;
   context: BuddyContextInfo | null;
+  /** Library titles the assistant surfaced with its tools, for card render. */
+  items?: BuddyCard[] | null;
+}
+
+/**
+ * Compact card for a library title the assistant recommends in chat. The
+ * server builds these from its own catalogue — hrefs are real SPA routes.
+ */
+export interface BuddyCard {
+  title: string;
+  kind: 'movie' | 'series' | 'album' | 'audio' | 'book';
+  href: string;
+  posterUrl: string;
+  year: number | null;
+  overview: string;
+  artist?: string;
 }
 
 /**
