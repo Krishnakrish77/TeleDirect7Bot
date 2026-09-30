@@ -12,8 +12,6 @@ import { uniqueMetadataParts } from '../utils/metadata';
 import { playbackOptionInfo } from '../utils/playbackOptions';
 import { Button } from './ui/button';
 import { TrailerModal } from './trailerModal';
-import { BuddyChat } from './buddyChat';
-import type { BuddyChatContext } from '../types';
 
 export function DetailPage({
   route,
@@ -444,15 +442,6 @@ function MovieDetail({
           })}
         </div>
       </section>
-      <section className="buddy-section" aria-label="Discuss with CouchMate">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Discuss</p>
-            <h2>CouchMate</h2>
-          </div>
-        </div>
-        <BuddyChat context={{ itemId: `movie:${data.key}`, title: data.title, kind: 'movie' }} />
-      </section>
       <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
     </main>
   );
@@ -681,15 +670,6 @@ function SeriesDetail({
             </section>
           ))}
         </div>
-      </section>
-      <section className="buddy-section" aria-label="Discuss with CouchMate">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Discuss</p>
-            <h2>CouchMate</h2>
-          </div>
-        </div>
-        <BuddyChat context={{ itemId: `series:${data.key}`, title: data.title, kind: 'tv', seriesTitle: data.title }} />
       </section>
       <RelatedRows rows={data.related} saved={saved} onToggleSaved={(card) => onToggleSaved(card.itemId)} />
     </main>

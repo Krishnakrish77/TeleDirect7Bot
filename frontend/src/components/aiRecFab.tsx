@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { CouchMateIcon } from '../icons';
-import type { HubCard, RequestTitle, WatchTrack } from '../types';
+import type { BuddyChatContext, HubCard, RequestTitle, WatchTrack } from '../types';
 
 const AiRecPanel = lazy(() => import('./aiRecPanel').then((m) => ({ default: m.AiRecPanel })));
 
@@ -9,6 +9,7 @@ const AiRecPanel = lazy(() => import('./aiRecPanel').then((m) => ({ default: m.A
 // (see App.tsx).
 export function AiRecFab({
   buddyEnabled = false,
+  buddyContext,
   saved,
   onToggleSaved,
   onPlayMix,
@@ -17,6 +18,8 @@ export function AiRecFab({
 }: {
   /** When the user opted into CouchMate, the panel opens on the chat tab. */
   buddyEnabled?: boolean;
+  /** Title context from the page the user is on, if any. */
+  buddyContext?: BuddyChatContext;
   saved: Set<string>;
   onToggleSaved: (card: HubCard) => void;
   onPlayMix: (tracks: WatchTrack[]) => void;
@@ -37,7 +40,7 @@ export function AiRecFab({
       </button>
       {open && (
         <Suspense fallback={null}>
-          <AiRecPanel open={open} onClose={() => setOpen(false)} buddyEnabled={buddyEnabled} saved={saved} onToggleSaved={onToggleSaved} onRequestTitle={onRequestTitle} onPlayMix={onPlayMix} onShuffleMix={onShuffleMix} />
+          <AiRecPanel open={open} onClose={() => setOpen(false)} buddyEnabled={buddyEnabled} buddyContext={buddyContext} saved={saved} onToggleSaved={onToggleSaved} onRequestTitle={onRequestTitle} onPlayMix={onPlayMix} onShuffleMix={onShuffleMix} />
         </Suspense>
       )}
     </>

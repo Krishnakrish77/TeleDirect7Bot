@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { dismissRecommendation, streamAiRecommendationJob, streamAiRecommendations, submitAiRecommendationJob, trackRecommendationEvents } from '../api';
-import type { AiRecItem, AiRecResponse, HubCard, RequestTitle } from '../types';
+import type { AiRecItem, AiRecResponse, BuddyChatContext, HubCard, RequestTitle } from '../types';
 import { CouchMateIcon, FilmIcon, SparkleIcon, TvIcon, XIcon } from '../icons';
 import type { WatchTrack } from '../types';
 import { AiMixPanel } from './aiMixPanel';
@@ -39,6 +39,7 @@ export function AiRecPanel({
   open,
   onClose,
   buddyEnabled = false,
+  buddyContext,
   saved,
   onToggleSaved,
   onPlayMix,
@@ -49,6 +50,8 @@ export function AiRecPanel({
   onClose: () => void;
   /** When the user opted into CouchMate, the panel opens on the chat tab. */
   buddyEnabled?: boolean;
+  /** Title context from the page the user opened the panel on. */
+  buddyContext?: BuddyChatContext;
   saved: Set<string>;
   onToggleSaved: (card: HubCard) => void;
   onPlayMix: (tracks: WatchTrack[]) => void;
@@ -243,7 +246,7 @@ export function AiRecPanel({
 
         {mode === 'mix' ? <AiMixPanel onBack={() => setMode('picks')} onPlay={onPlayMix} onShuffle={onShuffleMix} /> : tab === 'buddy' ? (
           <div className="ai-rec-buddy">
-            <BuddyChat />
+            <BuddyChat context={buddyContext} />
           </div>
         ) : <>
           {agentStatus ? <section className="ai-rec-progress" role="status" aria-live="polite">

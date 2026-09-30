@@ -15,7 +15,7 @@ import { QueueDrawer } from './components/queueDrawer';
 import { InstallPrompt } from './components/installPrompt';
 import { AiRecFab } from './components/aiRecFab';
 import { RequestTitleDialog } from './components/requestTitleDialog';
-import type { HubCard, HubFilters, RecommendationMeta, RequestTitle, WatchTrack } from './types';
+import type { BuddyChatContext, HubCard, HubFilters, RecommendationMeta, RequestTitle, WatchTrack } from './types';
 
 // Refill the radio station once the playing track is within this many of the
 // queue tail, so fresh tracks are ready before the current one ends.
@@ -380,6 +380,20 @@ function App() {
   const hubLoading = loading && !canRenderHubData;
   const filters = data?.filters ?? DEFAULT_FILTERS;
   const watchKey = route.kind === 'watch' ? route.key : '';
+  // The page the user is on anchors CouchMate: opening the FAB on a series
+  // or movie detail page (or the player) chats about that title. The server
+  // re-derives watch state; only the reference is passed.
+  const pageBuddyContext: BuddyChatContext | undefined = (() => {
+    if (route.kind === 'detail' && detail.data && (detail.data.kind === 'movie' || detail.data.kind === 'series')) {
+      return {
+        itemId: `${detail.data.kind}:${detail.data.key}`,
+        title: detail.data.title,
+        kind: detail.data.kind === 'series' ? 'tv' : 'movie',
+        ...(detail.data.kind === 'series' ? { seriesTitle: detail.data.title } : {}),
+      };
+    }
+    return undefined;
+  })();
   const shellClass = [
     'app-shell',
     audio.player.track ? 'has-player' : '',
@@ -717,7 +731,7 @@ function App() {
           />
         </Suspense>
       )}
-      {user && me?.gemini && <AiRecFab buddyEnabled={me?.buddy === true} saved={saved} onToggleSaved={onToggleSaved} onRequestTitle={(title) => { setRequestSeed(title); setRequestOpen(true); }} onPlayMix={(tracks) => {
+      {user && me?.gemini && <AiRecFab buddyEnabled={me?.buddy === true} buddyContext={pageBuddyContext} saved={saved} onToggleSaved={onToggleSaved} onRequestTitle={(title) => { setRequestSeed(title); setRequestOpen(true); }} onPlayMix={(tracks) => {
         if (tracks[0]) audio.playTrack(tracks[0], tracks);
       }} onShuffleMix={(tracks) => audio.shuffleQueue(tracks)} />}
       <ScrollToTop />
