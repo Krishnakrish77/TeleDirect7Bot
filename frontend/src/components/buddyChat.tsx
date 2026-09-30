@@ -278,7 +278,7 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
             {status === 'on' && (
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 size="sm"
                 className="buddy-clear"
                 onClick={clearChat}

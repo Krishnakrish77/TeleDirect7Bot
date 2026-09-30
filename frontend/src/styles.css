@@ -7647,6 +7647,8 @@ img {
 
 .ai-rec-tabs [data-slot="tabs-trigger"] {
   padding: 0.32rem 0.9rem;
+  border: 0;
+  background: transparent;
   border-radius: 8px;
   color: var(--muted);
   font-size: 0.82rem;
@@ -7716,10 +7718,7 @@ img {
   order: 1;
   margin-left: auto;
   flex: 0 0 auto;
-  color: var(--dim);
 }
-
-.buddy-input-row .buddy-clear:hover { color: var(--text); }
 
 .buddy-context-banner {
   margin: 0;

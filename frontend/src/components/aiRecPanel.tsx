@@ -227,11 +227,6 @@ export function AiRecPanel({
             <DialogTitle asChild><h2>{mode === 'mix' || tab === 'picks' ? 'AI Picks' : 'CouchMate'}</h2></DialogTitle>
           </div>
           <div className="ai-rec-head-actions">
-            {mode === 'picks' && tab === 'buddy' && (
-              <Button type="button" variant="outline" size="sm" className="ai-rec-mix-launch" onClick={() => setTab('picks')}>
-                <SparkleIcon /> AI Picks
-              </Button>
-            )}
             {mode === 'picks' && tab === 'picks' && <Button type="button" variant="ghost" size="sm" className="text-button" onClick={() => runAgent({ refresh: true })} disabled={busy}>Refresh</Button>}
             <DialogClose asChild><Button type="button" variant="ghost" size="icon-sm" className="icon-button" aria-label="Close"><XIcon /></Button></DialogClose>
           </div>
