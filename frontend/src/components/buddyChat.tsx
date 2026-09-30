@@ -179,7 +179,6 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
 
   return (
     <div className="buddy-chat">
-      {status === 'loading' && <p className="buddy-note">Loading your buddy…</p>}
       {status === 'signed-out' && <p className="buddy-note">Sign in to chat with your movie buddy.</p>}
       {status === 'unavailable' && <p className="buddy-note">Movie Buddy isn't available on this server right now.</p>}
 
@@ -195,24 +194,12 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
         </div>
       )}
 
-      {status === 'on' && (
+      {(status === 'on' || status === 'loading') && (
         <>
-          <div className="buddy-chat-head">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="buddy-clear"
-              onClick={clearChat}
-              disabled={clearing || sending || messages.length === 0}
-            >
-              {clearing ? 'Clearing…' : 'Clear chat'}
-            </Button>
-          </div>
-          {bannerSource && <p className="buddy-context-banner">{bannerFor(bannerSource)}</p>}
+          {bannerSource && status === 'on' && <p className="buddy-context-banner">{bannerFor(bannerSource)}</p>}
           <div className="buddy-messages" ref={listRef} role="log" aria-live="polite" aria-label="Buddy conversation">
             {historyLoading && <p className="buddy-note">Loading conversation…</p>}
-            {!historyLoading && messages.length === 0 && !sending && (
+            {!historyLoading && messages.length === 0 && !sending && status === 'on' && (
               <>
                 <p className="buddy-note">
                   {justCleared
@@ -225,7 +212,7 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
                       <Button
                         key={suggestion.label}
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
                         className="buddy-suggestion"
                         disabled={sending}
@@ -245,7 +232,7 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
             ))}
             {sending && <p className="buddy-typing" role="status">Buddy is thinking…</p>}
           </div>
-          {error && (
+          {error && status === 'on' && (
             <div className="buddy-error" role="alert">
               <span>{error}</span>
               {failedMessage && (
@@ -266,10 +253,22 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder={context ? 'Ask about this title…' : 'Ask your movie buddy…'}
-              disabled={sending}
+              disabled={sending || status === 'loading'}
               aria-label="Message your movie buddy"
               maxLength={2000}
             />
+            {status === 'on' && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="buddy-clear"
+                onClick={clearChat}
+                disabled={clearing || sending || messages.length === 0}
+              >
+                {clearing ? 'Clearing…' : 'Clear'}
+              </Button>
+            )}
             <Button type="submit" disabled={sending || !draft.trim()}>Send</Button>
           </form>
         </>

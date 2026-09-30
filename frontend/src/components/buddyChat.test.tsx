@@ -163,7 +163,7 @@ describe('BuddyChat', () => {
     render(<BuddyChat context={episodeContext} />);
 
     expect(await screen.findByText('Who is Avon?')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Clear chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
 
     await waitFor(() => expect(deleteBuddyHistory).toHaveBeenCalledWith({ itemId: 'item-1', messageId: 42 }));
     expect(confirmMock).toHaveBeenCalled();
@@ -180,7 +180,7 @@ describe('BuddyChat', () => {
     render(<BuddyChat />);
 
     expect(await screen.findByText('Hi')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Clear chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
 
     await waitFor(() => expect(deleteBuddyHistory).toHaveBeenCalledWith(undefined));
     expect(confirmMock.mock.calls[0][0]).toContain('all buddy conversations');
@@ -195,7 +195,7 @@ describe('BuddyChat', () => {
     render(<BuddyChat context={episodeContext} />);
 
     expect(await screen.findByText('Keep me')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Clear chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('Could not clear right now.');
     expect(screen.getByText('Keep me')).toBeTruthy();
@@ -208,7 +208,7 @@ describe('BuddyChat', () => {
     render(<BuddyChat context={episodeContext} />);
 
     expect(await screen.findByText('Still here')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Clear chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
 
     expect(deleteBuddyHistory).not.toHaveBeenCalled();
     expect(screen.getByText('Still here')).toBeTruthy();
