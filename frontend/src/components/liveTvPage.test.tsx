@@ -186,6 +186,29 @@ describe('LiveTvPage', () => {
     });
   });
 
+  it('surfaces compound "A;B" categories under both tags', () => {
+    const data: LiveTvResponse = {
+      channels: [
+        { id: 'conan', name: 'Detective Conan', streamUrl: 'https://example.test/conan.ts', logoUrl: '', category: 'Animation;Kids', enabled: true, sortOrder: 1, createdAt: 1, updatedAt: 1 },
+        { id: 'cnn', name: 'CNN', streamUrl: 'https://example.test/cnn.ts', logoUrl: '', category: 'News', enabled: true, sortOrder: 2, createdAt: 1, updatedAt: 1 },
+      ],
+    };
+    render(<LiveTvPage data={data} loading={false} error="" />);
+
+    // Dropdown lists both exploded tags with per-tag counts, not a literal "Animation;Kids" chip
+    fireEvent.click(screen.getByRole('combobox', { name: 'Channel category' }));
+    const listbox = screen.getByRole('listbox');
+    expect(within(listbox).getByText(/^Animation/)).toBeTruthy();
+    expect(within(listbox).getByText(/^Kids/)).toBeTruthy();
+    expect(within(listbox).queryByText(/Animation;Kids/)).toBeNull();
+    fireEvent.click(within(listbox).getByText(/^Kids/));
+
+    // Conan shows under Kids; CNN does not
+    const rail = screen.getByLabelText('Channels');
+    expect(within(rail).getByRole('button', { name: /Detective Conan/i })).toBeTruthy();
+    expect(within(rail).queryByRole('button', { name: /CNN/i })).toBeNull();
+  });
+
   it('renders large channel lists in batches', () => {
     const manyChannels: LiveTvResponse = {
       channels: Array.from({ length: 95 }, (_, index) => makeChannel(index + 1)),

@@ -139,19 +139,25 @@ function sameIds(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
+// M3U group-titles compound tags with ";" ("Animation;Kids"). Split them so
+// a channel surfaces under every tag, not under one literal "Animation;Kids"
+// chip nobody looks for.
+function channelTags(channel: IptvChannel): string[] {
+  const raw = channel.category?.trim();
+  if (!raw || raw.toLowerCase() === 'undefined') return ['Uncategorized'];
+  return raw.split(';').map((tag) => tag.trim()).filter(Boolean);
+}
+
 function channelCategory(channel: IptvChannel): string {
-  const category = channel.category?.trim();
-  // Source playlists ship literal "Undefined"/"undefined" group-titles;
-  // present them with the same label as missing categories.
-  if (!category || category.toLowerCase() === 'undefined') return 'Uncategorized';
-  return category;
+  return channelTags(channel)[0];
 }
 
 function categoryCounts(channels: IptvChannel[]): Array<[string, number]> {
   const counts = new Map<string, number>();
   for (const channel of channels) {
-    const category = channelCategory(channel);
-    counts.set(category, (counts.get(category) || 0) + 1);
+    for (const category of channelTags(channel)) {
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
   }
   return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
@@ -237,7 +243,7 @@ export function LiveTvPage({
         : channels;
     const categoryFilterActive = ![ALL_CHANNELS, FAVORITE_CHANNELS, RECENT_CHANNELS].includes(activeCategory);
     return scopedChannels.filter((channel) => {
-      if (categoryFilterActive && channelCategory(channel) !== activeCategory) return false;
+      if (categoryFilterActive && !channelTags(channel).includes(activeCategory)) return false;
       // "Active only" hides channels probed offline. Unprobed (undefined)
       // stay listed so the rail doesn't empty out while probes run.
       if (activeOnly && healthById[channel.id] === 'down') return false;
