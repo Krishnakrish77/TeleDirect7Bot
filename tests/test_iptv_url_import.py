@@ -24,6 +24,7 @@ from main.server.iptv_routes import (
     _probe_stream_url,
     _rewrite_m3u_proxy_urls,
     _with_proxied_logo,
+    _CHANNEL_SUBRESOURCE_HOSTS as _channel_hosts,
 )
 iptv_routes_module = importlib.import_module("main.server.iptv_routes")
 
@@ -129,7 +130,14 @@ class IptvUrlImportTest(unittest.TestCase):
 
         self.assertIn("/api/live-tv/stream/news?url=https%3A%2F%2Fcdn.example.test%2Flive%2Fsegment1.ts", rewritten)
         self.assertIn('URI="/api/live-tv/stream/news?url=https%3A%2F%2Fcdn.example.test%2Flive%2Fkeys%2Fkey.bin"', rewritten)
-        self.assertIn("https://other.example.test/live/segment3.ts", rewritten)
+        # Cross-origin subresources are ALSO proxied — a channel's CDN chain
+        # commonly hops origins after redirects (e.g. jmp2.uk → pluto stitcher),
+        # and leaving these raw breaks playback. Hosts are allowlisted per
+        # channel instead.
+        self.assertIn("/api/live-tv/stream/news?url=https%3A%2F%2Fother.example.test%2Flive%2Fsegment3.ts", rewritten)
+        # The allowlist recorded every referenced host for the ?url= check.
+        self.assertIn("cdn.example.test", _channel_hosts["news"])
+        self.assertIn("other.example.test", _channel_hosts["news"])
 
 
 if __name__ == "__main__":

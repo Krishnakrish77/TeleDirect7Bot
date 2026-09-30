@@ -398,12 +398,41 @@ def _stream_request_headers(raw_headers: dict | None) -> dict[str, str]:
     return headers
 
 
+# Hosts seen in each channel's own manifests — the ?url= subresource proxy
+# only fetches from these (an open relay to arbitrary hosts would be an
+# SSRF/abuse hazard; the manifest chain defines the channel's legit CDNs).
+_CHANNEL_SUBRESOURCE_HOSTS: dict[str, set[str]] = {}
+_CHANNEL_HOSTS_MAX = 64
+
+
+def _remember_channel_host(channel_id: str, absolute_url: str) -> None:
+    try:
+        host = (urlparse(absolute_url).hostname or "").lower()
+    except ValueError:
+        return
+    if not host:
+        return
+    hosts = _CHANNEL_SUBRESOURCE_HOSTS.setdefault(channel_id, set())
+    if host not in hosts and len(hosts) < _CHANNEL_HOSTS_MAX:
+        hosts.add(host)
+
+
+def _channel_host_allowed(channel_id: str, absolute_url: str) -> bool:
+    hosts = _CHANNEL_SUBRESOURCE_HOSTS.get(channel_id)
+    if hosts is None:
+        return False  # never rewrote this channel: no subresource proxying
+    try:
+        host = (urlparse(absolute_url).hostname or "").lower()
+    except ValueError:
+        return False
+    return host in hosts
+
+
 def _proxied_hls_uri(channel_id: str, playlist_url: str, source_url: str, uri: str) -> str:
     if uri.startswith(("data:", "blob:")):
         return uri
     absolute = urljoin(playlist_url, uri)
-    if not _same_origin_url(source_url, absolute):
-        return uri
+    _remember_channel_host(channel_id, absolute)
     return f"/api/live-tv/stream/{quote(channel_id, safe='')}?url={quote(absolute, safe='')}"
 
 
@@ -804,6 +833,7 @@ async def admin_iptv_health_sweep_start(request: web.Request) -> web.Response:
 
 @routes.get("/api/app/admin/iptv/health-sweep")
 async def admin_iptv_health_sweep_status(request: web.Request) -> web.Response:
+    _require_admin(request)
     return _json({"ok": True, "sweep": _sweep_snapshot()})
 
 
@@ -852,7 +882,7 @@ async def live_tv_stream(request: web.Request) -> web.StreamResponse:
         target_url = _normalise_import_url(requested_url)
     except ValueError as exc:
         return web.Response(text=str(exc), status=400)
-    if requested_url != source_url and not _same_origin_url(source_url, target_url):
+    if requested_url != source_url and not _same_origin_url(source_url, target_url) and not _channel_host_allowed(channel["id"], target_url):
         return web.Response(text="Stream subresources must stay on the configured channel origin", status=400)
     try:
         return await _proxy_channel_stream(request, channel, target_url)
