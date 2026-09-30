@@ -569,6 +569,7 @@ async def _probe_stream_segments(stream_url: str, raw_headers: dict | None) -> b
         ) as session:
             current = _normalise_import_url(stream_url)
             manifest_text = ""
+            manifest_content_type = ""
             for _ in range(_REDIRECT_LIMIT + 1):
                 async with session.get(current, allow_redirects=False, headers=_stream_request_headers(raw_headers)) as response:
                     if 300 <= response.status < 400:
@@ -579,12 +580,21 @@ async def _probe_stream_segments(stream_url: str, raw_headers: dict | None) -> b
                         continue
                     if response.status >= 400:
                         return False
+                    manifest_content_type = response.headers.get("Content-Type", "").lower()
                     manifest_text = (await _read_probe_bytes(response, _HLS_MANIFEST_MAX_BYTES)).decode(
                         response.charset or "utf-8", errors="replace"
                     )
                     break
             if not _looks_like_m3u(manifest_text):
-                return False
+                # Direct non-HLS streams (raw .ts, .mpd, PHP playlist gates —
+                # ~3% of real catalogues) have no manifest to parse. The URL
+                # answered with content, which is all manifest-only probing
+                # would have established. BUT: CDNs also serve soft-error
+                # HTML pages with HTTP 200 — those are NOT streams.
+                head = manifest_text.lstrip()[:512].lower()
+                if "text/html" in manifest_content_type or head.startswith(("<!doctype html", "<html")):
+                    return False
+                return True
             segment_url = _first_segment_url(manifest_text, current)
             if not segment_url:
                 return False
@@ -605,13 +615,9 @@ async def _probe_stream_segments(stream_url: str, raw_headers: dict | None) -> b
 
 
 async def _health_probe_channel(channel: dict) -> bool:
-    try:
-        await _probe_stream_url(channel["streamUrl"], channel.get("streamHeaders") or {})
-    except (ValueError, aiohttp.ClientError, TimeoutError):
-        return False
-    # Manifest reachable — but geo-fenced CDNs and expired tokens serve
-    # manifests whose segments are dead. Confirm the first segment plays
-    # before calling the channel healthy.
+    # Single deep probe: manifest AND first segment. The old two-step
+    # (manifest probe, then deep probe) fetched every manifest twice per
+    # attempt; _probe_stream_segments subsumes it, with a non-HLS fallback.
     return await _probe_stream_segments(channel["streamUrl"], channel.get("streamHeaders") or {})
 
 def _health_status_name(healthy: bool) -> str:
