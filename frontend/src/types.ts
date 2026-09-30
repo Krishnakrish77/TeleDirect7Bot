@@ -570,6 +570,7 @@ export interface BuddyContextInfo {
   episode: number | null;
   completed: boolean;
   cutoffLabel?: string;
+  progress?: number | null;
 }
 
 export interface BuddyChatResponse {

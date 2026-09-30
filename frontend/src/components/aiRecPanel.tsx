@@ -221,7 +221,7 @@ export function AiRecPanel({
         <div className="ai-rec-head">
           <div className="ai-rec-heading">
             <p className="eyebrow"><SparkleIcon /> For you</p>
-            <DialogTitle asChild><h2>AI picks</h2></DialogTitle>
+            <DialogTitle asChild><h2>{mode === 'mix' || tab === 'picks' ? 'AI picks' : 'Movie Buddy'}</h2></DialogTitle>
           </div>
           <div className="ai-rec-head-actions">
             {mode === 'picks' && tab === 'picks' && <Button type="button" variant="outline" size="sm" className="ai-rec-mix-launch" onClick={() => setMode('mix')}><SparkleIcon /> Mix</Button>}

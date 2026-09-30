@@ -136,6 +136,54 @@ class ResolveContextTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(await buddy_context.resolve_context(7, "movie:missing"))
             self.assertIsNone(await buddy_context.resolve_context(7, None, 999))
 
+    async def test_no_anchor_falls_back_to_newest_in_progress_item(self):
+        # The For-you panel chat sends no item reference: the buddy must still
+        # anchor to the newest watch-state entry instead of going generic.
+        ep2 = make_item(102, series_key="dark", series_title="Dark", season=1, episode=2)
+        with patched({102: ep2},
+                     cw={"x102": {"pos": 1200, "dur": 3000, "t": 1, "title": "Dark"}}):
+            context = await buddy_context.resolve_context(7, None, None)
+
+        self.assertEqual((context["season"], context["episode"]), (1, 2))
+        self.assertEqual(context["cutoffLabel"], "S01E02")
+        self.assertFalse(context["completed"])
+        self.assertEqual(context["progress"], 0.4)
+
+    async def test_no_anchor_falls_back_to_newest_completed_item(self):
+        ep1 = make_item(101, series_key="dark", series_title="Dark", season=1, episode=1)
+        with patched({101: ep1},
+                     wh=[{"cw_key": "x101", "title": "Dark", "watched_at": 0}]):
+            context = await buddy_context.resolve_context(7, None, None)
+
+        self.assertEqual((context["season"], context["episode"]), (1, 1))
+        self.assertTrue(context["completed"])
+        self.assertIsNone(context["progress"])
+
+    async def test_no_anchor_without_watch_state_is_general_chat(self):
+        with patched():
+            self.assertIsNone(await buddy_context.resolve_context(7, None, None))
+
+    async def test_in_progress_movie_exposes_progress_publicly(self):
+        movie = make_item(201, title="The Invisible Guest", movie_key="invisible-guest")
+        with patched({201: movie}, movies={"invisible-guest": [movie]},
+                     cw={"x201": {"pos": 600, "dur": 3000, "t": 1, "title": "The Invisible Guest"}}):
+            context = await buddy_context.resolve_context(7, "movie:invisible-guest")
+        self.assertEqual(context["progress"], 0.2)
+
+    async def test_prompt_quotes_watch_state_when_asked(self):
+        context = {
+            "title": "Dark", "kind": "tv", "seriesTitle": "Dark",
+            "season": 1, "episode": 2, "completed": False,
+            "cutoffLabel": "S01E02", "progress": 0.4,
+            "_prompt": {"progress": 0.4, "overview": "", "genres": [],
+                        "cast": [], "year": 2017, "director": "",
+                        "runtimeMinutes": 0},
+        }
+        system, _ = buddy_context.build_prompt(context, [], "what episode am I on?")
+        self.assertIn("40% through it", system)
+        self.assertIn("You can see their watch state", system)
+        self.assertNotIn("don't actually track", system)
+
     async def test_client_pinned_episode_cannot_inflate_cutoff(self):
         # User has only watched S01E02; pinning S01E10 must NOT move the
         # spoiler cutoff — it clamps to the real furthest-watched point.

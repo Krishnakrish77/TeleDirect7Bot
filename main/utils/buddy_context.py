@@ -126,6 +126,30 @@ def _prompt_meta(item) -> dict:
     }
 
 
+def _latest_watch_item(cw: dict, wh: list):
+    """The item the user is most likely chatting about: newest in-progress
+    entry, else newest completion. cw keys end in the message id."""
+    for key in cw or {}:
+        item = _item_for_cw_key(key)
+        if item is not None:
+            return item
+    for entry in wh or []:
+        item = _item_for_cw_key(entry.get("cw_key", ""))
+        if item is not None:
+            return item
+    return None
+
+
+async def _watch_state(user_id: int) -> tuple:
+    try:
+        cw = await cw_store.get_all(user_id)
+        wh = await wh_store.get_recent(user_id, limit=_WH_LOOKUP_LIMIT)
+    except Exception:
+        logging.exception("buddy_context: watch-state lookup failed uid=%d", user_id)
+        return {}, []
+    return cw, wh
+
+
 async def resolve_context(user_id: int, item_id: Optional[str] = None,
                           message_id: Optional[int] = None) -> Optional[dict]:
     """Build the spoiler-safe context for a chat, or None for general chat."""
@@ -145,15 +169,16 @@ async def resolve_context(user_id: int, item_id: Optional[str] = None,
             item = variants[0] if variants else None
         elif ref.isdigit():
             item = media_index.get_item(int(ref))
+    cw = wh = None
     if item is None and not series_episodes:
-        return None
-
-    try:
-        cw = await cw_store.get_all(user_id)
-        wh = await wh_store.get_recent(user_id, limit=_WH_LOOKUP_LIMIT)
-    except Exception:
-        logging.exception("buddy_context: watch-state lookup failed uid=%d", user_id)
-        cw, wh = {}, []
+        # No anchor (e.g. the For-you panel chat): anchor to the user's most
+        # recent watch state so the buddy still knows what they are watching.
+        cw, wh = await _watch_state(user_id)
+        item = _latest_watch_item(cw, wh)
+        if item is None:
+            return None
+    if cw is None:
+        cw, wh = await _watch_state(user_id)
 
     if series_episodes is not None:
         # Bare series reference: pick the episode that best matches where the
@@ -182,6 +207,7 @@ async def resolve_context(user_id: int, item_id: Optional[str] = None,
             "episode": item.episode,
             "completed": se in seen,
             "cutoffLabel": _se_label(*cutoff) if cutoff else None,
+            "progress": meta["progress"],
             "_prompt": meta,
         }
 
@@ -199,6 +225,7 @@ async def resolve_context(user_id: int, item_id: Optional[str] = None,
             "episode": item.episode,
             "completed": se in seen,
             "cutoffLabel": _se_label(*cutoff) if cutoff else None,
+            "progress": meta["progress"],
             "_prompt": meta,
         }
 
@@ -214,6 +241,7 @@ async def resolve_context(user_id: int, item_id: Optional[str] = None,
         "season": None,
         "episode": None,
         "completed": _movie_completed(item, cw, wh),
+        "progress": meta.get("progress"),
         "_prompt": meta,
     }
 
@@ -267,7 +295,13 @@ def build_prompt(context: Optional[dict], history: list, message: str) -> tuple:
         if context.get("completed"):
             lines.append("2. They have finished this episode — it may be discussed freely.")
         else:
-            lines.append("2. They have not finished the current episode — avoid its ending too.")
+            progress = (context.get("_prompt") or {}).get("progress")
+            at = f" They are about {int(progress * 100)}% through it." if progress else ""
+            lines.append(f"2. They have not finished the current episode{at} — avoid its ending too.")
+        lines.append(
+            "3. You can see their watch state — quote it when asked (\"you're on "
+            "S02E04, about halfway through\") instead of claiming you can't track it."
+        )
         meta = context.get("_prompt") or {}
         _append_meta(lines, meta, series)
     elif context and context.get("kind") == "movie":
@@ -287,6 +321,10 @@ def build_prompt(context: Optional[dict], history: list, message: str) -> tuple:
                 "discuss only what a viewer at their point would know."
             )
         _append_meta(lines, context.get("_prompt") or {}, title)
+        lines.append(
+            "2. You can see their watch state — quote it when asked (\"you're "
+            "about 40% through\") instead of claiming you can't track it."
+        )
     else:
         lines.append(
             "1. The user hasn't named a specific title — chat generally about films "
@@ -294,7 +332,7 @@ def build_prompt(context: Optional[dict], history: list, message: str) -> tuple:
             "warn before revealing any."
         )
     lines.append(
-        "2. If the user asks about future plot, deflect with a playful tease "
+        "- If the user asks about future plot, deflect with a playful tease "
         "(\"ohh, you're not ready for that yet\") — never confirm or deny."
     )
 

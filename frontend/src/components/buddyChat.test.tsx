@@ -86,6 +86,29 @@ describe('BuddyChat', () => {
     expect(screen.queryByRole('button', { name: 'Enable Movie Buddy' })).toBeNull();
   });
 
+  it('shows watch progress in the banner and offers suggestion chips in the empty state', async () => {
+    vi.mocked(fetchBuddyPrefs).mockResolvedValue({ enabled: true });
+    vi.mocked(fetchBuddyHistory).mockResolvedValue({ messages: [] });
+    vi.mocked(sendBuddyMessage).mockResolvedValue({
+      reply: "You're on S03E05, about 40% through.",
+      context: {
+        title: 'The Wire', kind: 'tv', seriesTitle: 'The Wire', season: 3, episode: 5,
+        completed: false, cutoffLabel: 'S03E05', progress: 0.4,
+      },
+    });
+    render(<BuddyChat context={episodeContext} />);
+
+    // Empty state suggests one-tap openers; tapping one sends its prompt.
+    fireEvent.click(await screen.findByRole('button', { name: 'Where am I?' }));
+    await waitFor(() => expect(sendBuddyMessage).toHaveBeenCalledWith({
+      message: 'What episode am I on, and how far through it am I?',
+      itemId: 'item-1', messageId: 42,
+    }));
+
+    // The server-derived context (now including progress) updates the banner.
+    expect(await screen.findByText('Chatting about The Wire S03E05 · 40% through — no spoilers beyond this episode')).toBeTruthy();
+  });
+
   it('surfaces a failed enable (e.g. 503 when Mongo is down) as a retry-able inline error', async () => {
     vi.mocked(fetchBuddyPrefs).mockResolvedValue({ enabled: false });
     vi.mocked(setBuddyEnabled).mockRejectedValueOnce(new ApiError('Buddy preferences need the database. Try again shortly.', 503));

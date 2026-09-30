@@ -20,6 +20,7 @@ type BannerSource = {
   season?: number | null;
   episode?: number | null;
   cutoffLabel?: string;
+  progress?: number | null;
 };
 
 function bannerFor(ctx: BannerSource): string {
@@ -29,10 +30,19 @@ function bannerFor(ctx: BannerSource): string {
       || (ctx.season != null
         ? `S${String(ctx.season).padStart(2, '0')}E${String(ctx.episode).padStart(2, '0')}`
         : `Episode ${ctx.episode}`);
-    return `Chatting about ${title} ${code} — no spoilers beyond this episode`;
+    const progress = ctx.progress != null ? ` · ${Math.round(ctx.progress * 100)}% through` : '';
+    return `Chatting about ${title} ${code}${progress} — no spoilers beyond this episode`;
   }
   return `Chatting about ${ctx.title} — no spoilers`;
 }
+
+/** One-tap openers shown in the empty state. */
+const SUGGESTIONS: ReadonlyArray<{ label: string; prompt: string }> = [
+  { label: 'Where am I?', prompt: 'What episode am I on, and how far through it am I?' },
+  { label: 'The story so far', prompt: 'Catch me up on the story so far.' },
+  { label: 'A character', prompt: 'Which character is the most interesting so far, and why?' },
+  { label: 'What to watch next', prompt: 'What should I watch after this?' },
+];
 
 /**
  * Shared Movie Buddy chat. All spoiler decisions happen server-side; this
@@ -203,11 +213,30 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
           <div className="buddy-messages" ref={listRef} role="log" aria-live="polite" aria-label="Buddy conversation">
             {historyLoading && <p className="buddy-note">Loading conversation…</p>}
             {!historyLoading && messages.length === 0 && !sending && (
-              <p className="buddy-note">
-                {justCleared
-                  ? 'Chat cleared — start a fresh one below.'
-                  : 'Ask anything — the story so far, a character, what to watch next. Spoiler-safe, always.'}
-              </p>
+              <>
+                <p className="buddy-note">
+                  {justCleared
+                    ? 'Chat cleared — start a fresh one below.'
+                    : 'Ask anything — the story so far, a character, what to watch next. Spoiler-safe, always.'}
+                </p>
+                {!justCleared && (
+                  <div className="buddy-suggestions" aria-label="Suggested questions">
+                    {SUGGESTIONS.map((suggestion) => (
+                      <Button
+                        key={suggestion.label}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="buddy-suggestion"
+                        disabled={sending}
+                        onClick={() => send(suggestion.prompt)}
+                      >
+                        {suggestion.label}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
             {messages.map((message, index) => (
               <div key={`${message.t}:${index}`} className={`buddy-message buddy-message--${message.role}`} dir="auto">

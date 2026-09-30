@@ -7765,6 +7765,20 @@ img {
   font-style: italic;
 }
 
+.buddy-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.buddy-suggestion {
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.buddy-suggestion:hover { color: var(--text); }
+
 .buddy-input-row {
   display: flex;
   align-items: center;
