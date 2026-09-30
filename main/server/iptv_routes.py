@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import socket
@@ -662,10 +663,17 @@ async def _run_health_sweep(mode: str, attempts: int) -> None:
         if ok:
             _HEALTH_CACHE.pop(channel["id"], None)
             affected.append({"id": channel["id"], "name": channel["name"], "action": action})
+            logging.info("iptv health sweep: %s channel id=%s name=%r", action, channel["id"], channel["name"])
+        else:
+            logging.warning("iptv health sweep: failed to %s channel id=%s name=%r", action, channel["id"], channel["name"])
 
     sweep["running"] = False
     sweep["finishedAt"] = time.time()
     sweep["affected"] = affected
+    logging.info(
+        "iptv health sweep: finished mode=%s probed=%d dead=%d %s=%d attempts=%d",
+        mode, len(channels), len(dead), "deleted" if mode == "delete" else "disabled", len(affected), attempts,
+    )
 
 
 @routes.post("/api/app/admin/iptv/health-sweep")

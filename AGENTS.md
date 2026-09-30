@@ -74,3 +74,13 @@ When adding a media handler, mirror `stream.py`: forward to `BIN_CHANNEL` first,
 ### Config (`main/vars.py`)
 
 All env vars funnel through a single `Var` class. `URL` is computed at import time from `FQDN`/`PORT`/`HAS_SSL`/`NO_PORT`/`ON_KOYEB` — any new env-driven behavior should land here rather than reading `os.environ` directly elsewhere.
+
+## Logging
+
+Backend changes MUST include logging for every state-changing or externally-visible operation — never silent success/failure paths. Conventions:
+
+- Use the module-level `logging` (`import logging`, logger via module name is fine; existing files use `logging.exception(...)` / `logging.info(...)` directly).
+- **Errors/fallbacks**: `logging.exception(...)` inside `except` blocks (keeps the traceback), as `iptv_store.py` and `skeleton_cache.py` already do.
+- **Admin actions / background jobs**: log start, completion, and per-item failures with counts and identifiers — e.g. the health sweep in `main/server/iptv_routes.py` logs how many channels were probed and which were disabled/deleted. A background job with no logs is undebuggable in production (Koyeb logs are the only observability).
+- **Never log secrets** (`API_HASH`, `BOT_TOKEN`, `JWT_SECRET`, session strings) or full stream URLs containing tokens — log channel/message IDs instead.
+- Frontend has no server-side logging; for user-visible failures surface an error state in the UI (`ErrorPanel`/`notice`) rather than `console.log`.
