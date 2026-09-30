@@ -2411,6 +2411,13 @@ img {
   width: min(100%, 1760px);
   margin: 0 auto;
   padding: clamp(1rem, 2vw, 1.5rem);
+  /* Viewport-fit: the page itself never scrolls on desktop — the channel
+   * rail owns the only scrollbar (no page + rail double scroll). Accounts
+   * for the 76px header, main's own vertical padding, the app-shell bottom
+   * padding, and grid gap rounding. */
+  height: calc(100svh - 76px - clamp(2rem, 4vw, 3rem) - max(2rem, env(safe-area-inset-bottom, 0px)) - 8px);
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .live-tv-hero {
@@ -2460,7 +2467,9 @@ img {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 410px);
   gap: 0.95rem;
-  align-items: start;
+  align-items: stretch;
+  /* Fill the row left by the hero; both children become full-height columns. */
+  min-height: 0;
 }
 
 .live-player-panel,
@@ -2473,13 +2482,19 @@ img {
 
 .live-player-panel {
   overflow: hidden;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
 }
 
 .live-video-frame {
   position: relative;
   display: grid;
   aspect-ratio: 16 / 9;
-  min-height: 360px;
+  max-height: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  width: 100%;
   background: #020304;
 }
 
@@ -2668,11 +2683,10 @@ img {
 }
 
 .live-channel-rail {
-  position: sticky;
-  top: calc(128px + 0.8rem);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  max-height: calc(100svh - 150px);
+  /* Column height comes from the stretch layout; no viewport math needed. */
+  max-height: 100%;
   overflow: hidden;
 }
 
@@ -14000,6 +14014,23 @@ select.edit-field-input {
   .live-tv-layout,
   .iptv-admin-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Single-column layout returns to natural page scroll — the desktop
+   * viewport-fit lock (only the rail scrolls) no longer applies. */
+  .live-tv-main {
+    height: auto;
+    overflow: visible;
+    grid-template-rows: none;
+  }
+
+  .live-player-panel {
+    display: block;
+  }
+
+  .live-video-frame {
+    max-height: none;
+    min-height: 210px;
   }
 
   .live-channel-rail {
