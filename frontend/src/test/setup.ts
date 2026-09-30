@@ -10,6 +10,20 @@ if (!globalThis.ResizeObserver) {
   globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
 }
 
+// jsdom has no IntersectionObserver; Live TV's infinite-scroll sentinel
+// depends on it. Stub that never intersects so tests render one window.
+if (!globalThis.IntersectionObserver) {
+  class IntersectionObserverStub {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  }
+  globalThis.IntersectionObserver = IntersectionObserverStub as unknown as typeof IntersectionObserver;
+}
+
 beforeEach(() => {
   if (typeof HTMLElement === 'undefined' || typeof HTMLMediaElement === 'undefined') return;
   delete (HTMLElement.prototype as unknown as { requestFullscreen?: unknown }).requestFullscreen;

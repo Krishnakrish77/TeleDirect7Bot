@@ -6,7 +6,7 @@ import { ErrorPanel, LoadingRows } from './common';
 import type { IptvChannel, IptvHealthStatus, LiveTvResponse } from '../types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 const HLS_RE = /\.m3u8(?:[?#]|$)|[?&](?:type|format)=m3u8/i;
 const FAVORITES_KEY = 'td:live-tv:favorites';
@@ -21,6 +21,11 @@ const RECENT_CHANNELS = '__recent';
 // gets coverage without one giant request, and re-check after the server
 // TTLs expire so currently-dead channels eventually recover their dot.
 const HEALTH_BATCH_SIZE = 100;
+// Probing the whole catalogue on every visitor's page load hammers upstream
+// origins (40 batches × 12 concurrent probes each) for dots the viewer may
+// never scroll to. Probe the first HEALTH_PROBE_LIMIT channels eagerly —
+// the admin's server-side sweep handles deep hygiene — and refresh on TTL.
+const HEALTH_PROBE_LIMIT = 600;
 const HEALTH_REFRESH_MS = 5 * 60 * 1000;
 // How long "Connecting…" may hang before we declare the channel dead.
 // hls.js retries non-fatal segment errors forever, so without this the
@@ -52,10 +57,12 @@ function useChannelHealth(channels: IptvChannel[]): Record<string, IptvHealthSta
     const controller = new AbortController();
     const probe = async () => {
       // Probe in batches; merge as results land so early batches light up
-      // the rail while later ones are still in flight.
-      for (let offset = 0; offset < channels.length; offset += HEALTH_BATCH_SIZE) {
+      // the rail while later ones are still in flight. Capped window: the
+      // rail's first screens are what visitors actually see.
+      const eager = channels.slice(0, HEALTH_PROBE_LIMIT);
+      for (let offset = 0; offset < eager.length; offset += HEALTH_BATCH_SIZE) {
         if (cancelled) return;
-        const batch = channels.slice(offset, offset + HEALTH_BATCH_SIZE).map((channel) => channel.id);
+        const batch = eager.slice(offset, offset + HEALTH_BATCH_SIZE).map((channel) => channel.id);
         try {
           const result = await fetchLiveTvHealth(batch, controller.signal);
           if (cancelled) return;
@@ -183,6 +190,9 @@ export function LiveTvPage({
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => new Set(readStoredIds(FAVORITES_KEY)));
   const [recentIds, setRecentIds] = useState<string[]>(() => readStoredIds(RECENTS_KEY));
   const [failedLogoKeys, setFailedLogoKeys] = useState<Set<string>>(() => new Set(failedLiveLogoKeys));
+  // Infinite scroll: grow the rendered window when the "Show more" sentinel
+  // scrolls into view — no manual clicking while browsing 4k-channel rails.
+  const sentinelRef = useRef<HTMLButtonElement | null>(null);
   const healthStatuses = useChannelHealth(channels);
   // Probe ok ≠ playable: geo-blocks, token gates and codec gaps only surface
   // when actually playing. Remember local playback failures as "down" so the
@@ -245,6 +255,18 @@ export function LiveTvPage({
     [filteredChannels, visibleChannelCount],
   );
   const remainingChannelCount = Math.max(0, filteredChannels.length - visibleChannels.length);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisibleChannelCount((current) => Math.min(filteredChannels.length, current + CHANNEL_RENDER_INCREMENT));
+      }
+    }, { root: sentinel.closest('.live-channel-list'), rootMargin: '200px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [filteredChannels.length, visibleChannelCount]);
   const activeViewLabel = activeCategoryLabel(activeCategory);
   const filterActive = activeCategory !== ALL_CHANNELS || Boolean(query.trim()) || activeOnly;
   const emptyMessage = query.trim()
@@ -555,32 +577,22 @@ export function LiveTvPage({
                   </span>
                 )}
               </div>
-              <Tabs value={activeCategory} onValueChange={setActiveCategory}>
-                <TabsList className="live-category-tabs" aria-label="Channel categories">
-                <TabsTrigger value={ALL_CHANNELS} onClick={() => setActiveCategory(ALL_CHANNELS)}>
-                  All
-                  <span>{channels.length}</span>
-                </TabsTrigger>
-                <TabsTrigger value={FAVORITE_CHANNELS} onClick={() => setActiveCategory(FAVORITE_CHANNELS)}>
-                  Favorites
-                  <span>{favoriteChannels.length}</span>
-                </TabsTrigger>
-                <TabsTrigger value={RECENT_CHANNELS} onClick={() => setActiveCategory(RECENT_CHANNELS)}>
-                  Recent
-                  <span>{recentChannels.length}</span>
-                </TabsTrigger>
-                {categories.map(([category, count]) => (
-                  <TabsTrigger
-                    key={category}
-                    value={category}
-                    onClick={() => setActiveCategory(category)}
-                  >
-                    {category}
-                    <span>{count}</span>
-                  </TabsTrigger>
-                ))}
-                </TabsList>
-              </Tabs>
+              <label className="live-category-select">
+                <span>Category</span>
+                <Select value={activeCategory} onValueChange={setActiveCategory}>
+                  <SelectTrigger className="live-category-select-trigger" aria-label="Channel category">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="live-category-select-content">
+                    <SelectItem value={ALL_CHANNELS}>All channels <span>{channels.length}</span></SelectItem>
+                    <SelectItem value={FAVORITE_CHANNELS}>Favorites <span>{favoriteChannels.length}</span></SelectItem>
+                    <SelectItem value={RECENT_CHANNELS}>Recent <span>{recentChannels.length}</span></SelectItem>
+                    {categories.map(([category, count]) => (
+                      <SelectItem key={category} value={category}>{category} <span>{count}</span></SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
             </div>
             <div className="live-channel-list">
               {visibleChannels.map((channel) => {
@@ -610,15 +622,15 @@ export function LiveTvPage({
                 );
               })}
               {remainingChannelCount > 0 && (
-                <Button
+                <button
                   type="button"
-                  variant="outline"
+                  ref={sentinelRef}
                   className="live-channel-more"
                   onClick={() => setVisibleChannelCount((current) => Math.min(filteredChannels.length, current + CHANNEL_RENDER_INCREMENT))}
                 >
                   Show more
                   <span>{remainingChannelCount.toLocaleString()} hidden</span>
-                </Button>
+                </button>
               )}
               {!filteredChannels.length && (
                 <div className="live-channel-empty">

@@ -49,6 +49,14 @@ describe('LiveTvPage', () => {
     localStorage.clear();
   });
 
+  // Category switching moved from tabs to a Radix select. The select renders
+  // a combobox; picking an option flips `activeCategory` through onValueChange.
+  async function selectCategory(screen: typeof import('@testing-library/react').screen, label: string) {
+    fireEvent.click(screen.getByRole('combobox', { name: 'Channel category' }));
+    const listbox = await screen.getByRole('listbox');
+    fireEvent.click(within(listbox).getByText(new RegExp(`^${label.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`)));
+  }
+
   it('renders channels, filters them, and starts playback only after user intent', async () => {
     const view = render(<LiveTvPage data={liveTvData} loading={false} error="" />);
     const video = view.container.querySelector('video');
@@ -63,7 +71,7 @@ describe('LiveTvPage', () => {
     expect(screen.getByRole('heading', { name: 'Movie One' })).toBeTruthy();
     await waitFor(() => expect(video?.getAttribute('src')).toBe('/api/live-tv/stream/movies'));
 
-    fireEvent.click(screen.getByRole('tab', { name: /News\s*1/i }));
+    await selectCategory(screen, 'News');
     expect(screen.getByRole('heading', { name: 'Movie One' })).toBeTruthy();
     expect(video?.getAttribute('src')).toBe('/api/live-tv/stream/movies');
 
@@ -89,15 +97,14 @@ describe('LiveTvPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Movie One/i }));
     await waitFor(() => expect(JSON.parse(localStorage.getItem('td:live-tv:recent') || '[]')).toEqual(['movies', 'news']));
 
-    const tabs = screen.getByRole('tablist', { name: 'Channel categories' });
     const rail = screen.getByLabelText('Channels');
 
-    fireEvent.click(within(tabs).getByRole('tab', { name: /Favorites/i }));
+    await selectCategory(screen, 'Favorites');
     expect(screen.getByRole('heading', { name: 'Movie One' })).toBeTruthy();
     expect(within(rail).queryByRole('button', { name: /Movie One/i })).toBeNull();
     expect(screen.getByRole('button', { name: 'Add Movie One to favorites' })).toBeTruthy();
 
-    fireEvent.click(within(tabs).getByRole('tab', { name: /Recent/i }));
+    await selectCategory(screen, 'Recent');
     expect(within(rail).getByRole('button', { name: /News 24/i })).toBeTruthy();
     expect(within(rail).getByRole('button', { name: /Movie One/i })).toBeTruthy();
   });
@@ -118,14 +125,13 @@ describe('LiveTvPage', () => {
     expect(screen.getByText('channels in All channels')).toBeTruthy();
   });
 
-  it('shows helpful empty copy for favorites and recent views', () => {
+  it('shows helpful empty copy for favorites and recent views', async () => {
     render(<LiveTvPage data={liveTvData} loading={false} error="" />);
-    const tabs = screen.getByRole('tablist', { name: 'Channel categories' });
 
-    fireEvent.click(within(tabs).getByRole('tab', { name: /Favorites/i }));
+    await selectCategory(screen, 'Favorites');
     expect(screen.getByText('No favorites yet. Use the heart on a channel to save it here.')).toBeTruthy();
 
-    fireEvent.click(within(tabs).getByRole('tab', { name: /Recent/i }));
+    await selectCategory(screen, 'Recent');
     expect(screen.getByText('No recent channels yet. Play a channel and it will appear here.')).toBeTruthy();
   });
 

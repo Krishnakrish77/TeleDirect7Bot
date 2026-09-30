@@ -2763,45 +2763,37 @@ img {
   outline: none;
 }
 
-.live-category-tabs {
-  display: flex;
-  gap: 0.42rem;
-  overflow-x: auto;
-  scrollbar-width: thin;
+.live-category-select {
+  display: grid;
+  gap: 0.3rem;
 }
 
-.live-category-tabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.42rem;
-  flex: 0 0 auto;
-  min-height: 34px;
-  padding: 0 0.62rem;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
-  color: var(--muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 850;
-  white-space: nowrap;
-}
-
-.live-category-tabs button[data-state="active"] {
-  border-color: var(--brand);
-  background: var(--brand);
-  color: #111317;
-}
-
-.live-category-tabs span {
-  /* --dim (#64748b) was too low-contrast on the dark chips. */
+.live-category-select > span {
   color: var(--muted);
   font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.live-category-tabs button[data-state="active"] span {
-  color: rgba(17, 19, 23, 0.72);
+.live-category-select-trigger {
+  min-height: 38px;
+  border-color: rgba(148, 163, 184, 0.16);
+  background: rgba(8, 9, 11, 0.46);
+  font-weight: 850;
+}
+
+.live-category-select-content [data-slot="select-item"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.live-category-select-content span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .live-channel-list {

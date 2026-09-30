@@ -540,12 +540,79 @@ _HEALTH_PROBE_CONCURRENCY = int(os.environ.get("IPTV_HEALTH_PROBE_CONCURRENCY", 
 _HEALTH_CACHE: dict[str, tuple[float, bool]] = {}
 _HEALTH_CACHE_LOCK = asyncio.Lock()
 
+def _first_segment_url(manifest_text: str, manifest_url: str) -> str:
+    """Return the first playable media segment (or sub-playlist) URL."""
+    for line in manifest_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if _URI_ATTR_RE.search(line):  # EXT-X-MEDIA / EXT-X-STREAM-INF URI="..."
+            match = _URI_ATTR_RE.search(line)
+            if match:
+                return urljoin(manifest_url, match.group(1))
+        return urljoin(manifest_url, line)
+    return ""
+
+
+async def _probe_stream_segments(stream_url: str, raw_headers: dict | None) -> bool:
+    """Strict probe for the health sweep: manifest AND first segment.
+
+    A manifest alone can resolve fine while every segment inside is dead
+    (geo-fenced CDNs, expired tokens) — which is why sweeps that only check
+    manifests delete nothing. Fetch the manifest, then Range-GET its first
+    segment URL.
+    """
+    try:
+        async with aiohttp.ClientSession(
+            timeout=_STREAM_PROBE_TIMEOUT,
+            connector=aiohttp.TCPConnector(resolver=_SafePublicResolver(), ttl_dns_cache=0),
+        ) as session:
+            current = _normalise_import_url(stream_url)
+            manifest_text = ""
+            for _ in range(_REDIRECT_LIMIT + 1):
+                async with session.get(current, allow_redirects=False, headers=_stream_request_headers(raw_headers)) as response:
+                    if 300 <= response.status < 400:
+                        location = response.headers.get("Location")
+                        if not location:
+                            return False
+                        current = _normalise_import_url(urljoin(current, location))
+                        continue
+                    if response.status >= 400:
+                        return False
+                    manifest_text = (await _read_probe_bytes(response, _HLS_MANIFEST_MAX_BYTES)).decode(
+                        response.charset or "utf-8", errors="replace"
+                    )
+                    break
+            if not _looks_like_m3u(manifest_text):
+                return False
+            segment_url = _first_segment_url(manifest_text, current)
+            if not segment_url:
+                return False
+            # Sub-playlists (master → variant) need one more hop; media
+            # segments answer a Range GET. Either proving reachable is enough.
+            async with session.get(
+                segment_url,
+                allow_redirects=False,
+                headers={**_stream_request_headers(raw_headers), "Range": "bytes=0-1023"},
+            ) as segment_response:
+                if segment_response.status < 400:
+                    return True
+                if 300 <= segment_response.status < 400 and segment_response.headers.get("Location"):
+                    return True  # redirect counts as reachable; the proxy follows it too
+                return False
+    except (ValueError, aiohttp.ClientError, TimeoutError):
+        return False
+
+
 async def _health_probe_channel(channel: dict) -> bool:
     try:
         await _probe_stream_url(channel["streamUrl"], channel.get("streamHeaders") or {})
-        return True
     except (ValueError, aiohttp.ClientError, TimeoutError):
         return False
+    # Manifest reachable — but geo-fenced CDNs and expired tokens serve
+    # manifests whose segments are dead. Confirm the first segment plays
+    # before calling the channel healthy.
+    return await _probe_stream_segments(channel["streamUrl"], channel.get("streamHeaders") or {})
 
 def _health_status_name(healthy: bool) -> str:
     return "ok" if healthy else "down"
