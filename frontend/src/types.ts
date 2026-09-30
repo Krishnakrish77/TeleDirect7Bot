@@ -246,6 +246,18 @@ export interface AdminIptvActionResponse extends AdminIptvResponse {
   error?: string;
 }
 
+export interface IptvHealthSweepStatus {
+  running: boolean;
+  mode?: 'disable' | 'delete';
+  attempts?: number;
+  total?: number;
+  processed?: number;
+  affected?: Array<{ id: string; name: string; action: 'disabled' | 'deleted' }>;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+  error?: string;
+}
+
 export interface WatchTrack {
   key: string;
   itemId: string;

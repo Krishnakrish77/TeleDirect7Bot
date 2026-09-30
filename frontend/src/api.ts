@@ -19,6 +19,7 @@ import type {
   LiveTvHealthResponse,
   AdminIptvResponse,
   AdminIptvActionResponse,
+  IptvHealthSweepStatus,
   MeResponse,
   PlaylistDetailResponse,
   PlaylistsResponse,
@@ -584,6 +585,18 @@ export async function saveAdminIptvChannel(payload: IptvChannelPayload): Promise
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+}
+
+export async function startAdminIptvHealthSweep(mode: 'disable' | 'delete', attempts = 3): Promise<{ ok: boolean; sweep: IptvHealthSweepStatus; error?: string }> {
+  return request(`/api/app/admin/iptv/health-sweep`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode, attempts }),
+  });
+}
+
+export async function fetchAdminIptvHealthSweep(signal?: AbortSignal): Promise<{ ok: boolean; sweep: IptvHealthSweepStatus }> {
+  return request('/api/app/admin/iptv/health-sweep', { signal });
 }
 
 export async function deleteAdminIptvChannel(id: string): Promise<AdminIptvActionResponse> {

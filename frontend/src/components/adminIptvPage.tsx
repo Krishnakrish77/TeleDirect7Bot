@@ -1,5 +1,5 @@
-import { FormEvent, type Dispatch, type SetStateAction, useMemo, useState } from 'react';
-import { deleteAdminIptvChannel, importAdminIptvM3u, importAdminIptvM3uUrl, saveAdminIptvChannel, testAdminIptvStream } from '../api';
+import { FormEvent, useEffect, type Dispatch, type SetStateAction, useMemo, useState } from 'react';
+import { deleteAdminIptvChannel, fetchAdminIptvHealthSweep, importAdminIptvM3u, importAdminIptvM3uUrl, saveAdminIptvChannel, startAdminIptvHealthSweep, testAdminIptvStream } from '../api';
 import { BroadcastIcon, CheckIcon, PlayIcon, SearchIcon, ShieldIcon, XIcon } from '../icons';
 import { ErrorPanel, LoadingRows } from './common';
 import { AdminGate } from './adminPage';
@@ -9,7 +9,7 @@ import { Card, CardContent } from './ui/card';
 import { Checkbox } from './ui/checkbox';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
-import type { AdminIptvResponse, IptvChannel, IptvChannelPayload, User } from '../types';
+import type { AdminIptvResponse, IptvChannel, IptvChannelPayload, IptvHealthSweepStatus, User } from '../types';
 
 const emptyForm: IptvChannelPayload = {
   name: '',
@@ -63,6 +63,7 @@ export function AdminIptvPage({
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
   const [adminChannelLimit, setAdminChannelLimit] = useState(200);
+  const [sweep, setSweep] = useState<IptvHealthSweepStatus | null>(null);
 
   const channels = data?.channels ?? [];
   const filteredChannels = useMemo(() => {
@@ -75,6 +76,38 @@ export function AdminIptvPage({
     () => filteredChannels.slice(0, adminChannelLimit),
     [filteredChannels, adminChannelLimit],
   );
+
+  useEffect(() => {
+    // Resume polling if a sweep started before this page loaded (e.g. reload
+    // mid-sweep) — otherwise the buttons would look idle while one runs.
+    let cancelled = false;
+    fetchAdminIptvHealthSweep()
+      .then((response) => {
+        if (!cancelled && response.sweep.running) setSweep(response.sweep);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sweep?.running) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await fetchAdminIptvHealthSweep();
+        setSweep(response.sweep);
+        if (!response.sweep.running) {
+          const affected = response.sweep.affected ?? [];
+          setNotice(`Health sweep finished: ${affected.length} channel(s) ${response.sweep.mode === 'delete' ? 'deleted' : 'disabled'}${affected.length ? ` (${affected.map((item) => item.name).slice(0, 5).join(', ')}${affected.length > 5 ? '…' : ''})` : ''}`);
+          reload();
+        }
+      } catch {
+        // Transient polling error — keep polling until the sweep reports done.
+      }
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [sweep?.running, reload]);
 
   if (!user?.is_admin) return <AdminGate user={user} onSignIn={onSignIn} />;
 
@@ -182,6 +215,21 @@ export function AdminIptvPage({
     }
   };
 
+  const startSweep = async (mode: 'disable' | 'delete') => {
+    if (mode === 'delete' && !window.confirm(`Hard-delete every channel that fails the health check (3 attempts each)? This cannot be undone.`)) return;
+    setBusy(`sweep-${mode}`);
+    setNotice('');
+    try {
+      const response = await startAdminIptvHealthSweep(mode, 3);
+      setSweep(response.sweep);
+      setNotice(`Health sweep started in background — probing ${response.sweep.total ?? 0} enabled channel(s), up to ${response.sweep.attempts ?? 3} attempts each.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Unable to start health sweep');
+    } finally {
+      setBusy('');
+    }
+  };
+
   return (
     <main className="admin-main admin-iptv-main">
       <section className="admin-hero iptv-admin-hero">
@@ -194,6 +242,8 @@ export function AdminIptvPage({
           <div className="admin-hero-actions">
             <Button asChild variant="secondary" size="sm"><a href="/admin"><ShieldIcon />Console</a></Button>
             <Button asChild variant="secondary" size="sm"><a href="/live-tv"><BroadcastIcon />Live TV</a></Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => startSweep('disable')} disabled={busy.startsWith('sweep') || Boolean(sweep?.running)}><PlayIcon />{sweep?.running ? 'Sweeping…' : 'Check & disable dead'}</Button>
+            <Button type="button" variant="destructive" size="sm" onClick={() => startSweep('delete')} disabled={busy.startsWith('sweep') || Boolean(sweep?.running)}><XIcon />Check & delete dead</Button>
             <Button type="button" variant="secondary" size="sm" onClick={() => reload()} disabled={loading}><CheckIcon />Refresh</Button>
           </div>
         </div>
@@ -202,6 +252,11 @@ export function AdminIptvPage({
       {loading && !data && <LoadingRows variant="detail" />}
       {error && <ErrorPanel message={error} />}
       {notice && <p className="admin-notice" role="status">{notice}</p>}
+      {sweep?.running && (
+        <p className="admin-notice" role="status">
+          Health sweep in progress: {sweep.processed ?? 0}/{sweep.total ?? 0} channel(s) checked ({sweep.mode === 'delete' ? 'hard-delete' : 'disable'} mode, up to {sweep.attempts ?? 3} attempts each).
+        </p>
+      )}
 
       <section className="iptv-admin-layout" aria-label="IPTV manager">
         <Card className="iptv-editor-panel">

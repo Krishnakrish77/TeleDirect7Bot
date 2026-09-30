@@ -7,9 +7,11 @@ import { AdminIptvPage } from './adminIptvPage';
 
 vi.mock('../api', () => ({
   deleteAdminIptvChannel: vi.fn(),
+  fetchAdminIptvHealthSweep: vi.fn().mockResolvedValue({ ok: true, sweep: { running: false } }),
   importAdminIptvM3u: vi.fn(),
   importAdminIptvM3uUrl: vi.fn(),
   saveAdminIptvChannel: vi.fn(),
+  startAdminIptvHealthSweep: vi.fn(),
   testAdminIptvStream: vi.fn(),
 }));
 

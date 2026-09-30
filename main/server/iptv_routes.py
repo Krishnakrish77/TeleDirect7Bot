@@ -610,6 +610,116 @@ async def live_tv_channels(_: web.Request) -> web.Response:
     return _json({"channels": [_with_proxied_logo(channel) for channel in channels]})
 
 
+_SWEEP_MAX_ATTEMPTS = int(os.environ.get("IPTV_SWEEP_MAX_ATTEMPTS", "3"))
+_HEALTH_SWEEP: dict | None = None
+_HEALTH_SWEEP_TASK: asyncio.Task | None = None
+
+
+def _sweep_snapshot() -> dict:
+    if not _HEALTH_SWEEP:
+        return {"running": False}
+    return {**_HEALTH_SWEEP, "running": _HEALTH_SWEEP.get("running", False)}
+
+
+async def _run_health_sweep(mode: str, attempts: int) -> None:
+    """Probe every enabled channel and disable/delete the ones that keep failing."""
+    global _HEALTH_SWEEP
+    if _HEALTH_SWEEP is None:
+        _HEALTH_SWEEP = {"total": 0, "processed": 0, "affected": []}
+    sweep = _HEALTH_SWEEP
+    channels = await iptv_store.list_channels(include_disabled=False)
+    sweep["total"] = len(channels)
+    if not channels:
+        sweep["running"] = False
+        sweep["finishedAt"] = time.time()
+        return
+
+    semaphore = asyncio.Semaphore(_HEALTH_PROBE_CONCURRENCY)
+
+    async def _probe_with_retries(channel: dict) -> bool:
+        # A channel is only "down" when every attempt fails.
+        try:
+            for _ in range(attempts):
+                async with semaphore:
+                    if await _health_probe_channel(channel):
+                        return True
+            return False
+        finally:
+            sweep["processed"] += 1
+
+    results = await asyncio.gather(*(_probe_with_retries(channel) for channel in channels))
+    dead = [channel for channel, healthy in zip(channels, results) if not healthy]
+
+    affected: list[dict] = []
+    for channel in dead:
+        if mode == "delete":
+            ok = await iptv_store.delete_channel(channel["id"])
+            action = "deleted"
+        else:
+            saved, _updated, _message = await iptv_store.save_channel({**channel, "enabled": False})
+            ok = bool(saved)
+            action = "disabled"
+        if ok:
+            _HEALTH_CACHE.pop(channel["id"], None)
+            affected.append({"id": channel["id"], "name": channel["name"], "action": action})
+
+    sweep["running"] = False
+    sweep["finishedAt"] = time.time()
+    sweep["affected"] = affected
+
+
+@routes.post("/api/app/admin/iptv/health-sweep")
+async def admin_iptv_health_sweep_start(request: web.Request) -> web.Response:
+    global _HEALTH_SWEEP, _HEALTH_SWEEP_TASK
+    _require_admin(request)
+    if _HEALTH_SWEEP and _HEALTH_SWEEP.get("running"):
+        return _json({"ok": False, "error": "A health sweep is already running"}, status=409)
+
+    data = await _body(request)
+    mode = str(data.get("mode") or "disable")
+    if mode not in ("disable", "delete"):
+        return _json({"ok": False, "error": "mode must be 'disable' or 'delete'"}, status=400)
+    try:
+        attempts = int(data.get("attempts") or 3)
+    except (TypeError, ValueError):
+        attempts = 3
+    attempts = max(1, min(attempts, _SWEEP_MAX_ATTEMPTS))
+
+    # No awaits between the running-check and publishing the new sweep state:
+    # two concurrent POSTs must not both start a sweep.
+    if _HEALTH_SWEEP and _HEALTH_SWEEP.get("running"):
+        return _json({"ok": False, "error": "A health sweep is already running"}, status=409)
+    _HEALTH_SWEEP = {
+        "running": True,
+        "mode": mode,
+        "attempts": attempts,
+        "total": 0,
+        "processed": 0,
+        "affected": [],
+        "startedAt": time.time(),
+        "finishedAt": None,
+    }
+    _HEALTH_SWEEP_TASK = asyncio.create_task(_run_health_sweep(mode, attempts))
+
+    def _on_sweep_done(task: asyncio.Task) -> None:
+        global _HEALTH_SWEEP
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None and _HEALTH_SWEEP:
+            _HEALTH_SWEEP["running"] = False
+            _HEALTH_SWEEP["finishedAt"] = time.time()
+            _HEALTH_SWEEP["error"] = f"{type(exc).__name__}: {exc}"
+
+    _HEALTH_SWEEP_TASK.add_done_callback(_on_sweep_done)
+    return _json({"ok": True, "sweep": _sweep_snapshot()})
+
+
+@routes.get("/api/app/admin/iptv/health-sweep")
+async def admin_iptv_health_sweep_status(request: web.Request) -> web.Response:
+    return _json({"ok": True, "sweep": _sweep_snapshot()})
+
+
 @routes.get("/api/live-tv/channel/{channel_id}")
 async def live_tv_channel(request: web.Request) -> web.Response:
     channel = await iptv_store.get_channel(request.match_info["channel_id"], include_disabled=False)
