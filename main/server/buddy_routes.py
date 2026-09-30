@@ -246,11 +246,15 @@ def _cards_from_tool_results(collected: list[dict]) -> list[dict]:
     renders them tappable, exactly like AI Picks rows.
     """
     cards = []
+    seen_hrefs: set[str] = set()
     for result in collected:
         for row in (result or {}).get("results") or []:
             href = str(row.get("playHref") or "")
             if not href.startswith(("/series/", "/movie/", "/album/", "/play/")):
                 continue
+            if href in seen_hrefs:
+                continue  # the model may repeat a search across turns
+            seen_hrefs.add(href)
             kind = row.get("kind")
             if kind not in ("movie", "series", "album", "audio"):
                 continue

@@ -296,6 +296,13 @@ class BuildPromptTest(unittest.TestCase):
         self.assertEqual(contents[-1]["parts"][0]["text"], "latest")
         self.assertNotIn("m10", system)
 
+    def test_malformed_history_entries_are_skipped(self):
+        # A corrupted store row must not crash the turn.
+        history = [{"role": "user", "text": "ok"}, None, "junk"]
+        system, contents = buddy_context.build_prompt(None, history, "latest")
+        # "ok" + latest survive; None/junk dropped
+        self.assertEqual([c["parts"][0]["text"] for c in contents], ["ok", "latest"])
+
 
 if __name__ == "__main__":
     unittest.main()

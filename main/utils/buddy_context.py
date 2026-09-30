@@ -348,6 +348,8 @@ def build_prompt(context: Optional[dict], history: list, message: str) -> tuple:
 
     contents = []
     for entry in (history or [])[-_HISTORY_CAP:]:
+        if not isinstance(entry, dict):
+            continue  # a malformed stored row must not crash the turn
         role = "user" if entry.get("role") == "user" else "model"
         text = str(entry.get("text") or "").strip()
         if text:

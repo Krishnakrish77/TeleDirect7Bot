@@ -429,6 +429,12 @@ class CardsFromToolResultsTest(unittest.TestCase):
         self.assertEqual(buddy_routes._cards_from_tool_results([{"error": "x"}]), [])
         self.assertEqual(buddy_routes._cards_from_tool_results([]), [])
 
+    def test_repeated_searches_deduplicate_by_href(self):
+        same = {"results": [{"title": "Arrival", "kind": "movie", "playHref": "/movie/arrival",
+                             "poster": "", "year": 2016, "overview": "o"}]}
+        cards = buddy_routes._cards_from_tool_results([same, same, same])
+        self.assertEqual(len(cards), 1)
+
 
 class _FakeGeminiResponse:
     status = 200
