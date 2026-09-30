@@ -623,12 +623,18 @@ def _sweep_snapshot() -> dict:
 
 
 async def _run_health_sweep(mode: str, attempts: int) -> None:
-    """Probe every enabled channel and disable/delete the ones that keep failing."""
+    """Probe channels and disable/delete the ones that keep failing.
+
+    disable mode: enabled channels only (hide dead ones from Live TV).
+    delete mode:  the whole catalogue including already-disabled channels —
+                  a purge of everything dead, past and present.
+    """
     global _HEALTH_SWEEP
     if _HEALTH_SWEEP is None:
         _HEALTH_SWEEP = {"total": 0, "processed": 0, "affected": []}
     sweep = _HEALTH_SWEEP
-    channels = await iptv_store.list_channels(include_disabled=False)
+    include_disabled = mode == "delete"
+    channels = await iptv_store.list_channels(include_disabled=include_disabled)
     sweep["total"] = len(channels)
     if not channels:
         sweep["running"] = False

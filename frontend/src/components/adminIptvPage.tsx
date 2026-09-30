@@ -216,7 +216,7 @@ export function AdminIptvPage({
   };
 
   const startSweep = async (mode: 'disable' | 'delete') => {
-    if (mode === 'delete' && !window.confirm(`Hard-delete every channel that fails the health check (3 attempts each)? This cannot be undone.`)) return;
+    if (mode === 'delete' && !window.confirm(`Hard-delete every channel that fails the health check (3 attempts each)? This sweeps the ENTIRE catalogue including channels you previously disabled. Cannot be undone.`)) return;
     setBusy(`sweep-${mode}`);
     setNotice('');
     try {

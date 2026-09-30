@@ -86,8 +86,26 @@ class IptvHealthSweepTest(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(iptv_routes, "_health_probe_channel", side_effect=fake_probe):
             await _run_health_sweep("delete", 3)
 
+        # delete mode purges the whole catalogue: disabled channels included
+        store.list_channels.assert_awaited_once_with(include_disabled=True)
         store.delete_channel.assert_awaited_once_with("dead")
         self.assertEqual(iptv_routes._HEALTH_SWEEP["affected"], [{"id": "dead", "name": "Dead", "action": "deleted"}])
+
+    async def test_disable_mode_ignores_disabled_channels(self):
+        dead_disabled = {**_channel("DeadDisabled", False), "enabled": False}
+        store = self.store_patcher.start()
+        store.list_channels = mock.AsyncMock(return_value=[])
+        store.save_channel = mock.AsyncMock()
+
+        async def fake_probe(_channel):
+            return False
+
+        with mock.patch.object(iptv_routes, "_health_probe_channel", side_effect=fake_probe):
+            await _run_health_sweep("disable", 3)
+
+        # disable mode only sweeps the enabled working set
+        store.list_channels.assert_awaited_once_with(include_disabled=False)
+        store.save_channel.assert_not_awaited()
 
     async def test_no_channels_completes_immediately(self):
         store = self.store_patcher.start()
