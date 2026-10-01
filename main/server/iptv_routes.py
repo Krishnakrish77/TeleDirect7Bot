@@ -565,7 +565,10 @@ async def _proxy_channel_stream(request: web.Request, channel: dict, target_url:
 _HEALTH_OK_TTL_SECONDS = int(os.environ.get("IPTV_HEALTH_OK_TTL_SECONDS", str(5 * 60)))
 _HEALTH_FAIL_TTL_SECONDS = int(os.environ.get("IPTV_HEALTH_FAIL_TTL_SECONDS", str(2 * 60)))
 _HEALTH_MAX_IDS = int(os.environ.get("IPTV_HEALTH_MAX_IDS", "100"))
-_HEALTH_PROBE_CONCURRENCY = int(os.environ.get("IPTV_HEALTH_PROBE_CONCURRENCY", "12"))
+# Probe concurrency shares the event loop with video relaying and ffmpeg
+# transcoding on a small Koyeb instance — keep it modest so a batch never
+# starves stream sockets/TLS handshakes.
+_HEALTH_PROBE_CONCURRENCY = int(os.environ.get("IPTV_HEALTH_PROBE_CONCURRENCY", "6"))
 _HEALTH_CACHE: dict[str, tuple[float, bool]] = {}
 _HEALTH_CACHE_LOCK = asyncio.Lock()
 
