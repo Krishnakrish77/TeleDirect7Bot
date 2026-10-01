@@ -207,30 +207,38 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
         # Hold the dict reference: patch.object restores the module attribute
         # when the block exits, so the final asserts must read this object.
         cooldowns = {}
+        # Non-loopback IP: loopback skips the per-IP increment, which would
+        # make the release asymmetry confusing to assert.
+        request = _FakeRequest(
+            method="GET",
+            headers={"Range": f"bytes={from_byte}-"},
+        )
+        request.remote = "203.0.113.5"
         with (
             patch.object(stream_routes, "multi_clients", {0: client}),
             patch.object(stream_routes, "work_loads", {0: 0}),
             patch.object(stream_routes, "class_cache", {client: TruncatingHugeStreamer()}),
-            patch.object(stream_routes, "_total_active", 1),
-            patch.object(stream_routes, "_ip_active", {"127.0.0.1": 1}),
+            patch.object(stream_routes, "_total_active", 5),
+            patch.object(stream_routes, "_ip_active", {"203.0.113.5": 2}),
             patch.object(stream_routes, "_client_cooldowns", cooldowns),
+            patch.object(stream_routes, "_LOOPBACK", set()),
         ):
-            response = await stream_routes.media_streamer(
-                _FakeRequest(
-                    method="GET",
-                    headers={"Range": f"bytes={from_byte}-"},
-                ), 42, "abc"
-            )
+            response = await stream_routes.media_streamer(request, 42, "abc")
 
-            # Draining the body raises the truncation (by design — headers
-            # promised more bytes) AND marks the client for failover.
-            with self.assertRaises(stream_routes.TelegramStreamTruncated):
-                async for _chunk in response.body._iter:
-                    pass
+            # The body ends CLEANLY (no exception) after truncation — ending
+            # short of Content-Length is the same player-visible outcome as
+            # raising, but without abandoning the generator chain, so the
+            # stream slot frees synchronously instead of at GC.
+            chunks = [chunk async for chunk in response.body._iter]
+            # Capture slot state INSIDE the patch (ints restore on exit).
+            total_after = stream_routes._total_active
+            ip_after = dict(stream_routes._ip_active)
 
+        self.assertEqual(chunks, [b"partial"])
         self.assertIn(0, cooldowns)
-        self.assertEqual(stream_routes._total_active, 0)
-        self.assertEqual(stream_routes._ip_active, {})
+        # Slot accounting returned to its pre-request base: no leak.
+        self.assertEqual(total_after, 5)
+        self.assertEqual(ip_after, {"203.0.113.5": 2})
 
     async def test_pdf_full_get_is_not_reduced_to_a_probe_head(self):
         """PDF viewers can start without Range and need the full document."""

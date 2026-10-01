@@ -273,11 +273,26 @@ def _real_ip(request: web.Request) -> str:
 
 
 async def _rate_limited_body(gen, ip: str):
-    """Wrap a yield_file generator — ONLY decrements; caller already incremented."""
+    """Wrap a yield_file generator — ONLY decrements; caller already incremented.
+
+    The ``finally`` normally runs when aiohttp exhausts the payload. But when
+    the body raises (TelegramStreamTruncated), aiohttp's
+    ``AsyncIterablePayload.write_with_length`` has no cleanup on the error
+    path — the wrapper stays suspended until GC, releasing the stream slot
+    arbitrarily late. ``aclose()`` here unwinds the inner generator (and its
+    own finally) synchronously so the slot frees the moment the stream dies.
+    """
     try:
         async for chunk in gen:
             yield chunk
     finally:
+        # Unwind the wrapper chain synchronously (see _body: aiohttp's payload
+        # error path abandons async generators; without aclose the stream
+        # slot frees only at GC).
+        try:
+            await gen.aclose()
+        except Exception:
+            pass  # the pending exception (if any) must still propagate
         _release_stream_slot(ip)
 
 
@@ -823,22 +838,39 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     part_count = (until_bytes // new_chunk_size) - (from_bytes // new_chunk_size) + 1
 
     async def _body():
-        """yield_file with client-failover bookkeeping.
+        """Stream yield_file with cleanup owned by THIS generator.
 
-        TelegramStreamTruncated means every GetFile retry was exhausted —
-        the DC (or this client's session) is effectively down. Headers are
-        already sent (the body ends short, a visible error for the player),
-        but the failing client gets a cooldown so the NEXT request fails
-        over to a healthy client instead of re-picking this one.
+        - TelegramStreamTruncated (GetFile retries exhausted): the DC or this
+          client's session is down. Headers are already sent, so this response
+          can only end short — a visible error for the player. Mark the client
+          for cooldown so the NEXT request fails over, then close our own
+          generator chain synchronously: aiohttp's payload error path abandons
+          async generators without closing them, which would otherwise leave
+          the stream slot occupied until GC.
         """
+        inner = tg_connect.yield_file(
+            file_id, index, offset, first_part_cut, last_part_cut, part_count, new_chunk_size
+        )
         try:
-            async for chunk in tg_connect.yield_file(
-                file_id, index, offset, first_part_cut, last_part_cut, part_count, new_chunk_size
-            ):
+            async for chunk in inner:
                 yield chunk
         except TelegramStreamTruncated as exc:
+            # Mark the client for cooldown so the NEXT request fails over,
+            # then end the body NORMALLY (StopAsyncIteration). Re-raising
+            # would propagate into aiohttp's payload write, which abandons
+            # the generator chain without closing it — the stream slot then
+            # frees only at GC. A clean short body is the same visible
+            # outcome for the player (Content-Length overpromised → network
+            # error) without leaking the slot.
             _mark_client_cooldown(index, str(exc))
-            raise
+            return
+        finally:
+            # Unwind yield_file's own try/finally (work_loads decrement,
+            # cdn session stop) even when aiohttp abandons us mid-error.
+            try:
+                await inner.aclose()
+            except Exception:
+                pass
 
     body = _rate_limited_body(_body(), client_ip)
 
