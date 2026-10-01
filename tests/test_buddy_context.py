@@ -193,6 +193,68 @@ class ResolveContextTest(unittest.IsolatedAsyncioTestCase):
             context = await buddy_context.resolve_context(7, None, None)
         self.assertEqual(context["title"], "The Love Hypothesis")
 
+    async def test_album_ref_resolves_first_track(self):
+        track = make_item(501, title="Song A")
+        track.media_kind = "audio"
+        track.artist = "Adrianne Lenker"
+        with patched({501: track}, series={}, movies={},
+                     cw={}, wh=[]):
+            with patch.object(buddy_context.media_index, "tracks_for_album",
+                              return_value=[track]):
+                context = await buddy_context.resolve_context(7, "album:album-1", None)
+        self.assertEqual(context["kind"], "audio")
+        self.assertEqual(context["title"], "Song A")
+
+    async def test_artist_ref_resolves_newest_item(self):
+        track = make_item(501, title="Song A")
+        track.media_kind = "audio"
+        track.artist = "Adrianne Lenker"
+        with patched({501: track}, series={}, movies={},
+                     cw={"x501": {"pos": 60, "dur": 240, "t": 1, "title": "Song A"}}, wh=[]), \
+                patch.object(buddy_context.media_index, "_items", {501: track}):
+            context = await buddy_context.resolve_context(7, "artist:adrianne-lenker", None)
+        self.assertEqual(context["kind"], "audio")
+        self.assertEqual(context["title"], "Song A")
+        self.assertTrue(context["progress"] > 0)
+
+    async def test_book_ref_resolves_book_item(self):
+        book = make_item(401, title="The Love Hypothesis", overview="STEM romance")
+        book.media_kind = "book"
+        with patched({401: book}, cw={}, wh=[]):
+            context = await buddy_context.resolve_context(7, "book:401", None)
+        self.assertEqual(context["kind"], "book")
+        self.assertEqual(context["title"], "The Love Hypothesis")
+
+    async def test_person_ref_resolves_filmography(self):
+        film = make_item(601, title="Past Lives", overview="Two childhood friends.")
+        film.cast = ["Greta Lee"]
+        film.director = "Celine Song"
+        with patched({601: film}, cw={}, wh=[]), \
+                patch.object(buddy_context.media_index, "items_by_cast_slug", return_value=[film]), \
+                patch.object(buddy_context.media_index, "items_by_director_slug", return_value=[]):
+            context = await buddy_context.resolve_context(7, "person:celine-song", None)
+        self.assertEqual(context["kind"], "movie")
+        self.assertEqual(context["title"], "Past Lives")
+
+    async def test_person_director_ref_resolves_via_director_slug(self):
+        film = make_item(601, title="Past Lives")
+        film.director = "Celine Song"
+        with patched({601: film}, cw={}, wh=[]), \
+                patch.object(buddy_context.media_index, "items_by_cast_slug", return_value=[]), \
+                patch.object(buddy_context.media_index, "items_by_director_slug", return_value=[film]):
+            context = await buddy_context.resolve_context(7, "person:celine-song", None)
+        self.assertEqual(context["title"], "Past Lives")
+
+    async def test_book_prompt_branches_for_reading(self):
+        context = {"title": "The Love Hypothesis", "kind": "book",
+                   "season": None, "episode": None, "completed": False,
+                   "_prompt": {"progress": 0.3, "overview": "", "genres": [],
+                               "cast": [], "year": 2022, "director": "",
+                               "runtimeMinutes": 0}}
+        system, _ = buddy_context.build_prompt(context, [], "hi")
+        self.assertIn("reading The Love Hypothesis", system)
+        self.assertIn("30% through", system)
+
     async def test_in_progress_movie_exposes_progress_publicly(self):
         movie = make_item(201, title="The Invisible Guest", movie_key="invisible-guest")
         with patched({201: movie}, movies={"invisible-guest": [movie]},

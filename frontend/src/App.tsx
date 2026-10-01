@@ -380,22 +380,38 @@ function App() {
   const hubLoading = loading && !canRenderHubData;
   const filters = data?.filters ?? DEFAULT_FILTERS;
   const watchKey = route.kind === 'watch' ? route.key : '';
-  // The page the user is on anchors CouchMate: opening the FAB on a series
-  // or movie detail page (or the player) chats about that title. The server
-  // re-derives watch state; only the reference is passed.
+  // The page the user is on anchors CouchMate: opening the FAB chats about
+  // that page's title. The server re-derives watch state; only the
+  // reference is passed.
   const pageBuddyContext: BuddyChatContext | undefined = (() => {
-    if (route.kind === 'detail' && detail.data && (detail.data.kind === 'movie' || detail.data.kind === 'series')) {
-      return {
-        itemId: `${detail.data.kind}:${detail.data.key}`,
-        title: detail.data.title,
-        kind: detail.data.kind === 'series' ? 'tv' : 'movie',
-        ...(detail.data.kind === 'series' ? { seriesTitle: detail.data.title } : {}),
-      };
+    if (route.kind === 'detail' && detail.data) {
+      const d = detail.data;
+      if (d.kind === 'movie' || d.kind === 'series') {
+        return {
+          itemId: `${d.kind}:${d.key}`,
+          title: d.title,
+          kind: d.kind === 'series' ? 'tv' : 'movie',
+          ...(d.kind === 'series' ? { seriesTitle: d.title } : {}),
+        };
+      }
+      if (d.kind === 'album') {
+        return { itemId: `album:${d.key}`, title: d.title, kind: 'tv' };
+      }
+      if (d.kind === 'artist') {
+        return { itemId: `artist:${d.key}`, title: d.title, kind: 'tv' };
+      }
+      if (d.kind === 'person') {
+        return { itemId: `person:${d.key}`, title: d.title, kind: 'tv' };
+      }
     }
-    // The player: anchor to the exact item being played. watchData is the
-    // fetched payload for watchKey; bare-key refs resolve server-side.
+    // The player: anchor to the exact item being played.
     if (route.kind === 'watch' && watchKey) {
       return { itemId: `watch:${watchKey}` };
+    }
+    // Books page with a deep link: /books?book=<messageId>.
+    if (route.kind === 'books') {
+      const bookId = new URLSearchParams(location.search).get('book');
+      if (bookId && /^\d+$/.test(bookId)) return { itemId: `book:${bookId}` };
     }
     return undefined;
   })();

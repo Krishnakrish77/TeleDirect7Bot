@@ -156,6 +156,53 @@ def _latest_watch_item(cw: dict, wh: list):
     return item
 
 
+def _first_item_by_artist(artist_ref: str):
+    """The newest item for an artist-page anchor.
+
+    The artist route key is a slug (``/artist/adrianne-lenker``); match it
+    the way the artist page itself does — slug every credited artist on an
+    item and compare. A display-name ref (slugified) also works.
+    """
+    ref = str(artist_ref or "").strip().lower()
+    if not ref:
+        return None
+    best = None
+    for item in media_index._items.values():
+        if getattr(item, "hidden", False) or (getattr(item, "media_kind", "") or "") != "audio":
+            continue
+        artist_field = str(getattr(item, "artist", "") or "")
+        slugs = [media_index._artist_slug(c) for c in media_index._artist_credits(artist_field)]
+        if ref not in slugs and media_index._artist_slug(ref) not in slugs:
+            continue
+        if best is None or item.message_id > best.message_id:
+            best = item
+    return best
+
+
+def _first_item_for_person(person_slug: str):
+    """The newest item a person (cast or director) appears in.
+
+    The person route key is a slug (``/person/celine-song``); resolve it the
+    way the person page itself does — items_by_cast_slug/items_by_director_slug.
+    A display-name ref (slugified) also works.
+    """
+    slug = str(person_slug or "").strip().lower()
+    if not slug:
+        return None
+    candidates = [
+        *(it for it in media_index.items_by_cast_slug(slug) if (getattr(it, "media_kind", "") or "") != "audio"),
+        *(it for it in media_index.items_by_director_slug(slug) if (getattr(it, "media_kind", "") or "") != "audio"),
+    ]
+    if not candidates:
+        # Display-name fallback: slugify and retry once.
+        from main.utils.media_index import _person_slug
+        candidates = [
+            *(it for it in media_index.items_by_cast_slug(_person_slug(slug)) if (getattr(it, "media_kind", "") or "") != "audio"),
+            *(it for it in media_index.items_by_director_slug(_person_slug(slug)) if (getattr(it, "media_kind", "") or "") != "audio"),
+        ]
+    return max(candidates, key=lambda it: it.message_id, default=None)
+
+
 async def _watch_state(user_id: int) -> tuple:
     try:
         cw = await cw_store.get_all(user_id)
@@ -192,6 +239,22 @@ async def resolve_context(user_id: int, item_id: Optional[str] = None,
                     item = media_index.get_item(int(m.group(1)))
                 except (TypeError, ValueError):
                     item = None
+        elif ref.startswith("album:"):
+            tracks = media_index.tracks_for_album(ref.split(":", 1)[1])
+            item = tracks[0] if tracks else None
+        elif ref.startswith("artist:"):
+            artist = ref.split(":", 1)[1]
+            item = _first_item_by_artist(artist)
+        elif ref.startswith("person:"):
+            person = ref.split(":", 1)[1].replace("-", " ")
+            item = _first_item_for_person(person)
+        elif ref.startswith("book:"):
+            try:
+                item = media_index.get_item(int(ref.split(":", 1)[1]))
+            except (TypeError, ValueError):
+                item = None
+            if item is not None and (getattr(item, "media_kind", "") or "") != "book":
+                item = None
         elif ref.isdigit():
             item = media_index.get_item(int(ref))
     cw = wh = None
@@ -262,7 +325,11 @@ async def resolve_context(user_id: int, item_id: Optional[str] = None,
             break
     return {
         "title": item.title,
-        "kind": "movie",
+        # Audio/book anchors are conversation anchors, not spoiler surfaces:
+        # label them so the prompt treats them as general discussion.
+        "kind": "audio" if (getattr(item, "media_kind", "") or "") == "audio"
+        else "book" if (getattr(item, "media_kind", "") or "") == "book"
+        else "movie",
         "season": None,
         "episode": None,
         "completed": _movie_completed(item, cw, wh),
@@ -360,6 +427,16 @@ def build_prompt(context: Optional[dict], history: list, message: str) -> tuple:
             "2. You can see their watch state — quote it when asked (\"you're "
             "about 40% through\") instead of claiming you can't track it."
         )
+    elif context and context.get("kind") in ("audio", "book"):
+        title = context.get("title") or "this title"
+        label = "listening to" if context["kind"] == "audio" else "reading"
+        progress = (context.get("_prompt") or {}).get("progress")
+        at = f" They are about {int(progress * 100)}% through it." if progress else ""
+        lines.append(
+            f"1. The user is {label} {title} on the platform.{at} Discuss its "
+            "story, themes and craft; avoid spoiling past their progress."
+        )
+        _append_meta(lines, context.get("_prompt") or {}, title)
     else:
         lines.append(
             "1. The user hasn't named a specific title — chat generally about films "
