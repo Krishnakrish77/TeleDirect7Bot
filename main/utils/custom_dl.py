@@ -94,11 +94,16 @@ class ByteStreamer:
         for attempt in range(2):
             try:
                 return await client.get_session(dc_id, is_media=True)
-            except (AuthBytesInvalid, AuthKeyUnregistered) as exc:
+            except (AuthBytesInvalid, AuthKeyUnregistered, TimeoutError, asyncio.TimeoutError) as exc:
+                # TimeoutError: the session's internal invoke already retried
+                # (MAX_RETRIES) and the DC was unreachable. Convert it to
+                # MediaSessionUnavailable so stream_routes' client-failover
+                # can try another client instead of surfacing a raw 500.
                 last_err = exc
                 logging.warning(
-                    "media session auth failed for dc=%s media_id=%s attempt=%d/2; "
+                    "media session %s for dc=%s media_id=%s attempt=%d/2; "
                     "clearing cached sessions",
+                    type(exc).__name__,
                     dc_id,
                     getattr(file_id, "media_id", "?"),
                     attempt + 1,

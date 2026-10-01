@@ -72,6 +72,29 @@ class ByteStreamerMediaSessionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.media_sessions, {})
         self.assertEqual(client.sessions, {})
 
+    async def test_dc_timeout_becomes_media_session_unavailable(self):
+        # pyrogram's invoke raises a raw TimeoutError after exhausting its
+        # internal retries when a DC is unreachable. It must convert to
+        # MediaSessionUnavailable so _choose_stream_client fails over to
+        # another client instead of leaking a 500 to the player.
+        class TimingOutClient(_FakeClient):
+            def __init__(self):
+                super().__init__()
+                self.session_error = TimeoutError
+
+        client = TimingOutClient()
+        streamer = ByteStreamer.__new__(ByteStreamer)
+
+        with patch("asyncio.sleep", return_value=None):
+            with self.assertRaises(MediaSessionUnavailable):
+                await streamer.generate_media_session(
+                    client,
+                    SimpleNamespace(dc_id=4, media_id=99),
+                )
+
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(client.media_sessions, {})
+
     async def test_get_file_flood_wait_retries_without_escaping_response_body(self):
         class MediaSession:
             def __init__(self):

@@ -19,7 +19,7 @@ from aiohttp.http_exceptions import BadStatusLine
 from main.bot import multi_clients, work_loads
 from main.server.exceptions import FIleNotFound, InvalidHash
 from main import Var, utils, StartTime, __version__, StreamBot
-from main.utils.custom_dl import MediaSessionUnavailable
+from main.utils.custom_dl import MediaSessionUnavailable, TelegramStreamTruncated
 from main.utils.download_urls import is_download_query
 from main.utils import media_index, rec_engine, skeleton_cache
 from main.utils.file_properties import matches_secure_hash
@@ -821,12 +821,26 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     # and ffmpeg hits AVERROR_EOF mid-moov-parse. Counting chunks by index
     # always covers [from_bytes, until_bytes] exactly.
     part_count = (until_bytes // new_chunk_size) - (from_bytes // new_chunk_size) + 1
-    body = _rate_limited_body(
-        tg_connect.yield_file(
-            file_id, index, offset, first_part_cut, last_part_cut, part_count, new_chunk_size
-        ),
-        client_ip,
-    )
+
+    async def _body():
+        """yield_file with client-failover bookkeeping.
+
+        TelegramStreamTruncated means every GetFile retry was exhausted —
+        the DC (or this client's session) is effectively down. Headers are
+        already sent (the body ends short, a visible error for the player),
+        but the failing client gets a cooldown so the NEXT request fails
+        over to a healthy client instead of re-picking this one.
+        """
+        try:
+            async for chunk in tg_connect.yield_file(
+                file_id, index, offset, first_part_cut, last_part_cut, part_count, new_chunk_size
+            ):
+                yield chunk
+        except TelegramStreamTruncated as exc:
+            _mark_client_cooldown(index, str(exc))
+            raise
+
+    body = _rate_limited_body(_body(), client_ip)
 
     status = 206 if range_header else 200
     response_headers = dict(common_headers)

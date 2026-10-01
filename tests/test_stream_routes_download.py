@@ -167,6 +167,71 @@ class StreamRouteDownloadTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stream_routes._total_active, 0)
         self.assertEqual(stream_routes._ip_active, {})
 
+    async def test_mid_stream_truncation_puts_client_on_cooldown(self):
+        """GetFile retries exhausted mid-body → the DC is down; the client
+        must enter cooldown so the NEXT request fails over, even though this
+        response can only end short (headers already sent)."""
+        client = _FakeClient()
+
+        class TruncatingStreamer(_FakeStreamer):
+            async def yield_file(self, *args):
+                yield b"partial"
+                raise stream_routes.TelegramStreamTruncated(
+                    "GetFile retries exhausted media_id=1 offset=0"
+                )
+
+        # A Range request starting in the middle of the file — outside both
+        # skeleton windows (head = first 2 MB, tail = last 512 KB) — skips
+        # the probe-head/skeleton shortcuts (those handle their own cooldown)
+        # and targets the live yield_file body, which is what we're testing.
+        # Only files bigger than HEAD+TAIL have such a middle, so inflate the
+        # fake file. The skeleton cache is module-global; clear it so earlier
+        # tests can't serve msg 42 from memory.
+        stream_routes.skeleton_cache._cache.clear()
+
+        class HugeFileId(_FakeFileId):
+            file_size = stream_routes.skeleton_cache.HEAD_SIZE + stream_routes.skeleton_cache.TAIL_SIZE + 1024
+
+        from_byte = HugeFileId.file_size // 2  # past head_limit, below tail_floor
+
+        class TruncatingHugeStreamer(_FakeStreamer):
+            async def get_file_properties(self, message_id):
+                return HugeFileId()
+
+            async def yield_file(self, *args):
+                yield b"partial"
+                raise stream_routes.TelegramStreamTruncated(
+                    "GetFile retries exhausted media_id=1 offset=0"
+                )
+
+        # Hold the dict reference: patch.object restores the module attribute
+        # when the block exits, so the final asserts must read this object.
+        cooldowns = {}
+        with (
+            patch.object(stream_routes, "multi_clients", {0: client}),
+            patch.object(stream_routes, "work_loads", {0: 0}),
+            patch.object(stream_routes, "class_cache", {client: TruncatingHugeStreamer()}),
+            patch.object(stream_routes, "_total_active", 1),
+            patch.object(stream_routes, "_ip_active", {"127.0.0.1": 1}),
+            patch.object(stream_routes, "_client_cooldowns", cooldowns),
+        ):
+            response = await stream_routes.media_streamer(
+                _FakeRequest(
+                    method="GET",
+                    headers={"Range": f"bytes={from_byte}-"},
+                ), 42, "abc"
+            )
+
+            # Draining the body raises the truncation (by design — headers
+            # promised more bytes) AND marks the client for failover.
+            with self.assertRaises(stream_routes.TelegramStreamTruncated):
+                async for _chunk in response.body._iter:
+                    pass
+
+        self.assertIn(0, cooldowns)
+        self.assertEqual(stream_routes._total_active, 0)
+        self.assertEqual(stream_routes._ip_active, {})
+
     async def test_pdf_full_get_is_not_reduced_to_a_probe_head(self):
         """PDF viewers can start without Range and need the full document."""
         client = _FakeClient()
