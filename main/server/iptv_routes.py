@@ -639,7 +639,9 @@ async def _probe_stream_segments(stream_url: str, raw_headers: dict | None) -> b
                 if 300 <= segment_response.status < 400 and segment_response.headers.get("Location"):
                     return True  # redirect counts as reachable; the proxy follows it too
                 return False
-    except (ValueError, aiohttp.ClientError, TimeoutError):
+    except (ValueError, aiohttp.ClientError, TimeoutError, OSError):
+        # OSError: raw socket failures from uvloop (network unreachable,
+        # fd exhaustion, connection refused before aiohttp wraps them).
         return False
 
 
@@ -696,11 +698,18 @@ async def live_tv_health(request: web.Request) -> web.Response:
             semaphore = asyncio.Semaphore(_HEALTH_PROBE_CONCURRENCY)
 
             async def _guarded(channel_id: str, channel: dict) -> None:
-                async with semaphore:
-                    healthy = await _health_probe_channel(channel)
+                # Probe errors must degrade to "down", never fail the whole
+                # status endpoint: a raw socket error (uvloop OSError,
+                # ENETUNREACH, fd exhaustion) escaping here 500s the batch.
+                try:
+                    async with semaphore:
+                        healthy = await _health_probe_channel(channel)
+                except Exception:
+                    logging.exception("iptv health probe crashed for channel %s", channel_id)
+                    healthy = False
                 _HEALTH_CACHE[channel_id] = (time.time(), healthy)
 
-            await asyncio.gather(*(_guarded(cid, channel) for cid, channel in still_stale))
+            await asyncio.gather(*(_guarded(cid, channel) for cid, channel in still_stale), return_exceptions=True)
         for channel_id, _channel in stale:
             statuses[channel_id] = _health_status_name(_health_cached(channel_id) or False)
 
@@ -746,12 +755,17 @@ async def _run_health_sweep(mode: str, attempts: int) -> None:
     semaphore = asyncio.Semaphore(_HEALTH_PROBE_CONCURRENCY)
 
     async def _probe_with_retries(channel: dict) -> bool:
-        # A channel is only "down" when every attempt fails.
+        # A channel is only "down" when every attempt fails. A crash
+        # (raw socket OSError escaping the probe, etc.) counts the
+        # channel as dead — one broken channel must not kill the sweep.
         try:
             for _ in range(attempts):
                 async with semaphore:
                     if await _health_probe_channel(channel):
                         return True
+            return False
+        except Exception:
+            logging.exception("iptv health sweep: probe crashed for channel id=%s", channel["id"])
             return False
         finally:
             sweep["processed"] += 1

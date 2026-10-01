@@ -114,6 +114,23 @@ class IptvHealthSweepTest(unittest.IsolatedAsyncioTestCase):
         self.assertIs(iptv_routes._HEALTH_SWEEP["running"], False)
         self.assertIsNotNone(iptv_routes._HEALTH_SWEEP["finishedAt"])
 
+    async def test_sweep_survives_probe_crash(self):
+        # A raw socket error (uvloop OSError, e.g. network unreachable) must
+        # count the channel as dead, not blow up the whole sweep task.
+        dead = _channel("Dead", False)
+        store = self.store_patcher.start()
+        store.list_channels = mock.AsyncMock(return_value=[dead])
+        store.save_channel = mock.AsyncMock(return_value=(True, dead, ""))
+
+        async def crash(_channel):
+            raise OSError("Network is unreachable")
+
+        with mock.patch.object(iptv_routes, "_health_probe_channel", side_effect=crash):
+            await _run_health_sweep("disable", 3)
+
+        store.save_channel.assert_awaited_once()
+        self.assertEqual(iptv_routes._HEALTH_SWEEP["affected"], [{"id": "dead", "name": "Dead", "action": "disabled"}])
+
 
 if __name__ == "__main__":
     unittest.main()
