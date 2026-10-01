@@ -170,11 +170,19 @@ async def get_top_plays(limit: int = 20) -> list:
         return _top_plays_cache["data"][:limit]
     # Never ran: await the refresh with a hard ceiling so the hub's own
     # timeout fires first and cancels us, not the refresh task.
+    # Polling instead of asyncio.wait_for: when the caller is cancelled
+    # while suspended in wait_for(shield(...)), CPython 3.13+/3.14 can
+    # discard the wait_for coroutine un-awaited (RuntimeWarning spam).
+    # sleep() is cancellation-safe, and this path only runs on a cold cache.
+    deadline = time.time() + 0.9
+    while True:
+        if _top_plays_refresh_task.done():
+            break
+        if time.time() >= deadline:
+            return (_top_plays_cache["data"] or [])[:limit]
+        await asyncio.sleep(0.05)
     try:
-        return await asyncio.wait_for(
-            asyncio.shield(_top_plays_refresh_task),
-            timeout=0.9,
-        )[:limit]
+        return (await asyncio.shield(_top_plays_refresh_task))[:limit]
     except (asyncio.TimeoutError, Exception):
         return (_top_plays_cache["data"] or [])[:limit]
 
