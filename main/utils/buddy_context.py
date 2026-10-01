@@ -128,16 +128,32 @@ def _prompt_meta(item) -> dict:
 
 def _latest_watch_item(cw: dict, wh: list):
     """The item the user is most likely chatting about: newest in-progress
-    entry, else newest completion. cw keys end in the message id."""
-    for key in cw or {}:
-        item = _item_for_cw_key(key)
-        if item is not None:
-            return item
-    for entry in wh or []:
-        item = _item_for_cw_key(entry.get("cw_key", ""))
-        if item is not None:
-            return item
-    return None
+    entry, else newest completion. cw keys end in the message id.
+
+    Long-form audio (audiobooks, DJ sets) refreshes its cw timestamp every
+    save, so pure recency routinely anchors to a 10-hour audiobook instead
+    of the film the user just watched. Video entries win ties: sort by
+    recency among videos first, and only fall back to audio when the user
+    has no video state at all.
+    """
+    def is_video(item) -> bool:
+        return (getattr(item, "media_kind", "") or "video") != "audio"
+
+    def first_item(filter_fn) -> Optional[object]:
+        for key in cw or {}:
+            item = _item_for_cw_key(key)
+            if item is not None and filter_fn(item):
+                return item
+        for entry in wh or []:
+            item = _item_for_cw_key(entry.get("cw_key", ""))
+            if item is not None and filter_fn(item):
+                return item
+        return None
+
+    item = first_item(is_video)
+    if item is None:
+        item = first_item(lambda _it: True)
+    return item
 
 
 async def _watch_state(user_id: int) -> tuple:
@@ -167,6 +183,15 @@ async def resolve_context(user_id: int, item_id: Optional[str] = None,
         elif ref.startswith("movie:"):
             variants = media_index.variants_for_movie(ref.split(":", 1)[1])
             item = variants[0] if variants else None
+        elif ref.startswith("watch:"):
+            # Watch-page anchor: the key is {hash}{message_id} — same shape
+            # cw keys use. Resolve to the exact playing item.
+            m = _CW_KEY_RE.match(ref.split(":", 1)[1])
+            if m:
+                try:
+                    item = media_index.get_item(int(m.group(1)))
+                except (TypeError, ValueError):
+                    item = None
         elif ref.isdigit():
             item = media_index.get_item(int(ref))
     cw = wh = None

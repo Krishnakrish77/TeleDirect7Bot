@@ -392,6 +392,11 @@ function App() {
         ...(detail.data.kind === 'series' ? { seriesTitle: detail.data.title } : {}),
       };
     }
+    // The player: anchor to the exact item being played. watchData is the
+    // fetched payload for watchKey; bare-key refs resolve server-side.
+    if (route.kind === 'watch' && watchKey) {
+      return { itemId: `watch:${watchKey}` };
+    }
     return undefined;
   })();
   const shellClass = [

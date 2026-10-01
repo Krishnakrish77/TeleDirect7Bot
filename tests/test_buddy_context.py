@@ -163,6 +163,36 @@ class ResolveContextTest(unittest.IsolatedAsyncioTestCase):
         with patched():
             self.assertIsNone(await buddy_context.resolve_context(7, None, None))
 
+    async def test_watch_ref_anchors_exact_playing_item(self):
+        # /play/ pages send watch:{key}; the anchor must be the playing item,
+        # not the newest continue-watching entry (an audiobook beats a film
+        # on pure recency because audio keeps refreshing its timestamp).
+        movie = make_item(201, title="Sarder 2", movie_key="sarder-2")
+        audiobook = make_item(401, title="The Love Hypothesis")
+        audiobook.media_kind = "audio"
+        with patched({201: movie, 401: audiobook},
+                     cw={"x401": {"pos": 900, "dur": 3000, "t": 5, "title": "The Love Hypothesis"}}):
+            context = await buddy_context.resolve_context(7, "watch:AgADAx201", None)
+        self.assertEqual(context["title"], "Sarder 2")
+
+    async def test_no_anchor_prefers_video_over_audio(self):
+        movie = make_item(201, title="Sarder 2", movie_key="sarder-2")
+        audiobook = make_item(401, title="The Love Hypothesis")
+        audiobook.media_kind = "audio"
+        with patched({201: movie, 401: audiobook},
+                     cw={"x401": {"pos": 900, "dur": 3000, "t": 5, "title": "The Love Hypothesis"},
+                         "x201": {"pos": 2950, "dur": 3000, "t": 3, "title": "Sarder 2"}}):
+            context = await buddy_context.resolve_context(7, None, None)
+        self.assertEqual(context["title"], "Sarder 2")
+
+    async def test_no_anchor_audio_only_user_still_anchors_audio(self):
+        audiobook = make_item(401, title="The Love Hypothesis")
+        audiobook.media_kind = "audio"
+        with patched({401: audiobook},
+                     cw={"x401": {"pos": 900, "dur": 3000, "t": 5, "title": "The Love Hypothesis"}}):
+            context = await buddy_context.resolve_context(7, None, None)
+        self.assertEqual(context["title"], "The Love Hypothesis")
+
     async def test_in_progress_movie_exposes_progress_publicly(self):
         movie = make_item(201, title="The Invisible Guest", movie_key="invisible-guest")
         with patched({201: movie}, movies={"invisible-guest": [movie]},

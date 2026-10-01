@@ -7639,12 +7639,13 @@ img {
   background: rgba(13, 87, 81, 0.22);
 }
 
-/* Segmented Picks/Buddy switcher at the top of the AI panel. */
+/* Segmented CouchMate/AI Picks switcher — centred under the heading. */
 .ai-rec-tabs {
   display: flex;
   gap: 0.25rem;
   flex-shrink: 0;
   width: fit-content;
+  margin: 0 auto;
   padding: 0.2rem;
   border: 1px solid var(--line);
   border-radius: 10px;
