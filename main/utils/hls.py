@@ -120,14 +120,30 @@ class ProbeResult:
         # allow-list here.
         return self.duration > 0 and self.video_codec is not None
 
+    # Video codecs that are browser-decodable AND MP4-muxable, so the HLS
+    # rendition can remux them (-c copy) into fMP4 segments instead of
+    # paying for a libx264 re-encode. VP9 inside MKV was previously forced
+    # through a full transcode because MP4 rejects VP9 in the *container*
+    # handoff — but the HLS output itself is fragmented MP4, so copy works.
+    FMP4_COPY_VIDEO_CODECS = frozenset({"h264", "vp9", "av1"})
+
+    @property
+    def remux_fmp4(self) -> bool:
+        """Serve as copied fMP4 segments (no video re-encode).
+
+        True for browser-decodable, MP4-muxable video codecs at 8-bit depth.
+        10-bit variants of these codecs still need the AVC transcode path:
+        no browser MSE pipeline handles them natively.
+        """
+        if self.video_codec not in self.FMP4_COPY_VIDEO_CODECS:
+            return False
+        pix_fmt = self.pix_fmt.lower()
+        return not any(hint in pix_fmt for hint in ("10le", "10be", "p010", "p012", "12le"))
+
     @property
     def needs_video_transcode(self) -> bool:
         """Whether this video needs browser-safe AVC output rather than copy."""
-        if self.video_codec != "h264":
-            return True
-        # H.264 10-bit is not portable through browser MSE either.
-        pix_fmt = self.pix_fmt.lower()
-        return any(hint in pix_fmt for hint in ("10le", "10be", "p010", "p012", "12le"))
+        return not self.remux_fmp4
 
     @property
     def segment_count(self) -> int:
@@ -547,7 +563,12 @@ async def extract_subtitle_vtt(source_url: str, track_index: int) -> Optional[by
 
 
 def build_playlist(probe_result: ProbeResult, segment_url_template: str) -> str:
-    """Build a VOD HLS manifest. segment_url_template must contain '{n}'."""
+    """Build a VOD HLS manifest. segment_url_template must contain '{n}'.
+
+    fMP4 sessions (probe_result.remux_fmp4) also use this manifest: ffmpeg's
+    segment muxer writes each .m4s as a standalone MP4 with its own moov
+    (movflags=+empty_moov), so no EXT-X-MAP init segment is required.
+    """
     lines = [
         "#EXTM3U",
         "#EXT-X-VERSION:3",

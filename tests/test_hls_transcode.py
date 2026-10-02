@@ -18,13 +18,34 @@ class HlsTranscodeTest(unittest.TestCase):
         probe = ProbeResult(60, "h264", "aac", pix_fmt="yuv420p")
 
         self.assertTrue(probe.hls_compatible)
+        self.assertTrue(probe.remux_fmp4)
         self.assertFalse(probe.needs_video_transcode)
 
-    def test_non_browser_video_codecs_are_hls_transcoded(self):
-        for codec in ("hevc", "av1", "vp9", "vc1", "mpeg2video"):
+    def test_vp9_av1_eight_bit_remux_to_fmp4_without_transcode(self):
+        """MKV VP9/AV1 previously forced a full libx264 re-encode because the
+        old policy only recognized H.264. The fMP4 copy path muxes them into
+        fragmented MP4 directly — no encode cost."""
+        for codec in ("vp9", "av1"):
             with self.subTest(codec=codec):
-                probe = ProbeResult(60, codec, "dts", pix_fmt="yuv420p10le")
+                probe = ProbeResult(60, codec, "aac", pix_fmt="yuv420p")
                 self.assertTrue(probe.hls_compatible)
+                self.assertTrue(probe.remux_fmp4)
+                self.assertFalse(probe.needs_video_transcode)
+
+    def test_ten_bit_copyable_codecs_still_transcode(self):
+        """10-bit HEVC/VP9/H.264 has no browser MSE path — copy is not enough."""
+        for codec in ("h264", "hevc", "vp9"):
+            with self.subTest(codec=codec):
+                probe = ProbeResult(60, codec, "aac", pix_fmt="yuv420p10le")
+                self.assertFalse(probe.remux_fmp4)
+                self.assertTrue(probe.needs_video_transcode)
+
+    def test_hevc_and_legacy_codecs_transcode(self):
+        for codec in ("hevc", "vc1", "mpeg2video", "mpeg4"):
+            with self.subTest(codec=codec):
+                probe = ProbeResult(60, codec, "dts", pix_fmt="yuv420p")
+                self.assertTrue(probe.hls_compatible)
+                self.assertFalse(probe.remux_fmp4)
                 self.assertTrue(probe.needs_video_transcode)
 
     def test_selected_audio_uses_the_requested_track_codec(self):
@@ -67,6 +88,49 @@ class HlsTranscodeTest(unittest.TestCase):
             self.assertIn("yuv420p", args)
             self.assertIn("aac", args)
             self.assertNotIn("-c:v copy", " ".join(args))
+        finally:
+            session.cleanup_disk()
+
+    def test_fmp4_session_copies_into_fragmented_mp4(self):
+        """The remux path must not encode video when the codec is browser-
+        safe. Audio follows the existing BROWSER_AUDIO_OK policy (aac/mp2/mp3
+        copy; anything else re-encodes to AAC)."""
+        session = HlsSession(
+            123, "http://127.0.0.1/input", 60, "aac", transcode_video=False,
+            fmp4=True,
+        )
+        try:
+            args = session._ffmpeg_args(0)
+
+            self.assertEqual(args[args.index("-c:v") + 1], "copy")
+            self.assertEqual(args[args.index("-c:a") + 1], "copy")
+            self.assertEqual(args[args.index("-segment_format") + 1], "mp4")
+            self.assertIn("frag_keyframe", " ".join(args))
+            self.assertIn("empty_moov", " ".join(args))
+            self.assertTrue(str(args[-1]).endswith("%05d.m4s"))
+            self.assertEqual(session.segment_ext(), ".m4s")
+        finally:
+            session.cleanup_disk()
+
+    def test_fmp4_session_transcodes_unsupported_audio(self):
+        """Video copies but DTS audio still needs the AAC re-encode."""
+        session = HlsSession(
+            123, "http://127.0.0.1/input", 60, "dts", transcode_video=False,
+            fmp4=True,
+        )
+        try:
+            args = session._ffmpeg_args(0)
+
+            self.assertEqual(args[args.index("-c:v") + 1], "copy")
+            self.assertEqual(args[args.index("-c:a") + 1], "aac")
+        finally:
+            session.cleanup_disk()
+
+    def test_ts_session_extension_unchanged(self):
+        session = HlsSession(123, "http://127.0.0.1/input", 60, "aac")
+        try:
+            self.assertEqual(session.segment_ext(), ".ts")
+            self.assertTrue(str(session._ffmpeg_args(0)[-1]).endswith("%05d.ts"))
         finally:
             session.cleanup_disk()
 

@@ -113,7 +113,11 @@ async def hls_playlist(request: web.Request) -> web.Response:
         _a = 0
     audio_index = max(0, min(_a, len(probe.audio_tracks) - 1)) if probe.audio_tracks else 0
 
-    seg_template = f"seg-{{n}}.ts?a={audio_index}"
+    # fMP4 remux sessions (vp9/av1/h264 copy) just change the segment
+    # extension; the manifest shape is identical because each .m4s carries
+    # its own moov.
+    seg_ext = "m4s" if probe.remux_fmp4 else "ts"
+    seg_template = f"seg-{{n}}.{seg_ext}?a={audio_index}"
     body = hls.build_playlist(probe, seg_template)
     return web.Response(
         text=body,
@@ -126,6 +130,7 @@ async def hls_playlist(request: web.Request) -> web.Response:
 
 
 @routes.get(r"/hls/{path:[^/]+}/seg-{n:\d+}.ts")
+@routes.get(r"/hls/{path:[^/]+}/seg-{n:\d+}.m4s")
 async def hls_segment(request: web.Request) -> web.StreamResponse:
     try:
         secure_hash, message_id = _parse_path(request.match_info["path"])
@@ -156,16 +161,21 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
     # we just serve the file when it's on disk. Backward seeks within already-
     # produced segments are free; forward seek beyond the current cursor
     # restarts ffmpeg from the seek point.
+    #
+    # Browser-decodable MP4-muxable codecs (H.264/VP9/AV1, 8-bit) take the
+    # -c copy fMP4 path: no encode slot, no CPU. Everything else — HEVC,
+    # 10-bit, exotic containers — is re-encoded to AVC/AAC. Even an H.264
+    # transcode source can carry timestamp discontinuities that are harmless
+    # for a direct file stream but fatal to Chrome's MSE append pipeline;
+    # re-encoding guarantees monotonic AVC/AAC segment timestamps and
+    # keyframes at every advertised HLS boundary.
+    use_fmp4 = probe.remux_fmp4
     try:
         session = await hls_session.get_or_start(
             message_id, source_url, probe.duration, hls.selected_audio_codec(probe, audio_index),
             audio_index=audio_index,
-            # HLS is our browser-compatibility rendition. Even an H.264 source
-            # can carry timestamp discontinuities that are harmless for a direct
-            # file stream but fatal to Chrome's MSE append pipeline. Re-encoding
-            # this fallback guarantees monotonic AVC/AAC segment timestamps and
-            # keyframes at every advertised HLS boundary.
-            transcode_video=True,
+            transcode_video=not use_fmp4,
+            fmp4=use_fmp4,
             source_size=file_id.file_size,
         )
         seg_path = await session.request(n)
@@ -184,7 +194,7 @@ async def hls_segment(request: web.Request) -> web.StreamResponse:
         headers={
             "Cache-Control": "public, max-age=3600",
             "Access-Control-Allow-Origin": "*",
-            "Content-Type": "video/mp2t",
+            "Content-Type": "video/mp4" if use_fmp4 else "video/mp2t",
         },
     )
 

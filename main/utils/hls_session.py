@@ -70,13 +70,17 @@ class HlsSession:
     def __init__(self, message_id: int, source_url: str,
                  duration: float, audio_codec: Optional[str],
                  audio_index: int = 0, *, transcode_video: bool = False,
-                 source_size: int = 0):
+                 fmp4: bool = False, source_size: int = 0):
         self.message_id = message_id
         self.source_url = source_url
         self.duration = duration
         self.audio_codec = audio_codec
         self.audio_index = audio_index
+        # transcode_video=True → libx264/AAC re-encode into .ts segments.
+        # transcode_video=False with fmp4=True → -c copy into fragmented-MP4
+        # segments (browser-decodable codec, no encode cost).
         self.transcode_video = transcode_video
+        self.fmp4 = fmp4
         self.source_size = max(0, int(source_size or 0))
         # A token belongs to one ffmpeg process.  The old stderr task can
         # finish after a seek starts a replacement; identity checking keeps it
@@ -99,13 +103,16 @@ class HlsSession:
 
     # -- file helpers --------------------------------------------------
 
+    def segment_ext(self) -> str:
+        return ".m4s" if self.fmp4 else ".ts"
+
     def segment_path(self, n: int) -> Path:
-        return self.work_dir / f"{n:05d}.ts"
+        return self.work_dir / f"{n:05d}{self.segment_ext()}"
 
     def latest_produced(self) -> int:
         """Highest segment number currently on disk (-1 if none)."""
         try:
-            files = list(self.work_dir.glob("*.ts"))
+            files = list(self.work_dir.glob(f"*{self.segment_ext()}"))
         except OSError:
             return -1
         latest = -1
@@ -126,7 +133,7 @@ class HlsSession:
         writer has finished flushing it.
         """
         try:
-            files = list(self.work_dir.glob("*.ts"))
+            files = list(self.work_dir.glob(f"*{self.segment_ext()}"))
         except OSError:
             return
         for f in files:
@@ -179,6 +186,35 @@ class HlsSession:
             ]
         else:
             video_args = ["-c:v", "copy"]
+
+        # fMP4 copy path: fragmented-MP4 segments that hls.js consumes via
+        # MSE. frag_keyframe forces a fragment boundary at each keyframe so
+        # segment cutting stays clean; empty_moov + default_base_moof make
+        # each segment a valid standalone movie fragment.
+        if self.fmp4:
+            return [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel", "error",
+                "-fflags", "+genpts+discardcorrupt",
+                "-ss", f"{start_sec:.3f}",
+                "-i", self.source_url,
+                *(["-map", "0:v:0?", "-map", f"0:a:{self.audio_index}"]
+                  if self.audio_codec
+                  else ["-map", "0:v:0?", "-map", f"0:a:{self.audio_index}?"]),
+                *video_args,
+                *audio_args,
+                "-f", "segment",
+                "-segment_time", str(SEGMENT_SECONDS),
+                "-segment_format", "mp4",
+                "-segment_format_options",
+                "movflags=+frag_keyframe+empty_moov+default_base_moof",
+                "-segment_start_number", str(from_segment),
+                "-output_ts_offset", f"{start_sec:.3f}",
+                "-avoid_negative_ts", "disabled",
+                str(self.work_dir / "%05d.m4s"),
+            ]
         return [
             "ffmpeg",
             "-y",
@@ -377,7 +413,7 @@ def _transcode_sem() -> asyncio.Semaphore:
 async def get_or_start(message_id: int, source_url: str,
                        duration: float, audio_codec: Optional[str],
                        audio_index: int = 0, *, transcode_video: bool = False,
-                       source_size: int = 0) -> HlsSession:
+                       fmp4: bool = False, source_size: int = 0) -> HlsSession:
     key = (message_id, audio_index)
     async with _sessions_lock:
         session = _sessions.get(key)
@@ -409,7 +445,7 @@ async def get_or_start(message_id: int, source_url: str,
 
         session = HlsSession(message_id, source_url, duration, audio_codec,
                              audio_index=audio_index, transcode_video=transcode_video,
-                             source_size=source_size)
+                             fmp4=fmp4, source_size=source_size)
         _sessions[key] = session
         return session
 
