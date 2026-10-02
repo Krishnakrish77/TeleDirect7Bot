@@ -108,57 +108,62 @@ async def _dm(user_id: int, text: str) -> None:
         log.debug("photos: could not DM uid=%s: %r", user_id, exc)
 
 
-@StreamBot.on_chat_member_updated(group=-3)
-async def photo_bot_added_to_channel(client: Client, update):
-    """Turn "user added the bot to their channel" into a pending link.
+# Handlers are only registered on the leader. photo_routes.py imports this
+# module lazily on web requests, so on a replica an unconditional decorator
+# would silently start a second ingest dispatcher racing the leader's.
+if Var.IS_LEADER:
 
-    The web wizard polls for this, so linking needs neither the numeric id
-    nor a message link. Updates missed while the bot was down fall back to
-    the manual link/id path in the wizard.
-    """
-    try:
-        if not Var.PHOTOS_ENABLED:
-            return
-        me = getattr(client, "me", None)
-        if me is None:
-            return
-        relevant, reason = _bot_membership_change(update, int(me.id))
-        if not relevant:
-            log.debug("photos: ignoring membership update (%s)", reason)
-            return
-        chat = update.chat
-        actor = getattr(update, "from_user", None)
-        if actor is None:
-            log.warning(
-                "photos: bot added to channel %s but the update carried no actor",
-                chat.id,
-            )
-            return
-        # Lazily imported: photo_routes owns the connect verification rules.
-        from main.server.photo_routes import _verify_channel_access
+    @StreamBot.on_chat_member_updated(group=-3)
+    async def photo_bot_added_to_channel(client: Client, update):
+        """Turn "user added the bot to their channel" into a pending link.
 
-        verified, reject_reason, _definitive = await _verify_channel_access(
-            chat.id, int(actor.id)
-        )
-        if verified is None:
-            log.warning(
-                "photos: channel %s added by uid=%s rejected: %s",
-                chat.id, actor.id, reject_reason,
+        The web wizard polls for this, so linking needs neither the numeric id
+        nor a message link. Updates missed while the bot was down fall back to
+        the manual link/id path in the wizard.
+        """
+        try:
+            if not Var.PHOTOS_ENABLED:
+                return
+            me = getattr(client, "me", None)
+            if me is None:
+                return
+            relevant, reason = _bot_membership_change(update, int(me.id))
+            if not relevant:
+                log.debug("photos: ignoring membership update (%s)", reason)
+                return
+            chat = update.chat
+            actor = getattr(update, "from_user", None)
+            if actor is None:
+                log.warning(
+                    "photos: bot added to channel %s but the update carried no actor",
+                    chat.id,
+                )
+                return
+            # Lazily imported: photo_routes owns the connect verification rules.
+            from main.server.photo_routes import _verify_channel_access
+
+            verified, reject_reason, _definitive = await _verify_channel_access(
+                chat.id, int(actor.id)
             )
-            await _dm(int(actor.id), f"Could not link that channel: {reject_reason}")
-            return
-        title = verified.get("title") or getattr(chat, "title", "") or ""
-        remember_pending_link(int(actor.id), int(chat.id), title)
-        log.info(
-            "photos: pending channel %s (%s) for uid=%s", chat.id, title, actor.id
-        )
-        await _dm(
-            int(actor.id),
-            f"✅ {title or 'Channel'} detected.\n"
-            "Return to the TeleDirect Photos page and press Continue to finish linking.",
-        )
-    except Exception:
-        log.exception("photo_bot_added_to_channel failed")
+            if verified is None:
+                log.warning(
+                    "photos: channel %s added by uid=%s rejected: %s",
+                    chat.id, actor.id, reject_reason,
+                )
+                await _dm(int(actor.id), f"Could not link that channel: {reject_reason}")
+                return
+            title = verified.get("title") or getattr(chat, "title", "") or ""
+            remember_pending_link(int(actor.id), int(chat.id), title)
+            log.info(
+                "photos: pending channel %s (%s) for uid=%s", chat.id, title, actor.id
+            )
+            await _dm(
+                int(actor.id),
+                f"✅ {title or 'Channel'} detected.\n"
+                "Return to the TeleDirect Photos page and press Continue to finish linking.",
+            )
+        except Exception:
+            log.exception("photo_bot_added_to_channel failed")
 
 
 # Ingest concurrency: one worker per channel keeps Telegram pacing sane and
@@ -248,6 +253,12 @@ def schedule_rescan(owner_user_id: int, channel_id: int, *,
     ``explicit`` (user pressed resync) scans from id 1 to cover ids below a
     parked cursor; automatic triggers keep the cheap forward walk.
     """
+    if not Var.IS_LEADER:
+        # Web routes (photo_routes.py) call this on every deployment; on a
+        # replica the leader's ingest pipeline owns the vault, so a rescan
+        # here would duplicate Telegram history probes and Mongo writes.
+        log.debug("photos: rescan skipped cid=%d (ROLE=replica)", channel_id)
+        return
     if not Var.PHOTOS_ENABLED:
         return
     task = _RESCAN_TASKS.get(channel_id)
@@ -372,32 +383,32 @@ async def rescan_channel(owner_user_id: int, channel_id: int, *,
         return 0
 
 
-@StreamBot.on_message(_photos_channel_filter(), group=-3)
-async def photo_channel_post(client: Client, message):
-    """Ingest any post in a bound photo channel.
+    @StreamBot.on_message(_photos_channel_filter(), group=-3)
+    async def photo_channel_post(client: Client, message):
+        """Ingest any post in a bound photo channel.
 
-    ``_photos_channel_filter`` is a dynamic filter that can't know the bound
-    channel ids at import time, so this handler checks the binding here.
-    DB errors on the binding lookup are contained (logged, post dropped) —
-    the fail-closed privacy concern lives in stream.py, which skips bound
-    channels before this handler sees the post.
-    """
-    try:
-        if not Var.PHOTOS_ENABLED:
-            return  # feature off: no ingestion (stream.py's fail-closed skip already protected the vault from the catalogue path)
-        channel_id = int(message.chat.id)
-        owner_doc = await photo_store.get_channel(channel_id)
-        if not owner_doc:
-            return  # not a photo vault — let other handlers deal with it
-        if owner_doc.get("status") != "active":
-            return
-        owner_user_id = owner_doc["owner_user_id"]
-        q = _queue_for(channel_id)
+        ``_photos_channel_filter`` is a dynamic filter that can't know the bound
+        channel ids at import time, so this handler checks the binding here.
+        DB errors on the binding lookup are contained (logged, post dropped) —
+        the fail-closed privacy concern lives in stream.py, which skips bound
+        channels before this handler sees the post.
+        """
         try:
-            q.put_nowait((owner_user_id, message))
-        except asyncio.QueueFull:
-            log.warning("photos ingest queue full for cid=%d; dropping mid=%d", channel_id, message.id)
-            return
-        _ensure_worker(channel_id)
-    except Exception:
-        log.exception("photo_channel_post failed")
+            if not Var.PHOTOS_ENABLED:
+                return  # feature off: no ingestion (stream.py's fail-closed skip already protected the vault from the catalogue path)
+            channel_id = int(message.chat.id)
+            owner_doc = await photo_store.get_channel(channel_id)
+            if not owner_doc:
+                return  # not a photo vault — let other handlers deal with it
+            if owner_doc.get("status") != "active":
+                return
+            owner_user_id = owner_doc["owner_user_id"]
+            q = _queue_for(channel_id)
+            try:
+                q.put_nowait((owner_user_id, message))
+            except asyncio.QueueFull:
+                log.warning("photos ingest queue full for cid=%d; dropping mid=%d", channel_id, message.id)
+                return
+            _ensure_worker(channel_id)
+        except Exception:
+            log.exception("photo_channel_post failed")

@@ -1136,8 +1136,16 @@ async def _reconciliation_loop(bot, channel_id: int) -> None:
 
 
 def ensure_reconciliation_running(bot, channel_id: int) -> None:
-    """Start the bounded reconciliation scheduler once, after seed recovery."""
+    """Start the bounded reconciliation scheduler once, after seed recovery.
+
+    Leader-only: the loop deletes BIN messages and advances a shared
+    Mongo cursor, so concurrent replicas would race each other.
+    """
     global _reconcile_task
+    from main.vars import Var
+    if not Var.IS_LEADER:
+        logging.info("media_index: reconciliation skipped (ROLE=replica)")
+        return
     if _reconcile_task is None or _reconcile_task.done():
         _reconcile_task = asyncio.create_task(_reconciliation_loop(bot, channel_id))
 

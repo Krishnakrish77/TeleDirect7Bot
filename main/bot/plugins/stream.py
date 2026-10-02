@@ -5,6 +5,7 @@ from main.utils import media_index
 from main.utils.download_urls import as_download_url
 from main.utils.file_properties import (
     PROJECT_REPOSITORY_URL,
+    _next_stream_base,
     gen_link,
     get_hash,
     get_media_from_message,
@@ -272,7 +273,7 @@ async def channel_receive_handler(bot, broadcast: Message):
         if not reused_bin:
             _schedule_index_if_admin(bot, broadcast, log_msg)
         file_hash = get_hash(log_msg)
-        stream_link = as_download_url(f"{Var.URL}{file_hash}{log_msg.id}")
+        stream_link = as_download_url(f"{_next_stream_base()}{file_hash}{log_msg.id}")
         if not reused_bin:
             await log_msg.reply_text(
                 text=f"**Channel Name:** `{broadcast.chat.title}`\n**Channel ID:** `{broadcast.chat.id}`\n**Request URL:** https://t.me/{(await bot.get_me()).username}?start=msgid_{str(log_msg.id)}",

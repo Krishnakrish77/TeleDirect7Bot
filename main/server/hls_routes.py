@@ -65,7 +65,12 @@ async def _resolve(message_id: int, secure_hash: str):
 
 
 async def _handle_missing(message_id: int) -> None:
-    await media_index.confirm_and_remove_missing(StreamBot, Var.BIN_CHANNEL, message_id)
+    if Var.IS_LEADER:
+        await media_index.confirm_and_remove_missing(StreamBot, Var.BIN_CHANNEL, message_id)
+    else:
+        # Replicas are read-only against the catalogue; leader reconciliation
+        # owns removals.
+        logging.info("hls: msg %d missing; catalogue cleanup left to leader (ROLE=replica)", message_id)
 
 
 @routes.get(r"/hls/{path:[^/]+}/playlist.m3u8")

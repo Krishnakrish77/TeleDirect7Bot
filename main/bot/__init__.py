@@ -7,7 +7,10 @@ StreamBot = Client(
     api_id=Var.API_ID,
     api_hash=Var.API_HASH,
     workdir="main",
-    plugins={"root": "main/bot/plugins"},
+    # Only the leader processes Telegram updates. Replicas register no
+    # plugins, so two deployments never double-reply to /start or
+    # double-forward the same upload to BIN_CHANNEL.
+    plugins={"root": "main/bot/plugins"} if Var.IS_LEADER else {},
     bot_token=Var.BOT_TOKEN,
     sleep_threshold=Var.SLEEP_THRESHOLD,
     workers=Var.WORKERS,

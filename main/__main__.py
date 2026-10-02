@@ -46,6 +46,10 @@ async def _connect_catalogue_store() -> None:
         logging.warning("Mongo unavailable; retrying in %ss", delay)
         await asyncio.sleep(delay)
         delay = min(delay * 2, 30)
+    if not Var.IS_LEADER:
+        logging.info("catalogue seed skipped (ROLE=replica) — leader owns "
+                     "BIN scanning and reconciliation")
+        return
     async def seed_then_reconcile() -> None:
         try:
             await media_index.seed(StreamBot, Var.BIN_CHANNEL)
@@ -147,10 +151,14 @@ async def start_services():
     # The server is intentionally live before Mongo connects, so visitors get
     # a styled maintenance page rather than a platform-level connection error.
     asyncio.create_task(_connect_catalogue_store())
-    asyncio.create_task(utils.warm_hub_shelves())
-    if Var.PHOTOS_ENABLED:
-        asyncio.create_task(_photos_channel_reverify_loop())
-        asyncio.create_task(_photos_boot_rescan())
+    # Leader-only jobs: reconciliation, photo reverify/rescan and hub
+    # warmup all mutate shared state (Mongo, BIN_CHANNEL pins) — running
+    # them on every replica would duplicate work and race writes.
+    if Var.IS_LEADER:
+        asyncio.create_task(utils.warm_hub_shelves())
+        if Var.PHOTOS_ENABLED:
+            asyncio.create_task(_photos_channel_reverify_loop())
+            asyncio.create_task(_photos_boot_rescan())
     hls_session.ensure_reaper_running()
     if Var.ON_KOYEB:
         print("------------------ Starting Keep Alive Service ------------------")

@@ -1,4 +1,5 @@
 import hmac
+import itertools
 
 from pyrogram import Client
 from typing import Any, Optional
@@ -116,6 +117,20 @@ def _is_book_message(message: Message) -> bool:
     name = (getattr(document, "file_name", "") or "").lower()
     return mime in {"application/pdf", "application/epub+zip"} or name.endswith((".pdf", ".epub"))
 
+
+# Round-robin cursor for distributing stream links across replica base
+# URLs. The leader's own URL is always pool position 0 so the pool is
+# deterministic across restarts; replicas never call this path because
+# gen_link only runs inside leader-only handlers.
+_link_rr = itertools.count()
+
+
+def _next_stream_base() -> str:
+    """Next base URL for stream links — round-robin over
+    [leader URL] + REPLICA_URLS."""
+    pool = [Var.URL] + Var.REPLICA_URLS
+    return pool[next(_link_rr) % len(pool)]
+
 # Generate Text, Stream Link, reply_markup
 async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
     """Generate Text for Stream Link, Reply Text and reply_markup"""
@@ -124,14 +139,15 @@ async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
     file_size = humanbytes(get_media_file_size(log_msg))
     file_hash = get_hash(log_msg)
 
-    page_link = f"{Var.URL}watch/{file_hash}{log_msg.id}"
-    stream_link = f"{Var.URL}{file_hash}{log_msg.id}"
+    base = _next_stream_base()
+    page_link = f"{base}watch/{file_hash}{log_msg.id}"
+    stream_link = f"{base}{file_hash}{log_msg.id}"
     download_link = as_download_url(stream_link)
     if _is_book_message(log_msg):
         # Books are served by the dedicated web reader, not the video player.
         # Keep the reply free of raw URLs so recipients don't receive a broken
         # video-style "Watch" link alongside the intended library action.
-        page_link = f"{Var.URL}books"
+        page_link = f"{base}books"
         Stream_Text = (
             "<u>**Book added to your library**</u>\n\n"
             f"<b>📚 Title :</b> {file_name}\n"
