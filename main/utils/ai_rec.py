@@ -827,6 +827,10 @@ async def _safe_stats(user_id: int) -> dict:
     cached = _stats_cache.get(user_id)
     if cached and now - cached[0] < _STATS_CACHE_TTL:
         return cached[1]
+    # Evict expired entries (they're only overwritten per user; without this
+    # sweep the dict grows once per distinct user for the life of the process).
+    for uid in [u for u, (ts, _) in _stats_cache.items() if now - ts >= _STATS_CACHE_TTL]:
+        _stats_cache.pop(uid, None)
     try:
         from main.server.stats_routes import _stats_payload
         stats = await _stats_payload(user_id)
@@ -952,7 +956,12 @@ async def _requestable_picks(user_id: int, profile: dict, dismissed: set, query:
     )
     out = [{**detail, "recReason": "A related title beyond your library."} for detail in details if isinstance(detail, dict)]
     if not query:
-        _external_pick_cache[user_id] = (_now(), out)
+        # Evict expired entries so the dict doesn't grow once per distinct
+        # user for the life of the process.
+        now = _now()
+        for uid in [u for u, (ts, _) in _external_pick_cache.items() if now - ts >= _EXTERNAL_PICK_TTL]:
+            _external_pick_cache.pop(uid, None)
+        _external_pick_cache[user_id] = (now, out)
     return out
 
 

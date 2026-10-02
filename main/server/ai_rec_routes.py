@@ -45,6 +45,13 @@ def _take_token(user_id: int) -> bool:
         _buckets[user_id] = (tokens, now)
         return False
     _buckets[user_id] = (tokens - 1, now)
+    # Drop long-idle buckets so the dict doesn't grow once per distinct user
+    # for the life of the process. A dropped bucket refills to full capacity,
+    # which is the correct treatment for a user absent this long anyway.
+    if len(_buckets) > 256:
+        idle_cutoff = now - _RATE_CAPACITY / _RATE_REFILL_PER_SEC * 4
+        for uid in [u for u, (_, ts) in _buckets.items() if ts < idle_cutoff]:
+            _buckets.pop(uid, None)
     return True
 
 

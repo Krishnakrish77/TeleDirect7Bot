@@ -225,8 +225,13 @@ async def _collect_signal_profile(user_id: int) -> dict:
     cached = _profile_cache.get(user_id)
     if cached and time.monotonic() - cached[0] < _PROFILE_CACHE_TTL:
         return cached[1]
+    # Evict expired entries (read-time TTL only blocks reuse; without a sweep
+    # the dict grows once per distinct user for the life of the process).
+    now = time.monotonic()
+    for uid in [u for u, (ts, _) in _profile_cache.items() if now - ts >= _PROFILE_CACHE_TTL]:
+        _profile_cache.pop(uid, None)
     profile = await _collect_signal_profile_uncached(user_id)
-    _profile_cache[user_id] = (time.monotonic(), profile)
+    _profile_cache[user_id] = (now, profile)
     return profile
 
 
