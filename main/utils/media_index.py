@@ -842,6 +842,10 @@ async def add_from_message(message) -> None:
             await _store.set_meta("latest_seen_id", _latest_seen_id)
         except Exception:
             logging.debug("store.set_meta failed", exc_info=True)
+    # Nudge replicas so fresh links served from them resolve immediately
+    # instead of 404ing until their next restart. Data flows from Mongo;
+    # this only paces the catch-up. No-op off the leader.
+    notify_replicas_of_new_item()
 
 
 def get_item(message_id: int) -> Optional[HubItem]:
@@ -1497,6 +1501,104 @@ async def load_catalogue() -> None:
             logging.exception("media_index: Mongo load_all failed")
     _seeded = True
     await _mark_catalogue_ready()
+
+
+async def refresh_from_store() -> int:
+    """Replica catch-up: pull catalogue rows the in-memory index has never
+    seen (message_id > max known) from the durable store and merge them.
+
+    The leader indexes uploads and writes through to Mongo; replicas load
+    the catalogue once at boot and would otherwise 404 watch links for
+    files uploaded after their boot until the next restart. Called from
+    the periodic replica refresh and from the lazy per-request hydrate.
+
+    Returns the number of items added. Leader is a no-op: seeding and
+    reconciliation own catalogue mutations there.
+    """
+    global _max_message_id_cache
+    from main.vars import Var
+    if _store is None or Var.IS_LEADER:
+        return 0
+    cursor = max(_items.keys()) if _items else 0
+    try:
+        docs = await _store.load_since(cursor)
+    except Exception:
+        logging.exception("media_index: refresh_from_store fetch failed")
+        return 0
+    if not docs:
+        return 0
+    added = 0
+    async with _lock:
+        for d in docs:
+            try:
+                item = _from_serializable(d)
+            except Exception:
+                logging.debug("media_index: bad Mongo doc skipped", exc_info=True)
+                continue
+            if item.message_id in _items:
+                continue
+            _items[item.message_id] = item
+            _hash_map[item.secure_hash] = item.message_id
+            added += 1
+        if added:
+            _max_message_id_cache = None
+            _mark_derived_stale()
+    if added:
+        logging.info("media_index: replica refresh added %d item(s)", added)
+    return added
+
+
+def notify_replicas_of_new_item() -> None:
+    """Fire-and-forget leader→replica nudge after a successful index.
+
+    POSTs a signed no-payload hook to every REPLICA_URLS entry; each replica
+    then pulls new rows from Mongo itself (refresh_from_store). Best-effort:
+    a failed/unreachable replica is covered by the periodic refresh and by
+    the hook the *next* upload triggers. Never raises.
+    """
+    import asyncio as _asyncio
+    import hashlib as _hashlib
+    import hmac as _hmac
+
+    from main.vars import Var
+
+    if not Var.IS_LEADER or not Var.REPLICA_URLS:
+        return
+    nonce = f"{time.time_ns()}"
+    signature = _hmac.new(
+        Var.JWT_SECRET.encode(),
+        f"catalogue-refresh:{nonce}".encode(),
+        _hashlib.sha256,
+    ).hexdigest()[:32]
+    headers = {"X-Refresh-Nonce": nonce, "X-Refresh-Signature": signature}
+
+    async def _notify_all() -> None:
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            for base in Var.REPLICA_URLS:
+                url = f"{base}internal/catalogue-refresh"
+                try:
+                    async with session.post(url, headers=headers,
+                                            timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        body = await resp.json(content_type=None)
+                        if resp.status != 200:
+                            logging.warning(
+                                "catalogue-refresh hook to %s failed: HTTP %s %s",
+                                base, resp.status, body,
+                            )
+                        else:
+                            logging.info(
+                                "catalogue-refresh hook to %s ok (added=%s)",
+                                base, body.get("added"),
+                            )
+                except Exception as exc:
+                    logging.warning("catalogue-refresh hook to %s failed: %s", base, exc)
+
+    try:
+        _asyncio.create_task(_notify_all())
+    except Exception:
+        logging.debug("catalogue-refresh hook dispatch failed", exc_info=True)
 
 
 async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:

@@ -55,6 +55,20 @@ async def _connect_catalogue_store() -> None:
             await media_index.load_catalogue()
         except Exception:
             logging.exception("catalogue load failed on replica")
+
+        async def replica_catalogue_refresh_loop() -> None:
+            # Safety net for the leader's post-upload hook (which is
+            # fire-and-forget): sweep Mongo for rows this replica has never
+            # seen on a fixed interval. load_since makes a no-op sweep one
+            # cheap indexed query.
+            while True:
+                await asyncio.sleep(300)
+                try:
+                    await media_index.refresh_from_store()
+                except Exception:
+                    logging.exception("replica catalogue refresh failed")
+
+        asyncio.create_task(replica_catalogue_refresh_loop())
         return
 
     async def seed_then_reconcile() -> None:

@@ -54,6 +54,7 @@ class Store(Protocol):
 
     async def init(self) -> None: ...
     async def load_all(self) -> List[dict]: ...
+    async def load_since(self, message_id: int) -> List[dict]: ...
     async def upsert(self, doc: dict) -> None: ...
     async def upsert_many(self, docs: Iterable[dict]) -> None: ...
     async def remove(self, message_id: int) -> None: ...
@@ -239,6 +240,30 @@ class MongoStore:
             return out
         except Exception:
             logging.exception("store.mongo: load_all failed")
+            return []
+
+    async def load_since(self, message_id: int) -> List[dict]:
+        """Return items with message_id strictly greater than the given id,
+        ascending. Backs the replica catalogue catch-up: each refresh pays
+        only for rows the replica hasn't seen yet. Updated older rows
+        propagate on the next full reload or restart; new uploads (the
+        common replica-miss case behind 404 watch links) always propagate.
+        """
+        try:
+            cursor = self._items.find(
+                {"message_id": {"$gt": int(message_id)}},
+                projection={"_id": False},
+            ).sort("message_id", 1)
+            out = [doc async for doc in cursor]
+            if out:
+                logging.info(
+                    "store.mongo: load_since(%d) -> %d items", message_id, len(out),
+                )
+            return out
+        except Exception:
+            logging.exception(
+                "store.mongo: load_since failed for cursor %s", message_id,
+            )
             return []
 
     async def upsert(self, doc: dict) -> None:

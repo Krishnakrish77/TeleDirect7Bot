@@ -37,6 +37,47 @@ from main.vars import Var
 routes = web.RouteTableDef()
 
 
+# --- Leader → replica catalogue-refresh hook -------------------------------
+#
+# The leader indexes new uploads and writes through to Mongo; replicas load
+# the catalogue only at boot, so a fresh link round-robined onto a replica
+# 404'd until restart. The leader now nudges every replica after a successful
+# index; the replica answers by pulling the new rows from Mongo itself
+# (load_since), so the hook carries no payload and a dropped/raced hook
+# self-heals on the next nudge or periodic refresh.
+
+
+def _catalogue_refresh_signature(nonce: str) -> str:
+    import hashlib
+    import hmac as _hmac
+    return _hmac.new(
+        Var.JWT_SECRET.encode(), f"catalogue-refresh:{nonce}".encode(), hashlib.sha256,
+    ).hexdigest()[:32]
+
+
+@routes.post("/internal/catalogue-refresh")
+async def internal_catalogue_refresh(request: web.Request) -> web.Response:
+    import hmac as _hmac
+
+    if Var.IS_LEADER:
+        return web.json_response({"error": "leader does not accept catalogue hooks"}, status=404)
+    nonce = request.headers.get("X-Refresh-Nonce", "")
+    given = request.headers.get("X-Refresh-Signature", "")
+    if not nonce or not given:
+        return web.json_response({"error": "missing signature"}, status=401)
+    expected = _catalogue_refresh_signature(nonce)
+    if not _hmac.compare_digest(expected, given):
+        logging.warning("catalogue-refresh hook: bad signature (nonce=%.8s…)", nonce)
+        return web.json_response({"error": "invalid signature"}, status=403)
+
+    # Run in-task: the fetch is one bounded Mongo query; the caller (leader)
+    # treats this as best-effort and never blocks playback on it.
+    added = await media_index.refresh_from_store()
+    if added:
+        logging.info("catalogue-refresh hook: +%d item(s)", added)
+    return web.json_response({"ok": True, "added": added})
+
+
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
 _env = Environment(
     loader=FileSystemLoader(str(_TEMPLATE_DIR)),

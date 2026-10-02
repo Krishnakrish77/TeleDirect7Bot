@@ -2768,6 +2768,13 @@ async def api_watch(request: web.Request) -> web.Response:
     secure_hash, message_id = parsed
     item = media_index.get_item(message_id)
     if item is None or item.secure_hash != secure_hash:
+        # Replica catalogue lag: the leader just indexed this file and the
+        # round-robin sent the link here before the hook/refresh landed.
+        # One bounded catch-up attempt before giving up; on the leader this
+        # is a no-op (the miss is real).
+        await media_index.refresh_from_store()
+        item = media_index.get_item(message_id)
+    if item is None or item.secure_hash != secure_hash:
         return _json({"error": "Item not found"}, status=404)
 
     if (item.media_kind or "") != "audio":
