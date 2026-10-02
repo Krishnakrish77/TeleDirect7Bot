@@ -136,6 +136,11 @@ class HubItem:
     # them manually.  Values: "title", "year", "series_title".
     admin_locked: List[str] = field(default_factory=list)
     hidden: bool = False               # hidden from library (still streamable via direct URL)
+    # Monotonic unix timestamp of the last catalogue mutation of this row
+    # (index, admin edit, enrichment write-back). Bumped on every
+    # ``_store_upsert``; replicas and the leader use it as a version vector
+    # so catalogue *edits* — not just new uploads — propagate across roles.
+    updated_at: float = 0.0
 
 
 @dataclass

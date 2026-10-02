@@ -34,9 +34,13 @@ class Var(object):
     PORT = int(environ.get("PORT", 8080))
     BIND_ADDRESS = str(environ.get("WEB_SERVER_BIND_ADDRESS", "0.0.0.0"))
     PING_INTERVAL = int(environ.get("PING_INTERVAL", "1200"))
+    # Keep-alive self-ping. Koyeb free instances sleep on idle, so the ping
+    # is auto-enabled there (KOYEB_REGION present). Other platforms (Render,
+    # Fly, …) opt in explicitly with KEEP_ALIVE=true; anything else disables.
+    ON_KOYEB = "KOYEB_REGION" in environ
+    KEEP_ALIVE = ON_KOYEB or environ.get("KEEP_ALIVE", "").strip().lower() in ("1", "true", "yes")
     HAS_SSL = str(environ.get("HAS_SSL", "")).lower() == "true"
     NO_PORT = str(environ.get("NO_PORT", "")).lower() == "true"
-    ON_KOYEB = "KOYEB_REGION" in environ
     FQDN = str(environ.get("FQDN") or environ.get("KOYEB_PUBLIC_DOMAIN") or BIND_ADDRESS)
     if ON_KOYEB:
         URL = f"https://{FQDN}/"
@@ -151,6 +155,24 @@ class Var(object):
                 "http(s) URL, e.g. https://replica.example.com"
             )
         REPLICA_URLS.append(_u.rstrip("/") + "/")
+
+    # The leader's public base URL, as replicas see it. Required for
+    # ROLE=replica deployments that should push catalogue edits (admin
+    # record cleanups made while signed into the replica) back to the
+    # leader's in-memory catalogue: the replica POSTs a signed nudge to
+    # <LEADER_URL>internal/catalogue-refresh and the leader pulls the
+    # changed rows from Mongo. Optional — without it, replica edits still
+    # reach Mongo and propagate on the next sweep/restart.
+    LEADER_URL = ""
+    _leader_raw = environ.get("LEADER_URL", "").strip()
+    if _leader_raw:
+        _parts = urllib.parse.urlsplit(_leader_raw)
+        if _parts.scheme not in ("http", "https") or not _parts.netloc:
+            raise RuntimeError(
+                f"Invalid LEADER_URL entry {_leader_raw!r}: must be an absolute "
+                "http(s) URL, e.g. https://leader.example.com"
+            )
+        LEADER_URL = _leader_raw.rstrip("/") + "/"
 
     # Optional user-account session string for grabbing media from protected
     # (copy/forward-restricted) channels. Generate via /gensession command.

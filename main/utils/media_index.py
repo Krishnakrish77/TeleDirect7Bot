@@ -235,6 +235,11 @@ def store_ready() -> bool:
 async def _store_upsert(item: HubItem) -> None:
     if _store is None:
         return
+    # Version stamp for cross-role catalogue sync: every mutation that
+    # reaches the durable store carries the time it happened. refresh_from_store()
+    # uses it to pull rows changed since the last sweep, so admin edits
+    # propagate between leader and replicas, not just new uploads.
+    item.updated_at = time.time()
     try:
         await _store.upsert(_to_serializable(item))
     except Exception:
@@ -406,6 +411,7 @@ def _to_serializable(item: HubItem) -> dict:
         "book_collection_order": item.book_collection_order,
         "admin_locked": list(item.admin_locked or []),
         "hidden": item.hidden,
+        "updated_at": item.updated_at,
         "subtitles": [
             {
                 "bin_message_id": s.bin_message_id,
@@ -500,6 +506,7 @@ def _from_serializable(d: dict) -> HubItem:
         ),
         admin_locked=list(d.get("admin_locked") or []),
         hidden=bool(d.get("hidden", False)),
+        updated_at=float(d.get("updated_at") or 0),
         subtitles=[
             ExternalSubtitle(
                 bin_message_id=s["bin_message_id"],
@@ -842,10 +849,11 @@ async def add_from_message(message) -> None:
             await _store.set_meta("latest_seen_id", _latest_seen_id)
         except Exception:
             logging.debug("store.set_meta failed", exc_info=True)
-    # Nudge replicas so fresh links served from them resolve immediately
-    # instead of 404ing until their next restart. Data flows from Mongo;
-    # this only paces the catch-up. No-op off the leader.
-    notify_replicas_of_new_item()
+    # Nudge peers so fresh links resolve immediately everywhere: replicas
+    # 404 new uploads until they catch up; the leader lags on replica-made
+    # edits the same way. Data flows from Mongo; this only paces the
+    # catch-up. No-op when there are no peers to tell.
+    notify_peers_of_update()
 
 
 def get_item(message_id: int) -> Optional[HubItem]:
@@ -1503,58 +1511,85 @@ async def load_catalogue() -> None:
     await _mark_catalogue_ready()
 
 
+# High-water mark for cross-role catch-up: the newest updated_at this
+# process has merged from the durable store. Separate from _latest_seen_id
+# (which tracks BIN message ids); this one version-vectors *changes*.
+_sync_cursor_updated_at: float = 0.0
+
+
 async def refresh_from_store() -> int:
-    """Replica catch-up: pull catalogue rows the in-memory index has never
-    seen (message_id > max known) from the durable store and merge them.
+    """Cross-role catch-up: pull catalogue rows changed since the last sweep
+    from the durable store and merge them.
 
-    The leader indexes uploads and writes through to Mongo; replicas load
-    the catalogue once at boot and would otherwise 404 watch links for
-    files uploaded after their boot until the next restart. Called from
-    the periodic replica refresh and from the lazy per-request hydrate.
+    Two propagation axes:
+      * new uploads   — message_id > max known id (the original replica-404 fix)
+      * edited rows   — updated_at > last merge cursor (admin edits, enrichment
+                        write-backs) so a record cleaned on the replica reaches
+                        the leader and vice versa
 
-    Returns the number of items added. Leader is a no-op: seeding and
-    reconciliation own catalogue mutations there.
+    Runs on every role. On the leader it must not clobber in-flight local
+    mutations: a merged row only replaces the in-memory copy when the stored
+    updated_at is newer than the local one. Returns the number of items
+    merged.
     """
-    global _max_message_id_cache
+    global _max_message_id_cache, _sync_cursor_updated_at
     from main.vars import Var
-    if _store is None or Var.IS_LEADER:
+    if _store is None:
         return 0
-    cursor = max(_items.keys()) if _items else 0
+    # On the leader the id-axis cursor is meaningless (it owns the newest
+    # ids already) but the updated_at axis still catches replica edits.
+    max_known_id = max(_items.keys()) if _items else 0
+    cursor_updated = _sync_cursor_updated_at
     try:
-        docs = await _store.load_since(cursor)
+        docs = await _store.load_since(max_known_id, cursor_updated)
     except Exception:
         logging.exception("media_index: refresh_from_store fetch failed")
         return 0
     if not docs:
         return 0
-    added = 0
+    merged = 0
     async with _lock:
+        newest_updated = cursor_updated
         for d in docs:
             try:
                 item = _from_serializable(d)
             except Exception:
                 logging.debug("media_index: bad Mongo doc skipped", exc_info=True)
                 continue
-            if item.message_id in _items:
-                continue
-            _items[item.message_id] = item
+            existing = _items.get(item.message_id)
+            if existing is not None:
+                # Last-writer-wins on the version stamp; equal stamps mean
+                # the local row IS the source of this write (write-through
+                # echo) — skip to avoid redundant derived-index churn.
+                if item.updated_at <= existing.updated_at:
+                    continue
+                _items[item.message_id] = item
+            else:
+                _items[item.message_id] = item
             _hash_map[item.secure_hash] = item.message_id
-            added += 1
-        if added:
+            merged += 1
+            if item.updated_at > newest_updated:
+                newest_updated = item.updated_at
+        if merged:
             _max_message_id_cache = None
             _mark_derived_stale()
-    if added:
-        logging.info("media_index: replica refresh added %d item(s)", added)
-    return added
+            _sync_cursor_updated_at = newest_updated
+    if merged:
+        logging.info(
+            "media_index: %s refresh merged %d item(s) (sync cursor → %s)",
+            "leader" if Var.IS_LEADER else "replica", merged, newest_updated,
+        )
+    return merged
 
 
-def notify_replicas_of_new_item() -> None:
-    """Fire-and-forget leader→replica nudge after a successful index.
+def notify_peers_of_update() -> None:
+    """Fire-and-forget signed nudge after a successful catalogue write.
 
-    POSTs a signed no-payload hook to every REPLICA_URLS entry; each replica
-    then pulls new rows from Mongo itself (refresh_from_store). Best-effort:
-    a failed/unreachable replica is covered by the periodic refresh and by
-    the hook the *next* upload triggers. Never raises.
+    Leader → every REPLICA_URLS entry; replica → LEADER_URL (when set).
+    Each peer answers by pulling changed rows from Mongo itself
+    (refresh_from_store), so the hook carries no payload and a dropped or
+    raced nudge self-heals via the periodic sweep or the next nudge.
+    Best-effort: never blocks, never raises.
     """
     import asyncio as _asyncio
     import hashlib as _hashlib
@@ -1562,7 +1597,11 @@ def notify_replicas_of_new_item() -> None:
 
     from main.vars import Var
 
-    if not Var.IS_LEADER or not Var.REPLICA_URLS:
+    if Var.IS_LEADER:
+        targets = list(Var.REPLICA_URLS)
+    else:
+        targets = [Var.LEADER_URL] if Var.LEADER_URL else []
+    if not targets:
         return
     nonce = f"{time.time_ns()}"
     signature = _hmac.new(
@@ -1576,7 +1615,7 @@ def notify_replicas_of_new_item() -> None:
         import aiohttp
 
         async with aiohttp.ClientSession() as session:
-            for base in Var.REPLICA_URLS:
+            for base in targets:
                 url = f"{base}internal/catalogue-refresh"
                 try:
                     async with session.post(url, headers=headers,
@@ -1589,7 +1628,7 @@ def notify_replicas_of_new_item() -> None:
                             )
                         else:
                             logging.info(
-                                "catalogue-refresh hook to %s ok (added=%s)",
+                                "catalogue-refresh hook to %s ok (merged=%s)",
                                 base, body.get("added"),
                             )
                 except Exception as exc:
@@ -1599,6 +1638,10 @@ def notify_replicas_of_new_item() -> None:
         _asyncio.create_task(_notify_all())
     except Exception:
         logging.debug("catalogue-refresh hook dispatch failed", exc_info=True)
+
+
+# Back-compat alias for the original leader→replica upload nudge.
+notify_replicas_of_new_item = notify_peers_of_update
 
 
 async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:

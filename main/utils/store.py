@@ -54,7 +54,7 @@ class Store(Protocol):
 
     async def init(self) -> None: ...
     async def load_all(self) -> List[dict]: ...
-    async def load_since(self, message_id: int) -> List[dict]: ...
+    async def load_since(self, message_id: int, updated_since: float = 0.0) -> List[dict]: ...
     async def upsert(self, doc: dict) -> None: ...
     async def upsert_many(self, docs: Iterable[dict]) -> None: ...
     async def remove(self, message_id: int) -> None: ...
@@ -242,27 +242,32 @@ class MongoStore:
             logging.exception("store.mongo: load_all failed")
             return []
 
-    async def load_since(self, message_id: int) -> List[dict]:
-        """Return items with message_id strictly greater than the given id,
-        ascending. Backs the replica catalogue catch-up: each refresh pays
-        only for rows the replica hasn't seen yet. Updated older rows
-        propagate on the next full reload or restart; new uploads (the
-        common replica-miss case behind 404 watch links) always propagate.
+    async def load_since(self, message_id: int, updated_since: float = 0.0) -> List[dict]:
+        """Return items the caller hasn't seen: message_id strictly greater
+        than ``message_id`` (new rows) OR updated_at strictly greater than
+        ``updated_since`` (rows edited after the caller's last sweep).
+
+        Backs the cross-role catalogue catch-up: each refresh pays only for
+        what changed. New uploads propagate on message_id; admin edits and
+        enrichment write-backs propagate on updated_at.
         """
         try:
-            cursor = self._items.find(
+            query = {"$or": [
                 {"message_id": {"$gt": int(message_id)}},
-                projection={"_id": False},
-            ).sort("message_id", 1)
+                {"updated_at": {"$gt": float(updated_since)}},
+            ]}
+            cursor = self._items.find(query, projection={"_id": False}).sort("message_id", 1)
             out = [doc async for doc in cursor]
             if out:
                 logging.info(
-                    "store.mongo: load_since(%d) -> %d items", message_id, len(out),
+                    "store.mongo: load_since(id>%s, updated>%s) -> %d items",
+                    message_id, updated_since, len(out),
                 )
             return out
         except Exception:
             logging.exception(
-                "store.mongo: load_since failed for cursor %s", message_id,
+                "store.mongo: load_since failed for cursor %s/%s",
+                message_id, updated_since,
             )
             return []
 

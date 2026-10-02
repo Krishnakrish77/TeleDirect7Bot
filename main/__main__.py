@@ -181,7 +181,7 @@ async def start_services():
             asyncio.create_task(_photos_channel_reverify_loop())
             asyncio.create_task(_photos_boot_rescan())
     hls_session.ensure_reaper_running()
-    if Var.ON_KOYEB:
+    if Var.KEEP_ALIVE:
         print("------------------ Starting Keep Alive Service ------------------")
         print()
         asyncio.create_task(utils.ping_server())
