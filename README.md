@@ -176,6 +176,11 @@ The essentials are in the Quick start `.env` example. The complete reference is 
 | `MONGO_META_COLLECTION` | `meta` | MongoDB metadata collection. |
 | `MEDIA_INDEX_SEED_OVERLAP` | `32` | Recent channel messages rechecked at normal startup. |
 | `MEDIA_INDEX_SEED_DEPTH` | `800` | History window for recovery or explicit reconciliation. |
+| `ROLE` | `leader` | `replica` serves HTTP only and pulls its catalogue from Mongo; the leader owns Telegram handlers and background jobs. |
+| `REPLICA_URLS` | — | Leader-only: comma-separated replica base URLs. Links round-robin across them; each gets a signed nudge when the catalogue changes. |
+| `LEADER_URL` | — | Replica-only: the leader's base URL, so catalogue edits made on the replica nudge the leader to pull the changed rows from Mongo. |
+| `KEEP_ALIVE` | auto on Koyeb | Set `true` to self-ping `FQDN` every `PING_INTERVAL` seconds on platforms that don't expose `KOYEB_REGION` (Render, Fly, …). |
+| `PING_INTERVAL` | `1200` | Seconds between keep-alive self-pings. |
 
 ### Streaming and throughput
 
