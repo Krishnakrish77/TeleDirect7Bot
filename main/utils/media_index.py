@@ -1443,29 +1443,15 @@ async def _delete_probe(bot, channel_id: int, probe_id: int) -> None:
     )
 
 
-async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
-    """Populate the index from BIN_CHANNEL history.
+async def load_catalogue() -> None:
+    """Restore the durable catalogue into memory WITHOUT touching BIN_CHANNEL.
 
-    Bots can't call ``messages.getHistory``, so we discover the channel's
-    current latest message id by sending a tiny ``.`` and reading the id
-    Telegram returns, then immediately deleting it. The probe IS the only
-    way for a bot to learn the high-water mark.
-
-    A warm start restores the durable catalogue first, then scans only the
-    new range plus a small overlap. This catches uploads that raced a prior
-    write-through without repeatedly re-reading a fixed recent-history
-    window. Cold recovery (or ``full_reconcile=True``) retains the bounded
-    full window for catalogue reconstruction and deletion reconciliation.
-
-    Probing every seed adds one ``.`` send + delete per startup, which
-    the retry logic in ``_delete_probe`` cleans up so the dot never
-    stays visible.
+    Runs on every deployment (replicas serve hub routes from the in-memory
+    ``_items``/``_hash_map`` built here). The leader runs ``seed()`` on top,
+    which probes/serially-scans BIN and advances the shared high-water mark —
+    that part must never run concurrently on replicas.
     """
-    global _seeded, _latest_seen_id, _reconcile_cursor
-    if _seeded and not full_reconcile:
-        await _mark_catalogue_ready(bot)
-        return
-
+    global _latest_seen_id, _reconcile_cursor, _seeded
     # Only load from /tmp JSON when Mongo isn't active. With Mongo, /tmp is
     # wiped on restart and seeding from the stale JSON would just be noise
     # before the Mongo load overwrites it anyway.
@@ -1509,6 +1495,34 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
             )
         except Exception:
             logging.exception("media_index: Mongo load_all failed")
+    _seeded = True
+    await _mark_catalogue_ready()
+
+
+async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
+    """Populate the index from BIN_CHANNEL history.
+
+    Bots can't call ``messages.getHistory``, so we discover the channel's
+    current latest message id by sending a tiny ``.`` and reading the id
+    Telegram returns, then immediately deleting it. The probe IS the only
+    way for a bot to learn the high-water mark.
+
+    A warm start restores the durable catalogue first, then scans only the
+    new range plus a small overlap. This catches uploads that raced a prior
+    write-through without repeatedly re-reading a fixed recent-history
+    window. Cold recovery (or ``full_reconcile=True``) retains the bounded
+    full window for catalogue reconstruction and deletion reconciliation.
+
+    Probing every seed adds one ``.`` send + delete per startup, which
+    the retry logic in ``_delete_probe`` cleans up so the dot never
+    stays visible.
+    """
+    global _seeded, _latest_seen_id, _reconcile_cursor
+    if _seeded and not full_reconcile:
+        await _mark_catalogue_ready(bot)
+        return
+
+    await load_catalogue()
 
     # Capture the restored high-water mark before probing. Do not advance it
     # until the complete scan succeeds: a partially fetched range must be

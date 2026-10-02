@@ -47,9 +47,16 @@ async def _connect_catalogue_store() -> None:
         await asyncio.sleep(delay)
         delay = min(delay * 2, 30)
     if not Var.IS_LEADER:
-        logging.info("catalogue seed skipped (ROLE=replica) — leader owns "
-                     "BIN scanning and reconciliation")
+        # Replicas restore the durable catalogue (needed to serve hub
+        # routes) but skip the BIN probe/scan and reconciliation — the
+        # leader owns those.
+        logging.info("ROLE=replica: loading catalogue without BIN scan")
+        try:
+            await media_index.load_catalogue()
+        except Exception:
+            logging.exception("catalogue load failed on replica")
         return
+
     async def seed_then_reconcile() -> None:
         try:
             await media_index.seed(StreamBot, Var.BIN_CHANNEL)
