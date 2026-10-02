@@ -1,4 +1,5 @@
 import logging
+import urllib.parse
 from os import environ
 from dotenv import load_dotenv
 from pyrogram.types import LinkPreviewOptions
@@ -112,6 +113,12 @@ class Var(object):
     BANNED_USERS = list({int(x) for x in str(environ.get("BANNED_USERS", "")).split()})
 
     # ── Leader / replica topology ────────────────────────────────────
+    # NOTE: stream concurrency limits (MAX_STREAMS_TOTAL / MAX_STREAMS_PER_IP)
+    # and the client-cooldown are PER-DEPLOYMENT process-local counters.
+    # With N replicas the effective limit multiplies by N; scale the env
+    # values down accordingly if per-IP caps must hold fleet-wide.
+    # TRUSTED_PROXY_CIDRS must be set on EVERY deployment (a replica missing
+    # it lumps all clients behind one rate-limit bucket).
     # Every deployment runs the full process (Pyrogram client + aiohttp
     # server), but only the leader runs Telegram update handlers and
     # singleton background jobs. Replicas are stateless HTTP/stream
@@ -129,11 +136,21 @@ class Var(object):
     #   REPLICA_URLS=https://a.koyeb.app,https://b.koyeb.app
     # The leader's own Var.URL must NOT be listed; it is always included
     # as the first pool entry. Replicas ignore this var.
-    REPLICA_URLS = [
-        u.strip().rstrip("/") + "/"
-        for u in environ.get("REPLICA_URLS", "").split(",")
-        if u.strip()
-    ]
+    # Entries must be http(s) URLs — they are embedded into Telegram
+    # buttons and HTML reply text, so anything else is rejected at boot
+    # rather than interpolated verbatim.
+    REPLICA_URLS = []
+    for _u in environ.get("REPLICA_URLS", "").split(","):
+        _u = _u.strip()
+        if not _u:
+            continue
+        _parts = urllib.parse.urlsplit(_u)
+        if _parts.scheme not in ("http", "https") or not _parts.netloc:
+            raise RuntimeError(
+                f"Invalid REPLICA_URLS entry {_u!r}: must be an absolute "
+                "http(s) URL, e.g. https://replica.example.com"
+            )
+        REPLICA_URLS.append(_u.rstrip("/") + "/")
 
     # Optional user-account session string for grabbing media from protected
     # (copy/forward-restricted) channels. Generate via /gensession command.

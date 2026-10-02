@@ -1,4 +1,5 @@
 import hmac
+import html
 import itertools
 
 from pyrogram import Client
@@ -150,7 +151,7 @@ async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
         page_link = f"{base}books"
         Stream_Text = (
             "<u>**Book added to your library**</u>\n\n"
-            f"<b>📚 Title :</b> {file_name}\n"
+            f"<b>📚 Title :</b> {html.escape(file_name)}\n"
             f"<b>📦 File Size :</b> {file_size}"
         )
         buttons = [[
@@ -158,7 +159,9 @@ async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
             InlineKeyboardButton("⬇ Download", url=download_link),
         ]]
     else:
-        Stream_Text = lang.stream_msg_text.format(file_name, file_size, download_link, page_link)
+        Stream_Text = lang.stream_msg_text.format(
+            html.escape(file_name), file_size, download_link, page_link
+        )
         buttons = [[
             InlineKeyboardButton("▶ Watch", url=page_link, style=ButtonStyle.PRIMARY),
             InlineKeyboardButton("⬇ Download", url=download_link),
