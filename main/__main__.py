@@ -214,7 +214,13 @@ async def cleanup():
     except Exception:
         logging.warning("hls_session shutdown_all errored or timed out", exc_info=True)
     await server.cleanup()
-    await StreamBot.stop()
+    # StreamBot.start() may have failed before the client ever connected
+    # (e.g. auth FloodWait at boot). pyrogram's stop()/terminate() then
+    # raises ConnectionError, which used to mask the real startup error.
+    try:
+        await StreamBot.stop()
+    except ConnectionError:
+        logging.info("StreamBot never connected; nothing to stop")
 
 
 def _request_shutdown():
