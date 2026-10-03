@@ -41,18 +41,41 @@ class Var(object):
     KEEP_ALIVE = ON_KOYEB or environ.get("KEEP_ALIVE", "").strip().lower() in ("1", "true", "yes")
     HAS_SSL = str(environ.get("HAS_SSL", "")).lower() == "true"
     NO_PORT = str(environ.get("NO_PORT", "")).lower() == "true"
-    FQDN = str(environ.get("FQDN") or environ.get("KOYEB_PUBLIC_DOMAIN") or BIND_ADDRESS)
-    if ON_KOYEB:
+    _fqdn = str(environ.get("FQDN") or environ.get("KOYEB_PUBLIC_DOMAIN") or BIND_ADDRESS)
+    # FQDN accepts BOTH forms: a bare hostname ("app.koyeb.app") or a full
+    # URL ("https://app.koyeb.app:8443/base"). Normalize once here so every
+    # downstream consumer (URL building, generated stream links, self-ping)
+    # gets a canonical value. A bare hostname inherits scheme/port from
+    # HAS_SSL/NO_PORT as before; a full URL carries its own scheme (and,
+    # when present, its own explicit port overrides the PORT/HAS_SSL flags).
+    _parsed = urllib.parse.urlparse(_fqdn if "://" in _fqdn else f"//{_fqdn}")
+    _host = _parsed.hostname
+    if not _host:
+        raise RuntimeError(
+            f"Invalid FQDN {_fqdn!r}: not a hostname or URL. "
+            "Use e.g. 'app.koyeb.app' or 'https://app.koyeb.app'."
+        )
+    FQDN = _host
+    if _parsed.scheme:
+        URL = urllib.parse.urlunparse(
+            (
+                _parsed.scheme,
+                _parsed.netloc,
+                _parsed.path.rstrip("/") or "",
+                "", "", "",
+            )
+        ).rstrip("/") + "/"
+    elif ON_KOYEB:
         URL = f"https://{FQDN}/"
     else:
         URL = "http{}://{}{}/".format(
             "s" if HAS_SSL else "", FQDN, "" if NO_PORT else ":" + str(PORT)
         )
-        if FQDN == BIND_ADDRESS and BIND_ADDRESS in ("0.0.0.0", "127.0.0.1", "localhost"):
-            logging.warning(
-                "FQDN is not set; generated stream links will use %s and only work "
-                "from this machine. Set FQDN to your public hostname.", BIND_ADDRESS
-            )
+    if FQDN == BIND_ADDRESS and BIND_ADDRESS in ("0.0.0.0", "127.0.0.1", "localhost"):
+        logging.warning(
+            "FQDN is not set; generated stream links will use %s and only work "
+            "from this machine. Set FQDN to your public hostname.", BIND_ADDRESS
+        )
 
     UPDATES_CHANNEL = "TechZBots"
     OWNER_ID = int(environ.get("OWNER_ID", "777000"))
