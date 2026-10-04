@@ -25,6 +25,10 @@ Frontend: `cd frontend && npm run build` (runs `tsc` then Vite; build output und
 
 Beyond that, changes are validated by running the bot against real Telegram credentials configured via `.env` (see README for the full var list; `API_ID`, `API_HASH`, `BOT_TOKEN`, `BIN_CHANNEL`, `OWNER_ID` are mandatory).
 
+## Commit messages
+
+One line, subject only — a short imperative summary of the change. No body, no trailers, no attribution footers. Example: `Fix music autoplay stalling when the tab is backgrounded`.
+
 ## Architecture
 
 This is a Telegram → HTTP bridge: the bot stores every uploaded file as a message in a private "bin" channel, then serves the bytes over HTTP by streaming chunks back from Telegram's MTProto servers on demand. Files are never persisted to disk.
