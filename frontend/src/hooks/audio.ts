@@ -1011,22 +1011,17 @@ export function useAudioPlayer() {
           nextCountdown: NEXT_COUNTDOWN_SECONDS,
         }));
         const started = performance.now();
-        const tick = () => {
-          const progress = clamp((performance.now() - started) / (CROSSFADE_SECONDS * 1000), 0, 1);
-          const baseVolume = playerRef.current.muted ? 0 : playerRef.current.volume;
-          from.volume = baseVolume * (1 - progress);
-          to.volume = baseVolume * progress;
-          if (progress < 1) {
-            requestAnimationFrame(tick);
-            return;
-          }
+        // Finalise the handoff once the fade ends: stop the old element, reset
+        // the crossfade latch, and record history for the faded-out track
+        // (onEnded is skipped during crossfade).
+        let fadeTimer = 0;
+        const finishCrossfade = () => {
           from.pause();
           from.removeAttribute('src');
           from.load();
           applyOutputSettings(to);
           preloadedKeyRef.current = '';
           crossfadeRef.current = false;
-          // onEnded is skipped during crossfade — clean up CW for the faded track here.
           if (fadedKey && !cwCompletedKeysRef.current.has(fadedKey)) {
             cwCompletedKeysRef.current.add(fadedKey);
             void recordWatchHistory(fadedKey, fadedTitle).catch(() => undefined);
@@ -1038,9 +1033,24 @@ export function useAudioPlayer() {
             } catch { /* ignore */ }
           }
         };
-        requestAnimationFrame(tick);
+        // Drive the fade with setInterval, not requestAnimationFrame: rAF is
+        // frozen in hidden tabs (music often plays in the background), which
+        // left crossfadeRef stuck true and swallowed every subsequent `ended`
+        // until the queue stalled. Timers still fire in background tabs
+        // (clamped to ~1s, fine for a 3s fade).
+        fadeTimer = window.setInterval(() => {
+          const progress = clamp((performance.now() - started) / (CROSSFADE_SECONDS * 1000), 0, 1);
+          const baseVolume = playerRef.current.muted ? 0 : playerRef.current.volume;
+          from.volume = baseVolume * (1 - progress);
+          to.volume = baseVolume * progress;
+          if (progress < 1) return;
+          window.clearInterval(fadeTimer);
+          crossfadeRef.current = false;
+          finishCrossfade();
+        }, 250);
       })
       .catch(() => {
+        window.clearInterval(fadeTimer);
         crossfadeRef.current = false;
       });
   }, [applyOutputSettings, getInactiveAudio, resolveNextIndex]);
@@ -1150,7 +1160,18 @@ export function useAudioPlayer() {
     };
     const onEnded = (event: Event) => {
       const audio = event.currentTarget as HTMLAudioElement;
-      if (audio !== getActiveAudio() || crossfadeRef.current) return;
+      if (audio !== getActiveAudio()) return;
+      if (crossfadeRef.current) {
+        // A crossfade in flight owns the transition — unless it's stale
+        // (timer starved by a suspended tab). A genuine in-flight fade has the
+        // NEXT track already loaded and playing in the other element; if this
+        // element is still the active source, the latch leaked. Clear it and
+        // advance normally instead of stalling the queue.
+        const inactive = getInactiveAudio();
+        const inFlight = Boolean(inactive?.src) && !inactive.paused && inactive.src !== audio.src;
+        if (inFlight) return;
+        crossfadeRef.current = false;
+      }
       clearPlaybackWatchdog();
       const current = playerRef.current;
       if (current.track && !cwCompletedKeysRef.current.has(current.track.key)) {
