@@ -993,6 +993,8 @@ export function useAudioPlayer() {
     const from = audio;
     const to = inactive;
     const targetSlot = activeSlotRef.current === 'primary' ? 'buffer' : 'primary';
+    // Declared above .play() so the rejection path can clear it.
+    let fadeTimer = 0;
     to.play()
       .then(() => {
         // Capture faded-out track BEFORE setPlayer switches to the new one.
@@ -1014,7 +1016,6 @@ export function useAudioPlayer() {
         // Finalise the handoff once the fade ends: stop the old element, reset
         // the crossfade latch, and record history for the faded-out track
         // (onEnded is skipped during crossfade).
-        let fadeTimer = 0;
         const finishCrossfade = () => {
           from.pause();
           from.removeAttribute('src');
@@ -1168,7 +1169,7 @@ export function useAudioPlayer() {
         // element is still the active source, the latch leaked. Clear it and
         // advance normally instead of stalling the queue.
         const inactive = getInactiveAudio();
-        const inFlight = Boolean(inactive?.src) && !inactive.paused && inactive.src !== audio.src;
+        const inFlight = Boolean(inactive?.src) && inactive !== null && !inactive.paused && inactive.src !== audio.src;
         if (inFlight) return;
         crossfadeRef.current = false;
       }
