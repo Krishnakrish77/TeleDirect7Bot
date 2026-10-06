@@ -987,11 +987,20 @@ export function useAudioPlayer() {
     }
     if (remaining > CROSSFADE_SECONDS || crossfadeRef.current) return;
     crossfadeRef.current = true;
+    const from = audio;
+    const to = inactive;
+    // Hidden mobile tabs suspend timers (Safari/Chrome throttle or freeze
+    // setTimeout/setInterval entirely), so a fade started in the background
+    // may never tick. Pause the outgoing element up front — the handoff is
+    // then already complete, just with an abrupt (instead of faded) mix.
+    // In the foreground nothing changes: `from` keeps playing until the
+    // first interval tick 250ms later.
+    if (document.hidden) {
+      from.pause();
+    }
     inactive.src = inactive.src || nextSrc;
     inactive.currentTime = 0;
     applyOutputSettings(inactive, 0);
-    const from = audio;
-    const to = inactive;
     const targetSlot = activeSlotRef.current === 'primary' ? 'buffer' : 'primary';
     // Declared above .play() so the rejection path can clear it.
     let fadeTimer = 0;
@@ -1039,6 +1048,12 @@ export function useAudioPlayer() {
         // left crossfadeRef stuck true and swallowed every subsequent `ended`
         // until the queue stalled. Timers still fire in background tabs
         // (clamped to ~1s, fine for a 3s fade).
+        if (document.hidden) {
+          // Timers may never fire here — finalise the handoff synchronously.
+          // The outgoing element was already paused above.
+          finishCrossfade();
+          return;
+        }
         fadeTimer = window.setInterval(() => {
           const progress = clamp((performance.now() - started) / (CROSSFADE_SECONDS * 1000), 0, 1);
           const baseVolume = playerRef.current.muted ? 0 : playerRef.current.volume;
@@ -1197,6 +1212,15 @@ export function useAudioPlayer() {
         setPlayer((state) => ({ ...state, playing: false }));
         return;
       }
+      if (document.hidden) {
+        // Hidden mobile tabs suspend setTimeout, so the 5s next-track
+        // countdown would never tick down and the queue would stall at the
+        // track end. Advance immediately instead — gapless and unattended
+        // listening is exactly the case where the delay doesn't matter.
+        pendingNextIndexRef.current = nextIndex;
+        confirmNext();
+        return;
+      }
       scheduleNext(nextIndex);
     };
     const onError = (event: Event) => {
@@ -1246,6 +1270,7 @@ export function useAudioPlayer() {
     armPlaybackWatchdog,
     cancelPlaybackAttempt,
     clearPlaybackWatchdog,
+    confirmNext,
     failPlayback,
     getActiveAudio,
     maybeCrossfade,
