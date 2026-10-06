@@ -1601,13 +1601,26 @@ def _video_choice_payload(item: HubItem, watched_keys: set[str] | None = None) -
     return payload
 
 
-def _episode_navigator_payload(item: HubItem) -> dict | None:
+def _episode_navigator_payload(
+    item: HubItem,
+    watched_keys: set[str] | None = None,
+) -> dict | None:
     """Return compact, variant-deduplicated episode choices for the player."""
     if not item.series_key:
         return None
     episodes = media_index.episodes_for_series(item.series_key)
     if len(episodes) < 2:
         return None
+
+    def _is_watched(entry_variants: list[HubItem]) -> bool:
+        if not watched_keys:
+            return False
+        # Watch state is stored per canonical variant, but a watch of any
+        # uploaded variant means the episode was seen.
+        return any(
+            f"{variant.secure_hash}{variant.message_id}" in watched_keys
+            for variant in entry_variants
+        )
 
     grouped: dict[tuple[object, object, object], list[HubItem]] = {}
     for episode in episodes:
@@ -1629,6 +1642,7 @@ def _episode_navigator_payload(item: HubItem) -> dict | None:
             "quality": preferred.source_type or preferred.quality or "",
             "playHref": _app_watch_url(preferred),
             "current": preferred.message_id == item.message_id,
+            "watched": _is_watched(variants),
             "_order": (episode_number is None, episode_number or 0, episode_end or 0),
         })
 
@@ -2637,7 +2651,11 @@ async def api_app_reorder_playlist_tracks(request: web.Request) -> web.Response:
     return _json(_playlist_detail_payload(playlist) if playlist else {"ok": ok})
 
 
-def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
+def _video_watch_payload(
+    request: web.Request,
+    item: HubItem,
+    watched_keys: set[str] | None = None,
+) -> dict:
     common = _item_common(item)
     title = item.episode_title or common["title"]
     if item.series_title and item.season is not None and item.episode is not None:
@@ -2746,7 +2764,7 @@ def _video_watch_payload(request: web.Request, item: HubItem) -> dict:
         "videoCodec": item.video_codec or "",
         "pixFmt": item.pix_fmt or "",
         "qualityVariants": [_video_choice_payload(variant) for variant in quality_variants],
-        "episodeNavigator": _episode_navigator_payload(item),
+        "episodeNavigator": _episode_navigator_payload(item, watched_keys=watched_keys),
         "nextEpisode": next_ep,
         "introStart": float(item.intro_start or 0),
         "introEnd": float(item.intro_end or 0),
@@ -2778,10 +2796,12 @@ async def api_watch(request: web.Request) -> web.Response:
         return _json({"error": "Item not found"}, status=404)
 
     if (item.media_kind or "") != "audio":
+        user = get_user(request)
+        watched_keys = await _watched_keys_for_user(user)
         return _json({
             "mediaKind": item.media_kind or "video",
             "classicHref": _watch_url(item),
-            "item": _video_watch_payload(request, item),
+            "item": _video_watch_payload(request, item, watched_keys=watched_keys),
         })
 
     tracks = []

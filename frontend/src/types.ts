@@ -419,6 +419,7 @@ export interface WatchVideo {
         quality: string;
         playHref: string;
         current: boolean;
+        watched?: boolean;
       }>;
     }>;
   } | null;

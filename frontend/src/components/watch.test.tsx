@@ -537,7 +537,9 @@ describe('WatchPage video player', () => {
           {
             key: '1', label: 'Season 1', entries: [
               { key: 'video-key', title: 'Pilot', label: 'S01E01', posterUrl: '/thumb/one.jpg', durationLabel: '42m', quality: '1080p', playHref: '/app/watch/video-key', current: true },
-              { key: 'video-key-2', title: 'The next chapter', label: 'S01E02', posterUrl: '/thumb/two.jpg', durationLabel: '43m', quality: '1080p', playHref: '/app/watch/video-key-2', current: false },
+              { key: 'video-key-2', title: 'The next chapter', label: 'S01E02', posterUrl: '/thumb/two.jpg', durationLabel: '43m', quality: '1080p', playHref: '/app/watch/video-key-2', current: false, watched: true },
+              { key: 'video-key-2b', title: 'The next chapter (720p)', label: 'S01E02', posterUrl: '/thumb/two.jpg', durationLabel: '43m', quality: '720p', playHref: '/app/watch/video-key-2b', current: false },
+              { key: 'video-key-2c', title: 'Local only', label: 'S01E03', posterUrl: '/thumb/two-c.jpg', durationLabel: '44m', quality: '1080p', playHref: '/app/watch/video-key-2c', current: false },
             ],
           },
           {
@@ -548,13 +550,17 @@ describe('WatchPage video player', () => {
         ],
       },
     }));
+    // Local (anonymous) watch state also counts: S01E03 was completed offline.
+    localStorage.setItem('td:watched:v1', JSON.stringify({ 'video-key-2c': Date.now() }));
 
     await screen.findByRole('heading', { name: 'Pilot' });
     fireEvent.click(screen.getByLabelText('Browse episodes'));
 
     const picker = await screen.findByRole('dialog', { name: 'Example Series' });
     expect(within(picker).getByText('Playing')).toBeTruthy();
-    expect(within(picker).getByRole('link', { name: /S01E02.*The next chapter/i }).getAttribute('href')).toBe('/app/watch/video-key-2');
+    // Server-flagged watched episodes show the pill; unwatched ones do not.
+    expect(within(picker).getAllByText('Watched')).toHaveLength(2);
+    expect(within(picker).getByRole('link', { name: 'S01E02The next chapter43m · 1080pWatched' }).getAttribute('href')).toBe('/app/watch/video-key-2');
     fireEvent.click(within(picker).getByRole('tab', { name: 'Season 2' }));
     expect(within(picker).getByText('S02E01')).toBeTruthy();
     expect(within(picker).getByRole('link', { name: 'View all episodes' }).getAttribute('href')).toBe('/app/series/example-series');

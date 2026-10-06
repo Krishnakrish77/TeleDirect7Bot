@@ -262,6 +262,19 @@ class SpaHubPayloadTest(unittest.TestCase):
             self.assertEqual(entries[1]["playHref"], "/play/episode-two103")
             autoplay_next = media_index.next_episode(alternate)
             self.assertEqual(autoplay_next["url"], "/watch/episode-two-low104")
+            # No watch history: nothing is marked watched.
+            self.assertFalse(entries[0]["watched"])
+            self.assertFalse(entries[1]["watched"])
+
+            # A watch recorded under any variant (canonical or 720p) marks the
+            # whole episode row watched in the picker.
+            watched = spa_routes._episode_navigator_payload(
+                current,
+                watched_keys={"episode-two-low104"},
+            )
+            watched_entries = watched["seasons"][0]["entries"]
+            self.assertFalse(watched_entries[0]["watched"])
+            self.assertTrue(watched_entries[1]["watched"])
         finally:
             media_index._items.clear()
             media_index._items.update(previous)

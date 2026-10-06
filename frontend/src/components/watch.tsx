@@ -1,6 +1,6 @@
 import { type CSSProperties, DragEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { attachUserSubtitle, deleteContinueEntry, fetchAudioTracks, fetchContinueMap, fetchSubtitles, fetchWatch, recordWatchHistory, saveContinueEntry, searchUserSubtitles } from '../api';
-import { CaptionsIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, SearchIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
+import { CaptionsIcon, CheckIcon, ChevronRightIcon, DownloadIcon, FilmIcon, HeartIcon, ListIcon, ListPlusIcon, MaximizeIcon, MoreVerticalIcon, PauseIcon, PictureInPictureIcon, PlayIcon, SearchIcon, ShareIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, VolumeIcon, XIcon } from '../icons';
 import { formatClock, RESTORE_AUDIO_MEDIA_SESSION_EVENT, type AudioPlayerHandle, type PlayerState } from '../hooks/audio';
 import type { AudioTrackOption, SubtitleSearchResult, SubtitleTrack, WatchResponse, WatchTrack, WatchVideo } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
@@ -10,7 +10,7 @@ import { AudioPlaybackIssue, AudioSettingsControls, AudioSettingsDisclosure, use
 import { attachHls, enablePauseBuffering, hlsUrl } from '../media/hls';
 import { revokeSubtitleTrack, subtitleFileToTrack, subtitleTextToTrack } from '../media/subtitles';
 import { buildVlcHref } from '../media/vlc';
-import { markLocallyWatched } from '../utils/localWatched';
+import { isLocallyWatched, markLocallyWatched } from '../utils/localWatched';
 import { isContinueSuppressed } from '../utils/continueWatching';
 import { getDeviceId } from '../utils/device';
 import { uniqueMetadataParts } from '../utils/metadata';
@@ -259,6 +259,7 @@ function EpisodeNavigatorSheet({
         {season && (
           <div className="episode-navigator-list" role="tabpanel" aria-label={season.label}>
             {season.entries.map((episode) => {
+              const watched = Boolean(episode.watched) || isLocallyWatched(episode.key);
               const body = <>
                 <img src={episode.posterUrl} alt="" loading="lazy" decoding="async" />
                 <span className="episode-navigator-copy">
@@ -266,7 +267,11 @@ function EpisodeNavigatorSheet({
                   <span dir="auto">{episode.title}</span>
                   <small>{[episode.durationLabel, episode.quality].filter(Boolean).join(' · ')}</small>
                 </span>
-                {episode.current ? <span className="episode-navigator-now">Playing</span> : <PlayIcon />}
+                {episode.current
+                  ? <span className="episode-navigator-now">Playing</span>
+                  : watched
+                    ? <span className="episode-navigator-watched"><CheckIcon /> Watched</span>
+                    : <PlayIcon />}
               </>;
               return episode.current ? (
                 <div key={episode.key} className="episode-navigator-row current" aria-current="true">{body}</div>
