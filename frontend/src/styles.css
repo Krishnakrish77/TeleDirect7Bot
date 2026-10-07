@@ -14707,6 +14707,14 @@ select.edit-field-input {
 @media (prefers-reduced-motion: reduce) {
   .yarl__container { animation: none; }
 }
+/* Touch / narrow layouts: bigger hit areas on YARL's own buttons. The
+   filmstrip is dropped in JS (Thumbnails plugin not mounted on narrow/touch);
+   hiding .yarl__thumbnails in CSS is not an option — that class is the
+   plugin's root wrapper and contains the carousel, so display:none here
+   collapses the whole lightbox to 0×0. */
+@media (max-width: 680px), (pointer: coarse) {
+  .yarl__button { width: 3rem; height: 3rem; }
+}
 .photos-lb-topbar {
   position: absolute; top: 0; left: 0; right: 0; z-index: 5;
   display: flex; align-items: center; gap: 0.35rem;
@@ -14717,11 +14725,11 @@ select.edit-field-input {
   pointer-events: none;
 }
 @media (max-width: 680px) {
-  .photos-lb-topbar { padding-right: 8.5rem; }
+  /* The zoom/close cluster is 3 buttons ~3rem wide + gaps. */
+  .photos-lb-topbar { padding-right: 10.2rem; gap: 0.15rem; }
 }
 .photos-lb-topbar > * { pointer-events: auto; }
-.photos-lb-topbar__spacer { flex: 1; }
-.photos-lb-title { display: grid; min-width: 0; margin-left: 0.25rem; }
+.photos-lb-title { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; margin-left: 0.25rem; }
 .photos-lb-title__name {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: #fff; font-size: 0.92rem; font-weight: 650;
@@ -14739,6 +14747,38 @@ select.edit-field-input {
 .photos-lb-btn.is-active { color: #fbbf24; }
 .photos-lb-btn--danger:hover { background: rgba(239, 68, 68, 0.4); }
 a.photos-lb-btn { text-decoration: none; }
+
+/* Phone lightbox: inline actions move into the overflow menu, so the topbar
+   carries Back + title + Info only and YARL's reserve shrinks to its
+   zoom/close cluster. Must come AFTER the base rules above. */
+@media (max-width: 680px) {
+  .photos-lb-topbar { padding-right: 10.2rem; gap: 0.15rem; }
+  .photos-lb-title { flex: 1 1 auto; min-width: 0; margin-right: 0.3rem; }
+  .photos-lb-title__date { display: none; }
+  .photos-lb-title__name { font-size: 0.84rem; white-space: normal; text-overflow: clip; }
+  .photos-lb-btn { width: 2.6rem; height: 2.6rem; flex: 0 0 auto; }
+  .photos-lb-btn svg { width: 1.2rem; height: 1.2rem; }
+}
+.photos-lb-menu {
+  display: grid;
+  min-width: 12rem;
+  padding: 0.35rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #111317;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  contain: layout paint style;
+}
+.photos-lb-menu button,
+.photos-lb-menu a {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center;
+  gap: 0.65rem; min-height: 40px; padding: 0 0.65rem;
+  border: 0; border-radius: 6px; background: transparent;
+  color: var(--text); cursor: pointer; font: inherit; text-align: left;
+}
+.photos-lb-menu button:hover, .photos-lb-menu a:hover { background: rgba(148, 163, 184, 0.14); }
+.photos-lb-menu button svg, .photos-lb-menu a svg { width: 1.05rem; height: 1.05rem; color: var(--muted); }
+.photos-lb-menu__danger, .photos-lb-menu__danger svg { color: #f87171; }
 
 /* Info slide-over: EXIF + album membership, GPhotos' right drawer. */
 .photos-info {
@@ -14807,10 +14847,16 @@ a.photos-lb-btn { text-decoration: none; }
   padding-right: 0.25rem;
 }
 
-/* Floating current-day header (pinned by scroll position). */
+/* Floating current-day header (pinned by scroll position). Renders as a
+   sibling OVERLAY above the scroller, anchored to .photos-timeline-wrap —
+   inside the scroll container it would scroll away with the content (sticky
+   can't work inside a transform-offset virtual list either). */
+.photos-timeline-wrap { position: relative; }
 .photos-floating-day {
-  position: sticky;
+  position: absolute;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 6;
   padding: .45rem .75rem .35rem;
   font-size: .95rem;
@@ -14847,16 +14893,17 @@ a.photos-lb-btn { text-decoration: none; }
 }
 
 /* ── Touch / narrow layouts ─────────────────────────────────────────────── */
-/* The grid views get a measured height (--photos-grid-height, set from JS) so
+/* The grid views get a measured page height (--photos-fill-height, set from JS) so
    the single scroller ends above the section switcher and the fixed bottom nav,
    and the page itself does not scroll. Desktop keeps its own sizing. */
 @media (max-width: 1179px) {
-  /* Measured page height; every wrapper below passes it down to the scroll
-     area, so the grid ends above the fixed bottom nav and the page itself
-     never scrolls. A missing link in this chain leaves the scroller at its
-     content height (measured 1877px on a phone). */
+  /* Measured page height (--photos-fill-height, set from JS). The PAGE owns
+     the viewport height; the header and the section switcher keep their own
+     size and the grid flexes to the remainder. Sizing the grid from the same
+     number as the page over-constrained the layout: the page (overflow:hidden)
+     clipped the switcher and left a dead band below the grid. */
   .photos-page--fill {
-    height: var(--photos-grid-height, auto);
+    height: var(--photos-fill-height, auto);
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -14870,7 +14917,10 @@ a.photos-lb-btn { text-decoration: none; }
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
-    flex: 1 1 auto;
+    /* The base rule sets align-items: start, which content-sizes the row and
+       collapsed the grid to its header height (measured 131px on a phone). */
+    align-items: stretch;
+    flex: 1 1 0;
     min-height: 0;
     height: auto;
   }
@@ -14880,15 +14930,17 @@ a.photos-lb-btn { text-decoration: none; }
     display: flex;
     flex-direction: column;
     min-height: 0;
-    flex: 1 1 auto;
+    flex: 1 1 0;
   }
-  .photos-page--fill .photos-timeline-wrap { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
-  /* Measured height wins over the chain: the wrappers above change with other
-     layout work, this does not. */
+  .photos-page--fill .photos-timeline-wrap { display: flex; flex-direction: column; min-height: 0; flex: 1 1 0; overflow: hidden; }
+  /* The scroller takes the remainder of the page after header + switcher.
+     flex-basis must be 0: with basis auto the virtualizer's km-tall inner
+     spacer drives the basis and the scroller inflates to its content
+     (measured 15616px on a phone). */
   .photos-page--fill .photos-timeline--scroll {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-height: 0;
-    height: var(--photos-grid-height, auto);
+    height: auto;
   }
   /* Pagination must stay reachable now that the grid owns the viewport. */
   .photos-page--fill .photos-more { flex: 0 0 auto; position: sticky; bottom: 0.4rem; align-self: center; }
@@ -14904,7 +14956,12 @@ a.photos-lb-btn { text-decoration: none; }
      page title/beta block goes away on phones (Google Photos has no page
      heading either) and only the actions row stays. */
   .photos-header { align-items: center; gap: 0.4rem; }
-  .photos-header > div:first-child { display: none; }
+  /* The album-detail lead carries the back button — always visible. Only the
+     library lead (title/beta block) collapses; the switcher labels the tab. */
+  .photos-header > div:first-child:not(.photos-header__lead--detail) { display: none; }
+  /* The early mobile block sets lead space-between; with only back+title in
+     the detail lead that flings the album name to the right edge. */
+  .photos-header__lead--detail { justify-content: flex-start; }
   .photos-subtitle, .photos-import-line { display: none; }
   .photos-header__actions { justify-content: flex-end; width: 100%; }
   .photos-header__actions { gap: 0.4rem; }
@@ -14913,8 +14970,11 @@ a.photos-lb-btn { text-decoration: none; }
   .photos-tabs { gap: 0.1rem; }
   .photos-tabs button { margin-right: 0.55rem; padding: 0.5rem 0.1rem; font-size: 0.86rem; }
 
-  /* Selection actions move to a bottom bar above the nav instead of covering
-     the app bar (and wrapping badly at 360px). */
+  /* Selection actions move to a bottom bar instead of covering
+     the app bar (and wrapping badly at 360px). While selecting, the section
+     switcher hides — the selection toolbar replaces it (GPhotos' pattern);
+     the 15px overlap of bar and switcher read as a stacking glitch. */
+  .photos-page--selecting .photos-nav { display: none; }
   .photos-selection-bar {
     top: auto;
     bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 0.5rem);

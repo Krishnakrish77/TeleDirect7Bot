@@ -90,6 +90,15 @@ function scrubberLabel(iso: string | null): string {
   return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
 }
 
+/**
+ * Touch/narrow layout flag for the lightbox (filmstrip off, actions in an
+ * overflow menu). jsdom has no matchMedia — desktop is the safe default there.
+ */
+function isNarrowViewport(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(max-width: 680px)').matches || window.matchMedia('(pointer: coarse)').matches;
+}
+
 function formatDuration(seconds: number | null): string {
   if (!seconds) return '';
   const mins = Math.floor(seconds / 60);
@@ -699,19 +708,20 @@ function TimelineFlow({
   }, [virtualItems, entries, virtualizer.scrollOffset]);
 
   return (
-    <div className="photos-timeline photos-timeline--scroll" ref={scrollRef} {...pinchHandlers}>
+    <>
       {floatingDay && !scrubLabel && (
         <div className="photos-floating-day" aria-hidden="true">{floatingDay}</div>
       )}
       {scrubLabel !== null && (
         <div className="photos-scrubber-bubble" role="presentation">{scrubLabel}</div>
       )}
-      <div
-        style={{
-          height: virtualItems ? virtualizer.getTotalSize() : undefined,
-          position: 'relative',
-        }}
-      >
+      <div className="photos-timeline photos-timeline--scroll" ref={scrollRef} {...pinchHandlers}>
+        <div
+          style={{
+            height: virtualItems ? virtualizer.getTotalSize() : undefined,
+            position: 'relative',
+          }}
+        >
         {(virtualItems ?? entries.map((entry, index) => ({
           index,
           start: entries.slice(0, index).reduce((sum, e) => sum + e.height + 8, 0),
@@ -765,13 +775,14 @@ function TimelineFlow({
             </div>
           );
         })}
+        </div>
       </div>
       <DateScrubber
         onScrub={onScrubberDrag}
         onEnd={() => setScrubLabel(null)}
         disabled={photos.length < 20}
       />
-    </div>
+    </>
   );
 }
 
@@ -1021,49 +1032,32 @@ function useMeasuredWidth<T extends HTMLElement>(): [React.RefCallback<T>, numbe
 }
 
 /**
- * Height for the timeline's scroll area on touch layouts.
+ * Height for the timeline's fill layout on touch layouts.
  *
- * The virtualizer needs its own scroll element, and sizing that element from
- * the viewport ignores both the app chrome above it and the space the shell
- * reserves for the fixed bottom nav — the last rows ended up under the nav
- * while the page scrolled too. Rather than thread a flex chain through the
- * page wrappers (which changed twice already), measure the scroll element
- * itself: viewport minus its top minus the reserved bottom space.
+ * Measures the page element itself (viewport minus its top minus the shell's
+ * reserved bottom space) and exposes it as --photos-fill-height. The page owns
+ * that height; the grid then flexes to the remainder after the header and the
+ * section switcher. (Sizing BOTH page and grid from the same measured number
+ * over-constrained the layout: the page clipped the switcher and left a dead
+ * band below the grid.)
  */
 function useGridHeight(active: boolean, revision: string): [React.RefCallback<HTMLElement>, number] {
   const [height, setHeight] = useState(0);
   const nodeRef = useRef<HTMLElement | null>(null);
   const cleanup = useRef<(() => void) | null>(null);
-  const attempts = useRef(0);
   const activeRef = useRef(false);
 
   const measure = useCallback(() => {
     const node = nodeRef.current;
     if (!node) return;
     if (!activeRef.current) return;
-    // Anchor on the scroll element itself when it is mounted: sizing it
-    // directly is robust against the page wrappers, whose grid/flex rules this
-    // file overrides in several places (an unbounded wrapper leaves the grid at
-    // its content height — measured 1877px on a phone).
-    const grid = document.querySelector<HTMLElement>('.photos-timeline--scroll');
-    if (!grid) {
-      // The grid mounts with the view; retry a few frames instead of leaving
-      // the height unset (an unset height left the grid at its content height).
-      if (attempts.current < 30) {
-        attempts.current += 1;
-        requestAnimationFrame(measure);
-      }
-      return;
-    }
-    attempts.current = 0;
-    // Reserve the section switcher's row as well: it sits between the grid and
-    // the app's fixed bottom nav, so the grid must end above it.
-    const sections = document.querySelector<HTMLElement>('.photos-nav');
-    const reserved =
-      parseFloat(getComputedStyle(document.querySelector('.app-shell') ?? document.body).paddingBottom || '0') +
-      (sections ? sections.getBoundingClientRect().height + 8 : 0);
+    // Anchor on the page element: its top is stable (below the app header) and
+    // everything it must clear is inside it, so one measurement suffices.
+    const reserved = parseFloat(
+      getComputedStyle(document.querySelector('.app-shell') ?? document.body).paddingBottom || '0',
+    );
     setHeight(
-      Math.max(220, Math.round(window.innerHeight - grid.getBoundingClientRect().top - reserved))
+      Math.max(220, Math.round(window.innerHeight - node.getBoundingClientRect().top - reserved)),
     );
   }, []);
 
@@ -1089,10 +1083,7 @@ function useGridHeight(active: boolean, revision: string): [React.RefCallback<HT
   // mounted after the first pass, which is timing dependent and flaky.
   useEffect(() => {
     activeRef.current = active;
-    if (!active) {
-      attempts.current = 0;
-      return;
-    }
+    if (!active) return;
     const frame = requestAnimationFrame(measure);
     return () => cancelAnimationFrame(frame);
   }, [active, revision, measure]);
@@ -1738,7 +1729,7 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   // Only the grid views get the measured fill height; the albums list and the
   // trash rows scroll with the document (the shell already reserves the nav).
   const fillsViewport = view === 'timeline' || view === 'favorites' || Boolean(isAlbumDetail);
-  const pageStyle = fillsViewport && gridHeight ? { ['--photos-grid-height' as string]: `${gridHeight}px` } : undefined;
+  const pageStyle = fillsViewport && gridHeight ? { ['--photos-fill-height' as string]: `${gridHeight}px` } : undefined;
   const searching = query.trim().length > 0;
   const timelineData: TimelineData | null = timeline && {
     items: visiblePhotos,
@@ -1749,7 +1740,7 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   return (
     <main
       ref={fillRef}
-      className={`photos-page${fillsViewport ? ' photos-page--fill' : ''}`}
+      className={`photos-page${fillsViewport ? ' photos-page--fill' : ''}${selectionActive ? ' photos-page--selecting' : ''}`}
       style={pageStyle}
       onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
@@ -1778,7 +1769,7 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
 
         <section className="photos-main">
           <header className="photos-header">
-            <div className="photos-header__lead">
+            <div className={`photos-header__lead${isAlbumDetail ? ' photos-header__lead--detail' : ''}`}>
               {isAlbumDetail ? (
                 <>
                   <button
@@ -2118,6 +2109,18 @@ function PhotoLightbox({
 }) {
   const photo = photos[index];
   const [metaOpen, setMetaOpen] = useState(false);
+  // The filmstrip costs ~110px of stage on a phone and swiping is the native
+  // navigation there — GPhotos drops it on touch too. Match the CSS touch
+  // breakpoint; plugins must be mounted/unmounted, hiding .yarl__thumbnails
+  // in CSS collapses the lightbox (that class wraps the carousel).
+  const [narrow, setNarrow] = useState(() => isNarrowViewport());
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const queries = ['(max-width: 680px)', '(pointer: coarse)'].map((q) => window.matchMedia(q));
+    const onChange = () => setNarrow(queries.some((m) => m.matches));
+    queries.forEach((m) => m.addEventListener('change', onChange));
+    return () => queries.forEach((m) => m.removeEventListener('change', onChange));
+  }, []);
 
   const slides = useMemo(() => buildLightboxSlides(photos), [photos]);
 
@@ -2140,7 +2143,7 @@ function PhotoLightbox({
            pin their own UI into the same corners our topbar owns — they
            rendered as overlapping text/icons. Zoom (wheel/double-tap),
            filmstrip and video are the GPhotos-equivalent set. */
-        plugins={[Zoom, Thumbnails, Video]}
+        plugins={narrow ? [Zoom, Video] : [Zoom, Thumbnails, Video]}
         animation={{ fade: 220, swipe: 280 }}
         render={{
           iconPrev: () => <ChevronLeftIcon />,
@@ -2169,8 +2172,7 @@ function PhotoLightbox({
                     <span className="photos-lb-title__date">{dayLabel(photo.takenAt)}</span>
                   </div>
                 )}
-                <span className="photos-lb-topbar__spacer" />
-                {photo && !trashView && (
+                {photo && !trashView && !narrow && (
                   <>
                     <button
                       type="button"
@@ -2205,6 +2207,38 @@ function PhotoLightbox({
                     <InfoIcon />
                   </button>
                 )}
+                {/* Phones: actions live in an overflow menu — 5 inline buttons
+                    plus YARL's zoom/close cluster left the filename ~20px at
+                    390px. Desktop keeps them inline. */}
+                {photo && !trashView && narrow && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button type="button" className="photos-lb-btn" aria-label="More actions" title="More">
+                        <MoreVerticalIcon />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="photos-lb-menu">
+                      <DropdownMenuItem asChild onSelect={() => onToggleFavorite(photo)}>
+                        <button type="button">
+                          <StarIcon filled={photo.favorite} />
+                          <span>{photo.favorite ? 'Remove from favorites' : 'Add to favorites'}</span>
+                        </button>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <a href={photoFileUrl(photo.id)} download>
+                          <DownloadIcon />
+                          <span>Download original</span>
+                        </a>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild onSelect={() => onTrash(photo)}>
+                        <button type="button" className="photos-lb-menu__danger">
+                          <TrashIcon />
+                          <span>Move to trash</span>
+                        </button>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
                 {photo && (trashView ? (
                   <button
                     type="button"
@@ -2215,7 +2249,7 @@ function PhotoLightbox({
                   >
                     <RestoreIcon />
                   </button>
-                ) : (
+                ) : !narrow && (
                   <button
                     type="button"
                     className="photos-lb-btn photos-lb-btn--danger"
