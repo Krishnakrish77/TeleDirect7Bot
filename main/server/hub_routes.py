@@ -715,7 +715,7 @@ _SW_SHELL = [
 _SW_JS = """\
 /* TeleDirect service worker — network-first for navigation,
    cache-first for static assets, network-only for streams/API. */
-const CACHE = 'td-v5';
+const CACHE = 'td-v6';
 const SHELL = __SHELL__;
 
 self.addEventListener('install', e => {
@@ -732,6 +732,16 @@ self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    ).then(() =>
+      // Re-cache the shell: the old cached '/' HTML references hashed entry
+      // chunks that a redeploy deletes (emptyOutDir). Serving that stale HTML
+      // as the offline fallback 404s the entry script — the app renders as a
+      // dead page under the cached chrome ("overlay, can do nothing").
+      caches.open(CACHE).then(c =>
+        Promise.allSettled(SHELL.map(u =>
+          c.add(new Request(u, {cache: 'reload'}))
+        ))
+      )
     ).then(() => self.clients.claim())
   );
 });

@@ -35,7 +35,9 @@ class PwaAssetsTest(unittest.TestCase):
     def test_service_worker_keeps_app_shell_cacheable(self):
         worker = hub_routes._SW_JS
 
-        self.assertIn("const CACHE = 'td-v5'", worker)
+        # Version bump forces clients to drop the stale shell cache; the
+        # activate handler re-caches the shell on every takeover.
+        self.assertIn("const CACHE = 'td-v6'", worker)
         self.assertIn('const SHELL = ["/","/favicon.svg"', worker)
         self.assertNotIn("tailwind.css", worker)
         self.assertNotIn("url.pathname.startsWith('/static/app/')", worker)
