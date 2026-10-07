@@ -1,9 +1,10 @@
 """Intro detection tests — synthetic fingerprints, no network, no fpcalc.
 
 Covers the contracts that matter for the Skip intro button:
-  - fpcalc base64 decoding (urlsafe, unpadded)
+  - fpcalc ``-raw`` payload parsing (decimal uint32 CSV; compressed form rejected)
   - cross-episode matching (shift handling, ±1 tolerance, longest run)
   - clamp validation (15–150 s, window position)
+  - silence-snap window around the matched intro end
   - manual-edit precedence (intro_source == "manual" never overwritten)
   - sweep bookkeeping (state transitions, persist calls)
 """
@@ -11,6 +12,7 @@ import asyncio
 import os
 import random
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("API_ID", "1")
@@ -89,17 +91,103 @@ def fp_triplet(total: int, intro_start: int, intro_len: int):
 
 
 class FingerprintDecodeTest(unittest.TestCase):
-    def test_urlsafe_unpadded_decode(self):
-        # urlsafe alphabet with '-' and '_' and no padding round-trips
-        import base64
-        import struct
-        raw = b"\x00\x01\x02\x03" * 5
-        b64 = base64.urlsafe_b64encode(raw).decode().rstrip("=")
-        self.assertEqual(intro_detect._decode_fingerprint(b64), list(struct.unpack("<5I", raw)))
+    # Real fpcalc output for the same 4 s of audio, both formats.
+    RAW_PAYLOAD = ",".join(["2238577015"] * 11)
+    COMPRESSED_PAYLOAD = "AQAAC0mUaEkSRZEKAAAAAA"
+
+    def test_raw_csv_payload_parses_to_uint32_points(self):
+        self.assertEqual(
+            intro_detect._decode_fingerprint(self.RAW_PAYLOAD),
+            [2238577015] * 11,
+        )
+
+    def test_compressed_payload_is_rejected(self):
+        # fpcalc's default (non -raw) output is a delta/bit-packed encoding.
+        # Treating it as a uint32 array silently produces ~40% fewer,
+        # meaningless points and every reported timing is wrong — it must
+        # never be accepted as a fingerprint.
+        with self.assertRaises(ValueError):
+            intro_detect._decode_fingerprint(self.COMPRESSED_PAYLOAD)
 
     def test_garbage_input_raises(self):
-        with self.assertRaises(Exception):
-            intro_detect._decode_fingerprint("!!!!not-base64!!!!")
+        for bad in ("", "   ", "!!!!not-a-fingerprint!!!!", "1,,2", "1, 2", "-5,3"):
+            with self.assertRaises(ValueError):
+                intro_detect._decode_fingerprint(bad)
+
+
+class FingerprintPipelineTest(unittest.TestCase):
+    """The fpcalc invocation and the decoder must agree on one format.
+
+    Regression: the detector ran fpcalc *without* ``-raw`` while decoding the
+    payload as a uint32 array, so real runs matched compressed bitstream words
+    and produced garbage timings (usually below the 15 s floor → no intro at
+    all). The stub below emulates fpcalc faithfully: it emits the compressed
+    payload unless ``-raw`` is requested.
+    """
+
+    RAW_PAYLOAD = ",".join(str(1000 + i) for i in range(40))
+    COMPRESSED_PAYLOAD = "AQAAC0mUaEkSRZEKAAAAAA"
+
+    def _stub_fpcalc(self, cmd, **_kwargs):
+        class R:
+            returncode = 0
+            stdout = (
+                f"FINGERPRINT={self.RAW_PAYLOAD}"
+                if "-raw" in cmd else f"FINGERPRINT={self.COMPRESSED_PAYLOAD}"
+            ).encode()
+
+        return R()
+
+    def test_fingerprint_sync_requests_and_parses_raw_points(self):
+        item = make_item(7, episode=1)
+        with (
+            patch.object(intro_detect.subprocess, "run", side_effect=self._stub_fpcalc),
+            patch.object(media_index, "_store_active", return_value=False),
+        ):
+            points = intro_detect._fingerprint_sync(item)
+        self.assertEqual(points, [1000 + i for i in range(40)])
+
+
+class SnapEndToSilenceTest(unittest.TestCase):
+    """The silence snap may only accept a silence inside its scan window.
+
+    Regression: the previous version accepted anything within ±(-8, +4) s of
+    the matched end, so a quiet beat inside the following dialogue could push
+    the intro end into the episode. Jellyfin's window is [end-5, end+2].
+    """
+
+    END = 60.0  # matched intro end → scan starts at 55 s
+
+    def _scan(self, *relative_offsets):
+        out = "".join(
+            f"[silencedetect @ 0x1] silence_start: {t}\n"
+            f"[silencedetect @ 0x1] silence_end: {t + 0.4} | silence_duration: 0.4\n"
+            for t in relative_offsets
+        )
+        return patch.object(
+            intro_detect.subprocess, "run",
+            return_value=SimpleNamespace(stdout=out, returncode=0),
+        )
+
+    def test_silence_inside_window_snaps_to_it(self):
+        with self._scan(4.0):  # 55 + 4 = 59 s, one second before the matched end
+            self.assertAlmostEqual(
+                intro_detect._snap_end_to_silence("http://127.0.0.1/x", self.END), 59.0)
+
+    def test_silence_after_outward_window_is_ignored(self):
+        with self._scan(9.0):  # 64 s — past end+2, would extend the intro
+            self.assertAlmostEqual(
+                intro_detect._snap_end_to_silence("http://127.0.0.1/x", self.END), self.END)
+
+    def test_no_silence_keeps_the_matched_end(self):
+        with self._scan():
+            self.assertAlmostEqual(
+                intro_detect._snap_end_to_silence("http://127.0.0.1/x", self.END), self.END)
+
+    def test_scan_failure_keeps_the_matched_end(self):
+        with patch.object(intro_detect.subprocess, "run", side_effect=RuntimeError("boom")):
+            self.assertAlmostEqual(
+                intro_detect._snap_end_to_silence("http://127.0.0.1/x", self.END), self.END)
 
 
 class MatchingTest(unittest.TestCase):
@@ -144,7 +232,7 @@ class ClampTest(unittest.TestCase):
         f1, f2 = fp_pair(total, 20, intro_pts)
         fps = {1: f1, 2: f2}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
-             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end):
             results = intro_detect.detect_series_intros_sync(eps)
         self.assertEqual(results, {})
 
@@ -158,7 +246,7 @@ class ClampTest(unittest.TestCase):
         f1, f2 = fp_pair(total, start_pts, intro_pts)
         fps = {1: f1, 2: f2}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
-             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end):
             results = intro_detect.detect_series_intros_sync(eps)
         self.assertEqual(results, {})
 
@@ -170,7 +258,7 @@ class ClampTest(unittest.TestCase):
         f1, f2 = fp_pair(total, a_start, intro_pts)
         fps = {1: f1, 2: f2}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
-             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end):
             results = intro_detect.detect_series_intros_sync(eps)
         self.assertEqual(set(results), {1, 2})
         s1, e1 = results[1]
@@ -192,7 +280,7 @@ class ManualPrecedenceTest(unittest.TestCase):
         f1, f2 = fp_pair(total, 50, intro_pts)
         fps = {1: f1, 2: f2}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
-             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end):
             results = intro_detect.detect_series_intros_sync(eps)
         self.assertNotIn(1, results)  # manual episode untouched
         self.assertEqual(eps[0].intro_start, 10.0)
@@ -234,7 +322,7 @@ class ConsensusTest(unittest.TestCase):
         f1, f2, f3 = fp_triplet(a_start + intro_pts + 300, a_start, intro_pts)
         fps = {1: f1, 2: f2, 3: f3}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
-             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end):
             results = intro_detect.detect_series_intros_sync(eps)
         self.assertEqual(set(results), {1, 2, 3})
 
@@ -252,7 +340,7 @@ class ConsensusTest(unittest.TestCase):
         f3 = episode_fp(total, drift_seed=5, salt=777)  # fully unrelated
         fps = {1: f1, 2: f2, 3: f3}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
-             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end):
             results = intro_detect.detect_series_intros_sync(eps)
         # The two related episodes still detect; the unrelated one finds nothing.
         self.assertEqual(set(results), {1, 2})
@@ -268,7 +356,7 @@ class ConsensusTest(unittest.TestCase):
         f1, f2 = fp_pair(a_start + intro_pts + 300, a_start, intro_pts)
         fps = {1: f1, 2: f2}
         with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
-             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end):
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end):
             results = intro_detect.detect_series_intros_sync(eps)
         self.assertEqual(set(results), {1, 2})
 
@@ -297,7 +385,7 @@ class SweepIntegrationTest(unittest.IsolatedAsyncioTestCase):
         media_index._items.update({1: eps[0], 2: eps[1]})
         with (
             patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]),
-            patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end, window: end),
+            patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end),
             patch.object(media_index, "_store_active", return_value=False),
             patch.object(media_index, "_persist_unlocked", lambda: None),
         ):

@@ -1,19 +1,26 @@
 """Cross-episode intro detection via chromaprint audio fingerprinting.
 
-Port of the approach proven by Jellyfin's Intro Skipper plugin:
+Based on the approach proven by Jellyfin's Intro Skipper plugin, with two
+deliberate divergences: shifts are found by scanning every alignment instead
+of anchoring on exact point matches (cross-encode drift makes exact anchors
+unreliable), and a run must be corroborated by a strict majority of siblings
+before it is stored.
 
   1. Fingerprint the first 25% of every episode in a series (capped at
-     10 minutes) with ``fpcalc`` — raw uint32 points, 1 point = 0.128 s
-     of audio.
-  2. For every episode pair, find fingerprint-point matches (±1 tolerance,
-     mirroring Jellyfin's ``invertedIndexShift``) and histogram the implied
-     time-shifts. The intro theme repeats exactly across episodes, so the
-     dominant shift aligns the two intros.
-  3. Walk the aligned pair; the longest contiguous matching range is the
-     intro. Snap its end to the first silence ≥ 0.5 s (where the theme
-     stops and dialogue begins).
-  4. Validate: 15–150 s long, starts within the fingerprinted window.
-     Anything else → no intro recorded (honest absence).
+     10 minutes) with ``fpcalc -raw`` — raw uint32 points, 1 point ≈
+     0.12384 s of audio.
+  2. For every episode pair, scan every alignment shift and keep the longest
+     run of points that agree within 6 of 32 Hamming bits (Jellyfin's
+     ``MaximumFingerprintPointDifferences``). The *run* is what separates the
+     shared theme from coincidental point matches.
+  3. Snapping/validation: drop runs shorter than 15 s or longer than 150 s
+     that start outside the fingerprinted window, snap the start to 0 when it
+     lands within 5 s of the episode start, and snap the end to the first real
+     silence (≥ 0.33 s below -50 dB, Jellyfin's defaults) where the theme stops
+     and dialogue begins.
+  4. Require a strict majority of siblings to agree on a run's position and
+     length (±3 s) before storing it. Anything else → no intro recorded
+     (honest absence).
 
 Silence is never used to *find* intros (theme music is loud); it only
 refines where the theme ends. Manual admin edits win forever via
@@ -26,11 +33,9 @@ JSON), so re-sweeps only fingerprint newly indexed episodes.
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import os
 import re
-import struct
 import subprocess
 import time
 from collections import defaultdict
@@ -41,11 +46,14 @@ from main.utils.hls import internal_stream_url
 
 log = logging.getLogger(__name__)
 
-# 1 fingerprint point represents this many seconds of audio (chromaprint spec).
-POINT_SECONDS = 0.128
-# ±point tolerance when matching — chromaprint points are quantized gradients
-# that can differ by ±1 even for identical audio (different encodes).
-POINT_TOLERANCE = 1
+# Duration of one fingerprint point: chromaprint frames the audio at 11025 Hz
+# with a 4096-sample frame and 2/3 overlap, so consecutive points are
+# 4096 / (11025 * 3) ≈ 0.12384 s apart. Jellyfin intro-skipper computes the
+# identical expression (ChromaprintConstants.SampleDuration). Point 0 is t=0 —
+# there is no head offset; shifting a segment by 20 s / 40 s moves the match by
+# exactly 161 / 322 points. Only the *tail* of the window loses points (the
+# last ~2.7 s of audio yield none), which just shortens the window slightly.
+POINT_SECONDS = 4096.0 / 11025.0 / 3.0
 # Points "match" when ≤6 of 32 bits differ — Jellyfin intro-skipper's production
 # value (MaximumFingerprintPointDifferences=6). Calibrated on real-library data:
 # unrelated chromaprint points have median Hamming 15-16/32 (P(≤6) ≈ 0.4%), so 6
@@ -104,21 +112,23 @@ def state() -> dict:
 # ---------------------------------------------------------------- fingerprint
 
 def _fingerprint_cache_key(message_id: int) -> str:
-    # v2: fingerprints are computed from lossless wav (previously mp3 —
-    # lossy decode shifted gradients and broke cross-episode matching).
-    return f"intro_fp:v2:{message_id}"
+    # v3: fingerprints are stored as fpcalc's ``-raw`` decimal CSV (v2 stored
+    # the default *compressed* payload, which the matcher cannot read).
+    return f"intro_fp:v3:{message_id}"
 
 
-def _decode_fingerprint(b64: str) -> List[int]:
-    """fpcalc emits URL-safe base64 (``-``/``_``) without padding."""
-    s = b64.strip().rstrip("=")
-    if not s or not re.fullmatch(r"[A-Za-z0-9_-]+", s):
-        raise ValueError("malformed fingerprint")
-    raw = base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
-    n = len(raw) // 4
-    if n == 0:
-        raise ValueError("empty fingerprint")
-    return list(struct.unpack(f"<{n}I", raw[: n * 4]))
+def _decode_fingerprint(payload: str) -> List[int]:
+    """Parse fpcalc's ``-raw`` FINGERPRINT payload — decimal uint32 CSV.
+
+    fpcalc only emits this form with ``-raw``. Its default output is a
+    delta/bit-packed encoding (base64) that is *not* a uint32 point array;
+    feeding it to the matcher yields fewer, meaningless points and every
+    reported timing is wrong, so reject anything that is not raw CSV.
+    """
+    s = payload.strip()
+    if not s or not re.fullmatch(r"\d+(,\d+)*", s):
+        raise ValueError("malformed raw fingerprint")
+    return [int(x) for x in s.split(",")]
 
 
 def _fingerprint_window_seconds(item) -> float:
@@ -179,36 +189,54 @@ def _longest_contiguous_match(a: List[int], b: List[int]) -> Tuple[int, int, int
     return best
 
 
-def _snap_end_to_silence(stream_url: str, approx_end: float, window: float) -> float:
-    """Move the intro's end to the first silence ≥ 0.5 s near the boundary.
+# Silence-snap parameters — Jellyfin intro-skipper's defaults
+# (SilenceDetectionMaximumNoise / SilenceDetectionMinimumDuration) and the
+# AdjustWindowInward / AdjustWindowOutward search window it scans around the
+# matched end. Deliberately strict: a "silence" that is really a beat inside
+# dialogue must not be mistaken for the theme's end.
+_SILENCE_NOISE_DB = -50
+_SILENCE_MIN_SECONDS = 0.33
+_SNAP_INWARD_SECONDS = 5.0
+_SNAP_OUTWARD_SECONDS = 2.0
 
-    The theme outro usually ends in a hard cut to dialogue; the first quiet
-    stretch near the matched end is the true boundary. The search starts a
-    few seconds BEFORE the matched end too: the matcher's run can over-extend
-    past the theme into the following scene (contiguous noise), and the first
-    silence then sits earlier. Falls back to the matched end when nothing is
-    found nearby.
+
+def _snap_end_to_silence(stream_url: str, approx_end: float) -> float:
+    """Move the intro's end to the first real silence near the matched end.
+
+    Mirrors Jellyfin intro-skipper's end adjustment: scan
+    ``[approx_end - 5 s, approx_end + 2 s]`` and take the first silence of at
+    least 0.33 s below -50 dB. The search starts BEFORE the matched end because
+    the matcher's run can over-extend past the theme into the following scene
+    (contiguous noise), and it stops just after it so a quiet beat inside
+    dialogue can never push the end further into the episode. Falls back to the
+    matched end when nothing qualifies — the common case for a hard cut from
+    theme music straight into dialogue.
     """
+    search_start = max(0.0, approx_end - _SNAP_INWARD_SECONDS)
     cmd = (
-        f'ffmpeg -hide_banner -nostats -ss {max(0.0, approx_end - 6.0):.2f} '
-        f'-t {min(20.0, window - approx_end + 6.0):.2f} -i "{stream_url}" '
-        f'-af "silencedetect=noise=-35dB:d=0.5" -f null - 2>&1'
+        f'ffmpeg -hide_banner -nostats -ss {search_start:.2f} '
+        f'-t {approx_end + _SNAP_OUTWARD_SECONDS - search_start:.2f} '
+        f'-i "{stream_url}" '
+        f'-af "silencedetect=noise={_SILENCE_NOISE_DB}dB:d={_SILENCE_MIN_SECONDS}" '
+        f"-f null - 2>&1"
     )
     try:
         out = subprocess.run(
             cmd, shell=True, capture_output=True, text=True, timeout=60,
         ).stdout
     except Exception:
+        log.exception("intro: silence scan failed; keeping the matched intro end")
         return approx_end
     for line in out.splitlines():
-        if "silence_start" in line:
-            try:
-                candidate = float(line.split("silence_start:")[1].split()[0])
-                snapped = approx_end - 6.0 + candidate
-                if snapped > approx_end - 8.0 and snapped < approx_end + 4.0:
-                    return snapped
-            except (ValueError, IndexError):
-                break
+        if "silence_start" not in line:
+            continue
+        try:
+            # silencedetect reports offsets relative to the input seek.
+            candidate = search_start + float(line.split("silence_start:")[1].split()[0])
+        except (ValueError, IndexError):
+            break
+        if search_start <= candidate <= approx_end + _SNAP_OUTWARD_SECONDS:
+            return candidate
     return approx_end
 
 
@@ -216,7 +244,6 @@ def _fingerprint_sync(item) -> List[int]:
     """Synchronous bridge — detection runs inside a worker thread; ffmpeg
     subprocess work is coordinated via asyncio in the async sweep, but the
     pure matching helpers stay sync for testability."""
-    import base64 as _b64
     cache_key = _fingerprint_cache_key(item.message_id)
     cached = None
     try:
@@ -232,10 +259,13 @@ def _fingerprint_sync(item) -> List[int]:
             pass
     stream_url = internal_stream_url(item.secure_hash, item.message_id)
     window = int(_fingerprint_window_seconds(item))
+    # -raw is required: the default fpcalc output is a compressed bit-packed
+    # encoding, not the uint32 point array the matcher (and POINT_SECONDS)
+    # assume.
     cmd = (
         f'ffmpeg -hide_banner -loglevel error -i "{stream_url}" '
         f"-t {window} -ac 2 -ar 44100 -f wav - | "
-        f"{_FPCALC} -length {window} -"
+        f"{_FPCALC} -raw -length {window} -"
     )
     proc = subprocess.run(cmd, shell=True, capture_output=True, timeout=_FP_TIMEOUT_SECONDS)
     if proc.returncode != 0:
@@ -246,13 +276,13 @@ def _fingerprint_sync(item) -> List[int]:
     )
     if not fp_line:
         raise RuntimeError(f"fpcalc produced no fingerprint for bin:{item.message_id}")
-    b64 = fp_line.split("=", 1)[1]
+    payload = fp_line.split("=", 1)[1]
     try:
         if media_index._store_active():
-            media_index_meta_set(cache_key, b64)
+            media_index_meta_set(cache_key, payload)
     except Exception:
         pass
-    return _decode_fingerprint(b64)
+    return _decode_fingerprint(payload)
 
 
 def _meta_store_get(key: str):
@@ -432,7 +462,7 @@ def detect_series_intros_sync(episodes: list) -> Dict[int, Tuple[float, float]]:
         ep.message_id for ep in episodes
         if getattr(ep, "intro_source", "") == "manual"
     }
-    window = _fingerprint_window_seconds(episodes[0])
+    episodes_by_id = {ep.message_id: ep for ep in episodes}
     ids = list(fingerprints)
 
     # Consensus pass — first collect every sibling's best run before trusting any.
@@ -471,15 +501,16 @@ def detect_series_intros_sync(episodes: list) -> Dict[int, Tuple[float, float]]:
             continue
         if run < MIN_INTRO_POINTS or run > MAX_INTRO_POINTS:
             continue
+        episode = episodes_by_id[mid]
         start = a_start * POINT_SECONDS
         end = (a_start + run) * POINT_SECONDS
-        if start > window * 0.9:
+        if start > _fingerprint_window_seconds(episode) * 0.9:
             continue
         if start <= 5:
             start = 0.0
-        end = _snap_end_to_silence(internal_stream_url(
-            next(e for e in episodes if e.message_id == mid).secure_hash, mid,
-        ), end, window)
+        end = _snap_end_to_silence(
+            internal_stream_url(episode.secure_hash, mid), end,
+        )
         if end - start < 15:
             continue
         results[mid] = (round(start, 2), round(end, 2))
