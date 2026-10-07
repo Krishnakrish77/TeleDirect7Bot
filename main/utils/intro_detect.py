@@ -18,9 +18,16 @@ before it is stored.
      lands within 5 s of the episode start, and snap the end to the first real
      silence (≥ 0.33 s below -50 dB, Jellyfin's defaults) where the theme stops
      and dialogue begins.
-  4. Require a strict majority of siblings to agree on a run's position and
-     length (±3 s) before storing it. Anything else → no intro recorded
-     (honest absence).
+  4. Require a strict majority of siblings to place the run at the same offset
+     *in each episode's own timeline* (±3 s) before storing it. The theme sits
+     at a different absolute time in every episode (cold-open lengths differ),
+     so agreement is voted per episode, never across episodes. Anything else →
+     no intro recorded (honest absence).
+
+Positions inside a ≥1 s stretch of identical fingerprint values (silence, a
+black/static lead-in, a held tone) are excluded from matching: chromaprint
+emits the same 32-bit point for such audio, so unrelated episodes would
+otherwise "share" the whole stretch and store it as a recurring intro.
 
 Silence is never used to *find* intros (theme music is loud); it only
 refines where the theme ends. Manual admin edits win forever via
@@ -141,9 +148,34 @@ def _fingerprint_window_seconds(item) -> float:
 
 # ---------------------------------------------------------------- matching
 
+# A point that repeats for this many consecutive positions (≈1 s) means the
+# audio has no spectral movement there: silence, a black/static lead-in, a held
+# tone. Chromaprint emits the *identical* 32-bit point for such audio, so two
+# unrelated episodes "share" the entire stretch and it would be stored as a
+# recurring intro — measured on a real series whose every episode opens with
+# 19 s of static: 109 of 155 head points were the same value, while real
+# content is ~96% distinct. Points inside such a stretch never match.
+_DEGENERATE_RUN_POINTS = max(2, int(1.0 / POINT_SECONDS))
+# Siblings must place the shared run within this many points of each other.
+_CONSENSUS_POSITION_POINTS = int(3.0 / POINT_SECONDS)
+
+
+def _degenerate_points(points: List[int]) -> List[bool]:
+    """Mask the positions of any ≥1 s stretch of identical point values."""
+    flags = [False] * len(points)
+    run_start = 0
+    for i in range(1, len(points) + 1):
+        if i == len(points) or points[i] != points[run_start]:
+            if i - run_start >= _DEGENERATE_RUN_POINTS:
+                for j in range(run_start, i):
+                    flags[j] = True
+            run_start = i
+    return flags
+
+
 def _hamming(x: int, y: int) -> int:
     """Bit distance between two chromaprint points (32-bit words)."""
-    return bin(x ^ y).count("1")
+    return (x ^ y).bit_count()
 
 
 def _longest_contiguous_match(a: List[int], b: List[int]) -> Tuple[int, int, int]:
@@ -154,6 +186,9 @@ def _longest_contiguous_match(a: List[int], b: List[int]) -> Tuple[int, int, int
     One Piece):
     - Chromaprint points drift a few bits per point across encodes; exact
       or ±1-integer matching finds nothing (0 matches at the true shift).
+      Measured on a real 6-episode season: Jellyfin's exact-match inverted
+      index proposes ~120 candidate shifts per pair but MISSES the true shift
+      on half of them, so its shift discovery cannot be adopted here.
     - Individual point thresholds can't separate signal from noise
       (matched ≈15/32 vs random ≈16/32). The *contiguous run* is the
       separator: at the true shift, sub-threshold points line up for
@@ -162,19 +197,24 @@ def _longest_contiguous_match(a: List[int], b: List[int]) -> Tuple[int, int, int
       ization wobble) are bridged: a single dropped point must not split
       or truncate the run. Bridged points count toward run length; the
       silence snap compensates the end.
+    - Positions inside a degenerate (frozen-value) stretch never match, so
+      silence cannot masquerade as shared audio (see _degenerate_points).
     - Brute-force scan over all shifts: O(len(a)·len(b)) Hamming ops per
       pair. ~1.4M ops for two 150s windows ≈ sub-second; series sweeps
       use short windows and this is simpler + more robust than Jellyfin's
       histogram optimization (their exact-match anchors don't survive
       cross-encode drift).
     """
+    degenerate_a = _degenerate_points(a)
+    degenerate_b = _degenerate_points(b)
     best = (0, 0, 0)
     for shift in range(-len(b) + 1, len(a)):
         run_best = run = best_start = 0
         gap = 0
         for i in range(len(a)):
             j = i + shift
-            if 0 <= j < len(b) and _hamming(a[i], b[j]) <= MATCH_HAMMING_BITS:
+            if (0 <= j < len(b) and not degenerate_a[i] and not degenerate_b[j]
+                    and _hamming(a[i], b[j]) <= MATCH_HAMMING_BITS):
                 run += 1 + gap
                 gap = 0
                 if run > run_best:
@@ -465,42 +505,53 @@ def detect_series_intros_sync(episodes: list) -> Dict[int, Tuple[float, float]]:
     episodes_by_id = {ep.message_id: ep for ep in episodes}
     ids = list(fingerprints)
 
-    # Consensus pass — first collect every sibling's best run before trusting any.
-    # A single pair's longest run is unreliable: even at a strict threshold, the
-    # "best of N siblings" maximum lands on a noise run for some pair. Real theme
-    # music appears at a *consistent offset* across most siblings; noise doesn't.
-    best_runs: Dict[int, Tuple[int, int, int]] = {}  # mid -> (run_pts, a_start_pts, shift)
+    # Per-episode vote, judged in that episode's OWN timeline. Each pair's run
+    # is already expressed in the first episode's timeline, so every sibling
+    # proposes a position for this episode and the recurring theme is the
+    # position most siblings agree on.
+    #
+    # Agreement must be judged per episode, never by comparing absolute starts
+    # across episodes: the same theme sits at a different absolute offset in
+    # every episode (cold-open lengths differ), which is exactly what the shift
+    # compensates for. Comparing absolute starts rejected every real intro in
+    # any series whose cold opens vary — measured on a real 6-episode season
+    # whose shared 40 s opening sits at 35/64/80/98/127 s.
+    proposals: Dict[int, List[Tuple[int, int]]] = {}  # mid -> [(run_pts, a_start_pts)]
     for mid in ids:
         if mid in manual_ids:
             continue
-        best = (0, 0, 0)
+        found = []
         for other in ids:
             if other == mid:
                 continue
-            run, a_start, shift = _longest_contiguous_match(fingerprints[mid], fingerprints[other])
-            if run > best[0]:
-                best = (run, a_start, shift)
-        if best[0] >= MIN_INTRO_POINTS:
-            best_runs[mid] = best
+            run, a_start, _shift = _longest_contiguous_match(fingerprints[mid], fingerprints[other])
+            if MIN_INTRO_POINTS <= run <= MAX_INTRO_POINTS:
+                found.append((run, a_start))
+        proposals[mid] = found
 
     consensus_min = (len(ids) - 1) // 2 + 1  # strict majority of siblings
-    for mid, (run, a_start, shift) in best_runs.items():
-        # Count siblings whose best run agrees within ±3s of position and length.
-        s0, e0 = a_start * POINT_SECONDS, (a_start + run) * POINT_SECONDS
-        agreeing = 0
-        for other, (run2, a2, sh2) in best_runs.items():
-            if other == mid:
-                continue
-            s2 = a2 * POINT_SECONDS
-            e2 = (a2 + run2) * POINT_SECONDS
-            if abs(s2 - s0) <= 3.0 and abs((e2 - s2) - (e0 - s0)) <= 3.0:
-                agreeing += 1
-        if agreeing + 1 < max(2, consensus_min) and len(ids) >= 3:
-            log.info("intro: bin:%s run %.1f-%.1fs confirmed by %d/%d siblings — rejected as noise",
-                     mid, s0, e0, agreeing + 1, len(ids))
+    for mid, found in proposals.items():
+        if not found:
             continue
-        if run < MIN_INTRO_POINTS or run > MAX_INTRO_POINTS:
+        # The run the most siblings agree on (±3 s of start position); ties go
+        # to the longer run. Length is not part of the vote: a pair's run
+        # boundaries wander by a few seconds with encode/tail differences,
+        # while the position is what identifies the recurring segment.
+        winner = max(found, key=lambda c: (
+            sum(1 for _r, s in found if abs(s - c[1]) <= _CONSENSUS_POSITION_POINTS),
+            c[0],
+        ))
+        agreeing = sorted(c for c in found if abs(c[1] - winner[1]) <= _CONSENSUS_POSITION_POINTS)
+        if len(agreeing) + 1 < max(2, consensus_min) and len(ids) >= 3:
+            log.info(
+                "intro: bin:%s best run %.1fs @ %.1fs confirmed by %d/%d siblings — rejected as noise",
+                mid, winner[0] * POINT_SECONDS, winner[1] * POINT_SECONDS,
+                len(agreeing), len(ids) - 1,
+            )
             continue
+        # Store the median-length agreeing run so one pair's over-extended
+        # boundary does not set the intro's end for the whole season.
+        run, a_start = agreeing[len(agreeing) // 2]
         episode = episodes_by_id[mid]
         start = a_start * POINT_SECONDS
         end = (a_start + run) * POINT_SECONDS

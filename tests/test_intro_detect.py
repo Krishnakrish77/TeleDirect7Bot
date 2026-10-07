@@ -361,6 +361,97 @@ class ConsensusTest(unittest.TestCase):
         self.assertEqual(set(results), {1, 2})
 
 
+class VariedColdOpenTest(unittest.TestCase):
+    """Regression: the same theme sits at a different absolute time in every
+    episode, because cold opens differ in length.
+
+    Real-library failure (#Love, 6 episodes): the shared ~40 s opening sits at
+    35/64/80/98/127 s, so the old consensus compared 98.1 s against 64.3 s,
+    35.0 s, … and rejected every episode — the per-series action reported
+    "No recurring intro found across 6 episodes" although five of them shared
+    the opening.
+    """
+
+    @staticmethod
+    def _episode(total: int, start: int, length: int, seed: int) -> list:
+        """Per-episode unique head/tail with the shared theme at ``start``.
+
+        The theme's base pattern is indexed from the theme's own start so the
+        same audio aligns under the right shift; the per-episode drift models
+        cross-encode point differences.
+        """
+        head = [_base(k, 100 + seed) ^ _drift(k, seed) for k in range(start)]
+        theme = [_base(k, 7) ^ _drift(k, seed) for k in range(length)]
+        tail = [_base(k, 200 + seed) ^ _drift(k, seed) for k in range(total - start - length)]
+        return head + theme + tail
+
+    def test_theme_at_different_offsets_is_detected_for_every_episode(self):
+        length = int(40 / intro_detect.POINT_SECONDS)
+        starts = [int(s / intro_detect.POINT_SECONDS) for s in (98.0, 64.0, 35.0)]
+        eps = [make_item(i + 1, episode=i + 1) for i in range(3)]
+        total = max(starts) + length + 300
+        fps = {i + 1: self._episode(total, starts[i], length, seed=i + 1) for i in range(3)}
+        with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end):
+            results = intro_detect.detect_series_intros_sync(eps)
+        self.assertEqual(set(results), {1, 2, 3})
+        for i, start_pts in enumerate(starts):
+            self.assertAlmostEqual(
+                results[i + 1][0], start_pts * intro_detect.POINT_SECONDS, delta=7.0,
+            )
+
+
+class StaticAudioTest(unittest.TestCase):
+    """Regression: a long stretch of identical fingerprint points is silence or
+    a static lead-in, never shared audio.
+
+    Real-library failure (#Love): every episode opens with ~19 s of static whose
+    fingerprint is one repeated value, so unrelated episodes matched the whole
+    stretch and it qualified as an intro (19 s > the 15 s minimum).
+    """
+
+    FROZEN = 0x12345678
+
+    def _static_episode(self, total: int, frozen: int, seed: int) -> list:
+        return [self.FROZEN] * frozen + [
+            _base(k, 100 + seed) ^ _drift(k, seed) for k in range(total - frozen)
+        ]
+
+    def test_static_head_is_not_reported_as_an_intro(self):
+        frozen = int(20 / intro_detect.POINT_SECONDS)
+        eps = [make_item(1, episode=1), make_item(2, episode=2)]
+        fps = {1: self._static_episode(1500, frozen, seed=1),
+               2: self._static_episode(1500, frozen, seed=2)}
+        with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end):
+            results = intro_detect.detect_series_intros_sync(eps)
+        self.assertEqual(results, {})
+
+    def test_static_head_does_not_hide_a_real_theme_behind_it(self):
+        frozen = int(20 / intro_detect.POINT_SECONDS)
+        length = int(40 / intro_detect.POINT_SECONDS)
+        starts = [int(s / intro_detect.POINT_SECONDS) for s in (60.0, 90.0)]
+        eps = [make_item(1, episode=1), make_item(2, episode=2)]
+        total = max(starts) + length + 200
+
+        def episode(start: int, seed: int) -> list:
+            return (
+                [self.FROZEN] * frozen
+                + [_base(k, 100 + seed) ^ _drift(k, seed) for k in range(start - frozen)]
+                + [_base(k, 7) ^ _drift(k, seed) for k in range(length)]
+                + [_base(k, 200 + seed) ^ _drift(k, seed) for k in range(total - start - length)]
+            )
+
+        fps = {1: episode(starts[0], 1), 2: episode(starts[1], 2)}
+        with patch.object(intro_detect, "_fingerprint_sync", side_effect=lambda it: fps[it.message_id]), \
+             patch.object(intro_detect, "_snap_end_to_silence", side_effect=lambda url, end: end):
+            results = intro_detect.detect_series_intros_sync(eps)
+        self.assertEqual(set(results), {1, 2})
+        self.assertAlmostEqual(
+            results[1][0], starts[0] * intro_detect.POINT_SECONDS, delta=7.0,
+        )
+
+
 class SweepIntegrationTest(unittest.IsolatedAsyncioTestCase):
     """End-to-end: seeded catalogue → detect_all_intros → persisted bounds."""
 
