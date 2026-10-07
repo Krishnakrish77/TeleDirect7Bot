@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/keep-assets.mjs snapshot && tsc -b && vite build && node scripts/keep-assets.mjs restore",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
     "test:pdf-jpx": "vitest run src/test/pdfJpxDecoder.test.ts",

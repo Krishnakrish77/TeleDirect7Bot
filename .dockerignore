@@ -19,6 +19,7 @@ test2.py
 .DS_Store
 frontend/node_modules
 frontend/.vite
+frontend/.vite-asset-stash
 main/server/static/app
 outputs
 tests

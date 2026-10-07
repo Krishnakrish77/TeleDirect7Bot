@@ -35,6 +35,10 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: '../main/server/static/app',
+      // Old hashed chunks are preserved around each build by
+      // scripts/keep-assets.mjs (snapshot before, restore after) so clients
+      // mid-session or on a stale service-worker shell can still fetch the
+      // chunks their HTML references.
       emptyOutDir: true,
       sourcemap: false,
       manifest: true,

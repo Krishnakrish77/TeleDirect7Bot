@@ -127,6 +127,7 @@ frontend/node_modules/
 
 # Frontend production build output
 main/server/static/app/
+frontend/.vite-asset-stash/
 
 # Local automation artifacts
 outputs/
