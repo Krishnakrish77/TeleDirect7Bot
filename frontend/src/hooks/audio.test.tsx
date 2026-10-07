@@ -451,6 +451,208 @@ describe('useAudioPlayer', () => {
     await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Theme'));
   });
 
+  it('hands off to the preloaded element while still audible in a hidden tab', async () => {
+    const play = vi.mocked(HTMLMediaElement.prototype.play);
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    try {
+      const first = makeTrack();
+      const second = makeTrack({
+        key: 'second-key',
+        itemId: 'item-second-key',
+        messageId: 2,
+        title: 'Second Theme',
+        streamHref: '/stream/second-key',
+        watchKey: 'second-key',
+        appHref: '/app/watch/second-key',
+        classicHref: '/watch/second-key',
+      });
+
+      render(<AudioHarness track={first} queue={[first, second]} />);
+
+      fireEvent.click(screen.getByText('Start'));
+      await waitFor(() => expect(play).toHaveBeenCalledTimes(1));
+
+      const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+      const buffer = screen.getByTestId('buffer-audio') as HTMLAudioElement;
+      Object.defineProperty(primary, 'duration', { configurable: true, value: 200 });
+      Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+
+      // Entering the 3s window in a hidden tab starts the PRELOADED second
+      // element underneath the still-playing first one (tab never goes
+      // silent, so the browser keep-alive holds)...
+      act(() => {
+        Object.defineProperty(primary, 'currentTime', { configurable: true, value: 199, writable: true });
+        fireEvent.timeUpdate(primary);
+      });
+      await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Second Theme'));
+      expect(buffer.getAttribute('src')).toContain('/stream/second-key');
+      expect(play).toHaveBeenCalledTimes(2);
+      // ...and the outgoing element is NOT paused by the handoff itself.
+      expect(primary.getAttribute('src')).toContain('/stream/track-key');
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
+  it('pauses the keep-alive element once the handoff element shows progress', async () => {
+    const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    try {
+      const first = makeTrack();
+      const second = makeTrack({
+        key: 'second-key',
+        itemId: 'item-second-key',
+        messageId: 2,
+        title: 'Second Theme',
+        streamHref: '/stream/second-key',
+        watchKey: 'second-key',
+        appHref: '/app/watch/second-key',
+        classicHref: '/watch/second-key',
+      });
+
+      render(<AudioHarness track={first} queue={[first, second]} />);
+
+      fireEvent.click(screen.getByText('Start'));
+      await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Theme'));
+
+      const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+      const buffer = screen.getByTestId('buffer-audio') as HTMLAudioElement;
+      Object.defineProperty(primary, 'duration', { configurable: true, value: 200 });
+      Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+
+      act(() => {
+        Object.defineProperty(primary, 'currentTime', { configurable: true, value: 199, writable: true });
+        fireEvent.timeUpdate(primary);
+      });
+      await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Second Theme'));
+      pause.mockClear();
+
+      // The new element proves audible progress; the keep-alive goes silent
+      // only now.
+      act(() => {
+        Object.defineProperty(buffer, 'currentTime', { configurable: true, value: 0.5, writable: true });
+        fireEvent.timeUpdate(buffer);
+      });
+
+      await waitFor(() => expect(pause).toHaveBeenCalledWith());
+      expect(primary.getAttribute('src')).toBeNull();
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
+  it('discards a hidden handoff whose play() resolves after the queue already advanced', async () => {
+    const play = vi.mocked(HTMLMediaElement.prototype.play);
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    try {
+      const first = makeTrack();
+      const second = makeTrack({
+        key: 'second-key',
+        itemId: 'item-second-key',
+        messageId: 2,
+        title: 'Second Theme',
+        streamHref: '/stream/second-key',
+        watchKey: 'second-key',
+        appHref: '/app/watch/second-key',
+        classicHref: '/watch/second-key',
+      });
+      const third = makeTrack({
+        key: 'third-key',
+        itemId: 'item-third-key',
+        messageId: 3,
+        title: 'Third Theme',
+        streamHref: '/stream/third-key',
+        watchKey: 'third-key',
+        appHref: '/app/watch/third-key',
+        classicHref: '/watch/third-key',
+      });
+      // Keep the handoff play() pending so the stale resolution can be
+      // delivered after the queue advanced by another path.
+      let resolveSecondPlay: (() => void) | null = null;
+      play
+        .mockResolvedValueOnce(undefined) // start track 1
+        .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveSecondPlay = resolve; })) // handoff, pending
+        .mockResolvedValue(undefined); // advance after from ended
+
+      render(<AudioHarness track={first} queue={[first, second, third]} />);
+
+      fireEvent.click(screen.getByText('Start'));
+      await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Theme'));
+
+      const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+      const buffer = screen.getByTestId('buffer-audio') as HTMLAudioElement;
+      Object.defineProperty(primary, 'duration', { configurable: true, value: 200 });
+      Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+
+      // Arm the hidden handoff: play() on the second element stays pending.
+      act(() => {
+        Object.defineProperty(primary, 'currentTime', { configurable: true, value: 199, writable: true });
+        fireEvent.timeUpdate(primary);
+      });
+      await waitFor(() => expect(buffer.getAttribute('src')).toContain('/stream/second-key'));
+      expect(screen.getByTestId('track').textContent).toBe('Theme');
+
+      // The first element reaches its natural end before the promise resolves:
+      // onEnded advances to track 2 via the same element (the Android path).
+      // Plays so far: 1 = start track 1, 2 = pending handoff, 3 = track 2
+      // restarted on the primary element.
+      Object.defineProperty(primary, 'paused', { configurable: true, value: true });
+      fireEvent.ended(primary);
+      await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Second Theme'));
+      expect(play).toHaveBeenCalledTimes(3);
+
+      // NOW the stale handoff promise resolves — it must not steal the
+      // active slot, restart track 2 in the orphaned element, or touch the
+      // live primary element.
+      await act(async () => { resolveSecondPlay?.(); });
+      expect(play).toHaveBeenCalledTimes(3);
+      await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Second Theme'));
+      expect(screen.getByTestId('track').textContent).not.toBe('none');
+      // The orphaned element was discarded, not adopted.
+      expect(buffer.getAttribute('src')).toBeNull();
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
+  it('recovers a queue that finished while the tab was hidden on return', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    try {
+      const first = makeTrack();
+      const second = makeTrack({
+        key: 'second-key',
+        itemId: 'item-second-key',
+        messageId: 2,
+        title: 'Second Theme',
+        streamHref: '/stream/second-key',
+        watchKey: 'second-key',
+        appHref: '/app/watch/second-key',
+        classicHref: '/watch/second-key',
+      });
+
+      render(<AudioHarness track={first} queue={[first, second]} />);
+
+      fireEvent.click(screen.getByText('Start'));
+      await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Theme'));
+
+      // The OS suspended the process before `ended` dispatched: track sits at
+      // 100% with the queue unadvanced.
+      const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+      Object.defineProperty(primary, 'duration', { configurable: true, value: 200 });
+      Object.defineProperty(primary, 'currentTime', { configurable: true, value: 200, writable: true });
+      act(() => { fireEvent.timeUpdate(primary); });
+
+      hidden.mockReturnValue(false);
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+
+      await waitFor(() => expect(screen.getByTestId('track').textContent).toBe('Second Theme'));
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
   it('restores audio Media Session handlers after another player releases them', async () => {
     const { handlers, mediaSession } = installMediaSession();
     render(<AudioHarness />);

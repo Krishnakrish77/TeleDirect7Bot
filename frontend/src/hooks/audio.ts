@@ -65,6 +65,9 @@ const QUEUE_KEY = 'td:queue';
 const QUEUE_INDEX_KEY = 'td:queueIndex';
 const PRELOAD_AT_SECONDS = 30;
 const CROSSFADE_SECONDS = 3;
+// How long the outgoing element may keep playing as a background keep-alive
+// after a hidden handoff before it is force-stopped.
+const BACKGROUND_KEEPALIVE_MS = 15000;
 const NEXT_COUNTDOWN_SECONDS = 5;
 const PLAYBACK_START_TIMEOUT_MS = 12000;
 const DEFAULT_VOLUME = 1;
@@ -969,6 +972,21 @@ export function useAudioPlayer() {
     });
   }, []);
 
+  // Shared end-of-track finalisation: record history and clear the CW entry
+  // (server + local mirror). Used by the 95% timeupdate path, `ended`,
+  // crossfade handoff, and the background advance.
+  const finaliseTrackEnd = useCallback((key: string, title: string) => {
+    if (!key || cwCompletedKeysRef.current.has(key)) return;
+    cwCompletedKeysRef.current.add(key);
+    void recordWatchHistory(key, title).catch(() => undefined);
+    void deleteContinueEntry(key).catch(() => undefined);
+    try {
+      const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
+      delete cw[key];
+      localStorage.setItem('td:cw', JSON.stringify(cw));
+    } catch { /* ignore quota/private-mode */ }
+  }, []);
+
   const maybeCrossfade = useCallback((audio: HTMLAudioElement) => {
     const current = playerRef.current;
     const nextIndex = resolveNextIndex(1);
@@ -986,18 +1004,126 @@ export function useAudioPlayer() {
       preloadedKeyRef.current = next.key;
     }
     if (remaining > CROSSFADE_SECONDS || crossfadeRef.current) return;
+    // Background mobile tabs can't go silent: the moment the audible element
+    // pauses (or its src is swapped, which aborts the session), Chrome drops
+    // its keep-alive throttling and iOS suspends the process (WebKit
+    // 173332/261858) — so a "pause old, then start new" switch dies mid-handoff
+    // and the queue stalls at track end. Instead, hand off while STILL AUDIBLE:
+    // start the preloaded next element underneath the playing one, then pause
+    // the old element only once the new one proves real progress. Foreground
+    // crossfade below is unchanged.
+    if (document.hidden) {
+      crossfadeRef.current = true;
+      const from = audio;
+      const to = inactive;
+      inactive.src = inactive.src || nextSrc;
+      inactive.currentTime = 0;
+      applyOutputSettings(inactive, 0);
+      const targetSlot = activeSlotRef.current === 'primary' ? 'buffer' : 'primary';
+      // Captured BEFORE play(): the .then() compares against this to detect a
+      // queue that advanced while the promise was pending.
+      const fadedKey = playerRef.current.track?.key;
+      const fadedTitle = playerRef.current.track?.title || '';
+      to.play()
+        .then(() => {
+          // Stale resolution: while play() was pending, the queue advanced by
+          // another path (from ended naturally and onEnded confirmed the next
+          // track, the user tapped next/prev, or the same-element fallback
+          // ran). Switching the active slot to this orphaned element would
+          // stall playback silently — discard the handoff instead.
+          if (playerRef.current.track?.key !== fadedKey || activeSlotRef.current === targetSlot) {
+            crossfadeRef.current = false;
+            if (getActiveAudio() !== to) {
+              to.pause();
+              to.removeAttribute('src');
+              to.load();
+            }
+            return;
+          }
+          activeSlotRef.current = targetSlot;
+          pendingNextIndexRef.current = null;
+          setPlayer((state) => ({
+            ...state,
+            track: next,
+            queueIndex: nextIndex,
+            playing: true,
+            currentTime: 0,
+            duration: next.duration || 0,
+            nextTrack: null,
+            nextCountdown: NEXT_COUNTDOWN_SECONDS,
+          }));
+          setMediaSessionMetadata(playerRef.current);
+          applyOutputSettings(to);
+          preloadedKeyRef.current = '';
+          crossfadeRef.current = false;
+          finaliseTrackEnd(fadedKey || '', fadedTitle);
+          // The old element keeps playing as a keep-alive — pausing it the
+          // moment the new one starts would silence the tab before the new
+          // session is firmly established (iOS can resolve play() while the
+          // element is still suspended). Pause it once the new element shows
+          // real, moving progress; a settled play() promise is not proof.
+          const proveProgress = (event: Event) => {
+            const el = event.currentTarget as HTMLAudioElement;
+            if (el.currentTime > 0.25 || el.currentTime > (el.duration || 0) - 0.25) {
+              el.removeEventListener('timeupdate', proveProgress);
+              el.removeEventListener('ended', proveProgress);
+              if (from.paused) return;
+              from.pause();
+              from.removeAttribute('src');
+              from.load();
+            }
+          };
+          to.addEventListener('timeupdate', proveProgress);
+          to.addEventListener('ended', proveProgress);
+          // Safety valve: if no timeupdate arrives within 15s (suspended tab
+          // that never got real audio), stop the old element anyway so the
+          // next track's `ended` can advance the queue normally.
+          window.setTimeout(() => {
+            to.removeEventListener('timeupdate', proveProgress);
+            to.removeEventListener('ended', proveProgress);
+            if (!from.paused) {
+              from.pause();
+              from.removeAttribute('src');
+              from.load();
+            }
+          }, BACKGROUND_KEEPALIVE_MS);
+        })
+        .catch(() => {
+          // play() rejected outright: fall back to the same-element swap —
+          // still inside the epsilon, so the element is still the audible
+          // session and a background restart is permitted.
+          crossfadeRef.current = false;
+          from.src = nextSrc;
+          preloadedKeyRef.current = '';
+          from.load();
+          cwCompletedKeysRef.current.delete(next.key);
+          applyOutputSettings(from);
+          const attemptId = beginPlaybackAttempt(next);
+          const promise = from.play();
+          armPlaybackWatchdog(from, next, attemptId);
+          if (promise) {
+            promise.catch((error) => failPlayback(next, from, attemptId, error));
+          }
+          const fallbackKey = playerRef.current.track?.key;
+          const fallbackTitle = playerRef.current.track?.title || '';
+          finaliseTrackEnd(fallbackKey || '', fallbackTitle);
+          setPlayer((state) => ({
+            ...state,
+            track: next,
+            queueIndex: nextIndex,
+            playing: true,
+            currentTime: 0,
+            duration: next.duration || 0,
+            nextTrack: null,
+            nextCountdown: NEXT_COUNTDOWN_SECONDS,
+          }));
+          setMediaSessionMetadata(playerRef.current);
+        });
+      return;
+    }
     crossfadeRef.current = true;
     const from = audio;
     const to = inactive;
-    // Hidden mobile tabs suspend timers (Safari/Chrome throttle or freeze
-    // setTimeout/setInterval entirely), so a fade started in the background
-    // may never tick. Pause the outgoing element up front — the handoff is
-    // then already complete, just with an abrupt (instead of faded) mix.
-    // In the foreground nothing changes: `from` keeps playing until the
-    // first interval tick 250ms later.
-    if (document.hidden) {
-      from.pause();
-    }
     inactive.src = inactive.src || nextSrc;
     inactive.currentTime = 0;
     applyOutputSettings(inactive, 0);
@@ -1032,28 +1158,13 @@ export function useAudioPlayer() {
           applyOutputSettings(to);
           preloadedKeyRef.current = '';
           crossfadeRef.current = false;
-          if (fadedKey && !cwCompletedKeysRef.current.has(fadedKey)) {
-            cwCompletedKeysRef.current.add(fadedKey);
-            void recordWatchHistory(fadedKey, fadedTitle).catch(() => undefined);
-            void deleteContinueEntry(fadedKey).catch(() => undefined);
-            try {
-              const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
-              delete cw[fadedKey];
-              localStorage.setItem('td:cw', JSON.stringify(cw));
-            } catch { /* ignore */ }
-          }
+          finaliseTrackEnd(fadedKey || '', fadedTitle);
         };
         // Drive the fade with setInterval, not requestAnimationFrame: rAF is
         // frozen in hidden tabs (music often plays in the background), which
         // left crossfadeRef stuck true and swallowed every subsequent `ended`
         // until the queue stalled. Timers still fire in background tabs
         // (clamped to ~1s, fine for a 3s fade).
-        if (document.hidden) {
-          // Timers may never fire here — finalise the handoff synchronously.
-          // The outgoing element was already paused above.
-          finishCrossfade();
-          return;
-        }
         fadeTimer = window.setInterval(() => {
           const progress = clamp((performance.now() - started) / (CROSSFADE_SECONDS * 1000), 0, 1);
           const baseVolume = playerRef.current.muted ? 0 : playerRef.current.volume;
@@ -1069,7 +1180,7 @@ export function useAudioPlayer() {
         window.clearInterval(fadeTimer);
         crossfadeRef.current = false;
       });
-  }, [applyOutputSettings, getInactiveAudio, resolveNextIndex]);
+  }, [applyOutputSettings, beginPlaybackAttempt, armPlaybackWatchdog, failPlayback, finaliseTrackEnd, getInactiveAudio, resolveNextIndex, setMediaSessionMetadata]);
 
   useEffect(() => {
     const audioNodes = [audioRef.current, bufferRef.current].filter(Boolean) as HTMLAudioElement[];
@@ -1135,17 +1246,7 @@ export function useAudioPlayer() {
       // parked at 90%+ (which never auto-resumes anyway) is shelf noise.
       // Same ratio as the video player and the server's stale-write guard.
       if (current.track && duration > 0 && currentTime / duration >= AUDIO_COMPLETE_RATIO) {
-        const key = current.track.key;
-        if (!cwCompletedKeysRef.current.has(key)) {
-          cwCompletedKeysRef.current.add(key);
-          void recordWatchHistory(key, current.track.title).catch(() => undefined);
-          void deleteContinueEntry(key).catch(() => undefined);
-          try {
-            const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
-            delete cw[key];
-            localStorage.setItem('td:cw', JSON.stringify(cw));
-          } catch { /* ignore quota/private-mode */ }
-        }
+        finaliseTrackEnd(current.track.key, current.track.title);
       }
       if ('mediaSession' in navigator && current.track && duration > 0 && Math.floor(currentTime) !== lastMediaSessionPos) {
         lastMediaSessionPos = Math.floor(currentTime);
@@ -1190,15 +1291,8 @@ export function useAudioPlayer() {
       }
       clearPlaybackWatchdog();
       const current = playerRef.current;
-      if (current.track && !cwCompletedKeysRef.current.has(current.track.key)) {
-        cwCompletedKeysRef.current.add(current.track.key);
-        void recordWatchHistory(current.track.key, current.track.title).catch(() => undefined);
-        void deleteContinueEntry(current.track.key).catch(() => undefined);
-        try {
-          const cw = JSON.parse(localStorage.getItem('td:cw') || '{}') || {};
-          delete cw[current.track.key];
-          localStorage.setItem('td:cw', JSON.stringify(cw));
-        } catch { /* ignore quota/private-mode */ }
+      if (current.track) {
+        finaliseTrackEnd(current.track.key, current.track.title);
       }
       if (current.repeatMode === 'one' && current.track) {
         // Each loop is its own play — re-arm end-of-playback finalisation.
@@ -1326,6 +1420,38 @@ export function useAudioPlayer() {
     }, 1000);
     return () => window.clearTimeout(timer);
   }, [confirmNext, player.nextCountdown, player.nextTrack]);
+
+  // iOS can suspend the web process before `ended` ever dispatches when a
+  // track finishes in the background (WebKit 173332), leaving the queue
+  // stopped at the old track. When the user returns, recover: skip past the
+  // finished track (or resume the last ~2s if the browser stalled just short
+  // of the end), so the user comes back to the queue still moving.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.hidden) return;
+      const audio = getActiveAudio();
+      const current = playerRef.current;
+      if (!audio || !current.track || current.nextTrack) return;
+      const duration = audio.duration || current.duration || current.track.duration || 0;
+      if (audio.ended || (duration > 0 && current.currentTime / duration >= AUDIO_COMPLETE_RATIO)) {
+        const nextIndex = resolveNextIndex(1);
+        if (nextIndex < 0) {
+          setPlayer((state) => ({ ...state, playing: false }));
+          return;
+        }
+        pendingNextIndexRef.current = nextIndex;
+        confirmNext();
+        return;
+      }
+      if (!audio.paused && current.playing && audio.currentTime > 0 && !audio.error) {
+        // The element itself can stall just short of the end in the
+        // background; a nudge re-kicks the decoder for the final stretch.
+        void audio.play().catch(() => undefined);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [confirmNext, getActiveAudio, resolveNextIndex]);
 
   useEffect(() => () => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
