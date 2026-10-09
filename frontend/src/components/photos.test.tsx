@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectPhotosChannel,
+  fetchPhotoFacets,
   resyncPhotosLibrary,
   fetchPendingPhotoChannel,
   fetchPhotoAlbums,
@@ -27,6 +28,7 @@ vi.mock('../api', () => ({
   disconnectPhotosChannel: vi.fn(),
   fetchPendingPhotoChannel: vi.fn(),
   fetchPhotoAlbums: vi.fn(),
+  fetchPhotoFacets: vi.fn().mockResolvedValue({ kinds: {}, cameras: [], months: [] }),
   fetchPhotosStatus: vi.fn(),
   fetchPhotosTimeline: vi.fn(),
   photoFileUrl: (id: string) => `/api/photos/file/${id}`,
@@ -436,5 +438,50 @@ describe('PhotosPage uploads', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('huge.jpg: File exceeds the 200 MB per-file limit');
+  });
+});
+
+describe('PhotosPage server search & filters', () => {
+  it('queries the server with the debounced search box value', async () => {
+    render(<PhotosPage user={user} />);
+    await screen.findByRole('button', { name: 'IMG_1.jpg' });
+    vi.mocked(fetchPhotosTimeline).mockClear();
+
+    const box = screen.getByLabelText(/search photos/i);
+    fireEvent.change(box, { target: { value: 'portugal' } });
+    // Debounced: the fetch fires after the 250ms settle, not on keystroke.
+    await waitFor(() => {
+      const call = vi.mocked(fetchPhotosTimeline).mock.calls.at(-1);
+      expect(call?.[0]?.q).toBe('portugal');
+    }, { timeout: 2000 });
+  });
+
+  it('renders camera and kind chips from facets and toggles a chip into the query', async () => {
+    vi.mocked(fetchPhotoFacets).mockResolvedValue({
+      kinds: { photo: 12, video: 3 },
+      cameras: [{ camera: 'Apple iPhone 15', count: 9 }],
+      months: [{ year: 2026, month: 9, count: 15 }],
+    });
+    render(<PhotosPage user={user} />);
+    await screen.findByRole('button', { name: 'IMG_1.jpg' });
+
+    // Kind chip with count, camera chip with count.
+    const videos = await screen.findByRole('button', { name: /Videos/ });
+    expect(videos.textContent).toContain('3');
+    const cameraChip = screen.getByRole('button', { name: /Apple iPhone 15/ });
+    expect(cameraChip.textContent).toContain('9');
+
+    // Clicking a chip re-queries with kind=video; clicking again clears it.
+    vi.mocked(fetchPhotosTimeline).mockClear();
+    fireEvent.click(videos);
+    await waitFor(() => {
+      const call = vi.mocked(fetchPhotosTimeline).mock.calls.at(-1);
+      expect(call?.[0]?.kind).toBe('video');
+    });
+    fireEvent.click(videos);
+    await waitFor(() => {
+      const call = vi.mocked(fetchPhotosTimeline).mock.calls.at(-1);
+      expect(call?.[0]?.kind).toBeUndefined();
+    });
   });
 });

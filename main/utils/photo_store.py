@@ -19,11 +19,14 @@ Collections:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 try:
     from bson.errors import DuplicateKeyError
+    from bson.son import SON
+    from pymongo import TEXT
 except ImportError:  # pragma: no cover — only matters for Mongo deployments
     DuplicateKeyError = Exception  # type: ignore[assignment,misc]
 
@@ -79,6 +82,15 @@ async def _ensure_indexes() -> None:
         await photos.create_index([("owner_user_id", 1), ("deleted", 1), ("taken_at", -1)])
         await photos.create_index(
             [("channel_id", 1), ("message_id", 1)], unique=True
+        )
+        # Server-side search: one text index over the human-meaningful fields.
+        # Filenames like IMG_2047 tokenize poorly, but camera ("Apple iPhone
+        # 15") and later labels/places tokenize well — and the tokenized
+        # filename still catches "portugal" in "Portugal 2026.jpg".
+        await photos.create_index(
+            [("file_name", TEXT), ("camera", TEXT)],
+            default_language="english",
+            name="photos_text_search",
         )
         channels = db["photo_channels"]
         await channels.create_index("channel_id", unique=True)
@@ -403,6 +415,7 @@ async def upsert_photo(doc: dict) -> Optional[str]:
         doc.setdefault("favorite", False)
         doc.setdefault("deleted", False)
         doc.setdefault("thumb", {"grid": False, "preview": False})
+        invalidate_facets(doc.get("owner_user_id", 0))
         try:
             await db["photos"].insert_one(dict(doc))
             return None
@@ -541,6 +554,73 @@ async def mark_hash(owner_user_id: int, channel_id: int, message_id: int,
         logging.exception("photo_store: mark_hash failed mid=%d", message_id)
 
 
+def _parse_iso_date(value: str) -> Optional[datetime]:
+    """Parse a client-supplied ISO date/datetime into an aware UTC datetime.
+
+    Bare dates ("2026-01-31") become midnight UTC. None on garbage — the
+    caller drops the filter rather than 400ing a rough UI control.
+    """
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def build_timeline_query(
+    owner_user_id: int,
+    *,
+    trash: bool = False,
+    favorites: bool = False,
+    album_id: str = "",
+    q: str = "",
+    kind: str = "",
+    mime: str = "",
+    camera: str = "",
+    taken_after: str = "",
+    taken_before: str = "",
+    min_size: int = 0,
+) -> Dict[str, Any]:
+    """Pure Mongo filter builder for the timeline — the search/filter API.
+
+    Kept free of I/O so tests can assert the exact query shape without a
+    database. ``q`` goes through $text (the photos_text_search index);
+    every other parameter composes as plain equality/range clauses.
+    """
+    query: Dict[str, Any] = {"owner_user_id": owner_user_id}
+    query["deleted"] = True if trash else False
+    if favorites:
+        query["favorite"] = True
+    if album_id:
+        query["album_ids"] = album_id
+    if kind:
+        query["kind"] = kind
+    if mime:
+        query["mime"] = mime
+    if camera:
+        # Exact camera string comes from the facets endpoint, which reads
+        # the same stored values — no regex needed.
+        query["camera"] = camera
+    if min_size > 0:
+        query["size"] = {"$gte": min_size}
+    after = _parse_iso_date(taken_after)
+    if after:
+        query.setdefault("taken_at", {})["$gte"] = after
+    before = _parse_iso_date(taken_before)
+    if before:
+        query.setdefault("taken_at", {})["$lte"] = before
+    needle = q.strip()
+    if needle:
+        # Quoted phrases stay a phrase ("beach day"); bare words are ORed
+        # by the server's text index — good enough for token search.
+        query["$text"] = {"$search": needle}
+    return query
+
+
 async def timeline_page(
     owner_user_id: int,
     *,
@@ -549,6 +629,13 @@ async def timeline_page(
     album_id: str = "",
     trash: bool = False,
     limit: int = 120,
+    q: str = "",
+    kind: str = "",
+    mime: str = "",
+    camera: str = "",
+    taken_after: str = "",
+    taken_before: str = "",
+    min_size: int = 0,
 ) -> dict:
     """Cursor-paginated timeline, newest first.
 
@@ -556,21 +643,28 @@ async def timeline_page(
     second, so paging on taken_at alone would skip the tie — the _id
     tie-breaker makes pagination stable. Day-grouping is a display concern
     in the route layer.
+
+    Search/filter params feed build_timeline_query(); they compose with the
+    cursor so a search result set pages exactly like the plain timeline.
     """
     await _ensure_indexes()
     db = _get_db()
     if db is None:
         return {"items": [], "nextCursor": None}
     limit = max(1, min(int(limit), _PAGE_CAP))
-    query: Dict[str, Any] = {"owner_user_id": owner_user_id}
-    if trash:
-        query["deleted"] = True
-    else:
-        query["deleted"] = False
-    if favorites:
-        query["favorite"] = True
-    if album_id:
-        query["album_ids"] = album_id
+    query = build_timeline_query(
+        owner_user_id,
+        trash=trash,
+        favorites=favorites,
+        album_id=album_id,
+        q=q,
+        kind=kind,
+        mime=mime,
+        camera=camera,
+        taken_after=taken_after,
+        taken_before=taken_before,
+        min_size=min_size,
+    )
     if cursor:
         try:
             cursor_taken, cursor_id = cursor.split("|", 1)
@@ -631,6 +725,7 @@ async def set_favorite(owner_user_id: int, photo_id: str, favorite: bool) -> boo
             {"_id": ObjectId(photo_id), "owner_user_id": owner_user_id},
             {"$set": {"favorite": bool(favorite)}},
         )
+        invalidate_facets(owner_user_id)
         return result.matched_count > 0
     except Exception:
         logging.exception("photo_store: set_favorite failed uid=%d pid=%s", owner_user_id, photo_id)
@@ -652,6 +747,7 @@ async def soft_delete(owner_user_id: int, photo_ids: List[str], deleted: bool) -
             {"_id": {"$in": ids}, "owner_user_id": owner_user_id},
             {"$set": {"deleted": bool(deleted)}},
         )
+        invalidate_facets(owner_user_id)
         return result.modified_count
     except Exception:
         logging.exception("photo_store: soft_delete failed uid=%d", owner_user_id)
@@ -931,3 +1027,85 @@ async def put_thumb(owner_user_id: int, key: str, data: bytes) -> None:
 def _binary(data: bytes):
     from bson.binary import Binary
     return Binary(data)
+
+
+# Facet caches: owner key → (computed_at, payload). The aggregation walks
+# the whole library per call, so a short TTL keeps repeated timeline visits
+# cheap without staleness that matters (counts, not truth).
+_FACETS_TTL = 60.0
+_facets_cache: Dict[int, tuple] = {}
+
+
+def invalidate_facets(owner_user_id: int) -> None:
+    """Drop the facet cache after any ingest/delete that changes counts."""
+    _facets_cache.pop(owner_user_id, None)
+
+
+async def photo_facets(
+    owner_user_id: int,
+    *,
+    album_id: str = "",
+    q: str = "",
+) -> dict:
+    """Counts for the filter-chip row: kind, camera, month buckets.
+
+    Aggregates over the non-deleted library (optionally scoped to an album
+    or a search query so chips reflect the current context). Cached 60s per
+    (owner, album, q) — facet counts are navigational, not live.
+    """
+    cache_key = (owner_user_id, album_id, q.strip())
+    cached = _facets_cache.get(owner_user_id)
+    if cached and cached[0] == cache_key and time.monotonic() - cached[1] < _FACETS_TTL:
+        return cached[2]
+
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return {"kinds": {}, "cameras": [], "months": []}
+    match = build_timeline_query(owner_user_id, album_id=album_id, q=q)
+    try:
+        pipeline = [
+            {"$match": match},
+            {
+                "$facet": {
+                    "kinds": [
+                        {"$group": {"_id": "$kind", "n": {"$sum": 1}}},
+                    ],
+                    "cameras": [
+                        {"$match": {"camera": {"$nin": [None, ""]}}},
+                        {"$group": {"_id": "$camera", "n": {"$sum": 1}}},
+                        {"$sort": SON([("n", -1), ("_id", 1)])},
+                        {"$limit": 12},
+                    ],
+                    "months": [
+                        {"$match": {"taken_at": {"$ne": None}}},
+                        {"$group": {
+                            "_id": {
+                                "year": {"$year": "$taken_at"},
+                                "month": {"$month": "$taken_at"},
+                            },
+                            "n": {"$sum": 1},
+                        }},
+                        {"$sort": SON([("_id.year", -1), ("_id.month", -1)])},
+                        {"$limit": 24},
+                    ],
+                },
+            },
+        ]
+        [agg] = await db["photos"].aggregate(pipeline).to_list(length=1)
+        result = {
+            "kinds": {d["_id"]: d["n"] for d in agg.get("kinds", []) if d["_id"]},
+            "cameras": [
+                {"camera": d["_id"], "count": d["n"]}
+                for d in agg.get("cameras", [])
+            ],
+            "months": [
+                {"year": d["_id"]["year"], "month": d["_id"]["month"], "count": d["n"]}
+                for d in agg.get("months", [])
+            ],
+        }
+        _facets_cache[owner_user_id] = (cache_key, time.monotonic(), result)
+        return result
+    except Exception:
+        logging.exception("photo_store: photo_facets failed uid=%d", owner_user_id)
+        return {"kinds": {}, "cameras": [], "months": []}

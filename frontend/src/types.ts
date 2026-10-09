@@ -1267,6 +1267,23 @@ export interface TimelineResponse {
   nextCursor: string | null;
 }
 
+/** Server-side search/filter params — all optional, all composable. */
+export interface PhotoSearchParams {
+  q?: string;
+  kind?: string;
+  camera?: string;
+  takenAfter?: string;
+  takenBefore?: string;
+  minSize?: number;
+}
+
+/** Filter-chip counts for the current search/album context. */
+export interface PhotoFacets {
+  kinds: Record<string, number>;
+  cameras: Array<{ camera: string; count: number }>;
+  months: Array<{ year: number; month: number; count: number }>;
+}
+
 export interface PhotoUploadResult {
   fileName: string;
   duplicate?: boolean;

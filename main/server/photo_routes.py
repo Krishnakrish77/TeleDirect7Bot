@@ -388,6 +388,10 @@ async def photos_timeline(request: web.Request) -> web.Response:
         limit = int(request.rel_url.query.get("limit", "120"))
     except ValueError:
         limit = 120
+    try:
+        min_size = int(request.rel_url.query.get("minSize", "0"))
+    except ValueError:
+        min_size = 0
     result = await photo_store.timeline_page(
         user_id,
         cursor=request.rel_url.query.get("cursor") or None,
@@ -395,8 +399,30 @@ async def photos_timeline(request: web.Request) -> web.Response:
         trash=view == "trash",
         album_id=request.rel_url.query.get("album") or "",
         limit=limit,
+        q=request.rel_url.query.get("q") or "",
+        kind=request.rel_url.query.get("kind") or "",
+        mime=request.rel_url.query.get("mime") or "",
+        camera=request.rel_url.query.get("camera") or "",
+        taken_after=request.rel_url.query.get("takenAfter") or "",
+        taken_before=request.rel_url.query.get("takenBefore") or "",
+        min_size=max(0, min_size),
     )
     return _json(result)
+
+
+@routes.get("/api/photos/facets")
+async def photos_facets(request: web.Request) -> web.Response:
+    """Filter-chip counts (kind / camera / month) for the current context."""
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    facets = await photo_store.photo_facets(
+        int(user["sub"]),
+        album_id=request.rel_url.query.get("album") or "",
+        q=request.rel_url.query.get("q") or "",
+    )
+    return _json(facets)
 
 
 @routes.post("/api/photos/{photo_id}/favorite")

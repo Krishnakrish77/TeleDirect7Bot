@@ -49,6 +49,8 @@ import type {
   PendingPhotoChannel,
   PhotosChannelStatus,
   PhotoAlbum,
+  PhotoSearchParams,
+  PhotoFacets,
   PhotoUploadResult,
   TimelineResponse,
 } from './types';
@@ -884,14 +886,32 @@ export async function resyncPhotosLibrary(): Promise<void> {
 }
 
 export async function fetchPhotosTimeline(
-  options: { cursor?: string; view?: string; album?: string; limit?: number; signal?: AbortSignal } = {},
+  options: {
+    cursor?: string; view?: string; album?: string; limit?: number;
+    signal?: AbortSignal;
+  } & PhotoSearchParams = {},
 ): Promise<TimelineResponse> {
   const qs = new URLSearchParams();
   if (options.cursor) qs.set('cursor', options.cursor);
   if (options.view) qs.set('view', options.view);
   if (options.album) qs.set('album', options.album);
   if (options.limit) qs.set('limit', String(options.limit));
+  if (options.q) qs.set('q', options.q);
+  if (options.kind) qs.set('kind', options.kind);
+  if (options.camera) qs.set('camera', options.camera);
+  if (options.takenAfter) qs.set('takenAfter', options.takenAfter);
+  if (options.takenBefore) qs.set('takenBefore', options.takenBefore);
+  if (options.minSize) qs.set('minSize', String(options.minSize));
   return request<TimelineResponse>(`/api/photos/timeline?${qs}`, { signal: options.signal });
+}
+
+export async function fetchPhotoFacets(
+  options: { album?: string; q?: string; signal?: AbortSignal } = {},
+): Promise<PhotoFacets> {
+  const qs = new URLSearchParams();
+  if (options.album) qs.set('album', options.album);
+  if (options.q) qs.set('q', options.q);
+  return request(`/api/photos/facets?${qs}`, { signal: options.signal });
 }
 
 export async function fetchPhotoAlbums(signal?: AbortSignal): Promise<{ albums: PhotoAlbum[] }> {

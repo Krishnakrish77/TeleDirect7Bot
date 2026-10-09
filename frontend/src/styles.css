@@ -2363,7 +2363,7 @@ img {
   }
 
   .photos-main {
-    padding-bottom: 0; /* No extra padding for main content due to fixed nav */
+    padding-bottom: 0; /* No extra padding needed for main content */
   }
 
   .photos-header {
@@ -14424,6 +14424,46 @@ select.edit-field-input {
   .photos-nav button:hover { background: rgba(148, 163, 184, 0.1); }
   .photos-nav button.active { background: rgba(249, 115, 22, 0.14); color: var(--text); }
 }
+/* Touch/narrow layouts: a fixed-width top tab row — equal columns, labels
+   ellipsize, icons drop to fit a 320px phone. NEVER a horizontal scrollbar:
+   the switcher used to sit at the bottom edge with overflow-x:auto, so four
+   tabs scrolled sideways under the thumb. */
+@media (hover: none), (pointer: coarse), (max-width: 680px) {
+  .photos-nav {
+    overflow: visible;
+    gap: 0.2rem;
+    border-bottom: 0;
+    padding-bottom: 0.2rem;
+  }
+  .photos-nav button {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    margin-right: 0;
+    padding: 0.5rem 0.25rem;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+  }
+  .photos-nav button span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.84rem;
+  }
+  .photos-nav button.active {
+    border-bottom: 0;
+    background: rgba(249, 115, 22, 0.14);
+    color: var(--text);
+  }
+}
+@media (max-width: 400px) {
+  .photos-nav button span { display: none; }
+  .photos-nav button { gap: 0; }
+  .photos-nav button svg { width: 1.3rem; height: 1.3rem; }
+}
+/* ≥900px desktop keeps the left rail from the min-width:900 block above; for
+   touch devices in 900–1179px this touch block wins by source order, so they
+   get the top tab row rather than a vertical rail eating grid height. */
 
 .photos-header__lead { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
 .photos-header__lead .photos-title { flex-wrap: wrap; }
@@ -14533,6 +14573,31 @@ select.edit-field-input {
 }
 
 .photos-more { justify-self: center; }
+
+/* Filter chip row — GPhotos-style pills under the header. */
+.photos-filters {
+  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+}
+.photos-chip {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  min-height: 2rem; padding: 0.2rem 0.75rem;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--panel); color: var(--muted);
+  cursor: pointer; font: inherit; font-size: 0.8rem; font-weight: 600;
+  white-space: nowrap;
+}
+.photos-chip:hover, .photos-chip:focus-visible { color: var(--text); border-color: var(--line-strong, var(--line)); outline: none; }
+.photos-chip--active {
+  border-color: rgba(249, 115, 22, 0.5);
+  background: rgba(249, 115, 22, 0.14);
+  color: var(--text);
+}
+.photos-chip__count {
+  padding: 0 0.35rem; border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  font-size: 0.72rem; font-weight: 700;
+}
+.photos-chip--active .photos-chip__count { background: rgba(249, 115, 22, 0.25); color: #fff; }
 
 .photos-loading, .photos-empty { display: grid; gap: 0.5rem; justify-items: center; text-align: center; padding: 2.5rem 0; color: var(--muted); }
 .photos-empty { padding: clamp(2rem, 6vw, 3.5rem) clamp(1rem, 4vw, 2.5rem); border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
@@ -14917,14 +14982,12 @@ a.photos-lb-btn { text-decoration: none; }
     flex-direction: column;
     overflow: hidden;
   }
-  /* The base .photos-shell rules live later in this file than the mobile block
-     they were meant to override, so the shell's grid is restated here (last in
-     the file wins): row 1 = the grid view, row 2 = the section switcher, which
-     then sits above the app's own fixed bottom nav instead of under it. */
+  /* Row 1 = the section switcher (a top tab row, GPhotos-style — no second
+     bar above the app's fixed bottom nav), row 2 = the grid view. */
   .photos-page--fill .photos-shell {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
     /* The base rule sets align-items: start, which content-sizes the row and
        collapsed the grid to its header height (measured 131px on a phone). */
     align-items: stretch;
@@ -14932,8 +14995,10 @@ a.photos-lb-btn { text-decoration: none; }
     min-height: 0;
     height: auto;
   }
-  .photos-page--fill .photos-main { grid-row: 1; }
-  .photos-page--fill .photos-nav { grid-row: 2; position: static; }
+  /* Row 1 = the section switcher (a top tab row, GPhotos-style — no second
+     bar above the app's fixed bottom nav), row 2 = the grid view. */
+  .photos-page--fill .photos-main { grid-row: 2; }
+  .photos-page--fill .photos-nav { grid-row: 1; position: static; }
   .photos-page--fill .photos-main {
     display: flex;
     flex-direction: column;

@@ -12,6 +12,7 @@ import {
   AlbumIcon,
   ArrowLeftIcon,
   CheckIcon,
+  FilterIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   DownloadIcon,
@@ -42,6 +43,7 @@ import {
   disconnectPhotosChannel,
   fetchPendingPhotoChannel,
   fetchPhotoAlbums,
+  fetchPhotoFacets,
   fetchPhotosStatus,
   fetchPhotosTimeline,
   photoFileUrl,
@@ -53,7 +55,7 @@ import {
   trashPhotos,
   uploadPhotos,
 } from '../api';
-import type { Photo, PhotoAlbum, PendingPhotoChannel, PhotosChannelStatus, TimelineResponse } from '../types';
+import type { Photo, PhotoAlbum, PhotoFacets, PhotoSearchParams, PendingPhotoChannel, PhotosChannelStatus, TimelineResponse } from '../types';
 import { resyncPhotosLibrary } from '../api';
 import { Button } from './ui/button';
 import {
@@ -1317,6 +1319,86 @@ function AlbumsGrid({
   );
 }
 
+// ── Filter chip row (facets) ─────────────────────────────────────────────
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** Kind chips are fixed (Photos / Videos); camera + month come from facets. */
+function PhotosFilterBar({
+  facets,
+  filters,
+  onChange,
+}: {
+  facets: PhotoFacets | null;
+  filters: PhotoSearchParams;
+  onChange: (next: PhotoSearchParams) => void;
+}) {
+  const kindOptions: Array<{ value: string; label: string; count?: number }> = [
+    { value: 'photo', label: 'Photos', count: facets?.kinds.photo },
+    { value: 'video', label: 'Videos', count: facets?.kinds.video },
+  ];
+  const monthLabel = (m: { year: number; month: number }) =>
+    `${MONTH_NAMES[m.month - 1]} ${m.year}`;
+  const activeMonth = (() => {
+    if (!filters.takenAfter || !filters.takenBefore) return null;
+    const after = filters.takenAfter.slice(0, 10);
+    const start = new Date(`${after}T00:00:00Z`);
+    if (Number.isNaN(start.getTime())) return null;
+    const m = { year: start.getUTCFullYear(), month: start.getUTCMonth() + 1 };
+    const match = facets?.months.find((x) => x.year === m.year && x.month === m.month);
+    return match || m;
+  })();
+
+  if (!facets && !filters.kind && !filters.camera && !activeMonth) return null;
+
+  const chip = (active: boolean, label: string, count: number | undefined,
+                onPick: () => void, onClear: () => void, key: string) => (
+    <button
+      key={key}
+      type="button"
+      className={`photos-chip${active ? ' photos-chip--active' : ''}`}
+      aria-pressed={active}
+      onClick={() => (active ? onClear() : onPick())}
+    >
+      {label}
+      {typeof count === 'number' && <span className="photos-chip__count">{count.toLocaleString()}</span>}
+    </button>
+  );
+
+  return (
+    <div className="photos-filters" role="group" aria-label="Filters">
+      {kindOptions.map((k) => chip(
+        filters.kind === k.value, k.label, k.count,
+        () => onChange({ ...filters, kind: k.value }),
+        () => onChange({ ...filters, kind: undefined }),
+        `kind-${k.value}`,
+      ))}
+      {(facets?.cameras ?? []).map((c) => chip(
+        filters.camera === c.camera, c.camera, c.count,
+        () => onChange({ ...filters, camera: c.camera }),
+        () => onChange({ ...filters, camera: undefined }),
+        `cam-${c.camera}`,
+      ))}
+      {(facets?.months ?? []).slice(0, 6).map((m) => chip(
+        Boolean(activeMonth && activeMonth.year === m.year && activeMonth.month === m.month),
+        monthLabel(m), m.count,
+        () => onChange({
+          ...filters,
+          takenAfter: `${m.year}-${String(m.month).padStart(2, '0')}-01`,
+          // First day of the following month minus one second — the last
+          // instant the month still "contains".
+          takenBefore: m.month === 12
+            ? `${m.year + 1}-01-01`
+            : `${m.year}-${String(m.month + 1).padStart(2, '0')}-01`,
+        }),
+        () => onChange({ ...filters, takenAfter: undefined, takenBefore: undefined }),
+        `mon-${m.year}-${m.month}`,
+      ))}
+    </div>
+  );
+}
+
 export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } | null; onSignIn?: () => void }) {
   const { status, loading: statusLoading, error: statusError, reload: reloadStatus } = usePhotoStatus();
   const [view, setView] = useState<View>('timeline');
@@ -1338,7 +1420,12 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
   const [dragOver, setDragOver] = useState(false);
+  // Server-side search + filter chips. `query` mirrors the input (immediate),
+  // `searchQ` is the debounced value actually sent to the API.
   const [query, setQuery] = useState('');
+  const [searchQ, setSearchQ] = useState('');
+  const [filters, setFilters] = useState<PhotoSearchParams>({});
+  const [facets, setFacets] = useState<PhotoFacets | null>(null);
   const [creatingAlbum, setCreatingAlbum] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const albumInputRef = useRef<HTMLInputElement>(null);
@@ -1352,18 +1439,20 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   const signedIn = Boolean(user);
   const photos = timeline?.items ?? [];
 
-  // Client-side file-name search over the loaded pages — the API has no
-  // search endpoint, and the loaded window is what the grid can show anyway.
-  const visiblePhotos = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return photos;
-    return photos.filter((p) => p.fileName.toLowerCase().includes(needle));
-  }, [photos, query]);
+  // Server-side search: the API filters across the whole library, so the
+  // visible list is just what came back. Debounce: `query` mirrors the input
+  // for a live box; `searchQ` chases it and drives the fetch.
+  const visiblePhotos = photos;
 
   // Grid, selection range math and lightbox all index the *visible* list so a
   // search filter can't shift them onto photos the user isn't looking at.
   const openPhoto = lightboxIndex >= 0 ? visiblePhotos[lightboxIndex] : null;
   const selectionActive = selection.ids.size > 0;
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setSearchQ(query.trim()), 250);
+    return () => window.clearTimeout(t);
+  }, [query]);
 
   const loadTimeline = useCallback(async (replace: boolean, view_?: View, albumId?: string) => {
     setTimelineLoading(true);
@@ -1375,6 +1464,8 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
         cursor,
         view: qs === 'albums' ? 'timeline' : qs,
         album: albumId || undefined,
+        ...filters,
+        q: searchQ || undefined,
       });
       setTimeline((current) => (replace ? data : { items: [...(current?.items ?? []), ...data.items], nextCursor: data.nextCursor }));
       setLoadError('');
@@ -1384,7 +1475,7 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
     } finally {
       setTimelineLoading(false);
     }
-  }, [view, timeline?.nextCursor]);
+  }, [view, timeline?.nextCursor, filters, searchQ]);
 
   const loadAlbums = useCallback(async () => {
     try {
@@ -1400,6 +1491,27 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
     void loadAlbums();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedIn, view]);
+
+  // Re-query when the debounced search or the filter chips change.
+  const filterKey = `${searchQ}|${JSON.stringify(filters)}`;
+  useEffect(() => {
+    if (!signedIn) return;
+    void loadTimeline(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn, filterKey]);
+
+  // Facet counts follow the search box + album context (not the kind/camera
+  // chips — chips must not zero themselves out).
+  const facetKey = `${searchQ}|${activeAlbum?.id ?? ''}`;
+  useEffect(() => {
+    if (!signedIn) return;
+    let cancelled = false;
+    fetchPhotoFacets({ q: searchQ || undefined, album: activeAlbum?.id || undefined })
+      .then((f) => { if (!cancelled) setFacets(f); })
+      .catch(() => { if (!cancelled) setFacets(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn, facetKey]);
 
   // Selection click handling: plain click in selection mode toggles; with
   // meta/ctrl toggles individually; shift extends a range from the anchor.
@@ -1730,11 +1842,13 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   // trash rows scroll with the document (the shell already reserves the nav).
   const fillsViewport = view === 'timeline' || view === 'favorites' || Boolean(isAlbumDetail);
   const pageStyle = fillsViewport && gridHeight ? { ['--photos-fill-height' as string]: `${gridHeight}px` } : undefined;
-  const searching = query.trim().length > 0;
+  const searching = searchQ.length > 0;
+  const hasFilters = Boolean(filters.kind || filters.camera || filters.takenAfter || filters.takenBefore || filters.minSize);
   const timelineData: TimelineData | null = timeline && {
     items: visiblePhotos,
-    // "Load more" is meaningless while a client-side filter hides results.
-    nextCursor: searching ? null : timeline.nextCursor,
+    // Server search pages normally — the cursor is preserved so "Load more"
+    // keeps fetching within the same search/filter context.
+    nextCursor: timeline.nextCursor,
   };
 
   return (
@@ -1759,6 +1873,9 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
                 setActiveAlbum(null);
                 setCreatingAlbum(false);
                 clearSelection();
+                setQuery('');
+                setSearchQ('');
+                setFilters({});
               }}
             >
               <NavIcon />
@@ -1886,6 +2003,14 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
             </div>
           </header>
 
+          {view !== 'albums' && !activeAlbum && (
+            <PhotosFilterBar
+              facets={facets}
+              filters={filters}
+              onChange={setFilters}
+            />
+          )}
+
           {view === 'albums' && !activeAlbum ? (
             <AlbumsGrid
               albums={albums}
@@ -1911,7 +2036,13 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
             <div className="photos-empty">
               <span className="photos-empty__icon" aria-hidden="true"><SearchIcon /></span>
               <h2>No matches</h2>
-              <p>No loaded file names contain “{query.trim()}”. Load more of the timeline to widen the search.</p>
+              <p>Nothing in your library matches “{searchQ}”. Try fewer words, or clear the active filters.</p>
+            </div>
+          ) : hasFilters && !visiblePhotos.length && !timelineLoading ? (
+            <div className="photos-empty">
+              <span className="photos-empty__icon" aria-hidden="true"><FilterIcon /></span>
+              <h2>No photos match these filters</h2>
+              <p>Loosen or clear a chip below to widen the view.</p>
             </div>
           ) : loadError ? null : (
             <PhotosTimeline
