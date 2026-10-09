@@ -58,6 +58,7 @@ import {
 import type { Photo, PhotoAlbum, PhotoFacets, PhotoSearchParams, PendingPhotoChannel, PhotosChannelStatus, TimelineResponse } from '../types';
 import { resyncPhotosLibrary } from '../api';
 import { Button } from './ui/button';
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,7 +74,7 @@ const PHOTO_GAP = 3;
 // morphs between these; a pinched-cell range like Google Photos' zoom.
 const ROW_HEIGHT_STEPS = [110, 150, 190, 240, 320] as const;
 
-function dayKey(iso: string | null): string {
+export function dayKey(iso: string | null): string {
   return (iso || '').slice(0, 10) || 'unknown';
 }
 
@@ -405,35 +406,21 @@ type VirtualEntry =
 /**
  * Virtualizer model: date headers interleaved with justified rows.
  *
- * Rows flow across day boundaries instead of restarting per day — restarting
- * leaves a wide ragged gap on every sparse day (measured 285–976px of dead
- * space per row on a 3-photos-a-day library), which is what makes the grid
- * read as a list of strips rather than a photo library. A day still gets a
- * header, emitted at the row where its photos begin.
+ * Rows restart at every day boundary: a row can only carry one header, so
+ * when photos from several days shared a row the later days got no header
+ * and their photos were mislabeled under the first photo's day (a 3-photo
+ * library shot across three months rendered as a single day). The ragged
+ * trailing row on sparse days is the price of truthful dates — the same
+ * tradeoff Google Photos makes.
  */
 export function buildVirtualModel(groups: DayGroup[], width: number, targetHeight: number): VirtualEntry[] {
   const entries: VirtualEntry[] = [];
   const headerH = 44;
-  const byKey = new Map(groups.map((group) => [group.key, group]));
-  const flat = groups.flatMap((group) => group.photos);
-  const rows = buildJustifiedRows(flat, width, targetHeight, PHOTO_GAP);
-  let lastKey = '';
-  for (const row of rows) {
-    const key = dayKey(row.items[0].takenAt);
-    let group = byKey.get(key);
-    if (!group) {
-      group = {
-        key,
-        label: dayLabel(row.items[0].takenAt),
-        takenAt: row.items[0].takenAt,
-        photos: row.items,
-      };
-    }
-    if (key !== lastKey) {
-      entries.push({ kind: 'header', group, height: headerH });
-      lastKey = key;
-    }
-    entries.push({ kind: 'row', row, group, height: row.height });
+  for (const group of groups) {
+    const rows = buildJustifiedRows(group.photos, width, targetHeight, PHOTO_GAP);
+    if (!rows.length) continue;
+    entries.push({ kind: 'header', group, height: headerH });
+    for (const row of rows) entries.push({ kind: 'row', row, group, height: row.height });
   }
   return entries;
 }
@@ -1357,6 +1344,7 @@ function PhotosFilterBar({
   filters: PhotoSearchParams;
   onChange: (next: PhotoSearchParams) => void;
 }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
   const kindOptions: Array<{ value: string; label: string; count?: number }> = [
     { value: 'photo', label: 'Photos', count: facets?.kinds.photo },
     { value: 'video', label: 'Videos', count: facets?.kinds.video },
@@ -1375,56 +1363,145 @@ function PhotosFilterBar({
 
   if (!facets && !filters.kind && !filters.camera && !activeMonth) return null;
 
-  const chip = (active: boolean, label: string, count: number | undefined,
-                onPick: () => void, onClear: () => void, key: string) => (
-    <button
-      key={key}
-      type="button"
-      className={`photos-chip${active ? ' photos-chip--active' : ''}`}
-      aria-pressed={active}
-      onClick={() => (active ? onClear() : onPick())}
-    >
-      {label}
-      {typeof count === 'number' && <span className="photos-chip__count">{count.toLocaleString()}</span>}
-    </button>
-  );
+  const activeCount =
+    (filters.kind ? 1 : 0) +
+    (filters.camera ? 1 : 0) +
+    (filters.place ? 1 : 0) +
+    (activeMonth ? 1 : 0);
+
+  // One option model drives both the desktop chip row and the mobile sheet.
+  const sections: Array<{
+    title: string;
+    options: Array<{ key: string; label: string; count?: number; active: boolean; toggle: () => void }>;
+  }> = [
+    {
+      title: 'Type',
+      options: kindOptions.map((k) => ({
+        key: `kind-${k.value}`,
+        label: k.label,
+        count: k.count,
+        active: filters.kind === k.value,
+        toggle: () => onChange({ ...filters, kind: filters.kind === k.value ? undefined : k.value }),
+      })),
+    },
+    {
+      title: 'Camera',
+      options: (facets?.cameras ?? []).map((c) => ({
+        key: `cam-${c.camera}`,
+        label: c.camera,
+        count: c.count,
+        active: filters.camera === c.camera,
+        toggle: () => onChange({ ...filters, camera: filters.camera === c.camera ? undefined : c.camera }),
+      })),
+    },
+    {
+      title: 'Place',
+      options: (facets?.places ?? []).map((p) => ({
+        key: `place-${p.place}`,
+        label: p.place,
+        count: p.count,
+        active: filters.place === p.place,
+        toggle: () => onChange({ ...filters, place: filters.place === p.place ? undefined : p.place }),
+      })),
+    },
+    {
+      title: 'Month',
+      options: (facets?.months ?? []).slice(0, 12).map((m) => {
+        const active = Boolean(activeMonth && activeMonth.year === m.year && activeMonth.month === m.month);
+        return {
+          key: `mon-${m.year}-${m.month}`,
+          label: monthLabel(m),
+          count: m.count,
+          active,
+          toggle: () => onChange(active
+            ? { ...filters, takenAfter: undefined, takenBefore: undefined }
+            : {
+                ...filters,
+                takenAfter: `${m.year}-${String(m.month).padStart(2, '0')}-01`,
+                // First day of the following month — the range end the
+                // month still "contains".
+                takenBefore: m.month === 12
+                  ? `${m.year + 1}-01-01`
+                  : `${m.year}-${String(m.month + 1).padStart(2, '0')}-01`,
+              }),
+        };
+      }),
+    },
+  ];
 
   return (
-    <div className="photos-filters" role="group" aria-label="Filters">
-      {kindOptions.map((k) => chip(
-        filters.kind === k.value, k.label, k.count,
-        () => onChange({ ...filters, kind: k.value }),
-        () => onChange({ ...filters, kind: undefined }),
-        `kind-${k.value}`,
-      ))}
-      {(facets?.cameras ?? []).map((c) => chip(
-        filters.camera === c.camera, c.camera, c.count,
-        () => onChange({ ...filters, camera: c.camera }),
-        () => onChange({ ...filters, camera: undefined }),
-        `cam-${c.camera}`,
-      ))}
-      {(facets?.places ?? []).map((p) => chip(
-        filters.place === p.place, p.place, p.count,
-        () => onChange({ ...filters, place: p.place }),
-        () => onChange({ ...filters, place: undefined }),
-        `place-${p.place}`,
-      ))}
-      {(facets?.months ?? []).slice(0, 6).map((m) => chip(
-        Boolean(activeMonth && activeMonth.year === m.year && activeMonth.month === m.month),
-        monthLabel(m), m.count,
-        () => onChange({
-          ...filters,
-          takenAfter: `${m.year}-${String(m.month).padStart(2, '0')}-01`,
-          // First day of the following month minus one second — the last
-          // instant the month still "contains".
-          takenBefore: m.month === 12
-            ? `${m.year + 1}-01-01`
-            : `${m.year}-${String(m.month + 1).padStart(2, '0')}-01`,
-        }),
-        () => onChange({ ...filters, takenAfter: undefined, takenBefore: undefined }),
-        `mon-${m.year}-${m.month}`,
-      ))}
-    </div>
+    <>
+      {/* Desktop: the whole option set as a chip row. */}
+      <div className="photos-filters" role="group" aria-label="Filters">
+        {sections.flatMap((section) =>
+          section.options.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              className={`photos-chip${option.active ? ' photos-chip--active' : ''}`}
+              aria-pressed={option.active}
+              onClick={option.toggle}
+            >
+              {option.label}
+              {typeof option.count === 'number' && (
+                <span className="photos-chip__count">{option.count.toLocaleString()}</span>
+              )}
+            </button>
+          )),
+        )}
+      </div>
+
+      {/* Mobile: chips don't scale (kinds + cameras + places + months wrap or
+          scroll off-screen), so the row collapses to one button with an
+          active-count badge and the options move to a bottom sheet. */}
+      <button
+        type="button"
+        className="photos-filters__trigger"
+        aria-haspopup="dialog"
+        onClick={() => setSheetOpen(true)}
+      >
+        <FilterIcon aria-hidden="true" />
+        <span>Filters</span>
+        {activeCount > 0 && <span className="photos-filters__badge">{activeCount}</span>}
+      </button>
+      <Dialog open={sheetOpen} onOpenChange={setSheetOpen}>
+        <DialogContent className="photos-filter-sheet" aria-describedby={undefined}>
+          <div className="photos-filter-sheet__head">
+            <DialogTitle>Filters</DialogTitle>
+            {activeCount > 0 && (
+              <button
+                type="button"
+                className="photos-filter-sheet__clear"
+                onClick={() => onChange({})}
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+          {sections.map((section) => section.options.length > 0 && (
+            <div className="photos-filter-sheet__section" key={section.title}>
+              <h3>{section.title}</h3>
+              <div className="photos-filter-sheet__options" role="group" aria-label={section.title}>
+                {section.options.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`photos-chip${option.active ? ' photos-chip--active' : ''}`}
+                    aria-pressed={option.active}
+                    onClick={option.toggle}
+                  >
+                    {option.label}
+                    {typeof option.count === 'number' && (
+                      <span className="photos-chip__count">{option.count.toLocaleString()}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

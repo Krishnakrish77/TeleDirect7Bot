@@ -18,6 +18,7 @@ import {
   buildJustifiedRows,
   buildLightboxSlides,
   buildVirtualModel,
+  dayKey,
   trashBatches,
 } from './photos';
 
@@ -161,9 +162,10 @@ describe('virtual timeline model', () => {
     photos,
   });
 
-  it('flows rows across day boundaries and headers the day that starts a row', () => {
-    // Three photos per day. Restarting rows per day would leave each day's row
-    // half empty; flowing across the boundary fills it (the density fix).
+  it('restarts rows at day boundaries so every day gets its own header', () => {
+    // Three photos per day. Rows used to flow across the boundary, which left
+    // the later day without a header and mislabeled its photos under the
+    // earlier day — a 3-photo library across three months read as one day.
     const groups = [
       group('2026-09-21', 'September 21, 2026', [photo('a', '2026-09-21'), photo('b', '2026-09-21'), photo('c', '2026-09-21')]),
       group('2026-09-20', 'September 20, 2026', [photo('d', '2026-09-20'), photo('e', '2026-09-20'), photo('f', '2026-09-20')]),
@@ -172,26 +174,27 @@ describe('virtual timeline model', () => {
     const headers = entries.filter((e) => e.kind === 'header');
     const rows = entries.flatMap((e) => (e.kind === 'row' ? [e.row] : []));
 
-    // The boundary row closes mid-day, so September 20 starts the next row and
-    // still gets its header — while its earlier photos share the first row.
     expect(headers.map((h) => h.group.label)).toEqual(['September 21, 2026', 'September 20, 2026']);
     // Every photo appears exactly once, in order.
     expect(rows.flatMap((row) => row.items.map((p) => p.id))).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
-    // A row mixing both days is the point of the change.
-    expect(rows.some((row) => new Set(row.items.map((p) => p.takenAt?.slice(0, 10))).size > 1)).toBe(true);
+    // No row mixes days.
+    expect(rows.every((row) => new Set(row.items.map((p) => p.takenAt?.slice(0, 10))).size === 1)).toBe(true);
   });
 
-  it('documented tradeoff: a day inside another day\'s row gets no header', () => {
-    // Six photos fit one row at this width, so September 20 never starts a row
-    // and its photos sit under the September 21 header — Google Photos behaves
-    // the same way when days share a row.
+  it('labels each day truthfully even when one row could hold the whole library', () => {
+    // Three photos from three different months fit a single justified row at
+    // this width — but each must still sit under its own date header.
     const groups = [
-      group('2026-09-21', 'September 21, 2026', [photo('a', '2026-09-21'), photo('b', '2026-09-21'), photo('c', '2026-09-21')]),
-      group('2026-09-20', 'September 20, 2026', [photo('d', '2026-09-20'), photo('e', '2026-09-20'), photo('f', '2026-09-20')]),
+      group('2026-09-27', 'September 27, 2026', [photo('a', '2026-09-27')]),
+      group('2026-07-14', 'July 14, 2026', [photo('b', '2026-07-14')]),
+      group('2026-06-02', 'June 2, 2026', [photo('c', '2026-06-02')]),
     ];
-    const rows = buildVirtualModel(groups, 1400, 150).flatMap((e) => (e.kind === 'row' ? [e.row] : []));
-    expect(rows).toHaveLength(1);
-    expect(new Set(rows[0].items.map((p) => p.takenAt?.slice(0, 10))).size).toBe(2);
+    const entries = buildVirtualModel(groups, 1400, 150);
+    const headers = entries.filter((e) => e.kind === 'header');
+    expect(headers.map((h) => h.group.label)).toEqual(['September 27, 2026', 'July 14, 2026', 'June 2, 2026']);
+    // Header order follows the photos: each header precedes its day's row.
+    const sequence = entries.map((e) => (e.kind === 'header' ? `H:${e.group.key}` : `R:${dayKey(e.row.items[0].takenAt)}`));
+    expect(sequence).toEqual(['H:2026-09-27', 'R:2026-09-27', 'H:2026-07-14', 'R:2026-07-14', 'H:2026-06-02', 'R:2026-06-02']);
   });
 });
 
