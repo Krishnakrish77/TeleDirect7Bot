@@ -26,11 +26,9 @@ from typing import Any, Dict, List, Optional
 from main.vars import Var
 
 try:
-    from bson.errors import DuplicateKeyError
     from bson.son import SON
-    from pymongo import TEXT
 except ImportError:  # pragma: no cover — only matters for Mongo deployments
-    DuplicateKeyError = Exception  # type: ignore[assignment,misc]
+    SON = dict  # type: ignore[assignment,misc]
 
 _PAGE_CAP = 200
 
@@ -98,7 +96,7 @@ async def _ensure_indexes() -> None:
         if old_spec and "place" not in str(old_spec.get("key", old_spec.get("weights", ""))):
             await photos.drop_index("photos_text_search")
         await photos.create_index(
-            [("file_name", TEXT), ("camera", TEXT), ("place", TEXT)],
+            [("file_name", "text"), ("camera", "text"), ("place", "text")],
             default_language="english",
             name="photos_text_search",
         )
@@ -432,8 +430,15 @@ async def upsert_photo(doc: dict) -> Optional[str]:
         try:
             await db["photos"].insert_one(dict(doc))
             return None
-        except DuplicateKeyError:
-            pass  # already exists — fall through to the merge below
+        except Exception as exc:
+            # DuplicateKeyError (pymongo.errors) — imported at call time:
+            # pymongo 4.x moved it out of bson.errors, and a module-level
+            # import inside a shared try/except poisoned every name in the
+            # block when the import failed (prod NameError: TEXT).
+            from pymongo.errors import DuplicateKeyError
+            if not isinstance(exc, DuplicateKeyError):
+                raise
+        # already exists — fall through to the merge below
         existing = await db["photos"].find_one(
             {"channel_id": doc["channel_id"], "message_id": doc["message_id"]},
             projection={"_id": 1, "deleted": 1, "sha256": 1},
