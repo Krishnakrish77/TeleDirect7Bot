@@ -19,6 +19,11 @@ from typing import Iterable
 _OPEN_STATES = {"pending", "planned", "partial"}
 _ALL_STATES = _OPEN_STATES | {"available", "declined", "cancelled"}
 _MAX_OPEN_PER_USER = 5
+# Anonymous visitors share one bucket. The unique (user_id, kind, tmdb_id)
+# index dedupes per title; the pool allows more open rows than a personal
+# account because many distinct visitors contribute to it.
+ANON_USER_ID = 0
+_MAX_OPEN_ANON = 25
 _indexed = False
 
 
@@ -110,11 +115,15 @@ def library_availability(tmdb_id: int, kind: str) -> dict:
 
 
 async def create(user_id: int, title: dict, requested_seasons: Iterable[object] | None) -> tuple[dict | None, str]:
-    """Create one idempotent request. Returns ``(request, outcome)``."""
+    """Create one idempotent request. Returns ``(request, outcome)``.
+
+    Anonymous submissions (user_id == ANON_USER_ID) share one pool with a
+    larger open cap — the unique per-title index still dedupes within it."""
     await _ensure_indexes()
     db = _get_db()
     if db is None:
         return None, "unavailable"
+    max_open = _MAX_OPEN_ANON if user_id == ANON_USER_ID else _MAX_OPEN_PER_USER
     kind = str(title.get("kind") or "")
     try:
         tmdb_id = int(title.get("tmdbId") or 0)
@@ -131,7 +140,7 @@ async def create(user_id: int, title: dict, requested_seasons: Iterable[object] 
         if existing:
             if str(existing.get("status") or "") in {"cancelled", "declined"}:
                 open_count = await coll.count_documents({"user_id": user_id, "status": {"$in": list(_OPEN_STATES)}})
-                if open_count >= _MAX_OPEN_PER_USER:
+                if open_count >= max_open:
                     return None, "limit"
                 now = _now()
                 await coll.update_one(
@@ -148,7 +157,7 @@ async def create(user_id: int, title: dict, requested_seasons: Iterable[object] 
                 return _safe(existing), "created"
             return _safe(existing), "duplicate"
         open_count = await coll.count_documents({"user_id": user_id, "status": {"$in": list(_OPEN_STATES)}})
-        if open_count >= _MAX_OPEN_PER_USER:
+        if open_count >= max_open:
             return None, "limit"
         now = _now()
         doc = {
@@ -170,7 +179,10 @@ async def create(user_id: int, title: dict, requested_seasons: Iterable[object] 
         await coll.insert_one(doc)
         return _safe(doc), "created"
     except Exception:
-        logging.exception("request_store: create failed uid=%d", user_id)
+        logging.exception(
+            "request_store: create failed uid=%s",
+            "anon" if user_id == ANON_USER_ID else user_id,
+        )
         return None, "error"
 
 

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+import math
+import time
+
 from aiohttp import web
 
 from main.server.tmdb_images import tmdb_image_url
@@ -21,9 +25,10 @@ def _user_id(request: web.Request) -> int | None:
 
 
 def _require_user(request: web.Request) -> int:
+    """Signed-in-only routes: my-requests list and cancel."""
     user_id = _user_id(request)
     if user_id is None:
-        raise web.HTTPUnauthorized(text="Sign in to request a title")
+        raise web.HTTPUnauthorized(text="Sign in to manage your requests")
     return user_id
 
 
@@ -32,6 +37,36 @@ def _require_admin(request: web.Request) -> int:
     if not user or not user.get("is_admin"):
         raise web.HTTPForbidden(text="Admin access required")
     return int(user["sub"])
+
+
+# Anonymous (not signed in) visitors can browse TMDB and submit requests.
+# Rate limiting is per-IP because there is no account to throttle. Mirrors
+# stream_routes' trusted-proxy handling: X-Forwarded-For is only honoured
+# when the direct peer is in TRUSTED_PROXY_CIDRS.
+_ANON_WINDOW_SECONDS = 60.0
+_ANON_LIMITS = {"search": 20, "title": 30, "create": 5}
+_anon_hits: dict[tuple[str, str], list[float]] = {}
+
+
+async def _anon_rate_limit(request: web.Request, action: str) -> None:
+    from main.server.stream_routes import _real_ip
+
+    limit = _ANON_LIMITS[action]
+    now = time.monotonic()
+    key = (action, _real_ip(request))
+    hits = [ts for ts in _anon_hits.get(key, []) if now - ts < _ANON_WINDOW_SECONDS]
+    if len(hits) >= limit:
+        retry_after = max(1, math.ceil(_ANON_WINDOW_SECONDS - (now - hits[0])))
+        logging.info("requests: anon rate limited ip=%s action=%s", key[1], action)
+        raise web.HTTPTooManyRequests(
+            text="Too many requests — try again shortly",
+            headers={"Retry-After": str(retry_after), "Access-Control-Allow-Origin": "*"},
+        )
+    hits.append(now)
+    _anon_hits[key] = hits
+    # Opportunistic sweep so abandoned keys don't grow without bound.
+    for stale in [k for k, v in _anon_hits.items() if not v or now - v[-1] > 300]:
+        _anon_hits.pop(stale, None)
 
 
 def _title_payload(title: dict) -> dict:
@@ -53,7 +88,8 @@ async def _body(request: web.Request) -> dict:
 
 @routes.get("/api/app/requests/search")
 async def search_requests(request: web.Request) -> web.Response:
-    _require_user(request)
+    if _user_id(request) is None:
+        await _anon_rate_limit(request, "search")
     query = (request.query.get("q") or "").strip()
     if len(query) < 2:
         return web.json_response({"items": []})
@@ -65,7 +101,8 @@ async def search_requests(request: web.Request) -> web.Response:
 
 @routes.get(r"/api/app/requests/title/{kind:movie|tv}/{tmdb_id:\d+}")
 async def request_title(request: web.Request) -> web.Response:
-    _require_user(request)
+    if _user_id(request) is None:
+        await _anon_rate_limit(request, "title")
     title = await tmdb.fetch_request_title(int(request.match_info["tmdb_id"]), request.match_info["kind"])
     if title is None:
         return web.json_response({"error": "Title was not found"}, status=404)
@@ -82,7 +119,10 @@ async def my_requests(request: web.Request) -> web.Response:
 
 @routes.post("/api/app/requests")
 async def create_request(request: web.Request) -> web.Response:
-    user_id = _require_user(request)
+    user_id = _user_id(request)
+    if user_id is None:
+        await _anon_rate_limit(request, "create")
+        user_id = request_store.ANON_USER_ID
     if not request_store.is_available():
         return web.json_response({"error": "Requests need MongoDB storage"}, status=503)
     body = await _body(request)
@@ -120,7 +160,7 @@ async def create_request(request: web.Request) -> web.Response:
     if outcome == "duplicate":
         return web.json_response({"item": saved, "duplicate": True})
     messages = {
-        "limit": "You have reached the limit of 5 open requests",
+        "limit": "There are too many open requests right now — try again later",
         "seasons_required": "Choose at least one season",
         "unavailable": "Requests need MongoDB storage",
     }

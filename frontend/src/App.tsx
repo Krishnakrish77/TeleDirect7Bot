@@ -457,7 +457,6 @@ function App() {
         onSearchClear={onSearchClear}
         onSuggestionNavigate={navigate}
         onRequestTitle={() => {
-          if (!user) { setSignInOpen(true); return; }
           setRequestSeed(null);
           setRequestOpen(true);
         }}
@@ -579,7 +578,7 @@ function App() {
             onSignIn={() => setSignInOpen(true)}
           />
         ) : route.kind === 'requests' ? (
-          <RequestsPage user={user} onSignIn={() => setSignInOpen(true)} />
+          <RequestsPage user={user} />
         ) : route.kind === 'liked-songs' ? (
           <LikedSongsPage
             user={user}
@@ -700,6 +699,7 @@ function App() {
         open={requestOpen}
         onOpenChange={setRequestOpen}
         seed={requestSeed}
+        signedIn={Boolean(user)}
       />
       <audio ref={audio.audioRef} preload="metadata" />
       <audio ref={audio.bufferRef} preload="none" />

@@ -17,11 +17,13 @@ export function RequestTitleDialog({
   onOpenChange,
   seed = null,
   onCompleted,
+  signedIn = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   seed?: RequestTitle | null;
   onCompleted?: () => void;
+  signedIn?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<RequestTitle[]>([]);
@@ -83,7 +85,11 @@ export function RequestTitleDialog({
     setMessage('');
     try {
       const result = await createMediaRequest({ tmdbId: selected.tmdbId, kind: selected.kind, seasons });
-      setMessage(result.duplicate ? 'You already requested this title.' : 'Request sent. We’ll update you here when it changes.');
+      setMessage(result.duplicate
+        ? 'This title has already been requested.'
+        : signedIn
+          ? 'Request sent. We’ll update you here when it changes.'
+          : 'Request sent. Sign in to track its status here.');
       onCompleted?.();
     } catch (err) {
       setMessage(err instanceof ApiError ? err.message : 'Could not save your request.');
@@ -107,7 +113,7 @@ export function RequestTitleDialog({
           <div>
             <p className="eyebrow">Library requests</p>
             <DialogTitle asChild><h2>Request a title</h2></DialogTitle>
-            <DialogDescription id="request-title-help">Pick the exact movie or series. We’ll keep its status in your requests.</DialogDescription>
+            <DialogDescription id="request-title-help">{signedIn ? 'Pick the exact movie or series. We’ll keep its status in your requests.' : 'Pick the exact movie or series. Sign in to track its status in your requests.'}</DialogDescription>
           </div>
           <DialogClose asChild><Button variant="ghost" size="icon-sm" aria-label="Close"><XIcon /></Button></DialogClose>
         </div>
@@ -134,7 +140,7 @@ export function RequestTitleDialog({
           })}</div></fieldset>}
           {alreadyAvailable ? <p className="request-dialog-state success"><CheckIcon /> This title is already available in your library.</p> : <div className="request-dialog-actions"><Button type="button" onClick={() => void submit()} disabled={saving || (selected.kind === 'tv' && seasons.length === 0)}>{saving ? 'Sending…' : 'Send request'}</Button></div>}
         </>}
-        {message && <p className={`request-dialog-state${message.startsWith('Request') || message.startsWith('You already') ? ' success' : ''}`}>{message}</p>}
+        {message && <p className={`request-dialog-state${message.startsWith('Request') || message.startsWith('This title has') ? ' success' : ''}`}>{message}</p>}
       </DialogContent>
     </Dialog>
   );

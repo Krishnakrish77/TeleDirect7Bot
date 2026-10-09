@@ -53,6 +53,29 @@ class RequestStoreTests(unittest.TestCase):
         self.assertEqual(rows[0]["title"], "Example")
         self.assertEqual(collection.query, {"user_id": 7})
 
+    def test_anonymous_bucket_allows_more_open_requests_than_personal(self):
+        class Collection:
+            async def count_documents(self, query):
+                return 24  # over the personal cap, under the anon pool cap
+
+            async def find_one(self, query):
+                return None
+
+            async def insert_one(self, doc):
+                pass
+
+        title = {"tmdbId": 5, "kind": "movie", "title": "T", "year": None, "overview": "", "posterPath": ""}
+        with patch.object(request_store, "_ensure_indexes", new=AsyncMock()), patch.object(request_store, "_get_db", return_value={"media_requests": Collection()}):
+            request, outcome = asyncio.run(request_store.create(request_store.ANON_USER_ID, title, None))
+            anon_ok = outcome == "created"
+            _, personal_outcome = asyncio.run(request_store.create(7, title, None))
+        self.assertTrue(anon_ok)
+        self.assertEqual(request["tmdbId"], 5)
+        self.assertEqual(personal_outcome, "limit")  # personal cap is 5 < 24
+
+    def test_anon_create_uses_shared_bucket_id(self):
+        self.assertEqual(request_store.ANON_USER_ID, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
