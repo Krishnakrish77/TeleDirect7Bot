@@ -123,3 +123,19 @@ describe('AiRecPanel tabs', () => {
     await waitFor(() => expect(screen.getByLabelText('Ask the recommender')).toBeTruthy());
   });
 });
+
+describe('AiRecPanel mix entry', () => {
+  it('opens the AI Mix builder from the header Mix button and returns via Back', () => {
+    vi.mocked(streamAiRecommendations).mockResolvedValue({
+      items: [], externalItems: [], message: '', coldStart: false,
+    });
+    renderPanel();
+
+    // The Mix entry must stay reachable from the picks view.
+    fireEvent.click(screen.getByRole('button', { name: 'Mix' }));
+    expect(screen.getByRole('heading', { name: 'Create an AI Mix' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to picks' }));
+    expect(screen.getByLabelText('Ask the recommender')).toBeTruthy();
+  });
+});
