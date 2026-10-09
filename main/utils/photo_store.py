@@ -63,6 +63,47 @@ def _get_db():
 _indexed = False
 
 
+async def _scrub_invalid_geo(photos) -> int:
+    """Remove gps/location with non-finite coordinates before index builds.
+
+    Pre-guard ingests could store gps {lat: nan, lon: nan} (EXIF 0/0
+    rationals); the geo backfill then copied them into `location`. A single
+    NaN point fails the whole 2dsphere index build (Location16755), which
+    blocked ALL photo indexes. Scrub is idempotent and runs before every
+    index-creation pass — cheap when nothing is bad.
+    """
+    import math
+
+    # Both forms: bare gps nan and the GeoJSON copy.
+    # Mongo $type matches BSON types, not NaN VALUES — so match numerics
+    # that fail every finite-range comparison (NaN and the infinities).
+    bad = {
+        "owner_user_id": {"$exists": True},
+        "$or": [
+            {"gps.lat": {"$exists": True, "$not": {"$gte": -1e308}},
+             "gps.lon": {"$exists": True, "$not": {"$lte": 1e308}}},
+            {"location.coordinates.0": {"$exists": True, "$not": {"$gte": -1e308}}},
+            {"location.coordinates.1": {"$exists": True, "$not": {"$lte": 1e308}}},
+        ],
+    }
+    try:
+        # Positional verification: $type nan matches BSON double nan.
+        bad_docs = await photos.count_documents(bad)
+        if not bad_docs:
+            return 0
+        await photos.update_many(bad, {
+            "$unset": {"gps": "", "location": ""},
+        })
+        logging.warning(
+            "photo_store: scrubbed %d photos with non-finite GPS "
+            "(EXIF 0/0 rationals); geo indexes can build", bad_docs,
+        )
+        return bad_docs
+    except Exception:
+        logging.exception("photo_store: geo scrub failed")
+        return 0
+
+
 async def _ensure_indexes() -> None:
     global _indexed
     if _indexed:
@@ -72,6 +113,8 @@ async def _ensure_indexes() -> None:
         return
     try:
         photos = db["photos"]
+        # NaN gps points fail the 2dsphere build — scrub before ANY index.
+        await _scrub_invalid_geo(photos)
         await photos.create_index([("owner_user_id", 1), ("taken_at", -1), ("_id", -1)])
         await photos.create_index(
             [("owner_user_id", 1), ("sha256", 1)], unique=True, sparse=True
@@ -791,10 +834,15 @@ async def backfill_geo(owner_user_id: int, channel_id: int, *, batch: int = 200)
             limit=batch,
         )
         updated = 0
+        import math
         async for doc in cursor:
             gps = doc.get("gps") or {}
             lat, lon = gps.get("lat"), gps.get("lon")
+            # NaN passes isinstance(float) but is rejected by the 2dsphere
+            # index build (Location16755) — one bad point blocks ALL indexes.
             if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+                continue
+            if not (math.isfinite(lat) and math.isfinite(lon)):
                 continue
             await db["photos"].update_one(
                 {"_id": doc["_id"]},

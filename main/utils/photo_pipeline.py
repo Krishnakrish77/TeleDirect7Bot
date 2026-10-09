@@ -403,7 +403,12 @@ async def ingest_bytes(owner_user_id: int, channel_id: int, message_id: int, *,
     gps = result.get("gps") or {}
     lat, lon = gps.get("lat"), gps.get("lon")
     location = None
-    if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+    # NaN passes isinstance(float) but the 2dsphere index build rejects NaN
+    # points (Location16755) — one bad doc would block every photo index.
+    if (
+        isinstance(lat, (int, float)) and isinstance(lon, (int, float))
+        and math.isfinite(lat) and math.isfinite(lon)
+    ):
         location = {"type": "Point", "coordinates": [lon, lat]}  # GeoJSON order
     err = await photo_store.upsert_photo({
         "owner_user_id": owner_user_id,
