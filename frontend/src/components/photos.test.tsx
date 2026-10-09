@@ -56,6 +56,7 @@ function makePhoto(overrides: Partial<Photo> = {}): Photo {
     takenAt: '2026-09-21T14:03:11Z',
     camera: null,
     gps: null,
+    place: null,
     favorite: false,
     albumIds: [],
     deleted: false,
@@ -460,6 +461,7 @@ describe('PhotosPage server search & filters', () => {
     vi.mocked(fetchPhotoFacets).mockResolvedValue({
       kinds: { photo: 12, video: 3 },
       cameras: [{ camera: 'Apple iPhone 15', count: 9 }],
+      places: [{ place: 'Lisbon, Portugal', count: 7 }],
       months: [{ year: 2026, month: 9, count: 15 }],
     });
     render(<PhotosPage user={user} />);

@@ -1222,6 +1222,7 @@ export interface Photo {
   takenAt: string | null;
   camera: string | null;
   gps: { lat: number; lon: number } | null;
+  place: string | null;
   favorite: boolean;
   albumIds: string[];
   deleted: boolean;
@@ -1272,6 +1273,7 @@ export interface PhotoSearchParams {
   q?: string;
   kind?: string;
   camera?: string;
+  place?: string;
   takenAfter?: string;
   takenBefore?: string;
   minSize?: number;
@@ -1281,6 +1283,7 @@ export interface PhotoSearchParams {
 export interface PhotoFacets {
   kinds: Record<string, number>;
   cameras: Array<{ camera: string; count: number }>;
+  places: Array<{ place: string; count: number }>;
   months: Array<{ year: number; month: number; count: number }>;
 }
 

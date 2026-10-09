@@ -400,9 +400,11 @@ async def ingest_bytes(owner_user_id: int, channel_id: int, message_id: int, *,
     Returns an error string, or None on success (including "duplicate").
     """
     result = await process(data, mime, file_name)
-    # Dedup (race-safe): if another ingest/upload with the same (owner, sha256)
-    # already inserted a doc, the unique index makes our insert a no-op
-    # ("duplicate") — the extra channel copy is simply not double-indexed.
+    gps = result.get("gps") or {}
+    lat, lon = gps.get("lat"), gps.get("lon")
+    location = None
+    if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+        location = {"type": "Point", "coordinates": [lon, lat]}  # GeoJSON order
     err = await photo_store.upsert_photo({
         "owner_user_id": owner_user_id,
         "channel_id": channel_id,
@@ -417,12 +419,17 @@ async def ingest_bytes(owner_user_id: int, channel_id: int, message_id: int, *,
         "duration": result.get("duration"),
         "taken_at": result.get("taken_at") or _now_utc(),
         "camera": result.get("camera"),
-        "gps": result.get("gps"),
+        "gps": gps or None,
+        "location": location,
         "sha256": result["sha256"],
         "uploaded_at": _now_utc(),
     })
     if err and err != "duplicate":
         return err
+    if location and Var.PHOTOS_PLACES:
+        # Fire-and-forget: the label lands on the doc a moment later; the
+        # 1 req/s Nominatim lock inside keeps this safe under bursts.
+        asyncio.create_task(_place_label(owner_user_id, channel_id, message_id, lon, lat))
     for size, key in (("grid", "thumb_grid"), ("preview", "thumb_preview")):
         if result.get(key):
             await photo_store.put_thumb(
@@ -501,6 +508,17 @@ async def ingest_message(owner_user_id: int, channel_id: int, message) -> None:
         raise
     except Exception:
         log.exception("ingest failed cid=%d mid=%d", channel_id, getattr(message, "id", -1))
+
+
+async def _place_label(owner_user_id: int, channel_id: int, message_id: int,
+                       lon: float, lat: float) -> None:
+    """Reverse-geocode one ingest and persist the place label. Best-effort:
+    all failure modes are logged inside geocode and swallowed here."""
+    from main.utils import geocode
+
+    label = await geocode.reverse_geocode(lat, lon)
+    if label:
+        await photo_store.set_place(owner_user_id, channel_id, message_id, label)
 
 
 def _now_utc() -> datetime:

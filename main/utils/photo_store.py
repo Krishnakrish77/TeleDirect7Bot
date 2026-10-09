@@ -23,6 +23,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from main.vars import Var
+
 try:
     from bson.errors import DuplicateKeyError
     from bson.son import SON
@@ -85,13 +87,23 @@ async def _ensure_indexes() -> None:
         )
         # Server-side search: one text index over the human-meaningful fields.
         # Filenames like IMG_2047 tokenize poorly, but camera ("Apple iPhone
-        # 15") and later labels/places tokenize well — and the tokenized
-        # filename still catches "portugal" in "Portugal 2026.jpg".
+        # 15"), place ("Lisbon, Portugal") and later labels tokenize well —
+        # and the tokenized filename still catches "portugal" in
+        # "Portugal 2026.jpg".
+        # place was added after the 2-field version shipped: Mongo refuses to
+        # create a same-name index with a different spec, so detect the old
+        # one and drop it once (idempotent — create_index after drop).
+        existing_text = await photos.index_information()
+        old_spec = existing_text.get("photos_text_search")
+        if old_spec and "place" not in str(old_spec.get("key", old_spec.get("weights", ""))):
+            await photos.drop_index("photos_text_search")
         await photos.create_index(
-            [("file_name", TEXT), ("camera", TEXT)],
+            [("file_name", TEXT), ("camera", TEXT), ("place", TEXT)],
             default_language="english",
             name="photos_text_search",
         )
+        # Places: $near / $geoWithin need the GeoJSON point.
+        await photos.create_index([("location", "2dsphere")], sparse=True)
         channels = db["photo_channels"]
         await channels.create_index("channel_id", unique=True)
         await channels.create_index("owner_user_id", unique=True)
@@ -386,6 +398,7 @@ def _serialize_photo(doc: dict) -> dict:
         "takenAt": iso_utc(doc.get("taken_at")),
         "camera": doc.get("camera"),
         "gps": doc.get("gps"),
+        "place": doc.get("place") or None,
         "favorite": bool(doc.get("favorite")),
         "albumIds": doc.get("album_ids", []),
         "deleted": bool(doc.get("deleted")),
@@ -581,15 +594,21 @@ def build_timeline_query(
     kind: str = "",
     mime: str = "",
     camera: str = "",
+    place: str = "",
     taken_after: str = "",
     taken_before: str = "",
     min_size: int = 0,
+    near: str = "",
+    radius_km: float = 0.0,
 ) -> Dict[str, Any]:
     """Pure Mongo filter builder for the timeline — the search/filter API.
 
     Kept free of I/O so tests can assert the exact query shape without a
     database. ``q`` goes through $text (the photos_text_search index);
     every other parameter composes as plain equality/range clauses.
+    ``near`` ("lat,lon") + ``radius_km`` become a $geoWithin $centerSphere
+    — chosen over $near because $near cannot compose inside $and/$or with
+    the cursor clauses.
     """
     query: Dict[str, Any] = {"owner_user_id": owner_user_id}
     query["deleted"] = True if trash else False
@@ -605,6 +624,9 @@ def build_timeline_query(
         # Exact camera string comes from the facets endpoint, which reads
         # the same stored values — no regex needed.
         query["camera"] = camera
+    if place:
+        # Same logic as camera: exact value from the facets endpoint.
+        query["place"] = place
     if min_size > 0:
         query["size"] = {"$gte": min_size}
     after = _parse_iso_date(taken_after)
@@ -618,7 +640,33 @@ def build_timeline_query(
         # Quoted phrases stay a phrase ("beach day"); bare words are ORed
         # by the server's text index — good enough for token search.
         query["$text"] = {"$search": needle}
+    center = _parse_latlon(near)
+    if center and radius_km > 0:
+        query["location"] = {
+            "$geoWithin": {
+                "$centerSphere": [
+                    [center[1], center[0]],  # GeoJSON order: lon, lat
+                    radius_km / 6378.1,      # radians (Earth radius)
+                ],
+            },
+        }
     return query
+
+
+def _parse_latlon(value: str) -> Optional[tuple]:
+    """Parse "lat,lon" floats. None on garbage — the caller drops the filter."""
+    if not value:
+        return None
+    parts = value.split(",")
+    if len(parts) != 2:
+        return None
+    try:
+        lat, lon = float(parts[0]), float(parts[1])
+    except ValueError:
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return None
+    return (lat, lon)
 
 
 async def timeline_page(
@@ -633,9 +681,12 @@ async def timeline_page(
     kind: str = "",
     mime: str = "",
     camera: str = "",
+    place: str = "",
     taken_after: str = "",
     taken_before: str = "",
     min_size: int = 0,
+    near: str = "",
+    radius_km: float = 0.0,
 ) -> dict:
     """Cursor-paginated timeline, newest first.
 
@@ -661,9 +712,12 @@ async def timeline_page(
         kind=kind,
         mime=mime,
         camera=camera,
+        place=place,
         taken_after=taken_after,
         taken_before=taken_before,
         min_size=min_size,
+        near=near,
+        radius_km=radius_km,
     )
     if cursor:
         try:
@@ -681,7 +735,7 @@ async def timeline_page(
             query,
             projection={"file_name": 1, "kind": 1, "mime": 1, "size": 1, "width": 1,
                         "height": 1, "duration": 1, "taken_at": 1, "camera": 1,
-                        "gps": 1, "favorite": 1, "album_ids": 1, "deleted": 1,
+                        "gps": 1, "place": 1, "favorite": 1, "album_ids": 1, "deleted": 1,
                         "thumb": 1, "message_id": 1, "uploaded_at": 1},
         ).sort([("taken_at", -1), ("_id", -1)]).to_list(length=limit + 1)
         next_cursor = None
@@ -698,6 +752,111 @@ async def timeline_page(
     except Exception:
         logging.exception("photo_store: timeline_page failed uid=%d", owner_user_id)
         return {"items": [], "nextCursor": None}
+
+
+async def set_place(owner_user_id: int, channel_id: int, message_id: int,
+                    place: str) -> None:
+    """Persist a reverse-geocoded place label on one photo. Best-effort
+    (the geocode backfill re-labels later if this fails)."""
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        await db["photos"].update_one(
+            {"channel_id": channel_id, "message_id": message_id,
+             "owner_user_id": owner_user_id},
+            {"$set": {"place": place}},
+        )
+    except Exception:
+        logging.exception("photo_store: set_place failed cid=%d mid=%d", channel_id, message_id)
+
+
+async def backfill_geo(owner_user_id: int, channel_id: int, *, batch: int = 200) -> int:
+    """One-time migration: build `location` (GeoJSON) for photos that have
+    `gps` but no `location`. Place labels come later (geocode backfill) —
+    this only creates the indexable geometry. Returns docs updated.
+
+    Called from the startup scan loop in main/__main__.py per vault.
+    """
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return 0
+    try:
+        cursor = db["photos"].find(
+            {
+                "owner_user_id": owner_user_id,
+                "channel_id": channel_id,
+                "gps.lat": {"$type": "number"},
+                "gps.lon": {"$type": "number"},
+                "location": {"$exists": False},
+            },
+            projection={"gps": 1},
+            limit=batch,
+        )
+        updated = 0
+        async for doc in cursor:
+            gps = doc.get("gps") or {}
+            lat, lon = gps.get("lat"), gps.get("lon")
+            if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+                continue
+            await db["photos"].update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"location": {"type": "Point", "coordinates": [lon, lat]}}},
+            )
+            updated += 1
+        if updated:
+            logging.info("photo_store: backfilled %d geo points uid=%d cid=%d", updated, owner_user_id, channel_id)
+        return updated
+    except Exception:
+        logging.exception("photo_store: backfill_geo failed uid=%d cid=%d", owner_user_id, channel_id)
+        return 0
+
+
+async def backfill_places(owner_user_id: int, channel_id: int, *, batch: int = 40) -> int:
+    """Reverse-geocode photos that have geometry but no place label yet.
+
+    Deliberately small batches: Nominatim's 1 req/s policy means a big
+    library takes a while, and this runs alongside the hourly scan loop —
+    progress over urgency. Returns photos labelled this round.
+    """
+    if not Var.PHOTOS_PLACES:
+        return 0
+    from main.utils import geocode
+
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return 0
+    try:
+        docs = await db["photos"].find(
+            {
+                "owner_user_id": owner_user_id,
+                "channel_id": channel_id,
+                "location": {"$exists": True},
+                "$or": [{"place": {"$exists": False}}, {"place": ""}],
+            },
+            projection={"location": 1},
+            limit=batch,
+        ).to_list(length=batch)
+        labelled = 0
+        for doc in docs:
+            coords = (doc.get("location") or {}).get("coordinates") or []
+            if len(coords) != 2:
+                continue
+            label = await geocode.reverse_geocode(coords[1], coords[0])
+            if not label:
+                continue
+            await db["photos"].update_one(
+                {"_id": doc["_id"]}, {"$set": {"place": label}}
+            )
+            labelled += 1
+        if labelled:
+            logging.info("photo_store: labelled %d places uid=%d cid=%d", labelled, owner_user_id, channel_id)
+        return labelled
+    except Exception:
+        logging.exception("photo_store: backfill_places failed uid=%d cid=%d", owner_user_id, channel_id)
+        return 0
 
 
 async def count_photos(owner_user_id: int) -> int:
@@ -1047,7 +1206,7 @@ async def photo_facets(
     album_id: str = "",
     q: str = "",
 ) -> dict:
-    """Counts for the filter-chip row: kind, camera, month buckets.
+    """Counts for the filter-chip row: kind, camera, month, place buckets.
 
     Aggregates over the non-deleted library (optionally scoped to an album
     or a search query so chips reflect the current context). Cached 60s per
@@ -1061,7 +1220,7 @@ async def photo_facets(
     await _ensure_indexes()
     db = _get_db()
     if db is None:
-        return {"kinds": {}, "cameras": [], "months": []}
+        return {"kinds": {}, "cameras": [], "months": [], "places": []}
     match = build_timeline_query(owner_user_id, album_id=album_id, q=q)
     try:
         pipeline = [
@@ -1076,6 +1235,12 @@ async def photo_facets(
                         {"$group": {"_id": "$camera", "n": {"$sum": 1}}},
                         {"$sort": SON([("n", -1), ("_id", 1)])},
                         {"$limit": 12},
+                    ],
+                    "places": [
+                        {"$match": {"place": {"$nin": [None, ""]}}},
+                        {"$group": {"_id": "$place", "n": {"$sum": 1}}},
+                        {"$sort": SON([("n", -1), ("_id", 1)])},
+                        {"$limit": 8},
                     ],
                     "months": [
                         {"$match": {"taken_at": {"$ne": None}}},
@@ -1099,6 +1264,10 @@ async def photo_facets(
                 {"camera": d["_id"], "count": d["n"]}
                 for d in agg.get("cameras", [])
             ],
+            "places": [
+                {"place": d["_id"], "count": d["n"]}
+                for d in agg.get("places", [])
+            ],
             "months": [
                 {"year": d["_id"]["year"], "month": d["_id"]["month"], "count": d["n"]}
                 for d in agg.get("months", [])
@@ -1108,4 +1277,4 @@ async def photo_facets(
         return result
     except Exception:
         logging.exception("photo_store: photo_facets failed uid=%d", owner_user_id)
-        return {"kinds": {}, "cameras": [], "months": []}
+        return {"kinds": {}, "cameras": [], "months": [], "places": []}

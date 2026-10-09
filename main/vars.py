@@ -235,3 +235,7 @@ class Var(object):
     # from download through thumbnail generation, and there is one ingest
     # worker per bound channel — this is the cross-channel memory bound.
     PHOTOS_FETCH_CONCURRENCY = max(1, int(environ.get("PHOTOS_FETCH_CONCURRENCY", "2") or 2))
+    # Reverse-geocode EXIF GPS to place names ("Lisbon, Portugal") at ingest
+    # via Nominatim (no key, self-hostable). Off switches the feature off
+    # cleanly — existing labels stay searchable.
+    PHOTOS_PLACES = str(environ.get("PHOTOS_PLACES", "true")).lower() in ("1", "true", "yes")

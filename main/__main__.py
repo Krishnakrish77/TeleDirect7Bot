@@ -151,6 +151,36 @@ async def _photos_boot_rescan() -> None:
         logging.exception("photos: boot rescan failed")
 
 
+async def _photos_geo_backfill() -> None:
+    """Build GeoJSON points + place labels for photos ingested before the
+    Places feature. Small batches, rescheduled hourly — a large library
+    labels gradually rather than stalling boot. Runs after boot rescan so
+    the scan's ingest queue isn't competing for the geocode budget."""
+    from main.utils import photo_store
+    for _ in range(30):  # up to ~5 min for Mongo to come up
+        if photo_store.is_available():
+            break
+        await asyncio.sleep(10)
+    else:
+        return
+    while True:
+        try:
+            db = photo_store._get_db()
+            cursor = db["photo_channels"].find(
+                {"status": "active"},
+                projection={"owner_user_id": 1, "channel_id": 1},
+            )
+            total = 0
+            async for row in cursor:
+                total += await photo_store.backfill_geo(row["owner_user_id"], row["channel_id"])
+                total += await photo_store.backfill_places(row["owner_user_id"], row["channel_id"])
+            if total:
+                logging.info("photos: geo backfill progressed %d docs this pass", total)
+        except Exception:
+            logging.exception("photos: geo backfill pass failed")
+        await asyncio.sleep(3600)
+
+
 async def start_services():
     print()
     print("-------------------- Initializing Telegram Bot --------------------")
@@ -180,6 +210,8 @@ async def start_services():
         if Var.PHOTOS_ENABLED:
             asyncio.create_task(_photos_channel_reverify_loop())
             asyncio.create_task(_photos_boot_rescan())
+            if Var.PHOTOS_PLACES:
+                asyncio.create_task(_photos_geo_backfill())
     hls_session.ensure_reaper_running()
     if Var.KEEP_ALIVE:
         print("------------------ Starting Keep Alive Service ------------------")

@@ -392,6 +392,10 @@ async def photos_timeline(request: web.Request) -> web.Response:
         min_size = int(request.rel_url.query.get("minSize", "0"))
     except ValueError:
         min_size = 0
+    try:
+        radius_km = float(request.rel_url.query.get("radiusKm", "0") or 0)
+    except ValueError:
+        radius_km = 0.0
     result = await photo_store.timeline_page(
         user_id,
         cursor=request.rel_url.query.get("cursor") or None,
@@ -403,9 +407,12 @@ async def photos_timeline(request: web.Request) -> web.Response:
         kind=request.rel_url.query.get("kind") or "",
         mime=request.rel_url.query.get("mime") or "",
         camera=request.rel_url.query.get("camera") or "",
+        place=request.rel_url.query.get("place") or "",
         taken_after=request.rel_url.query.get("takenAfter") or "",
         taken_before=request.rel_url.query.get("takenBefore") or "",
         min_size=max(0, min_size),
+        near=request.rel_url.query.get("near") or "",
+        radius_km=max(0.0, radius_km),
     )
     return _json(result)
 

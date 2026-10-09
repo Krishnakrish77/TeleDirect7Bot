@@ -1168,6 +1168,7 @@ function MetaPanel({ photo }: { photo: Photo }) {
     ['Aperture', exif?.FNumber ? `f/${exif.FNumber}` : ''],
     ['ISO', exif?.ISO ? String(exif.ISO) : ''],
     ['Focal length', exif?.FocalLength ? `${Math.round(exif.FocalLength)}mm` : ''],
+    ['Place', photo.place || ''],
     ['Location', location],
   ] as Array<[string, string]>).filter(([, v]) => v);
 
@@ -1379,6 +1380,12 @@ function PhotosFilterBar({
         () => onChange({ ...filters, camera: c.camera }),
         () => onChange({ ...filters, camera: undefined }),
         `cam-${c.camera}`,
+      ))}
+      {(facets?.places ?? []).map((p) => chip(
+        filters.place === p.place, p.place, p.count,
+        () => onChange({ ...filters, place: p.place }),
+        () => onChange({ ...filters, place: undefined }),
+        `place-${p.place}`,
       ))}
       {(facets?.months ?? []).slice(0, 6).map((m) => chip(
         Boolean(activeMonth && activeMonth.year === m.year && activeMonth.month === m.month),
@@ -1843,7 +1850,7 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   const fillsViewport = view === 'timeline' || view === 'favorites' || Boolean(isAlbumDetail);
   const pageStyle = fillsViewport && gridHeight ? { ['--photos-fill-height' as string]: `${gridHeight}px` } : undefined;
   const searching = searchQ.length > 0;
-  const hasFilters = Boolean(filters.kind || filters.camera || filters.takenAfter || filters.takenBefore || filters.minSize);
+  const hasFilters = Boolean(filters.kind || filters.camera || filters.place || filters.takenAfter || filters.takenBefore || filters.minSize);
   const timelineData: TimelineData | null = timeline && {
     items: visiblePhotos,
     // Server search pages normally — the cursor is preserved so "Load more"

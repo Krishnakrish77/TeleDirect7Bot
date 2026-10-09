@@ -899,6 +899,7 @@ export async function fetchPhotosTimeline(
   if (options.q) qs.set('q', options.q);
   if (options.kind) qs.set('kind', options.kind);
   if (options.camera) qs.set('camera', options.camera);
+  if (options.place) qs.set('place', options.place);
   if (options.takenAfter) qs.set('takenAfter', options.takenAfter);
   if (options.takenBefore) qs.set('takenBefore', options.takenBefore);
   if (options.minSize) qs.set('minSize', String(options.minSize));
