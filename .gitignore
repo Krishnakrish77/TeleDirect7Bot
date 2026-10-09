@@ -123,7 +123,7 @@ gen_session.py
 gen_session.session
 
 # Frontend dependencies / caches
-frontend/node_modules/
+node_modules/
 
 # Frontend production build output
 main/server/static/app/
