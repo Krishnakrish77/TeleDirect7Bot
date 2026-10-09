@@ -17,6 +17,7 @@ type InstallPromptProps = {
 };
 
 const DISMISS_KEY = 'td:pwa-install-dismissed-until:v1';
+const DISMISS_FOREVER_KEY = 'td:pwa-install-dismissed-forever:v1';
 const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function readDismissedUntil(): number {
@@ -42,20 +43,29 @@ function rememberDismissal(): number {
 function clearDismissal() {
   try {
     window.localStorage.removeItem(DISMISS_KEY);
+    window.localStorage.removeItem(DISMISS_FOREVER_KEY);
   } catch {
     // Storage is best-effort for this prompt.
   }
 }
 
 function isDismissed(): boolean {
+  try {
+    if (window.localStorage.getItem(DISMISS_FOREVER_KEY)) return true;
+  } catch {
+    // fall through to the TTL check
+  }
   return readDismissedUntil() > Date.now();
 }
 
 function isStandalone(): boolean {
   const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean };
-  return Boolean(
-    navigatorWithStandalone.standalone ||
-    (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches),
+  // Installed-app modes: iOS <16.4 only sets navigator.standalone; Android
+  // variants can report minimal-ui/fullscreen instead of standalone.
+  if (navigatorWithStandalone.standalone) return true;
+  if (typeof window.matchMedia !== 'function') return false;
+  return ['standalone', 'minimal-ui', 'fullscreen'].some(
+    (mode) => window.matchMedia(`(display-mode: ${mode})`).matches,
   );
 }
 
@@ -110,6 +120,14 @@ export function InstallPrompt({ enabled = true }: InstallPromptProps) {
   }, [enabled]);
 
   const dismiss = useCallback(() => {
+    // Second-ever dismissal means "stop asking" — a weekly re-nag after two
+    // explicit refusals is hostile.
+    try {
+      const count = Number(window.localStorage.getItem(DISMISS_FOREVER_KEY) || 0) + 1;
+      window.localStorage.setItem(DISMISS_FOREVER_KEY, String(count >= 2 ? 'forever' : count));
+    } catch {
+      // best-effort
+    }
     setDismissedUntil(rememberDismissal());
     setInstallEvent(null);
     setMode(null);

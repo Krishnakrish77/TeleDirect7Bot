@@ -456,6 +456,7 @@ function PhotoTile({
   selectionActive: boolean;
 }) {
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   // Long-press (touch) enters selection mode — Google Photos' gesture. The
   // timer dies on movement or lift, and the synthetic click after a fired
   // long-press must not also open the lightbox.
@@ -523,8 +524,22 @@ function PhotoTile({
         alt={photo.fileName}
         loading="lazy"
         decoding="async"
-        className={loaded ? 'is-loaded' : undefined}
+        className={`photos-item__img${loaded ? ' is-loaded' : ''}${failed ? ' is-failed' : ''}`}
         onLoad={() => setLoaded(true)}
+        onError={() => {
+          // Thumb 404s while the backend is still generating (ingest
+          // pipeline lag / regen back-off). One quiet retry after 2s —
+          // most thumbs appear without any user action.
+          if (failed) return;
+          setFailed(true);
+          window.setTimeout(() => {
+            const img = new window.Image();
+            img.onload = () => setLoaded(true);
+            img.onerror = () => setFailed(true);
+            img.src = `${photoThumbUrl(photo.id, 'grid')}?r=${Date.now()}`;
+            setFailed(false);
+          }, 2000);
+        }}
         draggable={false}
       />
       <span className="photos-item__shade" aria-hidden="true" />
