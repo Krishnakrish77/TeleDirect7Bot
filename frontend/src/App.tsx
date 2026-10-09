@@ -548,6 +548,7 @@ function App() {
             data={detail.data}
             loading={detail.loading}
             error={detail.error}
+            user={user}
             saved={saved}
             onToggleSaved={(itemId) => {
               if (!user) {

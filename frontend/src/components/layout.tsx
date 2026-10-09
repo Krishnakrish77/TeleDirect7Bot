@@ -372,6 +372,9 @@ export function SearchMenu({
           </a>
         );
       })}
+      <div className="search-menu-footer">
+        <button type="button" className="search-menu-request" onClick={() => { onPick(); onRequestTitle(); }}><ListPlusIcon /> Can't find it? Request a title</button>
+      </div>
     </div>
   );
 }

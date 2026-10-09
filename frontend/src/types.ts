@@ -1041,6 +1041,8 @@ export interface SeriesDetailResponse {
   totalEpisodeCount: number;
   seasonCount: number;
   seasonBlocks: SeriesSeasonBlock[];
+  tmdbId?: number | null;
+  availableSeasons?: number[];
   related: RelatedRow[];
 }
 

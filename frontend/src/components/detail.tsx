@@ -1,9 +1,10 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AutoplayIcon, BookmarkIcon, CheckIcon, ChevronRightIcon, DownloadIcon, FilmIcon, ListIcon, ListPlusIcon, PauseIcon, PlayIcon, ShuffleIcon, XIcon } from '../icons';
 import type { PlayerState } from '../hooks/audio';
-import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, SeriesDetailResponse, VideoChoice, WatchTrack } from '../types';
+import type { AlbumDetailResponse, ArtistDetailResponse, DetailResponse, HubCard, MovieDetailResponse, PersonDetailResponse, RequestTitle, SeriesDetailResponse, User, VideoChoice, WatchTrack } from '../types';
 import type { AppRoute } from '../navigation';
 import { LoadingRows, ErrorPanel } from './common';
+import { RequestTitleDialog } from './requestTitleDialog';
 import { MediaCard } from './mediaCard';
 import { RatingControls } from './rating';
 import { formatExternalRating } from '../utils/externalRating';
@@ -18,6 +19,7 @@ export function DetailPage({
   data,
   loading,
   error,
+  user,
   saved,
   onToggleSaved,
   navigate,
@@ -35,6 +37,7 @@ export function DetailPage({
   data: DetailResponse | null;
   loading: boolean;
   error: string;
+  user: User | null;
   saved: Set<string>;
   onToggleSaved: (itemId: string) => void;
   navigate: (href: string, replace?: boolean) => void;
@@ -65,6 +68,7 @@ export function DetailPage({
         <SeriesDetail
           data={data}
           saved={saved}
+          user={user}
           onToggleSaved={onToggleSaved}
           navigate={navigate}
           onMarkWatched={onMarkWatched}
@@ -450,6 +454,7 @@ function MovieDetail({
 function SeriesDetail({
   data,
   saved,
+  user,
   onToggleSaved,
   navigate,
   onMarkWatched,
@@ -457,6 +462,7 @@ function SeriesDetail({
 }: {
   data: SeriesDetailResponse;
   saved: Set<string>;
+  user: User | null;
   onToggleSaved: (itemId: string) => void;
   navigate: (href: string, replace?: boolean) => void;
   onMarkWatched?: (keys: string[], title: string) => void;
@@ -492,6 +498,18 @@ function SeriesDetail({
     detailCountLabel(data.seasonCount, 'season'),
     detailCountLabel(data.totalEpisodeCount, 'episode'),
   ]);
+  // Request CTA only when the catalogue knows the TMDB identity — the dialog
+  // needs it to fetch missing seasons. `tmdbId` is absent (null) when the
+  // upload was never matched to TMDB.
+  const [requestOpen, setRequestOpen] = useState(false);
+  const requestSeed = useMemo<RequestTitle | null>(() => data.tmdbId ? {
+    tmdbId: data.tmdbId,
+    kind: 'tv',
+    title: data.title,
+    year: data.year,
+    overview: data.overview,
+    posterPath: '',
+  } : null, [data.tmdbId, data.title, data.year, data.overview]);
   const [downloadBatch, setDownloadBatch] = useState<{ current: number; total: number } | null>(null);
   const downloadStatusTimer = useRef<number | null>(null);
   const downloadTargets = useMemo(() => {
@@ -555,20 +573,39 @@ function SeriesDetail({
         saved={saved.has(data.savedId)}
         onToggleSaved={() => onToggleSaved(data.savedId)}
         extraActions={(
-          <MarkWatchedAction
-            keys={seriesWatchKeys}
-            title={data.title}
-            initiallyWatched={visibleEntriesWatched}
-            onMarkWatched={onMarkWatched}
-            onMarked={handleShownMarked}
-            label={`Mark ${shownScopeLabel} watched`}
-            watchedLabel={`${shownScopeLabel.charAt(0).toUpperCase()}${shownScopeLabel.slice(1)} watched`}
-            ariaLabel={`${data.title}: ${shownScopeLabel} watched`}
-          />
+          <>
+            <MarkWatchedAction
+              keys={seriesWatchKeys}
+              title={data.title}
+              initiallyWatched={visibleEntriesWatched}
+              onMarkWatched={onMarkWatched}
+              onMarked={handleShownMarked}
+              label={`Mark ${shownScopeLabel} watched`}
+              watchedLabel={`${shownScopeLabel.charAt(0).toUpperCase()}${shownScopeLabel.slice(1)} watched`}
+              ariaLabel={`${data.title}: ${shownScopeLabel} watched`}
+            />
+            {requestSeed && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setRequestOpen(true)}
+                title="Request missing seasons"
+              >
+                <ListPlusIcon />
+                <span>Request seasons</span>
+              </Button>
+            )}
+          </>
         )}
       >
         <RatingControls messageId={ratingId} />
       </DetailHero>
+      <RequestTitleDialog
+        open={requestOpen}
+        onOpenChange={setRequestOpen}
+        seed={requestSeed}
+        signedIn={Boolean(user)}
+      />
 
       <DetailInfoSection
         label="About this series"

@@ -1562,6 +1562,7 @@ def _meta_payload(item: HubItem) -> dict:
         "imdbHref": f"https://www.imdb.com/title/{item.imdb_id}/" if item.imdb_id else "",
         "externalRating": _external_rating(item),
         "trailerKey": item.trailer_key or "",
+        "tmdbId": int(item.tmdb_id or 0) or None,
     }
 
 
@@ -1963,6 +1964,11 @@ def _series_detail_payload(
         "trailerKey": meta["trailerKey"],
         "playHref": first_entry["playHref"],
         "classicHref": first_entry["classicHref"],
+        "tmdbId": meta["tmdbId"],
+        "availableSeasons": [
+            block["season"] for block in blocks
+            if block["season"] is not None
+        ],
         "seasonOptions": options,
         "showSelector": show_selector,
         "selectedSeason": selected,
