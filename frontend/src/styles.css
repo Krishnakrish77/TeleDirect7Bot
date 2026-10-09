@@ -14559,9 +14559,15 @@ select.edit-field-input {
 
 /* Loading skeleton: shimmer rows standing in for the justified grid. */
 .photos-skeleton { display: grid; gap: 0.7rem; }
-.photos-skeleton__day { display: block; width: 9rem; height: 1.05rem; margin-top: 0.7rem; border-radius: 6px; background: rgba(148, 163, 184, 0.16); animation: photos-shimmer 1.4s ease-in-out infinite; }
+/* Status-load page: natural document flow (NOT the measured fill layout —
+   its flex chain collapses the skeleton to a pill and overflow:hidden clips
+   the rest: the black-void bug). Min-height keeps it taller than the chrome. */
+.photos-page--loading { min-height: calc(100svh - 6rem); }
+/* Alphas tuned to be visible on the near-black app background — 0.12/0.16
+   read as a black void on phones (the reported broken loading state). */
+.photos-skeleton__day { display: block; width: 9rem; height: 1.05rem; margin-top: 0.7rem; border-radius: 6px; background: rgba(148, 163, 184, 0.28); animation: photos-shimmer 1.4s ease-in-out infinite; }
 .photos-skeleton__row { display: flex; gap: 3px; }
-.photos-skeleton__tile { display: block; flex: 0 0 auto; height: 190px; border-radius: 3px; background: rgba(148, 163, 184, 0.12); animation: photos-shimmer 1.4s ease-in-out infinite; }
+.photos-skeleton__tile { display: block; flex: 0 0 auto; height: 190px; border-radius: 3px; background: rgba(148, 163, 184, 0.22); animation: photos-shimmer 1.4s ease-in-out infinite; }
 .photos-skeleton__tile:nth-child(2n) { animation-delay: 0.15s; }
 .photos-skeleton__tile:nth-child(3n) { animation-delay: 0.3s; }
 @keyframes photos-shimmer {

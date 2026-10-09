@@ -1808,9 +1808,25 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
     );
   }
   if (statusLoading) {
+    // Chrome + shimmer skeleton instead of a bare "Checking…" line: the page
+    // structure is known before the status resolves, and the text-only
+    // variant read as a black void on phones (the reported broken state).
     return (
-      <main className="photos-page photos-page--centered">
-        <div className="photos-loading">Checking your library…</div>
+      <main className="photos-page photos-page--loading">
+        <div className="photos-shell">
+          <nav className="photos-nav" aria-label="Photos sections">
+            {PHOTOS_NAV.map(({ key, label, icon: NavIcon }) => (
+              <button key={key} type="button" className={key === 'timeline' ? 'active' : ''} tabIndex={-1}>
+                <NavIcon />
+                <span>{label}</span>
+              </button>
+            ))}
+          </nav>
+          <section className="photos-main">
+            <header className="photos-header" aria-hidden="true" />
+            <TimelineSkeleton width={0} />
+          </section>
+        </div>
       </main>
     );
   }
