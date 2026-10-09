@@ -712,10 +712,43 @@ _SW_SHELL = [
 ]
 
 
+def _cache_version() -> str:
+    """Content hash of the precached shell — changes on every deploy.
+
+    Drives the SW cache name (td-<hash>): a new deploy gets a fresh cache,
+    the activate handler deletes the old one. Computing it per /sw.js
+    request is fine (small files, no-cache header anyway) but a module
+    one-liner cached by mtime avoids re-hashing on every fetch.
+    """
+    manifest = Path(__file__).resolve().parent / "static" / "app" / ".vite" / "manifest.json"
+    try:
+        import hashlib
+        h = hashlib.sha256()
+        h.update(manifest.read_bytes())
+        # Chunk contents matter too (a redeploy rewrites them without
+        # necessarily touching the manifest mtimes).
+        static_root = manifest.parent.parent
+        for asset in _load_react_app_shell_assets(manifest):
+            p = static_root / asset.lstrip("/")
+            if p.is_file():
+                h.update(p.read_bytes())
+        return h.hexdigest()[:12]
+    except Exception:
+        # Fall back to mtime so a broken manifest still rotates the cache.
+        try:
+            return f"m{int(manifest.stat().st_mtime)}"
+        except Exception:
+            return "dev"
+
+
 _SW_JS = """\
 /* TeleDirect service worker — network-first for navigation,
    cache-first for static assets, network-only for streams/API. */
-const CACHE = 'td-v6';
+/* Cache name is versioned per deploy (content hash of the shell) — a stale
+   shell can no longer win after a redeploy. Hand-bumped names caused the
+   "dead page under cached chrome" bug: same name across deploys kept old
+   chunks winning over the new ones indefinitely. */
+const CACHE = 'td-__CACHE_VERSION__';
 const SHELL = __SHELL__;
 
 self.addEventListener('install', e => {
@@ -773,14 +806,23 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Static assets — cache-first (versioned icon URLs are immutable by URL)
+  // Hashed Vite assets: the hash in the filename makes them immutable, but
+  // the cache must not outlive the deploy — cache-first served the PREVIOUS
+  // deploy's chunk after a redeploy (same SW cache name back then), so the
+  // app kept running old code no matter how often the user refreshed.
+  // Stale-while-revalidate: instant paint from cache, fresh copy cached for
+  // the next load.
   if (url.pathname.startsWith('/static/') ||
       url.pathname.match(/\\.(png|svg|ico|webmanifest|json)$/)) {
     e.respondWith(
-      caches.match(e.request).then(r => r || fetch(e.request).then(res => {
-        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
-        return res;
-      }))
+      caches.open(CACHE).then(async (c) => {
+        const cached = await c.match(e.request);
+        const network = fetch(e.request).then((res) => {
+          if (res.ok) c.put(e.request, res.clone());
+          return res;
+        }).catch(() => null);
+        return cached || (await network) || Response.error();
+      })
     );
     return;
   }
@@ -794,7 +836,9 @@ self.addEventListener('fetch', e => {
     );
   }
 });
-""".replace("__SHELL__", json.dumps(_SW_SHELL, separators=(",", ":")))
+""".replace("__CACHE_VERSION__", _cache_version()).replace(
+    "__SHELL__", json.dumps(_SW_SHELL, separators=(",", ":"))
+)
 
 
 @routes.get("/sw.js")
