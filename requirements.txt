@@ -5,6 +5,7 @@ pytgcrypto
 jinja2
 uvloop
 motor>=3.6
+pymongo>=4.9
 PyJWT==2.9.0
 m3u-ipytv==1.0.0
 Pillow

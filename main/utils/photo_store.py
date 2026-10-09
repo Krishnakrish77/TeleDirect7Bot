@@ -25,10 +25,8 @@ from typing import Any, Dict, List, Optional
 
 from main.vars import Var
 
-try:
-    from bson.son import SON
-except ImportError:  # pragma: no cover — only matters for Mongo deployments
-    SON = dict  # type: ignore[assignment,misc]
+from bson.son import SON
+from pymongo.errors import DuplicateKeyError
 
 _PAGE_CAP = 200
 
@@ -430,15 +428,8 @@ async def upsert_photo(doc: dict) -> Optional[str]:
         try:
             await db["photos"].insert_one(dict(doc))
             return None
-        except Exception as exc:
-            # DuplicateKeyError (pymongo.errors) — imported at call time:
-            # pymongo 4.x moved it out of bson.errors, and a module-level
-            # import inside a shared try/except poisoned every name in the
-            # block when the import failed (prod NameError: TEXT).
-            from pymongo.errors import DuplicateKeyError
-            if not isinstance(exc, DuplicateKeyError):
-                raise
-        # already exists — fall through to the merge below
+        except DuplicateKeyError:
+            pass  # already exists — fall through to the merge below
         existing = await db["photos"].find_one(
             {"channel_id": doc["channel_id"], "message_id": doc["message_id"]},
             projection={"_id": 1, "deleted": 1, "sha256": 1},
