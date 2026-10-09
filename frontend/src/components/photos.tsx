@@ -1088,7 +1088,14 @@ function useGridHeight(active: boolean, revision: string): [React.RefCallback<HT
     const shell = document.querySelector('.app-shell');
     const observer = shell ? new MutationObserver(measure) : null;
     observer?.observe(shell as Node, { attributes: true, attributeFilter: ['class'] });
+    // Measure on attach: the effect below only re-runs when active/revision
+    // change. The grid mounts late (channel status resolves first) and an
+    // empty library keeps revision constant, so without this the height never
+    // gets set — the fill page then collapses to its padding and its
+    // overflow:hidden clips the whole view (the mobile black void).
+    const frame = requestAnimationFrame(measure);
     cleanup.current = () => {
+      cancelAnimationFrame(frame);
       window.removeEventListener('resize', measure);
       observer?.disconnect();
     };
@@ -1880,6 +1887,12 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   // trash rows scroll with the document (the shell already reserves the nav).
   const fillsViewport = view === 'timeline' || view === 'favorites' || Boolean(isAlbumDetail);
   const pageStyle = fillsViewport && gridHeight ? { ['--photos-fill-height' as string]: `${gridHeight}px` } : undefined;
+  // The fill layout is overflow:hidden and sizes from --photos-fill-height:
+  // applying it before the first measurement collapses the page to its
+  // padding and clips the whole view. Until the height lands, fall back to
+  // the normal document flow (one paint of a scrollable page, then the
+  // measured layout takes over).
+  const fillActive = fillsViewport && gridHeight > 0;
   const searching = searchQ.length > 0;
   const hasFilters = Boolean(filters.kind || filters.camera || filters.place || filters.takenAfter || filters.takenBefore || filters.minSize);
   const timelineData: TimelineData | null = timeline && {
@@ -1892,7 +1905,7 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   return (
     <main
       ref={fillRef}
-      className={`photos-page${fillsViewport ? ' photos-page--fill' : ''}${selectionActive ? ' photos-page--selecting' : ''}`}
+      className={`photos-page${fillActive ? ' photos-page--fill' : ''}${selectionActive ? ' photos-page--selecting' : ''}`}
       style={pageStyle}
       onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
