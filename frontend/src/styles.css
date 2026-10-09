@@ -15017,6 +15017,9 @@ a.photos-lb-btn { text-decoration: none; }
   }
   /* Pagination must stay reachable now that the grid owns the viewport. */
   .photos-page--fill .photos-more { flex: 0 0 auto; position: sticky; bottom: 0.4rem; align-self: center; }
+  /* The page's generic clamp padding double-spaces against the shell gap and
+     the fixed chrome — every pixel here comes off the photo grid. */
+  .photos-page--fill { padding: 0.55rem 0.75rem 0.75rem; }
   /* The pinned day label must stay: the component suppresses the in-flow copy
      while that day is the pinned one, so hiding the pinned element left the
      current day with no header at all. */
@@ -15036,10 +15039,24 @@ a.photos-lb-btn { text-decoration: none; }
      the detail lead that flings the album name to the right edge. */
   .photos-header__lead--detail { justify-content: flex-start; }
   .photos-subtitle, .photos-import-line { display: none; }
-  .photos-header__actions { justify-content: flex-end; width: 100%; }
-  .photos-header__actions { gap: 0.4rem; }
+  /* One chrome row: search shrinks to fill the space left of Upload/⋮ —
+     the search used to take its own full-width row (order:3), doubling the
+     header height and burying the grid under black chrome. */
+  .photos-header__actions { justify-content: flex-end; width: 100%; gap: 0.4rem; flex-wrap: nowrap; }
+  .photos-search { order: 0; flex: 1 1 auto; min-width: 0; }
+  .photos-search input { width: 100%; min-width: 0; }
   /* 44px minimum for touch, compact padding/type kept. */
   .photos-header__actions button { min-height: 2.75rem; padding: 0 0.7rem; font-size: 0.8rem; }
+  /* Filter chips: one scrollable row — wrapping to two rows (109px) starved
+     the scroller on phones. */
+  .photos-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 0.15rem;
+  }
+  .photos-filters::-webkit-scrollbar { display: none; }
+  .photos-chip { flex: 0 0 auto; }
   .photos-tabs { gap: 0.1rem; }
   .photos-tabs button { margin-right: 0.55rem; padding: 0.5rem 0.1rem; font-size: 0.86rem; }
 
