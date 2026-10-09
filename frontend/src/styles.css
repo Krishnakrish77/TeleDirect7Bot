@@ -14619,6 +14619,58 @@ select.edit-field-input {
 }
 .photos-chip--active .photos-chip__count { background: rgba(249, 115, 22, 0.25); color: #fff; }
 
+/* Mobile filter entry point: the chip row collapses to this one button with
+   an active-count badge; the options move into the sheet below. */
+.photos-filters__trigger {
+  display: none;
+  align-items: center; gap: 0.45rem;
+  min-height: 2.75rem; padding: 0 0.9rem;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--panel); color: var(--muted);
+  cursor: pointer; font: inherit; font-size: 0.84rem; font-weight: 600;
+}
+.photos-filters__trigger svg { width: 1rem; height: 1rem; }
+.photos-filters__trigger:hover, .photos-filters__trigger:focus-visible { color: var(--text); border-color: var(--line-strong, var(--line)); outline: none; }
+.photos-filters__badge {
+  display: grid; place-items: center;
+  min-width: 1.25rem; height: 1.25rem; padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--brand); color: #fff;
+  font-size: 0.72rem; font-weight: 700;
+}
+
+/* Filter bottom sheet (mobile): sections of the same chips, wrapping. */
+.photos-filter-sheet {
+  position: fixed;
+  z-index: 91;
+  right: max(0.85rem, env(safe-area-inset-right, 0px));
+  bottom: max(0.85rem, env(safe-area-inset-bottom, 0px));
+  display: grid;
+  gap: 0.9rem;
+  width: min(calc(100% - 1.7rem), 460px);
+  max-height: min(84svh, 680px);
+  padding: 1rem;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #111317;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+.photos-filter-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.photos-filter-sheet__head h2 { margin: 0; font-size: 1.05rem; }
+.photos-filter-sheet__clear {
+  border: 0; background: none; color: var(--brand);
+  cursor: pointer; font: inherit; font-size: 0.84rem; font-weight: 700;
+  min-height: 2.75rem; padding: 0 0.4rem;
+}
+.photos-filter-sheet__section h3 {
+  margin: 0 0 0.45rem;
+  color: var(--muted); font-size: 0.72rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.photos-filter-sheet__options { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.photos-filter-sheet .photos-chip { min-height: 2.75rem; }
+
 .photos-loading, .photos-empty { display: grid; gap: 0.5rem; justify-items: center; text-align: center; padding: 2.5rem 0; color: var(--muted); }
 .photos-empty { padding: clamp(2rem, 6vw, 3.5rem) clamp(1rem, 4vw, 2.5rem); border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
 .photos-empty__icon { display: grid; place-items: center; width: 3.2rem; height: 3.2rem; border-radius: 999px; background: rgba(148, 163, 184, 0.14); color: var(--muted); }
@@ -14983,6 +15035,11 @@ a.photos-lb-btn { text-decoration: none; }
   .photos-selection-bar button,
   .photos-selection-bar__albums,
   .photos-album-card__actions button { min-height: 2.75rem; }
+  /* Touch has no hover to reveal the day select-all check — it only indents
+     every in-flow day header (the pinned floating label has no check, so
+     headers misaligned). Hide it until selection mode starts. */
+  .photos-day__check { display: none; }
+  .photos-page--selecting .photos-day__check { display: grid; opacity: 1; }
 }
 
 /* ── Touch / narrow layouts ─────────────────────────────────────────────── */
@@ -15067,16 +15124,12 @@ a.photos-lb-btn { text-decoration: none; }
   .photos-search input { width: 100%; min-width: 0; }
   /* 44px minimum for touch, compact padding/type kept. */
   .photos-header__actions button { min-height: 2.75rem; padding: 0 0.7rem; font-size: 0.8rem; }
-  /* Filter chips: one scrollable row — wrapping to two rows (109px) starved
-     the scroller on phones. */
-  .photos-filters {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-    padding-bottom: 0.15rem;
-  }
-  .photos-filters::-webkit-scrollbar { display: none; }
-  .photos-chip { flex: 0 0 auto; }
+  /* Filter chips collapse to a single button + bottom sheet on phones: kinds
+     + cameras + places + months overflow a 360px row no matter how the
+     scroll/padding is tuned, and a scrolling chip strip hides the active
+     filter state. */
+  .photos-filters { display: none; }
+  .photos-filters__trigger { display: inline-flex; align-self: flex-start; }
   .photos-tabs { gap: 0.1rem; }
   .photos-tabs button { margin-right: 0.55rem; padding: 0.5rem 0.1rem; font-size: 0.86rem; }
 
