@@ -42,12 +42,19 @@ function bannerFor(ctx: BannerSource): string {
   return 'Chatting about this title — no spoilers';
 }
 
-/** One-tap openers shown in the empty state. */
+/** One-tap openers shown in the empty state, when the chat is anchored to a title. */
 const SUGGESTIONS: ReadonlyArray<{ label: string; prompt: string }> = [
   { label: 'Where am I?', prompt: 'What episode am I on, and how far through it am I?' },
   { label: 'The story so far', prompt: 'Catch me up on the story so far.' },
   { label: 'A character', prompt: 'Which character is the most interesting so far, and why?' },
   { label: 'What to watch next', prompt: 'What should I watch after this?' },
+];
+
+/** Openers for a general chat — no page title to anchor to (home, hub…). */
+const GENERAL_SUGGESTIONS: ReadonlyArray<{ label: string; prompt: string }> = [
+  { label: 'Where am I?', prompt: 'What am I in the middle of, and how far through am I?' },
+  { label: 'What to watch next', prompt: 'What should I watch next? Pick something in my library that suits my taste.' },
+  { label: 'Music for tonight', prompt: 'Find some music in my library that fits tonight.' },
 ];
 
 /**
@@ -215,11 +222,13 @@ export function BuddyChat({ context }: { context?: BuddyChatContext }) {
                 <p className="buddy-note">
                   {justCleared
                     ? 'Chat cleared — start a fresh one below.'
-                    : 'Ask anything — the story so far, a character, what to watch next. Spoiler-safe, always.'}
+                    : context
+                      ? 'Ask anything — the story so far, a character, what to watch next. Spoiler-safe, always.'
+                      : 'Ask anything — what you\'re in the middle of, what to watch next, or music to put on. Spoiler-safe, always.'}
                 </p>
                 {!justCleared && (
                   <div className="buddy-suggestions" aria-label="Suggested questions">
-                    {SUGGESTIONS.map((suggestion) => (
+                    {(context ? SUGGESTIONS : GENERAL_SUGGESTIONS).map((suggestion) => (
                       <Button
                         key={suggestion.label}
                         type="button"

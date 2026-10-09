@@ -131,6 +131,24 @@ describe('BuddyChat', () => {
     expect(await screen.findByText('Chatting about The Wire S03E05 · 40% through — no spoilers beyond this episode')).toBeTruthy();
   });
 
+  it('offers general openers when no page title anchors the chat', async () => {
+    vi.mocked(fetchBuddyPrefs).mockResolvedValue({ enabled: true });
+    vi.mocked(fetchBuddyHistory).mockResolvedValue({ messages: [] });
+    render(<BuddyChat />);
+
+    // No anchor: title-specific chips ("The story so far", "A character") must not appear.
+    await screen.findByLabelText('Message CouchMate');
+    expect(screen.getByRole('button', { name: 'Music for tonight' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'The story so far' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'A character' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Where am I?' }));
+    await waitFor(() => expect(sendBuddyMessage).toHaveBeenCalledWith({
+      message: 'What am I in the middle of, and how far through am I?',
+      itemId: undefined, messageId: undefined,
+    }));
+  });
+
   it('surfaces a failed enable (e.g. 503 when Mongo is down) as a retry-able inline error', async () => {
     vi.mocked(fetchBuddyPrefs).mockResolvedValue({ enabled: false });
     vi.mocked(setBuddyEnabled).mockRejectedValueOnce(new ApiError('Buddy preferences need the database. Try again shortly.', 503));
