@@ -308,7 +308,9 @@ async def _extract_vtt_cached(cache_key, secure_hash: str, message_id: int, trac
     probe = await hls.probe(message_id, src)
     if not any(s.index == track for s in probe.subtitles):
         return None
-    data = await hls.extract_subtitle_vtt(src, track)
+    item = media_index.get_item(message_id)
+    file_size = int(getattr(item, "file_size", 0) or 0) if item is not None else 0
+    data = await hls.extract_subtitle_vtt(src, track, file_size)
     if not data:
         return None
     _vtt_cache_set(cache_key, data)

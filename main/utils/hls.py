@@ -43,7 +43,18 @@ SUBPROCESS_TIMEOUT = 25.0
 # sequentially over the Telegram-streamed loopback source (no fast seek to
 # a text stream) — genuinely "can take minutes" per _extract_vtt_cached's
 # own docstring, unlike the metadata-only probe/thumbnail runs above.
-SUBTITLE_EXTRACT_TIMEOUT = 180.0
+# Scale with file size: extraction is a full sequential demux, so a 1.8 GB
+# file at ~5 MB/s loopback throughput needs ~6 minutes — a fixed timeout
+# killed ffmpeg mid-run, and every retry restarted from byte 0 (the captions
+# endpoint then 503'd forever on big files). 90s floor covers small files'
+# startup + Telegram cold reads; ~2.5 MB/s sustained rate assumed on top.
+SUBTITLE_EXTRACT_BASE_TIMEOUT = 90.0
+SUBTITLE_EXTRACT_BYTES_PER_SECOND = 2.5 * 1024 * 1024
+
+
+def subtitle_extract_timeout(file_size: int) -> float:
+    """Seconds ffmpeg may take to demux the whole file for subtitle extraction."""
+    return SUBTITLE_EXTRACT_BASE_TIMEOUT + file_size / SUBTITLE_EXTRACT_BYTES_PER_SECOND
 
 # Cap concurrent ffmpeg subprocesses so a free-tier instance can't be DOSed
 # into oblivion by a handful of viewers all hitting "play" at once.
@@ -520,10 +531,17 @@ async def grab_thumbnail(source_url: str, duration: float = 0.0, seek: float = 1
     return stdout
 
 
-async def extract_subtitle_vtt(source_url: str, track_index: int) -> Optional[bytes]:
+async def extract_subtitle_vtt(
+    source_url: str, track_index: int, file_size: int = 0
+) -> Optional[bytes]:
     """Run ffmpeg to extract the Nth subtitle stream and convert it to WebVTT
-    bytes. Returns None on failure."""
+    bytes. Returns None on failure.
+
+    Extraction demuxes the whole file, so the asyncio deadline must scale with
+    file_size — a fixed 180s cap truncated big-file runs (and each retry
+    restarted the demux from byte 0, so the track never extracted)."""
     global _ffmpeg_available
+    timeout = subtitle_extract_timeout(file_size)
     args = [
         "ffmpeg",
         "-hide_banner", "-loglevel", "error",
@@ -542,12 +560,13 @@ async def extract_subtitle_vtt(source_url: str, track_index: int) -> Optional[by
         return None
     try:
         stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=SUBTITLE_EXTRACT_TIMEOUT
+            proc.communicate(), timeout=timeout
         )
     except asyncio.TimeoutError:
         await _finish_subprocess(proc)
         logging.warning(
-            "ffmpeg subtitle extract timed out (track=%d)", track_index
+            "ffmpeg subtitle extract timed out after %.0fs (track=%d)",
+            timeout, track_index,
         )
         return None
     except asyncio.CancelledError:
