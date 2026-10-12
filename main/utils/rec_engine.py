@@ -44,6 +44,51 @@ _MAX_RECS = 12   # max items in shelf
 TmdbKey = Tuple[int, str]
 
 
+def _card_title(card) -> str:
+    item = _card_item(card)
+    return str(
+        getattr(card, "series_title", "")
+        or getattr(card, "title", "")
+        or getattr(item, "series_title", "")
+        or getattr(item, "title", "")
+        or ""
+    )
+
+
+def watched_title_keys(history: list) -> set[str]:
+    """Normalized title keys of everything in the retained watch history.
+
+    Watch-history rows keep their catalogue title even after the upload is
+    deleted or re-uploaded, so the normalized title is the only durable
+    identity for exclusion when message-id/watchKey/TMDB matching all miss.
+    Shared with ai_rec; normalization reuses ``dedup.movie_key`` noise
+    stripping so release-tagged history titles match clean card titles.
+    """
+    from main.utils import dedup as _dedup
+    keys: set[str] = set()
+    for entry in history:
+        raw = entry.get("title") if isinstance(entry, dict) else None
+        text = re.sub(r"\s+", " ", str(raw or "")).strip()
+        if not text:
+            continue
+        slug = _dedup.movie_key(text, None) or ""
+        slug = slug.split("::", 1)[0]
+        if slug:
+            keys.add(slug)
+    return keys
+
+
+def _is_card_watched_title(card, watched_titles: set[str]) -> bool:
+    if not watched_titles:
+        return False
+    text = re.sub(r"\s+", " ", _card_title(card)).strip()
+    if not text:
+        return False
+    from main.utils import dedup as _dedup
+    slug = _dedup.movie_key(text, None) or ""
+    return bool(slug) and slug.split("::", 1)[0] in watched_titles
+
+
 def _tmdb_for_item(item) -> Tuple[Optional[int], str]:
     if item is None or not item.tmdb_id:
         return None, ""
@@ -437,6 +482,8 @@ async def get_recommendations(
     exclude = set(profile.get("exclude_tmdb") or set()) | dismissed
     candidates = await _fetch_recs_for_seeds(seeds, exclude)
     cards = _rank_candidate_cards(candidates, profile)
+    watched_titles = watched_title_keys(await wh_store.get_recent(user_id, limit=200))
+    cards = [card for card in cards if not _is_card_watched_title(card, watched_titles)]
     to_cache = [_card_tmdb(card) for card in cards]
     to_cache = [(tid, kind) for tid, kind in to_cache if tid]
 
@@ -463,6 +510,7 @@ async def get_personal_shelves(
         dismissed = dismissed if dismissed is not None else collected_dismissed
     seed_genres: Counter = profile.get("seed_genres") or Counter()
     exclude_tmdb = set(profile.get("exclude_tmdb") or set()) | dismissed
+    watched_titles = watched_title_keys(await wh_store.get_recent(user_id, limit=200))
     shelves: list[dict] = []
     used_names: set[str] = set()
     for genre, _weight in seed_genres.most_common(2):
@@ -476,6 +524,8 @@ async def get_personal_shelves(
         for card in cards:
             tid, kind = _card_tmdb(card)
             if tid and (tid, kind) in exclude_tmdb:
+                continue
+            if _is_card_watched_title(card, watched_titles or set()):
                 continue
             group_key = getattr(card, "series_key", "") or getattr(card, "movie_key", "") or str(_card_message_id(card))
             if group_key in seen_groups:

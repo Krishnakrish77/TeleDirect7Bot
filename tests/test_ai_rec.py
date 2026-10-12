@@ -82,6 +82,35 @@ class AiRecGroundingTest(unittest.TestCase):
             result = ai_rec._watched_card_ids(set(by_key))
         self.assertEqual(result, {"movie:kalki", "series:dark", "3"})
 
+    def test_watched_title_keys_match_cards_across_reuploads(self):
+        # A release-tagged history title from a since-deleted upload must
+        # still exclude a clean card title for the same film.
+        history = [{"cw_key": "gone-upload", "title": "Idhayam Murali (2026) Tamil 720p WEB-DL"}]
+        keys = rec_engine.watched_title_keys(history)
+        self.assertEqual(keys, {"idhayam-murali"})
+
+        new_upload = {"href": "/watch/new", "itemId": "999999", "title": "Idhayam Murali", "eyebrow": "Video"}
+        self.assertEqual(ai_rec._dedup_payloads([new_upload], set(), set(), keys), [])
+        self.assertEqual(ai_rec._validate_cached([new_upload], exclude_title_keys=keys), [])
+        # Unrelated titles keep flowing.
+        other = {"href": "/watch/other", "itemId": "888888", "title": "A Buyer's Market", "eyebrow": "Video"}
+        self.assertEqual(ai_rec._dedup_payloads([other], set(), set(), keys), [other])
+
+    def test_series_title_keys_cover_deleted_episode_uploads(self):
+        history = [{"cw_key": "gone-episode", "title": "House.of.the.Dragon.S01E02.1080p.WEB-DL"}]
+        keys = ai_rec._series_title_keys(history)
+        self.assertIn("series:house-of-the-dragon", keys)
+        card = {
+            "href": "/series/house-of-the-dragon",
+            "itemId": "series:house-of-the-dragon",
+            "title": "House of the Dragon",
+            "eyebrow": "Series",
+        }
+        self.assertEqual(ai_rec._dedup_payloads([card], set(), keys), [])
+        self.assertEqual(ai_rec._validate_cached([card], exclude_item_ids=keys), [])
+        # Movie-shaped titles never produce series keys.
+        self.assertEqual(ai_rec._series_title_keys([{"title": "Idhayam Murali 2026"}]), set())
+
     def test_ai_picks_uses_the_full_retained_watch_history_for_exclusion(self):
         self.assertEqual(ai_rec._AI_REC_HISTORY_LIMIT, 200)
 

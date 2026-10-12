@@ -27,6 +27,7 @@ from typing import Awaitable, Callable, Optional
 from main.utils import (
     ai_rec_store, cw_store, dismissed_store, gemini, media_index, rec_engine, rec_store, request_store, tmdb, wh_store,
 )
+from main.utils import dedup
 from main.vars import Var
 
 _MAX_CANDIDATES = 50
@@ -164,13 +165,45 @@ class AgentRunError(RuntimeError):
 
 # ---- pure helpers (unit-tested in test_ai_rec.py) -------------------------
 
+def _normalize_title_key(title: object) -> str:
+    """Reduce a watch-history or card title to a comparable token string.
+
+    Watch history rows keep their catalogue title even after the upload is
+    deleted or re-uploaded, so a normalized title is the only durable
+    identity for "the user already watched this film". Strip release noise
+    and quality tokens the same way ``movie_key`` does, so ``Idhayam Murali
+    (2026) Tamil 720p WEB-DL`` and a clean ``Idhayam Murali`` card match.
+    """
+    text = re.sub(r"\s+", " ", str(title or "")).strip()
+    if not text:
+        return ""
+    text = dedup.movie_key(text, None) or ""
+    return text.split("::", 1)[0]
+
+
+def _watched_title_keys(history: list) -> set[str]:
+    """Normalized title keys of everything in the retained watch history."""
+    keys: set[str] = set()
+    for entry in history:
+        key = _normalize_title_key(entry.get("title") if isinstance(entry, dict) else None)
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _payload_title_key(payload: dict) -> str:
+    return _normalize_title_key(payload.get("title"))
+
+
 def _dedup_payloads(
     payloads: list,
     exclude_keys: set[str],
     exclude_item_ids: set[str] | None = None,
+    exclude_title_keys: set[str] | None = None,
 ) -> list:
     """Drop duplicate cards and titles the user already watched/listened to."""
     exclude_item_ids = exclude_item_ids or set()
+    exclude_title_keys = exclude_title_keys or set()
     seen: set = set()
     out = []
     for p in payloads:
@@ -181,6 +214,10 @@ def _dedup_payloads(
             continue
         if p.get("watchKey") and p.get("watchKey") in exclude_keys:
             continue
+        if exclude_title_keys:
+            title_key = _payload_title_key(p)
+            if title_key and title_key in exclude_title_keys:
+                continue
         seen.add(href)
         out.append(p)
     return out
@@ -570,6 +607,7 @@ def _validate_cached(
     exclude_keys: set[str] | None = None,
     exclude_item_ids: set[str] | None = None,
     excluded_tmdb: set[tuple[int, str]] | None = None,
+    exclude_title_keys: set[str] | None = None,
 ) -> list:
     """Drop stale, watched, and explicitly excluded cached cards.
 
@@ -581,12 +619,17 @@ def _validate_cached(
     exclude_keys = exclude_keys or set()
     exclude_item_ids = exclude_item_ids or set()
     excluded_tmdb = excluded_tmdb or set()
+    exclude_title_keys = exclude_title_keys or set()
     out = []
     for item in items or []:
         if not _video_payloads([item]):
             continue
         if str(item.get("watchKey") or "") in exclude_keys:
             continue
+        if exclude_title_keys:
+            title_key = _payload_title_key(item)
+            if title_key and title_key in exclude_title_keys:
+                continue
         try:
             tmdb_key = (int(item.get("tmdbId") or 0), str(item.get("tmdbKind") or ""))
         except (TypeError, ValueError):
@@ -652,6 +695,32 @@ def _watched_card_ids(watch_keys: set[str]) -> set[str]:
             if message_id:
                 ids.add(str(message_id))
     return ids
+
+
+def _series_title_keys(history: list) -> set[str]:
+    """Series group keys derived from episode-shaped watch-history titles.
+
+    Episode uploads resolve through ``_item_for_cw_key`` only while the
+    watched upload still exists in the catalogue. A deleted/re-uploaded
+    episode loses that mapping, so fall back to the episode title itself:
+    ``series.parse`` extracts the show name and reproduces the same slug
+    the catalogue uses for ``series:<key>`` ids.
+    """
+    from main.utils import series as series_parse
+    keys: set[str] = set()
+    for entry in history:
+        raw = entry.get("title") if isinstance(entry, dict) else None
+        text = re.sub(r"\s+", " ", str(raw or "")).strip()
+        if not text:
+            continue
+        match = series_parse.parse(text)
+        if not match:
+            continue
+        cleaned = dedup.clean_for_search(match.raw_title or match.title)
+        slug = series_parse.slugify(cleaned or match.title)
+        if slug:
+            keys.add(f"series:{slug}")
+    return keys
 
 
 def _now() -> float:
@@ -899,6 +968,7 @@ async def _trending_items(
     exclude_keys: set[str] | None = None,
     exclude_item_ids: set[str] | None = None,
     excluded_tmdb: set[tuple[int, str]] | None = None,
+    exclude_title_keys: set[str] | None = None,
 ) -> list:
     """Return a safe cold-start fallback.
 
@@ -912,7 +982,7 @@ async def _trending_items(
         items, _ = media_index.query_grouped(sort="newest", limit=max(limit * 3, limit))
         payloads = [_spa._card(item) for item in items]
         payloads = _video_payloads(payloads)
-        payloads = _dedup_payloads(payloads, exclude_keys or set(), exclude_item_ids)
+        payloads = _dedup_payloads(payloads, exclude_keys or set(), exclude_item_ids, exclude_title_keys)
         payloads = _exclude_tmdb_payloads(payloads, excluded_tmdb or set())
         return _fallback_items(payloads, limit)
     except Exception:
@@ -987,8 +1057,9 @@ async def _cached_ai_recommendations(
     valid = _validate_cached(
         cached,
         exclude_keys=seen_keys,
-        exclude_item_ids=_watched_card_ids(seen_keys),
+        exclude_item_ids=_watched_card_ids(seen_keys) | _series_title_keys(history),
         excluded_tmdb=set(profile.get("exclude_tmdb") or set()) | set(dismissed or set()),
+        exclude_title_keys=_watched_title_keys(history),
     )
     if len(valid) < 3:  # Too stale to present as a complete shelf.
         return None
@@ -1052,11 +1123,13 @@ def _clean_agent_args(name: str, raw: object) -> dict:
 class _AgentCatalogue:
     """A per-request, filtered view of grouped cards exposed to Gemini."""
 
-    def __init__(self, *, profile: dict, seen_keys: set[str], watched_ids: set[str], excluded_tmdb: set[tuple[int, str]]):
+    def __init__(self, *, profile: dict, seen_keys: set[str], watched_ids: set[str], excluded_tmdb: set[tuple[int, str]],
+                 watched_title_keys: set[str] | None = None):
         self.profile = profile
         self.seen_keys = seen_keys
         self.watched_ids = watched_ids
         self.excluded_tmdb = excluded_tmdb
+        self.watched_title_keys = watched_title_keys or set()
         self._art_cache: dict = {}
         self._by_href: dict[str, str] = {}
         self.payloads: dict[str, dict] = {}
@@ -1085,13 +1158,13 @@ class _AgentCatalogue:
         card_payloads = [(_spa._card(card, art_cache=self._art_cache), score) for card, score in ranked_cards]
         payloads = [payload for payload, _score in card_payloads]
         video_payloads = _video_payloads(payloads)
-        unseen_payloads = _dedup_payloads(video_payloads, self.seen_keys, self.watched_ids)
+        unseen_payloads = _dedup_payloads(video_payloads, self.seen_keys, self.watched_ids, self.watched_title_keys)
         included_payloads = _exclude_tmdb_payloads(unseen_payloads, self.excluded_tmdb)
         # A second cache-style validation covers hidden/deleted single uploads
         # and makes all three tools subject to identical eligibility rules.
         payloads = _validate_cached(
             included_payloads, exclude_keys=self.seen_keys, exclude_item_ids=self.watched_ids,
-            excluded_tmdb=self.excluded_tmdb,
+            excluded_tmdb=self.excluded_tmdb, exclude_title_keys=self.watched_title_keys,
         )
         self._last_filter_counts = {
             "ranked": len(card_payloads),
@@ -1206,9 +1279,11 @@ async def _generate_agentic(
     # the same Mongo gathers twice.
     gathered_signals = {"profile": profile, "history": history, "cw_map": cw_map, "dismissed": dismissed}
     seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map)
-    watched_ids = _watched_card_ids(seen_keys)
+    watched_ids = _watched_card_ids(seen_keys) | _series_title_keys(history)
+    watched_title_keys = _watched_title_keys(history)
     excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
-    catalogue = _AgentCatalogue(profile=profile, seen_keys=seen_keys, watched_ids=watched_ids, excluded_tmdb=excluded)
+    catalogue = _AgentCatalogue(profile=profile, seen_keys=seen_keys, watched_ids=watched_ids,
+                                excluded_tmdb=excluded, watched_title_keys=watched_title_keys)
     intent = query or "Refresh the user's library picks with a useful, varied set."
     contents = [{"role": "user", "parts": [{"text": "\n".join([
         "You curate a private playable media library.",
@@ -1295,6 +1370,7 @@ async def _generate_agentic(
     items = _rerank_agent_picks(items, catalogue, profile, limit, pinned_id=pinned_id, metrics=rerank_metrics)
     items = _validate_cached(
         items, exclude_keys=seen_keys, exclude_item_ids=watched_ids, excluded_tmdb=excluded,
+        exclude_title_keys=watched_title_keys,
     )
     if not items:
         raise failed("invalid_picks")
@@ -1375,7 +1451,8 @@ async def get_ai_recommendations(
             items = await _trending_items(
                 limit,
                 exclude_keys=seen_keys,
-                exclude_item_ids=_watched_card_ids(seen_keys),
+                exclude_item_ids=_watched_card_ids(seen_keys) | _series_title_keys(history),
+                exclude_title_keys=_watched_title_keys(history),
             )
         except Exception:
             logging.exception("ai_rec: fallback activity filter failed")
@@ -1436,12 +1513,14 @@ async def _deterministic_shelf(
     has_activity = _has_user_activity(profile, stats, history, cw_map)
     has_signal = bool(profile.get("seeds")) or bool(stats.get("top_genres")) or bool(stats.get("top_artists"))
     seen_keys = {str(entry.get("cw_key") or "") for entry in history} | set(cw_map.keys())
-    watched_card_ids = _watched_card_ids(seen_keys)
+    watched_card_ids = _watched_card_ids(seen_keys) | _series_title_keys(history)
+    watched_title_keys = _watched_title_keys(history)
     excluded = set(profile.get("exclude_tmdb") or set()) | set(dismissed or set())
     if not has_signal or not gemini.available():
         return await _finish({
             "items": await _trending_items(
-                limit, exclude_keys=seen_keys, exclude_item_ids=watched_card_ids, excluded_tmdb=excluded,
+                limit, exclude_keys=seen_keys, exclude_item_ids=watched_card_ids,
+                excluded_tmdb=excluded, exclude_title_keys=watched_title_keys,
             ),
             "externalItems": [],
             "message": (
@@ -1459,6 +1538,7 @@ async def _deterministic_shelf(
     query_hrefs = {payload.get("href") for payload in query_payloads if payload.get("href")}
     payloads = _dedup_payloads(
         query_payloads + [_spa._card(obj, art_cache=art_cache) for obj in objs], seen_keys, watched_card_ids,
+        watched_title_keys,
     )
     payloads = _video_payloads(payloads)
     payloads = _exclude_tmdb_payloads(payloads, excluded)
@@ -1467,7 +1547,8 @@ async def _deterministic_shelf(
     if len(payloads) < 6:
         return await _finish({
             "items": await _trending_items(
-                limit, exclude_keys=seen_keys, exclude_item_ids=watched_card_ids, excluded_tmdb=excluded,
+                limit, exclude_keys=seen_keys, exclude_item_ids=watched_card_ids,
+                excluded_tmdb=excluded, exclude_title_keys=watched_title_keys,
             ),
             "externalItems": [],
             "message": "Your history is applied; here are fresh picks while we find more close matches." if has_activity else "",
