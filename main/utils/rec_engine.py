@@ -27,6 +27,7 @@ from typing import List, Optional, Tuple
 
 from main.utils import (
     cw_store,
+    dedup,
     dismissed_store,
     media_index,
     rec_feedback_store,
@@ -55,38 +56,44 @@ def _card_title(card) -> str:
     )
 
 
+def normalize_title_key(title: object) -> str:
+    """Reduce a watch-history or card title to a comparable slug.
+
+    Strips release noise and quality tokens via ``dedup.movie_key`` so
+    ``Idhayam Murali (2026) Tamil 720p WEB-DL`` and a clean ``Idhayam
+    Murali`` card produce the same key. The ``::year`` suffix is dropped:
+    matching is deliberately name-only, so a remake of a watched title is
+    also excluded — over-exclusion is the safe direction here.
+    """
+    text = re.sub(r"\s+", " ", str(title or "")).strip()
+    if not text:
+        return ""
+    slug = dedup.movie_key(text, None) or ""
+    return slug.split("::", 1)[0]
+
+
 def watched_title_keys(history: list) -> set[str]:
     """Normalized title keys of everything in the retained watch history.
 
     Watch-history rows keep their catalogue title even after the upload is
     deleted or re-uploaded, so the normalized title is the only durable
     identity for exclusion when message-id/watchKey/TMDB matching all miss.
-    Shared with ai_rec; normalization reuses ``dedup.movie_key`` noise
-    stripping so release-tagged history titles match clean card titles.
+    Shared with ai_rec.
     """
-    from main.utils import dedup as _dedup
     keys: set[str] = set()
     for entry in history:
         raw = entry.get("title") if isinstance(entry, dict) else None
-        text = re.sub(r"\s+", " ", str(raw or "")).strip()
-        if not text:
-            continue
-        slug = _dedup.movie_key(text, None) or ""
-        slug = slug.split("::", 1)[0]
-        if slug:
-            keys.add(slug)
+        key = normalize_title_key(raw)
+        if key:
+            keys.add(key)
     return keys
 
 
 def _is_card_watched_title(card, watched_titles: set[str]) -> bool:
     if not watched_titles:
         return False
-    text = re.sub(r"\s+", " ", _card_title(card)).strip()
-    if not text:
-        return False
-    from main.utils import dedup as _dedup
-    slug = _dedup.movie_key(text, None) or ""
-    return bool(slug) and slug.split("::", 1)[0] in watched_titles
+    key = normalize_title_key(_card_title(card))
+    return bool(key) and key in watched_titles
 
 
 def _tmdb_for_item(item) -> Tuple[Optional[int], str]:

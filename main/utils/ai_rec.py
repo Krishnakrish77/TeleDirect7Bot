@@ -170,15 +170,10 @@ def _normalize_title_key(title: object) -> str:
 
     Watch history rows keep their catalogue title even after the upload is
     deleted or re-uploaded, so a normalized title is the only durable
-    identity for "the user already watched this film". Strip release noise
-    and quality tokens the same way ``movie_key`` does, so ``Idhayam Murali
-    (2026) Tamil 720p WEB-DL`` and a clean ``Idhayam Murali`` card match.
+    identity for "the user already watched this film". See
+    ``rec_engine.normalize_title_key`` for the normalization contract.
     """
-    text = re.sub(r"\s+", " ", str(title or "")).strip()
-    if not text:
-        return ""
-    text = dedup.movie_key(text, None) or ""
-    return text.split("::", 1)[0]
+    return rec_engine.normalize_title_key(title)
 
 
 def _watched_title_keys(history: list) -> set[str]:
