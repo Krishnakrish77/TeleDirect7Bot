@@ -136,31 +136,16 @@ class ResolveContextTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(await buddy_context.resolve_context(7, "movie:missing"))
             self.assertIsNone(await buddy_context.resolve_context(7, None, 999))
 
-    async def test_no_anchor_falls_back_to_newest_in_progress_item(self):
-        # The For-you panel chat sends no item reference: the buddy must still
-        # anchor to the newest watch-state entry instead of going generic.
+    async def test_no_anchor_is_general_chat_even_with_watch_state(self):
+        # A general chat (home page, no item reference) must NOT silently
+        # anchor to the newest watch-state entry — that hijacked unrelated
+        # requests (e.g. a music mix) into a conversation about that title.
+        # Watch-state questions go through the where_was_i tool instead.
         ep2 = make_item(102, series_key="dark", series_title="Dark", season=1, episode=2)
-        with patched({102: ep2},
-                     cw={"x102": {"pos": 1200, "dur": 3000, "t": 1, "title": "Dark"}}):
-            context = await buddy_context.resolve_context(7, None, None)
-
-        self.assertEqual((context["season"], context["episode"]), (1, 2))
-        self.assertEqual(context["cutoffLabel"], "S01E02")
-        self.assertFalse(context["completed"])
-        self.assertEqual(context["progress"], 0.4)
-
-    async def test_no_anchor_falls_back_to_newest_completed_item(self):
-        ep1 = make_item(101, series_key="dark", series_title="Dark", season=1, episode=1)
-        with patched({101: ep1},
-                     wh=[{"cw_key": "x101", "title": "Dark", "watched_at": 0}]):
-            context = await buddy_context.resolve_context(7, None, None)
-
-        self.assertEqual((context["season"], context["episode"]), (1, 1))
-        self.assertTrue(context["completed"])
-        self.assertIsNone(context["progress"])
-
-    async def test_no_anchor_without_watch_state_is_general_chat(self):
-        with patched():
+        movie = make_item(201, title="The Invisible Guest", movie_key="invisible-guest")
+        with patched({102: ep2, 201: movie},
+                     cw={"x102": {"pos": 1200, "dur": 3000, "t": 1, "title": "Dark"}},
+                     wh=[{"cw_key": "x201", "title": "The Invisible Guest", "watched_at": 0}]):
             self.assertIsNone(await buddy_context.resolve_context(7, None, None))
 
     async def test_watch_ref_anchors_exact_playing_item(self):
@@ -174,24 +159,6 @@ class ResolveContextTest(unittest.IsolatedAsyncioTestCase):
                      cw={"x401": {"pos": 900, "dur": 3000, "t": 5, "title": "The Love Hypothesis"}}):
             context = await buddy_context.resolve_context(7, "watch:AgADAx201", None)
         self.assertEqual(context["title"], "Sarder 2")
-
-    async def test_no_anchor_prefers_video_over_audio(self):
-        movie = make_item(201, title="Sarder 2", movie_key="sarder-2")
-        audiobook = make_item(401, title="The Love Hypothesis")
-        audiobook.media_kind = "audio"
-        with patched({201: movie, 401: audiobook},
-                     cw={"x401": {"pos": 900, "dur": 3000, "t": 5, "title": "The Love Hypothesis"},
-                         "x201": {"pos": 2950, "dur": 3000, "t": 3, "title": "Sarder 2"}}):
-            context = await buddy_context.resolve_context(7, None, None)
-        self.assertEqual(context["title"], "Sarder 2")
-
-    async def test_no_anchor_audio_only_user_still_anchors_audio(self):
-        audiobook = make_item(401, title="The Love Hypothesis")
-        audiobook.media_kind = "audio"
-        with patched({401: audiobook},
-                     cw={"x401": {"pos": 900, "dur": 3000, "t": 5, "title": "The Love Hypothesis"}}):
-            context = await buddy_context.resolve_context(7, None, None)
-        self.assertEqual(context["title"], "The Love Hypothesis")
 
     async def test_album_ref_resolves_first_track(self):
         track = make_item(501, title="Song A")

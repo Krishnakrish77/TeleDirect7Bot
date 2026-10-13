@@ -259,8 +259,8 @@ class ChatRouteTest(unittest.IsolatedAsyncioTestCase):
             enabled(True),
             patch.object(
                 buddy_routes.buddy_store, "consume_daily", new=AsyncMock(return_value=True),
-            ),
-            patch.object(buddy_routes, "_take_token", return_value=True),
+            ) as quota,
+            patch.object(buddy_routes, "_take_token", return_value=True) as take_token,
         ):
             empty = await buddy_routes.buddy_chat(_Request({"message": "   "}))
             overlong = await buddy_routes.buddy_chat(_Request({"message": "x" * 2001}))
@@ -268,6 +268,49 @@ class ChatRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(empty.status, 400)
         self.assertEqual(overlong.status, 400)
         self.assertEqual(garbage.status, 400)
+        # Validation runs BEFORE the quota/burst gates: an invalid message
+        # must never burn a daily message or a burst token.
+        quota.assert_not_awaited()
+        take_token.assert_not_called()
+
+    async def test_502_refunds_daily_quota(self):
+        refund = AsyncMock(return_value=True)
+        with ExitStack() as stack:
+            patches = self._enter(stack, gemini_reply=None)
+            with patch.object(buddy_routes.buddy_store, "refund_daily", refund):
+                response = await buddy_routes.buddy_chat(_Request({"message": "hi"}))
+        self.assertEqual(response.status, 502)
+        # A failed turn must not eat the daily budget.
+        refund.assert_awaited_once_with(7)
+        patches["append"].assert_not_awaited()
+
+    async def test_cards_persisted_with_history(self):
+        search_row = {"title": "Arrival", "kind": "movie", "playHref": "/movie/arrival",
+                      "poster": "p", "year": 2016, "overview": "o"}
+        with ExitStack() as stack:
+            patches = self._enter(
+                stack,
+                gemini_reply=None,
+            )
+            # Drive the tool loop: first call returns a functionCall, the
+            # second (post-tool) call returns the final text.
+            patches["generate"].side_effect = [
+                {"candidates": [{"content": {"parts": [
+                    {"functionCall": {"name": "search_catalogue",
+                                      "args": {"query": "arrival"}}}]}}]},
+                {"candidates": [{"content": {"parts": [{"text": "here it is"}]},
+                                 "finishReason": "STOP"}]},
+            ]
+            with patch.object(buddy_routes.buddy_tools, "search_catalogue",
+                              return_value={"results": [search_row]}):
+                response = await buddy_routes.buddy_chat(_Request({"message": "find arrival"}))
+        self.assertEqual(response.status, 200)
+        payload = json.loads(response.text)
+        self.assertEqual(payload["items"][0]["href"], "/movie/arrival")
+        # The card list is persisted alongside the reply, not just echoed.
+        patches["append"].assert_awaited_once_with(
+            7, "general", "find arrival", "here it is", payload["items"],
+        )
 
     async def test_happy_path_chats_and_persists_pair(self):
         context = {
@@ -287,14 +330,14 @@ class ChatRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("_prompt", payload["context"])
         self.assertEqual(payload["context"]["cutoffLabel"], "S03E06")
         patches["append"].assert_awaited_once_with(
-            7, "m:105", "is Jonas okay?", "canned reply",
+            7, "m:105", "is Jonas okay?", "canned reply", [],
         )
         generate = patches["generate"]
         self.assertEqual(generate.await_args.kwargs["model"],
                          buddy_routes.Var.GEMINI_BUDDY_MODEL)
-        # Guardrails ride as a system instruction, and output is hard-capped.
+        # Guardrails ride as a system instruction, and output is capped.
         self.assertEqual(generate.await_args.kwargs["system_instruction"], "sys rules")
-        self.assertEqual(generate.await_args.kwargs["max_output_tokens"], 400)
+        self.assertEqual(generate.await_args.kwargs["max_output_tokens"], 1024)
         self.assertEqual(generate.await_args.args[0],
                          [{"role": "user", "parts": [{"text": "x"}]}])
 
@@ -310,7 +353,7 @@ class ChatRouteTest(unittest.IsolatedAsyncioTestCase):
             patches = self._enter(stack, context=None)
             response = await buddy_routes.buddy_chat(_Request({"message": "hi"}))
         self.assertEqual(json.loads(response.text)["context"], None)
-        patches["append"].assert_awaited_once_with(7, "general", "hi", "canned reply")
+        patches["append"].assert_awaited_once_with(7, "general", "hi", "canned reply", [])
 
 
 class HistoryRouteTest(unittest.IsolatedAsyncioTestCase):
@@ -421,9 +464,12 @@ class CardsFromToolResultsTest(unittest.TestCase):
                 {"title": "Junk", "kind": "movie", "playHref": "", "year": None, "overview": ""},
             ]},
         ])
-        self.assertEqual(len(cards), 1)
+        self.assertEqual(len(cards), 2)
         self.assertEqual(cards[0]["title"], "Arrival")
         self.assertEqual(cards[0]["href"], "/movie/arrival")
+        # Books get tappable cards too — the deep link is a real SPA route.
+        self.assertEqual(cards[1]["title"], "Some Book")
+        self.assertEqual(cards[1]["href"], "/books?book=5")
 
     def test_no_results_yields_no_items(self):
         self.assertEqual(buddy_routes._cards_from_tool_results([{"error": "x"}]), [])

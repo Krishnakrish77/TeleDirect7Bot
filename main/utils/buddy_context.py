@@ -126,36 +126,6 @@ def _prompt_meta(item) -> dict:
     }
 
 
-def _latest_watch_item(cw: dict, wh: list):
-    """The item the user is most likely chatting about: newest in-progress
-    entry, else newest completion. cw keys end in the message id.
-
-    Long-form audio (audiobooks, DJ sets) refreshes its cw timestamp every
-    save, so pure recency routinely anchors to a 10-hour audiobook instead
-    of the film the user just watched. Video entries win ties: sort by
-    recency among videos first, and only fall back to audio when the user
-    has no video state at all.
-    """
-    def is_video(item) -> bool:
-        return (getattr(item, "media_kind", "") or "video") != "audio"
-
-    def first_item(filter_fn) -> Optional[object]:
-        for key in cw or {}:
-            item = _item_for_cw_key(key)
-            if item is not None and filter_fn(item):
-                return item
-        for entry in wh or []:
-            item = _item_for_cw_key(entry.get("cw_key", ""))
-            if item is not None and filter_fn(item):
-                return item
-        return None
-
-    item = first_item(is_video)
-    if item is None:
-        item = first_item(lambda _it: True)
-    return item
-
-
 def _first_item_by_artist(artist_ref: str):
     """The newest item for an artist-page anchor.
 
@@ -257,16 +227,13 @@ async def resolve_context(user_id: int, item_id: Optional[str] = None,
                 item = None
         elif ref.isdigit():
             item = media_index.get_item(int(ref))
-    cw = wh = None
     if item is None and not series_episodes:
-        # No anchor (e.g. the For-you panel chat): anchor to the user's most
-        # recent watch state so the buddy still knows what they are watching.
-        cw, wh = await _watch_state(user_id)
-        item = _latest_watch_item(cw, wh)
-        if item is None:
-            return None
-    if cw is None:
-        cw, wh = await _watch_state(user_id)
+        # No anchor (home page, hub): general chat. Watch-state questions are
+        # answered via the where_was_i tool instead — silently anchoring to
+        # the newest continue-watching entry hijacked unrelated requests
+        # (e.g. a music mix) into a conversation about that title.
+        return None
+    cw, wh = await _watch_state(user_id)
 
     if series_episodes is not None:
         # Bare series reference: pick the episode that best matches where the

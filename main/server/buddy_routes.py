@@ -8,6 +8,7 @@ user's buddy flag.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Optional
 
@@ -141,15 +142,6 @@ async def buddy_chat(request: web.Request) -> web.Response:
         return web.json_response({"error": "unauthenticated"}, status=401)
     if not await buddy_store.get_enabled(uid):
         return _disabled()
-    # Daily quota first (cheap store counter), then the burst bucket.
-    if not await buddy_store.consume_daily(uid, Var.BUDDY_DAILY_LIMIT):
-        return web.json_response(
-            {"error": "Daily Movie Buddy limit reached — see you tomorrow."},
-            status=429,
-            headers={"Retry-After": _quota_retry_after()},
-        )
-    if not _take_token(uid):  # every chat message calls Gemini
-        return _rate_limited()
     try:
         body = await request.json()
     except Exception:
@@ -161,6 +153,17 @@ async def buddy_chat(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": f"message must be 1-{_MESSAGE_CAP} characters"}, status=400,
         )
+    # Validate the request BEFORE touching the quota — an invalid message
+    # must not burn one of the daily messages. Every chat message calls
+    # Gemini, so the burst bucket gates after validation too.
+    if not await buddy_store.consume_daily(uid, Var.BUDDY_DAILY_LIMIT):
+        return web.json_response(
+            {"error": "Daily Movie Buddy limit reached — see you tomorrow."},
+            status=429,
+            headers={"Retry-After": _quota_retry_after()},
+        )
+    if not _take_token(uid):
+        return _rate_limited()
     item_id = body.get("itemId")
     message_id = _message_id(body.get("messageId"))
     context = await buddy_context.resolve_context(uid, item_id, message_id)
@@ -182,9 +185,11 @@ async def buddy_chat(request: web.Request) -> web.Response:
             timeout=45,
             system_instruction=system_instruction,
             tools=buddy_tools.declarations(),
-            # Hard output cap: even a jailbroken buddy stays useless as a
-            # general-purpose assistant.
-            max_output_tokens=400,
+            # Output cap: tools are read-only and user-scoped, so length is
+            # not a jailbreak defence — the cap exists to bound cost. 1024
+            # still fits the persona's "few sentences" default but stops
+            # multi-item comparisons being cut mid-sentence.
+            max_output_tokens=1024,
         )
         calls = _tool_calls(data)
         if not calls:
@@ -217,13 +222,16 @@ async def buddy_chat(request: web.Request) -> web.Response:
     reply = _extract_reply(data)
     if not reply:
         # Never persist a dangling user message — the pair goes in atomically
-        # only once a reply exists.
+        # only once a reply exists. Refund the daily message too: a Gemini
+        # outage must not eat the user's quota for nothing.
+        logging.warning("buddy_chat: no reply uid=%d session=%s (gemini failure or empty)", uid, session_key)
+        await buddy_store.refund_daily(uid)
         return web.json_response(
             {"error": "The buddy couldn't think of a reply — try again."},
             status=502,
         )
-    await buddy_store.append_exchange(uid, session_key, message, reply)
     cards = _cards_from_tool_results(tool_results)
+    await buddy_store.append_exchange(uid, session_key, message, reply, cards)
     return web.json_response({
         "reply": reply,
         "context": _public_context(context),
@@ -257,13 +265,13 @@ def _cards_from_tool_results(collected: list[dict]) -> list[dict]:
     for result in collected:
         for row in (result or {}).get("results") or []:
             href = str(row.get("playHref") or "")
-            if not href.startswith(("/series/", "/movie/", "/album/", "/play/")):
+            if not href.startswith(("/series/", "/movie/", "/album/", "/books", "/play/")):
                 continue
             if href in seen_hrefs:
                 continue  # the model may repeat a search across turns
             seen_hrefs.add(href)
             kind = row.get("kind")
-            if kind not in ("movie", "series", "album", "audio"):
+            if kind not in ("movie", "series", "album", "audio", "book"):
                 continue
             cards.append({
                 "title": row.get("title") or "",
@@ -279,9 +287,17 @@ def _cards_from_tool_results(collected: list[dict]) -> list[dict]:
 
 
 def _extract_reply(data: Optional[dict]) -> Optional[str]:
-    """Pull the text out of a generateContent response, or None."""
+    """Pull the text out of a generateContent response, or None.
+
+    A MAX_TOKENS finish means the reply was cut mid-sentence; it is still
+    returned (better than nothing) but the truncation is logged so silent
+    degradation is at least visible server-side.
+    """
     try:
         parts = data["candidates"][0]["content"]["parts"]
+        finish = (data["candidates"][0] or {}).get("finishReason")
+        if finish == "MAX_TOKENS":
+            logging.warning("buddy_chat: reply truncated at max_output_tokens")
         text = "".join(str(p.get("text", "")) for p in parts).strip()
         return text or None
     except (AttributeError, IndexError, KeyError, TypeError):

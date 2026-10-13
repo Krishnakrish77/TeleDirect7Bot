@@ -115,7 +115,11 @@ async def set_enabled(user_id: int, enabled: bool) -> bool:
 
 
 async def get_history(user_id: int, session_key: str) -> list:
-    """Return [{role, text, t}] oldest→newest, capped at _MESSAGE_CAP."""
+    """Return [{role, text, t, items?}] oldest→newest, capped at _MESSAGE_CAP.
+
+    ``items`` (library cards the buddy surfaced) rides on the buddy message
+    so a reload shows the same cards the live reply did.
+    """
     await _ensure_indexes()
     db = _get_db()
     if db is None:
@@ -126,11 +130,15 @@ async def get_history(user_id: int, session_key: str) -> list:
             projection={"messages": 1},
         )
         messages = (doc or {}).get("messages") or []
-        return [
-            {"role": m.get("role"), "text": m.get("text", ""), "t": m.get("t", 0)}
-            for m in messages[-_MESSAGE_CAP:]
-            if m.get("role") in ("user", "buddy") and m.get("text")
-        ]
+        out = []
+        for m in messages[-_MESSAGE_CAP:]:
+            if m.get("role") not in ("user", "buddy") or not m.get("text"):
+                continue
+            row = {"role": m.get("role"), "text": m.get("text", ""), "t": m.get("t", 0)}
+            if m.get("items"):
+                row["items"] = m["items"]
+            out.append(row)
+        return out
     except Exception:
         logging.exception("buddy_store: get_history failed uid=%d key=%s",
                           user_id, session_key)
@@ -138,11 +146,14 @@ async def get_history(user_id: int, session_key: str) -> list:
 
 
 async def append_exchange(user_id: int, session_key: str,
-                          user_text: str, buddy_text: str) -> bool:
+                          user_text: str, buddy_text: str,
+                          items: Optional[list] = None) -> bool:
     """Atomically append a user+buddy pair so history never dangles one side.
 
     A single $push/$each/$slice keeps the cap at _MESSAGE_CAP without a
-    read-modify-write round-trip. Returns False when nothing was persisted.
+    read-modify-write round-trip. ``items`` (library cards for the reply)
+    is stored on the buddy message so history replays them. Returns False
+    when nothing was persisted.
     """
     await _ensure_indexes()
     db = _get_db()
@@ -150,9 +161,12 @@ async def append_exchange(user_id: int, session_key: str,
         return False
     try:
         now = time.time()
+        buddy_msg = {"role": "buddy", "text": buddy_text, "t": int(now)}
+        if items:
+            buddy_msg["items"] = items
         pair = [
             {"role": "user", "text": user_text, "t": int(now)},
-            {"role": "buddy", "text": buddy_text, "t": int(now)},
+            buddy_msg,
         ]
         async with _mutation_lock:
             await db["buddy_sessions"].update_one(
@@ -220,6 +234,31 @@ async def consume_daily(user_id: int, limit: int) -> bool:
         return True
     except Exception:
         logging.exception("buddy_store: consume_daily failed uid=%d", user_id)
+        return False
+
+
+async def refund_daily(user_id: int) -> bool:
+    """Give back one daily-quota message (a turn that produced no reply).
+
+    Best-effort: only decrements when the counter is still on today's UTC
+    date and above zero, so a refund can never push the count negative or
+    resurrect yesterday's budget.
+    """
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return False
+    try:
+        today = datetime.now(timezone.utc).date().isoformat()
+        async with _mutation_lock:
+            await db["buddy_prefs"].update_one(
+                {"user_id": user_id, "day": today, "day_count": {"$gt": 0}},
+                {"$inc": {"day_count": -1},
+                 "$set": {"updated_at": datetime.now(timezone.utc)}},
+            )
+        return True
+    except Exception:
+        logging.exception("buddy_store: refund_daily failed uid=%d", user_id)
         return False
 
 
