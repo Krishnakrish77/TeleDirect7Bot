@@ -2851,9 +2851,9 @@ def _video_watch_payload(
                 "posterUrl": _tmdb_image(next_item.episode_still_path, "w300") or _thumb(next_item),
             }
 
-    # Series episode variants share one CW record. The selected source remains
-    # explicit so resume/autoplay does not silently move a viewer to another
-    # quality when that variant exists.
+    # Quality variants of the same title (series episode or movie) share one
+    # CW record. The selected source remains explicit so resume/autoplay does
+    # not silently move a viewer to another quality when that variant exists.
     resume_item = media_index.canonical_watch_variant(item)
 
     return {
