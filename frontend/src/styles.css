@@ -10439,7 +10439,7 @@ img {
 }
 
 .edit-field-hint {
-  color: #475569;
+  color: var(--muted);
   font-size: 0.72rem;
   text-transform: none;
   letter-spacing: 0;

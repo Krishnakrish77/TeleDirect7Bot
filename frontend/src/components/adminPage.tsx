@@ -1556,9 +1556,9 @@ function EditModal({
                               <div key={lang} style={{ display: 'grid', gap: '0.3rem' }}>
                                 <strong style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#fdba74' }}>{langResults[0]?.label || lang}</strong>
                                 {langResults.map((result) => (
-                                  <div key={result.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center' }}>
-                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[result.release, result.source].filter(Boolean).join(' · ') || result.fileName}</span>
-                                    <Button type="button" variant="outline" size="sm" disabled={subtitleUploading} onClick={() => void handleSubtitleFetch(result)}>Attach</Button>
+                                  <div key={result.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem 0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <span style={{ color: 'var(--muted)', overflowWrap: 'anywhere' }}>{[result.release, result.source].filter(Boolean).join(' · ') || result.fileName}</span>
+                                    <Button type="button" variant="outline" size="sm" style={{ flexShrink: 0, marginLeft: 'auto' }} disabled={subtitleUploading} onClick={() => void handleSubtitleFetch(result)}>Attach</Button>
                                   </div>
                                 ))}
                               </div>
