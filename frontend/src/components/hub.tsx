@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, saveContinueEntry, trackRecommendationEvents } from '../api';
+import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, fetchMusicGenres, saveContinueEntry, trackRecommendationEvents } from '../api';
+import type { MusicGenreFacet } from '../api';
 import { localAppHref } from '../navigation';
 import { ChevronRightIcon, FilmIcon, PlayIcon, UserIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
@@ -485,6 +486,15 @@ export function GridView({
   const isMusicGrid =
     params.view === 'music' ||
     (data.items.length > 0 && data.items.every((card) => card.aspect === 'square'));
+  const [genreFacets, setGenreFacets] = useState<MusicGenreFacet[]>([]);
+  useEffect(() => {
+    if (!isMusicGrid) return;
+    const controller = new AbortController();
+    fetchMusicGenres(controller.signal)
+      .then(setGenreFacets)
+      .catch(() => setGenreFacets([]));
+    return () => controller.abort();
+  }, [isMusicGrid]);
   const priorityCount = 8;
   const isLoadingMore = loading && params.offset > 0;
   const searchQuery = params.q.trim();
@@ -501,6 +511,34 @@ export function GridView({
           <h2>{params.q ? `Search: ${params.q}` : 'Browse'}</h2>
         </div>
       </div>
+      {isMusicGrid && genreFacets.length > 0 && (
+        <div className="filter-view-row" role="group" aria-label="Music genres">
+          <Button
+            key="__all"
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={!params.tag ? 'filter-view-chip active' : 'filter-view-chip'}
+            aria-pressed={!params.tag}
+            onClick={() => update({ tag: '', offset: 0 })}
+          >
+            All genres
+          </Button>
+          {genreFacets.map(({ genre }) => (
+            <Button
+              key={genre}
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={params.tag === genre.toLowerCase() ? 'filter-view-chip active' : 'filter-view-chip'}
+              aria-pressed={params.tag === genre.toLowerCase()}
+              onClick={() => update({ tag: params.tag === genre.toLowerCase() ? '' : genre.toLowerCase(), offset: 0 })}
+            >
+              {genre}
+            </Button>
+          ))}
+        </div>
+      )}
       {loading && (
         <p className="grid-refresh-note" role="status">
           Updating results...

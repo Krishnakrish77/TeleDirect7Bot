@@ -1,11 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { createPlaylist, deletePlaylist, removeTrackFromPlaylist, renamePlaylist, reorderPlaylistTracks } from '../api';
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, ListIcon, ListPlusIcon, MoreVerticalIcon, PauseIcon, PlayIcon, SearchIcon, ShuffleIcon, XIcon } from '../icons';
+import { createPlaylist, deletePlaylist, refreshSmartPlaylist, removeTrackFromPlaylist, renamePlaylist, reorderPlaylistTracks } from '../api';
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, ListIcon, ListPlusIcon, MoreVerticalIcon, PauseIcon, PlayIcon, AutoplayIcon, SearchIcon, ShuffleIcon, SparkleIcon, XIcon } from '../icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import type { PlayerState } from '../hooks/audio';
 import type { PlaylistDetailResponse, PlaylistsResponse, User, WatchTrack } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
 import { PlaylistCover } from './addToPlaylistSheet';
+import { SmartPlaylistEditor } from './smartPlaylistEditor';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -163,6 +164,7 @@ export function PlaylistDetailPage({
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('playlist');
   const [renaming, setRenaming] = useState(false);
+  const [editingRules, setEditingRules] = useState(false);
   const [name, setName] = useState(data?.name || '');
   const [working, setWorking] = useState('');
   const [status, setStatus] = useState('');
@@ -297,9 +299,12 @@ export function PlaylistDetailPage({
           ) : (
             <h1>{data.name}</h1>
           )}
-          <p>{trackCountLabel(data.tracks.length)}</p>
+          <p>
+            {data.smart && <span className="smart-badge" title="Rules update this playlist automatically"><SparkleIcon /> Smart</span>}
+            {trackCountLabel(data.tracks.length)}
+          </p>
           <div className="playlist-detail-stats" aria-label="Playlist summary">
-            <span>Curated order</span>
+            <span>{data.smart ? 'Rules-driven order' : 'Curated order'}</span>
             <span>{data.tracks.length ? `Starts with ${data.tracks[0].title}` : 'Ready for your first track'}</span>
           </div>
           <div className="hero-actions">
@@ -316,6 +321,35 @@ export function PlaylistDetailPage({
                 <span>Rename</span>
               </Button>
             )}
+            {data.smart && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={working === 'refresh'}
+                onClick={async () => {
+                  setWorking('refresh');
+                  setStatus('');
+                  try {
+                    const updated = await refreshSmartPlaylist(data.playlistId);
+                    setData(updated);
+                    setStatus('Playlist refreshed');
+                  } catch (err) {
+                    setStatus(err instanceof Error ? err.message : 'Unable to refresh');
+                  } finally {
+                    setWorking('');
+                  }
+                }}
+              >
+                <AutoplayIcon />
+                <span>Refresh</span>
+              </Button>
+            )}
+            {!editingRules && (
+              <Button type="button" variant="outline" onClick={() => setEditingRules(true)}>
+                <SparkleIcon />
+                <span>{data.smart ? 'Edit rules' : 'Make smart'}</span>
+              </Button>
+            )}
             <Button type="button" variant="destructive" onClick={deleteCurrentPlaylist} disabled={working === 'delete'}>
               <XIcon />
               <span>Delete</span>
@@ -324,6 +358,19 @@ export function PlaylistDetailPage({
           {status && <p className="playlist-status" role="status"><span>{status}</span></p>}
         </div>
       </section>
+
+      {editingRules && (
+        <SmartPlaylistEditor
+          data={data}
+          setData={setData}
+          onDone={(updated) => {
+            setData(updated);
+            setEditingRules(false);
+            setStatus(updated.smart ? 'Smart rules saved' : 'Smart rules turned off');
+          }}
+          onCancel={() => setEditingRules(false)}
+        />
+      )}
 
       <section className="playlist-tools" aria-label="Playlist tools">
         <label className="playlist-search">

@@ -2299,7 +2299,7 @@ def _matches(item: HubItem, q: str, year: Optional[int], quality: str,
         # source_type instead of the resolution bucket.
         if quality.lower() != (getattr(item, "source_type", "") or "").lower():
             return False
-    if tag and tag.lstrip("#").lower() not in item.tags:
+    if tag and tag.lstrip("#").lower() not in (t.lower() for t in item.tags):
         return False
     if genre:
         gl = genre.lower()
@@ -4961,6 +4961,65 @@ def tag_cloud(limit: int = 30) -> List[Tuple[str, int]]:
     for it in _items.values():
         counter.update(it.tags)
     return counter.most_common(limit)
+
+
+# ID3 numeric genre codes (ID3v1 0-191, plus Winamp extensions) that ffprobe
+# sometimes reports instead of the human-readable name.
+_NUMERIC_GENRE_RE = re.compile(r"^\d+$")
+# Track-title style tokens that end up in the genre tag on hand-tagged files
+# and would pollute the facet list.
+_JUNK_GENRES = {"music", "audio", "song", "mp3", "unknown", "other"}
+
+
+def normalize_genre(raw: str) -> str:
+    """Canonical display form of one ID3 genre token.
+
+    Takes the first slash/comma-separated component, drops numeric codes and
+    obvious junk, title-cases consistently so "pop" / "Pop" / "POP" merge.
+    """
+    token = (raw or "").split("/")[0].split(",")[0].strip()
+    if not token or _NUMERIC_GENRE_RE.match(token) or token.lower() in _JUNK_GENRES:
+        return ""
+    return token.title()
+
+
+def music_genre_facets(limit: int = 24) -> List[dict]:
+    """Genre facets for the music view: [{genre, count}], most-used first.
+
+    Counts audio items per normalized genre tag. An item tagged with several
+    genre names (e.g. tags ["Hip Hop", "Rap"]) counts once per tag so facet
+    counts sum to more than the item count — same contract as tag_cloud.
+    """
+    counter: Counter = Counter()
+    for it in _items.values():
+        if it.hidden or getattr(it, "media_kind", "") != "audio":
+            continue
+        seen: set[str] = set()
+        for raw in it.tags or []:
+            genre = normalize_genre(raw)
+            key = genre.lower()
+            if genre and key not in seen:
+                seen.add(key)
+                counter[genre] += 1
+    return [
+        {"genre": genre, "count": count}
+        for genre, count in counter.most_common(limit)
+    ]
+
+
+def audio_items_missing_genre() -> list:
+    """Audio items that have been probed but carry no genre-looking tag.
+
+    Used by the admin genre-backfill pass; items probed before genre
+    extraction was added land here.
+    """
+    return [
+        it for it in _items.values()
+        if not it.hidden
+        and getattr(it, "media_kind", "") == "audio"
+        and float(getattr(it, "probed_at", 0) or 0) > 0
+        and not any(normalize_genre(t) for t in (it.tags or []))
+    ]
 
 
 def size() -> int:

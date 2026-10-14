@@ -460,6 +460,7 @@ function MaintenancePanel({
     ['metadata-cleanup', 'Backfill metadata', 'Force-refresh TMDB credits and episode details', 'Run metadata backfill? This refreshes TMDB-owned fields for video items.'],
     ['clear-audio-tmdb', 'Fix audio', 'Clear bad TMDB matches'],
     ['clear-audio-thumbs', 'Audio thumbs', 'Refresh music artwork'],
+    ['reprobe-audio-genres', 'Audio genres', 'Backfill missing ID3 genre facets'],
     ['clear-all-thumbs', 'All thumbs', 'Refresh every thumbnail'],
     ['dedupe', 'De-dupe', 'Delete duplicate uploads'],
     ['prune-non-admin', 'Prune non-admin', 'Remove known non-admin uploads from the public catalogue', 'Remove known non-admin uploads from the catalogue? This keeps their private stream files in BIN.'],

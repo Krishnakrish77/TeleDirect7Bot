@@ -215,6 +215,14 @@ async def _vlc_track(user_id: int, message_id: int,
 
     if action == "complete":
         await wh_store.record(user_id, cw_key, title)
+        # Scrobble hook (VLC path): fire-and-forget, never blocks streaming.
+        if (getattr(item, "media_kind", "") or "") == "audio":
+            try:
+                from main.utils import scrobbler
+                scrobbler.enqueue(user_id, item.message_id)
+            except Exception:
+                logging.exception("vlc track: scrobble enqueue failed uid=%d mid=%d",
+                                  user_id, message_id)
         rec_engine.invalidate_profile(user_id)
         await cw_store.delete_one(user_id, cw_key)
         await rec_store.clear_cached(user_id)

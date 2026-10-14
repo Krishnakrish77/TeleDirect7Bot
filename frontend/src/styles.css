@@ -3119,6 +3119,49 @@ img {
   font-size: 0.85rem;
 }
 
+.scrobble-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin: 1.5rem auto;
+  max-width: 640px;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.scrobble-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.scrobble-token,
+.scrobble-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.scrobble-filter textarea {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg);
+  font-family: ui-monospace, monospace;
+  font-size: 0.82rem;
+  resize: vertical;
+}
+
+.scrobble-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .stats-history-section {
   display: grid;
   gap: 0.8rem;
@@ -6945,6 +6988,86 @@ img {
   width: 17px;
   height: 17px;
   color: var(--green);
+}
+
+.smart-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-right: 0.5rem;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.smart-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.smart-playlist-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.smart-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.smart-mode-select {
+  width: auto;
+}
+
+.smart-rule-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.2fr) minmax(8rem, 1fr) 2fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.smart-editor-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.smart-limit,
+.smart-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.smart-limit input {
+  width: 5rem;
+}
+
+.smart-editor-actions {
+  display: inline-flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .smart-rule-row {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .playlist-tools {

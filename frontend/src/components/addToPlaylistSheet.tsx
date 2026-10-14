@@ -21,7 +21,12 @@ export function AddToPlaylistSheet({
   onClose: () => void;
   onSignIn: () => void;
 }) {
-  const playlists = usePlaylists(user, Boolean(open && user));
+  const allPlaylists = usePlaylists(user, Boolean(open && user));
+  // Smart playlists manage their own tracks via rules — the server rejects
+  // manual adds (409), so don't offer them as add targets.
+  const playlists = allPlaylists.data
+    ? { ...allPlaylists, data: { ...allPlaylists.data, playlists: allPlaylists.data.playlists.filter((p) => !p.smart) } }
+    : allPlaylists;
   const [name, setName] = useState('');
   const [busyId, setBusyId] = useState('');
   const [creating, setCreating] = useState(false);

@@ -467,6 +467,12 @@ export interface WatchResponse {
   albumTracks?: WatchTrack[];
 }
 
+export interface SmartPlaylistRule {
+  field: string;
+  op: string;
+  value: unknown;
+}
+
 export interface PlaylistSummary {
   playlistId: string;
   name: string;
@@ -474,6 +480,28 @@ export interface PlaylistSummary {
   coverUrls: string[];
   createdAt: string;
   updatedAt: string;
+  smart?: boolean;
+}
+
+export interface SmartPlaylistConfig {
+  rules?: SmartPlaylistRules | null;
+  sort?: string | null;
+  limit?: number | null;
+}
+
+export type SmartPlaylistRules =
+  | { all: SmartRuleNode[] }
+  | { any: SmartRuleNode[] };
+
+export type SmartRuleNode =
+  | SmartPlaylistRules
+  | { field: string; op: string; value: unknown };
+
+export interface ScrobbleSettings {
+  provider: string;
+  enabled: boolean;
+  hasToken: boolean;
+  filter: unknown;
 }
 
 export interface PlaylistsResponse {
@@ -483,7 +511,7 @@ export interface PlaylistsResponse {
   maxTracks: number;
 }
 
-export interface PlaylistDetailResponse extends PlaylistSummary {
+export interface PlaylistDetailResponse extends PlaylistSummary, SmartPlaylistConfig {
   tracks: WatchTrack[];
   available: boolean;
   maxPlaylists: number;

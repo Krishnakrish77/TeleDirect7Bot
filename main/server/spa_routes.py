@@ -2227,6 +2227,58 @@ async def api_app_radio(request: web.Request) -> web.Response:
     return _json({"tracks": tracks})
 
 
+@routes.get("/api/app/music/genres")
+async def api_app_music_genres(request: web.Request) -> web.Response:
+    """Genre facets for the music view: [{genre, count}] most-used first."""
+    return _json({"genres": media_index.music_genre_facets()})
+
+
+@routes.get("/api/app/scrobble/settings")
+async def api_app_scrobble_get(request: web.Request) -> web.Response:
+    """Client-safe scrobble settings — the token never leaves the server."""
+    from main.utils import scrobbler
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    doc = await scrobbler.get_settings(int(user["sub"]))
+    return _json(scrobbler.settings_payload(doc))
+
+
+@routes.put("/api/app/scrobble/settings")
+async def api_app_scrobble_put(request: web.Request) -> web.Response:
+    """Validate (ListenBrainz token check) and persist scrobble settings."""
+    from main.utils import scrobbler
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return _json({"error": "invalid JSON"}, status=400)
+    if not isinstance(body, dict):
+        return _json({"error": "invalid body"}, status=400)
+    ok, error = await scrobbler.save_settings(
+        int(user["sub"]),
+        provider=str(body.get("provider") or ""),
+        token=str(body.get("token") or ""),
+        filter_rules=body.get("filter"),
+    )
+    if not ok:
+        return _json({"error": error}, status=400)
+    doc = await scrobbler.get_settings(int(user["sub"]))
+    return _json(scrobbler.settings_payload(doc))
+
+
+@routes.delete("/api/app/scrobble/settings")
+async def api_app_scrobble_delete(request: web.Request) -> web.Response:
+    from main.utils import scrobbler
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    ok = await scrobbler.clear_settings(int(user["sub"]))
+    return _json({"ok": ok})
+
+
 @routes.get(r"/api/app/person/{slug:[a-z0-9][a-z0-9\-]*}")
 async def api_app_person(request: web.Request) -> web.Response:
     payload = _person_detail_payload(request.match_info["slug"])
@@ -2344,6 +2396,7 @@ def _playlist_summary_payload(playlist: dict) -> dict:
         "coverUrls": _playlist_cover_urls(playlist.get("cover_tracks") or playlist.get("tracks") or []),
         "createdAt": _iso_datetime(playlist.get("created_at")),
         "updatedAt": _iso_datetime(playlist.get("updated_at")),
+        "smart": bool(playlist.get("rules")),
     }
 
 
@@ -2363,19 +2416,25 @@ def _playlist_track_payload_from_entry(entry: dict) -> Optional[dict]:
 
 
 def _playlist_detail_payload(playlist: dict) -> dict:
+    is_smart = bool(playlist.get("rules"))
+    source_entries = (playlist.get("evaluated_tracks") if is_smart else None) or playlist.get("tracks") or []
     tracks = [
-        payload for entry in (playlist.get("tracks") or [])
+        payload for entry in source_entries
         if (payload := _playlist_track_payload_from_entry(entry)) is not None
     ]
     summary = _playlist_summary_payload({
         **playlist,
         "track_count": len(tracks),
-        "cover_tracks": playlist.get("tracks") or [],
+        "cover_tracks": source_entries,
     })
     return {
         **summary,
         "tracks": tracks,
         "available": playlist_store.is_available(),
+        "smart": is_smart,
+        "rules": playlist.get("rules"),
+        "sort": playlist.get("sort"),
+        "limit": playlist.get("limit"),
         **_playlist_limits_payload(),
     }
 
@@ -2548,6 +2607,12 @@ async def api_app_playlist_detail(request: web.Request) -> web.Response:
     playlist = await playlist_store.get_one(int(user["sub"]), playlist_id)
     if playlist is None:
         return _json({"error": "playlist not found"}, status=404)
+    if playlist.get("rules"):
+        from main.utils import smart_playlists
+        evaluated = await smart_playlists.evaluate(int(user["sub"]), playlist)
+        if evaluated is not None:
+            playlist = {**playlist, "evaluated_tracks": evaluated}
+            await smart_playlists.persist_evaluation(int(user["sub"]), playlist_id, evaluated)
     return _json(_playlist_detail_payload(playlist))
 
 
@@ -2566,6 +2631,56 @@ async def api_app_rename_playlist(request: web.Request) -> web.Response:
     if not ok and playlist is None:
         return _json({"error": "playlist not found"}, status=404)
     return _json(_playlist_detail_payload(playlist) if playlist else {"ok": ok})
+
+
+@routes.put(r"/api/app/playlists/{playlist_id:[a-f0-9]{32}}/rules")
+async def api_app_set_playlist_rules(request: web.Request) -> web.Response:
+    """Create/replace a smart playlist's rule config, or clear it."""
+    from main.utils import smart_playlists
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    if not playlist_store.is_available():
+        return _json({"error": "playlist storage unavailable"}, status=503)
+    playlist_id = request.match_info["playlist_id"]
+    user_id = int(user["sub"])
+    playlist = await playlist_store.get_one(user_id, playlist_id)
+    if playlist is None:
+        return _json({"error": "playlist not found"}, status=404)
+
+    body = await _playlist_body(request)
+    uid = user_id
+    try:
+        await smart_playlists.persist_config(
+            uid, playlist_id,
+            rules=body.get("rules"), sort=body.get("sort"), limit=body.get("limit"),
+        )
+    except smart_playlists.RulesError as exc:
+        return _json({"error": str(exc)}, status=400)
+
+    playlist = await playlist_store.get_one(user_id, playlist_id)
+    return _json(_playlist_detail_payload(playlist) if playlist else {"ok": True})
+
+
+@routes.post(r"/api/app/playlists/{playlist_id:[a-f0-9]{32}}/refresh")
+async def api_app_refresh_playlist(request: web.Request) -> web.Response:
+    """Force re-evaluation of a smart playlist, bypassing the refresh delay."""
+    from main.utils import smart_playlists
+    user = get_user(request)
+    if not user:
+        return _json({"error": "unauthenticated"}, status=401)
+    playlist_id = request.match_info["playlist_id"]
+    user_id = int(user["sub"])
+    playlist = await playlist_store.get_one(user_id, playlist_id)
+    if playlist is None:
+        return _json({"error": "playlist not found"}, status=404)
+    if not playlist.get("rules"):
+        return _json({"error": "not a smart playlist"}, status=400)
+    evaluated = await smart_playlists.evaluate(user_id, playlist, force=True)
+    if evaluated is not None:
+        await smart_playlists.persist_evaluation(user_id, playlist_id, evaluated)
+        playlist = {**playlist, "evaluated_tracks": evaluated}
+    return _json(_playlist_detail_payload(playlist))
 
 
 @routes.delete(r"/api/app/playlists/{playlist_id:[a-f0-9]{32}}")
@@ -2598,6 +2713,11 @@ async def api_app_add_playlist_track(request: web.Request) -> web.Response:
     if (item.media_kind or "") != "audio":
         return _json({"error": "only audio tracks can be added to playlists"}, status=400)
     playlist_id = request.match_info["playlist_id"]
+    existing = await playlist_store.get_one(int(user["sub"]), playlist_id)
+    if existing is None:
+        return _json({"error": "playlist not found"}, status=404)
+    if existing.get("rules"):
+        return _json({"error": "smart playlists manage their own tracks"}, status=409)
     payload = _track_payload(item)
     ok = await playlist_store.add_track(
         int(user["sub"]),
@@ -2623,6 +2743,9 @@ async def api_app_remove_playlist_track(request: web.Request) -> web.Response:
     user = get_user(request)
     if not user:
         return _json({"error": "unauthenticated"}, status=401)
+    existing = await playlist_store.get_one(int(user["sub"]), request.match_info["playlist_id"])
+    if existing is not None and existing.get("rules"):
+        return _json({"error": "smart playlists manage their own tracks"}, status=409)
     await playlist_store.remove_track(
         int(user["sub"]),
         request.match_info["playlist_id"],
@@ -2650,6 +2773,9 @@ async def api_app_reorder_playlist_tracks(request: web.Request) -> web.Response:
     if len(message_ids) != len(set(message_ids)):
         return _json({"error": "duplicate messageIds"}, status=400)
     playlist_id = request.match_info["playlist_id"]
+    existing = await playlist_store.get_one(int(user["sub"]), playlist_id)
+    if existing is not None and existing.get("rules"):
+        return _json({"error": "smart playlists manage their own tracks"}, status=409)
     ok = await playlist_store.reorder_tracks(int(user["sub"]), playlist_id, message_ids)
     if not ok and await playlist_store.get_one(int(user["sub"]), playlist_id) is None:
         return _json({"error": "playlist not found"}, status=404)

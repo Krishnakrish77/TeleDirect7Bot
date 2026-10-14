@@ -23,6 +23,8 @@ import type {
   MeResponse,
   PlaylistDetailResponse,
   PlaylistsResponse,
+  SmartPlaylistRules,
+  ScrobbleSettings,
   StatsResponse,
   AudioTrackOption,
   BooksResponse,
@@ -445,6 +447,16 @@ export async function fetchRadio(
   return request<{ tracks: WatchTrack[] }>(`/api/app/radio?${qs.toString()}`, { signal });
 }
 
+export interface MusicGenreFacet {
+  genre: string;
+  count: number;
+}
+
+export async function fetchMusicGenres(signal?: AbortSignal): Promise<MusicGenreFacet[]> {
+  const data = await request<{ genres: MusicGenreFacet[] }>('/api/app/music/genres', { signal });
+  return data.genres || [];
+}
+
 export async function fetchDetail(
   kind: 'movie' | 'series' | 'album' | 'artist' | 'person',
   key: string,
@@ -558,8 +570,44 @@ export async function reorderPlaylistTracks(playlistId: string, messageIds: numb
   });
 }
 
+export async function savePlaylistRules(
+  playlistId: string,
+  config: { rules: SmartPlaylistRules | null; sort: string; limit: number },
+): Promise<PlaylistDetailResponse> {
+  return request<PlaylistDetailResponse>(`/api/app/playlists/${encodeURIComponent(playlistId)}/rules`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+}
+
+export async function refreshSmartPlaylist(playlistId: string): Promise<PlaylistDetailResponse> {
+  return request<PlaylistDetailResponse>(`/api/app/playlists/${encodeURIComponent(playlistId)}/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 export async function fetchStats(signal?: AbortSignal): Promise<StatsResponse> {
   return request<StatsResponse>('/api/app/stats', { signal });
+}
+
+export async function fetchScrobbleSettings(signal?: AbortSignal): Promise<ScrobbleSettings> {
+  return request<ScrobbleSettings>('/api/app/scrobble/settings', { signal });
+}
+
+export async function saveScrobbleSettings(
+  settings: { provider: string; token: string; filter: unknown },
+): Promise<ScrobbleSettings> {
+  return request<ScrobbleSettings>('/api/app/scrobble/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function deleteScrobbleSettings(): Promise<void> {
+  await request<{ ok: boolean }>('/api/app/scrobble/settings', { method: 'DELETE' });
 }
 
 export async function fetchLiveTvChannels(signal?: AbortSignal): Promise<LiveTvResponse> {

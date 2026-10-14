@@ -593,6 +593,7 @@ _MAINTENANCE_JOB_LABELS = {
     "clear-all-thumbs": "Thumbnail cache clear",
     "dedupe": "De-duplicate pass",
     "prune-stale": "Stale prune",
+    "reprobe-audio-genres": "Audio genre backfill",
 }
 _maintenance_jobs: dict[str, dict] = {}
 
@@ -816,6 +817,45 @@ async def admin_clear_audio_thumbs(request: web.Request) -> web.Response:
     if _is_htmx(request):
         return web.Response(status=204)
     raise _redirect_with_flash("Audio thumb clear queued — see the maintenance panel for the result")
+
+
+@routes.post("/admin/reprobe-audio-genres")
+async def admin_reprobe_audio_genres(request: web.Request) -> web.Response:
+    """Re-ffprobe probed audio items whose tags carry no genre, so tracks
+    indexed before ID3 genre extraction got their genre facet backfilled."""
+    _require_session(request)
+
+    async def _reprobe_genres_job() -> str:
+        from main.utils import codec_probe
+        targets = media_index.audio_items_missing_genre()
+        if not targets:
+            return "Every audio item already has a genre"
+        done = got_genre = failed = 0
+        for item in targets:
+            try:
+                await codec_probe.probe_item(item)
+            except Exception:
+                logging.exception("admin: genre reprobe failed for bin:%d", item.message_id)
+                failed += 1
+            done += 1
+            if any(media_index.normalize_genre(t) for t in (item.tags or [])):
+                got_genre += 1
+        await media_index.persist_soon()
+        result = f"Re-probed {done} audio item(s): {got_genre} gained a genre, {failed} failed"
+        logging.info(
+            "admin: genre reprobe complete probed=%d with_genre=%d failed=%d",
+            done, got_genre, failed,
+        )
+        return result
+
+    _queue_maintenance_job(
+        "reprobe-audio-genres",
+        _reprobe_genres_job(),
+        label="Audio genre backfill",
+    )
+    if _is_htmx(request):
+        return web.Response(status=204)
+    raise _redirect_with_flash("Audio genre backfill queued — see the maintenance panel for the result")
 
 
 @routes.post("/admin/clear-all-thumbs")

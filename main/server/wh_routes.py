@@ -6,6 +6,7 @@ POST /api/wh/{key}  — record a completed watch (called when video hits 95%)
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from aiohttp import web
@@ -49,6 +50,14 @@ async def api_record(request: web.Request) -> web.Response:
     except Exception:
         return _json({"error": "invalid body"}, status=400)
     await wh_store.record(int(user["sub"]), key, title)
+    # Scrobble hook: fire-and-forget; never fails or delays the response.
+    if (getattr(item, "media_kind", "") or "") == "audio":
+        try:
+            from main.utils import scrobbler
+            scrobbler.enqueue(int(user["sub"]), item.message_id)
+        except Exception:
+            logging.exception("wh: scrobble enqueue failed uid=%d mid=%d",
+                              int(user["sub"]), item.message_id)
     rec_engine.invalidate_profile(int(user["sub"]))
     await rec_store.clear_cached(int(user["sub"]))
     await ai_rec_store.clear_cached(int(user["sub"]))
