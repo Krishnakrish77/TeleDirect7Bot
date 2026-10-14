@@ -129,6 +129,34 @@ class ChunkedDeleteTest(unittest.TestCase):
         flattened = [x for c in photo_routes._chunks(items, 90) for x in c]
         self.assertEqual(flattened, items)
 
+    def test_chunked_helper_returns_doc_ids(self):
+        """Regression: trash-empty once passed (channel_id, message_id)
+        tuples into this helper (expects dicts) and tested membership
+        against (channel_id, message_id) tuples (helper returns _ids) —
+        the purge was dead code. Lock the contract: dict targets in,
+        _id strings out, exactly what purge_photos consumes."""
+        import asyncio
+
+        docs = [
+            {"_id": f"id{i}", "channel_id": -100, "message_id": 10 + i}
+            for i in range(5)
+        ]
+
+        class FakeBot:
+            def __init__(self):
+                self.deleted = []
+
+            async def delete_messages(self, channel_id, message_ids):
+                self.deleted.extend((channel_id, mid) for mid in message_ids)
+
+        ok, failed = asyncio.run(
+            photo_routes._telegram_delete_chunked(FakeBot(), docs, "test")
+        )
+        self.assertEqual(ok, [f"id{i}" for i in range(5)])
+        self.assertEqual(failed, [])
+        # ok_ids feed purge_photos — it takes the same _id strings.
+        self.assertTrue(all(isinstance(x, str) for x in ok))
+
 
 if __name__ == "__main__":
     unittest.main()

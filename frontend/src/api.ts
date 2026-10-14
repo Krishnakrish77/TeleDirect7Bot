@@ -17,6 +17,7 @@ import type {
   IptvChannelPayload,
   LiveTvResponse,
   LiveTvHealthResponse,
+  Photo,
   AdminIptvResponse,
   AdminIptvActionResponse,
   IptvHealthSweepStatus,
@@ -1026,6 +1027,11 @@ export async function setAlbumPhotos(albumId: string, ids: string[], member: boo
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids }),
   });
+}
+
+export async function fetchOnePhoto(photoId: string, signal?: AbortSignal): Promise<Photo> {
+  const data = await request<{ photo: Photo }>(`/api/photos/photo/${encodeURIComponent(photoId)}`, { signal });
+  return data.photo;
 }
 
 export async function fetchPhotoMapPoints(signal?: AbortSignal): Promise<{ points: PhotoMapPoint[] }> {

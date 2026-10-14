@@ -46,6 +46,7 @@ import {
   fetchPendingPhotoChannel,
   fetchPhotoAlbums,
   fetchPhotoFacets,
+  fetchOnePhoto,
   fetchPhotosMemories,
   fetchPhotosStatus,
   fetchPhotosTimeline,
@@ -1558,6 +1559,11 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   const [facets, setFacets] = useState<PhotoFacets | null>(null);
   const [creatingAlbum, setCreatingAlbum] = useState(false);
   const [memories, setMemories] = useState<PhotosMemoriesResponse | null>(null);
+  // Memories photos live outside the timeline's loaded pages — the strip
+  // opens the lightbox against this standalone list instead.
+  const [memoriesLightbox, setMemoriesLightbox] = useState<Photo[] | null>(null);
+  // Same for map pins: standalone single-photo lightbox.
+  const [mapLightbox, setMapLightbox] = useState<Photo[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const albumInputRef = useRef<HTMLInputElement>(null);
   // Hooks must run before the early returns below (a hook after a conditional
@@ -2263,7 +2269,11 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
 
           {view === 'map' ? (
             <PhotoMapPage onSelect={(photoId) => {
-              setLightboxIndex(visiblePhotos.findIndex((p) => p.id === photoId));
+              // A pin can sit outside the timeline's loaded pages — fetch the
+              // photo standalone and open a single-slide lightbox.
+              fetchOnePhoto(photoId)
+                .then((photo) => setMapLightbox([photo]))
+                .catch(() => setError('Could not load that photo'));
             }} />
           ) : view === 'albums' && !activeAlbum ? (
             <AlbumsGrid
@@ -2312,8 +2322,7 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
                         type="button"
                         className="photos-memories__card"
                         onClick={() => {
-                          const first = group.items[0];
-                          setLightboxIndex(visiblePhotos.findIndex((p) => p.id === first?.id));
+                          if (group.items.length) setMemoriesLightbox(group.items);
                         }}
                       >
                         <img src={photoThumbUrl(group.items[0]?.id ?? '', 'grid')} alt="" loading="lazy" />
@@ -2455,6 +2464,45 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
         </div>
       )}
       {dragOver && <div className="photos-dropzone-hint">Drop to upload</div>}
+
+      {mapLightbox && (
+        <PhotoLightbox
+          photos={mapLightbox}
+          index={0}
+          albums={albums}
+          trashView={false}
+          onClose={() => setMapLightbox(null)}
+          onNavigate={() => undefined}
+          onToggleFavorite={(p) => void toggleFavorite(p)}
+          onTrash={(p) => {
+            void trash([p.id]);
+            setMapLightbox(null);
+          }}
+          onRestore={(p) => setMapLightbox(null)}
+          onAssignAlbum={(p, albumId, member) => void assignAlbum(p, albumId, member)}
+        />
+      )}
+
+      {memoriesLightbox && (
+        <PhotoLightbox
+          photos={memoriesLightbox}
+          index={0}
+          albums={albums}
+          trashView={false}
+          onClose={() => setMemoriesLightbox(null)}
+          onNavigate={() => undefined}
+          onToggleFavorite={(p) => void toggleFavorite(p)}
+          onTrash={(p) => {
+            void trash([p.id]);
+            setMemoriesLightbox((current) => current?.filter((item) => item.id !== p.id) ?? current);
+          }}
+          onRestore={(p) => {
+            void restorePhotos([p.id]).catch(() => setError('Could not restore the photo'));
+            setMemoriesLightbox((current) => current?.filter((item) => item.id !== p.id) ?? current);
+          }}
+          onAssignAlbum={(p, albumId, member) => void assignAlbum(p, albumId, member)}
+        />
+      )}
 
       {openPhoto && (
         <PhotoLightbox

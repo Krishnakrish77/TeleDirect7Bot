@@ -964,7 +964,14 @@ async def photos_upload(request: web.Request) -> web.Response:
                 import_total = 0
             import_mode = import_total > 0
             if import_mode:
-                await photo_store.import_job_start(user_id, import_total)
+                # The wizard sends one request PER FILE, each carrying the
+                # same batch total — init only when the job doc is absent or
+                # has a different total (a genuinely new import run).
+                # Unconditionally $setting done/failed to 0 here would wipe
+                # accumulated progress on every per-file request.
+                existing_job = await photo_store.import_job_get(user_id)
+                if not existing_job or existing_job.get("total") != import_total:
+                    await photo_store.import_job_start(user_id, import_total)
             continue
         if part.name != "file":
             # Drain unknown parts so the reader stays in sync.
@@ -976,6 +983,8 @@ async def photos_upload(request: web.Request) -> web.Response:
             continue
         if files >= Var.PHOTOS_UPLOAD_MAX_FILES:
             results.append({"fileName": part.filename or "?", "error": "Too many files in one request"})
+            if import_mode:
+                await photo_store.import_job_progress(user_id, failed=1, current_file=part.filename or "?")
             while True:
                 chunk = await part.read_chunk(262144)
                 if not chunk:
@@ -1017,6 +1026,8 @@ async def photos_upload(request: web.Request) -> web.Response:
                 "fileName": part.filename or "?",
                 "error": f"File exceeds the {Var.PHOTOS_UPLOAD_MAX_FILE // (1024 * 1024)} MB per-file limit",
             })
+            if import_mode:
+                await photo_store.import_job_progress(user_id, failed=1, current_file=part.filename or "?")
             continue
         # Vaults hold images and videos only — same allowlist the ingest
         # pipeline enforces. Reject early so the user isn't told an upload
@@ -1027,11 +1038,22 @@ async def photos_upload(request: web.Request) -> web.Response:
                 "fileName": part.filename or "?",
                 "error": f"Unsupported file type: {mime or 'unknown'} (images and videos only)",
             })
+            if import_mode:
+                await photo_store.import_job_progress(user_id, failed=1, current_file=part.filename or "?")
             continue
         files += 1
         sha = hasher.hexdigest()
         existing = await photo_store.find_by_sha(user_id, sha)
         if existing:
+            # A duplicate still belongs in the imported album — Takeout
+            # archives overlap across parts, so tag the existing doc rather
+            # than silently dropping it from the album.
+            if album_id:
+                await photo_store.append_album_ids(
+                    user_id, existing["channel_id"], existing["message_id"], [album_id],
+                )
+            if import_mode:
+                await photo_store.import_job_progress(user_id, done=1, current_file=part.filename or "?")
             results.append({
                 "fileName": part.filename or "?",
                 "duplicate": True,
@@ -1040,6 +1062,8 @@ async def photos_upload(request: web.Request) -> web.Response:
             continue
         if count >= Var.PHOTOS_PER_USER_CAP:
             results.append({"fileName": part.filename or "?", "error": "Library cap reached"})
+            if import_mode:
+                await photo_store.import_job_progress(user_id, failed=1, current_file=part.filename or "?")
             continue
         if album_id:
             album = await photo_store.get_album(user_id, album_id)
@@ -1065,6 +1089,8 @@ async def photos_upload(request: web.Request) -> web.Response:
         except Exception as exc:
             logging.warning("photos upload: send_document failed uid=%d: %s", user_id, exc)
             results.append({"fileName": file_name, "error": "Telegram send failed"})
+            if import_mode:
+                await photo_store.import_job_progress(user_id, failed=1, current_file=file_name)
             continue
         count += 1
         # Index the bytes we already hold. Telegram does not send the bot a
@@ -1105,7 +1131,9 @@ async def photos_upload(request: web.Request) -> web.Response:
                 )
             except Exception as exc:
                 logging.exception("photos upload: ingest failed uid=%d mid=%d", user_id, msg.id)
-                ingest_error = f"indexing failed: {exc}"
+                # Generic message to the client — the exception text may carry
+                # driver/pipeline internals; the details live in the server log.
+                ingest_error = "indexing failed"
         if ingest_error:
             logging.warning(
                 "photos upload: %s uid=%d mid=%d", ingest_error, user_id, msg.id
@@ -1218,6 +1246,21 @@ async def photos_map_points(request: web.Request) -> web.Response:
     return _json({"points": points})
 
 
+@routes.get(r"/api/photos/photo/{photo_id}")
+async def photos_get_one(request: web.Request) -> web.Response:
+    """One photo's metadata (owner-scoped) — the map view's pin click opens
+    the lightbox against a standalone fetch, since a pin may sit outside
+    the timeline's loaded pages."""
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    doc = await photo_store.get_photo_by_id(int(user["sub"]), request.match_info["photo_id"])
+    if doc is None:
+        return _json({"error": "photo not found"}, status=404)
+    return _json({"photo": photo_store._serialize_photo(doc)})
+
+
 def _chunks(items: list, size: int):
     for i in range(0, len(items), size):
         yield items[i:i + size]
@@ -1284,6 +1327,11 @@ async def photos_wipe(request: web.Request) -> web.Response:
         except Exception as exc:
             logging.warning("photos wipe: get_chat failed uid=%d: %r", user_id, exc)
             return _json({"error": "Could not verify the channel title"}, status=502)
+        if not title:
+            # An empty effective title would let an empty confirm string
+            # through the compare below — treat as unverifiable instead.
+            logging.warning("photos wipe: no channel title resolvable uid=%d", user_id)
+            return _json({"error": "Could not verify the channel title; wipe refused"}, status=502)
     if confirm != title:
         return _json({"error": "Confirmation does not match the channel title"}, status=400)
     targets = await photo_store.all_photo_ids(user_id)
@@ -1402,22 +1450,9 @@ async def photos_trash_empty(request: web.Request) -> web.Response:
         return _json({"purged": 0, "failed": 0})
     logging.info("photos: trash empty start uid=%d docs=%d", user_id, len(docs))
     bot = multi_clients.get(0) or StreamBot
-    by_channel: dict[int, list[int]] = {}
-    for d in docs:
-        by_channel.setdefault(d["channel_id"], []).append(d["message_id"])
-    deleted_ids: list[str] = []
-    failed = 0
-    for channel_id, message_ids in by_channel.items():
-        chunk_ok, chunk_failed = await _telegram_delete_chunked(
-            bot, [(channel_id, mid) for mid in message_ids], "trash empty",
-        )
-        failed += chunk_failed
-        deleted_ids.extend(
-            str(d["_id"]) for d in docs
-            if d["channel_id"] == channel_id
-            and (d["channel_id"], d["message_id"]) in chunk_ok
-        )
-    purged = await photo_store.purge_photos(user_id, deleted_ids)
+    ok_ids, failed_ids = await _telegram_delete_chunked(bot, docs, "trash empty")
+    purged = await photo_store.purge_photos(user_id, ok_ids)
+    failed = len(failed_ids)
     logging.info(
         "photos: trash empty done uid=%d purged=%d failed=%d",
         user_id, purged, failed,
