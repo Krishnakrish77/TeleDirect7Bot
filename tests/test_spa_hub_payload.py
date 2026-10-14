@@ -307,6 +307,64 @@ class SpaHubPayloadTest(unittest.TestCase):
             media_index._items.clear()
             media_index._items.update(previous)
 
+    def test_continue_lookup_collapses_movie_quality_variants(self):
+        previous = dict(media_index._items)
+        try:
+            movie_a = _video_item(
+                105, secure_hash="jersey-low", title="Jersey", movie_key="jersey::2019",
+                quality="480p", file_size=1_000,
+            )
+            movie_b = _video_item(
+                107, secure_hash="jersey-hd", title="Jersey", movie_key="jersey::2019",
+                quality="720p", file_size=2_000,
+            )
+            media_index._items.clear()
+            media_index._items.update({105: movie_a, 107: movie_b})
+
+            response = asyncio.run(hub_routes.api_items(SimpleNamespace(query={
+                "keys": "jersey-hd107,jersey-low105",
+                "variants": "jersey-hd107,jersey-low105",
+            })))
+            payload = json.loads(response.text)
+
+            # Both uploads resolve to the same canonical (earliest) key, so the
+            # continue-watching shelf groups the two qualities into one card.
+            self.assertEqual([entry["canonical_key"] for entry in payload],
+                             ["jersey-low105", "jersey-low105"])
+            # The viewer's chosen source is preserved per entry.
+            self.assertEqual([entry["variant_key"] for entry in payload],
+                             ["jersey-hd107", "jersey-low105"])
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
+    def test_watch_payload_shares_resume_key_across_movie_variants(self):
+        previous = dict(media_index._items)
+        try:
+            movie_a = _video_item(
+                105, secure_hash="jersey-low", title="Jersey", movie_key="jersey::2019",
+                quality="480p", file_size=1_000,
+            )
+            movie_b = _video_item(
+                107, secure_hash="jersey-hd", title="Jersey", movie_key="jersey::2019",
+                quality="720p", file_size=2_000,
+            )
+            media_index._items.clear()
+            media_index._items.update({105: movie_a, 107: movie_b})
+
+            with patch.object(spa_routes, "get_user", return_value=None):
+                payload_a = spa_routes._video_watch_payload(SimpleNamespace(), movie_a)
+                payload_b = spa_routes._video_watch_payload(SimpleNamespace(), movie_b)
+
+            # Either quality of the movie resumes from — and overwrites — one
+            # shared continue-watching record keyed by the earliest upload.
+            self.assertEqual(payload_a["resumeKey"], "jersey-low105")
+            self.assertEqual(payload_b["resumeKey"], "jersey-low105")
+            self.assertEqual(payload_b["variantKey"], "jersey-hd107")
+        finally:
+            media_index._items.clear()
+            media_index._items.update(previous)
+
     def test_watch_payload_shares_resume_key_across_episode_variants(self):
         previous = dict(media_index._items)
         try:

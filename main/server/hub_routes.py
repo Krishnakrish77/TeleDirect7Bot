@@ -903,8 +903,8 @@ async def api_items(request: web.Request) -> web.Response:
         if candidate_match:
             candidate = media_index.get_item(int(candidate_match.group(2)))
             if (candidate is not None and candidate.secure_hash == candidate_match.group(1)
-                    and media_index.canonical_episode_variant(candidate).message_id
-                    == media_index.canonical_episode_variant(item).message_id):
+                    and media_index.canonical_watch_variant(candidate).message_id
+                    == media_index.canonical_watch_variant(item).message_id):
                 item = candidate
         resolved.append((k, item))
 
@@ -941,7 +941,7 @@ async def api_items(request: web.Request) -> web.Response:
                         "thumb_url": f"/thumb/{nxt.secure_hash}{nxt.message_id}.jpg",
                         "poster_path": media_index.poster_path_for_item(nxt, cache=_art_cache),
                     }
-        canonical = media_index.canonical_episode_variant(item)
+        canonical = media_index.canonical_watch_variant(item)
         out.append({
             "key": k,
             "canonical_key": f"{canonical.secure_hash}{canonical.message_id}",

@@ -2854,7 +2854,7 @@ def _video_watch_payload(
     # Series episode variants share one CW record. The selected source remains
     # explicit so resume/autoplay does not silently move a viewer to another
     # quality when that variant exists.
-    resume_item = media_index.canonical_episode_variant(item)
+    resume_item = media_index.canonical_watch_variant(item)
 
     return {
         **common,

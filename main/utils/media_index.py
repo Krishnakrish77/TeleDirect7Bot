@@ -2924,14 +2924,20 @@ def episode_variants(item: HubItem) -> List[HubItem]:
             if _episode_identity(episode) == identity]
 
 
-def canonical_episode_variant(item: HubItem) -> HubItem:
-    """Choose the durable earliest-upload representative for an episode.
+def canonical_watch_variant(item: HubItem) -> HubItem:
+    """Choose the durable earliest-upload representative for a watchable
+    upload — one quality variant of a series episode or of a movie.
 
-    Every quality variant writes progress under this one real watch key. The
-    player's separate ``variantKey`` still remembers the user's chosen source,
-    while this representative keeps existing CW route/key validation intact.
+    Every quality variant writes continue-watching progress under this one
+    real watch key, so the shelf shows a single card per title regardless of
+    how many prints were watched. The player's separate ``variantKey`` still
+    remembers the user's chosen source, while this representative keeps
+    existing CW route/key validation intact.
     """
-    variants = episode_variants(item)
+    variants = episode_variants(item) if (item.series_key and item.episode is not None) \
+        else (variants_for_movie(item.movie_key) if item.movie_key else [])
+    if not variants:
+        return item
     # First upload is stable when additional qualities arrive later. If it is
     # deleted, the next surviving upload becomes the natural migration target.
     return min(variants, key=lambda variant: variant.message_id)
