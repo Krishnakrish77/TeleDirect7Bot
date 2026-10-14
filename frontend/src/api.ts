@@ -51,9 +51,11 @@ import type {
   PendingPhotoChannel,
   PhotosChannelStatus,
   PhotoAlbum,
+  PhotoMapPoint,
   PhotoSearchParams,
   PhotoFacets,
   PhotoUploadResult,
+  PhotosMemoriesResponse,
   TimelineResponse,
 } from './types';
 import { getDeviceId, getDeviceLabel } from './utils/device';
@@ -1001,12 +1003,62 @@ export async function restorePhotos(ids: string[]): Promise<void> {
   });
 }
 
+export async function emptyPhotosTrash(olderThanDays?: number): Promise<{ purged: number; failed: number }> {
+  return request('/api/photos/trash/empty', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(olderThanDays ? { olderThanDays } : {}),
+  });
+}
+
+export async function fetchPhotosTrashCount(signal?: AbortSignal): Promise<{ count: number }> {
+  return request('/api/photos/trash/count', { signal });
+}
+
+/** On-this-day strip grouped by how many years back each photo was taken. */
+export async function fetchPhotosMemories(signal?: AbortSignal): Promise<PhotosMemoriesResponse> {
+  return request('/api/photos/memories', { signal });
+}
+
 export async function setAlbumPhotos(albumId: string, ids: string[], member: boolean): Promise<void> {
   await request(`/api/photos/albums/${encodeURIComponent(albumId)}/photos`, {
     method: member ? 'POST' : 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids }),
   });
+}
+
+export async function fetchPhotoMapPoints(signal?: AbortSignal): Promise<{ points: PhotoMapPoint[] }> {
+  return request('/api/photos/map-points', { signal });
+}
+
+/** Permanently deletes Telegram messages + metadata for the whole library. */
+export async function wipePhotoLibrary(confirm: string): Promise<{ purged: number; failed: number }> {
+  return request('/api/photos/wipe', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm }),
+  });
+}
+
+/** Streams the library as NDJSON and triggers a browser download. */
+export async function exportPhotoLibrary(): Promise<void> {
+  const response = await fetch('/api/photos/export', { credentials: 'same-origin' });
+  if (!response.ok) {
+    throw new Error(response.statusText || 'Export failed');
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get('content-disposition') || '';
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = match?.[1] || 'photos-export.ndjson';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export function photoThumbUrl(photoId: string, size: 'grid' | 'preview'): string {
@@ -1046,5 +1098,51 @@ export async function uploadPhotos(
   xhr.withCredentials = true;
   xhr.send(form);
   options.signal?.addEventListener('abort', () => xhr.abort());
+  return done;
+}
+
+export interface PhotoImportProgress {
+  active: boolean;
+  done?: number;
+  failed?: number;
+  total?: number;
+  currentFile?: string;
+  startedAt?: string | null;
+}
+
+export async function fetchPhotoImportProgress(): Promise<PhotoImportProgress> {
+  return request<PhotoImportProgress>('/api/photos/import/progress');
+}
+
+export async function clearPhotoImportProgress(): Promise<void> {
+  await request<{ ok: boolean }>('/api/photos/import/progress', { method: 'DELETE' });
+}
+
+/** Upload one Takeout media file with its sidecar metadata (per-file XHR progress). */
+export function importPhotoFile(
+  file: File,
+  meta: { takenAt: string; albumName: string; importTotal: number; signal?: AbortSignal },
+): Promise<{ results: PhotoUploadResult[] }> {
+  const form = new FormData();
+  form.append('taken_at', meta.takenAt);
+  form.append('album_name', meta.albumName);
+  form.append('import_total', String(meta.importTotal));
+  form.append('file', file, file.name);
+  const xhr = new XMLHttpRequest();
+  const done = new Promise<{ results: PhotoUploadResult[] }>((resolve, reject) => {
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('Bad upload response')); }
+      } else {
+        reject(new Error(`Upload failed (${xhr.status})`));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+    xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
+  });
+  xhr.open('POST', '/api/photos/upload');
+  xhr.withCredentials = true;
+  xhr.send(form);
+  meta.signal?.addEventListener('abort', () => xhr.abort());
   return done;
 }

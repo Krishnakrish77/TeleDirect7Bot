@@ -239,3 +239,6 @@ class Var(object):
     # via Nominatim (no key, self-hostable). Off switches the feature off
     # cleanly — existing labels stay searchable.
     PHOTOS_PLACES = str(environ.get("PHOTOS_PLACES", "true")).lower() in ("1", "true", "yes")
+    # Days a trashed photo survives before the background sweep purges it
+    # (Telegram message + metadata). 0 disables the sweep entirely.
+    PHOTOS_TRASH_TTL_DAYS = max(0, int(environ.get("PHOTOS_TRASH_TTL_DAYS", "30") or 30))

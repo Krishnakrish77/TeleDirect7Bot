@@ -126,6 +126,42 @@ async def _photos_channel_reverify_loop() -> None:
             logging.exception("photos: reverify loop pass failed")
 
 
+async def _photos_trash_sweep() -> None:
+    """Purge trashed photos past the TTL: Telegram messages first, then docs.
+
+    Runs every 6h on the leader while photos are enabled; PHOTOS_TRASH_TTL_DAYS=0
+    disables the sweep entirely.
+    """
+    from main.server.photo_routes import purge_expired_trash_for_user
+    from main.utils import photo_store
+    while True:
+        await asyncio.sleep(6 * 3600)
+        try:
+            if Var.PHOTOS_TRASH_TTL_DAYS <= 0:
+                continue
+            db = photo_store._get_db()
+            if db is None:
+                continue
+            cursor = db["photo_channels"].find(
+                {"status": "active"}, projection={"owner_user_id": 1}
+            )
+            async for row in cursor:
+                uid = row["owner_user_id"]
+                try:
+                    purged, failed = await purge_expired_trash_for_user(
+                        uid, Var.PHOTOS_TRASH_TTL_DAYS
+                    )
+                    if purged or failed:
+                        logging.info(
+                            "photos: trash sweep uid=%s purged=%d failed=%d",
+                            uid, purged, failed,
+                        )
+                except Exception:
+                    logging.exception("photos: trash sweep failed uid=%s", uid)
+        except Exception:
+            logging.exception("photos: trash sweep pass failed")
+
+
 async def _photos_boot_rescan() -> None:
     """Catch-up pass on startup: enqueue vault posts missed while the bot
     was down (channel_post only fires live). Waits for Mongo first —
@@ -210,6 +246,7 @@ async def start_services():
         if Var.PHOTOS_ENABLED:
             asyncio.create_task(_photos_channel_reverify_loop())
             asyncio.create_task(_photos_boot_rescan())
+            asyncio.create_task(_photos_trash_sweep())
             if Var.PHOTOS_PLACES:
                 asyncio.create_task(_photos_geo_backfill())
     hls_session.ensure_reaper_running()

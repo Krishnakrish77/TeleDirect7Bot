@@ -33,6 +33,8 @@ from aiohttp import web
 from main import Var
 from main.bot import StreamBot, multi_clients
 from main.utils import photo_store
+from main.utils.photo_store import _parse_iso_date
+from pyrogram.errors import FloodWait
 from main.utils.custom_dl import ByteStreamer, MediaSessionUnavailable
 from main.utils.user_auth import get_user
 
@@ -935,12 +937,34 @@ async def photos_upload(request: web.Request) -> web.Response:
     sent = 0
     files = 0
     album_id = ""
+    # Takeout import (N5): optional per-request batch fields. Additive —
+    # existing clients that send neither part behave exactly as before.
+    taken_at_override = None
+    album_name = ""
+    import_total = 0
+    import_mode = False
     while True:
         part = await reader.next()
         if part is None:
             break
         if part.name == "album_id":
             album_id = (await part.text()).strip()
+            continue
+        if part.name == "taken_at":
+            # ISO 8601; same parse contract as the timeline takenAfter param.
+            taken_at_override = _parse_iso_date((await part.text()).strip())
+            continue
+        if part.name == "album_name":
+            album_name = (await part.text()).strip()[:80]
+            continue
+        if part.name == "import_total":
+            try:
+                import_total = max(0, int((await part.text()).strip() or 0))
+            except ValueError:
+                import_total = 0
+            import_mode = import_total > 0
+            if import_mode:
+                await photo_store.import_job_start(user_id, import_total)
             continue
         if part.name != "file":
             # Drain unknown parts so the reader stays in sync.
@@ -1021,6 +1045,14 @@ async def photos_upload(request: web.Request) -> web.Response:
             album = await photo_store.get_album(user_id, album_id)
             if not album:
                 album_id = ""  # stale/foreign id — drop rather than fail the batch
+        if not album_id and album_name:
+            # Takeout import: create-or-get the album by folder name (once
+            # per request; subsequent files reuse the resolved id).
+            album = await photo_store.get_or_create_album(user_id, album_name)
+            if album:
+                album_id = str(album["id"])
+            else:
+                album_name = ""  # store unavailable — keep uploading untagged
         data = bytes(payload)
         file_name = part.filename or "upload.bin"
         try:
@@ -1069,6 +1101,7 @@ async def photos_upload(request: web.Request) -> web.Response:
                 ingest_error = await photo_pipeline.ingest_bytes(
                     user_id, channel_id, msg.id,
                     file_id=file_id, data=data, mime=mime, file_name=file_name,
+                    taken_at_override=taken_at_override,
                 )
             except Exception as exc:
                 logging.exception("photos upload: ingest failed uid=%d mid=%d", user_id, msg.id)
@@ -1089,6 +1122,10 @@ async def photos_upload(request: web.Request) -> web.Response:
             # The doc exists by now (or is a duplicate of an earlier upload),
             # so one merge is enough — no polling loop needed.
             await photo_store.append_album_ids(user_id, channel_id, msg.id, [album_id])
+        if ingest_error and import_mode:
+            await photo_store.import_job_progress(user_id, failed=1, current_file=file_name)
+        elif import_mode:
+            await photo_store.import_job_progress(user_id, done=1, current_file=file_name)
         results.append({
             "fileName": file_name,
             "sha256": sha,
@@ -1096,6 +1133,7 @@ async def photos_upload(request: web.Request) -> web.Response:
             "albumId": album_id or None,
             "duplicate": False,
             "indexed": ingest_error is None,
+            **({"takenAt": taken_at_override.isoformat()} if import_mode and taken_at_override else {}),
             **({"error": f"Saved to Telegram, but not indexed: {ingest_error}"} if ingest_error else {}),
         })
     return _json({"results": results})
@@ -1146,3 +1184,321 @@ async def reverify_channel(owner_user_id: int) -> Optional[str]:
     await photo_store.set_channel_status(channel_id, status)
     _invalidate_channel_cache(owner_user_id)
     return status
+
+
+# ── Map view / wipe / export ──────────────────────────────────────────────
+
+
+@routes.get("/api/photos/map-points")
+async def photos_map_points(request: web.Request) -> web.Response:
+    """Geotagged markers for the map view (owner-scoped, non-deleted)."""
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    user_id = int(user["sub"])
+    taken_after = _parse_iso_date(request.query.get("takenAfter", ""))
+    taken_before = _parse_iso_date(request.query.get("takenBefore", ""))
+    docs = await photo_store.map_points(
+        user_id, taken_after=taken_after, taken_before=taken_before
+    )
+    points = []
+    for doc in docs:
+        gps = doc.get("gps") or {}
+        lat, lon = gps.get("lat"), gps.get("lon")
+        if lat is None or lon is None:
+            continue
+        points.append({
+            "id": str(doc["_id"]),
+            "lat": lat,
+            "lon": lon,
+            "takenAt": photo_store.iso_utc(doc.get("taken_at")),
+            "kind": doc.get("kind"),
+        })
+    return _json({"points": points})
+
+
+def _chunks(items: list, size: int):
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+
+
+async def _telegram_delete_chunked(bot, targets: list, label: str) -> tuple[int, int]:
+    """Delete channel messages in chunks of 90 with one FloodWait retry.
+    Targets: {_id, channel_id, message_id} dicts. Returns (ok_ids, failed_ids)."""
+    from pyrogram.errors import FloodWait  # type: ignore[import]
+    ok: list = []
+    failed: list = []
+    for chunk in _chunks(targets, 90):
+        by_channel: dict = {}
+        for t in chunk:
+            by_channel.setdefault(t["channel_id"], []).append(t["message_id"])
+        done = False
+        for attempt in (0, 1):
+            try:
+                for channel_id, message_ids in by_channel.items():
+                    await bot.delete_messages(channel_id, message_ids)
+                done = True
+                break
+            except FloodWait as wait:
+                delay = int(getattr(wait, "value", getattr(wait, "x", 1)) or 1)
+                logging.warning(
+                    "photos %s: FloodWait %ss chunk; retry once", label, delay
+                )
+                if attempt == 0:
+                    await asyncio.sleep(delay)
+            except Exception:
+                logging.exception("photos %s: chunk delete failed", label)
+                break
+        if done:
+            ok.extend(t["_id"] for t in chunk)
+        else:
+            failed.extend(t["_id"] for t in chunk)
+    return ok, failed
+
+
+@routes.post("/api/photos/wipe")
+async def photos_wipe(request: web.Request) -> web.Response:
+    """Destroy the whole library: Telegram messages, metadata, thumbs and
+    albums. Requires the bound channel's exact title as confirmation."""
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    user_id = int(user["sub"])
+    try:
+        body = await request.json()
+    except Exception:
+        return _json({"error": "Invalid JSON"}, status=400)
+    confirm = str((body or {}).get("confirm") or "")
+    channel_doc = await _channel_doc(user_id)
+    if not channel_doc or channel_doc.get("status") != "active":
+        return _json({"error": "Connect a channel first"}, status=400)
+    channel_id = int(channel_doc["channel_id"])
+    bot = multi_clients.get(0) or StreamBot
+    title = channel_doc.get("title") or ""
+    if not title:
+        try:
+            chat = await bot.get_chat(channel_id)
+            title = getattr(chat, "title", "") or ""
+        except Exception as exc:
+            logging.warning("photos wipe: get_chat failed uid=%d: %r", user_id, exc)
+            return _json({"error": "Could not verify the channel title"}, status=502)
+    if confirm != title:
+        return _json({"error": "Confirmation does not match the channel title"}, status=400)
+    targets = await photo_store.all_photo_ids(user_id)
+    logging.warning(
+        "photos wipe: START uid=%d channel=%d docs=%d", user_id, channel_id, len(targets)
+    )
+    ok_ids, failed_ids = await _telegram_delete_chunked(bot, targets, "wipe")
+    purged = await photo_store.wipe_library(user_id)
+    failed = len(targets) - len(ok_ids)
+    logging.warning(
+        "photos wipe: DONE uid=%d purged=%d failed=%d", user_id, purged, failed
+    )
+    return _json({"purged": purged, "failed": failed})
+
+
+@routes.get("/api/photos/export")
+async def photos_export(request: web.Request) -> web.StreamResponse:
+    """NDJSON stream of the library: photo lines then album lines. Streams
+    per batch of 500 — never a library-sized JSON body in memory."""
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    user_id = int(user["sub"])
+    response = web.StreamResponse(
+        status=200,
+        headers={
+            "Content-Type": "application/x-ndjson",
+            "Content-Disposition": (
+                f'attachment; filename="photos-export-{_dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d")}.ndjson"'
+            ),
+        },
+    )
+    await response.prepare(request)
+
+    def _line(payload: dict) -> bytes:
+        return (json.dumps(_reject_nan(payload), default=_json_default) + "\n").encode()
+
+    try:
+        async for payload in photo_store.export_library(user_id):
+            # Album lines carry no file metadata — discriminate on a
+            # photo-only field.
+            kind = "album" if "messageId" not in payload else "photo"
+            await response.write(_line({"type": kind, **payload}))
+    except Exception:
+        logging.exception("photos export: stream failed uid=%d", user_id)
+    await response.write_eof()
+    logging.info("photos export: finished uid=%d", user_id)
+    return response
+
+
+# ── Memories (on-this-day) + Trash purge/expiry ───────────────────────────
+
+_backfilled_taken_md: set[int] = set()
+
+
+@routes.get("/api/photos/memories")
+async def photos_memories(request: web.Request) -> web.Response:
+    """On-this-day strip: photos taken on today's month-day in prior years."""
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    user_id = int(user["sub"])
+    today = _dt.datetime.now(_dt.timezone.utc)
+    month_day = f"{today.month:02d}-{today.day:02d}"
+    docs = await photo_store.memories(user_id, month_day)
+    if user_id not in _backfilled_taken_md:
+        # One backfill pass per user per process: old docs predate taken_md.
+        count = await photo_store.backfill_taken_md(user_id)
+        _backfilled_taken_md.add(user_id)
+        logging.info("photos: memories backfill uid=%d updated=%d", user_id, count)
+        if count:
+            docs = await photo_store.memories(user_id, month_day)
+    groups: dict[int, list] = {}
+    for doc in docs:
+        payload = photo_store.memories_payload(doc)
+        if "yearsAgo" not in payload:
+            continue
+        groups.setdefault(payload["yearsAgo"], []).append(payload)
+    return _json({
+        "monthDay": month_day,
+        "groups": [
+            {"yearsAgo": years, "items": items}
+            for years, items in sorted(groups.items(), reverse=True)
+            if years
+        ],
+    })
+
+
+@routes.get("/api/photos/trash/count")
+async def photos_trash_count(request: web.Request) -> web.Response:
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    user_id = int(user["sub"])
+    return _json({"count": await photo_store.trash_count(user_id)})
+
+
+@routes.post("/api/photos/trash/empty")
+async def photos_trash_empty(request: web.Request) -> web.Response:
+    """Permanently delete trashed photos: Telegram messages + local docs."""
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    user_id = int(user["sub"])
+    try:
+        older_than_days = int((await request.json()).get("olderThanDays") or 0)
+    except Exception:
+        older_than_days = 0
+    older_than_days = max(0, older_than_days)
+    docs = await photo_store.empty_trash(user_id, older_than_days=older_than_days)
+    if not docs:
+        return _json({"purged": 0, "failed": 0})
+    logging.info("photos: trash empty start uid=%d docs=%d", user_id, len(docs))
+    bot = multi_clients.get(0) or StreamBot
+    by_channel: dict[int, list[int]] = {}
+    for d in docs:
+        by_channel.setdefault(d["channel_id"], []).append(d["message_id"])
+    deleted_ids: list[str] = []
+    failed = 0
+    for channel_id, message_ids in by_channel.items():
+        chunk_ok, chunk_failed = await _telegram_delete_chunked(
+            bot, [(channel_id, mid) for mid in message_ids], "trash empty",
+        )
+        failed += chunk_failed
+        deleted_ids.extend(
+            str(d["_id"]) for d in docs
+            if d["channel_id"] == channel_id
+            and (d["channel_id"], d["message_id"]) in chunk_ok
+        )
+    purged = await photo_store.purge_photos(user_id, deleted_ids)
+    logging.info(
+        "photos: trash empty done uid=%d purged=%d failed=%d",
+        user_id, purged, failed,
+    )
+    return _json({"purged": purged, "failed": failed})
+
+
+async def purge_expired_trash_for_user(owner_user_id: int, ttl_days: int) -> tuple[int, int]:
+    """One expiry pass for one user. Returns (purged, failed). Used by the
+    background sweep in main/__main__.py."""
+    docs = await photo_store.empty_trash(owner_user_id, older_than_days=ttl_days)
+    if not docs:
+        return 0, 0
+    bot = multi_clients.get(0) or StreamBot
+    deleted_ids: list[str] = []
+    failed = 0
+    by_channel: dict[int, list[int]] = {}
+    for d in docs:
+        by_channel.setdefault(d["channel_id"], []).append(d["message_id"])
+    for channel_id, message_ids in by_channel.items():
+        for i in range(0, len(message_ids), 90):
+            chunk = message_ids[i:i + 90]
+            try:
+                await bot.delete_messages(channel_id, chunk)
+                deleted_ids.extend(
+                    str(d["_id"]) for d in docs
+                    if d["channel_id"] == channel_id and d["message_id"] in chunk
+                )
+            except FloodWait as e:
+                logging.warning(
+                    "photos: trash sweep flood uid=%d cid=%d sleep=%ds",
+                    owner_user_id, channel_id, e.value,
+                )
+                await asyncio.sleep(e.value + 1)
+                try:
+                    await bot.delete_messages(channel_id, chunk)
+                    deleted_ids.extend(
+                        str(d["_id"]) for d in docs
+                        if d["channel_id"] == channel_id and d["message_id"] in chunk
+                    )
+                except Exception:
+                    failed += len(chunk)
+            except Exception:
+                logging.exception(
+                    "photos: trash sweep delete failed uid=%d cid=%d",
+                    owner_user_id, channel_id,
+                )
+                failed += len(chunk)
+    purged = await photo_store.purge_photos(owner_user_id, deleted_ids)
+    return purged, failed
+
+
+# ── Takeout import progress (N5) ──────────────────────────────────────────
+
+
+def _serialize_import_job(doc: dict) -> dict:
+    return {
+        "active": True,
+        "done": int(doc.get("done") or 0),
+        "failed": int(doc.get("failed") or 0),
+        "total": int(doc.get("total") or 0),
+        "currentFile": doc.get("current_file") or "",
+        "startedAt": photo_store.iso_utc(doc.get("started_at")),
+    }
+
+
+@routes.get("/api/photos/import/progress")
+async def import_progress_get(request: web.Request) -> web.Response:
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    doc = await photo_store.import_job_get(int(user["sub"]))
+    return _json(_serialize_import_job(doc) if doc else {"active": False})
+
+
+@routes.delete("/api/photos/import/progress")
+async def import_progress_clear(request: web.Request) -> web.Response:
+    disabled = _photos_disabled()
+    if disabled:
+        return disabled
+    user = _require_user(request)
+    await photo_store.import_job_clear(int(user["sub"]))
+    return _json({"ok": True})

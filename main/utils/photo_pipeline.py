@@ -390,8 +390,19 @@ async def generate_thumbs_for(owner_user_id: int, channel_id: int,
         return None
 
 
+def _effective_taken_at(result_taken_at: Optional[datetime],
+                        override: Optional[datetime]) -> datetime:
+    """Pick the photo's taken_at: an explicit override (e.g. a Google
+    Takeout sidecar timestamp) always wins over EXIF, which in turn wins
+    over "now"."""
+    if override is not None:
+        return override
+    return result_taken_at or _now_utc()
+
+
 async def ingest_bytes(owner_user_id: int, channel_id: int, message_id: int, *,
-                       file_id: str, data: bytes, mime: str, file_name: str) -> Optional[str]:
+                       file_id: str, data: bytes, mime: str, file_name: str,
+                       taken_at_override: Optional[datetime] = None) -> Optional[str]:
     """Run the pipeline on bytes we already hold and persist the result.
 
     Shared by the channel_post worker and the web upload path — Telegram does
@@ -422,7 +433,7 @@ async def ingest_bytes(owner_user_id: int, channel_id: int, message_id: int, *,
         "width": result.get("width"),
         "height": result.get("height"),
         "duration": result.get("duration"),
-        "taken_at": result.get("taken_at") or _now_utc(),
+        "taken_at": _effective_taken_at(result.get("taken_at"), taken_at_override),
         "camera": result.get("camera"),
         "gps": gps or None,
         "location": location,

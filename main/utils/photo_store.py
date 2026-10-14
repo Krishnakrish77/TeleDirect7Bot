@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from main.vars import Var
 
@@ -121,6 +121,7 @@ async def _ensure_indexes() -> None:
         )
         await photos.create_index([("owner_user_id", 1), ("favorite", 1)])
         await photos.create_index([("owner_user_id", 1), ("deleted", 1), ("taken_at", -1)])
+        await photos.create_index([("owner_user_id", 1), ("taken_md", 1)])
         await photos.create_index(
             [("channel_id", 1), ("message_id", 1)], unique=True
         )
@@ -441,6 +442,7 @@ def _serialize_photo(doc: dict) -> dict:
         "favorite": bool(doc.get("favorite")),
         "albumIds": doc.get("album_ids", []),
         "deleted": bool(doc.get("deleted")),
+        "deletedAt": iso_utc(doc.get("deleted_at")),
         "thumbsReady": bool(doc.get("thumb", {}).get("grid")),
         "uploadedAt": iso_utc(doc.get("uploaded_at")),
     }
@@ -463,6 +465,9 @@ async def upsert_photo(doc: dict) -> Optional[str]:
         return "MongoDB is not configured"
     try:
         doc.setdefault("uploaded_at", _now())
+        doc.setdefault(
+            "taken_md", taken_md(doc.get("taken_at"))
+        )
         doc.setdefault("album_ids", [])
         doc.setdefault("favorite", False)
         doc.setdefault("deleted", False)
@@ -946,9 +951,14 @@ async def soft_delete(owner_user_id: int, photo_ids: List[str], deleted: bool) -
         ids = [ObjectId(p) for p in photo_ids if p]
         if not ids:
             return 0
+        update: Dict[str, Any] = {"$set": {"deleted": bool(deleted)}}
+        if deleted:
+            update["$set"]["deleted_at"] = _now()
+        else:
+            update["$unset"] = {"deleted_at": ""}
         result = await db["photos"].update_many(
             {"_id": {"$in": ids}, "owner_user_id": owner_user_id},
-            {"$set": {"deleted": bool(deleted)}},
+            update,
         )
         invalidate_facets(owner_user_id)
         return result.modified_count
@@ -1322,3 +1332,402 @@ async def photo_facets(
     except Exception:
         logging.exception("photo_store: photo_facets failed uid=%d", owner_user_id)
         return {"kinds": {}, "cameras": [], "months": [], "places": []}
+
+
+# ── Map view / wipe / export ──────────────────────────────────────────────
+
+
+async def map_points(
+    owner_user_id: int,
+    *,
+    taken_after: Optional[datetime] = None,
+    taken_before: Optional[datetime] = None,
+) -> List[dict]:
+    """Geotagged, non-deleted photos for the map view. Raw docs (the route
+    serializes); capped so a huge library cannot flood one response."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return []
+    query: Dict[str, Any] = {
+        "owner_user_id": owner_user_id,
+        "deleted": False,
+        "gps": {"$ne": None},
+    }
+    taken_range: Dict[str, Any] = {}
+    if taken_after is not None:
+        taken_range["$gte"] = taken_after
+    if taken_before is not None:
+        taken_range["$lt"] = taken_before
+    if taken_range:
+        query["taken_at"] = taken_range
+    try:
+        return await db["photos"].find(
+            query,
+            projection={
+                "_id": 1, "message_id": 1, "gps.lat": 1, "gps.lon": 1,
+                "taken_at": 1, "kind": 1,
+            },
+        ).sort("taken_at", -1).to_list(length=5000)
+    except Exception:
+        logging.exception("photo_store: map_points failed uid=%d", owner_user_id)
+        return []
+
+
+async def all_photo_ids(owner_user_id: int) -> List[dict]:
+    """{_id, channel_id, message_id} for every doc — the wipe caller does
+    the Telegram deletes and then hands ids to wipe_library."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        return await db["photos"].find(
+            {"owner_user_id": owner_user_id},
+            projection={"_id": 1, "channel_id": 1, "message_id": 1},
+        ).to_list(length=0)
+    except Exception:
+        logging.exception("photo_store: all_photo_ids failed uid=%d", owner_user_id)
+        return []
+
+
+async def wipe_library(owner_user_id: int) -> int:
+    """Permanently delete this owner's photo docs + thumbs + album
+    memberships, after the caller deleted the Telegram messages. The
+    photo_channels binding is left untouched (re-connect keeps its
+    verification history)."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return 0
+    try:
+        photos_result = await db["photos"].delete_many({"owner_user_id": owner_user_id})
+        thumbs_result = await db["photo_thumbs"].delete_many(
+            {"owner_user_id": owner_user_id}
+        )
+        albums_result = await db["photo_albums"].delete_many(
+            {"owner_user_id": owner_user_id}
+        )
+        invalidate_facets(owner_user_id)
+        logging.info(
+            "photo_store: wipe_library uid=%d photos=%d thumbs=%d albums=%d",
+            owner_user_id, photos_result.deleted_count,
+            thumbs_result.deleted_count, albums_result.deleted_count,
+        )
+        return int(photos_result.deleted_count)
+    except Exception:
+        logging.exception("photo_store: wipe_library failed uid=%d", owner_user_id)
+        return 0
+
+
+async def export_library(owner_user_id: int) -> AsyncIterator[dict]:
+    """Stream the library for export: photo docs (album names resolved)
+    first, then album docs. Pages of 500 so a big library never sits in
+    memory as one object."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        albums = await db["photo_albums"].find(
+            {"owner_user_id": owner_user_id}
+        ).to_list(length=_PAGE_CAP)
+        album_names = {str(a["_id"]): a.get("name") or "" for a in albums}
+        last_id = None
+        while True:
+            spec: Dict[str, Any] = {"owner_user_id": owner_user_id}
+            if last_id is not None:
+                spec["_id"] = {"$gt": last_id}
+            batch = await db["photos"].find(spec).sort("_id", 1).to_list(length=500)
+            if not batch:
+                break
+            for doc in batch:
+                last_id = doc["_id"]
+                payload = _serialize_photo(doc)
+                payload["albumNames"] = [
+                    album_names.get(aid, "") for aid in payload.get("albumIds", [])
+                    if aid in album_names
+                ]
+                yield payload
+        for album in albums:
+            yield {"type": "album", **_serialize_album(album)}
+    except Exception:
+        logging.exception("photo_store: export_library failed uid=%d", owner_user_id)
+
+
+# ── Memories (on-this-day) + Trash purge/expiry ───────────────────────────
+
+
+def taken_md(taken_at) -> Optional[str]:
+    """Zero-padded "MM-DD" from a datetime, for on-this-day matching.
+
+    None when the input is missing or a Feb 29 date (leap-day photos would
+    otherwise only ever match one year in four — they stay unmatched).
+    Pure function so tests can exercise it without a database.
+    """
+    if not isinstance(taken_at, datetime):
+        return None
+    if (taken_at.month, taken_at.day) == (2, 29):
+        return None
+    return f"{taken_at.month:02d}-{taken_at.day:02d}"
+
+
+def trash_expiry_cutoff(now: datetime, ttl_days: int) -> Optional[datetime]:
+    """Pure helper: ``deleted_at`` older than this is purged. None = keep all."""
+    if ttl_days <= 0:
+        return None
+    return now - timedelta(days=ttl_days)
+
+
+def memories_payload(doc: dict) -> dict:
+    """Serialize a photo for the memories strip, plus ``yearsAgo``."""
+    out = _serialize_photo(doc)
+    taken = doc.get("taken_at")
+    years_ago = None
+    if isinstance(taken, datetime):
+        years_ago = max(0, _now().year - taken.year)
+        out["yearsAgo"] = years_ago
+    return out
+
+
+async def backfill_taken_md(owner_user_id: int, *, batch: int = 500) -> int:
+    """One-time migration: set ``taken_md`` on photos that predate it.
+
+    Skips Feb 29 photos (taken_md() returns None for them) so they never
+    match the on-this-day query. Returns the number of docs updated.
+    """
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return 0
+    updated = 0
+    try:
+        photos = db["photos"]
+        while True:
+            docs = await photos.find(
+                {
+                    "owner_user_id": owner_user_id,
+                    "taken_md": {"$exists": False},
+                    "taken_at": {"$ne": None},
+                },
+                projection={"taken_at": 1},
+            ).to_list(length=batch)
+            if not docs:
+                break
+            for d in docs:
+                md = taken_md(d.get("taken_at"))
+                if md is None:
+                    # Feb 29: write a never-matching sentinel so the doc
+                    # leaves the backfill query without ever matching a
+                    # real month-day.
+                    md = "02-30"
+                await photos.update_one(
+                    {"_id": d["_id"]}, {"$set": {"taken_md": md}}
+                )
+                updated += 1
+            if len(docs) < batch:
+                break
+        return updated
+    except Exception:
+        logging.exception("photo_store: backfill_taken_md failed uid=%d", owner_user_id)
+        return updated
+
+
+async def memories(owner_user_id: int, month_day: str) -> List[dict]:
+    """Photos taken on this month-day in prior years, newest first."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        return await db["photos"].find(
+            {
+                "owner_user_id": owner_user_id,
+                "taken_md": month_day,
+                "deleted": False,
+            }
+        ).sort([("taken_at", -1)]).to_list(length=200)
+    except Exception:
+        logging.exception("photo_store: memories failed uid=%d", owner_user_id)
+        return []
+
+
+async def empty_trash(owner_user_id: int, *, older_than_days: int = 0) -> List[dict]:
+    """Trashed photo docs, optionally only those past the TTL cutoff.
+
+    Returns ``[{_id, channel_id, message_id}]`` — the caller performs the
+    Telegram deletes and then calls purge_photos with the successful ids.
+    """
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        query: Dict[str, Any] = {"owner_user_id": owner_user_id, "deleted": True}
+        if older_than_days > 0:
+            from datetime import timedelta
+            query["deleted_at"] = {"$lt": _now() - timedelta(days=older_than_days)}
+        docs = await db["photos"].find(
+            query,
+            projection={"channel_id": 1, "message_id": 1},
+        ).to_list(length=_PAGE_CAP * 50)  # hard bound: 10k per pass
+        return docs
+    except Exception:
+        logging.exception("photo_store: empty_trash failed uid=%d", owner_user_id)
+        return []
+
+
+async def purge_photos(owner_user_id: int, photo_ids: List[str]) -> int:
+    """Permanently delete photo docs and their generated thumbs."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return 0
+    if not photo_ids:
+        return 0
+    try:
+        from bson import ObjectId
+        object_ids = [ObjectId(p) for p in photo_ids if p]
+        if not object_ids:
+            return 0
+        docs = await db["photos"].find(
+            {"_id": {"$in": object_ids}, "owner_user_id": owner_user_id},
+            projection={"channel_id": 1, "message_id": 1},
+        ).to_list(length=len(object_ids))
+        thumb_keys = [
+            thumb_key(d["channel_id"], d["message_id"], size)
+            for d in docs
+            for size in ("grid", "preview")
+        ]
+        if thumb_keys:
+            await db["photo_thumbs"].delete_many({"key": {"$in": thumb_keys}})
+        result = await db["photos"].delete_many(
+            {"_id": {"$in": [d["_id"] for d in docs]}, "owner_user_id": owner_user_id}
+        )
+        invalidate_facets(owner_user_id)
+        logging.info(
+            "photo_store: purged %d photos (thumbs %d) uid=%d",
+            result.deleted_count, len(thumb_keys), owner_user_id,
+        )
+        return result.deleted_count
+    except Exception:
+        logging.exception("photo_store: purge_photos failed uid=%d", owner_user_id)
+        return 0
+
+
+async def trash_count(owner_user_id: int) -> int:
+    """Cheap count for the trash view badge."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return 0
+    try:
+        return await db["photos"].count_documents(
+            {"owner_user_id": owner_user_id, "deleted": True}
+        )
+    except Exception:
+        logging.exception("photo_store: trash_count failed uid=%d", owner_user_id)
+        return 0
+
+
+# ── Takeout import (N5) ───────────────────────────────────────────────────
+
+
+def normalize_album_name(name: str) -> str:
+    """Strip whitespace; keep it inside the 1-80 char album-name window."""
+    cleaned = (name or "").strip()
+    return cleaned[:80]
+
+
+async def get_or_create_album(owner_user_id: int, name: str) -> Optional[dict]:
+    """Find the owner's album by exact (normalized) name, creating it if
+    missing. Used by the Takeout import so folder names map 1:1 to albums."""
+    cleaned = normalize_album_name(name)
+    if not cleaned:
+        return None
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return None
+    try:
+        doc = await db["photo_albums"].find_one(
+            {"owner_user_id": owner_user_id, "name": cleaned}
+        )
+        if doc:
+            return _serialize_album(doc)
+        return await create_album(owner_user_id, cleaned)
+    except Exception:
+        logging.exception("photo_store: get_or_create_album failed uid=%d", owner_user_id)
+        return None
+
+
+async def import_job_start(owner_user_id: int, total: int) -> None:
+    """(Re)initialise the single import-progress doc for this user."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        await db["photo_import_jobs"].update_one(
+            {"owner_user_id": owner_user_id},
+            {"$set": {
+                "owner_user_id": owner_user_id,
+                "done": 0,
+                "failed": 0,
+                "total": int(total),
+                "current_file": "",
+                "started_at": _now(),
+            }},
+            upsert=True,
+        )
+    except Exception:
+        logging.exception("photo_store: import_job_start failed uid=%d", owner_user_id)
+
+
+async def import_job_progress(owner_user_id: int, *, done: int = 0, failed: int = 0,
+                              current_file: str = "") -> None:
+    """Increment done/failed counters and set the file being processed."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        update: Dict[str, Any] = {
+            "current_file": current_file,
+            "updated_at": _now(),
+        }
+        if done:
+            update["done"] = int(done)
+        if failed:
+            update["failed"] = int(failed)
+        await db["photo_import_jobs"].update_one(
+            {"owner_user_id": owner_user_id},
+            {"$inc": {k: v for k, v in update.items() if k in ("done", "failed")},
+             "$set": {k: v for k, v in update.items() if k not in ("done", "failed")}},
+            upsert=True,
+        )
+    except Exception:
+        logging.exception("photo_store: import_job_progress failed uid=%d", owner_user_id)
+
+
+async def import_job_get(owner_user_id: int) -> Optional[dict]:
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return None
+    try:
+        return await db["photo_import_jobs"].find_one({"owner_user_id": owner_user_id})
+    except Exception:
+        logging.exception("photo_store: import_job_get failed uid=%d", owner_user_id)
+        return None
+
+
+async def import_job_clear(owner_user_id: int) -> None:
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        await db["photo_import_jobs"].delete_one({"owner_user_id": owner_user_id})
+    except Exception:
+        logging.exception("photo_store: import_job_clear failed uid=%d", owner_user_id)

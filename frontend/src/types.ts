@@ -1254,8 +1254,28 @@ export interface Photo {
   favorite: boolean;
   albumIds: string[];
   deleted: boolean;
+  deletedAt: string | null;
   thumbsReady: boolean;
   uploadedAt: string | null;
+}
+
+/** One geotagged photo marker for the map view. */
+export interface PhotoMapPoint {
+  id: string;
+  lat: number;
+  lon: number;
+  takenAt: string | null;
+  kind: string | null;
+}
+
+export interface PhotosMemoriesGroup {
+  yearsAgo: number;
+  items: Photo[];
+}
+
+export interface PhotosMemoriesResponse {
+  monthDay: string;
+  groups: PhotosMemoriesGroup[];
 }
 
 export interface PhotoAlbum {

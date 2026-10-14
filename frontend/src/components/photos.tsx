@@ -24,6 +24,7 @@ import {
   PlayIcon,
   PlusIcon,
   RestoreIcon,
+  MapIcon,
   SearchIcon,
   StarIcon,
   TrashIcon,
@@ -41,9 +42,11 @@ import {
   createPhotoAlbum,
   deletePhotoAlbum,
   disconnectPhotosChannel,
+  emptyPhotosTrash,
   fetchPendingPhotoChannel,
   fetchPhotoAlbums,
   fetchPhotoFacets,
+  fetchPhotosMemories,
   fetchPhotosStatus,
   fetchPhotosTimeline,
   photoFileUrl,
@@ -55,9 +58,12 @@ import {
   trashPhotos,
   uploadPhotos,
 } from '../api';
-import type { Photo, PhotoAlbum, PhotoFacets, PhotoSearchParams, PendingPhotoChannel, PhotosChannelStatus, TimelineResponse } from '../types';
+import type { Photo, PhotoAlbum, PhotoFacets, PhotoSearchParams, PendingPhotoChannel, PhotosChannelStatus, PhotosMemoriesResponse, TimelineResponse } from '../types';
 import { resyncPhotosLibrary } from '../api';
+import { exportPhotoLibrary, wipePhotoLibrary } from '../api';
+import PhotoMapPage from './photoMapPage';
 import { Button } from './ui/button';
+import PhotoImportWizard from './photoImportWizard';
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog';
 import {
   DropdownMenu,
@@ -77,6 +83,9 @@ const ROW_HEIGHT_STEPS = [110, 150, 190, 240, 320] as const;
 export function dayKey(iso: string | null): string {
   return (iso || '').slice(0, 10) || 'unknown';
 }
+
+/** Matches the backend's PHOTOS_TRASH_TTL_DAYS default (vars.py). */
+const TRASH_TTL_DAYS = 30;
 
 function dayLabel(iso: string | null): string {
   if (!iso) return 'Unknown date';
@@ -553,6 +562,14 @@ function PhotoTile({
       {photo.favorite && (
         <span className="photos-item__fav" aria-label="Favorite">
           <StarIcon filled />
+        </span>
+      )}
+      {photo.deleted && photo.deletedAt && (
+        <span className="photos-item__badge" title="Days left before this is deleted forever">
+          {Math.max(
+            0,
+            TRASH_TTL_DAYS - Math.floor((Date.now() - Date.parse(photo.deletedAt)) / 86_400_000),
+          )}d
         </span>
       )}
     </div>
@@ -1208,7 +1225,7 @@ function MetaPanel({ photo }: { photo: Photo }) {
 
 // ── Main photos page ──────────────────────────────────────────────────────
 
-type View = 'timeline' | 'favorites' | 'albums' | 'trash';
+type View = 'timeline' | 'favorites' | 'albums' | 'trash' | 'map';
 
 const PHOTOS_NAV: Array<{
   key: View;
@@ -1219,6 +1236,7 @@ const PHOTOS_NAV: Array<{
   { key: 'favorites', label: 'Favorites', icon: StarIcon },
   { key: 'albums', label: 'Albums', icon: AlbumIcon },
   { key: 'trash', label: 'Trash', icon: TrashIcon },
+  { key: 'map', label: 'Map', icon: MapIcon },
 ];
 
 // ── Albums cover grid ─────────────────────────────────────────────────────
@@ -1522,9 +1540,15 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   });
   const [uploads, setUploads] = useState<Array<{ name: string; url: string }>>([]);
   const [uploadPercent, setUploadPercent] = useState(0);
+  const [importWizardOpen, setImportWizardOpen] = useState(false);
   const [importState, setImportState] = useState<'idle' | 'running' | 'done' | 'paused' | 'error'>('idle');
+  const [exportBusy, setExportBusy] = useState(false);
+  const [wipeBusy, setWipeBusy] = useState(false);
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
+  // Trash-empty outcome surfaced in the notice area (purged/failed counts).
+  const [trashNotice, setTrashNotice] = useState('');
+  const [emptyingTrash, setEmptyingTrash] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   // Server-side search + filter chips. `query` mirrors the input (immediate),
   // `searchQ` is the debounced value actually sent to the API.
@@ -1533,6 +1557,7 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
   const [filters, setFilters] = useState<PhotoSearchParams>({});
   const [facets, setFacets] = useState<PhotoFacets | null>(null);
   const [creatingAlbum, setCreatingAlbum] = useState(false);
+  const [memories, setMemories] = useState<PhotosMemoriesResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const albumInputRef = useRef<HTMLInputElement>(null);
   // Hooks must run before the early returns below (a hook after a conditional
@@ -1597,6 +1622,17 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
     void loadAlbums();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedIn, view]);
+
+  // Memories strip: fetched once per session — its content (today's
+  // month-day across prior years) doesn't change mid-session.
+  useEffect(() => {
+    if (!signedIn) return;
+    let cancelled = false;
+    fetchPhotosMemories()
+      .then((res) => { if (!cancelled && res.groups.length) setMemories(res); })
+      .catch(() => undefined);  // memories are decorative — never surface errors
+    return () => { cancelled = true; };
+  }, [signedIn]);
 
   // Re-query when the debounced search or the filter chips change.
   const filterKey = `${searchQ}|${JSON.stringify(filters)}`;
@@ -1822,6 +1858,27 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
     }
   };
 
+  const emptyTrash = async () => {
+    const count = photos.filter((p) => p.deleted).length;
+    if (!window.confirm(`Permanently delete ${count} item${count === 1 ? '' : 's'} from the trash? This cannot be undone.`)) return;
+    setEmptyingTrash(true);
+    setTrashNotice('');
+    try {
+      const result = await emptyPhotosTrash();
+      setTrashNotice(
+        result.failed > 0
+          ? `Emptied trash: ${result.purged} deleted, ${result.failed} failed (they stay in the trash — try again later).`
+          : `Trash emptied — ${result.purged} item${result.purged === 1 ? '' : 's'} permanently deleted.`,
+      );
+      await loadTimeline(true, undefined, activeAlbum?.id);
+      await reloadStatus();
+    } catch (err) {
+      setError(describeError(err, 'Could not empty the trash'));
+    } finally {
+      setEmptyingTrash(false);
+    }
+  };
+
   const assignAlbum = async (photo: Photo, albumId: string, member: boolean) => {
     try {
       await setAlbumPhotos(albumId, [photo.id], member);
@@ -1829,6 +1886,40 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
       await loadAlbums();
     } catch (err) {
       setError(describeError(err, 'Could not update the album'));
+    }
+  };
+
+  const runExport = async () => {
+    setExportBusy(true);
+    try {
+      await exportPhotoLibrary();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  // Double confirm: prompt the channel title, compare client-side AND
+  // server-side (the server re-verifies against the bound channel).
+  const runWipe = async () => {
+    const confirm = window.prompt(
+      'This permanently deletes EVERY photo and video from your Telegram channel and this library. Type the channel title to confirm:',
+    );
+    if (!confirm) return;
+    setWipeBusy(true);
+    try {
+      const result = await wipePhotoLibrary(confirm);
+      setError(
+        result.failed > 0
+          ? `Library wiped: ${result.purged} deleted, ${result.failed} failed on Telegram.`
+          : `Library wiped: ${result.purged} items deleted.`,
+      );
+      void loadTimeline(true, undefined, activeAlbum?.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Wipe failed');
+    } finally {
+      setWipeBusy(false);
     }
   };
 
@@ -2104,6 +2195,9 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
                 }}
               />
               <Button onClick={() => fileInputRef.current?.click()}>Upload</Button>
+              <Button variant="secondary" onClick={() => setImportWizardOpen(true)}>
+                Import Google Takeout
+              </Button>
               {/* Maintenance actions live in an overflow menu — a library
                   scan is not a primary CTA on the gallery home. */}
               <DropdownMenu>
@@ -2126,12 +2220,40 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
                       <span>{importState === 'running' ? 'Looking for missing photos…' : 'Find missing photos'}</span>
                     </button>
                   </DropdownMenuItem>
+                  {view === 'trash' && (
+                    <DropdownMenuItem asChild disabled={emptyingTrash}>
+                      <button type="button" onClick={() => void emptyTrash()}>
+                        <TrashIcon />
+                        <span>{emptyingTrash ? 'Emptying trash…' : 'Empty trash'}</span>
+                      </button>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    asChild
+                    disabled={exportBusy}
+                    onSelect={() => void runExport()}
+                  >
+                    <button type="button">
+                      <DownloadIcon />
+                      <span>{exportBusy ? 'Preparing export…' : 'Export metadata'}</span>
+                    </button>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    asChild
+                    disabled={wipeBusy}
+                    onSelect={() => void runWipe()}
+                  >
+                    <button type="button" className="photos-menu-danger">
+                      <TrashIcon />
+                      <span>{wipeBusy ? 'Wiping library…' : 'Wipe library'}</span>
+                    </button>
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
           </header>
 
-          {view !== 'albums' && !activeAlbum && (
+          {view !== 'albums' && view !== 'map' && !activeAlbum && (
             <PhotosFilterBar
               facets={facets}
               filters={filters}
@@ -2139,7 +2261,11 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
             />
           )}
 
-          {view === 'albums' && !activeAlbum ? (
+          {view === 'map' ? (
+            <PhotoMapPage onSelect={(photoId) => {
+              setLightboxIndex(visiblePhotos.findIndex((p) => p.id === photoId));
+            }} />
+          ) : view === 'albums' && !activeAlbum ? (
             <AlbumsGrid
               albums={albums}
               creating={creatingAlbum}
@@ -2173,25 +2299,50 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
               <p>Loosen or clear a chip below to widen the view.</p>
             </div>
           ) : loadError ? null : (
-            <PhotosTimeline
-              data={timelineData}
-              loading={timelineLoading}
-              onLoadMore={() => void loadTimeline(false, undefined, activeAlbum?.id)}
-              onOpen={(photo) => {
-                // Selection-mode clicks reach onTileClick via PhotoTile; plain
-                // clicks open the lightbox.
-                setLightboxIndex(visiblePhotos.findIndex((p) => p.id === photo.id));
-              }}
-              onScan={() => void syncLibrary()}
-              onUpload={() => fileInputRef.current?.click()}
-              selection={selection}
-              onTileClick={onTileClick}
-              onToggleDay={toggleDay}
-              onPinchStep={onPinchStep}
-              rowHeight={rowHeight}
-              emptyView={view}
-              activeAlbumName={activeAlbum?.name}
-            />
+            <>
+              {view === 'timeline' && memories && memories.groups.length > 0 && (
+                <div className="photos-memories" role="region" aria-label="On this day">
+                  <p className="photos-memories__title">
+                    {Number(memories.groups[0].yearsAgo)} year{memories.groups[0].yearsAgo === 1 ? '' : 's'} ago today
+                  </p>
+                  <div className="photos-memories__row">
+                    {memories.groups.slice(0, 3).map((group) => (
+                      <button
+                        key={group.yearsAgo}
+                        type="button"
+                        className="photos-memories__card"
+                        onClick={() => {
+                          const first = group.items[0];
+                          setLightboxIndex(visiblePhotos.findIndex((p) => p.id === first?.id));
+                        }}
+                      >
+                        <img src={photoThumbUrl(group.items[0]?.id ?? '', 'grid')} alt="" loading="lazy" />
+                        <span>{group.yearsAgo}y · {group.items.length}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <PhotosTimeline
+                data={timelineData}
+                loading={timelineLoading}
+                onLoadMore={() => void loadTimeline(false, undefined, activeAlbum?.id)}
+                onOpen={(photo) => {
+                  // Selection-mode clicks reach onTileClick via PhotoTile; plain
+                  // clicks open the lightbox.
+                  setLightboxIndex(visiblePhotos.findIndex((p) => p.id === photo.id));
+                }}
+                onScan={() => void syncLibrary()}
+                onUpload={() => fileInputRef.current?.click()}
+                selection={selection}
+                onTileClick={onTileClick}
+                onToggleDay={toggleDay}
+                onPinchStep={onPinchStep}
+                rowHeight={rowHeight}
+                emptyView={view}
+                activeAlbumName={activeAlbum?.name}
+              />
+            </>
           )}
         </section>
       </div>
@@ -2249,6 +2400,18 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
         </div>
       )}
 
+      {trashNotice && (
+        <div className="photos-banner" role="status">
+          {trashNotice}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setTrashNotice('')}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
       {(error || loadError) && (
         <div className="photos-banner photos-banner--warn" role="alert">
           {error || loadError}
@@ -2310,6 +2473,11 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
           onAssignAlbum={(p, albumId, member) => void assignAlbum(p, albumId, member)}
         />
       )}
+      <PhotoImportWizard
+        open={importWizardOpen}
+        onOpenChange={setImportWizardOpen}
+        onFinished={() => { void loadTimeline(true); void reloadStatus(); }}
+      />
     </main>
   );
 }
