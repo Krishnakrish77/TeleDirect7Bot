@@ -419,6 +419,7 @@ function App() {
     'app-shell',
     audio.player.track ? 'has-player' : '',
     route.kind === 'watch' ? 'watch-route' : '',
+    route.kind === 'photos' ? 'photos-route' : '',
   ].filter(Boolean).join(' ');
   const onSearchSubmit = useCallback(() => {
     const nextQuery = query.trim();

@@ -2370,8 +2370,8 @@ img {
     flex-direction: column; /* Stack header elements */
     align-items: flex-start;
     gap: 0.8rem;
-    padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
-    padding-bottom: 0.8rem;
+    padding-top: max(0.4rem, env(safe-area-inset-top, 0px));
+    padding-bottom: 0.4rem;
   }
 
   .photos-header__lead {
@@ -14570,9 +14570,10 @@ select.edit-field-input {
     background: transparent;
   }
   .photos-nav button span {
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
+    text-overflow: clip;
     font-size: 0.84rem;
+    white-space: nowrap;
   }
   .photos-nav button.active {
     border-bottom: 0;
@@ -14581,9 +14582,12 @@ select.edit-field-input {
   }
 }
 @media (max-width: 400px) {
-  .photos-nav button span { display: none; }
-  .photos-nav button { gap: 0; }
-  .photos-nav button svg { width: 1.3rem; height: 1.3rem; }
+  /* Full labels stay visible even on 320–400px phones: equal-column flex
+     fits "Favorites" at 320px once icon+gap drop. Hiding labels read worse
+     than any squeeze — four identical icons are unrecognizable. */
+  .photos-nav button { gap: 0.3rem; }
+  .photos-nav button svg { width: 1rem; height: 1rem; }
+  .photos-nav button span { font-size: 0.78rem; }
 }
 /* ≥900px desktop keeps the left rail from the min-width:900 block above; for
    touch devices in 900–1179px this touch block wins by source order, so they
@@ -14718,9 +14722,12 @@ select.edit-field-input {
 
 .photos-more { justify-self: center; }
 
-/* Filter chip row — GPhotos-style pills under the header. */
+/* Filter chip row — GPhotos-style pills under the header. Lives in the same
+   flex flow as the header so phones can pull the trigger into the actions
+   row; desktop keeps the full-width chip row via the 100% basis below. */
 .photos-filters {
   display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+  flex: 1 1 100%;
 }
 .photos-chip {
   display: inline-flex; align-items: center; gap: 0.4rem;
@@ -15228,7 +15235,7 @@ a.photos-lb-btn { text-decoration: none; }
   .photos-page--fill .photos-more { flex: 0 0 auto; position: sticky; bottom: 0.4rem; align-self: center; }
   /* The page's generic clamp padding double-spaces against the shell gap and
      the fixed chrome — every pixel here comes off the photo grid. */
-  .photos-page--fill { padding: 0.55rem 0.75rem 0.75rem; }
+  .photos-page--fill { padding: 0.35rem 0.5rem 0.5rem; }
   /* The pinned day label must stay: the component suppresses the in-flow copy
      while that day is the pinned one, so hiding the pinned element left the
      current day with no header at all. */
@@ -15236,6 +15243,19 @@ a.photos-lb-btn { text-decoration: none; }
 }
 
 @media (max-width: 680px) {
+  /* The global media search doesn't search photos, and on ≤860px it takes a
+     full header row on top of the Photos header's own search — two stacked
+     search boxes, ~110px of chrome. Photos keeps its scoped search; the app
+     header collapses to one slim brand+account row (watch-route pattern). */
+  .app-shell.photos-route .app-header {
+    grid-template-columns: 1fr auto;
+    gap: 0.35rem;
+    min-height: 0;
+    padding-top: calc(0.4rem + env(safe-area-inset-top, 0px));
+    padding-bottom: 0.4rem;
+  }
+  .app-shell.photos-route .top-search { display: none; }
+
   /* Keep the chrome short: on a 844px-tall phone the page header used to eat
      ~340px before the first photo. The nav already labels the section, so the
      page title/beta block goes away on phones (Google Photos has no page
@@ -15261,9 +15281,9 @@ a.photos-lb-btn { text-decoration: none; }
      scroll/padding is tuned, and a scrolling chip strip hides the active
      filter state. */
   .photos-filters { display: none; }
-  .photos-filters__trigger { display: inline-flex; align-self: flex-start; }
-  .photos-tabs { gap: 0.1rem; }
-  .photos-tabs button { margin-right: 0.55rem; padding: 0.5rem 0.1rem; font-size: 0.86rem; }
+  /* The trigger joins the one actions row (search + Upload + ⋮) instead of
+     eating its own chrome row above the grid. */
+  .photos-filters__trigger { display: inline-flex; order: -1; flex: 0 1 auto; min-height: 2.75rem; padding: 0 0.7rem; }
 
   /* Selection actions move to a bottom bar instead of covering
      the app bar (and wrapping badly at 360px). While selecting, the section
