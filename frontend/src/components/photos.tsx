@@ -2110,7 +2110,7 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
         </nav>
 
         <section className="photos-main">
-          <header className="photos-header">
+          <header className={`photos-header${isAlbumDetail ? '' : ' photos-header--single-row'}`}>
             <div className={`photos-header__lead${isAlbumDetail ? ' photos-header__lead--detail' : ''}`}>
               {isAlbumDetail ? (
                 <>
@@ -2201,7 +2201,9 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
                 }}
               />
               <Button onClick={() => fileInputRef.current?.click()}>Upload</Button>
-              <Button variant="secondary" onClick={() => setImportWizardOpen(true)}>
+              {/* Desktop-only inline; phones get it in the overflow menu —
+                  the full label left the actions row no room for search. */}
+              <Button variant="secondary" className="photos-takeout-inline" onClick={() => setImportWizardOpen(true)}>
                 Import Google Takeout
               </Button>
               {/* Maintenance actions live in an overflow menu — a library
@@ -2216,6 +2218,16 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
                   {/* asChild + real <button>: .account-menu styles only match
                       a/button children; a bare DropdownMenuItem renders a
                       div[role=menuitem] and gets no row styling. */}
+                  <DropdownMenuItem
+                    asChild
+                    className="photos-takeout-menu-item"
+                    onSelect={() => setImportWizardOpen(true)}
+                  >
+                    <button type="button">
+                      <DownloadIcon />
+                      <span>Import Google Takeout</span>
+                    </button>
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     asChild
                     disabled={importState === 'running'}
@@ -2256,16 +2268,19 @@ export function PhotosPage({ user, onSignIn }: { user: { sub: number | string } 
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              {/* Inside the actions flex: desktop hides the trigger and wraps
+                  the chip row to its own line (flex-basis 100%); phones hide
+                  the chips and show only the trigger inline with Upload/⋮. */}
+              {view !== 'albums' && view !== 'map' && !activeAlbum && (
+                <PhotosFilterBar
+                  facets={facets}
+                  filters={filters}
+                  onChange={setFilters}
+                />
+              )}
             </div>
           </header>
-
-          {view !== 'albums' && view !== 'map' && !activeAlbum && (
-            <PhotosFilterBar
-              facets={facets}
-              filters={filters}
-              onChange={setFilters}
-            />
-          )}
 
           {view === 'map' ? (
             <PhotoMapPage onSelect={(photoId) => {

@@ -14570,10 +14570,9 @@ select.edit-field-input {
     background: transparent;
   }
   .photos-nav button span {
-    overflow: visible;
-    text-overflow: clip;
-    font-size: 0.84rem;
-    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.8rem;
   }
   .photos-nav button.active {
     border-bottom: 0;
@@ -14581,13 +14580,14 @@ select.edit-field-input {
     color: var(--text);
   }
 }
-@media (max-width: 400px) {
-  /* Full labels stay visible even on 320–400px phones: equal-column flex
-     fits "Favorites" at 320px once icon+gap drop. Hiding labels read worse
-     than any squeeze — four identical icons are unrecognizable. */
-  .photos-nav button { gap: 0.3rem; }
-  .photos-nav button svg { width: 1rem; height: 1rem; }
-  .photos-nav button span { font-size: 0.78rem; }
+@media (max-width: 680px) {
+  /* Labels must never bleed into the neighbouring tab's highlight, and the
+     old icon-only fallback made four tabs unrecognizable. Icons go instead:
+     the label gets the full equal column ("Favorites" fits 390px; at 320px
+     it ellipsizes — overlap beats truncation, truncation beats icons). */
+  .photos-nav button { gap: 0; }
+  .photos-nav button svg { display: none; }
+  .photos-nav button span { font-size: 0.84rem; }
 }
 /* ≥900px desktop keeps the left rail from the min-width:900 block above; for
    touch devices in 900–1179px this touch block wins by source order, so they
@@ -14721,6 +14721,43 @@ select.edit-field-input {
 }
 
 .photos-more { justify-self: center; }
+
+/* Import wizard: DialogContent only supplies fixed+z-index — without
+   geometry here the panel renders at its static position, which on every
+   screen is *below* the viewport (the "button does nothing" bug: it worked,
+   the dialog opened off-screen). Centre it like .modal-panel. */
+.photos-import-wizard {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(calc(100vw - 2rem), 26rem);
+  max-height: calc(100svh - 2rem);
+  overflow-y: auto;
+  padding: 1.4rem 1.2rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: #111317;
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+  display: grid;
+  gap: 0.9rem;
+}
+.photos-import-wizard h2 { margin: 0; font-size: 1.05rem; }
+.photos-import-wizard__pick p { margin: 0; color: var(--muted); font-size: 0.88rem; line-height: 1.55; }
+.photos-import-wizard__pick code { padding: 0.05rem 0.3rem; border-radius: 4px; background: rgba(148, 163, 184, 0.2); font-size: 0.85em; }
+.photos-import-wizard__actions { display: flex; gap: 0.6rem; }
+.photos-import-wizard__files { margin: 0; padding: 0.4rem 0 0.4rem 1.2rem; color: var(--muted); font-size: 0.8rem; }
+.photos-import-wizard__error { margin: 0; color: #f87171; font-size: 0.84rem; }
+.photos-import-wizard__progress p { margin: 0 0 0.5rem; font-size: 0.9rem; }
+.photos-import-wizard__summary p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+/* Takeout entry point: inline button on wide screens, overflow-menu item on
+   phones (the inline label starved the actions-row search for space). */
+@media (max-width: 680px) {
+  .photos-takeout-inline { display: none; }
+}
+@media (min-width: 681px) {
+  .photos-takeout-menu-item { display: none; }
+}
 
 /* Filter chip row — GPhotos-style pills under the header. Lives in the same
    flex flow as the header so phones can pull the trigger into the actions
@@ -15261,6 +15298,16 @@ a.photos-lb-btn { text-decoration: none; }
      page title/beta block goes away on phones (Google Photos has no page
      heading either) and only the actions row stays. */
   .photos-header { align-items: center; gap: 0.4rem; }
+  /* Library view: the lead collapses to display:none, so the header must stay
+     ONE row (lead hidden + actions + filters-trigger) — the stacked-column
+     base rule gave the filters trigger its own full-width row below the
+     actions and squeezed the search. Album detail (visible back-button lead)
+     keeps the column. JSX emits photos-header--single-row when the lead is
+     hidden in library view. */
+  .photos-header--single-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
   /* The album-detail lead carries the back button — always visible. Only the
      library lead (title/beta block) collapses; the switcher labels the tab. */
   .photos-header > div:first-child:not(.photos-header__lead--detail) { display: none; }
@@ -15281,9 +15328,8 @@ a.photos-lb-btn { text-decoration: none; }
      scroll/padding is tuned, and a scrolling chip strip hides the active
      filter state. */
   .photos-filters { display: none; }
-  /* The trigger joins the one actions row (search + Upload + ⋮) instead of
-     eating its own chrome row above the grid. */
-  .photos-filters__trigger { display: inline-flex; order: -1; flex: 0 1 auto; min-height: 2.75rem; padding: 0 0.7rem; }
+  /* The trigger joins the one actions row (search + Upload + ⋮). */
+  .photos-filters__trigger { display: inline-flex; flex: 0 0 auto; min-height: 2.75rem; padding: 0 0.7rem; }
 
   /* Selection actions move to a bottom bar instead of covering
      the app bar (and wrapping badly at 360px). While selecting, the section
