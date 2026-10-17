@@ -5174,7 +5174,7 @@ img {
   padding: 0 0.75rem;
 }
 
-.now-controls,
+.now-transport,
 .now-sheet .player-settings {
   justify-content: center;
 }
@@ -7379,13 +7379,21 @@ img {
   font-variant-numeric: tabular-nums;
 }
 
-/* Transport: shuffle · prev · play · next · repeat, centered */
+/* Transport: shuffle · prev · play · next · repeat. Grid with equal 1fr
+   column pairs keeps the play button exactly centered no matter how wide the
+   satellite icons are; satellites center within their cells. */
 .now-transport {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto repeat(2, minmax(0, 1fr));
   align-items: center;
-  justify-content: center;
+  justify-items: center;
   gap: 0.75rem;
   width: 100%;
+}
+
+.now-transport .repeat-button {
+  width: 40px;
+  height: 40px;
 }
 
 .now-side-btn {
@@ -12267,7 +12275,9 @@ select.edit-field-input {
     grid-template-areas:
       "track controls close"
       "progress progress progress";
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    /* Equal 1fr flanks keep the controls column exactly centered in the row
+       regardless of title length; the dismiss button hugs the right edge. */
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     min-height: 86px;
     gap: 0.5rem 0.5rem;
     padding: 0.5rem 0.65rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
@@ -12292,6 +12302,7 @@ select.edit-field-input {
 
   .mini-controls {
     gap: 0.4rem;
+    justify-self: center;
   }
 
   /* Keep skip controls reachable on mobile — hiding them forces a sheet
@@ -12361,17 +12372,16 @@ select.edit-field-input {
     -webkit-line-clamp: 2;
   }
 
-  .now-controls {
-    flex-wrap: nowrap;
+  .now-transport {
     gap: 0.38rem;
   }
 
-  .now-controls .player-nav {
+  .now-transport .player-nav {
     width: 34px;
     height: 34px;
   }
 
-  .now-controls .player-play {
+  .now-transport .player-play {
     width: 52px;
     height: 52px;
   }
@@ -12832,7 +12842,7 @@ select.edit-field-input {
   }
 
   .now-progress,
-  .now-controls,
+  .now-transport,
   .now-sheet .playback-issue,
   .now-lyrics,
   .now-sheet .classic-link {
