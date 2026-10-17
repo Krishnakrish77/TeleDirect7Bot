@@ -22,6 +22,26 @@ const AUDIO_COMPLETE_RATIO = 0.95;
 const AUDIO_NEAR_END_SECONDS = 45;
 const AUDIO_NEAR_END_SYNC_MS = 5000;
 
+// A browser/ffprobe duration estimate can be badly wrong for VBR MP3s
+// without a Xing header — far shorter than the real decoded length. When the
+// element's duration and the catalogue value disagree materially, timers keyed
+// to that estimate (crossfade, 95% finalise) would fire minutes before the
+// audio actually ends. Distrust both and let the `ended` event (true
+// end-of-decode) drive the transition instead. Threshold matches the
+// duration self-heal delta below.
+const DURATION_MISMATCH_RATIO = 0.05;
+function durationIsTrusted(audio: HTMLAudioElement, track: WatchTrack | null | undefined): boolean {
+  if (!Number.isFinite(audio.duration) || audio.duration <= 0) return false;
+  const catalog = track?.duration || 0;
+  if (!catalog) return true;
+  // Only an underestimate is dangerous: the element's duration governs when
+  // `ended` fires, so an estimate at/above the catalogue value is the best
+  // available truth and playback really ends there. A shorter estimate (VBR
+  // MP3 without Xing header) grows as decoding proceeds — timers keyed to it
+  // would fire before the real end.
+  return audio.duration >= catalog * (1 - DURATION_MISMATCH_RATIO);
+}
+
 // The local td:cw map is kept fresh from the server (App merges server→local on
 // load/focus), so reading it here resumes progress made on another device
 // without the hook fetching anything itself.
@@ -993,6 +1013,10 @@ export function useAudioPlayer() {
     const next = nextIndex >= 0 ? current.queue[nextIndex] : null;
     const duration = audio.duration || current.duration;
     if (!next || current.repeatMode === 'one' || !Number.isFinite(duration) || duration <= 0) return;
+    // Bad duration estimate (VBR MP3 without Xing header): the "3s remaining"
+    // window could actually be minutes of real audio. Skip the crossfade —
+    // the `ended` event fires at true end-of-decode and advances the queue.
+    if (!durationIsTrusted(audio, current.track)) return;
     const remaining = duration - audio.currentTime;
     const inactive = getInactiveAudio();
     if (!inactive) return;
@@ -1245,7 +1269,10 @@ export function useAudioPlayer() {
       // can close or the stream can stall in the final seconds, and a song
       // parked at 90%+ (which never auto-resumes anyway) is shelf noise.
       // Same ratio as the video player and the server's stale-write guard.
-      if (current.track && duration > 0 && currentTime / duration >= AUDIO_COMPLETE_RATIO) {
+      // Skipped when the duration estimate is untrusted (VBR MP3 without
+      // Xing header): 95% of the wrong estimate is minutes of real audio —
+      // `ended` finalises at true end-of-decode instead.
+      if (current.track && duration > 0 && currentTime / duration >= AUDIO_COMPLETE_RATIO && durationIsTrusted(audio, current.track)) {
         finaliseTrackEnd(current.track.key, current.track.title);
       }
       if ('mediaSession' in navigator && current.track && duration > 0 && Math.floor(currentTime) !== lastMediaSessionPos) {

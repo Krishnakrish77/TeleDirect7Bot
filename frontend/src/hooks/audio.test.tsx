@@ -169,6 +169,87 @@ describe('useAudioPlayer', () => {
     expect(deleteContinueEntry).toHaveBeenCalledTimes(1);
   });
 
+  it('does not finalise early when the element duration badly understates the track', async () => {
+    // VBR MP3 without Xing header: the browser estimates 100s, the real
+    // decode length (catalogue value) is 600s. 96% of the estimate must not
+    // mark the song completed — `ended` at the true end does.
+    const track = makeTrack({ duration: 600 });
+    render(<AudioHarness track={track} />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'duration', { configurable: true, value: 100 });
+    Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+
+    act(() => {
+      Object.defineProperty(primary, 'currentTime', { configurable: true, value: 96 });
+      fireEvent.timeUpdate(primary);
+    });
+
+    expect(recordWatchHistory).not.toHaveBeenCalled();
+    expect(deleteContinueEntry).not.toHaveBeenCalled();
+
+    // Reaching the real end still finalises exactly once.
+    act(() => {
+      Object.defineProperty(primary, 'currentTime', { configurable: true, value: 596 });
+      Object.defineProperty(primary, 'duration', { configurable: true, value: 600 });
+      fireEvent.timeUpdate(primary);
+      fireEvent.ended(primary);
+    });
+
+    await waitFor(() => expect(recordWatchHistory).toHaveBeenCalledTimes(1));
+    expect(deleteContinueEntry).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not crossfade when the element duration badly understates the track', async () => {
+    // VBR MP3 without Xing header: the browser estimates 100s, the real
+    // decode length (catalogue value) is 600s. The "3s remaining" window is
+    // minutes of real audio — the next track must not start under the
+    // still-playing one; `ended` advances instead.
+    const first = makeTrack({ title: 'First Theme', duration: 600 });
+    const second = makeTrack({ key: 'second-key', itemId: 'item-second-key', messageId: 2, title: 'Second Theme', duration: 600, streamHref: '/stream/second-key', watchKey: 'second-key', appHref: '/app/watch/second-key', classicHref: '/watch/second-key' });
+    render(<AudioHarness track={first} queue={[first, second]} />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    const buffer = screen.getByTestId('buffer-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'duration', { configurable: true, value: 100 });
+    Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+
+    act(() => {
+      Object.defineProperty(primary, 'currentTime', { configurable: true, value: 97 });
+      fireEvent.timeUpdate(primary);
+      fireEvent.timeUpdate(primary);
+    });
+
+    expect(screen.getByTestId('track').textContent).toBe('First Theme');
+    expect(buffer.getAttribute('src') || '').not.toContain('/stream/second-key');
+  });
+
+  it('still crossfades near the end of a track with a trusted duration', async () => {
+    const first = makeTrack({ title: 'First Theme', duration: 200 });
+    const second = makeTrack({ key: 'second-key', itemId: 'item-second-key', messageId: 2, title: 'Second Theme', duration: 200, streamHref: '/stream/second-key', watchKey: 'second-key', appHref: '/app/watch/second-key', classicHref: '/watch/second-key' });
+    render(<AudioHarness track={first} queue={[first, second]} />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    const buffer = screen.getByTestId('buffer-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'duration', { configurable: true, value: 200 });
+    Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+
+    act(() => {
+      Object.defineProperty(primary, 'currentTime', { configurable: true, value: 198 });
+      fireEvent.timeUpdate(primary);
+      fireEvent.timeUpdate(primary);
+    });
+
+    // Preload + crossfade window: the next element gets the second track's src.
+    await waitFor(() => expect(buffer.getAttribute('src')).toContain('/stream/second-key'));
+  });
+
   it('explains browser playback failures with actionable messages', () => {
     const track = makeTrack({ format: 'FLAC', qualityLabel: 'FLAC' });
     const audio = document.createElement('audio');
