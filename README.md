@@ -4,7 +4,7 @@
 
 [Quick start](#quick-start) · [Configuration](#configuration) · [Docker deployment](#docker) · [Daily use](#daily-use)
 
-<a href="https://www.buymeacoffee.com/sarukrishna.sk"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=☕&slug=sarukrishna.sk&button_colour=FFDD00&font_colour=000000&font_family=Lato&outline_colour=000000" alt="Buy Me a Coffee" height="40" /></a>
+<a href="https://www.buymeacoffee.com/sarukrishna.sk"><img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=%E2%98%95&slug=sarukrishna.sk&button_colour=FFDD00&font_colour=000000&font_family=Lato&outline_colour=000000" alt="Buy Me a Coffee" height="40" /></a>
 
 </div>
 
