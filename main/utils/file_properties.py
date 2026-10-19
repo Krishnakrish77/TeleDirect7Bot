@@ -177,6 +177,10 @@ async def gen_link(m: Message, log_msg: Messages, from_channel: bool):
         ])
     else:
         buttons.append([InlineKeyboardButton("↗ GitHub", url=PROJECT_REPOSITORY_URL)])
+    # Optional "Buy Me a Coffee" support button — shown on every generated
+    # direct-link message when BUY_ME_A_COFFEE_URL is configured.
+    if Var.BUY_ME_A_COFFEE_URL:
+        buttons.append([InlineKeyboardButton("☕ Support", url=Var.BUY_ME_A_COFFEE_URL)])
     reply_markup = InlineKeyboardMarkup(buttons)
 
     return reply_markup, Stream_Text, download_link

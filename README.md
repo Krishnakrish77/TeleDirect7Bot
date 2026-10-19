@@ -4,6 +4,8 @@
 
 [Quick start](#quick-start) · [Configuration](#configuration) · [Docker deployment](#docker) · [Daily use](#daily-use)
 
+<a href="https://www.buymeacoffee.com/sarukrishna.sk"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=☕&slug=sarukrishna.sk&button_colour=FFDD00&font_colour=000000&font_family=Lato&outline_colour=000000" alt="Buy Me a Coffee" height="40" /></a>
+
 </div>
 
 ---
@@ -85,6 +87,7 @@ BOT_USERNAME=your_bot_username_without_at
 TMDB_API_KEY=your_tmdb_api_key
 GEMINI_API_KEY=your_gemini_api_key
 WYZIE_API_KEY=your_wyzie_api_key
+BUY_ME_A_COFFEE_URL=https://buymeacoffee.com/yourusername
 ```
 
 Never commit `.env`, bot tokens, API keys, session strings, or database URLs. Use your deployment provider's secret/environment-variable settings in production.
@@ -157,6 +160,7 @@ The essentials are in the Quick start `.env` example. The complete reference is 
 | `NO_PORT` | `false` | Omit the port from generated links when a proxy serves standard HTTP(S) ports. |
 | `JWT_SECRET` | generated per boot | A persistent, random secret for web sessions. Set this in production. |
 | `BOT_USERNAME` | — | Bot username for Telegram Login; omit `@`. |
+| `BUY_ME_A_COFFEE_URL` | — | Your Buy Me a Coffee page URL. When set, a ☕ Support button is appended to every direct-link message the bot sends. |
 
 ### Catalogue and metadata
 
