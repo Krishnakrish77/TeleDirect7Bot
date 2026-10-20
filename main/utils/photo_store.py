@@ -25,8 +25,13 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from main.vars import Var
 
-from bson.son import SON
-from pymongo.errors import DuplicateKeyError
+try:
+    from bson.son import SON
+    from pymongo.errors import DuplicateKeyError
+except ImportError:  # light test envs without motor/pymongo
+    SON = dict  # type: ignore[assignment]
+    DuplicateKeyError = Exception  # type: ignore[assignment]
+
 
 _PAGE_CAP = 200
 
