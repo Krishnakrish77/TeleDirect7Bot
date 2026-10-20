@@ -289,12 +289,8 @@
               // Merge server data when signed in — server wins on higher t value.
               if (window._tdAuth && window._tdAuth.user) {
                 try {
-                  const tok = (function() {
-                    try { const t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
-                    const m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-                    return m ? m[1] : null;
-                  })();
-                  const r = await fetch('/api/cw', {
+                  var tok = window._tdToken ? window._tdToken() : null;
+                  var r = await fetch('/api/cw', {
                     headers: tok ? {'Authorization': 'Bearer ' + tok} : {},
                   });
                   if (r.ok) {
@@ -368,11 +364,7 @@
               } catch (e) { /* ignore */ }
               this.entries = this.entries.filter(e => e.key !== key);
               if (window._tdAuth && window._tdAuth.user) {
-                const tok = (function() {
-                  try { const t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
-                  const m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-                  return m ? m[1] : null;
-                })();
+                var tok = window._tdToken ? window._tdToken() : null;
                 if (tok) fetch('/api/cw/' + encodeURIComponent(key), {
                   method: 'DELETE',
                   headers: {'Authorization': 'Bearer ' + tok},
@@ -384,11 +376,7 @@
               localStorage.removeItem('td:cw');
               this.entries = [];
               if (window._tdAuth && window._tdAuth.user) {
-                const tok = (function() {
-                  try { const t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
-                  const m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-                  return m ? m[1] : null;
-                })();
+                var tok = window._tdToken ? window._tdToken() : null;
                 if (tok) fetch('/api/cw', {
                   method: 'DELETE',
                   headers: {'Authorization': 'Bearer ' + tok},

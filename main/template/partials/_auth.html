@@ -76,13 +76,9 @@ window.tdRequireAuth = function(event, featureName) {
 window._tdAuth = (function() {
   var _user = null;
 
-  function _cookieToken() {
-    var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-    return m ? m[1] : null;
-  }
   function _load() {
     try {
-      var token = sessionStorage.getItem('td:auth') || _cookieToken();
+      var token = sessionStorage.getItem('td:auth');
       if (!token) return null;
       // JWT uses base64url (no padding); atob needs standard base64 with padding.
       var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');

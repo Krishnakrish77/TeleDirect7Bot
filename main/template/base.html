@@ -22,7 +22,6 @@
     (function(){
       try {
         var tok=sessionStorage.getItem('td:auth');
-        if(!tok){var m=document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);tok=m&&m[1];}
         var li=false;
         if(tok){
           var b64=tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');

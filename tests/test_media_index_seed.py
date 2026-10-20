@@ -7,6 +7,7 @@ os.environ.setdefault("API_ID", "1")
 os.environ.setdefault("API_HASH", "test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
+os.environ.setdefault("OWNER_ID", "1")
 
 from main.utils import media_index
 

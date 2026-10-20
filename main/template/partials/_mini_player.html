@@ -723,11 +723,11 @@
   // can call them without depending on watch-page-only _scripts_interactions.
   // Single canonical token getter — shared via window so _auth.html,
   // _scripts_interactions.html and any other partial can delegate to it
-  // instead of maintaining their own copy.
+  // instead of maintaining their own copy.  No cookie fallback: td_session
+  // is httponly and unreadable from JS; the bearer token lives in
+  // sessionStorage('td:auth') set on sign-in and via the SPA API layer.
   window._tdToken = function() {
-    try { var t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_) {}
-    var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-    return m ? m[1] : null;
+    try { return sessionStorage.getItem('td:auth'); } catch(_) { return null; }
   };
   window._tdWHRecord = function(key, title) {
     if (!key || !(window._tdAuth && window._tdAuth.user)) return;

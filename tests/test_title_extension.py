@@ -10,6 +10,7 @@ os.environ.setdefault("API_ID", "1")
 os.environ.setdefault("API_HASH", "test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
+os.environ.setdefault("OWNER_ID", "1")
 
 from main.utils.dedup import clean_for_search
 from main.utils.index_entry import title_from_filename

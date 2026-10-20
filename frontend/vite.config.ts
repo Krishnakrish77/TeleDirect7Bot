@@ -7,7 +7,7 @@ import path from 'node:path';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  const backend = env.VITE_BACKEND_ORIGIN || 'https://olympic-lorianne-kksoftsolutions-87c05347.koyeb.app';
+  const backend = env.VITE_BACKEND_ORIGIN || 'http://localhost:8080';
 
   return {
     base: '/static/app/',

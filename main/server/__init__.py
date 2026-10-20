@@ -124,6 +124,152 @@ async def error_middleware(request: web.Request, handler):
     return response
 
 
+_STATE_CHANGING_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+
+
+def _csrf_allowed_host(host: str | None, allowed_hosts: set[str]) -> bool:
+    if not host:
+        return False
+    return host.lower() in allowed_hosts
+
+
+def _csrf_extract_host(value: str) -> str | None:
+    if not value:
+        return None
+    try:
+        import urllib.parse as _urlparse
+        parsed = _urlparse.urlparse(value)
+        if parsed.hostname:
+            return parsed.hostname
+        # Fallback for bare host values (no scheme) e.g. "example.com:8080"
+        bare = value.split("/")[0].split("?")[0].split("#")[0].strip()
+        if ":" in bare:
+            # strip port if present but keep IPv6 bracket handling simple
+            if bare.startswith("["):
+                # IPv6 literal like [::1]:8080
+                end = bare.find("]")
+                if end != -1:
+                    return bare[1:end] or None
+            else:
+                bare = bare.split(":")[0]
+        return bare or None
+    except Exception:
+        return None
+
+
+def _csrf_get_allowed() -> tuple[set[str], set[str]]:
+    """Return (allowed_hosts, allowed_origins) derived from Var."""
+    try:
+        from main.vars import Var as _Var
+    except Exception:
+        return set(), set()
+    allowed_hosts: set[str] = set()
+    allowed_origins: set[str] = set()
+    try:
+        fqdn = getattr(_Var, "FQDN", "") or ""
+        if fqdn:
+            allowed_hosts.add(fqdn.lower())
+    except Exception:
+        pass
+    try:
+        bind = getattr(_Var, "BIND_ADDRESS", "") or ""
+        if bind:
+            allowed_hosts.add(bind.lower())
+            # 0.0.0.0 binds all interfaces — browsers will show localhost/127.0.0.1
+            if bind == "0.0.0.0":
+                allowed_hosts.update({"localhost", "127.0.0.1"})
+    except Exception:
+        pass
+    try:
+        url = getattr(_Var, "URL", "") or ""
+        if url:
+            import urllib.parse as _urlparse
+            parsed = _urlparse.urlparse(url)
+            if parsed.hostname:
+                allowed_hosts.add(parsed.hostname.lower())
+                # Also consider netloc host without port for comparison already covered
+            if parsed.scheme and parsed.netloc:
+                # Normalise origin as scheme://netloc (no trailing slash, no path)
+                allowed_origins.add(f"{parsed.scheme.lower()}://{parsed.netloc.lower()}")
+                # Also store host-only variant via hostname already added to allowed_hosts
+    except Exception:
+        pass
+    return allowed_hosts, allowed_origins
+
+
+@web.middleware
+async def csrf_middleware(request: web.Request, handler):
+    """Reject cross-site state-changing requests that carry the session cookie.
+
+    Only fires for POST/PUT/DELETE/PATCH when a ``td_session`` cookie is present
+    and no ``Authorization: Bearer`` header is sent (Bearer-only API flows are
+    intentionally exempt).  Validation is strict on Origin when present — its
+    host (or full scheme://host[:port] origin) must match Var.FQDN / Var.URL
+    (or Var.BIND_ADDRESS fallback).  When Origin is absent we fall back to the
+    Referer host.  Empty Origin *and* Referer is allowed for same-origin form
+    posts (some browsers omit both on same-origin navigations).
+    """
+    if request.method in _STATE_CHANGING_METHODS:
+        cookie = request.cookies.get("td_session")
+        auth = request.headers.get("Authorization", "")
+        if cookie and not auth.startswith("Bearer "):
+            origin = (request.headers.get("Origin") or "").strip()
+            referer = (request.headers.get("Referer") or "").strip()
+            allowed_hosts, allowed_origins = _csrf_get_allowed()
+            # Normalise allowed_hosts to lower case already; also handle empty edge
+            # where Var failed to load — fail open rather than break the app.
+            if allowed_hosts or allowed_origins:
+                ok = False
+                if origin:
+                    # Strict: Origin present → must match allowed origin/host
+                    import urllib.parse as _urlparse
+                    parsed = _urlparse.urlparse(origin)
+                    host = parsed.hostname
+                    # Full origin compare (scheme://netloc) when both sides have it
+                    if parsed.scheme and parsed.netloc:
+                        cand = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+                        if cand in allowed_origins:
+                            ok = True
+                        # Also allow host-only match against allowed_hosts
+                        if not ok and host and host.lower() in allowed_hosts:
+                            ok = True
+                        # Fallback: bare host extracted from Origin (covers edge formats)
+                        if not ok and not host:
+                            bare_host = _csrf_extract_host(origin)
+                            if bare_host and bare_host.lower() in allowed_hosts:
+                                ok = True
+                    elif host:
+                        if host.lower() in allowed_hosts:
+                            ok = True
+                    else:
+                        # Origin without scheme/host — try bare extraction
+                        bare_host = _csrf_extract_host(origin)
+                        if bare_host and bare_host.lower() in allowed_hosts:
+                            ok = True
+                    if not ok:
+                        logging.warning(
+                            "CSRF origin check failed: method=%s path=%s origin=%r referer=%r allowed_hosts=%r",
+                            request.method, request.path, origin, referer, sorted(allowed_hosts),
+                        )
+                        return web.json_response({"error": "CSRF check failed", "reason": "origin mismatch"}, status=403)
+                elif referer:
+                    # Origin missing → check Referer host
+                    host = _csrf_extract_host(referer)
+                    if host and host.lower() not in allowed_hosts:
+                        logging.warning(
+                            "CSRF referer check failed: method=%s path=%s origin=%r referer=%r allowed_hosts=%r",
+                            request.method, request.path, origin, referer, sorted(allowed_hosts),
+                        )
+                        return web.json_response({"error": "CSRF check failed", "reason": "referer mismatch"}, status=403)
+                    # Empty host extraction on non-empty Referer treated as mismatch? Be lenient and allow
+                    # if we couldn't parse — fall through to handler.
+                else:
+                    # Both Origin and Referer empty — allow same-origin form post (browser may omit both)
+                    pass
+    return await handler(request)
+
+
+
 @web.middleware
 async def mongo_readiness_middleware(request: web.Request, handler):
     """Serve a deliberate maintenance response while Mongo reconnects."""
@@ -268,7 +414,7 @@ def web_server():
     # benefits from compression on the way out.
     web_app = web.Application(
         client_max_size=30000000,
-        middlewares=[error_middleware, security_middleware, gzip_middleware, mongo_readiness_middleware],
+        middlewares=[csrf_middleware, error_middleware, security_middleware, gzip_middleware, mongo_readiness_middleware],
     )
     # Order matters: specific prefixes (hub, hls) first so they don't get
     # swallowed by the catch-all /{path:\S+} byte-stream route at the end.

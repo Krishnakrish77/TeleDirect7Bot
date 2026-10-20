@@ -81,7 +81,7 @@ class Var(object):
     # Optional Buy Me a Coffee link — when set, a "☕ Support" button is
     # appended to the direct-link message buttons. Leave empty to hide it.
     BUY_ME_A_COFFEE_URL = environ.get("BUY_ME_A_COFFEE_URL", "").strip()
-    OWNER_ID = int(environ.get("OWNER_ID", "777000"))
+    OWNER_ID = int(_require("OWNER_ID"))  # mandatory — no 777000 sentinel fallback
     # Optional TMDB API key for catalogue enrichment (posters, overviews,
     # IMDb ids). Free at themoviedb.org → Settings → API. Without it the
     # enrichment pipeline no-ops silently.

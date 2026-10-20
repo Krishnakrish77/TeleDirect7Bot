@@ -11,6 +11,7 @@ os.environ.setdefault("API_ID", "1")
 os.environ.setdefault("API_HASH", "test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
+os.environ.setdefault("OWNER_ID", "1")
 
 hub_routes = importlib.import_module("main.server.hub_routes")
 spa_routes = importlib.import_module("main.server.spa_routes")

@@ -226,7 +226,7 @@ async def main() -> None:
     print("TeleDirect Photos dev harness")
     print(f"  Open:  http://127.0.0.1:8081/photos")
     print(f"  Login: paste this in the browser console to set the session:")
-    print(f"         document.cookie='td_session={token}'; location.reload()")
+    print(f"         sessionStorage.setItem('td:auth', '{token}'); location.reload()")
     print("  Upload via the UI; Mongo db:", os.environ["MONGO_DB"])
     print("=" * 60)
     print()

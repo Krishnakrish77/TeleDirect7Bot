@@ -83,9 +83,7 @@
       var currentRating = null;
 
       function _tok() {
-        try { var t = sessionStorage.getItem('td:auth'); if (t) return t; } catch(_){}
-        var m = document.cookie.match(/(?:^|;\s*)td_session=([^;]+)/);
-        return m ? m[1] : null;
+        try { return sessionStorage.getItem('td:auth'); } catch(_) { return null; }
       }
       function _render(rating, counts) {
         currentRating = rating;

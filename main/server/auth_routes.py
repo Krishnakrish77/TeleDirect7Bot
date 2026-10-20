@@ -16,7 +16,7 @@ _SECURE = Var.HAS_SSL or Var.ON_KOYEB
 def _set_session_cookie(resp: web.Response, value: str, max_age: int) -> None:
     resp.set_cookie(
         "td_session", value,
-        httponly=False,     # JS needs to read it for Authorization header use
+        httponly=True,  # JS MUST NOT read cookie directly; token lives in JSON response body + sessionStorage('td:auth')
         samesite="Lax",
         secure=_SECURE,
         path="/",

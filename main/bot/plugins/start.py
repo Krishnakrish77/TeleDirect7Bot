@@ -7,11 +7,6 @@ from pyrogram import filters
 from main.utils.Translation import Language, BUTTON
 
 
-# Sentinel used by vars.py when OWNER_ID isn't set in the env. It's a
-# real Telegram id (the "Telegram" system account) so no real user ever
-# matches it accidentally.
-_OWNER_UNSET = 777000
-
 # Dedup: track the last message_id we replied to per user so a duplicate
 # update delivery (e.g. two instances racing during a rolling redeploy)
 # doesn't send two links.
@@ -43,11 +38,7 @@ async def admin_link(bot, message):
 
     Admin authentication itself is the Telegram Login Widget in the SPA —
     the link is a convenience deep link, not a credential. Non-owners get
-    nothing in production so the admin surface stays hidden. But if
-    OWNER_ID is unset (defaulting to Telegram's 777000 system sentinel)
-    we treat the first invocation as setup help and DM the requester
-    instructions plus their own Telegram id — otherwise the failure mode
-    is silent and undebuggable.
+    nothing so the admin surface stays hidden.
     """
     user = message.from_user
     if user is None:
@@ -59,18 +50,6 @@ async def admin_link(bot, message):
         "/admin invoked: from_user=%s owner_id=%s match=%s",
         requester_id, owner_id, requester_id == owner_id,
     )
-
-    if owner_id == _OWNER_UNSET:
-        await message.reply_text(
-            text=(
-                "⚠️ **Admin not configured**\n\n"
-                f"Set the `OWNER_ID` environment variable to `{requester_id}` "
-                "and redeploy — that's your Telegram user id. Once set, "
-                "`/admin` will return the admin panel link."
-            ),
-            link_preview_options=NO_PREVIEW,
-        )
-        return
 
     if requester_id != owner_id:
         # Silently ignore so the admin surface isn't advertised to randos.

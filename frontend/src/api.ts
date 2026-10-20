@@ -95,6 +95,17 @@ function nonJsonErrorMessage(response: Response, text: string, contentType: stri
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  // td_session cookie is httponly — browser sends it automatically (same-origin
+  // credentials), but JS can't read it. For environments where the session token
+  // must travel as a header (HTMX boosted pages, cross-origin dev), also attach
+  // an Authorization header from sessionStorage if present.
+  if (!headers.has('Authorization')) {
+    try {
+      const t = sessionStorage.getItem('td:auth');
+      if (t) headers.set('Authorization', `Bearer ${t}`);
+    } catch {
+    }
+  }
   const response = await fetch(path, {
     ...init,
     headers,
@@ -111,7 +122,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         const text = await response.text();
         message = nonJsonErrorMessage(response, text, contentType);
       }
-    } catch (_) {
+    } catch {
       // Keep the status text when the error body is unreadable.
     }
     throw new ApiError(message, response.status);

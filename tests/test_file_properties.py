@@ -6,6 +6,7 @@ os.environ.setdefault("API_ID", "1")
 os.environ.setdefault("API_HASH", "test")
 os.environ.setdefault("BOT_TOKEN", "1:test")
 os.environ.setdefault("BIN_CHANNEL", "-1001")
+os.environ.setdefault("OWNER_ID", "1")
 
 from main.utils.file_properties import PROJECT_REPOSITORY_URL, gen_link
 from pyrogram.enums import ButtonStyle
