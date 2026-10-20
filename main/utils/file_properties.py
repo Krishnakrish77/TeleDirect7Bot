@@ -69,13 +69,11 @@ def secure_hash_from_unique_id(unique_id: str) -> str:
     ---------------------------------------------
     The produced hash is a *shared link* derived from the Telegram
     ``unique_id`` (itself not a secret — anyone who receives a forward
-    learns it). ``/{hash}{message_id}`` URLs are the sole authorisation
-    for stream routes (``main/server/stream_routes.py``): a valid pair
-    streams/decrypts the file via Telegram ``GetFile`` with no session,
-    no expiry, and no per-IP binding. Treat any stream URL as a bearer
-    link — do not embed it in public indexes, add time-limited HMAC
-    signed links via ``main/utils/signed_link.py`` for any future
-    private-share flow.
+    learns it). ``/{hash}{message_id}`` URLs are bearer links for stream
+    routes (``main/server/stream_routes.py``): a valid pair streams/decrypts
+    the file via Telegram ``GetFile`` with no session, no expiry, and no
+    per-IP binding. Treat any stream URL as you would a password reset link
+    time-limited tokens via ``main/utils/signed_link.py``.
     """
     uid = (unique_id or "")[:16]
     # Trim trailing digits so the URL hash never ends in a digit.

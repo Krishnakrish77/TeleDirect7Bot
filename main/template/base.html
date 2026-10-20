@@ -16,8 +16,8 @@
     {# Synchronous auth-state pre-render — runs before body paints so the
        correct sign-in / avatar element is shown on the very first frame.
        Both elements default to display:none in HTML; this script reveals
-       the right one immediately from the JWT in sessionStorage or cookie,
-       eliminating the Alpine init flash. #}
+       the right one immediately from the JWT in sessionStorage
+       (td_session cookie is httponly), eliminating the Alpine init flash. #}
     <script>
     (function(){
       try {

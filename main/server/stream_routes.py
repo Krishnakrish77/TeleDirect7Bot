@@ -429,17 +429,14 @@ async def signed_stream_handler(request: web.Request):
     if message_id is None:
         raise web.HTTPForbidden(text="Invalid or expired signed link")
     # Proof is the HMAC signature itself, not the public capability hash.
+    # The catalogue lookup confirms the item still exists; expiry-only
+    # revocation means rotating JWT_SECRET is the only way to invalidate
+    # all outstanding signed links.
     try:
         item = media_index.get_item(message_id)
         if item is None:
             raise FIleNotFound
-        # Reuse the normal streaming pipeline with the catalogue's hash as the
-        # proof value — the signed token already authorized the caller.
-        item = media_index.get_item(message_id)
-        if item is None:
-            raise FIleNotFound
-        # Use the catalogue hash as proof — the signed token already verified caller.
-        return await media_streamer(request, message_id, item.secure_hash or item.file_unique_id or "")
+        return await media_streamer(request, message_id, item.secure_hash or "")
     except (FIleNotFound, InvalidHash) as exc:
         raise web.HTTPNotFound(text=getattr(exc, "message", "Not found"))
 
