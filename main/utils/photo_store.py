@@ -25,14 +25,6 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from main.vars import Var
 
-try:
-    from bson.son import SON
-    from pymongo.errors import DuplicateKeyError
-except ImportError:  # light test envs without motor/pymongo
-    SON = dict  # type: ignore[assignment]
-    DuplicateKeyError = Exception  # type: ignore[assignment]
-
-
 _PAGE_CAP = 200
 
 
@@ -478,6 +470,10 @@ async def upsert_photo(doc: dict) -> Optional[str]:
         doc.setdefault("deleted", False)
         doc.setdefault("thumb", {"grid": False, "preview": False})
         invalidate_facets(doc.get("owner_user_id", 0))
+        try:
+            from pymongo.errors import DuplicateKeyError
+        except ImportError:  # pragma: no cover — always present in prod (pymongo>=4.9)
+            DuplicateKeyError = Exception  # type: ignore[no-redef]
         try:
             await db["photos"].insert_one(dict(doc))
             return None
@@ -1281,6 +1277,10 @@ async def photo_facets(
     if db is None:
         return {"kinds": {}, "cameras": [], "months": [], "places": []}
     match = build_timeline_query(owner_user_id, album_id=album_id, q=q)
+    try:
+        from bson.son import SON
+    except ImportError:  # pragma: no cover — always present in prod (pymongo)
+        SON = dict  # type: ignore[no-redef]
     try:
         pipeline = [
             {"$match": match},
