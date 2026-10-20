@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from aiohttp import web
 
-from main.utils.user_auth import verify_telegram_payload, create_token
+from main.utils.user_auth import verify_telegram_payload, create_token, revoke_token
 from main.vars import Var
 
 routes = web.RouteTableDef()
@@ -46,6 +47,19 @@ async def auth_telegram(request: web.Request) -> web.Response:
 
 @routes.post("/auth/logout")
 async def auth_logout(request: web.Request) -> web.Response:
+    # Server-side revocation: invalidate the current session's jti so a
+    # copied Bearer token or restored cookie from before logout is rejected.
+    # Absent/expired token is a no-op; we still clear the cookie.
+    for src in (request.headers.get("Authorization", ""), request.cookies.get("td_session", "")):
+        raw = src[7:] if src.startswith("Bearer ") else src
+        if not raw:
+            continue
+        try:
+            if await revoke_token(raw):
+                logging.info("auth: revoked session on logout")
+                break
+        except Exception:
+            logging.exception("auth: revoke on logout failed")
     resp = web.Response(text='{"ok":true}', content_type="application/json")
     _set_session_cookie(resp, "", max_age=0)
     return resp

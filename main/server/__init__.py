@@ -222,7 +222,9 @@ async def csrf_middleware(request: web.Request, handler):
     full scheme://host[:port] must match Var.FQDN/Var.URL, or its hostname
     must be in the allowed set.  When Origin is absent we fall back to the
     Referer host.  Empty Origin *and* Referer is allowed for same-origin form
-    posts (some browsers/fetch configurations omit both).
+    posts (some browsers/fetch configurations omit both).  If the server's own
+    allow-list cannot be derived (misconfigured FQDN/BIND_ADDRESS) the
+    request is rejected rather than allowed.
     """
     if request.method in _STATE_CHANGING_METHODS:
         cookie = request.cookies.get("td_session")
@@ -231,12 +233,17 @@ async def csrf_middleware(request: web.Request, handler):
             origin = (request.headers.get("Origin") or "").strip()
             referer = (request.headers.get("Referer") or "").strip()
             allowed_hosts, allowed_origins = _csrf_get_allowed()
-            # Guard against misconfigured Var (empty allow-lists) — fail closed
-            # would block all cookie-auth writes, so log and skip instead.
-            # Operators should set FQDN or BIND_ADDRESS correctly.
+            # Fail closed — an empty allow-list means we cannot validate the
+            # request origin, so reject cookie-authenticated writes instead of
+            # silently skipping the check. Operators must set FQDN or
+            # BIND_ADDRESS correctly.
             if not allowed_hosts and not allowed_origins:
-                logging.warning("CSRF check skipped: no allowed hosts configured (FQDN/BIND_ADDRESS empty)")
-            elif origin:
+                logging.warning(
+                    "CSRF check failed: no allowed hosts configured (FQDN/BIND_ADDRESS empty); rejecting %s %s",
+                    request.method, request.path,
+                )
+                return web.json_response({"error": "CSRF check failed", "reason": "server misconfigured"}, status=403)
+            if origin:
                 if not _csrf_origin_allowed(origin, allowed_hosts, allowed_origins):
                     _o_host = _csrf_extract_host(origin) or origin[:64]
                     logging.warning(

@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { aiSuggestItem, ApiError, fetchAiModels, fetchTmdbPreview, resolveTmdbImdb, streamAiRecommendations } from './api';
-
+import { aiSuggestItem, ApiError, fetchAiModels, fetchHub, fetchTmdbPreview, resolveTmdbImdb, streamAiRecommendations } from './api';
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -86,5 +85,34 @@ describe('api helpers', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/app/ai/recommendations/stream', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ initial: true }),
     }));
+  });
+
+  it('does not attach an expired Bearer token', async () => {
+    // JWT exp in the past → header must be omitted and storage cleared
+    const exp = Math.floor(Date.now() / 1000) - 100;
+    const payload = btoa(JSON.stringify({ exp, sub: 1 })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const tok = `h.${payload}.s`;
+    sessionStorage.setItem('td:auth', tok);
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    await fetchHub({});
+    const reqHeaders: Headers = fetchMock.mock.calls[0][1]?.headers as Headers ?? fetchMock.mock.calls[0][1]?.headers;
+    const auth = reqHeaders instanceof Headers ? reqHeaders.get('Authorization') : (reqHeaders as Record<string, string>)?.Authorization;
+    expect(auth).toBeFalsy();
+    // expired entry is evicted
+    expect(sessionStorage.getItem('td:auth')).toBeNull();
+  });
+
+  it('clears sessionStorage on 401', async () => {
+    sessionStorage.setItem('td:auth', 'h.eyJleHAiOjk5OTk5OTk5OTl9.s');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'unauthenticated' }, 401)));
+    let err: unknown;
+    try {
+      await fetchHub({});
+    } catch (e) {
+      err = e;
+    }
+    expect((err as ApiError).status).toBe(401);
+    expect(sessionStorage.getItem('td:auth')).toBeNull();
   });
 });

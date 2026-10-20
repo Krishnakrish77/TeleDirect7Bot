@@ -15,7 +15,8 @@ os.environ.setdefault("OWNER_ID", "1")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-0cf9bff2-42f2-43d2-99f2-000000000001")
 
 from main.utils.signed_link import _PURPOSE, sign_message, verify_signed  # noqa: E402
-from main.server import _csrf_origin_allowed, _csrf_extract_host, _csrf_get_allowed  # noqa: E402
+from main.server import _csrf_origin_allowed, _csrf_extract_host, _csrf_get_allowed, csrf_middleware  # noqa: E402
+from main.utils import user_auth as _user_auth  # noqa: E402
 
 
 class SignedLinkTest(unittest.TestCase):
@@ -109,6 +110,71 @@ class CsrfHelpersTest(unittest.TestCase):
             vars_mod.Var.BIND_ADDRESS = orig
 
     def test_dead_helper_removed(self):
+        import main.server as srv
+        self.assertFalse(hasattr(srv, "_csrf_allowed_host"), "_csrf_allowed_host dead helper should be deleted")
+
+
+class JwtJtiTest(unittest.TestCase):
+    def test_create_token_has_jti(self):
+        tok = _user_auth.create_token({"id": 99, "first_name": "Ada", "username": "", "photo_url": ""})
+        payload = _user_auth.decode_token(tok)
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertIsInstance(payload.get("jti"), str)
+        self.assertGreater(len(str(payload["jti"])), 4)
+
+    def test_revoked_token_rejected(self):
+        tok = _user_auth.create_token({"id": 101, "first_name": "Revoke", "username": "", "photo_url": ""})
+        self.assertIsNotNone(_user_auth.decode_token(tok))
+        payload = _user_auth.jwt.decode(tok, _user_auth.Var.JWT_SECRET, algorithms=[_user_auth._ALGORITHM])
+        _user_auth._revoked_jtis.add(str(payload["jti"]))
+        try:
+            self.assertIsNone(_user_auth.decode_token(tok))
+        finally:
+            _user_auth._revoked_jtis.discard(str(payload["jti"]))
+
+    def test_empty_jti_not_revoked(self):
+        self.assertFalse(_user_auth.is_revoked_sync(None))
+        self.assertFalse(_user_auth.is_revoked_sync(""))
+
+
+class CsrfMiddlewareTest(unittest.IsolatedAsyncioTestCase):
+    def _req(self, *, method="POST", has_cookie=True, has_bearer=False, origin="", referer=""):
+        req = SimpleNamespace()
+        req.method = method
+        req.path = "/api/test"
+        req.cookies = {"td_session": "tok"} if has_cookie else {}
+        req.headers = {}
+        if has_bearer:
+            req.headers["Authorization"] = "Bearer tok"
+        if origin is not None:
+            req.headers["Origin"] = origin
+        if referer is not None:
+            req.headers["Referer"] = referer
+        return req
+
+    async def _call(self, req):
+        async def ok_handler(_r):
+            return "ok"
+        return await csrf_middleware(req, ok_handler)
+
+    async def test_fail_closed_on_empty_allow_list(self):
+        with patch("main.server._csrf_get_allowed", return_value=(set(), set())):
+            res = await self._call(self._req(origin="", referer=""))
+            self.assertEqual(res.status, 403)
+
+    async def test_exempt_when_bearer_present(self):
+        with patch("main.server._csrf_get_allowed", return_value=(set(), set())):
+            self.assertEqual(await self._call(self._req(has_bearer=True, origin="https://evil.com")), "ok")
+
+    async def test_exempt_when_no_cookie(self):
+        with patch("main.server._csrf_get_allowed", return_value=(set(), set())):
+            self.assertEqual(await self._call(self._req(has_cookie=False, origin="https://evil.com")), "ok")
+
+    async def test_exempt_on_safe_method(self):
+        with patch("main.server._csrf_get_allowed", return_value=(set(), set())):
+            self.assertEqual(await self._call(self._req(method="GET", origin="https://evil.com")), "ok")
+
         import main.server as srv
         self.assertFalse(hasattr(srv, "_csrf_allowed_host"), "_csrf_allowed_host dead helper should be deleted")
 

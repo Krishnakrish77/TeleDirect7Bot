@@ -96,13 +96,27 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
   // td_session cookie is httponly — browser sends it automatically (same-origin
-  // credentials), but JS can't read it. For environments where the session token
-  // must travel as a header (HTMX boosted pages, cross-origin dev), also attach
-  // an Authorization header from sessionStorage if present.
+  // credentials), but JS can't read it. For SPA/dev flows where the session
+  // token is mirrored in sessionStorage, attach it as Authorization if still valid.
   if (!headers.has('Authorization')) {
     try {
       const t = sessionStorage.getItem('td:auth');
-      if (t) headers.set('Authorization', `Bearer ${t}`);
+      if (t) {
+        // Mirror _auth.html _load() expiry check so an expired token never
+        // disables csrf_middleware's Bearer exemption check with a dead header.
+        try {
+          const b64 = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+          const padded = b64 + '=='.slice(0, (4 - b64.length % 4) % 4);
+          const p = JSON.parse(atob(padded));
+          if (typeof p.exp === 'number' && p.exp > Date.now() / 1000) {
+            headers.set('Authorization', `Bearer ${t}`);
+          } else {
+            sessionStorage.removeItem('td:auth');
+          }
+        } catch {
+          // Malformed token — don't attach, leave stale entry for signOut to handle.
+        }
+      }
     } catch {
     }
   }
@@ -112,6 +126,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: 'same-origin',
   });
   if (!response.ok) {
+    // Clear stale sessionStorage token on 401 so the next call falls back to
+    // the httponly cookie rather than re-sending dead credentials.
+    if (response.status === 401) {
+      try { sessionStorage.removeItem('td:auth'); } catch {}
+    }
     let message = response.statusText || 'Request failed';
     const contentType = (response.headers.get('content-type') || '').toLowerCase();
     try {
