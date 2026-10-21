@@ -3939,9 +3939,12 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
     # Series/movie grouping.  If series_title is locked the admin chose
     # a specific grouping — skip the recomputation entirely so the
     # series_key/movie_key they set doesn't get reverted.
+    # Audio/books never enter the movie-variant world (same rule as
+    # _item_from_message), regardless of what TMDB matched.
+    is_audio_or_book = (item.media_kind or "") in {"audio", "book"}
     if "series_title" in locked:
         # Keep existing grouping; only update movie_key if somehow missing.
-        if not item.series_key and not item.movie_key:
+        if not item.series_key and not item.movie_key and not is_audio_or_book:
             item.movie_key = compute_movie_key(item.title, item.year, item.file_name)
     else:
         # Recompute grouping keys against the canonical title.
@@ -3990,7 +3993,9 @@ def _apply_tmdb_to_item(item: HubItem, hit: "tmdb.TMDBHit") -> None:
             item.series_title = ""
             item.season = None
             item.episode = None
-            item.movie_key = compute_movie_key(item.title, item.year, item.file_name)
+            item.movie_key = "" if is_audio_or_book else compute_movie_key(
+                item.title, item.year, item.file_name,
+            )
 
     # Merge TMDB genres into tags without duplicating existing entries.
     existing = set(item.tags)
@@ -4334,6 +4339,11 @@ async def enrich_with_tmdb_id(message_id: int, tmdb_id: int, kind: str,
     item = _items.get(message_id)
     if item is None:
         return False
+    # TMDB only covers films and TV — never enrich audio or books (same rule
+    # as enrich_one). An admin override on a song would stamp movie metadata
+    # (and via movie_key, fold the song into a film's variant group).
+    if (item.media_kind or "") in {"audio", "book"}:
+        return False
     hit = await tmdb.fetch_by_id(tmdb_id, kind)
     if hit is None:
         return False
@@ -4560,7 +4570,8 @@ async def fill_episode_details(bot=None) -> dict:
 
 
 async def clear_audio_tmdb_mismatches() -> int:
-    """Strip TMDB fields from any audio item that was previously mis-enriched.
+    """Strip TMDB fields and stray movie keys from audio/book items that were
+    previously mis-grouped as movies.
 
     Returns the number of items fixed. Safe to call multiple times.
     """
@@ -4568,6 +4579,9 @@ async def clear_audio_tmdb_mismatches() -> int:
     to_upsert = []
     async with _lock:
         for item in _items.values():
+            if item.media_kind not in {"audio", "book"}:
+                continue
+            fixed_item = False
             if item.media_kind == "audio" and item.tmdb_id:
                 item.tmdb_id = None
                 item.tmdb_kind = ""
@@ -4585,12 +4599,21 @@ async def clear_audio_tmdb_mismatches() -> int:
                 item.tmdb_logo_path = ""
                 item.tmdb_details_checked_at = 0.0
                 item.enriched_at = 0.0
+                fixed_item = True
+            # Songs/books that picked up a movie_key from a pre-guard reindex
+            # fold into that film's variant group — likes and plays feed the
+            # movie's TMDB signals. The ingest path never assigns one; strip
+            # any that exist.
+            if item.movie_key:
+                item.movie_key = ""
+                fixed_item = True
+            if fixed_item:
                 to_upsert.append(item)
                 fixed += 1
         if fixed:
             _persist_unlocked()
     if fixed:
-        logging.info("media_index: cleared TMDB data from %d mis-enriched audio item(s)", fixed)
+        logging.info("media_index: cleared TMDB data / stray movie keys from %d audio/book item(s)", fixed)
     for item in to_upsert:
         await _store_upsert(item)
     return fixed
@@ -4888,7 +4911,12 @@ async def reindex_all(bot=None) -> dict:
                     new_series_title = ""
                     new_season = None
                     new_episode = None
-                    new_movie_key = compute_movie_key(
+                    # Same rule as _item_from_message: audio and books live
+                    # outside the movie-variant world. A song titled like a
+                    # film ("Jailer 2") must never collapse into that
+                    # film's variant group — likes and plays of it would
+                    # feed the movie's TMDB signals.
+                    new_movie_key = "" if getattr(it, "media_kind", "") in {"audio", "book"} else compute_movie_key(
                         it.title or it.file_name, it.year, it.file_name,
                     )
                 new_quality = _extract_quality(it.title, it.file_name, it.description)
