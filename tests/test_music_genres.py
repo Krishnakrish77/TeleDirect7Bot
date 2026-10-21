@@ -27,6 +27,18 @@ class NormalizeGenreTests(unittest.TestCase):
         self.assertEqual(media_index.normalize_genre("music"), "")
         self.assertEqual(media_index.normalize_genre("unknown"), "")
 
+    def test_punctuation_only_dropped(self):
+        self.assertEqual(media_index.normalize_genre("&"), "")
+        self.assertEqual(media_index.normalize_genre("&/Pop"), "")  # first component wins
+        self.assertEqual(media_index.normalize_genre("-"), "")
+        self.assertEqual(media_index.normalize_genre("…"), "")
+
+    def test_site_names_dropped(self):
+        self.assertEqual(media_index.normalize_genre("Masstamilan.Fm"), "")
+        self.assertEqual(media_index.normalize_genre("MassTamilan.dev"), "")
+        self.assertEqual(media_index.normalize_genre("Pagalworld"), "")
+        self.assertEqual(media_index.normalize_genre("R&B"), "R&B")  # legit genre survives
+
     def test_title_case_normalization(self):
         self.assertEqual(media_index.normalize_genre("pop"), "Pop")
         self.assertEqual(media_index.normalize_genre("HIP HOP"), "Hip Hop")
@@ -63,14 +75,26 @@ class MusicGenreFacetTests(unittest.TestCase):
         self._audio(4, ["pop"], hidden=True)   # hidden — excluded
         facets = media_index.music_genre_facets()
         by_genre = {f["genre"]: f["count"] for f in facets}
-        self.assertEqual(by_genre.get("Pop"), 2)
-        self.assertEqual(by_genre.get("Rock"), 1)
-        self.assertNotIn("pop", by_genre)  # canonical casing only
+        # 2 of 3 tracks < _MIN_GENRE_FACET_COUNT → dropped from facets
+        self.assertEqual(by_genre.get("Pop"), None)
 
     def test_limit_respected(self):
-        for i in range(30):
-            self._audio(100 + i, [f"Genre{i}"])
+        # 12 distinct genres with 4 items each — all above the facet
+        # threshold, so limit (not min-count) caps the list at 10.
+        for i in range(12):
+            for j in range(4):
+                self._audio(100 + i * 10 + j, [f"Genre{i}"])
         self.assertEqual(len(media_index.music_genre_facets(limit=10)), 10)
+
+    def test_rare_genres_dropped(self):
+        # Below _MIN_GENRE_FACET_COUNT: excluded. At the threshold: kept.
+        self._audio(300, ["Rare"])
+        self._audio(301, ["Common"])
+        self._audio(302, ["Common"])
+        self._audio(303, ["Common"])
+        by_genre = {f["genre"] for f in media_index.music_genre_facets()}
+        self.assertNotIn("Rare", by_genre)
+        self.assertIn("Common", by_genre)
 
     def test_missing_genre_items_detected_for_backfill(self):
         self._audio(201, ["Pop"])

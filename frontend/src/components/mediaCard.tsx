@@ -271,21 +271,23 @@ function MediaCardBase({
         }}
       >
         <span className="card-copy">
-          <span className="card-eyebrow-row">
-            {!isMusic && <span className="eyebrow">{display.eyebrow}</span>}
-            {watched && (
-              <span className="card-watched-status" aria-label={`${display.title} watched`}>
-                <CheckIcon />
-                <span>Watched</span>
-              </span>
-            )}
-            {currentlyWatching && (
-              <span className="card-watching-status" aria-label={`${display.title} currently watching`}>
-                <PlayIcon />
-                <span>Watching{progressPct ? ` ${progressPct}%` : ''}</span>
-              </span>
-            )}
-          </span>
+          {(watched || currentlyWatching) && (
+            <span className="card-status-row">
+              {watched && (
+                <span className="card-watched-status" aria-label={`${display.title} watched`}>
+                  <CheckIcon />
+                  <span>Watched</span>
+                </span>
+              )}
+              {currentlyWatching && (
+                <span className="card-watching-status" aria-label={`${display.title} currently watching`}>
+                  <PlayIcon />
+                  <span>Watching{progressPct ? ` ${progressPct}%` : ''}</span>
+                </span>
+              )}
+            </span>
+          )}
+          {!isMusic && <span className="eyebrow">{display.eyebrow}</span>}
           <strong dir="auto">{display.title}</strong>
           {newEpisodeText && (
             <span className="card-new-episode" aria-label={`${display.title} has new episode ${newEpisodeText}`}>

@@ -4975,16 +4975,36 @@ _NUMERIC_GENRE_RE = re.compile(r"^\d+$")
 # Track-title style tokens that end up in the genre tag on hand-tagged files
 # and would pollute the facet list.
 _JUNK_GENRES = {"music", "audio", "song", "mp3", "unknown", "other"}
+# Punctuation-only / symbol tokens ("&", "-", "…") that hand-tagged files
+# carry — no descriptive value, pure facet noise.
+_PUNCT_GENRE_RE = re.compile(r"^[\W_]+$", re.UNICODE)
+# Ripper/site-name tokens that mass-produced downloads put in the genre tag
+# (masstamilan, pagalworld, etc.). Matched as a substring, case-insensitive.
+_SITE_NAME_RE = re.compile(
+    r"masstamilan|massstamilan|pagalworld|jaahan|djpunjab|mr-jatt|jatt\.fm"
+    r"|winky|plus\.fm|stafaband|lagu\.|mp3 clans?|tamilan",
+    re.IGNORECASE,
+)
+# Minimum items before a genre earns a facet chip — one-off tags ("Du 1",
+# "Monde 1") are noise, not browseable categories.
+_MIN_GENRE_FACET_COUNT = 3
 
 
 def normalize_genre(raw: str) -> str:
     """Canonical display form of one ID3 genre token.
 
-    Takes the first slash/comma-separated component, drops numeric codes and
-    obvious junk, title-cases consistently so "pop" / "Pop" / "POP" merge.
+    Takes the first slash/comma-separated component, drops numeric codes,
+    punctuation-only tokens, ripper site names, and obvious junk, title-cases
+    consistently so "pop" / "Pop" / "POP" merge.
     """
     token = (raw or "").split("/")[0].split(",")[0].strip()
-    if not token or _NUMERIC_GENRE_RE.match(token) or token.lower() in _JUNK_GENRES:
+    if (
+        not token
+        or _NUMERIC_GENRE_RE.match(token)
+        or token.lower() in _JUNK_GENRES
+        or _PUNCT_GENRE_RE.match(token)
+        or _SITE_NAME_RE.search(token)
+    ):
         return ""
     return token.title()
 
@@ -5007,9 +5027,12 @@ def music_genre_facets(limit: int = 24) -> List[dict]:
             if genre and key not in seen:
                 seen.add(key)
                 counter[genre] += 1
+    # Rare one-off tags are noise, not categories — drop them so the facet
+    # row stays a handful of meaningful chips instead of a wall of "1"s.
     return [
         {"genre": genre, "count": count}
         for genre, count in counter.most_common(limit)
+        if count >= _MIN_GENRE_FACET_COUNT
     ]
 
 

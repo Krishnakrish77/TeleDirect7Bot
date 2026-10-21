@@ -880,8 +880,9 @@ img {
 }
 
 /* Music genre facet row — sits under the grid heading, scrolls horizontally
-   on narrow screens with an edge fade, and each chip carries its catalogue
-   count so users can see how much a genre holds before tapping. */
+   on narrow screens. The wrapper (below) paints an edge fade on whichever
+   side still has content, so overflow reads as "scroll for more" rather
+   than a truncated chip. */
 .genre-facet-row {
   display: flex;
   align-items: center;
@@ -890,8 +891,7 @@ img {
   overflow-x: auto;
   padding: 0.1rem 0 0.35rem;
   scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to right, #000 94%, transparent);
-  mask-image: linear-gradient(to right, #000 94%, transparent);
+  scroll-snap-type: x proximity;
 }
 
 .genre-facet-row::-webkit-scrollbar {
@@ -899,9 +899,49 @@ img {
 }
 
 .genre-facet-row .filter-view-chip {
+  scroll-snap-align: start;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+/* Overflow affordance: wrap the row in .genre-facet-wrap; GridView toggles
+   can-scroll classes and the wrap paints an edge fade + chevron on whichever
+   side still has content. */
+.genre-facet-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.genre-facet-wrap::after,
+.genre-facet-wrap::before {
+  position: absolute;
+  top: 0;
+  bottom: 0.35rem;
+  z-index: 1;
+  width: 2.6rem;
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.genre-facet-wrap::before {
+  left: -0.25rem;
+  background: linear-gradient(to right, var(--bg) 30%, transparent);
+}
+
+.genre-facet-wrap::after {
+  right: -0.25rem;
+  background: linear-gradient(to left, var(--bg) 30%, transparent);
+}
+
+.genre-facet-wrap.can-scroll-left::before {
+  opacity: 1;
+}
+
+.genre-facet-wrap.can-scroll-right::after {
+  opacity: 1;
 }
 
 .genre-facet-count {
@@ -1784,20 +1824,23 @@ img {
 }
 
 .card-copy {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   min-height: 3.65rem;
   min-width: 0;
 }
 
-.card-eyebrow-row {
+/* Status line above the title: watching %/watched badges on their own row so
+   their presence never shifts the title baseline between neighbor cards. */
+.card-status-row {
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
+  gap: 0.3rem;
+  min-height: 0;
 }
 
-.card-eyebrow-row .eyebrow {
-  min-width: 0;
+.card-status-row:empty {
+  display: none;
 }
 
 .card-watched-status {
@@ -2015,7 +2058,7 @@ img {
 }
 
 .media-grid.music-grid {
-  grid-template-columns: repeat(auto-fill, minmax(136px, 160px));
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
   justify-content: start;
 }
 
@@ -11180,7 +11223,7 @@ select.edit-field-input {
   }
 
   .media-grid.music-grid {
-    grid-template-columns: repeat(auto-fill, minmax(170px, 190px));
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   }
 
   .media-card-poster-link:hover .poster-wrap,
@@ -11238,7 +11281,7 @@ select.edit-field-input {
   }
 
   .media-grid.music-grid {
-    grid-template-columns: repeat(auto-fill, minmax(178px, 200px));
+    grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
   }
 
   .card-row {

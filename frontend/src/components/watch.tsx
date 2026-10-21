@@ -463,9 +463,15 @@ export function WatchPage({
     );
   }
 
-  const track = data.item;
-  const queue = data.albumTracks?.length ? data.albumTracks : [track];
-  const current = player.track?.key === track.key;
+  const urlTrack = data.item;
+  const queue = data.albumTracks?.length ? data.albumTracks : [urlTrack];
+  // When the queue auto-advances (or the user skips) while this page is open,
+  // follow the player's track — the page must reflect what's audible now, not
+  // the track in the URL. Fall back to the URL track when the player moved to
+  // something outside this album queue (another page's queue took over).
+  const queueTrack = queue.find((item) => item.key === player.track?.key);
+  const track = queueTrack || urlTrack;
+  const current = player.track?.key === track.key && Boolean(queueTrack);
   const playing = current && player.playing;
   const duration = current ? player.duration || track.duration || 0 : track.duration || 0;
   const currentTime = current ? player.currentTime : 0;
