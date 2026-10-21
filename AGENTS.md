@@ -29,7 +29,16 @@ Beyond that, changes are validated by running the bot against real Telegram cred
 
 One line, subject only — a short imperative summary of the change. No body, no trailers, no attribution footers. Example: `Fix music autoplay stalling when the tab is backgrounded`.
 
-**Always review the full diff before committing or pushing.** Read back every changed hunk (`git diff`, including elided output from tool summaries) and verify: no leftover scaffolding/throwaway files, no debug logging or secrets, comments match the code, and the change set contains only what the task asked for. Fix anything off before `git commit`; never commit unreviewed output.
+**Run a proper code review before every commit or push — a diff skim is not a review.** After the change passes its smoke test, review the full `git diff` (including elided hunks in tool summaries) and check each item:
+
+1. **Correctness** — logic actually does what the task said; edge cases handled (empty input, off-by-one, null/absent fields, error paths); no behavior change smuggled into unrelated code paths.
+2. **Scope** — only the task's changes; no drive-by refactors, no leftover scaffolding, throwaway scripts, debug logging, commented-out code, or TODOs.
+3. **Security** — no secrets (tokens, session strings, API keys) in code, logs, or test fixtures; user input validated where it crosses a trust boundary; no new unauthenticated endpoints.
+4. **Repo rules** — logging on every state-changing/externally-visible backend path (`logging.exception` in catches, never silent); no secrets in logs; frontend failures surface in the UI, not the console.
+5. **Consistency** — follows the file's existing patterns (naming, CSS conventions, component structure) instead of introducing a second style; comments match what the code does.
+6. **Tests** — existing suite updated where behavior changed (old assertions on removed behavior get deleted, not re-pinned); new behavior covered; full suite plus the build pass.
+
+Fix everything found before `git commit`. If a finding is ambiguous, resolve it conservatively (the boring option) rather than committing and asking. Never commit unreviewed output, and never push a commit that hasn't been through this review.
 
 ## Architecture
 
