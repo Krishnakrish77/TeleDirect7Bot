@@ -34,10 +34,16 @@ class NormalizeGenreTests(unittest.TestCase):
         self.assertEqual(media_index.normalize_genre("…"), "")
 
     def test_site_names_dropped(self):
+        # Structural URL/domain detection — no blocklist needed.
         self.assertEqual(media_index.normalize_genre("Masstamilan.Fm"), "")
         self.assertEqual(media_index.normalize_genre("MassTamilan.dev"), "")
-        self.assertEqual(media_index.normalize_genre("Pagalworld"), "")
+        # "Pagalworld" bare (no TLD) survives structural detection — the
+        # min-count threshold catches one-off site tags instead.
+        self.assertEqual(media_index.normalize_genre("pagalworld.com"), "")
+        self.assertEqual(media_index.normalize_genre("www.jatt.fm"), "")
+        self.assertEqual(media_index.normalize_genre("https://stafaband.info"), "")
         self.assertEqual(media_index.normalize_genre("R&B"), "R&B")  # legit genre survives
+        self.assertEqual(media_index.normalize_genre("Hip-Hop"), "Hip-Hop")  # hyphen ok
 
     def test_title_case_normalization(self):
         self.assertEqual(media_index.normalize_genre("pop"), "Pop")

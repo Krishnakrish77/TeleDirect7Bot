@@ -4978,11 +4978,15 @@ _JUNK_GENRES = {"music", "audio", "song", "mp3", "unknown", "other"}
 # Punctuation-only / symbol tokens ("&", "-", "…") that hand-tagged files
 # carry — no descriptive value, pure facet noise.
 _PUNCT_GENRE_RE = re.compile(r"^[\W_]+$", re.UNICODE)
-# Ripper/site-name tokens that mass-produced downloads put in the genre tag
-# (masstamilan, pagalworld, etc.). Matched as a substring, case-insensitive.
-_SITE_NAME_RE = re.compile(
-    r"masstamilan|massstamilan|pagalworld|jaahan|djpunjab|mr-jatt|jatt\.fm"
-    r"|winky|plus\.fm|stafaband|lagu\.|mp3 clans?|tamilan",
+# URL/web-address shapes a genre tag can take: an explicit scheme, a
+# www. prefix, or a bare domain with a plausible TLD ("Masstamilan.Fm",
+# "pagalworld.com", "jatt.fm"). No real genre looks like this, so anything
+# matching is dropped structurally — no ripper-site blocklist to maintain.
+_URL_GENRE_RE = re.compile(
+    r"^[a-z][a-z0-9+.-]*:$"        # bare scheme remnant ("https:" — post-split)
+    r"|^[a-z][a-z0-9+.-]*://"      # full scheme://
+    r"|^www\."                     # www.
+    r"|^[a-z0-9-]+\.[a-z]{2,}(/\s|$|\.$)",  # name.tld (optionally path/dot-terminated)
     re.IGNORECASE,
 )
 # Minimum items before a genre earns a facet chip — one-off tags ("Du 1",
@@ -4994,8 +4998,9 @@ def normalize_genre(raw: str) -> str:
     """Canonical display form of one ID3 genre token.
 
     Takes the first slash/comma-separated component, drops numeric codes,
-    punctuation-only tokens, ripper site names, and obvious junk, title-cases
-    consistently so "pop" / "Pop" / "POP" merge.
+    punctuation-only tokens, URL/web-address shapes (ripper site names like
+    "Masstamilan.Fm"), and obvious junk, title-cases consistently so
+    "pop" / "Pop" / "POP" merge.
     """
     token = (raw or "").split("/")[0].split(",")[0].strip()
     if (
@@ -5003,7 +5008,7 @@ def normalize_genre(raw: str) -> str:
         or _NUMERIC_GENRE_RE.match(token)
         or token.lower() in _JUNK_GENRES
         or _PUNCT_GENRE_RE.match(token)
-        or _SITE_NAME_RE.search(token)
+        or _URL_GENRE_RE.search(token)
     ):
         return ""
     return token.title()
