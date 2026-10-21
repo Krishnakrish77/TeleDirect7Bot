@@ -212,7 +212,13 @@ export function FilterBar({
   setQuery: (next: string) => void;
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
 }) {
+  const isMusic = params.view === 'music';
   const { viewOptions, metadataControls, sortControl } = filterOptions(filters, params, update);
+  // Music view: the genre chip row is the tag filter, so the Tag pill is a
+  // duplicate — drop it along with the movie-only Year/Quality/Genre pills.
+  const visibleControls = isMusic
+    ? metadataControls.filter((control) => control.id !== 'tag' && control.id !== 'year' && control.id !== 'quality' && control.id !== 'genre')
+    : metadataControls;
   const activeFilterCount = appliedFilterChips({ filters, params, query }).length;
   const hasFilters = activeFilterCount > 0 || params.sort !== 'newest' || Boolean(params.view);
   const clearAll = (replace = false) => {
@@ -224,7 +230,7 @@ export function FilterBar({
     <section className="filter-panel" aria-label="Browse filters">
       <div className="filter-count" aria-label="Catalogue size">
         <FilterIcon />
-        <strong>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</strong>
+        <strong>{catalogueSize ? `${catalogueSize.toLocaleString()} ${isMusic ? 'albums & songs' : 'titles'}` : 'Library'}</strong>
       </div>
 
       {/* Category chips — always visible, scroll on mobile */}
@@ -244,9 +250,10 @@ export function FilterBar({
         ))}
       </div>
 
-      {/* Inline controls: Year / Quality / Genre / Tag — desktop only */}
+      {/* Inline controls — desktop only. Music view keeps Sort only; genre
+          filtering lives in the genre chip row below the grid header. */}
       <div className="filter-inline-controls" aria-label="Advanced filters">
-        {metadataControls.map((control) => (
+        {visibleControls.map((control) => (
           <SelectControl key={control.id} control={control} compact />
         ))}
       </div>
@@ -292,7 +299,12 @@ export function FilterPage({
     const next = { ...params, ...patch, offset: 0 };
     navigate(appUrl(next, '/filters'), replace);
   };
+  const isMusic = params.view === 'music';
   const { viewOptions, metadataControls, sortControl } = filterOptions(filters, params, updateFilterRoute);
+  // Mirror FilterBar: music filters via the genre chip row, not movie pills.
+  const pageControls = isMusic
+    ? metadataControls.filter((control) => control.id !== 'tag' && control.id !== 'year' && control.id !== 'quality' && control.id !== 'genre')
+    : metadataControls;
   const chips = appliedFilterChips({ filters, params, query });
   const hasFilters = chips.length > 0 || params.sort !== 'newest' || Boolean(params.view);
   const clearAll = () => {
@@ -307,7 +319,7 @@ export function FilterPage({
           <p className="eyebrow">Browse</p>
           <h1>Filters</h1>
         </div>
-        <span>{catalogueSize ? `${catalogueSize.toLocaleString()} titles` : 'Library'}</span>
+        <span>{catalogueSize ? `${catalogueSize.toLocaleString()} ${isMusic ? 'albums & songs' : 'titles'}` : 'Library'}</span>
       </div>
 
       <section className="filter-page-panel" aria-label="Content type">
@@ -329,7 +341,7 @@ export function FilterPage({
 
         <div className="filter-page-selects">
           <SelectControl control={sortControl} />
-          {metadataControls.map((control) => (
+          {pageControls.map((control) => (
             <SelectControl key={control.id} control={control} />
           ))}
         </div>

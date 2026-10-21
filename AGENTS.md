@@ -29,6 +29,8 @@ Beyond that, changes are validated by running the bot against real Telegram cred
 
 One line, subject only — a short imperative summary of the change. No body, no trailers, no attribution footers. Example: `Fix music autoplay stalling when the tab is backgrounded`.
 
+**Always review the full diff before committing or pushing.** Read back every changed hunk (`git diff`, including elided output from tool summaries) and verify: no leftover scaffolding/throwaway files, no debug logging or secrets, comments match the code, and the change set contains only what the task asked for. Fix anything off before `git commit`; never commit unreviewed output.
+
 ## Architecture
 
 This is a Telegram → HTTP bridge: the bot stores every uploaded file as a message in a private "bin" channel, then serves the bytes over HTTP by streaming chunks back from Telegram's MTProto servers on demand. Files are never persisted to disk.

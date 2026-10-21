@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FocusEvent, MouseEvent } from 'react';
-import { deleteContinueEntry, dismissRecommendation, fetchRadio, recordWatchHistory, setServerSyncEnabled, signOut } from './api';
+import { deleteContinueEntry, dismissRecommendation, fetchRadio, fetchWatch, recordWatchHistory, setServerSyncEnabled, signOut } from './api';
 import { syncContinueWatching } from './utils/continueWatching';
 import { appUrl, parseRoute, useAppNavigation, useHubParams } from './navigation';
 import { useAudioPlayer } from './hooks/audio';
@@ -304,6 +304,29 @@ function App() {
   const radioSeedRef = useRef<{ track?: string; artist?: string } | null>(null);
   const radioBusyRef = useRef(false);
   const radioDryRef = useRef(false);
+
+  // Inline playback from the music grid: resolve the card's track (and album
+  // queue) via the watch API, then hand it straight to the player.
+  const playCardFromGrid = useCallback(async (card: HubCard) => {
+    if (!card.playHref) return;
+    const key = card.playHref.replace(/^\/play\//, '');
+    try {
+      const data = await fetchWatch(key);
+      const item = data.item;
+      const isTrack = data.mediaKind === 'audio'
+        && item.type === 'track'
+        && 'streamHref' in item
+        && 'key' in item;
+      if (!isTrack) return;
+      const track = item as WatchTrack;
+      const queue = data.albumTracks?.length ? data.albumTracks : [track];
+      audioRef.current.playTrack(track, queue);
+    } catch {
+      // Playback is best-effort from the grid; the card's own click path
+      // (full watch page) remains the fallback. Surface nothing inline.
+    }
+  }, []);
+
   const startRadio = useCallback(async (seed: { track?: string; artist?: string }) => {
     try {
       const { tracks } = await fetchRadio(seed);
@@ -530,6 +553,7 @@ function App() {
                 params={params}
                 update={update}
                 onToggleSaved={onToggleSaved}
+                onPlayCard={playCardFromGrid}
                 loading={loading}
               />
             )}

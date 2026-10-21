@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { clearAllContinue, deleteContinueEntry, dismissRecommendation, fetchContinueItems, fetchMusicGenres, saveContinueEntry, trackRecommendationEvents } from '../api';
 import type { MusicGenreFacet } from '../api';
 import { localAppHref } from '../navigation';
-import { ChevronRightIcon, FilmIcon, PlayIcon, UserIcon, XIcon } from '../icons';
+import { ChevronRightIcon, FilmIcon, MusicIcon, PlayIcon, UserIcon, XIcon } from '../icons';
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
 import { tmdbImageUrl } from '../utils/tmdb';
 import { formatExternalRating } from '../utils/externalRating';
@@ -474,6 +474,7 @@ export function GridView({
   saved,
   update,
   onToggleSaved,
+  onPlayCard,
   loading = false,
 }: {
   data: HubResponse;
@@ -481,6 +482,7 @@ export function GridView({
   saved: Set<string>;
   update: (patch: Partial<HubParams>, replace?: boolean) => void;
   onToggleSaved: (card: HubCard) => void;
+  onPlayCard?: (card: HubCard) => void;
   loading?: boolean;
 }) {
   const isMusicGrid =
@@ -508,11 +510,11 @@ export function GridView({
       <div className="section-heading">
         <div>
           <p className="eyebrow">{resultEyebrow}</p>
-          <h2>{params.q ? `Search: ${params.q}` : 'Browse'}</h2>
+          <h2>{params.q ? `Search: ${params.q}` : isMusicGrid ? 'Music library' : 'Browse'}</h2>
         </div>
       </div>
       {isMusicGrid && genreFacets.length > 0 && (
-        <div className="filter-view-row" role="group" aria-label="Music genres">
+        <div className="genre-facet-row" role="group" aria-label="Music genres">
           <Button
             key="__all"
             type="button"
@@ -524,19 +526,23 @@ export function GridView({
           >
             All genres
           </Button>
-          {genreFacets.map(({ genre }) => (
-            <Button
-              key={genre}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={params.tag === genre.toLowerCase() ? 'filter-view-chip active' : 'filter-view-chip'}
-              aria-pressed={params.tag === genre.toLowerCase()}
-              onClick={() => update({ tag: params.tag === genre.toLowerCase() ? '' : genre.toLowerCase(), offset: 0 })}
-            >
-              {genre}
-            </Button>
-          ))}
+          {genreFacets.map(({ genre, count }) => {
+            const value = genre.toLowerCase();
+            return (
+              <Button
+                key={genre}
+                type="button"
+                variant="ghost"
+                size="sm"
+                className={params.tag === value ? 'filter-view-chip active' : 'filter-view-chip'}
+                aria-pressed={params.tag === value}
+                onClick={() => update({ tag: params.tag === value ? '' : value, offset: 0 })}
+              >
+                {genre}
+                {count > 0 && <small className="genre-facet-count">{count}</small>}
+              </Button>
+            );
+          })}
         </div>
       )}
       {loading && (
@@ -554,6 +560,7 @@ export function GridView({
                 saved={saved.has(card.itemId)}
                 priority={index < priorityCount}
                 onToggleSaved={onToggleSaved}
+                onPlay={isMusicGrid ? onPlayCard : undefined}
                 interactionDisabled={loading}
               />
             ))}
@@ -577,7 +584,7 @@ export function GridView({
         </>
       ) : (
         <div className="empty-state">
-          <FilmIcon />
+          {isMusicGrid ? <MusicIcon /> : <FilmIcon />}
           <strong>{searchQuery ? `No results for “${searchQuery}”` : data.emptyText}</strong>
           <span>{searchQuery
             ? 'Try a title, artist, cast member, genre, or a shorter phrase.'

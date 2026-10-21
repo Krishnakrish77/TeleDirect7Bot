@@ -73,11 +73,38 @@ describe('MediaCard', () => {
 
     render(<MediaCard card={album} saved={false} onToggleSaved={vi.fn()} />);
 
-    expect(screen.getByText('Album')).toBeTruthy();
+    // Music cards drop the redundant "Album"/"Song" eyebrow — the square art
+    // and artist subtitle already identify them.
+    expect(screen.queryByText('Album')).toBeNull();
     expect(screen.getByText('Navarasa')).toBeTruthy();
     expect(screen.getByText('Karthik - 3 tracks')).toBeTruthy();
     expect(screen.getAllByText(/3 tracks/)).toHaveLength(1);
     expect(screen.queryByText(/2021/)).toBeNull();
+  });
+
+  it('renders a play button on music cards when onPlay is provided', () => {
+    const album = card({
+      type: 'album',
+      itemId: 'album:navarasa',
+      title: 'Navarasa',
+      subtitle: 'Karthik - 3 tracks',
+      mediaKind: 'audio',
+      aspect: 'square',
+      playHref: '/play/hash42',
+    });
+    const onPlay = vi.fn();
+
+    render(<MediaCard card={album} saved={false} onToggleSaved={vi.fn()} onPlay={onPlay} />);
+
+    const play = screen.getByRole('button', { name: 'Play Navarasa' });
+    fireEvent.click(play);
+    expect(onPlay).toHaveBeenCalledWith(album);
+  });
+
+  it('omits the play button when no onPlay handler is given', () => {
+    const video = card({});
+    render(<MediaCard card={video} saved={false} onToggleSaved={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /Play / })).toBeNull();
   });
 
   it('normalizes card display data independently from API metadata', () => {

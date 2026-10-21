@@ -35,6 +35,8 @@ interface MediaCardProps {
   priority?: boolean;
   onToggleSaved: (card: HubCard) => void;
   onMarkWatched?: (card: HubCard) => void;
+  /** Music grids only: start playback for this album/song without leaving the page. */
+  onPlay?: (card: HubCard) => void;
   dismissMeta?: RecommendationMeta | null;
   onDismiss?: (meta: RecommendationMeta, card: HubCard) => void;
   recommendation?: Omit<RecommendationFeedbackEvent, 'action' | 'itemId' | 'tmdbId' | 'tmdbKind'>;
@@ -117,6 +119,7 @@ function MediaCardBase({
   priority = false,
   onToggleSaved,
   onMarkWatched,
+  onPlay,
   dismissMeta,
   onDismiss,
   recommendation,
@@ -237,6 +240,25 @@ function MediaCardBase({
             <PlayIcon />
           </Button>
         )}
+        {onPlay && card.playHref && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="music-play-button"
+            disabled={interactionDisabled}
+            title={`Play ${display.title}`}
+            aria-label={`Play ${display.title}`}
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (interactionDisabled) return;
+              onPlay(card);
+            }}
+          >
+            <PlayIcon />
+          </Button>
+        )}
       </span>
       <a
         className="media-card-link"
@@ -250,7 +272,7 @@ function MediaCardBase({
       >
         <span className="card-copy">
           <span className="card-eyebrow-row">
-            <span className="eyebrow">{display.eyebrow}</span>
+            {!isMusic && <span className="eyebrow">{display.eyebrow}</span>}
             {watched && (
               <span className="card-watched-status" aria-label={`${display.title} watched`}>
                 <CheckIcon />

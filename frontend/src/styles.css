@@ -879,6 +879,104 @@ img {
   gap: 0.3rem;
 }
 
+/* Music genre facet row — sits under the grid heading, scrolls horizontally
+   on narrow screens with an edge fade, and each chip carries its catalogue
+   count so users can see how much a genre holds before tapping. */
+.genre-facet-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 0.1rem 0 0.35rem;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, #000 94%, transparent);
+  mask-image: linear-gradient(to right, #000 94%, transparent);
+}
+
+.genre-facet-row::-webkit-scrollbar {
+  display: none;
+}
+
+.genre-facet-row .filter-view-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.genre-facet-count {
+  min-width: 18px;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 17px;
+  text-align: center;
+}
+
+.genre-facet-row .filter-view-chip.active .genre-facet-count {
+  background: rgba(17, 19, 23, 0.24);
+  color: #111317;
+}
+
+/* Inline play affordance on music cards (grids + shelves): bottom-left of the
+   art so it doesn't collide with the top-right heart. Revealed on hover with
+   pointer devices; always visible on touch where there is no hover. */
+.music-play-button {
+  position: absolute;
+  bottom: 0.45rem;
+  left: 0.45rem;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background: rgba(249, 115, 22, 0.94);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity 0.12s, transform 0.12s, background 0.12s;
+}
+
+.music-play-button:hover {
+  background: #ea580c;
+  transform: scale(1.06);
+}
+
+.music-play-button:disabled {
+  cursor: progress;
+  opacity: 0.48;
+}
+
+.music-play-button svg {
+  width: 16px;
+  height: 16px;
+  transform: translateX(1px);
+}
+
+.music-play-button:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .media-card:hover .music-play-button,
+  .media-card:focus-within .music-play-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .music-play-button {
+    opacity: 1;
+  }
+}
+
 .filter-view-chip {
   flex: 0 0 auto;
   height: 32px;
@@ -7428,6 +7526,26 @@ img {
 .now-volume-slider {
   flex: 1;
   min-width: 0;
+}
+
+/* The volume slider shares the brand-colored Radix slider with the scrubber,
+   but at full width it out-shouts the transport row. Slim it down and mute
+   the range so the scrubber stays the visual anchor. */
+.now-volume .now-volume-slider {
+  max-width: 11rem;
+}
+
+.now-volume .now-volume-slider > span:first-child {
+  height: 4px;
+}
+
+.now-volume .now-volume-slider > span:first-child > span {
+  background: rgba(148, 163, 184, 0.65);
+}
+
+.now-volume .now-volume-slider > span > .bg-white {
+  width: 11px !important;
+  height: 11px !important;
 }
 
 .now-queue-btn {
