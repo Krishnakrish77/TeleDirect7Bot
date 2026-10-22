@@ -1689,6 +1689,10 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
     except Exception:
         logging.exception("media_index: probe send failed; seed skipped")
         _seeded = True
+        # Clear the reservation or every later seed (including the admin
+        # rescan) is blocked with "already running" for this process.
+        _seed_state["running"] = False
+        _seed_state["finished_at"] = time.time()
         await _mark_catalogue_ready(bot)
         return
     latest_id = probe.id
