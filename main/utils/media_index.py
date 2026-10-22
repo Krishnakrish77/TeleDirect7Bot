@@ -594,11 +594,13 @@ _ATTR_USER_ID_RE = re.compile(r"\bUser\s+ID\s*:\s*\**\s*`?(-?\d+)`?", re.IGNOREC
 
 
 def _bin_attribution_marker(message) -> Optional[Tuple[int, bool]]:
-    """Return (source_file_message_id, is_admin_added) for BIN reply notes.
+    """Return ``(source_file_message_id, is_admin_added)`` for BIN reply notes,
+    or ``None`` when the note carries no sender attribution.
 
-    Normal upload handlers write a bot reply next to the copied file:
-    private uploads include ``User ID``, group/channel uploads include
-    ``Group ID``/``Channel ID``. Admin grab flows write ``Grabbed`` notes.
+    Private uploads write ``User ID`` notes — the only sender-attributing
+    kind. Group/channel uploads write ``Group ID``/``Channel ID`` notes,
+    which record the media's source and are deliberately neutral here.
+    Admin grab flows write ``Grabbed`` notes (owner-only commands).
     During startup seed we scan newest-to-oldest, so the attribution reply
     is usually encountered before the file it replies to.
     """
