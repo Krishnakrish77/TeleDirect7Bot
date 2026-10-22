@@ -38,17 +38,15 @@ _PATTERNS = [
     # end is captured (S01E01-E02-E03 → episode=1, episode_end=2).
     re.compile(
         r"^(?P<title>.+?)[\s._\-]+s(?P<season>\d{1,2})[\s._\-]*ep?(?P<episode>\d{1,4})"
-        r"(?:[-E]e?(?P<episode_end>\d{1,4}))?\b",
+        r"(?:[-E]e?(?P<episode_end>\d{1,4}))?(?=[\s._\-]|$)",
         re.IGNORECASE,
     ),
-    # 1x03 / 01x003 (episode range not common in this format, skipped)
     re.compile(
-        r"^(?P<title>.+?)[\s._\-]+(?P<season>\d{1,2})x(?P<episode>\d{1,3})\b",
+        r"^(?P<title>.+?)[\s._\-]+(?P<season>\d{1,2})x(?P<episode>\d{1,3})(?=[\s._\-]|$)",
         re.IGNORECASE,
     ),
-    # Season 1 Episode 3 (spelled out)
     re.compile(
-        r"^(?P<title>.+?)[\s._\-]+season\s*(?P<season>\d{1,2})[\s._\-]+episode\s*(?P<episode>\d{1,3})\b",
+        r"^(?P<title>.+?)[\s._\-]+season\s*(?P<season>\d{1,2})[\s._\-]+episode\s*(?P<episode>\d{1,3})(?=[\s._\-]|$)",
         re.IGNORECASE,
     ),
     # Daily-aired serial format: ``<EpNum><Title> MM-DD-YY``
