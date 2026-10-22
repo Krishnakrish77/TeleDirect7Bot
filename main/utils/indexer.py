@@ -173,7 +173,9 @@ async def _index_bin_message_impl(bot: Client, bin_msg: Message) -> None:
         fresh = await bot.get_messages(bin_msg.chat.id, bin_msg.id)
         await media_index.add_from_message(fresh)
     except Exception:
-        logging.debug("media_index add failed for bin:%d", bin_msg.id, exc_info=True)
+        # Visible at INFO-level production logs: this is the drop point where
+        # a bulk upload silently vanishes from the catalogue.
+        logging.exception("media_index add failed for bin:%d", bin_msg.id)
         return
 
 
@@ -191,8 +193,7 @@ async def _index_bin_message_impl(bot: Client, bin_msg: Message) -> None:
         if tmdb.is_configured() and item is not None and item.media_kind != "book":
             await media_index.enrich_one(bin_msg.id, bot=bot)
     except Exception:
-        logging.debug("enrichment failed for bin:%d", bin_msg.id,
-                      exc_info=True)
+        logging.exception("enrichment failed for bin:%d", bin_msg.id)
 
     # Fire-and-forget ffprobe so the watch page knows whether this
     # file is browser-playable (h264/8-bit ✓, hevc/10-bit/av1 ✗)
@@ -203,8 +204,7 @@ async def _index_bin_message_impl(bot: Client, bin_msg: Message) -> None:
         if item is not None and item.media_kind != "book":
             codec_probe.schedule_probe(bin_msg.id)
     except Exception:
-        logging.debug("codec probe schedule failed for bin:%d", bin_msg.id,
-                      exc_info=True)
+        logging.exception("codec probe schedule failed for bin:%d", bin_msg.id)
 
 
 def schedule_index(bot: Client, bin_msg: Message) -> None:

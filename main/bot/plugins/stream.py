@@ -59,16 +59,24 @@ def _schedule_index_if_admin(bot: Client, source_msg: Message, bin_msg: Message)
 
     Non-admin uploads still get stream links; they just stay out of the
     catalogue so the hub remains an operator-curated library.
+
+    Safe to call on dedupe-reused bins too: when the bin message already
+    has a catalogue entry (the creator's index task won the race) this is a
+    no-op, but if that task failed the reuse path would otherwise skip
+    indexing forever. Indexing is idempotent — add_from_message upserts by
+    message_id — so re-scheduling a missing entry is the self-heal.
     """
-    if _from_admin(source_msg):
-        schedule_index(bot, bin_msg)
+    if not _from_admin(source_msg):
+        logging.info(
+            "media_index: skipped non-admin upload bin:%s from chat:%s user:%s",
+            getattr(bin_msg, "id", "?"),
+            getattr(getattr(source_msg, "chat", None), "id", "?"),
+            getattr(getattr(source_msg, "from_user", None), "id", "?"),
+        )
         return
-    logging.info(
-        "media_index: skipped non-admin upload bin:%s from chat:%s user:%s",
-        getattr(bin_msg, "id", "?"),
-        getattr(getattr(source_msg, "chat", None), "id", "?"),
-        getattr(getattr(source_msg, "from_user", None), "id", "?"),
-    )
+    if media_index.get_item(bin_msg.id) is not None:
+        return
+    schedule_index(bot, bin_msg)
 
 
 _pending_bin_copies: dict[tuple[str, int], asyncio.Future] = {}
@@ -238,8 +246,7 @@ async def private_receive_handler(c: Client, m: Message):
             return
 
         log_msg, reused_bin = await _copy_or_reuse_bin_message(c, m)
-        if not reused_bin:
-            _schedule_index_if_admin(c, m, log_msg)
+        _schedule_index_if_admin(c, m, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=reused_bin)
         if not reused_bin:
             await log_msg.reply_text(text=f"**Requested By :** [{m.from_user.first_name}](tg://user?id={m.from_user.id})\n**User ID :** `{m.from_user.id}`\n**Download Link :** {stream_link}", link_preview_options=NO_PREVIEW)
@@ -270,8 +277,7 @@ async def channel_receive_handler(bot, broadcast: Message):
         # editable. The reply-text below still carries the source
         # channel attribution, so we don't lose that context.
         log_msg, reused_bin = await _copy_or_reuse_bin_message(bot, broadcast)
-        if not reused_bin:
-            _schedule_index_if_admin(bot, broadcast, log_msg)
+        _schedule_index_if_admin(bot, broadcast, log_msg)
         file_hash = get_hash(log_msg)
         stream_link = as_download_url(f"{_next_stream_base()}{file_hash}{log_msg.id}")
         if not reused_bin:
@@ -333,8 +339,7 @@ async def group_receive_handler(c: Client, m: Message):
     try:
         # See private_receive_handler — copy keeps captions editable.
         log_msg, reused_bin = await _copy_or_reuse_bin_message(c, m)
-        if not reused_bin:
-            _schedule_index_if_admin(c, m, log_msg)
+        _schedule_index_if_admin(c, m, log_msg)
         reply_markup, Stream_Text, stream_link = await gen_link(m=m, log_msg=log_msg, from_channel=True)
         if not reused_bin:
             await log_msg.reply_text(text=f"**Requested By :** [{m.chat.title}](https://t.me/{m.chat.username or ''})\n**Group ID :** `{m.chat.id}`\n**Download Link :** {stream_link}", link_preview_options=NO_PREVIEW)
