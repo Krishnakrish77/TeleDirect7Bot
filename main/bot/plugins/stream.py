@@ -47,11 +47,34 @@ async def _is_photo_channel(channel_id: int) -> bool:
 
 
 def _from_admin(m: Message) -> bool:
+    # Primary: direct sender
     user = getattr(m, "from_user", None)
-    try:
-        return bool(user and int(user.id) == int(Var.OWNER_ID))
-    except (TypeError, ValueError):
-        return False
+    uid = getattr(user, "id", None)
+    if uid is not None:
+        try:
+            return int(uid) == int(Var.OWNER_ID)
+        except (TypeError, ValueError):
+            return False
+    # Fallback: anon forward / privacy-hidden — try forward origin
+    fwd_user = getattr(m, "forward_from", None)
+    if getattr(fwd_user, "id", None) is not None:
+        try:
+            if int(fwd_user.id) == int(Var.OWNER_ID):
+                return True
+        except (TypeError, ValueError):
+            pass
+    # Private chat itself is the sender when from_user hidden
+    chat = getattr(m, "chat", None)
+    if getattr(chat, "type", None) == "private" or str(getattr(chat, "type", "")).lower() == "private":
+        try:
+            if int(getattr(chat, "id", 0)) == int(Var.OWNER_ID):
+                return True
+        except (TypeError, ValueError):
+            pass
+    # Channel posts have no per-user attribution — let seed handle them
+    # (seed treats Channel/Group notes as neutral). Returning False keeps
+    # ingest's admin-gate conservative for live channel posts.
+    return False
 
 
 def _schedule_index_if_admin(bot: Client, source_msg: Message, bin_msg: Message) -> None:

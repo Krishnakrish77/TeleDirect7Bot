@@ -80,17 +80,27 @@ from main.utils.subtitles import (
 _INDEXABLE_ATTRS = ("video", "document", "animation", "audio")
 
 
+_VIDEO_EXTS = (".mkv", ".mp4", ".mov", ".avi", ".m4v", ".wmv", ".flv", ".webm", ".mpg", ".mpeg", ".ts", ".m2ts")
+
+
+def _is_video_ext(name: str) -> bool:
+    n = (name or "").lower()
+    return any(n.endswith(ext) for ext in _VIDEO_EXTS)
+
+
 def _indexable_media(message: Message):
     for attr in _INDEXABLE_ATTRS:
         media = getattr(message, attr, None)
         if media is None:
             continue
         mime = (getattr(media, "mime_type", "") or "").lower()
+        file_name = (getattr(media, "file_name", "") or "").lower()
         # Books are first-class catalogue documents alongside video/audio.
         if attr == "document" and not (
             mime.startswith("video/") or mime.startswith("audio/")
             or mime in {"application/pdf", "application/epub+zip"}
-            or (getattr(media, "file_name", "") or "").lower().endswith((".pdf", ".epub"))
+            or file_name.endswith((".pdf", ".epub"))
+            or _is_video_ext(file_name)
         ):
             continue
         return media
@@ -100,6 +110,19 @@ def _indexable_media(message: Message):
 def _build_caption(message: Message) -> Optional[str]:
     media = _indexable_media(message)
     if media is None:
+        try:
+            doc = getattr(message, "document", None)
+            vid = getattr(message, "video", None)
+            m = doc or vid or getattr(message, "animation", None) or getattr(message, "audio", None)
+            attrs = [a for a in _INDEXABLE_ATTRS if getattr(message, a, None) is not None]
+            logging.warning(
+                "indexer: skipping bin:%s _indexable_media None attrs=%s mime=%r file_name=%r",
+                getattr(message, "id", "?"), attrs,
+                getattr(m, "mime_type", "") if m else "",
+                getattr(m, "file_name", "") if m else "",
+            )
+        except Exception:
+            logging.warning("indexer: skipping bin:%s _indexable_media None", getattr(message, "id", "?"))
         return None
     file_name = getattr(media, "file_name", None) or ""
     file_size = getattr(media, "file_size", 0) or 0

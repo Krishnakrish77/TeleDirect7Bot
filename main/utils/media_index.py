@@ -539,8 +539,11 @@ def _is_video_message(message) -> bool:
     if message.video is not None or message.animation is not None:
         return True
     mime = (getattr(media, "mime_type", "") or "").lower()
-    return mime.startswith("video/")
-
+    if mime.startswith("video/"):
+        return True
+    # Telegram often stores mkv/mp4 as generic document with octet-stream
+    name = (getattr(media, "file_name", "") or "").lower()
+    return any(name.endswith(ext) for ext in (".mkv", ".mp4", ".mov", ".avi", ".m4v", ".wmv", ".flv", ".webm", ".mpg", ".mpeg", ".ts", ".m2ts"))
 
 def _is_audio_message(message) -> bool:
     if getattr(message, "empty", False):
@@ -678,6 +681,17 @@ def _item_from_message(message) -> Optional[HubItem]:
     is_audio = _is_audio_message(message)
     is_book = _is_book_message(message)
     if not _is_video_message(message) and not is_audio and not is_book:
+        try:
+            m = _media_of(message)
+            logging.debug(
+                "media_index: _item_from_message None bin:%s mime=%r file_name=%r attrs video=%s doc=%s audio=%s",
+                getattr(message, "id", "?"),
+                getattr(m, "mime_type", "") if m else "",
+                getattr(m, "file_name", "") if m else "",
+                bool(getattr(message, "video", None)), bool(getattr(message, "document", None)), bool(getattr(message, "audio", None)),
+            )
+        except Exception:
+            pass
         return None
     media_kind = "book" if is_book else "audio" if is_audio else "video"
     media = _media_of(message)
