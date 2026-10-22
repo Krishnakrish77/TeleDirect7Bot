@@ -16,6 +16,18 @@ class _Store:
     def __init__(self):
         self.set_meta = AsyncMock()
 
+    async def load_all(self):
+        return []
+
+    async def upsert_many(self, docs):
+        pass
+
+    async def upsert(self, doc):
+        pass
+
+    async def remove(self, message_id):
+        pass
+
 
 class _Bot:
     def __init__(self, latest_id: int, *, fail_fetch: bool = False):
@@ -175,6 +187,70 @@ class MediaIndexSeedTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(store.upserted)
         self.assertTrue(set(store.upserted) >= {1049, 1050})
         self.assertEqual(store.upserted[1050]["title"], "Ted Lasso S01E 1050")
+
+    async def test_seed_indexes_files_whose_note_is_channel_attribution(self):
+        """Group/Channel notes record the media's source, not the sender's
+        identity — an admin forwarding from their own channel produces one.
+        They must not mark the file non-admin, or every seed scan deletes
+        the row and refuses to re-index it (bulk uploads showing 1 of N)."""
+        class UpsertSpyStore(_Store):
+            def __init__(self):
+                super().__init__()
+                self.upserted: dict[int, dict] = {}
+
+            async def load_all(self):
+                return []
+
+            async def upsert_many(self, docs):
+                for d in docs:
+                    self.upserted[d["message_id"]] = d
+
+        store = UpsertSpyStore()
+        media_index._store = store
+
+        file_msg = SimpleNamespace(
+            id=1050, empty=False, video=None, document=SimpleNamespace(
+                file_unique_id="AgADchan1050", file_size=145892810,
+                file_name="Ted.Lasso.S01E08.[@TVseriesLand]720p.MKV",
+                mime_type="video/x-matroska", duration=1928, thumbs=[],
+            ),
+            audio=None, animation=None, caption="",
+            from_user=None, chat=SimpleNamespace(id=-100),
+        )
+        channel_note = SimpleNamespace(
+            id=1100, empty=False, video=None, document=None, audio=None,
+            animation=None, caption=None,
+            text="**Channel Name:** `X`\n**Channel ID:** `-100123`\n**Request URL:** t.me/x",
+            reply_to_message_id=1050, chat=SimpleNamespace(id=-100),
+        )
+
+        class ChannelNoteBot(_Bot):
+            async def get_messages(self, _channel_id, ids):
+                self.requested_ids.append(list(ids))
+                out = []
+                for i in ids:
+                    if i == 1050:
+                        out.append(file_msg)
+                    elif i == 1100:
+                        out.append(channel_note)
+                    else:
+                        out.append(SimpleNamespace(id=i, empty=True))
+                return out
+
+        bot = ChannelNoteBot(1100)
+        with (
+            patch.object(media_index, "_persist_unlocked"),
+            patch.object(media_index, "_item_from_message",
+                         side_effect=media_index._item_from_message),
+        ):
+            await media_index.seed(bot, -100, full_reconcile=True)
+
+        item = media_index._items.get(1050)
+        self.assertIsNotNone(item)
+        self.assertEqual(item.series_key, "ted-lasso")
+        self.assertEqual(item.episode, 8)
+        # …and it is durable, so the recovery survives restart.
+        self.assertIn(1050, store.upserted)
 
     async def test_deletions_received_during_recovery_are_drained_after_ready(self):
         media_index._items[99] = SimpleNamespace(message_id=99, secure_hash="deleted")

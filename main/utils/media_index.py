@@ -628,9 +628,12 @@ def _bin_attribution_marker(message) -> Optional[Tuple[int, bool]]:
         except Exception:
             return int(reply_id), False
 
-    if re.search(r"\b(Group|Channel) ID\s*:", text, re.IGNORECASE):
-        return int(reply_id), False
-
+    # Group/Channel notes only record WHERE the media came from, not WHO
+    # sent it — an admin forwarding from their own channel produces one.
+    # Treating them as "non-admin" made the seed scan permanently delete
+    # (and the rescan refuse to re-index) those files: the exact
+    # "bulk upload shows 1 of N" failure. Curation of genuinely
+    # non-admin rows belongs to the explicit Prune-non-admin action.
     return None
 
 
