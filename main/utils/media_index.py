@@ -1891,6 +1891,29 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
                 for mid in list(source_pruned_ids):
                     await _store_remove(mid)
                 source_pruned_ids.clear()
+            # Write this batch's discoveries to the durable store. The
+            # in-memory insert above dies with the process (and /tmp JSON is
+            # disabled when Mongo is active), so without this a rescan's
+            # recovered rows vanish on the next restart — worse, the next
+            # delta seed still skips them (high-water mark already advanced),
+            # losing them indefinitely.
+            if _store_active():
+                batch_items = [
+                    it for mid in ids
+                    if (it := _items.get(mid)) is not None
+                ]
+                if batch_items:
+                    try:
+                        await _store.upsert_many(
+                            [_to_serializable(it) for it in batch_items]
+                        )
+                    except Exception:
+                        # Keep the scan running; rows stay in memory and the
+                        # next successful batch re-writes them.
+                        logging.exception(
+                            "media_index: seed batch upsert failed for %d..%d",
+                            ids[-1], ids[0],
+                        )
             _seed_state["scanned"] += len(ids)
             _seed_state["indexed"] = len(_items)
             high -= _FETCH_BATCH
