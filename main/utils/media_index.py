@@ -1703,7 +1703,15 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
         floor = max(1, previous_latest - _SEED_OVERLAP)
         mode = "delta"
     else:
-        floor = max(1, latest_id - _SEED_DEPTH)
+        # A full rescan must reach every id the catalogue could reference —
+        # including rows LOST from the catalogue (crashed ingest, wiped
+        # store) whose BIN messages still exist below the current window.
+        # latest - _SEED_DEPTH alone misses them once ~DEPTH newer messages
+        # push the burst ids out (exactly the "rescan found nothing" trap).
+        # Floor at the oldest known catalogue row instead, and never above
+        # the plain depth window.
+        oldest_known = min(_items.keys()) if _items else latest_id
+        floor = max(1, min(oldest_known, latest_id - _SEED_DEPTH))
         mode = "full"
     high = latest_id
     total_to_scan = high - floor + 1
