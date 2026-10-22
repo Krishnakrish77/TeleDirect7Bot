@@ -594,6 +594,7 @@ _MAINTENANCE_JOB_LABELS = {
     "dedupe": "De-duplicate pass",
     "prune-stale": "Stale prune",
     "reprobe-audio-genres": "Audio genre backfill",
+    "rescan-bin": "Full BIN rescan",
 }
 _maintenance_jobs: dict[str, dict] = {}
 
@@ -2961,6 +2962,24 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
             "Non-admin prune queued",
             status=_admin_status_payload(),
         )
+
+    if action == "rescan-bin":
+        if media_index.seed_state().get("running"):
+            return _admin_json_message(
+                "A seed scan is already running",
+                status=_admin_status_payload(),
+            )
+
+        async def _rescan() -> str:
+            await media_index.seed(StreamBot, int(Var.BIN_CHANNEL), full_reconcile=True)
+            state = media_index.seed_state()
+            outcome = "incomplete — retried on next boot" if state.get("failed") else "complete"
+            return (
+                f"Rescan {outcome}: scanned {state.get('scanned', 0)} ids, "
+                f"catalogue now {media_index.size()} entries"
+            )
+
+        return _queue_maintenance_job(action, _rescan(), label="Full BIN rescan")
 
     if action == "prune-stale":
         return _queue_maintenance_job(

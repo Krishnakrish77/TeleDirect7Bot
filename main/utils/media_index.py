@@ -1666,6 +1666,13 @@ async def seed(bot, channel_id: int, *, full_reconcile: bool = False) -> None:
     if _seeded and not full_reconcile:
         await _mark_catalogue_ready(bot)
         return
+    # Reserve before any await: two concurrent full_reconcile triggers (admin
+    # double-click, admin rescan racing boot seed) must not scan concurrently.
+    if _seed_state["running"]:
+        logging.info("media_index: seed already running — skipping re-entry")
+        return
+    _seed_state["running"] = True
+    _seed_state["finished_at"] = 0.0
 
     await load_catalogue()
 

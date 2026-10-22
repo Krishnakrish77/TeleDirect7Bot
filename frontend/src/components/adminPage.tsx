@@ -465,6 +465,7 @@ function MaintenancePanel({
     ['dedupe', 'De-dupe', 'Delete duplicate uploads'],
     ['prune-non-admin', 'Prune non-admin', 'Remove known non-admin uploads from the public catalogue', 'Remove known non-admin uploads from the catalogue? This keeps their private stream files in BIN.'],
     ['prune-stale', 'Prune stale', 'Remove missing BIN rows'],
+    ['rescan-bin', 'Rescan BIN', 'Re-scan the deep BIN history window and re-index anything missing', 'Rescan the full BIN history window? This re-reads up to 800 recent messages and re-indexes anything the catalogue is missing.'],
     ['migrate-to-mongo', 'Mongo', 'Start migration'],
   ] as const;
 
