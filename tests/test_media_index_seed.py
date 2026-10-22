@@ -124,6 +124,58 @@ class MediaIndexSeedTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(media_index._latest_seen_id, 1000)
         store.set_meta.assert_not_awaited()
 
+    async def test_seed_persists_discovered_rows_to_the_durable_store(self):
+        """Seed-scan discoveries must reach Mongo. The in-memory insert dies
+        with the process, and /tmp JSON is disabled when Mongo is active —
+        without the bulk upsert, rescan-recovered rows are lost on restart
+        while the delta seed's high-water mark keeps skipping them forever."""
+        class UpsertSpyStore(_Store):
+            def __init__(self):
+                super().__init__()
+                self.upserted: dict[int, dict] = {}
+
+            async def load_all(self):
+                return []
+
+            async def upsert_many(self, docs):
+                for d in docs:
+                    self.upserted[d["message_id"]] = d
+
+        store = UpsertSpyStore()
+        media_index._store = store
+
+        # BIN holds two media messages inside the scan window; the catalogue
+        # holds neither (the exact post-crash state a rescan must repair).
+        def _media_msg(mid):
+            return SimpleNamespace(
+                id=mid, empty=False, video=None, document=SimpleNamespace(
+                    file_unique_id=f"AgADbulk{mid}", file_size=1_000 + mid,
+                    file_name=f"Ted Lasso S01E{mid}.mkv",
+                    mime_type="video/x-matroska", duration=1800, thumbs=[],
+                ),
+                audio=None, animation=None, caption="",
+                from_user=SimpleNamespace(id=1), chat=SimpleNamespace(id=-100),
+            )
+
+        class BulkBot(_Bot):
+            async def get_messages(self, _channel_id, ids):
+                self.requested_ids.append(list(ids))
+                return [_media_msg(i) for i in ids]
+
+        bot = BulkBot(1050)
+        with (
+            patch.object(media_index, "_persist_unlocked"),
+            patch.object(media_index, "_item_from_message",
+                         side_effect=media_index._item_from_message),
+        ):
+            await media_index.seed(bot, -100, full_reconcile=True)
+
+        # Every discovery in the deep window is durable, not just in-memory.
+        # Window = [latest-800, latest]; all covered ids got upserted.
+        self.assertTrue(store.upserted)
+        self.assertTrue(set(store.upserted) >= {1049, 1050})
+        self.assertEqual(store.upserted[1050]["title"], "Ted Lasso S01E 1050")
+
     async def test_deletions_received_during_recovery_are_drained_after_ready(self):
         media_index._items[99] = SimpleNamespace(message_id=99, secure_hash="deleted")
         media_index._hash_map["deleted"] = 99
