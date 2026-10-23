@@ -133,7 +133,15 @@ async def _ensure_indexes() -> None:
         existing_text = await photos.index_information()
         old_spec = existing_text.get("photos_text_search")
         if old_spec and "place" not in str(old_spec.get("key", old_spec.get("weights", ""))):
-            await photos.drop_index("photos_text_search")
+            from pymongo.errors import OperationFailure
+            try:
+                await photos.drop_index("photos_text_search")
+            except OperationFailure as exc:
+                # Code 26/27 IndexNotFound: the old index is already gone —
+                # another instance's migration won the race. That is the
+                # desired end state; create_index below reconciles the spec.
+                if exc.code not in (26, 27):
+                    raise
         await photos.create_index(
             [("file_name", "text"), ("camera", "text"), ("place", "text")],
             default_language="english",
