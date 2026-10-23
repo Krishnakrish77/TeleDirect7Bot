@@ -32,7 +32,6 @@ _EVENT_CAP = 5_000
 _EVENTS = "watch_events"
 _BADGES = "watched_badges"
 _indexed = False
-_badges_backfilled = False
 
 
 def _get_db():
@@ -221,37 +220,6 @@ async def record_series_badge(user_id: int, series_key: str, title: str) -> None
         )
     except Exception:
         logging.exception("wh_store: series badge failed uid=%d series=%s", user_id, series_key)
-
-
-async def backfill_badges() -> None:
-    """Seed badges from surviving watch_history rows (older evictions are
-    unrecoverable). Runs once per process; bounded by _WH_CAP per user."""
-    global _badges_backfilled
-    if _badges_backfilled:
-        return
-    db = _get_db()
-    if db is None:
-        return
-    try:
-        await _ensure_indexes()
-        cursor = db["watch_history"].find({}, projection={"user_id": 1, "cw_key": 1, "title": 1})
-        count = 0
-        async for row in cursor:
-            doc = _badge_doc(int(row["user_id"]), str(row.get("cw_key", "")), str(row.get("title", "")))
-            if doc is None:
-                continue
-            await db[_BADGES].update_one(
-                {"user_id": doc["user_id"], "cw_key": doc["cw_key"]},
-                {"$set": doc},
-                upsert=True,
-            )
-            count += 1
-        # Flag only on success so a mid-run Mongo failure retries next start;
-        # the upserts are idempotent.
-        _badges_backfilled = True
-        logging.info("wh_store: badge backfill complete, %d rows", count)
-    except Exception:
-        logging.exception("wh_store: badge backfill failed")
 
 
 async def get_recent(user_id: int, limit: int = 20) -> list:

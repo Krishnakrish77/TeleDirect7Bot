@@ -38,14 +38,9 @@ async def _ensure_indexes() -> None:
         return
     try:
         coll = db["dismissed"]
-        # Older releases keyed dismissals only by numeric TMDB ID. Movie and
-        # TV IDs use separate namespaces, so remove that obsolete index before
-        # creating the type-safe replacement. Existing documents retain their
-        # stored kind and continue to work.
-        try:
-            await coll.drop_index("user_id_1_tmdb_id_1")
-        except Exception:
-            pass  # absent on fresh databases or already migrated
+        # The old numeric-id index removal lives in the migration registry
+        # (main/utils/migrations.py); the type-safe replacement below is
+        # idempotent and coexists with it.
         await coll.create_index([("user_id", 1), ("tmdb_id", 1), ("kind", 1)], unique=True)
         await db["dismissed"].create_index("user_id")
         _indexed = True

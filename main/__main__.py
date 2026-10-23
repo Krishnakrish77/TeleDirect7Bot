@@ -20,7 +20,7 @@ from main import utils
 from main import StreamBot
 from main.server import web_server
 from main.bot.clients import initialize_clients
-from main.utils import hls_session, media_index, wh_store
+from main.utils import hls_session, media_index, migrations
 
 
 _LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -81,14 +81,22 @@ async def _connect_catalogue_store() -> None:
             # checks one bounded batch every interval; it never full-scans at boot.
             media_index.ensure_reconciliation_running(StreamBot, Var.BIN_CHANNEL)
 
-    async def backfill_watch_badges() -> None:
-        try:
-            await wh_store.backfill_badges()
-        except Exception:
-            logging.exception("watch badge backfill failed")
-
     asyncio.create_task(seed_then_reconcile())
-    asyncio.create_task(backfill_watch_badges())
+
+    async def run_migrations() -> None:
+        # One-shot schema migrations, ledger-recorded so each runs exactly
+        # once per database (not once per deploy). Leader-only: replicas
+        # share the database and the ledger rows.
+        if not Var.IS_LEADER:
+            return
+        try:
+            count = await migrations.run_pending_migrations()
+            if count:
+                logging.info("migrations: %d ran at startup", count)
+        except Exception:
+            logging.exception("migrations: startup run failed")
+
+    asyncio.create_task(run_migrations())
 
 
 async def _photos_channel_reverify_loop() -> None:

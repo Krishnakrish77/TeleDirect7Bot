@@ -127,21 +127,9 @@ async def _ensure_indexes() -> None:
         # 15"), place ("Lisbon, Portugal") and later labels tokenize well —
         # and the tokenized filename still catches "portugal" in
         # "Portugal 2026.jpg".
-        # place was added after the 2-field version shipped: Mongo refuses to
-        # create a same-name index with a different spec, so detect the old
-        # one and drop it once (idempotent — create_index after drop).
-        existing_text = await photos.index_information()
-        old_spec = existing_text.get("photos_text_search")
-        if old_spec and "place" not in str(old_spec.get("key", old_spec.get("weights", ""))):
-            from pymongo.errors import OperationFailure
-            try:
-                await photos.drop_index("photos_text_search")
-            except OperationFailure as exc:
-                # Code 26/27 IndexNotFound: the old index is already gone —
-                # another instance's migration won the race. That is the
-                # desired end state; create_index below reconciles the spec.
-                if exc.code not in (26, 27):
-                    raise
+        # The 2-field → 3-field (place) index replacement lives in the
+        # migration registry (main/utils/migrations.py); create_index here
+        # reconciles the spec either way.
         await photos.create_index(
             [("file_name", "text"), ("camera", "text"), ("place", "text")],
             default_language="english",
