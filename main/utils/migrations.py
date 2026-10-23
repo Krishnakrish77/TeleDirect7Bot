@@ -32,8 +32,6 @@ import logging
 import time
 from typing import Awaitable, Callable
 
-from main.vars import Var
-
 _LEDGER = "schema_migrations"
 
 MigrationFn = Callable[[], Awaitable[str | None]]
