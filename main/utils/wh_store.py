@@ -10,12 +10,19 @@ Schema — collection ``watch_history``:
 completion event per play. Stats use it for accurate day/month activity while
 the existing history collection remains the fast source for resume and hub
 features.
+
+``watched_badges`` is the durable fact that a key/title was ever completed.
+It has no TTL and no count cap, so the "Watched" badge survives the
+watch-history cap eviction, the 365-day TTL, and re-uploads: rows keep the
+normalized title slug, which stays valid across new message ids. Only the
+key, the slug, and the media kind are stored — no timestamps or labels.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime, timezone
 
@@ -23,7 +30,9 @@ _WH_CAP = 200
 _TTL_DAYS = 365
 _EVENT_CAP = 5_000
 _EVENTS = "watch_events"
+_BADGES = "watched_badges"
 _indexed = False
+_badges_backfilled = False
 
 
 def _get_db():
@@ -52,6 +61,9 @@ async def _ensure_indexes() -> None:
         events = db[_EVENTS]
         await events.create_index([("user_id", 1), ("watched_at", -1)])
         await events.create_index("watched_at", expireAfterSeconds=_TTL_DAYS * 86400)
+        badges = db[_BADGES]
+        await badges.create_index([("user_id", 1), ("cw_key", 1)], unique=True)
+        await badges.create_index([("user_id", 1), ("title_slug", 1)])
         _indexed = True
     except Exception:
         logging.exception("wh_store: ensure_indexes failed")
@@ -72,6 +84,9 @@ async def record(user_id: int, cw_key: str, title: str) -> None:
              "$inc": {"play_count": 1}},
             upsert=True,
         )
+        # Durable watched badge — the fact this key/title was completed
+        # outlives the history cap and TTL so badges never expire.
+        _badge_upsert_nowait(user_id, cw_key, title)
         await db[_EVENTS].insert_one({
             "user_id": user_id,
             "cw_key": cw_key,
@@ -105,6 +120,138 @@ async def record(user_id: int, cw_key: str, title: str) -> None:
             })
     except Exception:
         logging.exception("wh_store: record failed uid=%d key=%s", user_id, cw_key)
+
+
+# ── Durable watched badges ────────────────────────────────────────────────────
+# A completion writes one badge row per (user, key) that never expires or gets
+# evicted. Matching by normalized title slug additionally survives re-uploads,
+# which change the message id and therefore the cw_key. Rows deliberately
+# carry no timestamp: a badge is a fact, not a recency signal.
+
+
+def _badge_doc(user_id: int, cw_key: str, title: str) -> dict | None:
+    """Build the badge doc for one completion, or None when unidentifiable."""
+    try:
+        from main.utils import media_index, rec_engine
+        match = re.match(r"^[A-Za-z0-9_-]*[A-Za-z_-](\d+)$", cw_key or "")
+        item = media_index.get_item(int(match.group(1))) if match else None
+        if item is None:
+            return None
+        doc = {
+            "user_id": user_id,
+            "cw_key": cw_key,
+            "title_slug": rec_engine.normalize_title_key(title),
+            "kind": "series" if item.series_key else "movie",
+        }
+        if item.series_key:
+            doc["series_slug"] = item.series_key
+        return doc
+    except Exception:
+        logging.exception("wh_store: badge doc build failed uid=%d key=%s", user_id, cw_key)
+        return None
+
+
+def _badge_upsert_nowait(user_id: int, cw_key: str, title: str) -> None:
+    """Fire-and-forget badge write; must never delay or fail the completion."""
+    db = _get_db()
+    if db is None:
+        return
+    doc = _badge_doc(user_id, cw_key, title)
+    if doc is None:
+        return
+
+    async def _write() -> None:
+        try:
+            await _ensure_indexes()
+            await db[_BADGES].update_one(
+                {"user_id": user_id, "cw_key": cw_key},
+                {"$set": doc},
+                upsert=True,
+            )
+        except Exception:
+            logging.exception("wh_store: badge upsert failed uid=%d key=%s", user_id, cw_key)
+
+    asyncio.create_task(_write())
+
+
+async def get_badges(user_id: int) -> tuple[set[str], set[str], set[str]]:
+    """Return (cw_keys, title_slugs, series_slugs) of completed titles."""
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return set(), set(), set()
+    try:
+        docs = await db[_BADGES].find(
+            {"user_id": user_id},
+            projection={"cw_key": 1, "title_slug": 1, "series_slug": 1, "_id": 0},
+        ).to_list(length=0)
+        keys = {str(d["cw_key"]) for d in docs if d.get("cw_key")}
+        slugs = {str(d["title_slug"]) for d in docs if d.get("title_slug")}
+        series_slugs = {str(d["series_slug"]) for d in docs if d.get("series_slug")}
+        return keys, slugs, series_slugs
+    except Exception:
+        logging.exception("wh_store: get_badges failed for user %d", user_id)
+        return set(), set(), set()
+
+
+async def record_series_badge(user_id: int, series_key: str, title: str) -> None:
+    """Persist an explicit series completion as a durable badge.
+
+    Uses the series slug (the catalogue's stable identity for a show) plus
+    the normalized title, so re-uploaded episodes of a completed series
+    still resolve as watched. No cw_key: an explicit completion is not tied
+    to one uploaded episode copy.
+    """
+    await _ensure_indexes()
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        from main.utils import rec_engine
+        await db[_BADGES].update_one(
+            {"user_id": user_id, "series_slug": series_key},
+            {"$set": {
+                "user_id": user_id,
+                "cw_key": f"series:{series_key}",
+                "title_slug": rec_engine.normalize_title_key(title),
+                "series_slug": series_key,
+                "kind": "series",
+            }},
+            upsert=True,
+        )
+    except Exception:
+        logging.exception("wh_store: series badge failed uid=%d series=%s", user_id, series_key)
+
+
+async def backfill_badges() -> None:
+    """Seed badges from surviving watch_history rows (older evictions are
+    unrecoverable). Runs once per process; bounded by _WH_CAP per user."""
+    global _badges_backfilled
+    if _badges_backfilled:
+        return
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        await _ensure_indexes()
+        cursor = db["watch_history"].find({}, projection={"user_id": 1, "cw_key": 1, "title": 1})
+        count = 0
+        async for row in cursor:
+            doc = _badge_doc(int(row["user_id"]), str(row.get("cw_key", "")), str(row.get("title", "")))
+            if doc is None:
+                continue
+            await db[_BADGES].update_one(
+                {"user_id": doc["user_id"], "cw_key": doc["cw_key"]},
+                {"$set": doc},
+                upsert=True,
+            )
+            count += 1
+        # Flag only on success so a mid-run Mongo failure retries next start;
+        # the upserts are idempotent.
+        _badges_backfilled = True
+        logging.info("wh_store: badge backfill complete, %d rows", count)
+    except Exception:
+        logging.exception("wh_store: badge backfill failed")
 
 
 async def get_recent(user_id: int, limit: int = 20) -> list:

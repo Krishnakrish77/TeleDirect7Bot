@@ -158,6 +158,16 @@ async def _items_for_user(user_id: int) -> list[dict]:
         wh_store.get_recent(user_id, limit=500),
     )
     completed_keys = {str(entry.get("cw_key", "")) for entry in history}
+    # Durable badges: completions that outlived the history cap/TTL and
+    # re-uploads whose cw_key changed (matched back via normalized title).
+    badge_keys, badge_slugs, badge_series = await wh_store.get_badges(user_id)
+    completed_keys |= badge_keys
+    for slug in badge_slugs:
+        for item in media_index.items_for_title_slug(slug):
+            completed_keys.add(_watch_key(item))
+    for series_key in badge_series:
+        for episode in media_index.episodes_for_series(series_key):
+            completed_keys.add(_watch_key(episode))
     cw_by_key: dict[str, float] = {}
     for ck, entry in cw_data.items():
         m = _CW_KEY_RE.match(ck)
@@ -246,6 +256,16 @@ async def api_mark_completed(request: web.Request) -> web.Response:
         return _json({"error": "invalid item_id"}, status=400)
     if not await watchlist_store.mark_completed(int(user["sub"]), iid):
         return _json({"error": "saved title not found"}, status=404)
+    # Durable badge: series completion is the only way a series shows
+    # "watched" (watchlist contract), so record it in slug form — it must
+    # survive re-uploads that change every episode's cw_key.
+    if iid.startswith("series:"):
+        series_key = iid[7:]
+        eps = media_index.episodes_for_series(series_key)
+        title = (eps[0].series_title if eps else "") or series_key
+        asyncio.create_task(wh_store.record_series_badge(
+            int(user["sub"]), series_key, title,
+        ))
     return _json({"ok": True, "item_id": iid, "watchStatus": "watched"})
 
 

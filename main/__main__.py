@@ -20,7 +20,7 @@ from main import utils
 from main import StreamBot
 from main.server import web_server
 from main.bot.clients import initialize_clients
-from main.utils import hls_session, media_index
+from main.utils import hls_session, media_index, wh_store
 
 
 _LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -81,7 +81,14 @@ async def _connect_catalogue_store() -> None:
             # checks one bounded batch every interval; it never full-scans at boot.
             media_index.ensure_reconciliation_running(StreamBot, Var.BIN_CHANNEL)
 
+    async def backfill_watch_badges() -> None:
+        try:
+            await wh_store.backfill_badges()
+        except Exception:
+            logging.exception("watch badge backfill failed")
+
     asyncio.create_task(seed_then_reconcile())
+    asyncio.create_task(backfill_watch_badges())
 
 
 async def _photos_channel_reverify_loop() -> None:

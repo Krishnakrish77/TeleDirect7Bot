@@ -462,6 +462,30 @@ async def _watched_keys_for_user(user: dict | None) -> set[str]:
         key = str(item.get("cw_key") or "")
         if key:
             watched_keys.add(key)
+    # Durable badges: re-expand completed titles (and series) into the
+    # keys of the *current* catalogue copies so a re-upload — new message
+    # id, new cw_key — still shows its Watched badge after the original
+    # history row was capped or TTL'd out.
+    try:
+        badge_keys, badge_slugs, badge_series = await asyncio.wait_for(
+            wh_store.get_badges(int(user["sub"])),
+            timeout=2.0,
+        )
+    except asyncio.TimeoutError:
+        logging.warning("spa hub: watched badge aggregation timed out")
+        return watched_keys
+    except Exception:
+        logging.exception("spa hub: watched badge aggregation failed")
+        return watched_keys
+    watched_keys |= badge_keys
+    for slug in badge_slugs:
+        for item in media_index.items_for_title_slug(slug):
+            watched_keys.add(f"{item.secure_hash}{item.message_id}")
+    # Series completions (explicit Watchlist action) expand to every current
+    # episode copy; per-episode badges cover individually watched episodes.
+    for series_key in badge_series:
+        for episode in media_index.episodes_for_series(series_key):
+            watched_keys.add(f"{episode.secure_hash}{episode.message_id}")
     return watched_keys
 
 

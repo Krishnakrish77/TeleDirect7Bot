@@ -209,6 +209,13 @@ _group_buckets_stale = True
 _art_buckets: dict[tuple[str, str], list[HubItem]] = {}
 _art_buckets_stale = True
 
+# Derived title-slug map: normalize_title_key(title) → visible members.
+# Same rebuild cadence as the other buckets; lets watch badges match a
+# completed title against re-uploads whose message id (and therefore
+# cw_key) changed.
+_title_slug_buckets: dict[str, list[HubItem]] = {}
+_title_slug_buckets_stale = True
+
 # --- Durable store (Mongo when configured) ---------------------------------
 # When ``STORE_BACKEND=mongo``, every mutation also writes-through to
 # MongoDB Atlas. The in-memory ``_items`` dict stays authoritative
@@ -1329,10 +1336,12 @@ def _invalidate_hub_caches() -> None:
 def _invalidate_search_index() -> None:
     """Mark the derived index stale after any catalogue mutation."""
     global _search_index_stale, _art_buckets_stale, _group_buckets_stale
+    global _title_slug_buckets_stale
     global _derived_gen, _max_message_id_cache
     _search_index_stale = True
     _art_buckets_stale = True
     _group_buckets_stale = True
+    _title_slug_buckets_stale = True
     _derived_gen += 1
     _max_message_id_cache = None
 
@@ -2106,6 +2115,7 @@ def _build_derived_indexes(items: List[HubItem]) -> dict:
     series: dict[str, list[HubItem]] = {}
     movies: dict[str, list[HubItem]] = {}
     albums: dict[str, list[HubItem]] = {}
+    title_slugs: dict[str, list[HubItem]] = {}
     for item in items:
         if item.hidden:
             continue
@@ -2126,6 +2136,12 @@ def _build_derived_indexes(items: List[HubItem]) -> dict:
             series.setdefault(item.series_key, []).append(item)
         elif item.movie_key:
             movies.setdefault(item.movie_key, []).append(item)
+        # Lazy import: rec_engine imports this module (watch badges need the
+        # same normalized-title identity the recommendation exclusion uses).
+        from main.utils.rec_engine import normalize_title_key
+        slug = normalize_title_key(item.title or item.file_name)
+        if slug:
+            title_slugs.setdefault(slug, []).append(item)
         if (item.media_kind or "") == "audio":
             album_key = getattr(item, "album_key", "") or ""
             if album_key:
@@ -2152,12 +2168,14 @@ def _build_derived_indexes(items: List[HubItem]) -> dict:
         "series": series,
         "movies": movies,
         "albums": albums,
+        "title_slugs": title_slugs,
     }
 
 
 def _apply_derived_indexes(built: dict) -> None:
     global _search_index, _search_docs, _search_title_tokens, _search_tokens_sorted
     global _art_buckets, _series_buckets, _movie_buckets, _album_buckets
+    global _title_slug_buckets
     _search_index = built["postings"]
     _search_docs = built["docs"]
     _search_title_tokens = built["title_tokens"]
@@ -2166,14 +2184,17 @@ def _apply_derived_indexes(built: dict) -> None:
     _series_buckets = built["series"]
     _movie_buckets = built["movies"]
     _album_buckets = built["albums"]
+    _title_slug_buckets = built["title_slugs"]
 
 
 def _rebuild_derived_sync() -> None:
     """Synchronous fallback: rebuild on the loop when no background pass has
     caught up yet (e.g. a search arriving inside the debounce window)."""
     global _search_index_stale, _art_buckets_stale, _group_buckets_stale
+    global _title_slug_buckets_stale
     _apply_derived_indexes(_build_derived_indexes(list(_items.values())))
     _search_index_stale = _art_buckets_stale = _group_buckets_stale = False
+    _title_slug_buckets_stale = False
 
 
 async def _derived_rebuild_worker() -> None:
@@ -2184,9 +2205,11 @@ async def _derived_rebuild_worker() -> None:
     rebuild per search request.
     """
     global _search_index_stale, _art_buckets_stale, _group_buckets_stale
+    global _title_slug_buckets_stale
     while True:
         await asyncio.sleep(_DERIVED_REBUILD_DEBOUNCE)
-        if not (_search_index_stale or _art_buckets_stale or _group_buckets_stale):
+        if not (_search_index_stale or _art_buckets_stale or _group_buckets_stale
+                or _title_slug_buckets_stale):
             return
         gen = _derived_gen
         # Snapshot on the loop so the worker thread never iterates _items
@@ -2203,6 +2226,7 @@ async def _derived_rebuild_worker() -> None:
         if gen == _derived_gen:
             # No mutation raced the build — the snapshot is current.
             _search_index_stale = _art_buckets_stale = _group_buckets_stale = False
+            _title_slug_buckets_stale = False
             return
         # A mutation landed mid-build: the just-applied index is internally
         # consistent but already stale. Loop and rebuild once things settle.
@@ -2969,6 +2993,21 @@ def episodes_for_series(series_key: str) -> List[HubItem]:
     """All episodes for a series, sorted by season then episode."""
     _ensure_group_buckets()
     return _series_buckets.get(series_key, [])
+
+
+def items_for_title_slug(slug: str) -> List[HubItem]:
+    """All visible catalogue items whose normalized title matches ``slug``.
+
+    Lets durable watched badges match a completed title against re-uploads
+    whose message id (and therefore cw_key) changed. Watched slugs come from
+    ``wh_store.get_badges``; matching here avoids threading a slug set
+    through every card-building call site.
+    """
+    if not slug:
+        return []
+    if _title_slug_buckets_stale:
+        _rebuild_derived_sync()
+    return _title_slug_buckets.get(slug, [])
 
 
 def _episode_identity(item: HubItem) -> tuple[object, object, object]:
