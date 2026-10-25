@@ -2269,52 +2269,6 @@ async def api_app_music_genres(request: web.Request) -> web.Response:
     return _json({"genres": media_index.music_genre_facets()})
 
 
-@routes.get("/api/app/scrobble/settings")
-async def api_app_scrobble_get(request: web.Request) -> web.Response:
-    """Client-safe scrobble settings — the token never leaves the server."""
-    from main.utils import scrobbler
-    user = get_user(request)
-    if not user:
-        return _json({"error": "unauthenticated"}, status=401)
-    doc = await scrobbler.get_settings(int(user["sub"]))
-    return _json(scrobbler.settings_payload(doc))
-
-
-@routes.put("/api/app/scrobble/settings")
-async def api_app_scrobble_put(request: web.Request) -> web.Response:
-    """Validate (ListenBrainz token check) and persist scrobble settings."""
-    from main.utils import scrobbler
-    user = get_user(request)
-    if not user:
-        return _json({"error": "unauthenticated"}, status=401)
-    try:
-        body = await request.json()
-    except Exception:
-        return _json({"error": "invalid JSON"}, status=400)
-    if not isinstance(body, dict):
-        return _json({"error": "invalid body"}, status=400)
-    ok, error = await scrobbler.save_settings(
-        int(user["sub"]),
-        provider=str(body.get("provider") or ""),
-        token=str(body.get("token") or ""),
-        filter_rules=body.get("filter"),
-    )
-    if not ok:
-        return _json({"error": error}, status=400)
-    doc = await scrobbler.get_settings(int(user["sub"]))
-    return _json(scrobbler.settings_payload(doc))
-
-
-@routes.delete("/api/app/scrobble/settings")
-async def api_app_scrobble_delete(request: web.Request) -> web.Response:
-    from main.utils import scrobbler
-    user = get_user(request)
-    if not user:
-        return _json({"error": "unauthenticated"}, status=401)
-    ok = await scrobbler.clear_settings(int(user["sub"]))
-    return _json({"ok": ok})
-
-
 @routes.get(r"/api/app/person/{slug:[a-z0-9][a-z0-9\-]*}")
 async def api_app_person(request: web.Request) -> web.Response:
     payload = _person_detail_payload(request.match_info["slug"])

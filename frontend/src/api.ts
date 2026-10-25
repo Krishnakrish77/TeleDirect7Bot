@@ -25,7 +25,6 @@ import type {
   PlaylistDetailResponse,
   PlaylistsResponse,
   SmartPlaylistRules,
-  ScrobbleSettings,
   StatsResponse,
   AudioTrackOption,
   BooksResponse,
@@ -623,24 +622,6 @@ export async function refreshSmartPlaylist(playlistId: string): Promise<Playlist
 
 export async function fetchStats(signal?: AbortSignal): Promise<StatsResponse> {
   return request<StatsResponse>('/api/app/stats', { signal });
-}
-
-export async function fetchScrobbleSettings(signal?: AbortSignal): Promise<ScrobbleSettings> {
-  return request<ScrobbleSettings>('/api/app/scrobble/settings', { signal });
-}
-
-export async function saveScrobbleSettings(
-  settings: { provider: string; token: string; filter: unknown },
-): Promise<ScrobbleSettings> {
-  return request<ScrobbleSettings>('/api/app/scrobble/settings', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(settings),
-  });
-}
-
-export async function deleteScrobbleSettings(): Promise<void> {
-  await request<{ ok: boolean }>('/api/app/scrobble/settings', { method: 'DELETE' });
 }
 
 export async function fetchLiveTvChannels(signal?: AbortSignal): Promise<LiveTvResponse> {

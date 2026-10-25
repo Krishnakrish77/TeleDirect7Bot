@@ -1,5 +1,5 @@
-"""Self-checks for the shared rule-filter engine (smart playlists +
-scrobble filter). Pure — no Mongo, no network."""
+"""Self-checks for the shared rule-filter engine (smart playlists).
+Pure — no Mongo, no network."""
 
 import os
 import unittest

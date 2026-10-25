@@ -3,8 +3,8 @@
 A rule tree is ``{"all": [...]}`` / ``{"any": [...]}`` (may nest) whose
 leaves are ``{"field": value, "op": operator, "value": operand}``. Operators
 and field extraction are supplied by the caller so the same engine serves
-smart playlists (track predicates) and the scrobble filter (one song at a
-time) without either module importing the other.
+smart playlists (track predicates) and other per-item filters without
+either module importing the other.
 
 Supported operators (whitelist — unknown ops are validation errors):
   eq / ne           equality (case-insensitive for strings)

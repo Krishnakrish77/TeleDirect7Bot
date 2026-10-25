@@ -497,13 +497,6 @@ export type SmartRuleNode =
   | SmartPlaylistRules
   | { field: string; op: string; value: unknown };
 
-export interface ScrobbleSettings {
-  provider: string;
-  enabled: boolean;
-  hasToken: boolean;
-  filter: unknown;
-}
-
 export interface PlaylistsResponse {
   available: boolean;
   playlists: PlaylistSummary[];

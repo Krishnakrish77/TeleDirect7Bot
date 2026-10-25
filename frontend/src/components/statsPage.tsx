@@ -2,7 +2,6 @@ import { ChartIcon, FilmIcon, MusicIcon, PlayIcon, TvIcon, UserIcon } from '../i
 import { localAppHref } from '../navigation';
 import type { StatsHistoryItem, StatsResponse, StatsTitle, User } from '../types';
 import { ErrorPanel, LoadingRows } from './common';
-import { ScrobbleSettings } from './scrobbleSettings';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 
@@ -202,8 +201,6 @@ export function StatsPage({
           </div>
         </section>
       )}
-
-      {user && <ScrobbleSettings />}
 
       <section className="stats-panels">
         {/* ── Weekly rhythm ── */}
