@@ -567,6 +567,7 @@ def _admin_status_payload() -> dict:
         "seed": media_index.seed_state(),
         "reconciliation": media_index.reconciliation_state(),
         "enrich": media_index.enrichment_state(),
+        "book_enrich": media_index.book_enrichment_state(),
         "credits": media_index.credits_backfill_state(),
         "reindex": media_index.reindex_state(),
         "probe": codec_probe.state(),
@@ -2906,6 +2907,17 @@ async def api_app_admin_maintenance(request: web.Request) -> web.Response:
         asyncio.create_task(intro_detect.detect_all_intros())
         return _admin_json_message("Intro detection queued", status=_admin_status_payload())
 
+    if action == "enrich-books":
+        state = media_index.book_enrichment_state()
+        if state.get("running"):
+            return _admin_json_message("Book enrichment already running", status=_admin_status_payload())
+        force = bool(data.get("force"))
+        asyncio.create_task(media_index.enrich_books_all(force=force))
+        return _admin_json_message(
+            "Book enrichment queued — covers and authors will fill in as matches land",
+            status=_admin_status_payload(),
+        )
+
     if action == "fetch-episodes":
         if not media_index.episode_fill_state().get("running"):
             asyncio.create_task(media_index.fill_episode_details(bot=StreamBot))
@@ -3024,6 +3036,12 @@ async def api_app_admin_dashboard(request: web.Request) -> web.Response:
         "year_distribution":  [{"decade": d,  "count": n} for d, n in s["year_distribution"]],
         "total_size_label":   humanbytes(s.get("total_size_bytes") or 0),
         "credits_backfill":    media_index.credits_backfill_state(),
+        "book_enrichment":    media_index.book_enrichment_state(),
+        "book_count":         sum(1 for it in media_index._items.values() if (it.media_kind or "") == "book" and not it.hidden),
+        "book_missing_metadata": sum(
+            1 for it in media_index._items.values()
+            if (it.media_kind or "") == "book" and not it.hidden and media_index._book_needs_enrichment(it)
+        ),
         "recent_additions":   [{**it, "watchHref": f"/app/watch/{it['secure_hash']}{it['message_id']}", "fileSizeLabel": humanbytes(it.get("file_size") or 0)} for it in s["recent_additions"]],
         "largest_items":      [{**it, "watchHref": f"/app/watch/{it['secure_hash']}{it['message_id']}", "fileSizeLabel": humanbytes(it.get("file_size") or 0)} for it in s["largest_items"]],
     }, headers={"Cache-Control": "no-store"})
@@ -3073,19 +3091,35 @@ async def api_app_admin_item_get(request: web.Request) -> web.Response:
 
 @routes.get("/api/app/admin/book-search")
 async def api_app_admin_book_search(request: web.Request) -> web.Response:
-    """Search Google Books from the authenticated admin editor."""
+    """Search Google Books and Open Library from the admin editor.
+
+    Open Library needs no API key, so it is queried unconditionally;
+    Google Books results are appended only when the key is configured.
+    Duplicates (same ISBN) collapse in favour of the Google Books entry
+    when both providers return one, since Google carries richer copy.
+    """
     _require_api_admin(request)
     query = (request.query.get("q") or "").strip()
     if len(query) < 2:
         return web.json_response({"items": []})
-    if not Var.GOOGLE_BOOKS_API_KEY:
-        return web.json_response({"error": "GOOGLE_BOOKS_API_KEY is not configured."}, status=503)
+    items: list[dict] = []
+    seen_isbns: set[str] = set()
     try:
-        items = await google_books.search_books(query)
-    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-        logging.warning("admin: Google Books search unavailable (%s)", type(exc).__name__)
+        from main.utils import open_library
+        items = await open_library.search_books(query, limit=6)
+        seen_isbns = {c["isbn"] for c in items if c.get("isbn")}
+    except Exception:
+        logging.exception("admin: Open Library search failed")
+    if Var.GOOGLE_BOOKS_API_KEY:
+        try:
+            google_items = await google_books.search_books(query)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            logging.warning("admin: Google Books search unavailable (%s)", type(exc).__name__)
+            google_items = []
+        items.extend(c for c in google_items if not (c.get("isbn") and c["isbn"] in seen_isbns))
+    if not items:
         return web.json_response(
-            {"error": "Google Books is unavailable. Try again shortly."},
+            {"error": "No matches found. Try another title or author."},
             status=503,
             headers={"Retry-After": "5"},
         )
@@ -3109,6 +3143,9 @@ async def api_app_admin_item_apply_book_metadata(request: web.Request) -> web.Re
     except Exception:
         return web.json_response({"error": "invalid JSON"}, status=400)
     candidate = google_books.normalise_search_doc(body.get("candidate") or {})
+    if candidate is None:
+        from main.utils import open_library
+        candidate = open_library.normalise_search_doc(body.get("candidate") or {})
     if candidate is None:
         return web.json_response({"error": "Choose a valid Google Books result"}, status=400)
 

@@ -70,11 +70,35 @@ _QUALITY_PATTERNS: List[Tuple[str, "re.Pattern"]] = [
     ("480p",  re.compile(_SEP_L + r"(?:480p?|sd)" + _SEP_R, re.IGNORECASE)),
 ]
 
+# Source-tier tags shown on cards when the file has no (or an ambiguous)
+# resolution marker. "WEB-DL"/"WEBRip"/"HDRip"/"BluRay" are what the
+# release name actually advertises; they read better on a movie card than
+# a bare resolution and catch files like "Movie.WEBRip.x264" that carry no
+# "720p"/"1080p" token at all. Checked after the resolution patterns so a
+# real "1080p WEB-DL" still shows "1080p".
+_SOURCE_TIER_PATTERNS: List[Tuple[str, "re.Pattern"]] = [
+    ("BluRay", re.compile(_SEP_L + r"blu[- ]?ray(?:rip)?" + _SEP_R, re.IGNORECASE)),
+    # WEB-DL only with the hyphen: "webdl" inside an ordinary word
+    # ("Webdl Documentary") would otherwise false-positive.
+    ("WEB-DL", re.compile(_SEP_L + r"web-dl" + _SEP_R, re.IGNORECASE)),
+    ("WEBRip", re.compile(_SEP_L + r"web-?rip" + _SEP_R, re.IGNORECASE)),
+    ("HDRip",  re.compile(_SEP_L + r"hd-?rip" + _SEP_R, re.IGNORECASE)),
+    ("DVDRip", re.compile(_SEP_L + r"dvd-?rip" + _SEP_R, re.IGNORECASE)),
+]
+
 
 def _extract_quality(*texts: str) -> str:
-    """Pick the highest-resolution match across the given haystacks."""
+    """Pick the best quality label across the given haystacks.
+
+    Resolution buckets win (4K → 480p); when none is present, the
+    source-tier tag (WEB-DL / WEBRip / HDRip / BluRay / DVDRip) is used
+    so files like ``Movie.WEBRip.x264`` still show a meaningful badge.
+    """
     haystack = " ".join(t for t in texts if t)
     for label, pat in _QUALITY_PATTERNS:
+        if pat.search(haystack):
+            return label
+    for label, pat in _SOURCE_TIER_PATTERNS:
         if pat.search(haystack):
             return label
     return ""
@@ -810,6 +834,10 @@ def _item_from_message(message) -> Optional[HubItem]:
         quality="" if is_book else _extract_quality(parsed.title, file_name, parsed.description),
         source_type="" if is_book else _extract_source_type(file_name, parsed.description, message.caption or ""),
         file_name=file_name or _synthesize_filename(parsed.title, parsed.year, media),
+        # Books: seed the display author from "Title - Author" style
+        # filenames so cards show a real author even before the
+        # enrichment sweep runs. Empty when the pattern doesn't match.
+        book_authors=(_parse_book_filename(file_name)[1:] if is_book else []),
         series_key=series_key,
         series_title=series_title,
         season=season,
@@ -2742,6 +2770,15 @@ def _build_movie_group(variants: List[HubItem]) -> MovieGroup:
     # is usually the most descriptive (channel prefixes and release flags
     # add length but they're equally common across variants).
     canonical = max(variants, key=lambda v: len(v.title or ""))
+    # Card badge: theatre-print tags dominate (a PreDVD upload has no
+    # meaningful "1080p"); otherwise the best resolution/source tier.
+    source_types = [v.source_type for v in variants if v.source_type]
+    quality_label = source_types[0] if source_types else ""
+    if not quality_label:
+        for tier in ("4K", "1080p", "720p", "480p", "BluRay", "WEB-DL", "WEBRip", "HDRip", "DVDRip"):
+            if any(v.quality == tier for v in variants):
+                quality_label = tier
+                break
     return MovieGroup(
         movie_key=variants[0].movie_key,
         title=canonical.title or variants[0].title,
@@ -2752,6 +2789,7 @@ def _build_movie_group(variants: List[HubItem]) -> MovieGroup:
         art_item=_preferred_art_item(variants),
         has_thumb=any(v.has_thumb for v in variants),
         total_size=sum(v.file_size for v in variants),
+        quality=quality_label,
     )
 
 
@@ -4920,6 +4958,267 @@ async def backfill_missing_credits(bot=None) -> dict:
     }
 
 
+# ── Book enrichment sweep ──────────────────────────────────────────────────
+#
+# Books are invisible to TMDB enrichment (enrich_one skips media_kind ==
+# "book"), so they previously relied on manual admin Google Books matches.
+# This sweep gives every unenriched book a provider chain:
+#
+# 1. Embedded ISBN (from the filename or an admin-set book_isbn) → exact
+#    Open Library edition lookup — the highest-confidence match there is.
+# 2. Open Library title+author search with a strict similarity gate.
+# 3. Google Books title search (only when a key is configured) with the
+#    same gate.
+#
+# Fields an admin locked (admin_locked) or already filled are never
+# overwritten; the sweep only fills gaps. Progress is reported through
+# _book_enrich_state so the admin UI can poll it like the other pipelines.
+
+_book_enrich_state: dict = {"running": False, "done": 0, "total": 0,
+                            "enriched": 0, "failed": 0,
+                            "started_at": 0.0, "finished_at": 0.0,
+                            "last_title": ""}
+
+_TITLE_SIMILARITY_GATE = 0.82
+
+
+def book_enrichment_state() -> dict:
+    return dict(_book_enrich_state)
+
+
+def _title_similarity(a: str, b: str) -> float:
+    """Case/punctuation-insensitive similarity in [0, 1]."""
+    import difflib
+
+    def norm(value: str) -> str:
+        return re.sub(r"[^a-z0-9 ]+", "", (value or "").lower()).strip()
+    na, nb = norm(a), norm(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    return difflib.SequenceMatcher(None, na, nb).ratio()
+
+
+def _parse_book_filename(file_name: str) -> tuple[str, str]:
+    """Extract (title, author) from ``Author - Title``/``Title - Author``
+    style filenames. Returns ``(title, author)`` with either possibly
+    empty — the caller decides how to use the hints.
+
+    Book filenames don't follow video release conventions; the common
+    useful pattern is ``<part> - <part>`` with one part being the author.
+    Heuristic: if the first part looks like a personal name (1–3 words,
+    mostly alphabetic) it's the author; otherwise the second part is.
+    """
+    base = re.sub(r"\.(epub|pdf|mobi|azw3?|fb2|cbz|cbr)$", "", (file_name or "").strip(), flags=re.IGNORECASE)
+    if " - " not in base and " – " not in base and " — " not in base:
+        return (base, "")
+    parts = re.split(r"\s+[–—-]\s+", base, maxsplit=1)
+    if len(parts) != 2:
+        return (base, "")
+    first, second = parts[0].strip(), parts[1].strip()
+    name_like = re.compile(r"^[A-ZÀ-Þ][\w'’.-]*(?:\s+[A-ZÀ-Þ][\w'’.-]*){0,2}$")
+    first_is_name = bool(name_like.fullmatch(first)) and len(first.split()) <= 3
+    second_is_name = bool(name_like.fullmatch(second)) and len(second.split()) <= 3
+    # Exactly one side looks like a short personal name — that side is the
+    # author. When both do (e.g. "Dark Matter - Blake Crouch" where both
+    # parts are short and title-cased), treat the *second* part as the
+    # author: the "Title - Author" convention dominates in book filenames.
+    if second_is_name and not first_is_name:
+        return (first, second)
+    if first_is_name and not second_is_name:
+        return (second, first)
+    if first_is_name and second_is_name:
+        return (first, second)
+    return (first or second, "")
+
+
+def _book_needs_enrichment(item: HubItem) -> bool:
+    return (
+        (item.media_kind or "") == "book"
+        and not item.hidden
+        and not (item.book_authors and item.book_cover_url)
+    )
+
+
+def _apply_book_candidate(item: HubItem, candidate: dict) -> bool:
+    """Fill empty book fields from a provider candidate. Never overwrites
+    admin-set values (admin_locked, or fields already populated). Returns
+    True if anything changed."""
+    locked = set(item.admin_locked or [])
+    changed = False
+
+    if candidate.get("authors") and not item.book_authors:
+        item.book_authors = list(candidate["authors"])
+        changed = True
+    if candidate.get("coverUrl") and not item.book_cover_url:
+        item.book_cover_url = candidate["coverUrl"]
+        changed = True
+    if candidate.get("isbn") and not item.book_isbn:
+        item.book_isbn = candidate["isbn"]
+        changed = True
+    if candidate.get("publisher") and not item.book_publisher:
+        item.book_publisher = candidate["publisher"]
+        changed = True
+    if candidate.get("language") and not item.book_language:
+        item.book_language = candidate["language"]
+        changed = True
+    if candidate.get("pageCount") and not item.book_page_count:
+        item.book_page_count = int(candidate["pageCount"])
+        changed = True
+    if candidate.get("description") and not (item.description or item.overview):
+        item.description = candidate["description"]
+        changed = True
+    if candidate.get("subjects") and not item.book_subjects:
+        item.book_subjects = list(candidate["subjects"])
+        changed = True
+    if candidate.get("year") and not item.year and "year" not in locked:
+        item.year = int(candidate["year"])
+        changed = True
+    if candidate.get("title") and "title" not in locked:
+        similarity = _title_similarity(candidate["title"], item.title or "")
+        # Only adopt the provider's canonical title on a near-exact match;
+        # otherwise keep the catalogue's display title.
+        if similarity >= _TITLE_SIMILARITY_GATE and similarity < 1.0:
+            item.title = candidate["title"]
+            changed = True
+
+    if changed:
+        item.book_source_key = candidate.get("key") or item.book_source_key
+    return changed
+
+
+async def enrich_book_one(message_id: int) -> bool:
+    """Run the provider chain for one book. Returns True when enriched."""
+    from main.utils import google_books, open_library
+
+    item = _items.get(message_id)
+    if item is None or (item.media_kind or "") != "book":
+        return False
+    if item.book_authors and item.book_cover_url:
+        return False  # already complete
+
+    filename_title, filename_author = _parse_book_filename(item.file_name or "")
+    search_title = (item.title or filename_title or "").strip()
+    if len(search_title) < 3 or _is_generic_media_title(search_title):
+        return False
+    known_authors = [a for a in (item.book_authors or []) if a]
+    search_author = known_authors[0] if known_authors else filename_author
+
+    # Gate used for search-based matches: candidate title must resemble
+    # the catalogue title, and (when we have an author hint) the
+    # candidate's first author must overlap the hint. Prevents "The
+    # Time Machine" matching some unrelated modern title.
+    async def _gated(candidates: list) -> Optional[dict]:
+        for cand in candidates:
+            if _title_similarity(cand.get("title") or "", search_title) < _TITLE_SIMILARITY_GATE:
+                continue
+            cand_authors = [a.lower() for a in (cand.get("authors") or [])]
+            hint = (search_author or "").strip().lower()
+            if hint and cand_authors:
+                if not any(hint in ca or ca in hint for ca in cand_authors):
+                    continue
+            return cand
+        return None
+
+    candidate = None
+
+    # 1. ISBN exact lookup — catalogue ISBN, else ISBN found in filename.
+    isbn_hint = item.book_isbn
+    if not isbn_hint:
+        m = re.search(r"\b(97[89][\d-]{10,16}|\d{9}[\dXx])\b", item.file_name or "")
+        isbn_hint = m.group(1) if m else ""
+    if isbn_hint:
+        candidate = await open_library.lookup_isbn(isbn_hint)
+        if candidate and not candidate.get("title"):
+            candidate = None
+
+    # 2. Open Library title search.
+    if candidate is None:
+        query = f"{search_title} {search_author}".strip()
+        candidate = await _gated(await open_library.search_books(query, limit=5))
+
+    # 3. Google Books (only with a key; same gate).
+    if candidate is None:
+        candidate = await _gated(await google_books.search_books(query, limit=5))
+
+    if candidate is None:
+        return False
+
+    # Works carry description/subjects only on the work endpoint.
+    if not candidate.get("description"):
+        work_id = (candidate.get("key") or "").removeprefix("openlibrary:")
+        if work_id:
+            details = await open_library.fetch_work_details(work_id)
+            if details:
+                candidate.update(details)
+
+    async with _lock:
+        changed = _apply_book_candidate(item, candidate)
+        if changed:
+            _persist_unlocked()
+    if changed:
+        await _store_upsert(item)
+    return changed
+
+
+async def enrich_books_all(force: bool = False) -> dict:
+    """Background-enrich every book that lacks authors or a cover.
+
+    Mirrors ``enrich_all``: updates ``_book_enrich_state`` for admin
+    progress polling, logs per-item failures, throttles politely.
+    """
+    if _book_enrich_state["running"]:
+        return {"total": 0, "enriched": 0, "already_running": True}
+
+    targets = [
+        mid for mid, it in _items.items()
+        if (force or _book_needs_enrichment(it))
+        and (it.media_kind or "") == "book"
+        and not it.hidden
+    ]
+
+    _book_enrich_state.update(
+        running=True, done=0, total=len(targets), enriched=0, failed=0,
+        started_at=time.time(), finished_at=0.0, last_title="",
+    )
+    logging.info("book enrichment: started for %d book(s)", len(targets))
+    try:
+        for mid in targets:
+            item = _items.get(mid)
+            if item is None:
+                _book_enrich_state["done"] += 1
+                continue
+            _book_enrich_state["last_title"] = item.title or item.file_name or f"bin:{mid}"
+            try:
+                ok = await enrich_book_one(mid)
+                if ok:
+                    _book_enrich_state["enriched"] += 1
+                    logging.info("book enrichment: bin:%d matched (%s)", mid, _book_enrich_state["last_title"])
+                else:
+                    logging.info("book enrichment: bin:%d no confident match (%s)", mid, _book_enrich_state["last_title"])
+            except Exception:
+                logging.exception("book enrichment failed for bin:%d", mid)
+                _book_enrich_state["failed"] += 1
+            finally:
+                _book_enrich_state["done"] += 1
+            # Open Library asks ~100 req/min; stay well under across the
+            # three provider calls per item.
+            await asyncio.sleep(0.7)
+    finally:
+        _book_enrich_state["running"] = False
+        _book_enrich_state["finished_at"] = time.time()
+    logging.info(
+        "book enrichment: finished — %d/%d matched, %d failed",
+        _book_enrich_state["enriched"], len(targets), _book_enrich_state["failed"],
+    )
+    return {
+        "total": len(targets),
+        "enriched": _book_enrich_state["enriched"],
+        "failed": _book_enrich_state["failed"],
+    }
+
+
 async def reindex_all(bot=None) -> dict:
     """Re-derive series_key, season, episode, movie_key, quality on every
     existing HubItem from its current file_name + title.
@@ -5066,13 +5365,20 @@ def distinct_years() -> List[int]:
 def distinct_qualities() -> List[str]:
     """Filter options for the quality dropdown: theatre-print source tags
     first (they dominate resolution — a PreDVD rip has no meaningful
-    "1080p"), then resolution buckets present, ordered 4K → 480p."""
+    "1080p"), then resolution buckets present ordered 4K → 480p, then
+    source-tier tags (WEB-DL / WEBRip / …) for files without a
+    resolution marker."""
     present = {it.quality for it in _items.values() if it.quality}
     order = ["4K", "1080p", "720p", "480p"]
+    tiers = ["BluRay", "WEB-DL", "WEBRip", "HDRip", "DVDRip"]
     sources = {getattr(it, "source_type", "") or "" for it in _items.values()}
     sources.discard("")
     source_order = ["PreDVD", "DVDScr", "HDTS", "TS", "TC", "CAM"]
-    return [s for s in source_order if s in sources] + [q for q in order if q in present]
+    return (
+        [s for s in source_order if s in sources]
+        + [q for q in order if q in present]
+        + [t for t in tiers if t in present]
+    )
 
 
 def distinct_genres() -> List[str]:

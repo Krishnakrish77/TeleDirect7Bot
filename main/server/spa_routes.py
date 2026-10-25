@@ -24,6 +24,7 @@ from aiohttp import web
 
 from main.server.tmdb_images import tmdb_image_proxy, tmdb_image_url
 from main.server.google_books_images import google_books_cover_proxy
+from main.server.openlibrary_images import openlibrary_cover_proxy
 from main.utils import codec_probe
 from main.utils import cw_store
 from main.utils import book_progress_store
@@ -97,6 +98,7 @@ _HUB_CARD_PAYLOAD_KEYS = (
     "posterSrcSet",
     "durationLabel",
     "quality",
+    "sourceType",
     "genres",
     "externalRating",
     "ratingCounts",
@@ -272,6 +274,11 @@ async def api_tmdb_image_proxy(request: web.Request) -> web.Response:
 @routes.get(r"/api/google-books-cover/{volume_id:[A-Za-z0-9_-]+}")
 async def api_google_books_cover_proxy(request: web.Request) -> web.Response:
     return await google_books_cover_proxy(request)
+
+
+@routes.get(r"/api/openlibrary-cover/{cover_id:\d+}")
+async def api_openlibrary_cover_proxy(request: web.Request) -> web.Response:
+    return await openlibrary_cover_proxy(request)
 
 
 def _cache_get(key: str) -> tuple[str, bytes] | None:
@@ -654,8 +661,13 @@ def _book_content_url(item: HubItem) -> str:
 
 
 def _book_cover_proxy_url(item: HubItem) -> str:
-    match = re.fullmatch(r"google-books:([A-Za-z0-9_-]{4,64})", item.book_cover_url or "")
-    return f"/api/google-books-cover/{match.group(1)}" if match else ""
+    google = re.fullmatch(r"google-books:([A-Za-z0-9_-]{4,64})", item.book_cover_url or "")
+    if google:
+        return f"/api/google-books-cover/{google.group(1)}"
+    openlibrary = re.fullmatch(r"openlibrary-cover:(\d{1,12})", item.book_cover_url or "")
+    if openlibrary:
+        return f"/api/openlibrary-cover/{openlibrary.group(1)}"
+    return ""
 
 
 @routes.get(r"/book/{key:[A-Za-z0-9_-]+}/content", allow_head=True)
@@ -1013,7 +1025,7 @@ def _card_from_movie(card: MovieGroup) -> dict:
             f"{'' if card.variant_count == 1 else 's'}"
         ),
         "eyebrow": "Movie",
-        "badge": f"{card.variant_count} versions",
+        "badge": card.quality or f"{card.variant_count} versions",
         "href": f"/movie/{card.movie_key}",
         "playHref": _play_url(poster),
         "detailsHref": f"/movie/{card.movie_key}",

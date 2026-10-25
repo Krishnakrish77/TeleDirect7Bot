@@ -102,6 +102,7 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
 
   const metadata = data?.metadata_quality;
   const creditsBackfill = data?.credits_backfill;
+  const bookEnrichment = data?.book_enrichment;
   const missingRatings = metadata?.missing_ratings ?? 0;
   const backfillableMetadata = metadata
     ? (metadata.missing_tmdb_metadata ?? metadata.missing_credits + missingRatings)
@@ -194,6 +195,22 @@ export function AdminDashboard({ user, onSignIn }: { user: User | null; onSignIn
                 </div>
               </StatCard>
             )}
+
+            <StatCard label="Books metadata">
+              <StatRow label="Books" value={data ? data.book_count.toLocaleString() : '—'} />
+              <StatRow label="Missing author/cover" value={data ? data.book_missing_metadata.toLocaleString() : '—'} warn={(data?.book_missing_metadata ?? 0) > 0} />
+              <StatRow label="Last run" value={formatRunTime(bookEnrichment?.finished_at)} />
+              <div className="dash-action-row">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={Boolean(cleanupBusy)}
+                  onClick={() => void runCleanup('enrich-books')}
+                >
+                  {cleanupBusy === 'enrich-books' ? 'Queuing...' : 'Enrich books'}
+                </Button>
+              </div>
+            </StatCard>
 
             <StatCard label="Codec compatibility">
               <StatRow label="Browser-playable" value={data.codec_health.probed_playable} />

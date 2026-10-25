@@ -169,6 +169,7 @@ class MovieGroup:
     art_item: Optional["HubItem"] = None
     has_thumb: bool = False
     total_size: int = 0      # sum of variant file sizes — used for "largest" sort
+    quality: str = ""        # best badge across variants: source tag or resolution
 
 
 @dataclass

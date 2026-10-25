@@ -1154,6 +1154,9 @@ export interface AdminDashboardResponse {
     health_score: number;
   };
   credits_backfill: AdminProgressState;
+  book_enrichment: AdminProgressState;
+  book_count: number;
+  book_missing_metadata: number;
   storage_by_quality: Array<{ quality: string; bytes: number; label: string }>;
   storage_by_codec: Array<{ codec: string; bytes: number; label: string }>;
   year_distribution: Array<{ decade: number; count: number }>;
