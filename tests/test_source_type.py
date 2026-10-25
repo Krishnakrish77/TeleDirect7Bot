@@ -95,7 +95,83 @@ class ExtractQualityUnderscoreTests(unittest.TestCase):
 
     def test_dot_separated_unchanged(self):
         self.assertEqual(media_index._extract_quality("Movie.2025.1080p.WEB-DL.mkv"), "1080p")
-        self.assertEqual(media_index._extract_quality("no tokens here"), "")
+
+
+class ExtractQualitySourceTierTests(unittest.TestCase):
+    """Files without a resolution token still get a meaningful badge from
+    the source-tier tag (WEB-DL / WEBRip / HDRip / BluRay / DVDRip)."""
+
+    def test_tier_only_filenames(self):
+        self.assertEqual(media_index._extract_quality("Movie.2025.WEB-DL.x264.mkv"), "WEB-DL")
+        self.assertEqual(media_index._extract_quality("Movie.2025.WEBRip.mp4"), "WEBRip")
+        self.assertEqual(media_index._extract_quality("Movie_2025_HDRip_x264"), "HDRip")
+        self.assertEqual(media_index._extract_quality("Movie.2025.BluRay.x264.mkv"), "BluRay")
+        self.assertEqual(media_index._extract_quality("Movie.2025.BluRayRip.mkv"), "BluRay")
+        self.assertEqual(media_index._extract_quality("Movie.2025.DVDRip.avi"), "DVDRip")
+
+    def test_resolution_still_wins(self):
+        self.assertEqual(media_index._extract_quality("Movie.2025.1080p.WEB-DL.x264.mkv"), "1080p")
+        self.assertEqual(media_index._extract_quality("Movie_2025_720p_WEBRip.mkv"), "720p")
+
+    def test_no_false_positives(self):
+        self.assertEqual(media_index._extract_quality("Movie.2025.mkv"), "")
+        self.assertEqual(media_index._extract_quality("Webdl Documentary.mp4") , "")
+        # "web dl" with a space is not a tier tag; keep it that way to
+        # avoid matching ordinary prose in descriptions.
+        self.assertEqual(media_index._extract_quality("The web dl story"), "")
+
+    def test_tier_in_quality_filter_options(self):
+        from main.utils.hub_query import HubItem
+
+        def item(quality):
+            return HubItem(message_id=1, secure_hash="h", title="T", year=None,
+                           description="", tags=[], duration=0, file_size=0,
+                           has_thumb=False, quality=quality)
+        # Ensure the filter dropdown surfaces WEB-DL when such files exist.
+        with patch.object(media_index, "_items", {1: item("WEB-DL"), 2: item("1080p")}):
+            options = media_index.distinct_qualities()
+        self.assertIn("WEB-DL", options)
+        self.assertIn("1080p", options)
+        # Resolution buckets come before source tiers.
+        self.assertLess(options.index("1080p"), options.index("WEB-DL"))
+
+
+class MovieGroupQualityBadgeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_movie_group_badge_prefers_source_tag(self):
+        from main.utils.media_index import _build_movie_group
+        from main.utils.hub_query import HubItem
+
+        def variant(mid, source_type="", quality=""):
+            return HubItem(message_id=mid, secure_hash="h", title="Movie", year=2025,
+                           description="", tags=[], duration=0, file_size=1,
+                           has_thumb=False, movie_key="movie-1", media_kind="video",
+                           source_type=source_type, quality=quality)
+        group = _build_movie_group([variant(1, source_type="PreDVD"), variant(2, quality="1080p")])
+        self.assertEqual(group.quality, "PreDVD")
+
+    async def test_movie_group_badge_best_resolution(self):
+        from main.utils.media_index import _build_movie_group
+        from main.utils.hub_query import HubItem
+
+        def variant(mid, quality=""):
+            return HubItem(message_id=mid, secure_hash="h", title="Movie", year=2025,
+                           description="", tags=[], duration=0, file_size=1,
+                           has_thumb=False, movie_key="movie-1", media_kind="video",
+                           quality=quality)
+        group = _build_movie_group([variant(1, quality="480p"), variant(2, quality="1080p")])
+        self.assertEqual(group.quality, "1080p")
+
+    async def test_movie_group_badge_tier_fallback(self):
+        from main.utils.media_index import _build_movie_group
+        from main.utils.hub_query import HubItem
+
+        def variant(mid, quality=""):
+            return HubItem(message_id=mid, secure_hash="h", title="Movie", year=2025,
+                           description="", tags=[], duration=0, file_size=1,
+                           has_thumb=False, movie_key="movie-1", media_kind="video",
+                           quality=quality)
+        group = _build_movie_group([variant(1, quality="WEB-DL"), variant(2, quality="WEB-DL")])
+        self.assertEqual(group.quality, "WEB-DL")
 
 
 class SourceTypeFilterTests(unittest.IsolatedAsyncioTestCase):

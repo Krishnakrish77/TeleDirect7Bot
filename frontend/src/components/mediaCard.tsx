@@ -79,6 +79,9 @@ export function getMediaCardDisplay(card: HubCard): { eyebrow: string; title: st
     const subtitle = joinMetadata([
       card.genres[0],
       card.variantCount && card.variantCount > 1 ? countLabel(card.variantCount, 'version') : '',
+      // Theatre-print tags (PreDVD/CAM/…) and source tiers (WEB-DL/…)
+      // dominate resolution — a PreDVD upload has no meaningful "1080p".
+      card.sourceType || card.quality || '',
     ]);
     return { eyebrow: 'Movie', title, subtitle: subtitle || card.subtitle };
   }
