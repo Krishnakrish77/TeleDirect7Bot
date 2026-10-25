@@ -13,7 +13,11 @@ from aiohttp import web
 
 _TMDB_IMAGE_TIMEOUT = aiohttp.ClientTimeout(total=12, sock_connect=5, sock_read=8)
 _TMDB_IMAGE_CACHE_TTL = int(os.environ.get("TMDB_IMAGE_CACHE_TTL_SECONDS", str(24 * 60 * 60)))
-_TMDB_IMAGE_ERROR_CACHE_TTL = int(os.environ.get("TMDB_IMAGE_ERROR_CACHE_TTL_SECONDS", str(6 * 60 * 60)))
+# Placeholder (error fallback) cache. Kept short on purpose: a transient
+# TMDB timeout must not pin the "Artwork" placeholder for hours. In-memory
+# TTL and the browser-facing Cache-Control use the same short window so the
+# next request retries the real image almost immediately.
+_TMDB_IMAGE_ERROR_CACHE_TTL = int(os.environ.get("TMDB_IMAGE_ERROR_CACHE_TTL_SECONDS", str(2 * 60)))
 _TMDB_IMAGE_CACHE_MAX_ITEMS = int(os.environ.get("TMDB_IMAGE_CACHE_MAX_ITEMS", "256"))
 _TMDB_IMAGE_MAX_BYTES = int(os.environ.get("TMDB_IMAGE_MAX_BYTES", str(2 * 1024 * 1024)))
 _TMDB_IMAGE_CACHE_MAX_BYTES = int(os.environ.get("TMDB_IMAGE_CACHE_MAX_BYTES", str(64 * 1024 * 1024)))
@@ -112,6 +116,10 @@ def _tmdb_placeholder_result(size: str, tail: str) -> tuple[str, bytes]:
     return content_type, _TMDB_IMAGE_PLACEHOLDER_SVG
 
 
+def _is_placeholder_body(content_type: str, body: bytes) -> bool:
+    return content_type == "image/svg+xml" and body == _TMDB_IMAGE_PLACEHOLDER_SVG
+
+
 async def _fetch_tmdb_image(size: str, tail: str) -> tuple[str, bytes]:
     cache_key = _tmdb_image_cache_key(size, tail)
     now = time.monotonic()
@@ -176,11 +184,14 @@ async def tmdb_image_proxy(request: web.Request) -> web.Response:
         size, tail = _normalise_tmdb_image(request.match_info["size"], request.match_info["tail"])
         content_type, body = _tmdb_placeholder_result(size, tail)
         cache_ttl = _TMDB_IMAGE_ERROR_CACHE_TTL
+    # Placeholders (error fallbacks) must not be pinned by browsers/CDNs:
+    # a short TTL lets the next request retry the real TMDB image.
+    max_age = _TMDB_IMAGE_ERROR_CACHE_TTL if _is_placeholder_body(content_type, body) else cache_ttl
     return web.Response(
         body=body,
         content_type=content_type,
         headers={
-            "Cache-Control": f"public, max-age={cache_ttl}" if cache_ttl > 0 else "no-store",
+            "Cache-Control": f"public, max-age={max_age}" if max_age > 0 else "no-store",
             "X-Content-Type-Options": "nosniff",
         },
     )

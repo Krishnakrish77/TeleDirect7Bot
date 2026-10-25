@@ -60,6 +60,43 @@ class SpaTmdbImageTest(unittest.TestCase):
         self.assertEqual(body, _TMDB_IMAGE_PLACEHOLDER_SVG)
         self.assertIn(_tmdb_image_cache_key("w342", "missing.jpg"), _tmdb_image_cache)
 
+    def test_placeholder_error_cache_ttl_is_short(self):
+        # A transient TMDB failure must not pin the placeholder for hours:
+        # both the in-memory TTL and the browser-facing Cache-Control use
+        # the same short window so the next request retries the real image.
+        self.assertLessEqual(tmdb_images_module._TMDB_IMAGE_ERROR_CACHE_TTL, 300)
+
+    def test_proxy_serves_placeholder_with_short_cache_control(self):
+        import asyncio
+        from unittest.mock import patch
+
+        from aiohttp.test_utils import make_mocked_request
+
+        request = make_mocked_request("GET", "/api/tmdb-image/w342/missing.jpg", match_info={"size": "w342", "tail": "missing.jpg"})
+        with patch.object(
+            tmdb_images_module, "_fetch_tmdb_image", return_value=("image/svg+xml", _TMDB_IMAGE_PLACEHOLDER_SVG)
+        ):
+            response = asyncio.run(tmdb_images_module.tmdb_image_proxy(request))
+
+        self.assertEqual(response.headers["Cache-Control"], f"public, max-age={tmdb_images_module._TMDB_IMAGE_ERROR_CACHE_TTL}")
+
+    def test_proxy_serves_real_image_with_long_cache_control(self):
+        import asyncio
+        from unittest.mock import patch
+
+        from aiohttp.test_utils import make_mocked_request
+
+        request = make_mocked_request("GET", "/api/tmdb-image/w342/poster.jpg", match_info={"size": "w342", "tail": "poster.jpg"})
+        with patch.object(
+            tmdb_images_module, "_fetch_tmdb_image", return_value=("image/jpeg", b"fake-bytes")
+        ):
+            response = asyncio.run(tmdb_images_module.tmdb_image_proxy(request))
+
+        self.assertEqual(
+            response.headers["Cache-Control"],
+            f"public, max-age={tmdb_images_module._TMDB_IMAGE_CACHE_TTL}",
+        )
+
     def test_tmdb_image_cache_respects_total_byte_cap(self):
         old_max = tmdb_images_module._TMDB_IMAGE_CACHE_MAX_BYTES
         try:
