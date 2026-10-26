@@ -812,6 +812,31 @@ def _item_from_message(message) -> Optional[HubItem]:
     # page's overview block populated without needing to re-hit TMDB.
     overview = parsed.description if parsed.tmdb_id else ""
 
+    # Books: two cleanups the generic video path doesn't need.
+    # 1. Telegram documents sometimes arrive with no extension at all.
+    #    Without one the books API reports format "BOOK", the reader
+    #    routes it to PDF.js, and the file won't open. Restore the
+    #    extension from the MIME type Telegram already gave us.
+    # 2. "Title - Author" filenames leave the author inside the display
+    #    title (and poison both the search query and the match gate).
+    #    Split it out: title loses the suffix, author becomes the first
+    #    book_author.
+    book_author = ""
+    if is_book and file_name:
+        if not re.search(r"\.[A-Za-z0-9]{1,5}$", file_name):
+            book_mime = (getattr(media, "mime_type", "") or "").lower()
+            if "epub" in book_mime:
+                file_name = f"{file_name}.epub"
+            elif "pdf" in book_mime:
+                file_name = f"{file_name}.pdf"
+        book_title, book_author = _parse_book_filename(file_name)
+        # Only rewrite a title that still equals the raw filename stem;
+        # a title typed into the caption is deliberate and stays.
+        if book_author and len(book_title) >= 2:
+            filename_title = title_from_filename(file_name)
+            if (parsed.title or "").strip() in {"", filename_title}:
+                parsed.title = book_title
+
     # Compute artist and album_key for audio items.
     # album_key is intentionally left empty at index time — the background
     # codec probe extracts the album title from ID3 tags and sets the key
@@ -837,7 +862,7 @@ def _item_from_message(message) -> Optional[HubItem]:
         # Books: seed the display author from "Title - Author" style
         # filenames so cards show a real author even before the
         # enrichment sweep runs. Empty when the pattern doesn't match.
-        book_authors=(_parse_book_filename(file_name)[1:] if is_book else []),
+        book_authors=([book_author] if book_author else []),
         series_key=series_key,
         series_title=series_title,
         season=season,
@@ -5005,18 +5030,29 @@ def _parse_book_filename(file_name: str) -> tuple[str, str]:
     style filenames. Returns ``(title, author)`` with either possibly
     empty — the caller decides how to use the hints.
 
-    Book filenames don't follow video release conventions; the common
-    useful pattern is ``<part> - <part>`` with one part being the author.
-    Heuristic: if the first part looks like a personal name (1–3 words,
-    mostly alphabetic) it's the author; otherwise the second part is.
+    Book filenames don't follow video release conventions. Real shapes
+    seen in the BIN channel:
+
+    - ``Dark Matter - Blake Crouch.epub``      (spaced dash)
+    - ``An Echo of Oblivion -Sofi Aguilera.epub`` (dash glued to author)
+    - ``Surrounded by Idiots - Thomas Erikson``  (no extension at all)
+    - ``The_Silo_Saga_Omnibus_Silo_1-3_Hugh_Howey.epub`` (underscores)
+
+    Underscores become spaces first (scene-naming habit), then the name
+    is split on a spaced/glued dash. Hyphens *inside* a word (``Silo
+    1-3``, ``Spider-Man``) are preserved because they have no whitespace
+    on either side.
     """
-    base = re.sub(r"\.(epub|pdf|mobi|azw3?|fb2|cbz|cbr)$", "", (file_name or "").strip(), flags=re.IGNORECASE)
-    if " - " not in base and " – " not in base and " — " not in base:
-        return (base, "")
-    parts = re.split(r"\s+[–—-]\s+", base, maxsplit=1)
+    base = re.sub(r"\.[A-Za-z0-9]{1,5}$", "", (file_name or "").strip())
+    base = base.replace("_", " ").strip()
+    if not base:
+        return ("", "")
+    parts = re.split(r"\s+[–—]\s*|\s*[–—]\s+|\s+-\s*|\s*-\s+", base, maxsplit=1)
     if len(parts) != 2:
         return (base, "")
     first, second = parts[0].strip(), parts[1].strip()
+    if not first or not second:
+        return (base, "")
     name_like = re.compile(r"^[A-ZÀ-Þ][\w'’.-]*(?:\s+[A-ZÀ-Þ][\w'’.-]*){0,2}$")
     first_is_name = bool(name_like.fullmatch(first)) and len(first.split()) <= 3
     second_is_name = bool(name_like.fullmatch(second)) and len(second.split()) <= 3
@@ -5098,20 +5134,47 @@ async def enrich_book_one(message_id: int) -> bool:
     if item.book_authors and item.book_cover_url:
         return False  # already complete
 
+    title_before_search = item.title
     filename_title, filename_author = _parse_book_filename(item.file_name or "")
-    search_title = (item.title or filename_title or "").strip()
+    # Catalogue titles indexed before author splitting landed still carry
+    # the " - Author" suffix ("Dark Matter - Blake Crouch"). Strip it from
+    # both the stored title and the search query, otherwise the query is
+    # "Dark Matter - Blake Crouch Blake Crouch" and the gate compares
+    # "Dark Matter" against the polluted string (0.61 < 0.82 → rejected).
+    title_from_item, author_from_item = _parse_book_filename(item.title or "")
+    if author_from_item and len(title_from_item) >= 2:
+        search_title = title_from_item
+        if (item.title or "") != title_from_item and "title" not in set(item.admin_locked or []):
+            item.title = title_from_item
+    else:
+        search_title = (item.title or filename_title or "").strip()
     if len(search_title) < 3 or _is_generic_media_title(search_title):
         return False
     known_authors = [a for a in (item.book_authors or []) if a]
-    search_author = known_authors[0] if known_authors else filename_author
+    search_author = known_authors[0] if known_authors else (author_from_item or filename_author)
 
-    # Gate used for search-based matches: candidate title must resemble
-    # the catalogue title, and (when we have an author hint) the
-    # candidate's first author must overlap the hint. Prevents "The
-    # Time Machine" matching some unrelated modern title.
+    # Gate used for search-based matches. Two acceptance shapes:
+    # 1. High string similarity — "Dark Matter" vs "Dark Matter".
+    # 2. Token containment — every word of the provider title appears in
+    #    the catalogue title ("Silo Saga Omnibus" inside "The Silo Saga
+    #    Omnibus Silo 1-3"). Blockbusters and omnibus editions routinely
+    #    carry a subtitle the catalogue title lacks; pure string
+    #    similarity scored 0.74 and rejected them.
+    # A single-token provider title ("It", "Dune") never passes on
+    # containment alone — it must also clear the similarity gate.
+    def _title_matches(candidate_title: str) -> bool:
+        similarity = _title_similarity(candidate_title, search_title)
+        if similarity >= _TITLE_SIMILARITY_GATE:
+            return True
+        def tokens(value: str) -> set[str]:
+            return {t for t in re.sub(r"[^a-z0-9 ]+", " ", (value or "").lower()).split() if len(t) > 1}
+        cand_tokens = tokens(candidate_title)
+        item_tokens = tokens(search_title)
+        return len(cand_tokens) >= 2 and cand_tokens.issubset(item_tokens)
+
     async def _gated(candidates: list) -> Optional[dict]:
         for cand in candidates:
-            if _title_similarity(cand.get("title") or "", search_title) < _TITLE_SIMILARITY_GATE:
+            if not _title_matches(cand.get("title") or ""):
                 continue
             cand_authors = [a.lower() for a in (cand.get("authors") or [])]
             hint = (search_author or "").strip().lower()
@@ -5143,6 +5206,12 @@ async def enrich_book_one(message_id: int) -> bool:
         candidate = await _gated(await google_books.search_books(query, limit=5))
 
     if candidate is None:
+        # Even without a match, persist the title cleanup so the card stops
+        # rendering "Dark Matter - Blake Crouch".
+        if item.title != title_before_search:
+            async with _lock:
+                _persist_unlocked()
+            await _store_upsert(item)
         return False
 
     # Works carry description/subjects only on the work endpoint.
@@ -5155,9 +5224,10 @@ async def enrich_book_one(message_id: int) -> bool:
 
     async with _lock:
         changed = _apply_book_candidate(item, candidate)
-        if changed:
+        cleaned_title = item.title != title_before_search
+        if changed or cleaned_title:
             _persist_unlocked()
-    if changed:
+    if changed or item.title != title_before_search:
         await _store_upsert(item)
     return changed
 

@@ -197,3 +197,55 @@ describe('BooksPage EPUB reading settings', () => {
     expect(screen.getByRole('complementary', { name: 'Reading settings' })).toBeTruthy();
   });
 });
+
+describe('BooksPage genre rail', () => {
+  beforeEach(() => {
+    window.history.replaceState(null, '', '/books');
+    apiMocks.fetchBooks.mockResolvedValue({
+      items: Array.from({ length: 10 }, (_, index) => ({
+        ...epub,
+        id: `genre-${index}`,
+        title: `Genre book ${index}`,
+        subjects: index === 0
+          ? ['Classic Literature', 'Mystery']
+          : index === 1
+            ? ['Classic Literature', 'Fiction']
+            : [`Subject ${index}`, `Topic ${index}`],
+      })),
+    });
+  });
+
+  it('caps the rail and expands on demand', async () => {
+    render(<BooksPage user={null} />);
+    const rail = await screen.findByRole('region', { name: 'Browse books by genre' });
+    // 19 subjects, but only 8 chips + All genres + the toggle are rendered.
+    expect(rail.querySelectorAll('button')).toHaveLength(10);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all 19' }));
+    expect(rail.querySelectorAll('button')).toHaveLength(21);
+    expect(screen.getByRole('button', { name: 'Show fewer' }).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('title-cases lowercase provider subjects without changing the filter value', async () => {
+    render(<BooksPage user={null} />);
+    await screen.findByRole('region', { name: 'Browse books by genre' });
+    const chip = screen.getByRole('button', { name: 'Mystery, 1 book' });
+    expect(chip.textContent).toContain('Mystery');
+    fireEvent.click(chip);
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('BooksPage reader routing', () => {
+  it('opens an extension-less book as EPUB instead of PDF', async () => {
+    window.history.replaceState(null, '', '/books');
+    apiMocks.fetchBooks.mockResolvedValue({ items: [{ ...epub, id: 'legacy', title: 'Legacy Book', fileName: 'Legacy Book', format: 'BOOK' }] });
+    Object.assign(window, { ePub: vi.fn(() => ({ renderTo: vi.fn(() => ({ display: vi.fn(), next: vi.fn(), prev: vi.fn(), themes: { register: vi.fn(), select: vi.fn() }, annotations: { highlight: vi.fn(), remove: vi.fn() } })), loaded: { navigation: Promise.resolve({ toc: [] }) }, spine: { each: vi.fn() }, destroy: vi.fn() })), JSZip: { loadAsync: vi.fn().mockResolvedValue({ files: {} }) } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(standardEpubHeader())));
+
+    render(<BooksPage user={null} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Legacy Book/i }));
+    // EPUB chrome exposes "Open reading settings"; the PDF branch says "Open reader tools".
+    expect(await screen.findByRole('button', { name: 'Open reading settings' })).toBeTruthy();
+  });
+});

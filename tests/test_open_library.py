@@ -141,6 +141,30 @@ class BookFilenameParseTest(unittest.TestCase):
             ("Build a Large Language Model (From Scratch)", ""),
         )
 
+    def test_dash_glued_author(self):
+        # Live BIN example: "An Echo of Oblivion -Sofi Aguilera.epub".
+        from main.utils.media_index import _parse_book_filename
+        self.assertEqual(
+            _parse_book_filename("An Echo of Oblivion -Sofi Aguilera.epub"),
+            ("An Echo of Oblivion", "Sofi Aguilera"),
+        )
+
+    def test_missing_extension(self):
+        # Telegram documents can arrive without an extension.
+        from main.utils.media_index import _parse_book_filename
+        self.assertEqual(
+            _parse_book_filename("Surrounded by Idiots - Thomas Erikson"),
+            ("Surrounded by Idiots", "Thomas Erikson"),
+        )
+
+    def test_underscore_separated(self):
+        # Underscores become spaces; the hyphen inside "Silo 1-3" survives.
+        from main.utils.media_index import _parse_book_filename
+        self.assertEqual(
+            _parse_book_filename("The_Silo_Saga_Omnibus_Silo_1-3_Hugh_Howey.epub"),
+            ("The Silo Saga Omnibus Silo 1-3 Hugh Howey", ""),
+        )
+
 
 def _hub_item(**kw):
     from main.utils.hub_query import HubItem
@@ -229,8 +253,6 @@ class BookEnrichSweepTest(unittest.IsolatedAsyncioTestCase):
                          "coverUrl": "openlibrary-cover:7436634", "isbn": "9781447297579",
                          "publisher": "Orbit", "language": "eng", "pageCount": 352,
                          "description": "A story.", "subjects": ["Fiction"]}
-            with patch.object(mi.open_library, "lookup_isbn", new=AsyncMock(return_value=None)) if hasattr(mi, "open_library") else patch.object(mi, "_book_enrich_state", mi._book_enrich_state):
-                pass  # media_index imports open_library lazily inside enrich_book_one
             with patch("main.utils.open_library.lookup_isbn", new=AsyncMock(return_value=None)), \
                  patch("main.utils.open_library.search_books", new=AsyncMock(return_value=[candidate])), \
                  patch("main.utils.open_library.fetch_work_details", new=AsyncMock(return_value=None)), \
@@ -259,6 +281,76 @@ class BookEnrichSweepTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(item.book_authors, [])
         finally:
             mi._items.pop(43, None)
+
+    async def test_enrich_cleans_polluted_title_and_matches(self):
+        # Live failure: item.title was the full filename stem
+        # "Dark Matter - Blake Crouch", so the query duplicated the author
+        # and the gate scored 0.61 < 0.82. It must now match AND the
+        # stored title must lose the author suffix.
+        import main.utils.media_index as mi
+
+        item = self._hub_item(message_id=45, title="Dark Matter - Blake Crouch",
+                              file_name="Dark Matter - Blake Crouch.epub", media_kind="book")
+        mi._items[45] = item
+        try:
+            candidate = {"key": "openlibrary:OL17358795W", "title": "Dark Matter",
+                         "authors": ["Blake Crouch"], "coverUrl": "openlibrary-cover:7436634"}
+            with patch("main.utils.open_library.lookup_isbn", new=AsyncMock(return_value=None)), \
+                 patch("main.utils.open_library.search_books", new=AsyncMock(return_value=[candidate])), \
+                 patch("main.utils.open_library.fetch_work_details", new=AsyncMock(return_value=None)), \
+                 patch("main.utils.google_books.search_books", new=AsyncMock(return_value=[])), \
+                 patch.object(mi, "_store_upsert", new=AsyncMock(return_value=None)):
+                ok = await mi.enrich_book_one(45)
+            self.assertTrue(ok)
+            self.assertEqual(item.title, "Dark Matter")
+            self.assertEqual(item.book_authors, ["Blake Crouch"])
+        finally:
+            mi._items.pop(45, None)
+
+    async def test_enrich_accepts_superset_title(self):
+        # Live failure: provider "Silo Saga Omnibus" vs catalogue
+        # "The Silo Saga Omnibus Silo 1-3" scored 0.74 and was rejected.
+        # Token containment accepts it.
+        import main.utils.media_index as mi
+
+        item = self._hub_item(message_id=46, title="The Silo Saga Omnibus Silo 1-3",
+                              file_name="The_Silo_Saga_Omnibus_Silo_1-3_Hugh_Howey.epub",
+                              media_kind="book")
+        mi._items[46] = item
+        try:
+            candidate = {"key": "openlibrary:OL21937089W", "title": "Silo Saga Omnibus",
+                         "authors": ["Hugh Howey"], "coverUrl": "openlibrary-cover:15110955"}
+            with patch("main.utils.open_library.lookup_isbn", new=AsyncMock(return_value=None)), \
+                 patch("main.utils.open_library.search_books", new=AsyncMock(return_value=[candidate])), \
+                 patch("main.utils.open_library.fetch_work_details", new=AsyncMock(return_value=None)), \
+                 patch("main.utils.google_books.search_books", new=AsyncMock(return_value=[])), \
+                 patch.object(mi, "_store_upsert", new=AsyncMock(return_value=None)):
+                ok = await mi.enrich_book_one(46)
+            self.assertTrue(ok)
+            self.assertEqual(item.book_authors, ["Hugh Howey"])
+            self.assertEqual(item.book_cover_url, "openlibrary-cover:15110955")
+        finally:
+            mi._items.pop(46, None)
+
+    async def test_enrich_rejects_single_token_containment(self):
+        # "Inference Engineering" must not match "Parallel inference engine"
+        # off the shared "inference" token.
+        import main.utils.media_index as mi
+
+        item = self._hub_item(message_id=47, title="Inference Engineering",
+                              file_name="Inference Engineering.epub", media_kind="book")
+        mi._items[47] = item
+        try:
+            wrong = {"key": "openlibrary:OL8W", "title": "Parallel inference engine",
+                     "authors": ["Someone"], "coverUrl": "openlibrary-cover:8"}
+            with patch("main.utils.open_library.lookup_isbn", new=AsyncMock(return_value=None)), \
+                 patch("main.utils.open_library.search_books", new=AsyncMock(return_value=[wrong])), \
+                 patch("main.utils.google_books.search_books", new=AsyncMock(return_value=[])):
+                ok = await mi.enrich_book_one(47)
+            self.assertFalse(ok)
+            self.assertEqual(item.book_authors, [])
+        finally:
+            mi._items.pop(47, None)
 
     async def test_enrich_books_all_reports_state(self):
         import main.utils.media_index as mi
