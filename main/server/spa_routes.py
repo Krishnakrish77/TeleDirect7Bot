@@ -661,12 +661,14 @@ def _book_content_url(item: HubItem) -> str:
 
 
 def _book_cover_proxy_url(item: HubItem) -> str:
+    # ?v=2: the proxies used to stream truncated bodies, and browsers cached
+    # those broken images for a day. The version suffix forces a refetch.
     google = re.fullmatch(r"google-books:([A-Za-z0-9_-]{4,64})", item.book_cover_url or "")
     if google:
-        return f"/api/google-books-cover/{google.group(1)}"
+        return f"/api/google-books-cover/{google.group(1)}?v=2"
     openlibrary = re.fullmatch(r"openlibrary-cover:(\d{1,12})", item.book_cover_url or "")
     if openlibrary:
-        return f"/api/openlibrary-cover/{openlibrary.group(1)}"
+        return f"/api/openlibrary-cover/{openlibrary.group(1)}?v=2"
     return ""
 
 

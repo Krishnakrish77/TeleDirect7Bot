@@ -22,9 +22,19 @@ async def google_books_cover_proxy(request: web.Request) -> web.Response:
                 content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
                 if response.status >= 400 or not content_type.startswith("image/"):
                     raise ValueError("Google Books cover unavailable")
-                body = await response.content.read(_MAX_BYTES + 1)
-                if len(body) > _MAX_BYTES:
-                    raise ValueError("Google Books cover too large")
+                # Loop until EOF: `content.read(n)` returns on the first
+                # buffered chunk, which served truncated covers.
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    total += len(chunk)
+                    if total > _MAX_BYTES:
+                        raise ValueError("Google Books cover too large")
+                    chunks.append(chunk)
+                body = b"".join(chunks)
+                declared = response.headers.get("Content-Length", "")
+                if declared.isdigit() and len(body) < int(declared):
+                    raise ValueError("Google Books cover truncated")
     except (aiohttp.ClientError, TimeoutError, ValueError):
         content_type, body = "image/svg+xml", _FALLBACK
     return web.Response(body=body, content_type=content_type, headers={"Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff"})
