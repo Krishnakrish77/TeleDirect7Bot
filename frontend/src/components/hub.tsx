@@ -468,8 +468,12 @@ export function ShelfRow({
   );
 }
 
-/** Scroll-state tracked genre chip row: edge fades + snap scrolling mark the
-    clipped side so the row reads "scroll for more" instead of truncated. */
+/** All music genres in a wrapped chip cloud.
+ *
+ * Previously a horizontal scroller with edge fades — on a wide catalogue
+ * half the genres sat behind an invisible scroll, and the fade chevrons
+ * were the only hint. Wrapping shows every genre at once with no hidden
+ * state; the row simply grows by a line or two. */
 function GenreFacetRow({
   facets,
   activeTag,
@@ -479,61 +483,35 @@ function GenreFacetRow({
   activeTag: string;
   onUpdate: (patch: Partial<HubParams>, replace?: boolean) => void;
 }) {
-  const rowRef = useRef<HTMLDivElement | null>(null);
-  const [canScrollBack, setCanScrollBack] = useState(false);
-  const [canScrollForward, setCanScrollForward] = useState(false);
-
-  const updateScrollState = useCallback(() => {
-    const row = rowRef.current;
-    if (!row) return;
-    const maxScroll = row.scrollWidth - row.clientWidth;
-    setCanScrollBack(row.scrollLeft > 2);
-    setCanScrollForward(row.scrollLeft < maxScroll - 2);
-  }, []);
-
-  useEffect(() => {
-    updateScrollState();
-    const row = rowRef.current;
-    if (!row) return;
-    row.addEventListener('scroll', updateScrollState, { passive: true });
-    window.addEventListener('resize', updateScrollState);
-    return () => {
-      row.removeEventListener('scroll', updateScrollState);
-      window.removeEventListener('resize', updateScrollState);
-    };
-  }, [facets.length, updateScrollState]);
-
   return (
-    <div className={`genre-facet-wrap${canScrollBack ? ' can-scroll-left' : ''}${canScrollForward ? ' can-scroll-right' : ''}`}>
-      <div className="genre-facet-row" role="group" aria-label="Music genres" ref={rowRef}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className={!activeTag ? 'filter-view-chip active' : 'filter-view-chip'}
-          aria-pressed={!activeTag}
-          onClick={() => onUpdate({ tag: '', offset: 0 })}
-        >
-          All genres
-        </Button>
-        {facets.map(({ genre, count }) => {
-          const value = genre.toLowerCase();
-          return (
-            <Button
-              key={genre}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={activeTag === value ? 'filter-view-chip active' : 'filter-view-chip'}
-              aria-pressed={activeTag === value}
-              onClick={() => onUpdate({ tag: activeTag === value ? '' : value, offset: 0 })}
-            >
-              {genre}
-              {count > 0 && <small className="genre-facet-count">{count}</small>}
-            </Button>
-          );
-        })}
-      </div>
+    <div className="genre-facet-row" role="group" aria-label="Music genres">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={!activeTag ? 'filter-view-chip active' : 'filter-view-chip'}
+        aria-pressed={!activeTag}
+        onClick={() => onUpdate({ tag: '', offset: 0 })}
+      >
+        All genres
+      </Button>
+      {facets.map(({ genre, count }) => {
+        const value = genre.toLowerCase();
+        return (
+          <Button
+            key={genre}
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={activeTag === value ? 'filter-view-chip active' : 'filter-view-chip'}
+            aria-pressed={activeTag === value}
+            onClick={() => onUpdate({ tag: activeTag === value ? '' : value, offset: 0 })}
+          >
+            {genre}
+            {count > 0 && <small className="genre-facet-count">{count}</small>}
+          </Button>
+        );
+      })}
     </div>
   );
 }

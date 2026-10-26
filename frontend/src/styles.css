@@ -879,69 +879,22 @@ img {
   gap: 0.3rem;
 }
 
-/* Music genre facet row — sits under the grid heading, scrolls horizontally
-   on narrow screens. The wrapper (below) paints an edge fade on whichever
-   side still has content, so overflow reads as "scroll for more" rather
-   than a truncated chip. */
+/* Music genre facets — every genre wraps onto as many lines as needed.
+   The old single-line scroller hid all but the first screenful behind an
+   invisible horizontal scroll. */
 .genre-facet-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.3rem;
   min-width: 0;
-  overflow-x: auto;
   padding: 0.1rem 0 0.35rem;
-  scrollbar-width: none;
-  scroll-snap-type: x proximity;
-}
-
-.genre-facet-row::-webkit-scrollbar {
-  display: none;
 }
 
 .genre-facet-row .filter-view-chip {
-  scroll-snap-align: start;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-}
-
-/* Overflow affordance: wrap the row in .genre-facet-wrap; GridView toggles
-   can-scroll classes and the wrap paints an edge fade + chevron on whichever
-   side still has content. */
-.genre-facet-wrap {
-  position: relative;
-  min-width: 0;
-}
-
-.genre-facet-wrap::after,
-.genre-facet-wrap::before {
-  position: absolute;
-  top: 0;
-  bottom: 0.35rem;
-  z-index: 1;
-  width: 2.6rem;
-  content: '';
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s;
-}
-
-.genre-facet-wrap::before {
-  left: -0.25rem;
-  background: linear-gradient(to right, var(--bg) 30%, transparent);
-}
-
-.genre-facet-wrap::after {
-  right: -0.25rem;
-  background: linear-gradient(to left, var(--bg) 30%, transparent);
-}
-
-.genre-facet-wrap.can-scroll-left::before {
-  opacity: 1;
-}
-
-.genre-facet-wrap.can-scroll-right::after {
-  opacity: 1;
 }
 
 .genre-facet-count {
@@ -5789,11 +5742,7 @@ img {
 .books-filter-row select:focus-visible { border-color: var(--brand); outline: 2px solid rgba(249, 115, 22, .25); outline-offset: 1px; }
 .books-topic-filter { display: grid; gap: .5rem; }
 .books-topic-filter > span { color: var(--muted); font-size: .72rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
-.books-topic-filter > div { display: flex; gap: .45rem; overflow-x: auto; padding: .1rem 0 .35rem; scrollbar-color: rgba(148, 163, 184, .55) transparent; }
-/* Expanded: wrap instead of a 1.4k-px horizontal scroller — with a large
-   subject list the rail hid half the chips behind an invisible scroll. */
-.books-topic-filter > div.is-expanded { flex-wrap: wrap; overflow-x: visible; }
-.books-topic-filter .books-topic-toggle { border-style: dashed; color: var(--muted); }
+.books-topic-filter > div { display: flex; flex-wrap: wrap; gap: .45rem; padding: .1rem 0 .35rem; }
 .books-topic-filter button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .45rem; min-height: 2.25rem; padding: .4rem .7rem; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); cursor: pointer; font: inherit; font-size: .8rem; font-weight: 650; white-space: nowrap; }
 .books-topic-filter button:hover, .books-topic-filter button:focus-visible { border-color: rgba(249, 115, 22, .7); color: var(--text); outline: none; }
 .books-topic-filter button.is-active { border-color: #fb923c; background: #7c2d12; color: #fff; }

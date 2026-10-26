@@ -215,15 +215,12 @@ describe('BooksPage genre rail', () => {
     });
   });
 
-  it('caps the rail and expands on demand', async () => {
+  it('shows every genre at once with no hidden scroll or cap', async () => {
     render(<BooksPage user={null} />);
     const rail = await screen.findByRole('region', { name: 'Browse books by genre' });
-    // 19 subjects, but only 8 chips + All genres + the toggle are rendered.
-    expect(rail.querySelectorAll('button')).toHaveLength(10);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show all 19' }));
-    expect(rail.querySelectorAll('button')).toHaveLength(21);
-    expect(screen.getByRole('button', { name: 'Show fewer' }).getAttribute('aria-expanded')).toBe('true');
+    // 19 subjects + All genres; nothing is withheld behind a toggle.
+    expect(rail.querySelectorAll('button')).toHaveLength(20);
+    expect(screen.queryByRole('button', { name: /show all/i })).toBeNull();
   });
 
   it('title-cases lowercase provider subjects without changing the filter value', async () => {
