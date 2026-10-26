@@ -166,7 +166,7 @@ describe('BooksPage EPUB reading settings', () => {
     expect(screen.getByLabelText('Search books')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'By Example Author' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Science fiction, 1 book' }));
+    fireEvent.change(screen.getByLabelText('Genre'), { target: { value: 'Science fiction' } });
     expect(screen.getByRole('button', { name: /Example Book/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Example PDF/i })).toBeNull();
   });
@@ -198,7 +198,7 @@ describe('BooksPage EPUB reading settings', () => {
   });
 });
 
-describe('BooksPage genre rail', () => {
+describe('BooksPage genre filter', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/books');
     apiMocks.fetchBooks.mockResolvedValue({
@@ -215,21 +215,23 @@ describe('BooksPage genre rail', () => {
     });
   });
 
-  it('shows every genre at once with no hidden scroll or cap', async () => {
+  it('lists every genre in one dropdown, ranked by count', async () => {
     render(<BooksPage user={null} />);
-    const rail = await screen.findByRole('region', { name: 'Browse books by genre' });
-    // 19 subjects + All genres; nothing is withheld behind a toggle.
-    expect(rail.querySelectorAll('button')).toHaveLength(20);
-    expect(screen.queryByRole('button', { name: /show all/i })).toBeNull();
+    const select = await screen.findByLabelText('Genre');
+    const options = [...select.querySelectorAll('option')].map((option) => option.textContent);
+    // 19 subjects + the "All genres" entry — nothing hidden behind a rail.
+    expect(options).toHaveLength(20);
+    expect(options[0]).toBe('All genres (19)');
+    expect(options[1]).toBe('Classic Literature (2)');
   });
 
-  it('title-cases lowercase provider subjects without changing the filter value', async () => {
+  it('title-cases lowercase provider subjects while filtering on the raw value', async () => {
     render(<BooksPage user={null} />);
-    await screen.findByRole('region', { name: 'Browse books by genre' });
-    const chip = screen.getByRole('button', { name: 'Mystery, 1 book' });
-    expect(chip.textContent).toContain('Mystery');
-    fireEvent.click(chip);
-    expect(chip.getAttribute('aria-pressed')).toBe('true');
+    const select = await screen.findByLabelText('Genre');
+    const option = [...select.querySelectorAll('option')].find((entry) => entry.textContent?.startsWith('Mystery')) as HTMLOptionElement;
+    expect(option.value).toBe('Mystery');
+    fireEvent.change(select, { target: { value: 'Mystery' } });
+    expect((select as HTMLSelectElement).value).toBe('Mystery');
   });
 });
 

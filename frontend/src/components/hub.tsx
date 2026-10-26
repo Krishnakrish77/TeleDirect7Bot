@@ -9,6 +9,7 @@ import { formatExternalRating } from '../utils/externalRating';
 import { addContinueClearTombstone, addContinueTombstone, isContinueSuppressed, readContinueClearTombstone, readContinueTombstones, readLocalContinue, syncContinueWatching, writeLocalContinue } from '../utils/continueWatching';
 import { MediaCard } from './mediaCard';
 import { Button } from './ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 type HubShelf = { name: string; href: string | null; items: HubCard[]; dismissable?: boolean; recMeta?: Array<RecommendationMeta | null> };
 export const HOME_SHELF_LIMIT = 7;
@@ -468,12 +469,12 @@ export function ShelfRow({
   );
 }
 
-/** All music genres in a wrapped chip cloud.
+/** Music genre filter as a plain dropdown.
  *
- * Previously a horizontal scroller with edge fades — on a wide catalogue
- * half the genres sat behind an invisible scroll, and the fade chevrons
- * were the only hint. Wrapping shows every genre at once with no hidden
- * state; the row simply grows by a line or two. */
+ * The chip row it replaces needed horizontal scrolling (or a wrapped block
+ * several lines tall) to expose every genre. A select keeps the row one
+ * line tall no matter how many genres the catalogue has, and the counts
+ * stay visible in the option labels. */
 function GenreFacetRow({
   facets,
   activeTag,
@@ -484,34 +485,20 @@ function GenreFacetRow({
   onUpdate: (patch: Partial<HubParams>, replace?: boolean) => void;
 }) {
   return (
-    <div className="genre-facet-row" role="group" aria-label="Music genres">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className={!activeTag ? 'filter-view-chip active' : 'filter-view-chip'}
-        aria-pressed={!activeTag}
-        onClick={() => onUpdate({ tag: '', offset: 0 })}
-      >
-        All genres
-      </Button>
-      {facets.map(({ genre, count }) => {
-        const value = genre.toLowerCase();
-        return (
-          <Button
-            key={genre}
-            type="button"
-            variant="ghost"
-            size="sm"
-            className={activeTag === value ? 'filter-view-chip active' : 'filter-view-chip'}
-            aria-pressed={activeTag === value}
-            onClick={() => onUpdate({ tag: activeTag === value ? '' : value, offset: 0 })}
-          >
-            {genre}
-            {count > 0 && <small className="genre-facet-count">{count}</small>}
-          </Button>
-        );
-      })}
+    <div className="genre-facet-select">
+      <Select value={activeTag || '__all'} onValueChange={(value) => onUpdate({ tag: value === '__all' ? '' : value, offset: 0 })}>
+        <SelectTrigger aria-label="Music genre">
+          <SelectValue placeholder="All genres" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all">All genres</SelectItem>
+          {facets.map(({ genre, count }) => (
+            <SelectItem key={genre} value={genre.toLowerCase()}>
+              {genre}{count > 0 ? ` (${count})` : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
