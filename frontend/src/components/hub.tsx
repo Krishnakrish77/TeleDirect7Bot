@@ -6,7 +6,7 @@ import { ChevronRightIcon, FilmIcon, MusicIcon, PlayIcon, UserIcon, XIcon } from
 import type { ContinueEntry, ContinueItem, HeroItem, HubCard, HubParams, HubResponse, RecommendationMeta } from '../types';
 import { tmdbImageUrl } from '../utils/tmdb';
 import { formatExternalRating } from '../utils/externalRating';
-import { addContinueClearTombstone, addContinueTombstone, isContinueSuppressed, readContinueClearTombstone, readContinueTombstones, readLocalContinue, syncContinueWatching, writeLocalContinue } from '../utils/continueWatching';
+import { addContinueClearTombstone, addContinueTombstone, AUDIO_RESUME_MIN_DUR, isContinueSuppressed, readContinueClearTombstone, readContinueTombstones, readLocalContinue, syncContinueWatching, writeLocalContinue } from '../utils/continueWatching';
 import { MediaCard } from './mediaCard';
 import { Button } from './ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -194,7 +194,12 @@ export function ContinueWatching({ serverSyncEnabled = false }: { serverSyncEnab
             existing.legacyKeys.push(entry.key);
           }
         });
-        const groupedEntries = [...grouped.values()];
+        const groupedEntries = [...grouped.values()].filter(
+          // Songs below the resume threshold always restart, so an entry for
+          // one is shelf noise rather than a resume — including legacy rows
+          // written before audio stopped persisting them.
+          ({ entry, item }) => item.media_kind !== 'audio' || entry.dur >= AUDIO_RESUME_MIN_DUR,
+        );
         const migrations = groupedEntries.filter(({ entry, legacyKeys }) => legacyKeys.some((key) => key !== entry.key));
         if (migrations.length) {
           const persisted = readLocalContinue();

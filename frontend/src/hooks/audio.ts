@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { deleteContinueEntry, recordWatchHistory, reportAudioDuration, saveContinueEntry } from '../api';
-import { isContinueSuppressed, readLocalContinue, upsertLocalContinue } from '../utils/continueWatching';
+import { AUDIO_RESUME_MIN_DUR, isContinueSuppressed, readLocalContinue, upsertLocalContinue } from '../utils/continueWatching';
 import { preloadLyrics } from './lyrics';
 import type { WatchTrack } from '../types';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
 const AUDIO_RESUME_MIN_POS = 30; // don't resume a track barely started
-// Only long-form audio (podcasts, mixes, audiobooks, DJ sets) auto-resumes —
-// normal songs restart, matching how music players behave. Cross-device resume
-// of short tracks isn't worth the "why did it start mid-song" surprise.
-const AUDIO_RESUME_MIN_DUR = 20 * 60;
 // Progress at/after this fraction counts as finished: CW is finalised
 // immediately instead of waiting for `ended`, so a closed/stalled tab can't
 // leave a near-complete song (which never auto-resumes anyway) lingering on
@@ -1246,7 +1242,11 @@ export function useAudioPlayer() {
         persistLastRef.current = now;
         persistNowPlaying({ ...current, currentTime, duration });
       }
-      if (current.track && currentTime > 5 && duration > 0 && now - cwLastSyncRef.current > (duration - currentTime < AUDIO_NEAR_END_SECONDS ? AUDIO_NEAR_END_SYNC_MS : 30000)) {
+      // Only long-form audio is resumable (see AUDIO_RESUME_MIN_DUR), so
+      // writing CW for a normal song would just create a Continue-shelf entry
+      // and card progress that start over when opened. Short tracks still
+      // finalise history at the completion ratio below.
+      if (current.track && duration >= AUDIO_RESUME_MIN_DUR && currentTime > 5 && now - cwLastSyncRef.current > (duration - currentTime < AUDIO_NEAR_END_SECONDS ? AUDIO_NEAR_END_SYNC_MS : 30000)) {
         if (cwSessionKeyRef.current !== current.track.key) {
           cwSessionKeyRef.current = current.track.key;
           cwSessionStartedRef.current = now;

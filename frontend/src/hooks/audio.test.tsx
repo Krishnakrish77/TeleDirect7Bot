@@ -150,6 +150,47 @@ describe('useAudioPlayer', () => {
     expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['track-key']).toBeUndefined();
   });
 
+  it('does not persist continue state for songs that restart at the beginning', async () => {
+    render(<AudioHarness />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'duration', { configurable: true, value: 200 });
+    Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+    Object.defineProperty(primary, 'currentTime', { configurable: true, value: 100 });
+
+    act(() => {
+      fireEvent.timeUpdate(primary);
+    });
+
+    expect(saveContinueEntry).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['track-key']).toBeUndefined();
+  });
+
+  it('persists continue state for long-form audio that can resume', async () => {
+    // 40-minute mix: above AUDIO_RESUME_MIN_DUR, so cross-device resume applies.
+    const track = makeTrack({ duration: 2400 });
+    render(<AudioHarness track={track} />);
+
+    fireEvent.click(screen.getByText('Start'));
+
+    const primary = screen.getByTestId('primary-audio') as HTMLAudioElement;
+    Object.defineProperty(primary, 'duration', { configurable: true, value: 2400 });
+    Object.defineProperty(primary, 'paused', { configurable: true, value: false });
+    Object.defineProperty(primary, 'currentTime', { configurable: true, value: 600 });
+
+    act(() => {
+      fireEvent.timeUpdate(primary);
+    });
+
+    await waitFor(() => expect(saveContinueEntry).toHaveBeenCalledWith(
+      'track-key',
+      expect.objectContaining({ pos: 600, dur: 2400 }),
+    ));
+    expect(JSON.parse(localStorage.getItem('td:cw') || '{}')['track-key']).toMatchObject({ pos: 600, dur: 2400 });
+  });
+
   it('records only one completion per play when the ended event follows the 95% path', async () => {
     render(<AudioHarness />);
 

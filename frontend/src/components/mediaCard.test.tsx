@@ -369,6 +369,33 @@ describe('MediaCard', () => {
     expect(container.querySelector('.card-progress span')?.getAttribute('style')).toContain('width: 50%');
   });
 
+  it('hides resume progress on songs that would restart but keeps it for long-form audio', () => {
+    localStorage.setItem('td:cw', JSON.stringify({
+      song42: { pos: 90, dur: 200 },
+      mix42: { pos: 900, dur: 3600 },
+    }));
+
+    const song = render(
+      <MediaCard
+        card={card({ type: 'track', mediaKind: 'audio', watchKey: 'song42' })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+      />,
+    );
+    expect(song.container.querySelector('.card-progress span')).toBeNull();
+    expect(screen.queryByText(/Watching/)).toBeNull();
+    song.unmount();
+
+    const mix = render(
+      <MediaCard
+        card={card({ type: 'track', mediaKind: 'audio', watchKey: 'mix42' })}
+        saved={false}
+        onToggleSaved={vi.fn()}
+      />,
+    );
+    expect(mix.container.querySelector('.card-progress span')?.getAttribute('style')).toContain('width: 25%');
+  });
+
   it('shows watched status from API without showing the action', () => {
     render(
       <MediaCard

@@ -380,6 +380,26 @@ describe('ContinueWatching', () => {
     });
   });
 
+  it('hides short music entries that would restart at the beginning', async () => {
+    localStorage.setItem('td:cw', JSON.stringify({
+      song1: { pos: 90, dur: 200, t: 30, title: 'Theme' },
+      mix1: { pos: 900, dur: 3600, t: 20, title: 'Late Night Mix' },
+      hash1: { pos: 120, dur: 1200, t: 10, title: 'Kalki' },
+    }));
+    vi.mocked(fetchContinueItems).mockResolvedValue([
+      { ...kalkiItem, key: 'song1', title: 'Theme', media_kind: 'audio', watch_url: '/watch/song1' },
+      { ...kalkiItem, key: 'mix1', title: 'Late Night Mix', media_kind: 'audio', watch_url: '/watch/mix1' },
+      { ...kalkiItem },
+    ]);
+
+    render(<ContinueWatching />);
+
+    expect(await screen.findAllByText('Kalki')).toHaveLength(2);
+    // Long-form audio resumes, so its card stays; the song cannot resume.
+    expect(await screen.findAllByText('Late Night Mix')).toHaveLength(2);
+    expect(screen.queryAllByText('Theme')).toHaveLength(0);
+  });
+
   it('merges local entries missing from the server snapshot (login merge)', async () => {
     // A local entry the server has never seen is pushed up on sign-in — the
     // robust login merge. Resurrection of *deleted* entries is prevented by

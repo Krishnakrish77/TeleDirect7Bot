@@ -2,6 +2,7 @@ import { memo, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { BookmarkIcon, CheckIcon, FilmIcon, HeartIcon, MusicIcon, PlayIcon, ThumbDownIcon, ThumbUpIcon, XIcon } from '../icons';
 import type { HubCard, RatingCounts, RecommendationMeta } from '../types';
 import { formatExternalRating } from '../utils/externalRating';
+import { AUDIO_RESUME_MIN_DUR } from '../utils/continueWatching';
 import { isLocallyWatched } from '../utils/localWatched';
 import { joinMetadata } from '../utils/metadata';
 import { trackRecommendationEvents, type RecommendationFeedbackEvent } from '../api';
@@ -22,9 +23,12 @@ function readCwMap(): Record<string, { pos: number; dur: number }> {
   return parsed;
 }
 
-function getLocalCwPct(watchKey: string): number {
+function getLocalCwPct(watchKey: string, music: boolean): number {
   const entry = readCwMap()[watchKey];
   if (!entry?.dur || !entry?.pos) return 0;
+  // Short tracks always restart, so a progress bar would promise a resume
+  // position the player immediately discards.
+  if (music && entry.dur < AUDIO_RESUME_MIN_DUR) return 0;
   const pct = entry.pos / entry.dur;
   return pct > 0.02 && pct < 0.95 ? Math.max(4, Math.min(96, Math.round(pct * 100))) : 0;
 }
@@ -135,7 +139,7 @@ function MediaCardBase({
   const externalRating = isMusic ? '' : formatExternalRating(card.externalRating);
   const metaItems = getMediaCardMetaItems(card);
   const communityRating = isMusic ? '' : communityRatingLabel(card.ratingCounts);
-  const rawProgress = useMemo(() => card.progressPct ?? (card.watchKey ? getLocalCwPct(card.watchKey) : 0), [card.progressPct, card.watchKey]);
+  const rawProgress = useMemo(() => card.progressPct ?? (card.watchKey ? getLocalCwPct(card.watchKey, isMusic) : 0), [card.progressPct, card.watchKey, isMusic]);
   const watched = !isMusic && (Boolean(card.watched) || isLocallyWatched(card.watchKey));
   const progressPct = watched ? 0 : rawProgress;
   const currentlyWatching = !watched && Boolean(card.currentlyWatching || progressPct > 0);

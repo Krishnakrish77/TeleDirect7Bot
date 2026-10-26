@@ -8,6 +8,12 @@ const CONTINUE_TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type LocalContinueMap = Record<string, Omit<ContinueEntry, 'key'>>;
 
+// Only long-form audio (podcasts, mixes, audiobooks, DJ sets) is resumable;
+// normal songs always start from the top, matching music players. The audio
+// hook, the Continue shelf and card progress all share this threshold so a
+// short track never leaves a resume entry that cannot actually be resumed.
+export const AUDIO_RESUME_MIN_DUR = 20 * 60;
+
 export function readLocalContinue(): LocalContinueMap {
   try {
     const parsed = JSON.parse(localStorage.getItem(CONTINUE_STORAGE_KEY) || '{}');
