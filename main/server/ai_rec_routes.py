@@ -134,19 +134,18 @@ async def ai_recommendations_job_submit(request: web.Request) -> web.Response:
     # client gets the same friendly 429 as the inline path.
     if not _take_token(uid):
         return _rate_limited()
-    job = ai_rec_jobs.runner.enqueue(uid)
-    if job is None:
-        return web.json_response(
-            {"error": "You already have picks generating — one moment.", "retryable": True, "status": 429},
-            status=429,
-        )
 
     async def execute(job: ai_rec_jobs.RecommendationJob, progress) -> dict:
         return await ai_rec.get_ai_recommendations(
             uid, query=query or None, refresh=refresh, agentic=True, progress=progress,
         )
 
-    ai_rec_jobs.runner.bind(execute)
+    job = ai_rec_jobs.runner.enqueue(uid, execute)
+    if job is None:
+        return web.json_response(
+            {"error": "You already have picks generating — one moment.", "retryable": True, "status": 429},
+            status=429,
+        )
     return web.json_response({"jobId": job.job_id, "status": job.status})
 
 

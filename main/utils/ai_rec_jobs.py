@@ -34,15 +34,16 @@ JobStatus = str  # "queued" | "running" | "done" | "failed"
 
 
 class RecommendationJob:
-    __slots__ = ("job_id", "user_id", "status", "result", "error", "queued_at", "_event")
+    __slots__ = ("job_id", "user_id", "status", "result", "error", "queued_at", "_execute", "_event")
 
-    def __init__(self, job_id: str, user_id: int):
+    def __init__(self, job_id: str, user_id: int, execute=None):
         self.job_id = job_id
         self.user_id = user_id
         self.status: JobStatus = "queued"
         self.result: dict | None = None
         self.error: dict | None = None
         self.queued_at = time.monotonic()
+        self._execute = execute
         # Set when status leaves queued/running; late subscribers await it.
         self._event = asyncio.Event()
 
@@ -63,11 +64,6 @@ class JobRunner:
         self._jobs: dict[str, RecommendationJob] = {}
         self._queues: dict[int, asyncio.Queue] = {}
         self._workers: dict[int, asyncio.Task] = {}
-        self._execute: Callable[[RecommendationJob, Callable[[str], Awaitable[None]]], Awaitable[dict]] | None = None
-
-    def bind(self, execute: Callable[[RecommendationJob, Callable[[str], Awaitable[None]]], Awaitable[dict]]) -> None:
-        """Install the generation coroutine: ``(job, progress) -> result dict``."""
-        self._execute = execute
 
     def _reap(self) -> None:
         now = time.monotonic()
@@ -86,10 +82,13 @@ class JobRunner:
             for job in terminal[: len(self._jobs) - MAX_TRACKED_JOBS]:
                 self._jobs.pop(job.job_id, None)
 
-    def enqueue(self, user_id: int) -> RecommendationJob | None:
-        """Create a job, queued behind at most one pending run for this user."""
-        if self._execute is None:
-            raise RuntimeError("JobRunner used before bind()")
+    def enqueue(self, user_id: int, execute: Callable[[RecommendationJob, Callable[[str], Awaitable[None]]], Awaitable[dict]]) -> RecommendationJob | None:
+        """Create a job, queued behind at most one pending run for this user.
+
+        ``execute`` is stored per job — a request-scoped closure capturing
+        that submit's uid/query/refresh — so concurrent submits can never
+        run each other's payload.
+        """
         self._reap()
         pending = [
             job for job in self._jobs.values()
@@ -97,7 +96,7 @@ class JobRunner:
         ]
         if len(pending) >= MAX_QUEUED_PER_USER + 1:
             return None
-        job = RecommendationJob(f"airec-{uuid.uuid4().hex[:12]}", user_id)
+        job = RecommendationJob(f"airec-{uuid.uuid4().hex[:12]}", user_id, execute)
         self._jobs[job.job_id] = job
         queue = self._queues.setdefault(user_id, asyncio.Queue())
         queue.put_nowait(job)
@@ -120,7 +119,7 @@ class JobRunner:
 
             try:
                 job.result = await asyncio.wait_for(
-                    self._execute(job, progress),  # type: ignore[misc]
+                    job._execute(job, progress),  # type: ignore[misc]
                     timeout=JOB_TIMEOUT_SECONDS,
                 )
                 job.status = "done"

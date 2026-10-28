@@ -61,8 +61,7 @@ class JobRunnerTest(__import__("unittest").IsolatedAsyncioTestCase):
             await progress("Searching")
             return {"items": [{"href": "/one"}], "message": ""}
 
-        runner.bind(execute)
-        job = runner.enqueue(7)
+        job = runner.enqueue(7, execute)
         self.assertIsNotNone(job)
         await job.wait(timeout=2)
         self.assertEqual(job.status, "done")
@@ -76,8 +75,7 @@ class JobRunnerTest(__import__("unittest").IsolatedAsyncioTestCase):
         async def execute(job, progress):
             raise RuntimeError("gemini exploded")
 
-        runner.bind(execute)
-        job = runner.enqueue(7)
+        job = runner.enqueue(7, execute)
         await job.wait(timeout=2)
         self.assertEqual(job.status, "failed")
         self.assertEqual(job.error["status"], 502)
@@ -95,9 +93,8 @@ class JobRunnerTest(__import__("unittest").IsolatedAsyncioTestCase):
             await asyncio.sleep(0.02)
             active -= 1
 
-        runner.bind(execute)
-        first = runner.enqueue(7)
-        second = runner.enqueue(7)
+        first = runner.enqueue(7, execute)
+        second = runner.enqueue(7, execute)
         await first.wait(timeout=2)
         await second.wait(timeout=2)
         self.assertEqual(max_active, 1)  # never overlapped
@@ -108,12 +105,11 @@ class JobRunnerTest(__import__("unittest").IsolatedAsyncioTestCase):
         async def execute(job, progress):
             await asyncio.sleep(10)
 
-        runner.bind(execute)
-        first = runner.enqueue(7)
-        second = runner.enqueue(7)  # queued behind first — allowed
+        first = runner.enqueue(7, execute)
+        second = runner.enqueue(7, execute)  # queued behind first — allowed
         self.assertIsNotNone(second)
         # One running + one queued = cap; a third is rejected.
-        self.assertIsNone(runner.enqueue(7))
+        self.assertIsNone(runner.enqueue(7, execute))
         first._event.set()
         # Let the worker observe the (already set) event and clean up.
         await asyncio.sleep(0)
@@ -125,8 +121,7 @@ class JobRunnerTest(__import__("unittest").IsolatedAsyncioTestCase):
         async def execute(job, progress):
             await asyncio.sleep(60)
 
-        runner.bind(execute)
-        job = runner.enqueue(7)
+        job = runner.enqueue(7, execute)
         # Shrink the wait: patch the event wait by completing through timeout path
         with patch.object(ai_rec_jobs, "JOB_TIMEOUT_SECONDS", 0.05):
             # worker already captured the constant? wait_for uses module constant
@@ -141,11 +136,10 @@ class JobRunnerTest(__import__("unittest").IsolatedAsyncioTestCase):
         async def execute(job, progress):
             return {"items": []}
 
-        runner.bind(execute)
-        job = runner.enqueue(7)
+        job = runner.enqueue(7, execute)
         await job.wait(timeout=2)
         with patch.object(ai_rec_jobs, "JOB_RESULT_TTL_SECONDS", -1):
-            runner.enqueue(8)
+            runner.enqueue(8, execute)
         self.assertIsNone(runner.get(job.job_id))
 
 
@@ -164,7 +158,7 @@ class JobRoutesTest(__import__("unittest").IsolatedAsyncioTestCase):
             )
         self.assertEqual(json.loads(response.text), {"jobId": "airec-test", "status": "queued"})
         take_token.assert_called_once_with(7)
-        enqueue.assert_called_once_with(7)
+        enqueue.assert_called_once_with(7, enqueue.call_args.args[1])
         recommendations.assert_not_awaited()
 
     async def test_submit_requires_query_or_refresh(self):
