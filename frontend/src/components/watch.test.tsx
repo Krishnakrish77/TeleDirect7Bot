@@ -842,6 +842,59 @@ describe('WatchPage video player', () => {
     }
   });
 
+  it('kicks a showing track whose cues stopped rendering while playing', async () => {
+    const subtitles: SubtitleTrack[] = [
+      { id: 'eng', url: '/sub/video-key/en.vtt', language: 'en', label: 'English', codec: 'vtt', kind: 'subtitles' },
+    ];
+    fetchSubtitlesMock.mockResolvedValue(subtitles);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello', { status: 200 })));
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:english');
+    const view = renderWatchPage();
+
+    try {
+      await screen.findByRole('heading', { name: 'Pilot' });
+      const captionsButton = await screen.findByLabelText('Turn captions on') as HTMLButtonElement;
+      await waitFor(() => expect(captionsButton.disabled).toBe(false));
+      fireEvent.click(captionsButton);
+      await waitFor(() => expect(view.container.querySelector('track')).toBeTruthy());
+
+      const video = view.container.querySelector('video') as HTMLVideoElement;
+      const modeLog: TextTrackMode[] = [];
+      // jsdom has no TextTrack implementation; this stub records mode writes
+      // so the synchronous hidden→showing flip is observable.
+      const trackStub = {
+        get mode() { return modeLog[modeLog.length - 1] ?? 'showing'; },
+        set mode(value: TextTrackMode) { modeLog.push(value); },
+        cues: [{}],
+        activeCues: [] as unknown[],
+        id: '',
+      };
+      const textTrack = trackStub as unknown as TextTrack;
+      Object.defineProperty(video, 'textTracks', { configurable: true, value: [textTrack] });
+      Object.defineProperty(video, 'readyState', { configurable: true, value: 2 });
+      Object.defineProperty(video, 'paused', { configurable: true, value: false });
+
+      // The kick flips showing → hidden → showing in one tick; assert the
+      // sequence rather than polling the (already restored) final mode.
+      fireEvent.timeUpdate(video);
+      expect(modeLog).toEqual(['hidden', 'showing']);
+
+      // A healthy track (active cues present) is left alone.
+      modeLog.length = 0;
+      trackStub.activeCues = [{}];
+      fireEvent.timeUpdate(video);
+      expect(modeLog).toEqual([]);
+
+      // Paused playback never kicks, even with empty active cues.
+      trackStub.activeCues = [];
+      Object.defineProperty(video, 'paused', { configurable: true, value: true });
+      fireEvent.timeUpdate(video);
+      expect(modeLog).toEqual([]);
+    } finally {
+      createObjectUrl.mockRestore();
+    }
+  });
+
   it('shows a decoded video frame in the seek preview when the browser exposes one', async () => {
     const view = renderWatchPage();
 
@@ -1114,6 +1167,54 @@ describe('WatchPage video player', () => {
     } finally {
       createObjectUrl.mockRestore();
     }
+  });
+
+  it('offers a language filter dropdown only when multiple languages are found', async () => {
+    searchUserSubtitlesMock.mockResolvedValue({
+      results: [
+        { id: 'en-1', format: 'srt', language: 'en', label: 'English', release: 'A.1080p', fileName: 'a.en.srt', hearingImpaired: false, source: 'opensubtitles' },
+        { id: 'en-2', format: 'srt', language: 'en', label: 'English', release: 'B.720p', fileName: 'b.en.srt', hearingImpaired: false, source: 'opensubtitles' },
+        { id: 'ta-1', format: 'srt', language: 'ta', label: 'Tamil', release: 'C.1080p', fileName: 'c.ta.srt', hearingImpaired: false, source: 'opensubtitles' },
+      ],
+    });
+    renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    fireEvent.click(screen.getByLabelText('More video options'));
+    fireEvent.click(screen.getByText('Find subtitles'));
+    await screen.findByText('A.1080p · opensubtitles');
+
+    const filter = screen.getByLabelText('Filter subtitles by language') as HTMLSelectElement;
+    expect(filter).toBeTruthy();
+    expect(filter.options).toHaveLength(3); // All languages + en + ta
+
+    // Selecting a language narrows the results to that group.
+    fireEvent.change(filter, { target: { value: 'ta' } });
+    expect(screen.getByText('C.1080p · opensubtitles')).toBeTruthy();
+    expect(screen.queryByText('A.1080p · opensubtitles')).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Pilot' }).querySelectorAll('.subtitle-search-lang')).toHaveLength(1);
+
+    // Back to all languages restores every group.
+    fireEvent.change(filter, { target: { value: '' } });
+    expect(screen.getByText('A.1080p · opensubtitles')).toBeTruthy();
+    expect(screen.getByText('C.1080p · opensubtitles')).toBeTruthy();
+  });
+
+  it('hides the language filter when results speak one language', async () => {
+    searchUserSubtitlesMock.mockResolvedValue({
+      results: [
+        { id: 'en-1', format: 'srt', language: 'en', label: 'English', release: 'A.1080p', fileName: 'a.en.srt', hearingImpaired: false, source: 'opensubtitles' },
+        { id: 'en-2', format: 'srt', language: 'en', label: 'English', release: 'B.720p', fileName: 'b.en.srt', hearingImpaired: false, source: 'opensubtitles' },
+      ],
+    });
+    renderWatchPage();
+
+    await screen.findByRole('heading', { name: 'Pilot' });
+    fireEvent.click(screen.getByLabelText('More video options'));
+    fireEvent.click(screen.getByText('Find subtitles'));
+    await screen.findByText('A.1080p · opensubtitles');
+
+    expect(screen.queryByLabelText('Filter subtitles by language')).toBeNull();
   });
 
   it('exposes VLC as a direct player action without opening the options menu', async () => {

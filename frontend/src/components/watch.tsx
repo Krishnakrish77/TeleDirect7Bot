@@ -330,6 +330,13 @@ function SubtitleSearchSheet({
       .map((lang) => ({ lang, items: byLang.get(lang) ?? [] }));
   }, [results]);
 
+  const [languageFilter, setLanguageFilter] = useState('');
+  // A fresh search can drop the filtered language; fall back to all results
+  // instead of showing an empty sheet.
+  const filterPresent = !languageFilter || groups.some(({ lang }) => lang === languageFilter);
+  const effectiveFilter = filterPresent ? languageFilter : '';
+  const visibleGroups = effectiveFilter ? groups.filter(({ lang }) => lang === effectiveFilter) : groups;
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="subtitle-search-sheet" aria-labelledby="subtitle-search-title" container={container}>
@@ -346,11 +353,23 @@ function SubtitleSearchSheet({
             <SearchIcon />
             <span>{searching ? 'Searching…' : results.length ? 'Search again' : 'Find subtitles'}</span>
           </Button>
+          {groups.length > 1 && (
+            <select
+              value={effectiveFilter}
+              onChange={(event) => setLanguageFilter(event.currentTarget.value)}
+              aria-label="Filter subtitles by language"
+            >
+              <option value="">All languages</option>
+              {groups.map(({ lang, items }) => (
+                <option key={lang} value={lang}>{lang === 'und' ? 'Unknown language' : lang} ({items.length})</option>
+              ))}
+            </select>
+          )}
           {status && <p className="subtitle-search-status" role="status">{status}</p>}
         </div>
         {results.length > 0 && (
           <div className="subtitle-search-results" aria-label="Subtitle search results">
-            {groups.map(({ lang, items }) => (
+            {visibleGroups.map(({ lang, items }) => (
               <section key={lang} className="subtitle-search-lang">
                 <h3>{items[0]?.label && items.every((item) => item.label === items[0].label)
                   ? items[0].label
@@ -1268,6 +1287,32 @@ function VideoWatchPage({
     return () => textTracks.removeEventListener('addtrack', applyMode);
   }, [activeSub, playableSubtitle, sourceSrc]);
 
+  // Safari/WebKit occasionally stops painting cues after a pause/resume or
+  // seek even though the track is still in 'showing' mode (the captions
+  // button stays "on" while nothing renders). Kicking the track mode
+  // re-registers it with the renderer. Detect the stall by watching for
+  // playback with an active selection but zero active cues.
+  useEffect(() => {
+    if (!activeSub) return undefined;
+    const el = videoRef.current;
+    if (!el) return undefined;
+    let lastKick = 0;
+    const onTime = () => {
+      if (el.paused || el.readyState < 2) return;
+      const track = Array.from(el.textTracks || []).find((t) => t.mode === 'showing');
+      if (!track || (track.cues !== null && track.cues.length === 0)) return;
+      if (!track.activeCues || track.activeCues.length > 0) return;
+      const now = Date.now();
+      // Seek flash: within ~600ms of a seek the cue list legitimately lags.
+      if (now - lastKick < 1000) return;
+      lastKick = now;
+      track.mode = 'hidden';
+      track.mode = 'showing';
+    };
+    el.addEventListener('timeupdate', onTime);
+    return () => el.removeEventListener('timeupdate', onTime);
+  }, [activeSub, sourceSrc]);
+
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
@@ -1483,6 +1528,15 @@ function VideoWatchPage({
       setPlaying(true);
       setVideoMediaSessionPlaybackState(true);
       setVideoMediaSessionPosition(el.currentTime || 0);
+      // WebKit can drop cue painting across a pause/resume while the track
+      // still reports 'showing'. Flipping the mode re-registers the renderer
+      // so captions keep displaying after play resumes. With captions off
+      // no track is 'showing', so this is a no-op.
+      Array.from(el.textTracks || []).forEach((track) => {
+        if (track.mode !== 'showing') return;
+        track.mode = 'hidden';
+        track.mode = 'showing';
+      });
     };
     const onPause = () => {
       setPlaying(false);

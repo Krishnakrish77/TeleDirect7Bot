@@ -9311,6 +9311,16 @@ img {
   width: 16px;
 }
 
+.subtitle-search-actions select {
+  height: 30px;
+  max-width: 11rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #111317;
+  color: #fff;
+  font-size: 0.78rem;
+}
+
 .subtitle-search-status {
   margin: 0;
   color: #fdba74;
